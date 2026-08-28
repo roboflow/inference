@@ -2,6 +2,11 @@ import os
 
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
+
 API_KEY = os.environ.get("API_KEY")
 
 
@@ -521,6 +526,7 @@ def test_compilation_endpoint_when_compilation_fails(
 
 def test_workflow_run(
     server_url: str,
+    auth_mode: str,
     clean_loaded_models_fixture,
 ) -> None:
     # given
@@ -552,20 +558,24 @@ def test_workflow_run(
     # when
     response = requests.post(
         f"{server_url}/workflows/run",
-        json={
-            "specification": valid_workflow_definition,
-            "api_key": API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "model_id": "yolov8n-640",
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": valid_workflow_definition,
+                "api_key": API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                    "model_id": "yolov8n-640",
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     # then
@@ -693,7 +703,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.15.0"]
+    assert response_data["versions"] == ["1.15.1"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:

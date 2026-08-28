@@ -1,0 +1,9 @@
+# CUDA 13 sibling of requirements.gpu.txt, consumed by Dockerfile.onnx.gpu on
+# the CUDA 13 build. onnxruntime-gpu is intentionally absent here: CUDA 13
+# builds of ORT are not published to PyPI (the PyPI wheel of the same version
+# is a CUDA 12 build), so the Dockerfile installs it in a dedicated step from
+# Microsoft's onnxruntime-cuda-13 feed. A plain pin here would silently
+# resolve to the CUDA 12 wheel.
+inference-models[torch-cu130]~=0.36.0
+pynvvideocodec~=2.1.0; platform_machine == "x86_64"
+onnxruntime-gpu>=1.27.0,<1.30.0

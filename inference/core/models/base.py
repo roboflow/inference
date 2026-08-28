@@ -12,6 +12,7 @@ from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
+    parse_image_dims_hw,
     record_measured_model_input,
 )
 
@@ -31,7 +32,10 @@ class BaseInference:
         clear_measured_model_input()
         with start_span("model.preprocess"):
             preproc_image, returned_metadata = self.preprocess(image, **kwargs)
-            record_measured_model_input(preproc_image)
+            record_measured_model_input(
+                preproc_image,
+                fallback_hw=parse_image_dims_hw(returned_metadata),
+            )
             logger.debug(
                 f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
             )

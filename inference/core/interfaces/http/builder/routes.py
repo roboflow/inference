@@ -7,7 +7,7 @@ import tempfile
 import time
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -19,7 +19,12 @@ from inference.core.cache.air_gapped import (
     get_task_type_to_block_mapping,
     scan_cached_models,
 )
-from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
+from inference.core.env import (
+    BUILDER_ORIGIN,
+    MODEL_CACHE_DIR,
+    OFFLINE_MODE,
+    USE_INFERENCE_MODELS,
+)
 from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
@@ -260,6 +265,42 @@ _MODELS_CACHE_TTL = 30.0  # seconds
 _models_lock = asyncio.Lock()
 
 
+def _offline_loadable_model_ids() -> Optional[Set[str]]:
+    """Ids (canonical + recorded aliases) the offline-weights registry can serve.
+
+    A model is offline-loadable only when its registry record exists AND at
+    least one recorded package has all its files on disk - the same bar the
+    roboflow-offline-weights provider applies before negotiation.
+
+    Returns None when the registry cannot be consulted, so the caller keeps
+    the listing unfiltered instead of showing an empty picker on an internal
+    error.
+    """
+    try:
+        from inference_models.weights_providers.offline_registry import (
+            OfflinePackagePresence,
+            list_records_status,
+        )
+
+        loadable: Set[str] = set()
+        for record_status in list_records_status():
+            if not any(
+                package.presence is OfflinePackagePresence.OK
+                for package in record_status.packages
+            ):
+                continue
+            loadable.add(record_status.canonical_model_id)
+            loadable.update(record_status.requested_aliases)
+        return loadable
+    except Exception:
+        logger.warning(
+            "Could not consult the offline-weights registry - the model "
+            "listing will not be filtered to offline-loadable models.",
+            exc_info=True,
+        )
+        return None
+
+
 @router.get("/api/models", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions_async
 async def get_cached_models():
@@ -327,6 +368,33 @@ async def get_cached_models():
         seen = _collect_unambiguous_user_models(user_models=user_models)
         for m in foundation_models:
             seen[m["model_id"]] = m
+
+        # In OFFLINE_MODE only registry-recorded, materialized models load -
+        # a cached manifest alone is not enough. Filter the listing so the
+        # picker never promises a model the offline provider will refuse.
+        # Applies only to the inference-models runtime: the legacy loader
+        # (USE_INFERENCE_MODELS=False) serves traditional-layout caches
+        # offline without the registry, so its listing must stay unfiltered.
+        if OFFLINE_MODE and USE_INFERENCE_MODELS:
+            offline_loadable = _offline_loadable_model_ids()
+            if offline_loadable is not None:
+                dropped = [
+                    model_id
+                    for model_id in seen
+                    if model_id not in offline_loadable
+                    and not set(reverse_aliases.get(model_id, [])) & offline_loadable
+                ]
+                for model_id in dropped:
+                    seen.pop(model_id)
+                if dropped:
+                    logger.info(
+                        "OFFLINE_MODE: hiding %d cached model(s) absent from "
+                        "the offline-weights registry: %s. Run once with "
+                        "OFFLINE_MODE_WARM_UP=True on a connected machine to "
+                        "register them.",
+                        len(dropped),
+                        ", ".join(sorted(dropped)),
+                    )
 
         # Enrich each model with compatible block types and aliases.
         task_to_blocks = get_task_type_to_block_mapping(blocks=blocks)

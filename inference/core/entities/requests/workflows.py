@@ -80,8 +80,11 @@ class DescribeBlocksRequest(BaseModel):
 
 
 class DescribeInterfaceRequest(BaseModel):
-    api_key: str = Field(
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route still requires "
+        "a key through one of the channels.",
     )
 
 

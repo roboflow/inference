@@ -8,25 +8,29 @@ as a dependency for the main inference package.
 
 import asyncio
 import base64
+from contextlib import contextmanager
 import gzip
 import hashlib
 import inspect
+from io import StringIO
 import json
 import os
+import sys
 import threading
 import time
 import traceback
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Generator, Optional, Tuple
 
 from starlette.requests import Request
 
 import modal
 
-from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
-)
 
+_thread_local = threading.local()
+_install_lock = threading.Lock()
+
+
+WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
@@ -43,6 +47,80 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 # _WS_MAX_FRAME_BYTES in
 # inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py.
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
+
+
+# mirrors inference/core/workflows/execution_engine/v1/dynamic_blocks (avoiding `from inference import ...`)
+class _ThreadDispatchStream:
+    """Stream wrapper that tees writes into a per-thread StringIO buffer
+    (when one is active) while still forwarding them to the original stream.
+
+    Threads that are not capturing see normal stdout/stderr behaviour; threads
+    that are capturing get both: the buffer keeps an in-memory copy for error
+    payloads, and the original stream still receives the bytes so ``print()``
+    output continues to reach Docker / the process stdout.
+    """
+
+    def __init__(self, original, attr_name: str):
+        object.__setattr__(self, "_original", original)
+        object.__setattr__(self, "_attr_name", attr_name)
+
+    def _get_buffer(self):
+        return getattr(_thread_local, self._attr_name, None)
+
+    def write(self, data):
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.write(data)
+            except Exception:
+                pass
+        return self._original.write(data)
+
+    def flush(self):
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.flush()
+            except Exception:
+                pass
+        return self._original.flush()
+
+    def fileno(self):
+        return self._original.fileno()
+
+    def isatty(self):
+        return self._original.isatty()
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+
+def _install_dispatchers() -> None:
+    if isinstance(sys.stdout, _ThreadDispatchStream):
+        return
+    with _install_lock:
+        if isinstance(sys.stdout, _ThreadDispatchStream):
+            return
+        sys.stdout = _ThreadDispatchStream(sys.stdout, "_capture_stdout")
+        sys.stderr = _ThreadDispatchStream(sys.stderr, "_capture_stderr")
+
+
+@contextmanager
+def capture_output() -> Generator[Tuple[StringIO, StringIO], None, None]:
+    """Context manager to capture stdout and stderr for the current thread.
+
+    Uses per-thread buffers via ``threading.local`` so concurrent calls in
+    different threads capture independently without any global lock.
+    """
+    _install_dispatchers()
+    stdout_buf, stderr_buf = StringIO(), StringIO()
+    _thread_local._capture_stdout = stdout_buf
+    _thread_local._capture_stderr = stderr_buf
+    try:
+        yield stdout_buf, stderr_buf
+    finally:
+        _thread_local._capture_stdout = None
+        _thread_local._capture_stderr = None
 
 
 class _NoopDebugTraces:
@@ -72,14 +150,13 @@ INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv(
     "WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu"
 )
-WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
 
 
 def get_inference_image():
     """Get the Modal Image for inference."""
 
     # Use the pre-built shared image or create on-the-fly
-    inference_version = WEBEXEC_INFERENCE_VERSION
+    inference_version = INFERENCE_VERSION
     if not inference_version:
         try:
             from inference.core.version import __version__
@@ -90,7 +167,7 @@ def get_inference_image():
 
     image = (
         modal.Image.from_registry(
-            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}"
+            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{inference_version}"
         )
         .apt_install(
             "libgl1-mesa-glx",
@@ -318,6 +395,7 @@ from datetime import datetime
                 deserialize_image_kind,
                 deserialize_video_metadata_kind,
             )
+            from inference.core.workflows.execution_engine.entities.base import Batch
             from inference.core.workflows.prototypes.block import BlockResult
 
             def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
@@ -390,9 +468,22 @@ from datetime import datetime
 
                     return serialized
 
-                serialized_inputs = {}
-                for key, value in inputs.items():
-                    serialized_inputs[key] = patch_for_modal_serialization(value)
+                # This also serialises the block's RETURN value (see the
+                # `serialize_for_modal_remote_execution(result)` call below), and a
+                # BlockResult is a list whenever the block increases output
+                # dimensionality (offset-1) or declares batch_oriented_parameters —
+                # one entry per element. The dict-only path raised
+                # `AttributeError: 'list' object has no attribute 'items'`, which
+                # made both kinds of block unusable over the HTTP transport. The
+                # websocket path already handled lists (_serialize_msgpack_result).
+                if isinstance(inputs, list):
+                    serialized_inputs = [
+                        patch_for_modal_serialization(item) for item in inputs
+                    ]
+                else:
+                    serialized_inputs = {}
+                    for key, value in inputs.items():
+                        serialized_inputs[key] = patch_for_modal_serialization(value)
 
                 # Convert to JSON string
                 return json.dumps(serialized_inputs, cls=InputJSONEncoder)
@@ -412,6 +503,19 @@ from datetime import datetime
                             elif obj["_type"] == "ndarray":
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
+                            elif obj["_type"] == "batch":
+                                # Without this arm a Batch arrives stringified
+                                # and blocks declaring batch_oriented_parameters
+                                # get a repr instead of their data.
+                                indices = obj.get("indices")
+                                return Batch(
+                                    content=[decode_inputs(v) for v in obj["value"]],
+                                    indices=(
+                                        [tuple(i) for i in indices]
+                                        if indices is not None
+                                        else None
+                                    ),
+                                )
                             elif obj["_type"] == "object":
                                 return obj["value"]
                             elif obj["_type"] == "sv_detections":
@@ -639,6 +743,7 @@ from datetime import datetime
             deserialize_image_kind,
             deserialize_video_metadata_kind,
         )
+        from inference.core.workflows.execution_engine.entities.base import Batch
 
         def _decode(obj):
             if isinstance(obj, dict):
@@ -713,6 +818,16 @@ from datetime import datetime
                 if _type == "ndarray":
                     return np.array(obj["value"], dtype=obj["dtype"]).reshape(
                         obj["shape"]
+                    )
+                if _type == "batch":
+                    indices = obj.get("indices")
+                    return Batch(
+                        content=[_decode(v) for v in obj["value"]],
+                        indices=(
+                            [tuple(i) for i in indices]
+                            if indices is not None
+                            else None
+                        ),
                     )
                 if _type == "bytes":
                     return (

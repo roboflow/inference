@@ -3,7 +3,12 @@ from typing import Tuple
 import pytest
 import requests
 
-from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    ROBOFLOW_API_KEY,
+    api_key_auth_headers,
+    api_key_query_suffix,
+    without_api_key_in_header_mode,
+)
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -37,10 +42,12 @@ def test_getting_block_descriptions_from_legacy_get_endpoint(
 @pytest.mark.flaky(retries=4, delay=1)
 def test_getting_block_descriptions_from_new_post_endpoint(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/describe?api_key={ROBOFLOW_API_KEY}"
+        f"{object_detection_service_url}/workflows/blocks/describe{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -120,16 +127,19 @@ def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engi
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_get_versions_of_execution_engine(object_detection_service_url: str) -> None:
+def test_get_versions_of_execution_engine(
+    object_detection_service_url: str, auth_mode: str
+) -> None:
     # when
     response = requests.get(
-        f"{object_detection_service_url}/workflows/execution_engine/versions?api_key={ROBOFLOW_API_KEY}"
+        f"{object_detection_service_url}/workflows/execution_engine/versions{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.15.0"]
+    assert response_data["versions"] == ["1.15.1"]
 
 
 FUNCTION = """
@@ -234,10 +244,12 @@ def test_getting_block_schema_from_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
+def test_getting_dynamic_outputs(
+    object_detection_service_url: str, auth_mode: str
+) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/dynamic_outputs?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/blocks/dynamic_outputs{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
         json={
             "type": "LMM",
             "name": "step_1",
@@ -247,6 +259,7 @@ def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
             "json_output": {"field_1": "some", "field_2": "other"},
             "remote_api_key": "$inputs.open_ai_key",
         },
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -268,6 +281,7 @@ def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
 @pytest.mark.flaky(retries=4, delay=1)
 def test_compilation_endpoint_when_compilation_succeeds(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # given
     valid_workflow_definition = {
@@ -293,8 +307,9 @@ def test_compilation_endpoint_when_compilation_succeeds(
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/validate{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
         json=valid_workflow_definition,
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -306,6 +321,7 @@ def test_compilation_endpoint_when_compilation_succeeds(
 @pytest.mark.flaky(retries=4, delay=1)
 def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_execution_engine_version(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # given
     valid_workflow_definition = {
@@ -331,8 +347,9 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/validate{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
         json=valid_workflow_definition,
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -344,6 +361,7 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
 @pytest.mark.flaky(retries=4, delay=1)
 def test_compilation_endpoint_when_compilation_fails(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # given
     valid_workflow_definition = {
@@ -365,8 +383,9 @@ def test_compilation_endpoint_when_compilation_fails(
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/validate{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
         json=valid_workflow_definition,
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -410,25 +429,31 @@ SIMPLE_WORKFLOW_DEFINITION = {
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_simple_workflow_run_when_run_expected_to_succeed(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": SIMPLE_WORKFLOW_DEFINITION,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "model_id": detection_model_id,
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": SIMPLE_WORKFLOW_DEFINITION,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                    "model_id": detection_model_id,
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -444,15 +469,21 @@ def test_simple_workflow_run_when_run_expected_to_succeed(
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_simple_workflow_run_when_parameter_is_missing(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": SIMPLE_WORKFLOW_DEFINITION,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": SIMPLE_WORKFLOW_DEFINITION,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -461,25 +492,31 @@ def test_simple_workflow_run_when_parameter_is_missing(
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_simple_workflow_run_when_api_key_is_invalid(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": SIMPLE_WORKFLOW_DEFINITION,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "model_id": detection_model_id,
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": SIMPLE_WORKFLOW_DEFINITION,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                    "model_id": detection_model_id,
+                },
+                "api_key": "invalid",
             },
-            "api_key": "invalid",
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, "invalid"),
     )
 
     # then
@@ -514,24 +551,30 @@ CLIP_WORKFLOW_DEFINITION = {
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_clip_workflow_run_when_run_expected_to_succeed(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": CLIP_WORKFLOW_DEFINITION,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ],
-                "reference": ["cat", "dog"],
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": CLIP_WORKFLOW_DEFINITION,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ],
+                    "reference": ["cat", "dog"],
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -569,24 +612,30 @@ OCR_WORKFLOW_DEFINITION = {
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_ocr_workflow_run_when_run_expected_to_succeed(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": OCR_WORKFLOW_DEFINITION,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": OCR_WORKFLOW_DEFINITION,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -627,24 +676,29 @@ YOLO_WORLD_WORKFLOW_DEFINITION = {
 @pytest.mark.flaky(retries=4, delay=1)
 def test_yolo_world_workflow_run_when_run_expected_to_succeed(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": YOLO_WORLD_WORKFLOW_DEFINITION,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "class_names": ["banana", "apple"],
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": YOLO_WORLD_WORKFLOW_DEFINITION,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                    "class_names": ["banana", "apple"],
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -726,25 +780,31 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
 )
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_run_with_dynamic_blocks(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "model_id": detection_model_id,
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {
+                    "image": [
+                        {
+                            "type": "url",
+                            "value": "https://media.roboflow.com/fruit.png",
+                        }
+                    ]
+                    * 2,
+                    "model_id": detection_model_id,
+                },
             },
-        },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -762,12 +822,15 @@ def test_workflow_run_with_dynamic_blocks(
 )
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_validate_with_dynamic_blocks(
-    object_detection_service_url: str, detection_model_id: str
+    object_detection_service_url: str,
+    detection_model_id: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/validate{api_key_query_suffix(auth_mode, ROBOFLOW_API_KEY)}",
         json=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -805,12 +868,14 @@ def test_getting_block_schema_using_get_endpoint(
 def test_discovering_interface_of_saved_workflow(
     object_detection_service_url: str,
     interface_discovering_workflow: Tuple[str, str],
+    auth_mode: str,
 ) -> None:
     # when
     workspace_name, workflow_id = interface_discovering_workflow
     result = requests.post(
         f"{object_detection_service_url}/{workspace_name}/workflows/{workflow_id}/describe_interface",
-        json={"api_key": ROBOFLOW_API_KEY},
+        json=without_api_key_in_header_mode(auth_mode, {"api_key": ROBOFLOW_API_KEY}),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -842,6 +907,7 @@ def test_discovering_interface_of_saved_workflow(
 @pytest.mark.flaky(retries=4, delay=1)
 def test_discovering_interface_of_valid_workflow_from_payload(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # given
     valid_definition = {
@@ -885,10 +951,14 @@ def test_discovering_interface_of_valid_workflow_from_payload(
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/describe_interface",
-        json={
-            "specification": valid_definition,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": valid_definition,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -915,6 +985,7 @@ def test_discovering_interface_of_valid_workflow_from_payload(
 @pytest.mark.flaky(retries=4, delay=1)
 def test_discovering_interface_of_invalid_workflow_from_payload(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # given
     valid_definition = {
@@ -957,10 +1028,14 @@ def test_discovering_interface_of_invalid_workflow_from_payload(
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/describe_interface",
-        json={
-            "specification": valid_definition,
-            "api_key": ROBOFLOW_API_KEY,
-        },
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": valid_definition,
+                "api_key": ROBOFLOW_API_KEY,
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then
@@ -990,15 +1065,20 @@ WORKFLOW_WITH_ENV_SECRET_STORE = {
 @pytest.mark.flaky(retries=4, delay=1)
 def test_extracting_secrets_from_env_based_secret_store(
     object_detection_service_url: str,
+    auth_mode: str,
 ) -> None:
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": WORKFLOW_WITH_ENV_SECRET_STORE,
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {},
-        },
+        json=without_api_key_in_header_mode(
+            auth_mode,
+            {
+                "specification": WORKFLOW_WITH_ENV_SECRET_STORE,
+                "api_key": ROBOFLOW_API_KEY,
+                "inputs": {},
+            },
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
     )
 
     # then

@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.35.2"
+version = "0.36.0"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -20,7 +20,11 @@ dependencies = [
   "einops>=0.7.0,<1.0.0",
   "peft>=0.18.1",
   "num2words~=0.5.14",
-  "bitsandbytes>=0.46.1,<0.48.0; sys_platform != 'darwin'",
+  # <0.48 ships no libbitsandbytes_cuda130.so, so every 4-bit load fails against a
+  # CUDA 13 torch build. That is what the plain PyPI wheel and the torch-cu130
+  # extra resolve to. 0.50 adds cuda130/132 and keeps every CUDA version this repo
+  # targets (cu118, cu124 for the GPU image, cu126 for Jetson).
+  "bitsandbytes>=0.46.1,<0.51.0; sys_platform != 'darwin'",
   "pyvips>=2.2.3,<3.0.0",
   "rf-clip==1.1",
   "python-doctr[torch]>=1.0.0",

@@ -1,8 +1,12 @@
 """Megapixel bucketing for model usage telemetry.
 
-Buckets record the post-preprocess / fixed model input size, which is the
-resolution the model actually ran at, rather than the native upload size. Bucket
-maps are merge-friendly sums; averages are derived downstream.
+Buckets prefer a configured fixed input (including HuggingFace processor /
+vision-config size), then the observed preprocess tensor (including
+``pixel_values``), then native ``image_dims``. That last fallback is a cost
+proxy for models whose tensor is not spatial (Qwen-style patch tokens):
+larger uploads produce more patches and take longer. ``unknown`` is only used
+when none of those sources are available. Bucket maps are merge-friendly
+sums; averages are derived downstream.
 
 The measured input size is published through a :class:`~contextvars.ContextVar`
 rather than an attribute on the model. Model instances are shared across the
@@ -106,6 +110,16 @@ def _image_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
     return size, size
 
 
+def _wrapped_backend_fixed_hw(backend: Any) -> Optional[Tuple[int, int]]:
+    """Fixed canvas of a backend an adapter delegates inference to."""
+    for attr in ("image_size", "_image_size", "img_size"):
+        size = _image_size_to_hw(getattr(backend, attr, None))
+        if size is not None:
+            return size
+
+    return None
+
+
 def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     """Return (height, width) when the model has a fixed numeric input size."""
     height = _as_positive_int(getattr(model, "img_size_h", None))
@@ -113,26 +127,25 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     if height is not None and width is not None:
         return height, width
 
-    for attr in ("image_size", "img_size"):
+    # CLIP names its square canvas `resolution`, read off the ONNX input shape.
+    for attr in ("image_size", "img_size", "resolution"):
         size = _image_size_to_hw(getattr(model, attr, None))
         if size is not None:
             return size
 
     # Adapters wrap backends that expose image_size / _image_size.
+    # Package backends that only keep the canvas on inference-config copy it
+    # onto the adapter as img_size_h / img_size_w at load time.
     for attr in ("_model", "sam", "sam_model", "owlv2"):
         inner = getattr(model, attr, None)
         if inner is None:
             continue
-        for size_attr in ("image_size", "_image_size", "img_size"):
-            size = _image_size_to_hw(getattr(inner, size_attr, None))
+        for candidate in (inner, getattr(inner, "_model", None)):
+            if candidate is None:
+                continue
+            size = _wrapped_backend_fixed_hw(candidate)
             if size is not None:
                 return size
-        nested = getattr(inner, "_model", None)
-        if nested is not None:
-            for size_attr in ("image_size", "_image_size", "img_size"):
-                size = _image_size_to_hw(getattr(nested, size_attr, None))
-                if size is not None:
-                    return size
 
     environment = getattr(model, "environment", None)
     if isinstance(environment, dict):
@@ -166,11 +179,94 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
             if height is not None and width is not None:
                 return height, width
 
+    return _get_hf_fixed_input_hw(model)
+
+
+def _hf_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
+    """Normalize a HuggingFace ``image_processor.size`` value to (height, width)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, dict):
+        height = _as_positive_int(value.get("height"))
+        width = _as_positive_int(value.get("width"))
+        if height is not None and width is not None:
+            return height, width
+        edge = _as_positive_int(value.get("shortest_edge"))
+        if edge is not None:
+            return edge, edge
+        return None
+    height = _as_positive_int(getattr(value, "height", None))
+    width = _as_positive_int(getattr(value, "width", None))
+    if height is not None and width is not None:
+        return height, width
+    return _image_size_to_hw(value)
+
+
+def _get_hf_fixed_input_hw(model: Any) -> Optional[Tuple[int, int]]:
+    """Read a fixed canvas from an HF processor or ``vision_config.image_size``."""
+    processor = getattr(model, "processor", None)
+    image_processor = getattr(processor, "image_processor", None)
+    size = _hf_size_to_hw(getattr(image_processor, "size", None))
+    if size is not None:
+        return size
+
+    for candidate in (getattr(model, "model", None), model):
+        if candidate is None:
+            continue
+        config = getattr(candidate, "config", None)
+        if config is None:
+            continue
+        if isinstance(config, dict):
+            vision_config = config.get("vision_config")
+        else:
+            vision_config = getattr(config, "vision_config", None)
+        if vision_config is None:
+            continue
+        if isinstance(vision_config, dict):
+            image_size = vision_config.get("image_size")
+        else:
+            image_size = getattr(vision_config, "image_size", None)
+        size = _image_size_to_hw(image_size)
+        if size is not None:
+            return size
     return None
 
 
-def get_tensor_spatial_hw(tensor: Any) -> Optional[Tuple[int, int]]:
-    """Best-effort spatial (height, width) from a preprocessed model tensor."""
+def _get_pixel_values(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value.get("pixel_values")
+    pixel_values = getattr(value, "pixel_values", None)
+    if pixel_values is not None:
+        return pixel_values
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        try:
+            return getter("pixel_values")
+        except (TypeError, ValueError, KeyError):
+            return None
+    return None
+
+
+def get_tensor_spatial_hw(
+    tensor: Any,
+    *,
+    require_channel_axis: bool = False,
+) -> Optional[Tuple[int, int]]:
+    """Best-effort spatial (height, width) from a preprocessed model tensor.
+
+    HuggingFace VLM preprocess returns a mapping with ``pixel_values`` instead of
+    a raw image tensor. Those values are unwrapped here. Patch-style tensors
+    without a channel axis are not treated as spatial.
+    """
+    pixel_values = _get_pixel_values(tensor)
+    if pixel_values is not None and pixel_values is not tensor:
+        return get_tensor_spatial_hw(
+            pixel_values,
+            require_channel_axis=True,
+        )
+
     shape = getattr(tensor, "shape", None)
     if shape is None:
         return None
@@ -195,6 +291,9 @@ def get_tensor_spatial_hw(tensor: Any) -> Optional[Tuple[int, int]]:
         if height > 0 and width > 0:
             return height, width
 
+    if require_channel_axis:
+        return None
+
     height = dims[-2]
     width = dims[-1]
     if height > 0 and width > 0:
@@ -203,6 +302,10 @@ def get_tensor_spatial_hw(tensor: Any) -> Optional[Tuple[int, int]]:
 
 
 def get_tensor_batch_size(tensor: Any) -> Optional[int]:
+    pixel_values = _get_pixel_values(tensor)
+    if pixel_values is not None and pixel_values is not tensor:
+        return get_tensor_batch_size(pixel_values)
+
     shape = getattr(tensor, "shape", None)
     try:
         if shape is None or len(shape) < 4:
@@ -210,6 +313,35 @@ def get_tensor_batch_size(tensor: Any) -> Optional[int]:
         return _as_positive_int(shape[0])
     except TypeError:
         return None
+
+
+def parse_image_dims_hw(metadata: Any) -> Optional[Tuple[int, int]]:
+    """Parse preprocess ``image_dims`` (width, height) into (height, width)."""
+    if metadata is None:
+        return None
+
+    dims = None
+    if isinstance(metadata, dict):
+        dims = metadata.get("image_dims")
+    else:
+        getter = getattr(metadata, "get", None)
+        if callable(getter):
+            try:
+                dims = getter("image_dims")
+            except (TypeError, ValueError, KeyError):
+                dims = None
+        if dims is None:
+            dims = getattr(metadata, "image_dims", None)
+
+    if not isinstance(dims, (tuple, list)) or len(dims) != 2:
+        return None
+
+    width = _as_positive_int(dims[0])
+    height = _as_positive_int(dims[1])
+    if width is None or height is None:
+        return None
+
+    return height, width
 
 
 def count_inference_images(image: Any) -> int:
@@ -229,12 +361,28 @@ def clear_measured_model_input() -> None:
     _measured_model_input.set(None)
 
 
-def record_measured_model_input(preprocessed_tensor: Any) -> None:
-    """Publish post-preprocess spatial metadata for the usage decorator to read."""
+def record_measured_model_input(
+    preprocessed_tensor: Any,
+    *,
+    fallback_hw: Optional[Tuple[int, int]] = None,
+) -> None:
+    """Publish post-preprocess spatial metadata for the usage decorator to read.
+
+    ``fallback_hw`` is native ``image_dims``. It is used when the preprocess
+    object has no readable spatial tensor, including HF ``pixel_values`` that
+    are flattened patches rather than NCHW.
+    """
     try:
+        measured_hw = get_tensor_spatial_hw(preprocessed_tensor)
+        if measured_hw is None and fallback_hw is not None:
+            height = _as_positive_int(fallback_hw[0])
+            width = _as_positive_int(fallback_hw[1])
+            if height is not None and width is not None:
+                measured_hw = (height, width)
+
         _measured_model_input.set(
             (
-                get_tensor_spatial_hw(preprocessed_tensor),
+                measured_hw,
                 get_tensor_batch_size(preprocessed_tensor),
             )
         )
@@ -277,7 +425,11 @@ def resolve_model_input_hw(
     model: Any,
     measured_hw: Optional[Tuple[int, int]] = None,
 ) -> Optional[Tuple[int, int]]:
-    """Fixed model input size when there is one, otherwise the observed size."""
+    """Fixed model input size when there is one, otherwise the observed size.
+
+    Observed size is the preprocessed tensor (including HF ``pixel_values``),
+    or native ``image_dims`` when that tensor is missing or not spatial.
+    """
     if model is not None:
         fixed_hw = get_fixed_model_input_hw(model)
         if fixed_hw is not None:

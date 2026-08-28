@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional, Type
+from typing import Any, List, Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -1383,6 +1383,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
     }
 
 
@@ -1418,6 +1419,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
     }
 
 
@@ -1462,6 +1464,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1513,6 +1516,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1554,6 +1558,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
 
 
@@ -1592,6 +1597,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
     }
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
@@ -4843,6 +4849,21 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
     }
 
 
+def _requests_for_workflow(requests_mock: Mocker, workflow_id: str) -> List[Any]:
+    """The requests this test made, ignoring anything else on the transport.
+
+    requests_mock intercepts the whole process, and the usage collector's sender
+    thread outlives whichever test first started it and posts on an interval. So
+    ``call_count`` is not a count of what the test under it did, and asserting on
+    it fails whenever that timer happens to land inside this test.
+    """
+    return [
+        request
+        for request in requests_mock.request_history
+        if f"workflows/{workflow_id}" in request.url
+    ]
+
+
 def test_get_workflow_specification_when_valid_response_given_on_consecutive_requests(
     requests_mock: Mocker,
 ) -> None:
@@ -4877,9 +4898,10 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     )
 
     # then
-    assert requests_mock.call_count == 1, "Expected remote API to be called only once"
+    workflow_requests = _requests_for_workflow(requests_mock, "some_workflow")
+    assert len(workflow_requests) == 1, "Expected remote API to be called only once"
     assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
+        workflow_requests[-1].query == "api_key=my_api_key"
     ), "API key must be given in query"
     assert (
         result_1
@@ -5001,7 +5023,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
 
     # then
     assert (
-        requests_mock.call_count == 2
+        len(_requests_for_workflow(requests_mock, "some_workflow")) == 2
     ), "Expected two API calls since versioned and unversioned use separate cache keys"
     assert len(ephemeral_cache.cache) == 2, "Expected two cache entries"
 
