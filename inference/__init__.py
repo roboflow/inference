@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from inference.models.utils import get_model, get_roboflow_model
 
 _LAZY_ATTRIBUTES: Dict[str, Callable[[], Any]] = {
+    "Model": lambda: _import_from("inference.core.models.base", "Model"),
     "Stream": lambda: _import_from("inference.core.interfaces.stream.stream", "Stream"),
     "InferencePipeline": lambda: _import_from(
         "inference.core.interfaces.stream.inference_pipeline", "InferencePipeline"
