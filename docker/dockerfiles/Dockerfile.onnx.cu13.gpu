@@ -254,6 +254,8 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install --break-system-packages --ignore-installed pip uv
 
+ENV UV_BREAK_SYSTEM_PACKAGES=1
+
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
 # The lock resolves pycuda to 2025.1.1, which does not compile against
