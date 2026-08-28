@@ -247,7 +247,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
-    requirements/requirements.pali.flash_attn.txt \
+    requirements/requirements.pali.flash_attn.cu13.txt \
     requirements/requirements.easyocr.txt \
     requirements/requirements.modal.txt \
     ./
@@ -294,15 +294,9 @@ RUN uv pip install --system \
 
 RUN python3 -m pip install --break-system-packages packaging==24.1 && rm -rf ~/.cache/pip
 
-# flash-attn compiles from source here (no prebuilt cu13 wheel). Scope the
-# kernel build to the architectures this image targets - left unset, setup.py
-# builds for every SM torch enables, which multiplies build time. 12.0 covers
-# RTX PRO 6000 Blackwell.
-# RISK(cuda13): flash-attn 2.7.4.post1 predates Blackwell and CUDA 13 - if
-# this step fails on cutlass or sm_120, bump requirements.pali.flash_attn.txt
-# to the first release advertising CUDA 13 support instead of patching here.
+
 RUN TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
-    python3 -m pip install --break-system-packages -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
+    python3 -m pip install --break-system-packages -r requirements.pali.flash_attn.cu13.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 COPY . .
 
