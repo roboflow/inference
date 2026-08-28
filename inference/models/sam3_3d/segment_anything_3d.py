@@ -32,6 +32,7 @@ from inference.core.roboflow_api import (
     stream_url_to_cache,
 )
 from inference.core.utils.image_utils import load_image_rgb
+from inference.usage_tracking.collector import usage_collector
 
 try:
     import pycocotools.mask as mask_utils
@@ -358,6 +359,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     model_id=self.endpoint,
                 )
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest
     ) -> Sam3_3D_Objects_Response:

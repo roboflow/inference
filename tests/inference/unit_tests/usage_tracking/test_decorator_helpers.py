@@ -5,9 +5,11 @@ import pytest
 
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
     call_carries_authenticated_non_billable_intent,
+    get_model_api_key_from_kwargs,
     get_model_descriptor_from_kwargs,
     get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
@@ -16,6 +18,7 @@ from inference.usage_tracking.decorator_helpers import (
     get_source_info_from_kwargs,
     non_billable_intent_is_authenticated,
     read_source_tags_bound_to_call,
+    record_fixed_model_input_for_request,
 )
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
@@ -696,6 +699,67 @@ def test_recorded_model_identities_evict_oldest_when_full(monkeypatch):
         )
     finally:
         clear_recorded_model_descriptors()
+
+
+def test_model_frames_count_images_kwarg_used_by_video_blocks():
+    frames, _ = get_model_frames_and_input_hw(
+        {"images": [object(), object(), object()]}
+    )
+
+    assert frames == 3
+
+
+def test_model_frames_count_workflow_batch_used_by_video_blocks():
+    batch = Batch(content=[object(), object(), object()], indices=None)
+
+    frames, _ = get_model_frames_and_input_hw({"images": batch})
+
+    assert frames == 3
+
+
+def test_model_frames_count_compare_request_subject_and_prompt_images():
+    request = SimpleNamespace(
+        subject=object(),
+        subject_type="image",
+        prompt=[object(), object()],
+        prompt_type="image",
+    )
+
+    frames, _ = get_model_frames_and_input_hw({"request": request})
+
+    assert frames == 3
+
+
+def test_text_only_embedding_bills_one_frame_without_visual_canvas():
+    model = SimpleNamespace(image_size=224)
+
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": SimpleNamespace()}
+    )
+
+    assert frames == 1
+    assert input_hw is None
+
+
+def test_published_canvas_without_imagery_keeps_bucket():
+    model = SimpleNamespace(image_size=1024)
+    request = SimpleNamespace(image=None, image_id="cached-embed")
+
+    record_fixed_model_input_for_request(model, request)
+    frames, input_hw = get_model_frames_and_input_hw(
+        {"self": model, "request": request}
+    )
+
+    assert frames == 1
+    assert input_hw == (1024, 1024)
+
+
+def test_model_api_key_from_workflow_block_private_attr():
+    api_key = get_model_api_key_from_kwargs(
+        {"self": SimpleNamespace(_api_key="workflow-block-key")}
+    )
+
+    assert api_key == "workflow-block-key"
 
 
 def test_explicit_model_usage_api_key_takes_precedence_over_request(
