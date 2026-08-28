@@ -151,7 +151,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/action_recognition_model@v1"]
+    type: Literal["roboflow_core/roboflow_action_recognition_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     class_filter: Union[
         Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])

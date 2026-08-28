@@ -276,7 +276,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     manifest = manifest_type.model_validate(
         {
-            "type": "roboflow_core/action_recognition_model@v1",
+            "type": "roboflow_core/roboflow_action_recognition_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
             "class_filter": ["walk", "run"],
@@ -303,7 +303,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 def test_manifest_allows_omitted_class_filter(manifest_type):
     manifest = manifest_type.model_validate(
         {
-            "type": "roboflow_core/action_recognition_model@v1",
+            "type": "roboflow_core/roboflow_action_recognition_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
             "model_id": "cosmos-3-edge",
@@ -318,7 +318,7 @@ def test_manifest_requires_model_id(manifest_type):
     with pytest.raises(Exception):
         manifest_type.model_validate(
             {
-                "type": "roboflow_core/action_recognition_model@v1",
+                "type": "roboflow_core/roboflow_action_recognition_model@v1",
                 "name": "video_classifier",
                 "images": "$inputs.image",
                 "class_filter": ["walk"],
@@ -340,7 +340,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
     manifest_type, field, value
 ):
     data = {
-        "type": "roboflow_core/action_recognition_model@v1",
+        "type": "roboflow_core/roboflow_action_recognition_model@v1",
         "name": "video_classifier",
         "images": "$inputs.image",
         "model_id": "cosmos-3-edge",
