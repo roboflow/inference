@@ -15,17 +15,33 @@ class VideoSegmentClassificationPrediction:
     class_name: str
 
 
+WHOLE_VIDEO_SAMPLING_MODE = "whole_video"
+
+
 @dataclass(frozen=True)
 class VideoSampling:
     """The temporal contract a model is trained (or validated) for.
 
     Consumers window and sample video to match: window length in seconds,
     frames sampled per second, and the fewest frames worth classifying.
+
+    ``whole_video`` mode models read a clip as one unit, with the frame
+    budget spread over its full length, so consumers classify once at the
+    end of the stream instead of on a window schedule.
     """
 
     window_seconds: float = 16.0
     sample_fps: float = 4.0
     min_frames: int = 4
+    mode: str = "sliding_window"
+
+    @property
+    def classifies_whole_video(self) -> bool:
+        return self.mode == WHOLE_VIDEO_SAMPLING_MODE
+
+    @property
+    def window_frames(self) -> int:
+        return max(1, round(self.window_seconds * self.sample_fps))
 
 
 class VideoSegmentClassificationModel(ABC):

@@ -993,6 +993,92 @@ def test_flush_emits_only_video_with_a_pending_tail():
     ]
 
 
+def test_whole_video_mode_never_fires_on_the_stride_schedule():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
+    )
+
+    for frame_number in range(40):
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
+            stride_seconds=0.5,
+        )
+
+    assert model.calls == []
+
+
+def test_whole_video_mode_classifies_once_at_end_of_stream():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
+    )
+    for frame_number in range(40):
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
+            stride_seconds=0.5,
+        )
+
+    flushed = block.flush_stream_pipeline_outputs()
+
+    assert len(model.calls) == 1
+    assert len(flushed) == 1
+    _, outputs = flushed[0]
+    assert [entry.class_name for entry in outputs[0]["timeline"]] == ["walk"]
+
+
+def test_whole_video_buffer_spans_the_stream_within_the_frame_budget():
+    block, model = _make_block()
+    # 4 s at 2 fps is an 8-frame budget.
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
+    )
+
+    for frame_number in range(60):
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
+            stride_seconds=0.5,
+        )
+
+    sampled = block._video_bookkeeping["stream-0"].sampled
+    sampled_numbers = [number for number, _ in sampled]
+    # The buffer holds the trained budget, keeps stream start, and reaches
+    # the newest sample instead of sliding away from the beginning.
+    assert len(sampled) <= 8
+    assert sampled_numbers[0] == 0
+    assert sampled_numbers[-1] >= 56
+
+
+def test_whole_video_flush_reports_the_thinned_buffer_rate():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    model.video_sampling = VideoSampling(
+        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
+    )
+    for frame_number in range(60):
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
+            stride_seconds=0.5,
+        )
+
+    block.flush_stream_pipeline_outputs()
+
+    sampled = block._video_bookkeeping["stream-0"].sampled
+    span_seconds = (sampled[-1][0] - sampled[0][0]) / 4.0
+    expected_fps = (len(sampled) - 1) / span_seconds
+    # Thinning halves the real rate; the model must hear the rate its
+    # frames actually carry, not the configured sample rate.
+    assert model.calls[0]["fps"] == pytest.approx(expected_fps)
+    assert model.calls[0]["fps"] < 2.0
+
+
 def test_consecutive_flush_calls_do_not_repeat_the_tail():
     block, model = _make_block(
         responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]

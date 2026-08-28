@@ -533,12 +533,14 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
                 return float(value)
             return fallback
 
+        mode = config.get("mode")
         return VideoSampling(
             window_seconds=_positive_number(
                 "window_seconds", default.window_seconds
             ),
             sample_fps=_positive_number("sample_fps", default.sample_fps),
             min_frames=int(_positive_number("min_frames", default.min_frames)),
+            mode=mode if isinstance(mode, str) and mode else default.mode,
         )
 
     @classmethod

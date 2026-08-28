@@ -76,6 +76,10 @@ final scheduled call, provided the buffer meets the model's minimum frame
 count. This gives shorter-than-window clips and longer clip tails a final
 result.
 
+A model trained to read a clip as one unit reports whole video sampling. For
+these models the block holds a thinned set of frames that spans the stream and
+classifies once, when the stream ends.
+
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
 temporal content, so these paths return an empty timeline.
@@ -378,6 +382,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 window_seconds=requested_window_seconds,
                 sample_fps=float(video_sampling.sample_fps),
                 min_frames=max(1, int(video_sampling.min_frames)),
+                mode=video_sampling.mode,
             ),
             stride_frames=stride_frames,
             effective_sample_fps=effective_sample_fps,
@@ -398,12 +403,20 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             while bookkeeping.next_sample_frame_number <= frame_number:
                 bookkeeping.next_sample_frame_number += sampling_stride
 
-        cutoff_frame_number = frame_number - window_frames
-        while (
-            bookkeeping.sampled
-            and bookkeeping.sampled[0][0] <= cutoff_frame_number
-        ):
-            bookkeeping.sampled.pop(0)
+        if video_sampling.classifies_whole_video:
+            # The model reads a clip as one unit, so the buffer spans
+            # everything seen so far, thinned to the trained frame budget.
+            _thin_to_frame_budget(
+                bookkeeping=bookkeeping,
+                frame_budget=video_sampling.window_frames,
+            )
+        else:
+            cutoff_frame_number = frame_number - window_frames
+            while (
+                bookkeeping.sampled
+                and bookkeeping.sampled[0][0] <= cutoff_frame_number
+            ):
+                bookkeeping.sampled.pop(0)
 
         error_status = ""
         if bookkeeping.last_fire_frame_number is None:
@@ -417,7 +430,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             + bookkeeping.resolved_sampling.stride_frames
         )
         should_classify = (
-            len(bookkeeping.sampled)
+            not video_sampling.classifies_whole_video
+            and len(bookkeeping.sampled)
             >= bookkeeping.resolved_sampling.video_sampling.min_frames
             and frame_number >= next_fire_frame_number
         )
@@ -478,7 +492,10 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 bookkeeping=bookkeeping,
                 block_filter=bookkeeping.block_filter,
                 id_vocabulary=bookkeeping.id_vocabulary,
-                effective_sample_fps=resolved_sampling.effective_sample_fps,
+                effective_sample_fps=_buffer_sample_fps(
+                    bookkeeping=bookkeeping,
+                    resolved_sampling=resolved_sampling,
+                ),
                 sampling_stride=resolved_sampling.sampling_stride,
             )
             output = self._build_output(
@@ -719,6 +736,41 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             "inference_id": str(uuid4()),
         }
 
+
+def _buffer_sample_fps(
+    bookkeeping: "_VideoSegmentClassificationBookkeeping",
+    resolved_sampling: "_ResolvedVideoSampling",
+) -> float:
+    """The rate the buffered frames actually represent.
+
+    Thinning a whole-video buffer lowers its real rate below the sampled
+    one, and the model reads its frame timestamps from this value.
+    """
+    if not resolved_sampling.video_sampling.classifies_whole_video:
+        return resolved_sampling.effective_sample_fps
+    source_fps = bookkeeping.source_fps
+    if len(bookkeeping.sampled) < 2 or not source_fps:
+        return resolved_sampling.effective_sample_fps
+    span_frames = bookkeeping.sampled[-1][0] - bookkeeping.sampled[0][0]
+    if span_frames <= 0:
+        return resolved_sampling.effective_sample_fps
+    return (len(bookkeeping.sampled) - 1) * source_fps / span_frames
+
+def _thin_to_frame_budget(bookkeeping, frame_budget: int) -> None:
+    """Keep a uniform spread of at most ``frame_budget`` samples.
+
+    Whole-video models see the frame budget spread over the full clip, and
+    a stream has no known end, so the buffer thins as it grows. Keeping the
+    first and last samples holds the span the model reasons over.
+    """
+    sample_count = len(bookkeeping.sampled)
+    if sample_count <= frame_budget:
+        return
+    step = (sample_count - 1) / (frame_budget - 1) if frame_budget > 1 else 0.0
+    kept_positions = sorted(
+        {round(index * step) for index in range(max(1, frame_budget))}
+    )
+    bookkeeping.sampled = [bookkeeping.sampled[index] for index in kept_positions]
 
 def _batch_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
     indices = getattr(images, "indices", None)
