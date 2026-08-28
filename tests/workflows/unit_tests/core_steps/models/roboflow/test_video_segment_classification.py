@@ -52,6 +52,7 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     ImageParentMetadata,
     VideoSegmentClassificationPrediction,
     VideoMetadata,
@@ -207,14 +208,14 @@ def _run(
     window_seconds=1.0,
     stride_seconds=0.5,
     sample_fps=2.0,
+    min_frames=1,
 ):
-    # The temporal contract travels with the model; min_frames stays 1 so
-    # the fire-cadence expectations below hold unchanged.
+    # The temporal contract travels with the model.
     if block._model is not None:
         block._model.video_sampling = VideoSampling(
             window_seconds=window_seconds,
             sample_fps=sample_fps,
-            min_frames=1,
+            min_frames=min_frames,
         )
     return block.run(
         images=[frame],
@@ -836,6 +837,184 @@ def test_min_frames_gates_the_first_fire():
     # delays the first fire until the buffer holds 4 samples.
     assert fired_at[0] == 3
     assert len(model.calls[0]["frames"]) == 4
+
+
+def test_flush_classifies_short_clip_below_default_window():
+    block, model = _make_block(
+        responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=3)]]
+    )
+
+    for frame_number in range(4):
+        result = _run(
+            block,
+            _make_frame(frame_number),
+            window_seconds=2.0,
+            stride_seconds=None,
+            sample_fps=4.0,
+            min_frames=4,
+        )
+
+    assert block.is_stream_pipelined() is True
+    assert block.stream_pipeline_depth() == 0
+    assert result["timeline"] == []
+    assert model.calls == []
+
+    flushed = block.flush_stream_pipeline_outputs()
+
+    assert len(flushed) == 1
+    indices, outputs = flushed[0]
+    assert indices == [(0,)]
+    assert len(outputs) == 1
+    assert len(model.calls) == 1
+    assert len(model.calls[0]["frames"]) == 4
+    assert [frame[0, 0, 2] for frame in model.calls[0]["frames"]] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert _timeline_as_dicts(outputs[0]) == [
+        {
+            "start_frame_idx": 0,
+            "end_frame_idx": 3,
+            "class_name": "walk",
+            "class_id": 0,
+        }
+    ]
+    assert _window_class_names(outputs[0]) == ["walk"]
+
+
+def test_flush_classifies_tail_after_a_scheduled_fire():
+    block, model = _make_block(
+        responses=[
+            [_model_segment("walk", start_frame_idx=0, end_frame_idx=2)],
+            [_model_segment("walk", start_frame_idx=0, end_frame_idx=3)],
+        ]
+    )
+
+    for frame_number in range(4):
+        result = _run(
+            block,
+            _make_frame(frame_number),
+            sample_fps=4.0,
+        )
+
+    assert len(model.calls) == 1
+    assert result["timeline"][0].end_frame_idx == 2
+
+    flushed = block.flush_stream_pipeline_outputs()
+
+    assert len(model.calls) == 2
+    assert len(flushed) == 1
+    assert flushed[0][0] == [(0,)]
+    assert flushed[0][1][0]["timeline"][0].end_frame_idx == 3
+
+
+def test_flush_immediately_after_fire_without_new_sample_returns_empty():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+
+    for frame_number in range(3):
+        _run(
+            block,
+            _make_frame(frame_number),
+            sample_fps=4.0,
+        )
+
+    assert len(model.calls) == 1
+    assert block.flush_stream_pipeline_outputs() == []
+    assert len(model.calls) == 1
+
+
+def test_flush_skips_buffer_below_model_minimum():
+    block, model = _make_block()
+
+    for frame_number in range(3):
+        _run(
+            block,
+            _make_frame(frame_number),
+            window_seconds=2.0,
+            stride_seconds=None,
+            sample_fps=4.0,
+            min_frames=4,
+        )
+
+    assert block.flush_stream_pipeline_outputs() == []
+    assert model.calls == []
+
+
+def test_flush_emits_only_video_with_a_pending_tail():
+    block, model = _make_block(
+        responses=[
+            [_model_segment("walk", start_frame_idx=0, end_frame_idx=2)],
+            [_model_segment("run", start_frame_idx=0, end_frame_idx=1)],
+        ]
+    )
+    model.video_sampling = VideoSampling(
+        window_seconds=1.0,
+        sample_fps=4.0,
+        min_frames=1,
+    )
+    first_batch = Batch.init(
+        content=[
+            _make_frame(0, video_id="a"),
+            _make_frame(0, video_id="b"),
+        ],
+        indices=[(0,), (1,)],
+    )
+    second_batch = Batch.init(
+        content=[
+            _make_frame(2, video_id="a"),
+            _make_frame(1, video_id="b"),
+        ],
+        indices=[(0,), (1,)],
+    )
+
+    block.run(
+        images=first_batch,
+        class_filter=["walk", "run"],
+        model_id="cosmos-3-edge",
+        stride_seconds=0.5,
+    )
+    block.run(
+        images=second_batch,
+        class_filter=["walk", "run"],
+        model_id="cosmos-3-edge",
+        stride_seconds=0.5,
+    )
+    assert len(model.calls) == 1
+
+    flushed = block.flush_stream_pipeline_outputs()
+
+    assert len(model.calls) == 2
+    assert len(flushed) == 1
+    assert flushed[0][0] == [(1,)]
+    assert [entry.class_name for entry in flushed[0][1][0]["timeline"]] == [
+        "run"
+    ]
+
+
+def test_consecutive_flush_calls_do_not_repeat_the_tail():
+    block, model = _make_block(
+        responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
+    )
+    for frame_number in range(2):
+        _run(
+            block,
+            _make_frame(frame_number),
+            window_seconds=2.0,
+            stride_seconds=None,
+            sample_fps=4.0,
+            min_frames=2,
+        )
+
+    first_flush = block.flush_stream_pipeline_outputs()
+    second_flush = block.flush_stream_pipeline_outputs()
+
+    assert len(first_flush) == 1
+    assert second_flush == []
+    assert len(model.calls) == 1
+    block.close_stream_pipeline()
+    assert block._video_bookkeeping == {}
 
 
 def test_fractional_sampling_stride_keeps_the_true_sample_rate():

@@ -71,11 +71,10 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-The block does not run an extra classification when a stream ends, so frames
-after the final scheduled call do not receive a new result. On a finite clip,
-keep the window shorter than the clip: the first classification waits one
-full stride, so a longer window never runs. Tail classification requires an
-end-of-stream signal and is planned separately.
+When a stream ends, the block classifies sampled frames that arrived after the
+final scheduled call, provided the buffer meets the model's minimum frame
+count. This gives shorter-than-window clips and longer clip tails a final
+result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -96,6 +95,15 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
     return np.ascontiguousarray(image.numpy_image[:, :, ::-1])
 
 
+@dataclass(frozen=True)
+class _ResolvedVideoSampling:
+    video_sampling: VideoSampling
+    stride_frames: int
+    effective_sample_fps: float
+    sampling_stride: float
+    keep_alive_frames: int
+
+
 @dataclass
 class _VideoSegmentClassificationBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
@@ -108,6 +116,11 @@ class _VideoSegmentClassificationBookkeeping:
     signature: Tuple[Tuple[str, ...], float, float] = field(
         default_factory=lambda: ((), 0.0, 0.0)
     )
+    resolved_sampling: Optional[_ResolvedVideoSampling] = None
+    block_filter: Optional[List[str]] = None
+    id_vocabulary: Optional[List[str]] = None
+    last_image: Optional[WorkflowImageData] = None
+    last_batch_index: Optional[Tuple[int, ...]] = None
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -290,11 +303,12 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         id_vocabulary = getattr(model, "class_names", None) or block_filter or None
         video_sampling = getattr(model, "video_sampling", None) or VideoSampling()
         results = []
-        for image in images:
+        for batch_index, image in zip(_batch_indices(images=images), images):
             results.append(
                 self._process_frame(
                     model=model,
                     image=image,
+                    batch_index=batch_index,
                     block_filter=block_filter,
                     id_vocabulary=id_vocabulary,
                     video_sampling=video_sampling,
@@ -307,6 +321,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self,
         model,
         image: WorkflowImageData,
+        batch_index: Tuple[int, ...],
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         video_sampling: VideoSampling,
@@ -358,6 +373,21 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
         keep_alive_frames = window_frames + math.ceil(sampling_stride)
+        bookkeeping.resolved_sampling = _ResolvedVideoSampling(
+            video_sampling=VideoSampling(
+                window_seconds=requested_window_seconds,
+                sample_fps=float(video_sampling.sample_fps),
+                min_frames=max(1, int(video_sampling.min_frames)),
+            ),
+            stride_frames=stride_frames,
+            effective_sample_fps=effective_sample_fps,
+            sampling_stride=sampling_stride,
+            keep_alive_frames=keep_alive_frames,
+        )
+        bookkeeping.block_filter = block_filter
+        bookkeeping.id_vocabulary = id_vocabulary
+        bookkeeping.last_image = image
+        bookkeeping.last_batch_index = batch_index
 
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
@@ -382,9 +412,14 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             bookkeeping.last_fire_frame_number = frame_number
         # The model declares the fewest frames worth classifying; a fire
         # waits until the buffer reaches it.
+        next_fire_frame_number = (
+            bookkeeping.last_fire_frame_number
+            + bookkeeping.resolved_sampling.stride_frames
+        )
         should_classify = (
-            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
-            and frame_number >= bookkeeping.last_fire_frame_number + stride_frames
+            len(bookkeeping.sampled)
+            >= bookkeeping.resolved_sampling.video_sampling.min_frames
+            and frame_number >= next_fire_frame_number
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number
@@ -406,6 +441,59 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             keep_alive_frames=keep_alive_frames,
             error_status=error_status,
         )
+
+    def is_stream_pipelined(self) -> bool:
+        return True
+
+    def stream_pipeline_depth(self) -> int:
+        return 0
+
+    def flush_stream_pipeline_outputs(
+        self,
+    ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
+        if self._model is None:
+            return []
+        results = []
+        for bookkeeping in self._video_bookkeeping.values():
+            resolved_sampling = bookkeeping.resolved_sampling
+            if (
+                not bookkeeping.sampled
+                or resolved_sampling is None
+                or bookkeeping.last_fire_frame_number is None
+                or bookkeeping.last_image is None
+                or bookkeeping.last_batch_index is None
+            ):
+                continue
+            newest_sample_frame_number = bookkeeping.sampled[-1][0]
+            if newest_sample_frame_number <= bookkeeping.last_fire_frame_number:
+                continue
+            if (
+                len(bookkeeping.sampled)
+                < resolved_sampling.video_sampling.min_frames
+            ):
+                continue
+            bookkeeping.last_fire_frame_number = newest_sample_frame_number
+            error_status = self._classify_buffer(
+                model=self._model,
+                bookkeeping=bookkeeping,
+                block_filter=bookkeeping.block_filter,
+                id_vocabulary=bookkeeping.id_vocabulary,
+                effective_sample_fps=resolved_sampling.effective_sample_fps,
+                sampling_stride=resolved_sampling.sampling_stride,
+            )
+            output = self._build_output(
+                bookkeeping=bookkeeping,
+                image=bookkeeping.last_image,
+                id_vocabulary=bookkeeping.id_vocabulary,
+                frame_number=bookkeeping.last_frame_number,
+                keep_alive_frames=resolved_sampling.keep_alive_frames,
+                error_status=error_status,
+            )
+            results.append(([bookkeeping.last_batch_index], [output]))
+        return results
+
+    def close_stream_pipeline(self) -> None:
+        self._video_bookkeeping.clear()
 
     def _resolve_source_fps(
         self,
@@ -630,3 +718,10 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             "root_parent_id": parent_id,
             "inference_id": str(uuid4()),
         }
+
+
+def _batch_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
+    indices = getattr(images, "indices", None)
+    if indices is not None:
+        return indices
+    return [(i,) for i in range(len(images))]
