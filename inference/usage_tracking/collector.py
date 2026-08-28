@@ -290,6 +290,23 @@ class UsageCollector:
         )
 
     @staticmethod
+    def _is_preview(resource_details: Optional[Dict[str, Any]]) -> bool:
+        """Normalize the preview flag for aggregation partitioning.
+
+        Partitioned on for the same reason `billable` is: a preview run and a
+        production run of the same resource inside one flush window would
+        otherwise collapse into a single row whose `is_preview` is whichever was
+        written last, making preview traffic indistinguishable from billed
+        traffic.
+        """
+        if not resource_details:
+            return False
+        preview = resource_details.get("is_preview")
+        return preview is True or (
+            isinstance(preview, str) and preview.lower() == "true"
+        )
+
+    @staticmethod
     def _normalize_error_type(error_type: Any) -> str:
         if not isinstance(error_type, str):
             return UNKNOWN_ERROR_TYPE
@@ -353,6 +370,7 @@ class UsageCollector:
         ResourceCategory,
         ResourceID,
         bool,
+        bool,
         str,
         Optional[str],
         Optional[int],
@@ -362,6 +380,7 @@ class UsageCollector:
             category,
             resource_id,
             cls._is_billable(resource_details),
+            cls._is_preview(resource_details),
             outcome,
             error_type,
             error_status_code,
@@ -378,6 +397,8 @@ class UsageCollector:
         billable = str(cls._is_billable(resource_details)).lower()
         outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
         usage_key = f"{category}:{resource_id}:billable={billable}:outcome={outcome}"
+        if cls._is_preview(resource_details):
+            usage_key = f"{usage_key}:preview=true"
         if outcome == ERROR_OUTCOME:
             usage_key = f"{usage_key}:error_type={error_type}"
             if error_status_code is not None:
@@ -865,6 +886,11 @@ class UsageCollector:
             execution_duration, execution_details = resolve_workflow_block_execution(
                 execution_duration=execution_duration,
             )
+            # The block's own measurement replaces the decorator's wall clock,
+            # so it has not been through the serverless floor yet.
+            execution_duration = UsageCollector._apply_duration_floor(
+                execution_duration
+            )
             resource_details = {
                 **resource_details,
                 **block_resource_details,
@@ -876,9 +902,9 @@ class UsageCollector:
             resource_details["is_preview"] = (
                 usage_workflow_preview or usage_workflow_is_preview.get()
             )
-            source = usage_source_tags.get().get("source")
-            if source:
-                resource_details["source"] = source
+            source_tag = usage_source_tags.get().get("source")
+            if source_tag:
+                resource_details["source"] = source_tag
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -954,8 +980,8 @@ class UsageCollector:
         }
 
     @staticmethod
-    def _compute_execution_duration(t1: float, t2: float) -> float:
-        raw = t2 - t1
+    def _apply_duration_floor(raw: float) -> float:
+        """Billing floor a duration is subject to on GCP serverless."""
         if not GCP_SERVERLESS:
             return raw
         if apply_duration_minimum is not None:
@@ -966,6 +992,10 @@ class UsageCollector:
             except LookupError:
                 pass
         return max(raw, 0.1)
+
+    @classmethod
+    def _compute_execution_duration(cls, t1: float, t2: float) -> float:
+        return cls._apply_duration_floor(t2 - t1)
 
     @classmethod
     def _exception_error_details(cls, error: Exception) -> Dict[str, Any]:

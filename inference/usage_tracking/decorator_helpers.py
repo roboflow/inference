@@ -10,6 +10,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.usage_tracking.block_execution import (
     BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
+    EXECUTION_MODE_BY_DURATION_SOURCE,
     consume_measured_block_execution,
 )
 from inference.usage_tracking.megapixel_buckets import (
@@ -56,6 +57,12 @@ usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
 # and inherited by nested `workflow_block` rows the same way billing
 # suppression is. Preview is independent of `billable`: a preview run is
 # still counted unless the caller also opted out.
+#
+# In-process only, unlike suppression: billing intent crosses into the SDK via
+# `inference_sdk.config.outbound_service_secret`, which
+# `InferenceConfiguration.to_billing_query_parameters()` reads at send time.
+# There is no `is_preview` anywhere in `inference_sdk`, so rows a *remote*
+# server records during a preview run do not carry the flag.
 usage_workflow_is_preview: ContextVar[bool] = ContextVar(
     "usage_workflow_is_preview", default=False
 )
@@ -613,7 +620,10 @@ def get_workflow_block_api_key_from_kwargs(
     block = func_kwargs.get("self")
     if block is None:
         return None
-    return getattr(block, "_api_key", None)
+    api_key = getattr(block, "_api_key", None)
+    if not api_key:
+        return None
+    return str(api_key)
 
 
 def get_workflow_block_resource_details_from_kwargs(
@@ -645,6 +655,18 @@ def get_workflow_block_resource_details_from_kwargs(
     return resource_details
 
 
+def _count_batch_elements(value: Any) -> int:
+    """Leaf elements of a possibly nested ``Batch``.
+
+    A block running at dimensionality >= 2 (say, downstream of a crop) receives
+    a ``Batch`` of ``Batch``, so the outer length is the number of parent
+    elements, not the number of items the block was handed.
+    """
+    if not isinstance(value, Batch):
+        return 1
+    return sum(_count_batch_elements(element) for element in value)
+
+
 def get_workflow_block_frames_from_kwargs(func_kwargs: Dict[str, Any]) -> int:
     """Batch elements handed to one ``run()`` call.
 
@@ -652,12 +674,14 @@ def get_workflow_block_frames_from_kwargs(func_kwargs: Dict[str, Any]) -> int:
     counting invocations would under-report them against blocks the engine
     calls once per element.
     """
-    block_kwargs = func_kwargs.get("kwargs")
+    block_kwargs = func_kwargs.get("block_kwargs")
     if not isinstance(block_kwargs, dict):
         return 1
 
     batch_sizes = [
-        len(value) for value in block_kwargs.values() if isinstance(value, Batch)
+        _count_batch_elements(value)
+        for value in block_kwargs.values()
+        if isinstance(value, Batch)
     ]
     if not batch_sizes:
         return 1
@@ -689,8 +713,9 @@ def resolve_workflow_block_execution(
         return execution_duration, fallback_details
 
     execution_details = {"duration_source": measured_execution.source}
-    if measured_execution.execution_mode:
-        execution_details["execution_mode"] = measured_execution.execution_mode
+    execution_mode = EXECUTION_MODE_BY_DURATION_SOURCE.get(measured_execution.source)
+    if execution_mode:
+        execution_details["execution_mode"] = execution_mode
 
     return measured_execution.duration, execution_details
 

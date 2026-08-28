@@ -17,12 +17,13 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks import modal_ex
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.execution_timing import (
-    clear_remote_execution_duration,
-    consume_remote_execution_duration,
-)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     ModalExecutor,
+)
+from inference.usage_tracking.block_execution import (
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    clear_measured_block_execution,
+    consume_measured_block_execution,
 )
 
 
@@ -80,9 +81,9 @@ def modal_app_with_fake_modal(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def cleared_remote_duration():
-    clear_remote_execution_duration()
+    clear_measured_block_execution()
     yield
-    clear_remote_execution_duration()
+    clear_measured_block_execution()
 
 
 def _run_user_code_ws(modal_app, code: str, run_function_name: str, inputs: dict):
@@ -159,7 +160,9 @@ def test_executor_publishes_the_runtime_the_sandbox_reported():
         )
 
     # then
-    assert consume_remote_execution_duration() == 0.25
+    measured = consume_measured_block_execution()
+    assert measured.duration == 0.25
+    assert measured.source == BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
 
 
 def test_executor_publishes_nothing_when_the_sandbox_reports_no_runtime():
@@ -188,4 +191,4 @@ def test_executor_publishes_nothing_when_the_sandbox_reports_no_runtime():
         )
 
     # then
-    assert consume_remote_execution_duration() is None
+    assert consume_measured_block_execution() is None
