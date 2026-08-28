@@ -93,6 +93,11 @@ _WS_MAX_CHUNKS = 1024
 # own request rather than exhaust memory for everything else in the process.
 # Mirrors WEBEXEC_WS_MAX_REQUEST_BYTES in modal/modal_app.py.
 _WS_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+# Ceiling on ONE outbound request, mirroring WEBEXEC_WS_MAX_REQUEST_BYTES in
+# modal/modal_app.py. Enforcing it here turns an oversized payload into a clear
+# size error instead of a server-side reassembly abort whose error frame the
+# response-id guard discards as a desync.
+_WS_MAX_REQUEST_BYTES = 64 * 1024 * 1024
 
 
 def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
@@ -103,6 +108,20 @@ def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
         frame_bytes[i : i + _WS_MAX_FRAME_BYTES]
         for i in range(0, len(frame_bytes), _WS_MAX_FRAME_BYTES)
     ]
+    if len(frame_bytes) > _WS_MAX_REQUEST_BYTES:
+        # Mirrors the server's WEBEXEC_WS_MAX_REQUEST_BYTES. Without this the
+        # frame is sent, the server aborts reassembly BEFORE it parses the
+        # request id, and its error frame comes back unaddressed — which the
+        # response-id guard reports as a frame desync, hiding the real cause.
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block payload is too large for the websocket "
+                f"transport: {len(frame_bytes)} bytes, above the "
+                f"{_WS_MAX_REQUEST_BYTES}-byte limit. Reduce the size of the "
+                "block's inputs."
+            ),
+            context="modal_executor | websocket_payload_too_large",
+        )
     if len(chunks) > _WS_MAX_CHUNKS:
         # Fail here, naming the real cause. Announcing a count the server
         # structurally rejects makes it answer with an error frame carrying
@@ -137,38 +156,23 @@ _DEFAULT_ADVERTISED_IDLE_TIMEOUT_SECONDS = 10.0
 _MIN_HEARTBEAT_INTERVAL_SECONDS = 0.5
 
 
-# Failures the server reports that are NOT failures of the user's code.
-# Only a fallback for servers predating the ``server_error`` flag: user code
-# can raise an exception class of any name, so a name alone must never select
-# a control path. See ``_is_server_originated_response``.
-_SERVER_INFRASTRUCTURE_ERROR_TYPES = frozenset(
-    {
-        "ResponseNoLongerAvailable",
-        "InvalidRequest",
-        "UnknownCodeHash",
-        "ResponseTooLarge",
-    }
-)
-
-
 def _is_server_originated_response(result: dict) -> bool:
     """Whether the server, not the user's block, produced this failure.
 
-    ``error_type`` carries an exception CLASS NAME chosen by untrusted user
-    code, so it must not by itself select a control path — a block raising
-    ``class UnknownCodeHash(Exception)`` would otherwise trigger the client's
-    resend-with-full-code and execute twice.
+    ONLY the ``server_error`` flag decides. ``error_type`` carries an exception
+    CLASS NAME chosen by untrusted user code, so it can never select a control
+    path: a block raising ``class UnknownCodeHash(Exception)`` would otherwise
+    trigger the resend-with-full-code and execute twice — on the HTTP
+    transport, which is the default and has no request id or dedup to catch it.
 
-    A server that stamps ``server_error`` sets it on its OWN responses and
-    never on a user-code failure, so whenever the key is present it is
-    authoritative. Only a response from a server predating the flag (no key
-    at all) falls back to matching names, which keeps the HTTP transport
-    working against an un-upgraded deployment.
+    There is deliberately no fallback to matching names. A server that stamps
+    the flag sets it on its own responses and omits it on user-code failures,
+    so "absent" means user code, not "old server" — falling back on absence
+    would make the name list authoritative for exactly the responses it must
+    not govern. Servers predating the flag are out of scope: this PR's deploy
+    contract is server-first.
     """
-    if "server_error" in result:
-        return result.get("server_error") is True
-    error_type = result.get("error_type") or "RuntimeError"
-    return error_type in _SERVER_INFRASTRUCTURE_ERROR_TYPES
+    return result.get("server_error") is True
 
 
 def _get_socket_timeout(ws: Any) -> Optional[float]:
@@ -1062,8 +1066,12 @@ class WebSocketModalExecutor:
     # execution-sized read timeout.
     _CHUNK_CONTINUATION_TIMEOUT_SECONDS = 30.0
 
-    # How long ``close()`` waits for _io_lock before tearing down anyway.
+    # How long ``close()`` waits for _io_lock before giving up on closing the
+    # socket itself (it still drops its own reference).
     _CLOSE_LOCK_TIMEOUT_SECONDS = 1.0
+    # Slack on top of the keepalive's worst-case socket hold, to cover
+    # websocket-client's own close timeout and scheduling.
+    _CLOSE_JOIN_SLACK_SECONDS = 5.0
 
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
@@ -1089,28 +1097,42 @@ class WebSocketModalExecutor:
         reset runtime state — the exact bug the session check exists to
         prevent.
 
-        KNOWN LIMITS. The session belongs to the executor, and executors are
-        cached per WORKSPACE, so every concurrent workflow run in this process
-        shares one session id and one ``_had_success`` latch. The guarantee is
-        therefore per-executor, not per-run, and it is worse than "weaker":
-        the error lands on whichever run reconnects first, which is not
-        necessarily the run whose state was lost. The run that actually lost
-        state may then pass the check silently on the rotated session, with
-        reset globals. Fixing that needs a per-run session identity (e.g.
-        ``inference_sdk.config.execution_id``) the executor does not thread
-        through today.
+        KNOWN LIMITS — read these before relying on the check.
 
-        Three more paths disarm the latch without an error:
+        1. It is per-EXECUTOR, not per-run. Executors are cached per workspace,
+           so every concurrent workflow run in this process shares one session
+           id and one ``_had_success`` latch. The error lands on whichever run
+           reconnects first, not necessarily the one whose state was lost, and
+           that run may then pass the check silently on the rotated session.
+           There is no per-run session identity available to fix this: one
+           ``hello`` binds one session per CONNECTION, and
+           ``workflow_execution_id`` (already on every frame via
+           ``workflow_context``) is minted fresh per ``run_workflow`` call —
+           i.e. per video FRAME — so using it here would report a lost session
+           on every frame.
 
-        * idle release (``WEBEXEC_WS_IDLE_RELEASE_SECONDS``) rotates, so any
-          workflow with a gap longer than that silently restarts its session;
-        * a v1 -> v2 server upgrade, since ``_had_success`` is only latched on
-          a v2 success;
-        * a caller that retries after the loud failure (``InferencePipeline``
-          retries on the next frame) sees a correct-looking fresh session.
+        2. A positive answer proves less than it reads. ``session_known=True``
+           means "this container still holds a namespace for this session's
+           code hash" — NOT "your run's state is intact". Server-side
+           namespaces are keyed by code hash and never by session, and every
+           namespace shares one ``_shared_globals`` dict, so two concurrent
+           runs of the same block on one container already read and overwrite
+           each other's state. That cross-run corruption predates this check
+           and is unaffected by it.
 
-        Set ``WEBEXEC_WS_FAIL_ON_SESSION_LOSS=False`` to disable enforcement
-        entirely and restore the pre-v2 silent-continuation behaviour.
+        3. Container-local state cannot survive a long run by construction: a
+           websocket connection is a single Modal input capped at 700s, the
+           server closes at ``WEBEXEC_WS_MAX_CONNECTION_SECONDS`` before that,
+           and reconnects have no container affinity.
+
+        Several paths disarm the latch without an error, by design: a graceful
+        server close (the scheduled connection cap), idle release
+        (``WEBEXEC_WS_IDLE_RELEASE_SECONDS``), a v1 -> v2 upgrade, and any
+        caller that retries after the loud failure.
+
+        Given (1)-(3), ``WEBEXEC_WS_FAIL_ON_SESSION_LOSS`` defaults to False:
+        the check is an opt-in diagnostic for deployments whose blocks really
+        do rely on cross-frame globals, not a guarantee the platform can keep.
         """
         logger.info(
             "[webexec-ws] rotating session %s -> new session (%s)",
@@ -1119,6 +1141,9 @@ class WebSocketModalExecutor:
         )
         self._session_id = uuid.uuid4().hex
         self._had_success = False
+        # Not dead: the fail-open path rotates on a LIVE connection, where no
+        # drop has cleared this. The other call sites drop first, where it is
+        # redundant but harmless.
         self._hashes_sent_on_ws = set()
 
     def _get_ws_url(self, workspace_id: str) -> str:
@@ -1374,18 +1399,31 @@ class WebSocketModalExecutor:
                 try:
                     self._send_heartbeat(ws)
                     logger.debug("[webexec-ws] keepalive ok")
+                except _ServerClosingError:
+                    # The server closed on schedule (connection cap or its own
+                    # idle timeout) with nothing in flight — this thread holds
+                    # _io_lock, so no request can be mid-exchange. Nothing was
+                    # lost that a reconnect will not rebuild, so rotate rather
+                    # than leaving _had_success armed: otherwise the next
+                    # request's handshake lands on some other container,
+                    # reports session_known=False, and raises a session-lost
+                    # error for work that never had state at risk. The cap
+                    # fires every WEBEXEC_WS_MAX_CONNECTION_SECONDS, so
+                    # without this the failure is scheduled, not exceptional.
+                    logger.debug(
+                        "[webexec-ws] server closed gracefully during keepalive; "
+                        "rotating session and dropping conn"
+                    )
+                    self._drop_ws_connection_locked()
+                    self._rotate_session("server closed gracefully")
+                    self._clear_keepalive_handle()
+                    return
                 except Exception as e:
                     logger.debug(
                         "[webexec-ws] keepalive failed (%s); dropping conn",
                         e,
                     )
-                    try:
-                        ws.close()
-                    except Exception:
-                        pass
-                    self._ws = None
-                    self._hashes_sent_on_ws = set()
-                    self._server = self._server._replace(container_id=None)
+                    self._drop_ws_connection_locked()
                     self._clear_keepalive_handle()
                     return
             finally:
@@ -1400,12 +1438,19 @@ class WebSocketModalExecutor:
 
         The loop skips a tick when ``idle < interval``, so the real
         worst-case gap between two app-level frames is ``2 x interval``.
-        Dividing by 3 keeps that at 2/3 of the server's deadline; the floor
-        below is small enough not to break that invariant in practice.
+        Dividing by 3 keeps that at 2/3 of the server's deadline.
+
+        The floor is capped by ``idle_timeout / 3`` rather than applied over
+        it: a bare ``max()`` breaks the invariant for a small advertised
+        timeout, which is reachable because the server reads its own value
+        from an int env var. At an advertised 1s a 0.5s floor yields a 1.0s
+        worst-case gap — exactly the deadline — so the connection would
+        idle-close every cycle, reintroducing the bug this protocol fixes.
         """
         server = self._server
         if server.proto == 2 and server.idle_timeout:
-            return max(_MIN_HEARTBEAT_INTERVAL_SECONDS, server.idle_timeout / 3.0)
+            third = server.idle_timeout / 3.0
+            return min(max(_MIN_HEARTBEAT_INTERVAL_SECONDS, third), third)
         return self._KEEPALIVE_IDLE_SECONDS
 
     # A heartbeat ack is tiny and immediate; waiting the full read timeout
@@ -1490,18 +1535,37 @@ class WebSocketModalExecutor:
             keepalive_thread is not None
             and keepalive_thread is not threading.current_thread()
         ):
-            # Bounded by the ack timeout the keepalive can be blocked on,
-            # plus slack; a stuck thread must not wedge cache eviction.
-            keepalive_thread.join(timeout=self._HEARTBEAT_ACK_TIMEOUT_SECONDS + 1.0)
+            # The ack deadline is installed on the SOCKET, so it bounds the
+            # heartbeat's send AND its recv — a black-holed peer costs up to
+            # two of them, plus websocket-client's own close timeout. Joining
+            # for only one would return with the thread still inside recv().
+            keepalive_thread.join(
+                timeout=2 * self._heartbeat_ack_timeout()
+                + self._CLOSE_JOIN_SLACK_SECONDS
+            )
         # Best effort on the lock: an in-flight execution can hold it for the
-        # whole read timeout, and cache eviction must not block on that. The
-        # keepalive — the thread this actually races — is already gone.
+        # whole read timeout, and cache eviction must not block on that.
         acquired = self._io_lock.acquire(timeout=self._CLOSE_LOCK_TIMEOUT_SECONDS)
+        if not acquired:
+            # Someone still owns the socket — the keepalive if the join above
+            # timed out, otherwise a request thread. Calling close() here would
+            # free the fd under their blocked recv(), which is the exact
+            # use-after-free this method's ordering exists to prevent (and the
+            # fd could be reused by an unrelated socket before they notice).
+            # Drop only this executor's reference; their own failure path
+            # closes the socket.
+            logger.debug(
+                "[webexec-ws] close(): io lock still held; releasing the "
+                "reference without closing the socket"
+            )
+            self._ws = None
+            self._hashes_sent_on_ws = set()
+            self._server = self._server._replace(container_id=None)
+            return
         try:
             self._drop_ws_connection_locked()
         finally:
-            if acquired:
-                self._io_lock.release()
+            self._io_lock.release()
 
     def _drop_ws_connection(self) -> None:
         """Tear down the current connection. Takes ``_io_lock``.
@@ -1695,7 +1759,16 @@ class WebSocketModalExecutor:
                 # user's code a second time. So the ambiguity, once incurred,
                 # must survive a graceful close.
                 self._drop_ws_connection()
-                sent_ok = False
+                # A graceful close is the server acting on its own schedule
+                # (connection cap or idle timeout), not evidence that runtime
+                # state was lost unexpectedly. Rotate so the reconnect starts
+                # an honest fresh session instead of tripping the session-lost
+                # check on whichever container it lands on — that check would
+                # otherwise fire every WEBEXEC_WS_MAX_CONNECTION_SECONDS, for
+                # stateless blocks that had nothing at risk. The at-most-once
+                # guard is unaffected: it keys on ``sent_to_container``, not on
+                # the session id.
+                self._rotate_session("server closed gracefully")
                 last_exc = e
                 logger.debug(
                     "[webexec-ws] server closed gracefully (attempt %d/%d); "
@@ -1832,7 +1905,12 @@ class WebSocketModalExecutor:
                     parts = []
                     reassembled_bytes = 0
                     for _ in range(chunk_count):
-                        part = self._recv_bytes_frame()
+                        # Read from the SAME socket the deadline was installed
+                        # on: another thread may have replaced self._ws
+                        # between chunks, and reading that one would both miss
+                        # the continuation deadline and interleave with its
+                        # exchange.
+                        part = self._recv_bytes_frame(ws)
                         reassembled_bytes += len(part)
                         if reassembled_bytes > _WS_MAX_RESPONSE_BYTES:
                             raise ConnectionError(
@@ -1905,7 +1983,7 @@ class WebSocketModalExecutor:
             not send_full_code
             and not result.get("success", False)
             and result.get("error_type") == "UnknownCodeHash"
-            and self._is_server_originated(result)
+            and _is_server_originated_response(result)
         ):
             self._hashes_sent_on_ws.discard(code_hash)
             logger.info(
@@ -1998,30 +2076,6 @@ class WebSocketModalExecutor:
             )
         return result
 
-    # Shared with the HTTP transport so the two cannot drift apart.
-    _SERVER_INFRASTRUCTURE_ERROR_TYPES = _SERVER_INFRASTRUCTURE_ERROR_TYPES
-
-    def _is_server_originated(self, result: dict) -> bool:
-        """Whether the server, not the user's code, produced this failure.
-
-        On protocol v2 the server stamps ``server_error: True`` on its own
-        control responses, so the flag is authoritative and the name list is
-        ignored. That matters because ``error_type`` carries an exception
-        CLASS NAME chosen by untrusted user code: a block raising
-        ``class UnknownCodeHash(Exception)`` would otherwise trigger the
-        client's resend-with-full-code path and execute twice, and one named
-        ``InvalidRequest`` would have its traceback, line number and output
-        discarded as if it were a transport fault.
-
-        A v1 server can never set the flag, so there the names still decide.
-        """
-        if result.get("server_error") is True:
-            return True
-        if self._server.proto == 2:
-            return False
-        error_type = result.get("error_type") or "RuntimeError"
-        return error_type in self._SERVER_INFRASTRUCTURE_ERROR_TYPES
-
     def _raise_server_error_if_infrastructure(
         self,
         result: dict,
@@ -2035,7 +2089,7 @@ class WebSocketModalExecutor:
         or ran successfully.
         """
         error_type = result.get("error_type") or "RuntimeError"
-        if not self._is_server_originated(result):
+        if not _is_server_originated_response(result):
             return
         raise DynamicBlockError(
             public_message=(
@@ -2056,10 +2110,24 @@ class WebSocketModalExecutor:
         the real response queued so the NEXT request desyncs too.
         Against a v1 server the field does not exist, so only a mismatch is
         enforced there.
+
+        A server-stamped error frame is exempt from the echo requirement: the
+        server legitimately emits unaddressed ones (a chunk-reassembly abort, a
+        decode-limit violation, an over-long request id) whose id it never got
+        to parse. Those carry a precise diagnostic, and reporting them as a
+        generic desync throws it away — the opposite of what this guard is for.
         """
-        if not isinstance(result, dict):
-            return
         echoed = result.get("request_id")
+        if echoed is None and result.get("server_error") is True:
+            self._drop_ws_connection()
+            raise DynamicBlockError(
+                public_message=(
+                    "The Modal webexec server rejected the request "
+                    f"({result.get('error_type') or 'ServerError'}): "
+                    f"{result.get('error', 'Unknown error')}"
+                ),
+                context="modal_executor | websocket_server_error",
+            )
         if self._server.proto == 2 and (echoed is None or "_kind" in result):
             self._drop_ws_connection()
             raise DynamicBlockError(
@@ -2169,6 +2237,19 @@ class PooledWebSocketModalExecutor:
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         pool_size = max(1, WEBEXEC_WS_CONNECTION_POOL_SIZE)
+        if pool_size > 1 and WEBEXEC_WS_FAIL_ON_SESSION_LOSS:
+            # Enforced by a docstring only, until now. With more than one
+            # executor, consecutive frames of one stateful run can be routed
+            # to different sockets and therefore different containers, so the
+            # session guarantee the flag asks for cannot hold.
+            logger.warning(
+                "[webexec-ws] WEBEXEC_WS_CONNECTION_POOL_SIZE=%d with "
+                "WEBEXEC_WS_FAIL_ON_SESSION_LOSS enabled: the session "
+                "continuity guarantee does not hold above pool size 1, since "
+                "consecutive frames of one run may use different connections. "
+                "Use pool size 1 for stateful custom Python blocks.",
+                pool_size,
+            )
         self._executors = [
             WebSocketModalExecutor(workspace_id=self.workspace_id)
             for _ in range(pool_size)

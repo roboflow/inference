@@ -471,3 +471,85 @@ class _BridgeWS:
 
     def ping(self) -> None:
         pass
+
+
+class TestGracefulCloseContract:
+    """The `closing` frame is the client's PROOF that a frame was never read.
+
+    The client resets its delivery state on it and retries on ANY container,
+    so if the real server could ever emit `closing` after having read a frame,
+    that would be duplicate execution of user code. These drive the real
+    server's own close triggers rather than a hand-written frame.
+    """
+
+    def test_server_announces_closing_on_the_idle_timeout(self, modal_app) -> None:
+        from fastapi.testclient import TestClient
+
+        # Idle deadline short enough to fire without slowing the suite.
+        modal_app.WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = 1
+        _, app = _ws_app(
+            modal_app, lambda self, *a, **kw: {"success": True, "result": {}}
+        )
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            # Say hello so the connection is v2 — a v1 client must never be
+            # sent this frame.
+            ws.send_bytes(
+                msgpack.packb(
+                    {"_kind": "hello", "proto": 2, "session_id": "s-1"},
+                    use_bin_type=True,
+                )
+            )
+            assert msgpack.unpackb(ws.receive_bytes(), raw=False)["_kind"] == "hello"
+            # Then go silent and let the server's idle deadline fire.
+            frame = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert frame == {"_kind": "closing"}
+
+    def test_server_announces_closing_on_the_connection_cap(self, modal_app) -> None:
+        from fastapi.testclient import TestClient
+
+        # Cap already elapsed => the very first loop iteration closes.
+        modal_app.WEBEXEC_WS_MAX_CONNECTION_SECONDS = 0
+        _, app = _ws_app(
+            modal_app, lambda self, *a, **kw: {"success": True, "result": {}}
+        )
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            # No hello: a v1 client must NOT receive a `closing` frame, since
+            # it would feed the unrecognised map straight to msgpack as a
+            # response. The server should just close.
+            with pytest.raises(Exception):
+                ws.receive_bytes()
+
+    def test_v1_shaped_frame_still_executes(self, modal_app) -> None:
+        # "Backward compatible against v1 clients" is a wire claim: a frame
+        # with no _kind, no request_id and no session is what a v1 client
+        # actually sends. Every other test here sends a request_id.
+        from fastapi.testclient import TestClient
+
+        seen = {}
+
+        def run_user_code(self, code_str, imports, name, inputs, code_hash, ctx):
+            seen["inputs"] = inputs
+            return {"success": True, "result": {"ok": 1}}
+
+        _, app = _ws_app(modal_app, run_user_code)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(
+                msgpack.packb(
+                    {
+                        "code_str": "def run():\n    return 1\n",
+                        "imports": [],
+                        "run_function_name": "run",
+                        "inputs": {"x": 1},
+                    },
+                    use_bin_type=True,
+                )
+            )
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is True
+        assert "request_id" not in resp, "must not invent an id the client never sent"
+        assert seen["inputs"] == {"x": 1}

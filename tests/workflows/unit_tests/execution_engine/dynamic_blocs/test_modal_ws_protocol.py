@@ -174,7 +174,8 @@ class TestHandshake:
 
         assert executor._server.container_id == "container-7"
 
-    def test_session_lost_after_prior_success_raises(self) -> None:
+    def test_session_lost_after_prior_success_raises(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(modal_executor, "WEBEXEC_WS_FAIL_ON_SESSION_LOSS", True)
         executor = WebSocketModalExecutor(workspace_id="test-ws")
         executor._had_success = True
         executor._ws = _FakeWS([_hello_reply(session_known=False)])
@@ -182,7 +183,10 @@ class TestHandshake:
         with pytest.raises(WebexecSessionLostError):
             executor._handshake()
 
-    def test_session_lost_rotates_session_so_it_fails_only_once(self) -> None:
+    def test_session_lost_rotates_session_so_it_fails_only_once(
+        self, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setattr(modal_executor, "WEBEXEC_WS_FAIL_ON_SESSION_LOSS", True)
         executor = WebSocketModalExecutor(workspace_id="test-ws")
         executor._had_success = True
         executor._hashes_sent_on_ws = {"hash-1"}
@@ -673,10 +677,17 @@ class TestSessionLossKillSwitch:
         assert executor._session_id != session
         assert executor._had_success is False
 
-    def test_enforcement_on_by_default(self) -> None:
-        assert modal_executor.WEBEXEC_WS_FAIL_ON_SESSION_LOSS is True
+    def test_enforcement_off_by_default(self) -> None:
+        # Enforcement is OFF by default: the check cannot distinguish a
+        # stateful block from a stateless one, and the server's connection cap
+        # guarantees the trigger on a schedule, so defaulting it on would fail
+        # the stateless majority roughly every WEBEXEC_WS_MAX_CONNECTION_SECONDS.
+        assert modal_executor.WEBEXEC_WS_FAIL_ON_SESSION_LOSS is False
 
-    def test_session_lost_publishes_server_info_before_raising(self) -> None:
+    def test_session_lost_publishes_server_info_before_raising(
+        self, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setattr(modal_executor, "WEBEXEC_WS_FAIL_ON_SESSION_LOSS", True)
         # The keepalive thread reads _server unlocked; leaving it on the v1
         # default after a v2 handshake would restore the 25s interval
         # against a 10s-idle server.
@@ -782,7 +793,7 @@ class TestIdleTimeoutCoercion:
     ) -> None:
         assert modal_executor._coerce_idle_timeout(advertised) == expected
 
-    @pytest.mark.parametrize("advertised", [1.5, 2, 3, 10, 30, 300])
+    @pytest.mark.parametrize("advertised", [1, 1.5, 2, 3, 10, 30, 300])
     def test_heartbeat_gap_stays_under_the_advertised_timeout(
         self, advertised: float
     ) -> None:
@@ -818,9 +829,11 @@ class TestPostLoopRetryExhaustion:
             proto=2, idle_timeout=10.0, container_id="container-1"
         )
 
+        sends = []
+
         class _Sock:
             def send_binary(self, frame: bytes) -> None:
-                pass
+                sends.append(frame)
 
             def recv(self) -> Any:
                 raise ConnectionError("boom")
@@ -839,6 +852,10 @@ class TestPostLoopRetryExhaustion:
 
         assert "may have already executed" in excinfo.value.public_message
         assert "websocket_response" in excinfo.value.context
+        # Pin the retry count too: without this the test passes unchanged if
+        # `attempts` regresses to 1, since a single delivered-then-lost frame
+        # produces the same message.
+        assert len(sends) == 3, "a delivered frame must be retried twice more"
 
     def test_never_delivered_frame_reports_a_connect_failure(
         self, monkeypatch: Any
@@ -861,8 +878,18 @@ class TestServerInfrastructureErrors:
     @pytest.mark.parametrize(
         "result",
         [
-            {"success": False, "error_type": "ResponseNoLongerAvailable", "error": "x"},
-            {"success": False, "error_type": "InvalidRequest", "error": "x"},
+            {
+                "success": False,
+                "error_type": "ResponseNoLongerAvailable",
+                "error": "x",
+                "server_error": True,
+            },
+            {
+                "success": False,
+                "error_type": "InvalidRequest",
+                "error": "x",
+                "server_error": True,
+            },
             {
                 "success": False,
                 "error_type": "ValueError",
@@ -890,31 +917,29 @@ class TestServerInfrastructureErrors:
             "MyBlock",
         )
 
-    def test_v2_ignores_a_forged_infrastructure_error_type(self) -> None:
+    @pytest.mark.parametrize(
+        "error_type",
+        ["UnknownCodeHash", "InvalidRequest", "ResponseNoLongerAvailable"],
+    )
+    @pytest.mark.parametrize("proto", [1, 2])
+    def test_a_forged_infrastructure_name_is_never_trusted(
+        self, error_type: str, proto: int
+    ) -> None:
         # error_type is an exception CLASS NAME chosen by untrusted user code.
-        # On v2 the server stamps server_error on its own responses, so a
-        # block raising ``class InvalidRequest(Exception)`` must still be
-        # reported as the user's code failing -- with its traceback intact.
+        # ONLY the server_error flag may select a control path -- on EITHER
+        # protocol. A name-based fallback would be authoritative for exactly
+        # the responses it must not govern, because a stamping server omits
+        # the flag on user-code failures, so "absent" means user code rather
+        # than "old server".
         executor = WebSocketModalExecutor(workspace_id="test-ws")
-        executor._server = _ServerInfo(proto=2, idle_timeout=10.0)
-
-        executor._raise_server_error_if_infrastructure(
-            {"success": False, "error_type": "InvalidRequest", "error": "x"},
-            "MyBlock",
+        executor._server = _ServerInfo(
+            proto=proto, idle_timeout=10.0 if proto == 2 else None
         )
 
-    def test_v1_still_trusts_the_error_type_names(self) -> None:
-        # A v1 server cannot stamp the flag, so there the names must still
-        # classify -- otherwise every legacy transport failure is reported as
-        # the user's block raising.
-        executor = WebSocketModalExecutor(workspace_id="test-ws")
-        executor._server = _ServerInfo(proto=1)
-
-        with pytest.raises(DynamicBlockError):
-            executor._raise_server_error_if_infrastructure(
-                {"success": False, "error_type": "InvalidRequest", "error": "x"},
-                "MyBlock",
-            )
+        executor._raise_server_error_if_infrastructure(
+            {"success": False, "error_type": error_type, "error": "x"},
+            "MyBlock",
+        )
 
 
 class TestChunkedResponseValidation:

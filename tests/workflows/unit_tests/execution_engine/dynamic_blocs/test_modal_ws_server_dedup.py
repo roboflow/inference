@@ -429,13 +429,14 @@ class TestMalformedFrames:
 
 
 class TestWireBoundaryTypes:
-    def test_non_string_request_id_is_ignored_rather_than_half_registered(
+    def test_non_string_request_id_is_rejected_without_running_the_block(
         self, modal_app
     ) -> None:
-        # _TtlKeySet.add() used to store any hashable while __contains__
-        # gated on isinstance(str), so an int request_id was recorded as
-        # executed but never found again — the at-most-once backstop
-        # silently did not hold.
+        # _TtlKeySet.add() used to store any hashable while __contains__ gated
+        # on isinstance(str), so an int request_id was recorded as executed but
+        # never found again. Downgrading it to "no request id" is not a fix
+        # either: the block would run with NO at-most-once record, so a resend
+        # runs it a second time. It must be refused before execution.
         from fastapi.testclient import TestClient
 
         calls = []
@@ -451,9 +452,10 @@ class TestWireBoundaryTypes:
             ws.send_bytes(frame)
             resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
 
-        assert resp["success"] is True
-        # Treated as "no request id at all": nothing registered anywhere.
-        assert 12345 not in executor._ws_executed
+        assert resp["success"] is False
+        assert resp["error_type"] == "InvalidRequest"
+        assert resp["server_error"] is True
+        assert calls == [], "the block must not run without a dedup record"
         assert len(executor._ws_executed._seen) == 0
         assert executor._ws_inflight == {}
 
@@ -511,8 +513,6 @@ class TestInflightDedup:
         # One TestClient context => one portal => one event loop, matching a
         # real container where every connection shares the ASGI loop.
         client = TestClient(app)
-        client.__enter__()
-
         results = {}
 
         def second_connection():
@@ -529,13 +529,15 @@ class TestInflightDedup:
                 release.set()
                 results["second"] = msgpack.unpackb(ws2.receive_bytes(), raw=False)
 
-        with client.websocket_connect("/ws") as ws1:
-            ws1.send_bytes(frame)
-            worker = threading.Thread(target=second_connection, daemon=True)
-            worker.start()
-            results["first"] = msgpack.unpackb(ws1.receive_bytes(), raw=False)
-            worker.join(timeout=10)
-        client.__exit__(None, None, None)
+        # `with` rather than a bare __enter__/__exit__ pair: an assertion
+        # raising between them would leak the ASGI portal thread.
+        with client:
+            with client.websocket_connect("/ws") as ws1:
+                ws1.send_bytes(frame)
+                worker = threading.Thread(target=second_connection, daemon=True)
+                worker.start()
+                results["first"] = msgpack.unpackb(ws1.receive_bytes(), raw=False)
+                worker.join(timeout=10)
 
         assert len(calls) == 1, "the resend must not start a second execution"
         assert results["first"] == results["second"]

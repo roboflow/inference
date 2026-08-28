@@ -121,21 +121,53 @@ class _TtlKeySet:
     All access happens on the event loop thread, so no locking is needed.
     """
 
-    def __init__(self, ttl_seconds: float, max_entries: int):
+    def __init__(
+        self,
+        ttl_seconds: float,
+        max_entries: int,
+        min_retention_seconds: float = 0.0,
+        name: str = "registry",
+    ):
         from collections import OrderedDict
 
         self._ttl_seconds = ttl_seconds
         self._max_entries = max_entries
+        # Entries younger than this are never evicted to satisfy the size cap.
+        self._min_retention_seconds = min_retention_seconds
+        self._name = name
         self._seen: "OrderedDict[str, float]" = OrderedDict()
 
     def _prune(self) -> None:
-        while len(self._seen) > self._max_entries:
-            self._seen.popitem(last=False)
-        deadline = time.monotonic() - self._ttl_seconds
+        now = time.monotonic()
+        # Expire first, so age-based eviction reclaims room before the size cap
+        # has to.
+        deadline = now - self._ttl_seconds
         while self._seen:
             key, last_seen = next(iter(self._seen.items()))
             if last_seen >= deadline:
                 break
+            del self._seen[key]
+        # Only THEN enforce the size cap, and never at the cost of an entry the
+        # peer could still act on. For _ws_executed that entry is the whole
+        # at-most-once backstop: dropping one inside the client's retry window
+        # lets a resend fall through to a second execution of user code. Under
+        # sustained load the count cap would otherwise evict ids seconds old,
+        # regardless of TTL. Entries are a key plus a float, so retaining them
+        # for the protected window costs little; exceeding the cap is reported
+        # rather than silently papered over.
+        if len(self._seen) <= self._max_entries:
+            return
+        protected_deadline = now - self._min_retention_seconds
+        while len(self._seen) > self._max_entries and self._seen:
+            key, last_seen = next(iter(self._seen.items()))
+            if last_seen >= protected_deadline:
+                print(
+                    f"[webexec] {self._name} is over its {self._max_entries}-entry "
+                    f"cap and every entry is still inside the "
+                    f"{self._min_retention_seconds:.0f}s retention window; keeping "
+                    "them to preserve at-most-once. Raise the cap if this persists."
+                )
+                return
             del self._seen[key]
 
     # Ids the client generates are uuid4 hex (32 chars); this leaves room for
@@ -166,8 +198,15 @@ class _TtlKeySet:
         self._seen.pop(key, None)
 
     def refresh(self, key: str) -> bool:
-        """Re-stamp an existing entry. Never adds. Returns whether present."""
-        if not self._valid(key) or key not in self._seen:
+        """Re-stamp an existing entry. Never adds. Returns whether present.
+
+        Prunes first: without it an entry past its TTL is still reported
+        present and then re-stamped back to life.
+        """
+        if not self._valid(key):
+            return False
+        self._prune()
+        if key not in self._seen:
             return False
         self.add(key)
         return True
@@ -203,7 +242,10 @@ class _WsResponseCache:
         self,
         max_entries: int = 128,
         max_bytes: int = 64 * 1024 * 1024,
-        ttl_seconds: float = 120.0,
+        # The client can take up to its read timeout
+        # (WEBEXEC_WS_READ_TIMEOUT_SECONDS, 720s) to notice a lost response and
+        # resend, so a 120s TTL expired before the retry it exists to answer.
+        ttl_seconds: float = 900.0,
     ):
         from collections import OrderedDict
 
@@ -408,6 +450,7 @@ _executor_decorator_kwargs = {
     "env": {
         "WEBEXEC_WS_MAX_CONNECTION_SECONDS": str(WEBEXEC_WS_MAX_CONNECTION_SECONDS),
         "WEBEXEC_WS_IDLE_TIMEOUT_SECONDS": str(WEBEXEC_WS_IDLE_TIMEOUT_SECONDS),
+        "WEBEXEC_WS_MAX_REQUEST_BYTES": str(WEBEXEC_WS_MAX_REQUEST_BYTES),
     },
 }
 if WEBEXEC_MODAL_ROUTING_REGION:
@@ -447,10 +490,16 @@ class Executor:
         # id. Adding ``snap=True`` here would make restored containers share
         # one id and let the client's same-container resend check pass across
         # different containers — re-executing user code. Keep it post-restore.
-        self._container_id = os.environ.get("MODAL_TASK_ID") or uuid.uuid4().hex
+        # Always append a random suffix: this id is the sole trust anchor for
+        # the client's same-container resend guard, so uniqueness must be
+        # self-guaranteed rather than inherited from MODAL_TASK_ID being set.
+        # The task id is kept as a prefix for log correlation.
+        self._container_id = f"{os.environ.get('MODAL_TASK_ID', '')}-{uuid.uuid4().hex}"
         self._ws_sessions = _TtlKeySet(
             ttl_seconds=self._WS_SESSION_TTL_SECONDS,
             max_entries=self._WS_SESSION_MAX_ENTRIES,
+            min_retention_seconds=self._WS_SESSION_MIN_RETENTION_SECONDS,
+            name="_ws_sessions",
         )
         # Request ids whose user code this container has STARTED running.
         # Entries are tiny, so this outlives the response cache by a wide
@@ -459,6 +508,8 @@ class Executor:
         self._ws_executed = _TtlKeySet(
             ttl_seconds=self._WS_EXECUTED_TTL_SECONDS,
             max_entries=self._WS_EXECUTED_MAX_ENTRIES,
+            min_retention_seconds=self._WS_EXECUTED_MIN_RETENTION_SECONDS,
+            name="_ws_executed",
         )
         self._ws_response_cache = _WsResponseCache()
         self._ws_inflight: Dict[str, "asyncio.Task"] = {}
@@ -490,6 +541,16 @@ class Executor:
     # 3 attempts with reconnects, bounded by the client's read timeout.
     _WS_EXECUTED_TTL_SECONDS = 3600.0
     _WS_EXECUTED_MAX_ENTRIES = 32768
+    # No executed marker may be evicted by the SIZE cap while the client could
+    # still resend the request it guards. The client's window is bounded by its
+    # read timeout (WEBEXEC_WS_READ_TIMEOUT_SECONDS, 720s) times its retry
+    # attempts; this covers it with margin. Without it, sustained load evicts
+    # markers seconds old and a same-container resend re-runs user code.
+    _WS_EXECUTED_MIN_RETENTION_SECONDS = 900.0
+    # A session id must likewise survive the size cap long enough to answer the
+    # reconnects of a live stream; evicting one early reports a false session
+    # loss.
+    _WS_SESSION_MIN_RETENTION_SECONDS = 900.0
 
     def _ws_session_seen(self, session_id: str) -> bool:
         """Whether user code for this session already ran on this container.
@@ -1208,6 +1269,23 @@ from datetime import datetime
             carry the in-flight id, so an unaddressed error frame reaches the
             user as a generic "frame desync" instead of the real cause.
             """
+            if len(payload) > WEBEXEC_WS_MAX_REQUEST_BYTES:
+                # The client caps reassembly at the same limit, and it reports
+                # an over-cap response as a lost connection ("may have already
+                # executed") rather than as a size problem. Refuse here so the
+                # real cause is named once and not retried.
+                await websocket.send_bytes(
+                    _pack_ws_error(
+                        error_type="ResponseTooLarge",
+                        error=(
+                            "The block's result is too large to return over the "
+                            f"websocket transport: {len(payload)} bytes, above "
+                            f"the {WEBEXEC_WS_MAX_REQUEST_BYTES}-byte limit."
+                        ),
+                        request_id=request_id,
+                    )
+                )
+                return
             if len(payload) > WEBEXEC_WS_MAX_FRAME_BYTES:
                 chunks = [
                     payload[i : i + WEBEXEC_WS_MAX_FRAME_BYTES]
@@ -1303,8 +1381,11 @@ from datetime import datetime
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
 
-            # ``decode_failed`` is the ONLY positive proof that the user's
-            # code did not run: the worker sets it before touching anything
+            # ``decode_failed`` is ONE of two positive proofs that the user's
+            # code did not run (the other is ``never_ran``, set for control
+            # responses returned before the function is looked up). What it is
+            # not is an inference from ``started_running``: the worker sets it
+            # before touching anything
             # else. ``started_running`` cannot serve that role on its own,
             # because ``asyncio.to_thread`` cancellation cancels the awaiting
             # future while the pool thread keeps going — so observing it False
@@ -1314,6 +1395,7 @@ from datetime import datetime
             # then executes anyway.
             started_running = False
             decode_failed = False
+            never_ran = False
 
             def _run_user_code():
                 """Decode, run and pack — all off the event loop.
@@ -1332,7 +1414,7 @@ from datetime import datetime
                 payload is still reported as never-executed and stays safely
                 resendable, exactly as when it ran on the loop.
                 """
-                nonlocal started_running, decode_failed
+                nonlocal started_running, decode_failed, never_ran
                 try:
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
                 except Exception as error:
@@ -1348,6 +1430,16 @@ from datetime import datetime
                     client_code_hash,
                     workflow_context,
                 )
+                # Control responses returned BEFORE the user's function is
+                # looked up: the block provably did not run, so its executed
+                # marker must not bar a resend. (A namespace-init failure is
+                # NOT in this set — exec()ing the user's module scope IS
+                # running their code.)
+                if not resp.get("success") and resp.get("error_type") in (
+                    "UnknownCodeHash",
+                    "InvalidRequest",
+                ):
+                    never_ran = True
                 succeeded = bool(resp.get("success"))
                 if succeeded:
                     resp["result"] = Executor._serialize_msgpack_result(resp["result"])
@@ -1361,6 +1453,10 @@ from datetime import datetime
                 if request_id:
                     executor_self._ws_executed.add(request_id)
                 succeeded, payload = await asyncio.to_thread(_run_user_code)
+
+                if never_ran and request_id:
+                    # Provable non-execution: keep the id resendable.
+                    executor_self._ws_executed.discard(request_id)
 
                 if succeeded:
                     # Only now has runtime state actually been built here;
@@ -1514,9 +1610,24 @@ from datetime import datetime
                         # not what the chunk ceiling happens to allow.
                         reassembled_bytes = 0
                         for _ in range(chunk_count):
+                            # Re-derive the budget each chunk: a peer dribbling
+                            # one chunk just inside the idle timeout would
+                            # otherwise hold a max_inputs slot for
+                            # chunk_count * IDLE seconds, far past the
+                            # connection cap, until Modal kills the input with
+                            # no close frame.
+                            chunk_remaining = WEBEXEC_WS_MAX_CONNECTION_SECONDS - (
+                                time.monotonic() - connected_at
+                            )
+                            if chunk_remaining <= 0:
+                                raise ValueError(
+                                    "connection cap reached during chunked receive"
+                                )
                             part = await asyncio.wait_for(
                                 websocket.receive_bytes(),
-                                timeout=WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
+                                timeout=min(
+                                    chunk_remaining, WEBEXEC_WS_IDLE_TIMEOUT_SECONDS
+                                ),
                             )
                             reassembled_bytes += len(part)
                             if reassembled_bytes > WEBEXEC_WS_MAX_REQUEST_BYTES:
@@ -1528,8 +1639,12 @@ from datetime import datetime
                         # Off the event loop: unpacking tens of MB is GIL-held
                         # CPU that would otherwise stall every other
                         # connection past its idle deadline.
+                        # join INSIDE the worker: argument expressions are
+                        # evaluated on the loop before to_thread is awaited, so
+                        # joining here would copy up to the byte cap on the very
+                        # thread this call exists to keep free.
                         request = await asyncio.to_thread(
-                            _safe_unpackb, b"".join(parts)
+                            lambda: _safe_unpackb(b"".join(parts))
                         )
 
                     # ---- protocol v2 control frames ----
@@ -1599,6 +1714,24 @@ from datetime import datetime
                             )
                         )
                         continue
+                    if raw_request_id is not None and not isinstance(
+                        raw_request_id, str
+                    ):
+                        # Silently downgrading to "no dedup" would execute the
+                        # block with no at-most-once record, so a resend runs it
+                        # again. An over-long str is already rejected above;
+                        # reject a wrong-typed one the same way.
+                        await websocket.send_bytes(
+                            _pack_ws_error(
+                                error_type="InvalidRequest",
+                                error=(
+                                    "request_id must be a string; the block was "
+                                    "not run."
+                                ),
+                                request_id=None,
+                            )
+                        )
+                        continue
                     request_id = (
                         raw_request_id
                         if isinstance(raw_request_id, str) and raw_request_id
@@ -1645,17 +1778,26 @@ from datetime import datetime
                                 execute_request(request, request_id, conn_session_id)
                             )
                             executor_self._ws_inflight[request_id] = task
+
                             # execute_request's ``finally`` clears the entry
                             # in the normal case, but a task cancelled before
                             # its body ever starts (loop shutdown, container
                             # teardown at the input timeout) never reaches it.
                             # _ws_inflight is the one v2 structure with no cap
                             # and no TTL, so close that leak here.
-                            task.add_done_callback(
-                                lambda _t, rid=request_id: (
+                            # Identity-checked: popping by key alone lets a
+                            # stale callback delete a NEWER task registered
+                            # under the same id, which would re-open the
+                            # duplicate-execution window a resend relies on
+                            # this map to close.
+                            def _clear_inflight(
+                                finished: "asyncio.Task",
+                                rid: str = request_id,
+                            ) -> None:
+                                if executor_self._ws_inflight.get(rid) is finished:
                                     executor_self._ws_inflight.pop(rid, None)
-                                )
-                            )
+
+                            task.add_done_callback(_clear_inflight)
                         # shield: this connection dying must not cancel an
                         # execution another connection may be waiting on
                         # (or will resend for).
