@@ -62,7 +62,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json_atomic, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.model_types import record_model_type
+from inference.usage_tracking.model_types import record_model_descriptor
 from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
@@ -70,6 +70,13 @@ from inference_models.models.auto_loaders.model_cache_paths import (
     generate_model_cache_root_for_model_id,
     generate_models_cache_dir,
 )
+
+try:
+    from inference_models.weights_providers.offline_registry import load_record_raw
+except ImportError:
+    # Runtime images may still be on an inference-models wheel that predates
+    # the offline registry. Usage then stays architecture-only for this path.
+    load_record_raw = None
 
 # fallback model_type for local `inference_models` packages that do not declare
 # model_architecture in model_config.json.
@@ -449,18 +456,36 @@ def get_model_type(
         service_secret=service_secret,
     )
     # Usage tracking labels rows from this map so the registry (and its API
-    # calls) stay off the inference hot path. Prefer the platform variant
-    # (size / task suffix, e.g. yolov8-n) when present; class lookup still
-    # uses the architecture returned below. Both id spellings are recorded
-    # because callers may pass an alias while the loaded model reports its
-    # resolved id.
-    recorded_model_type = model_variant or model_type
-    record_model_type(model_id=model_id, model_type=recorded_model_type)
-    record_model_type(
+    # calls) stay off the inference hot path. The architecture keys class
+    # lookup below; the variant is reported alongside it so telemetry can roll
+    # up by family or drill into a size. Both id spellings are recorded because
+    # callers may pass an alias while the loaded model reports its resolved id.
+    record_model_descriptor(
+        model_id=model_id,
+        architecture=model_type,
+        variant=model_variant,
+        task_type=task_type,
+    )
+    record_model_descriptor(
         model_id=resolve_roboflow_model_alias(model_id=model_id),
-        model_type=recorded_model_type,
+        architecture=model_type,
+        variant=model_variant,
+        task_type=task_type,
     )
     return task_type, model_type
+
+
+def _coded_model_variant(model_id: str) -> Optional[str]:
+    """Variant label for a model the platform metadata path never sees.
+
+    GENERIC_MODELS and pipelines resolve from static tables, so they never
+    receive ``modelVariant``. Their size / task label is the model id suffix
+    (``sam2/hiera_large`` -> ``hiera_large``); a bare architecture id
+    (``clip``) has no variant to record.
+    """
+    _, _, variant = str(model_id).partition("/")
+
+    return variant or None
 
 
 def _resolve_model_type(
@@ -476,20 +501,24 @@ def _resolve_model_type(
     pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
     if pipeline_definition is not None:
         logger.debug(f"Loading model pipeline: {model_id}.")
-        return pipeline_definition.task_type, pipeline_definition.model_type, None
+        return (
+            pipeline_definition.task_type,
+            pipeline_definition.model_type,
+            _coded_model_variant(model_id=model_id),
+        )
     validate_model_id_for_cache(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {model_id}.")
         task_type, model_type = GENERIC_MODELS[model_id]
-        return task_type, model_type, None
+        return task_type, model_type, _coded_model_variant(model_id=model_id)
 
     # then check if the dataset id is in the GENERIC_MODELS dictionary
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         task_type, model_type = GENERIC_MODELS[dataset_id]
-        return task_type, model_type, None
+        return task_type, model_type, _coded_model_variant(model_id=model_id)
 
     if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
         if not _check_if_api_key_has_access_to_model(
@@ -790,16 +819,20 @@ def _get_model_metadata_from_inference_models_cache(
     absent (e.g. cache warmed through `inference-models` directly). The
     ``model_architecture`` stored in ``model_config.json`` is used as the
     model type - architecture-level keys are registered in
-    ``ROBOFLOW_MODEL_TYPES``.
+    ``ROBOFLOW_MODEL_TYPES``. The platform variant is not in that file; it
+    is read from the offline-registry record written at warm-up, when one
+    exists.
     """
     if not USE_INFERENCE_MODELS:
         return None
+
     cached_dir = find_cached_model_package_dir(
         model_id=model_id,
         api_key=api_key,
     )
     if cached_dir is None:
         return None
+
     config_path = os.path.join(cached_dir, "model_config.json")
     try:
         metadata = read_json(path=config_path)
@@ -807,15 +840,68 @@ def _get_model_metadata_from_inference_models_cache(
         return None
     if not isinstance(metadata, dict):
         return None
+
     task_type = metadata.get("task_type", "")
     model_architecture = metadata.get("model_architecture", "")
-    if (
+    if not (
         isinstance(task_type, str)
         and task_type
         and isinstance(model_architecture, str)
         and model_architecture
     ):
-        return task_type, model_architecture, None
+        return None
+
+    model_variant = _model_variant_from_offline_registry(
+        model_id,
+        extra_model_ids=(
+            metadata.get("canonical_model_id"),
+            metadata.get("model_id"),
+        ),
+    )
+    return task_type, model_architecture, model_variant
+
+
+def _model_variant_from_offline_registry(
+    model_id: str,
+    *,
+    extra_model_ids: Tuple[Any, ...] = (),
+) -> Optional[str]:
+    """Platform variant persisted when inference-models warmed this model.
+
+    ``model_config.json`` only stores architecture / task. The offline
+    registry record keeps the same ``modelVariant`` a live
+    ``/models/v1/external/stat`` call would return, keyed by canonical id
+    or a requested alias.
+
+    Candidates come from an unvalidated ``model_config.json``, so anything
+    that is not a non-empty string is skipped rather than coerced: this
+    helper must degrade to "no variant" for a corrupt config, never raise.
+    """
+    if load_record_raw is None:
+        return None
+
+    seen = set()
+    for candidate_id in (model_id, *extra_model_ids):
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id
+            or candidate_id in seen
+        ):
+            continue
+
+        seen.add(candidate_id)
+        record = load_record_raw(model_id=candidate_id)
+        if not isinstance(record, dict):
+            continue
+
+        model_payload = record.get("model")
+        if not isinstance(model_payload, dict):
+            continue
+
+        variant = model_payload.get("model_variant")
+        if isinstance(variant, str) and variant:
+            return variant
+
     return None
 
 

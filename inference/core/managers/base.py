@@ -49,7 +49,7 @@ from inference.core.telemetry import (
     set_span_attribute,
     start_span,
 )
-from inference.usage_tracking.model_types import bind_usage_model_identity
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 
 class ModelManager:
@@ -151,7 +151,7 @@ class ModelManager:
                         service_secret=service_secret,
                         **extra_init_kwargs,
                     )
-                    bind_usage_model_identity(
+                    bind_usage_model_descriptor(
                         model, model_id, resolved_identifier, model_id_alias
                     )
                     vram_after = _get_cuda_memory_allocated()
