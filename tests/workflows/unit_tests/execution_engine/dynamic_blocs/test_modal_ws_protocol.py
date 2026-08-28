@@ -18,7 +18,8 @@ from inference.core.env import (
     WEBEXEC_WS_IDLE_RELEASE_SECONDS,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
-from inference.core.workflows.errors import DynamicBlockError
+from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import modal_executor
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     WebexecSessionLostError,
     WebSocketModalExecutor,
@@ -377,8 +378,8 @@ class _LockAcquiredHook:
         self._lock = threading.Lock()
         self._on_acquire = on_acquire
 
-    def acquire(self, blocking: bool = True) -> bool:
-        acquired = self._lock.acquire(blocking)
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        acquired = self._lock.acquire(blocking, timeout)
         if acquired:
             self._on_acquire()
         return acquired
@@ -443,11 +444,37 @@ class TestResponseIdGuard:
 
         assert executor._ws is None
 
-    def test_matching_or_absent_id_passes(self) -> None:
+    def test_matching_id_passes(self) -> None:
         executor = _executor_with_ws(_FakeWS())
 
         executor._check_response_id({"request_id": "req-1"}, "req-1")
+
+    def test_v2_requires_the_echoed_id(self) -> None:
+        # A late heartbeat_ack landing in the execution recv slot has no
+        # request_id. Accepting it would surface as a fabricated
+        # "RuntimeError: Unknown error" against the user's block and leave
+        # the real response queued, desyncing the next request too.
+        executor = _executor_with_ws(_FakeWS())
+
+        with pytest.raises(DynamicBlockError, match="in-flight request id"):
+            executor._check_response_id({"success": True}, "req-1")
+
+        assert executor._ws is None
+
+    def test_v2_rejects_a_control_frame(self) -> None:
+        executor = _executor_with_ws(_FakeWS())
+
+        with pytest.raises(DynamicBlockError, match="in-flight request id"):
+            executor._check_response_id(
+                {"_kind": "heartbeat_ack", "request_id": "req-1"}, "req-1"
+            )
+
+    def test_v1_still_accepts_a_response_without_an_id(self) -> None:
+        executor = _executor_with_ws(_FakeWS(), proto=1)
+
         executor._check_response_id({"success": True}, "req-1")
+
+        assert executor._ws is not None
 
 
 class TestHeartbeat:
@@ -500,3 +527,289 @@ class TestHeartbeat:
             executor._send_heartbeat(ws)
 
         assert ws.timeouts[-1] == WEBEXEC_WS_READ_TIMEOUT_SECONDS
+
+
+class TestSessionLossKillSwitch:
+    def test_enforcement_can_be_disabled(self, monkeypatch: Any) -> None:
+        # Prod needs to revert to the pre-v2 (silent continuation) behavior
+        # without rolling the inference ref back across every consumer.
+        monkeypatch.setattr(modal_executor, "WEBEXEC_WS_FAIL_ON_SESSION_LOSS", False)
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._had_success = True
+        session = executor._session_id
+        executor._ws = _FakeWS([_hello_reply(session_known=False)])
+
+        executor._handshake()
+
+        assert executor._server.proto == 2
+        # The session is still rotated: state really is gone, so the next
+        # reconnect must not silently pass the check on the old id.
+        assert executor._session_id != session
+        assert executor._had_success is False
+
+    def test_enforcement_on_by_default(self) -> None:
+        assert modal_executor.WEBEXEC_WS_FAIL_ON_SESSION_LOSS is True
+
+    def test_session_lost_publishes_server_info_before_raising(self) -> None:
+        # The keepalive thread reads _server unlocked; leaving it on the v1
+        # default after a v2 handshake would restore the 25s interval
+        # against a 10s-idle server.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._had_success = True
+        executor._ws = _FakeWS([_hello_reply(session_known=False)])
+
+        with pytest.raises(WebexecSessionLostError):
+            executor._handshake()
+
+        assert executor._server.proto == 2
+        assert executor._server.idle_timeout == 10.0
+
+
+def _run_one_execution(executor: WebSocketModalExecutor, response: dict) -> Any:
+    """Drive _execute_ws once with a canned server response."""
+
+    def _fake_send_recv(
+        _frame: bytes, _workspace: str, request_id: Any = None
+    ) -> bytes:
+        # Echo the id the executor generated, as a real v2 server does.
+        echoed = dict(response)
+        if executor._server.proto == 2:
+            echoed["request_id"] = request_id
+        return _pack(echoed)
+
+    executor._send_recv_with_retry = _fake_send_recv  # type: ignore
+    return executor._execute_ws(
+        "MyBlock",
+        SimpleNamespace(
+            run_function_code="def run(x):\n    return x\n",
+            run_function_name="run",
+            imports=[],
+        ),
+        {},
+        "ws",
+        msgpack,
+        {},
+    )
+
+
+class TestHadSuccessLatch:
+    def test_v1_success_does_not_arm_the_v2_session_check(self) -> None:
+        # Client rolls out before the Modal app: the executor talks v1 and
+        # succeeds. If that armed the latch, the first reconnect onto an
+        # upgraded v2 container would hard-fail every workspace executor
+        # that had ever succeeded.
+        executor = _executor_with_ws(_FakeWS(), proto=1)
+
+        _run_one_execution(executor, {"success": True, "result": {}})
+
+        assert executor._had_success is False
+
+    def test_v2_success_arms_it(self) -> None:
+        executor = _executor_with_ws(_FakeWS())
+
+        _run_one_execution(executor, {"success": True, "result": {}})
+
+        assert executor._had_success is True
+
+
+class TestIdleReleaseDisable:
+    def test_non_positive_value_disables_idle_release(self, monkeypatch: Any) -> None:
+        # <= 0 disables, matching WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS.
+        # Treating it as "always release" would drop the connection after one
+        # heartbeat interval AND bypass the session check (rotation clears the
+        # latch), silently resetting stateful blocks.
+        monkeypatch.setattr(modal_executor, "WEBEXEC_WS_IDLE_RELEASE_SECONDS", 0)
+        ws = _FakeWS([_pack({"_kind": "heartbeat_ack"})])
+        executor = _executor_with_ws(ws)
+        executor._had_success = True
+        old_session = executor._session_id
+        executor._last_activity = _time.monotonic() - 100_000
+
+        executor._keepalive_loop(_single_pass_stop_event())
+
+        assert executor._ws is ws
+        assert not ws.closed
+        assert executor._session_id == old_session
+        assert executor._had_success is True
+
+
+class TestIdleTimeoutCoercion:
+    @pytest.mark.parametrize(
+        "advertised, expected",
+        [
+            (None, 10.0),
+            ("not-a-number", 10.0),
+            (0, 10.0),
+            (-5, 10.0),
+            (float("nan"), 10.0),
+            (1, 3.0),  # clamped up: a 1s timeout would mean an RTT/s forever
+            (10_000, 300.0),  # clamped down: must stay under the idle release
+            (30, 30.0),
+        ],
+    )
+    def test_advisory_field_never_bricks_the_transport(
+        self, advertised: Any, expected: float
+    ) -> None:
+        assert modal_executor._coerce_idle_timeout(advertised) == expected
+
+    def test_handshake_survives_a_garbage_idle_timeout(self) -> None:
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._ws = _FakeWS([_pack({"_kind": "hello", "idle_timeout_s": "soon"})])
+
+        executor._handshake()
+
+        assert executor._server.proto == 2
+        assert executor._server.idle_timeout == 10.0
+
+
+class TestPostLoopRetryExhaustion:
+    def test_delivered_frame_reports_possible_execution(self, monkeypatch: Any) -> None:
+        # Attempt 1 delivers the frame and loses the response; attempts 2-3
+        # reconnect to the same container and fail too. The final error must
+        # keep the "may have already executed" wording, or a job runner
+        # re-runs the block and duplicates its side effects.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = _ServerInfo(
+            proto=2, idle_timeout=10.0, container_id="container-1"
+        )
+
+        class _Sock:
+            def send_binary(self, frame: bytes) -> None:
+                pass
+
+            def recv(self) -> Any:
+                raise ConnectionError("boom")
+
+            def close(self) -> None:
+                pass
+
+        def _fake_ensure(_workspace: str) -> None:
+            executor._ws = _Sock()
+            executor._server = executor._server._replace(container_id="container-1")
+
+        monkeypatch.setattr(executor, "_ensure_connection", _fake_ensure)
+
+        with pytest.raises(DynamicBlockError) as excinfo:
+            executor._send_recv_with_retry(_pack({"request_id": "r"}), "ws", "r")
+
+        assert "may have already executed" in excinfo.value.public_message
+        assert "websocket_response" in excinfo.value.context
+
+    def test_never_delivered_frame_reports_a_connect_failure(
+        self, monkeypatch: Any
+    ) -> None:
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+
+        def _fake_ensure(_workspace: str) -> None:
+            raise ConnectionError("no route")
+
+        monkeypatch.setattr(executor, "_ensure_connection", _fake_ensure)
+
+        with pytest.raises(DynamicBlockError) as excinfo:
+            executor._send_recv_with_retry(_pack({"request_id": "r"}), "ws", "r")
+
+        assert "failed after retry" in excinfo.value.public_message
+        assert "websocket_connection" in excinfo.value.context
+
+
+class TestServerInfrastructureErrors:
+    @pytest.mark.parametrize(
+        "result",
+        [
+            {"success": False, "error_type": "ResponseNoLongerAvailable", "error": "x"},
+            {"success": False, "error_type": "InvalidRequest", "error": "x"},
+            {
+                "success": False,
+                "error_type": "ValueError",
+                "error": "x",
+                "server_error": True,
+            },
+        ],
+    )
+    def test_transport_failures_are_not_reported_as_user_code_errors(
+        self, result: dict
+    ) -> None:
+        # DynamicBlockCodeError means "the user's Python raised". These
+        # failures mean the block either never ran or ran fine.
+        with pytest.raises(DynamicBlockError) as excinfo:
+            WebSocketModalExecutor._raise_server_error_if_infrastructure(
+                result, "MyBlock"
+            )
+
+        assert not isinstance(excinfo.value, DynamicBlockCodeError)
+        assert "websocket_server_error" in excinfo.value.context
+
+    def test_user_code_errors_still_fall_through(self) -> None:
+        WebSocketModalExecutor._raise_server_error_if_infrastructure(
+            {"success": False, "error_type": "ZeroDivisionError", "error": "x"},
+            "MyBlock",
+        )
+
+
+class TestChunkedResponseValidation:
+    @pytest.mark.parametrize("chunk_count", [0, -1, 10**9, "many", True])
+    def test_bogus_chunk_header_is_connection_death(self, chunk_count: Any) -> None:
+        # A negative count yields an empty join and explodes in unpackb far
+        # from any handler; a huge one stalls the read timeout per attempt.
+        ws = _FakeWS([_pack({"_chunked": chunk_count})])
+        executor = _executor_with_ws(ws)
+
+        with pytest.raises(ConnectionError, match="chunk count"):
+            executor._recv_reassembled(msgpack)
+
+
+class TestMalformedResponse:
+    def test_undecodable_response_becomes_a_transport_error(self) -> None:
+        executor = _executor_with_ws(_FakeWS())
+
+        with pytest.raises(DynamicBlockError, match="could not be"):
+            executor._unpack_response(b"\xc1not-msgpack", msgpack)
+
+        assert executor._ws is None
+
+    def test_non_map_response_becomes_a_transport_error(self) -> None:
+        executor = _executor_with_ws(_FakeWS())
+
+        with pytest.raises(DynamicBlockError, match="not a"):
+            executor._unpack_response(_pack([1, 2, 3]), msgpack)
+
+        assert executor._ws is None
+
+
+class TestCloseTearsDownKeepaliveFirst:
+    def test_close_stops_and_joins_the_keepalive_thread(self) -> None:
+        # close() runs on a request thread when the executor cache evicts
+        # this executor. websocket-client's close() does a recv_frame() that
+        # bypasses the socket read lock, so the keepalive must be gone
+        # before the fd is freed.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._ws = _FakeWS()
+        executor._server = _ServerInfo(
+            proto=2, idle_timeout=10.0, container_id="container-1"
+        )
+        executor._ensure_keepalive_thread()
+        thread = executor._keepalive_thread
+        assert thread is not None and thread.is_alive()
+
+        executor.close()
+
+        assert not thread.is_alive()
+        assert executor._ws is None
+        assert executor._server.container_id is None
+
+    def test_close_does_not_block_on_an_in_flight_execution(self) -> None:
+        # _io_lock can be held for the whole read timeout by a running block.
+        # Executor-cache eviction must not wait that long.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._ws = _FakeWS()
+        executor._CLOSE_LOCK_TIMEOUT_SECONDS = 0.05
+        executor._io_lock.acquire()
+        try:
+            started = _time.monotonic()
+            executor.close()
+            elapsed = _time.monotonic() - started
+        finally:
+            executor._io_lock.release()
+
+        assert elapsed < 1.0
+        assert executor._ws is None

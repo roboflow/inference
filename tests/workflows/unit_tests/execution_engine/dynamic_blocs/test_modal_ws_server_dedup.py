@@ -5,65 +5,12 @@ that survives response-cache eviction, the bounded response cache, and the
 session registry that answers the client's hello.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
+import time
 
 import msgpack
 import pytest
 
-
-class _FakeModalImage:
-    @classmethod
-    def debian_slim(cls, *args, **kwargs):
-        return cls()
-
-    @classmethod
-    def from_registry(cls, *args, **kwargs):
-        return cls()
-
-    def apt_install(self, *args, **kwargs):
-        return self
-
-    def pip_install(self, *args, **kwargs):
-        return self
-
-    def entrypoint(self, *args, **kwargs):
-        return self
-
-
-class _FakeModalApp:
-    def __init__(self, name: str):
-        self.name = name
-
-    def cls(self, *args, **kwargs):
-        return lambda cls: cls
-
-
-def _identity_decorator(*args, **kwargs):
-    return lambda obj: obj
-
-
-@pytest.fixture()
-def modal_app(monkeypatch):
-    fake_modal = ModuleType("modal")
-    fake_modal.App = _FakeModalApp
-    fake_modal.Image = _FakeModalImage
-    fake_modal.parameter = lambda *args, **kwargs: None
-    fake_modal.enter = _identity_decorator
-    fake_modal.fastapi_endpoint = _identity_decorator
-    fake_modal.asgi_app = _identity_decorator
-    fake_modal.concurrent = _identity_decorator
-    monkeypatch.setitem(sys.modules, "modal", fake_modal)
-
-    modal_app_path = Path(__file__).resolve().parents[5] / "modal" / "modal_app.py"
-    spec = importlib.util.spec_from_file_location(
-        "modal_app_ws_dedup_test", modal_app_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from .conftest import build_ws_app as _ws_app
 
 
 class TestTtlKeySet:
@@ -128,19 +75,34 @@ class TestResponseCache:
         assert cache.get("2") == b"b"
         assert cache.get("3") == b"c"
 
-    def test_byte_cap_evicts_least_recently_used(self, modal_app) -> None:
+    def test_byte_cap_evicts_oldest_first(self, modal_app) -> None:
         cache = modal_app._WsResponseCache(
             max_entries=16, max_bytes=100, ttl_seconds=60
         )
         cache.put("a", b"x" * 40)
         cache.put("b", b"y" * 40)
 
-        cache.get("a")  # promote a, so b is the eviction candidate
+        # A hit must NOT promote: entries stay in age order so the TTL is a
+        # real TTL and the early-exit expiry scan stays correct.
+        cache.get("a")
         cache.put("c", b"z" * 40)
 
-        assert cache.get("b") is None
-        assert cache.get("a") is not None
+        assert cache.get("a") is None
+        assert cache.get("b") is not None
         assert cache.get("c") is not None
+
+    def test_hit_does_not_extend_the_ttl(self, modal_app) -> None:
+        cache = modal_app._WsResponseCache(
+            max_entries=8, max_bytes=10**9, ttl_seconds=0.05
+        )
+        cache.put("a", b"payload")
+        assert cache.get("a") == b"payload"
+
+        deadline = time.monotonic() + 0.2
+        while time.monotonic() < deadline:
+            cache.get("a")
+
+        assert cache.get("a") is None
 
     def test_expired_entry_is_not_served(self, modal_app) -> None:
         cache = modal_app._WsResponseCache(
@@ -151,30 +113,21 @@ class TestResponseCache:
 
         assert cache.get("a") is None
 
-    def test_oversized_payload_does_not_corrupt_accounting(self, modal_app) -> None:
-        # A response larger than the whole budget cannot be retained; what
-        # matters is that it evicts itself cleanly and the cache stays
-        # usable (the executed-request registry, not this cache, is what
-        # keeps execution at-most-once).
+    def test_oversized_payload_is_refused_without_draining_the_cache(
+        self, modal_app
+    ) -> None:
+        # A response too large to coexist with anything else must not be
+        # inserted at all: inserting it would evict every other entry and
+        # then itself, wiping the dedup cache for every concurrent
+        # connection on this container.
         cache = modal_app._WsResponseCache(max_entries=8, max_bytes=100, ttl_seconds=60)
+        cache.put("keep", b"ok")
 
         cache.put("huge", b"x" * 500)
 
         assert cache.get("huge") is None
-        cache.put("small", b"ok")
-        assert cache.get("small") == b"ok"
-
-
-def _ws_app(modal_app, run_user_code):
-    """Build the websocket app with user-code execution stubbed out."""
-    cls = modal_app.Executor
-    user_cls = cls._get_user_cls() if hasattr(cls, "_get_user_cls") else cls
-    executor = user_cls.__new__(user_cls)
-    executor.workspace_id = "test-ws"
-    user_cls.identify(executor)
-    monkeyed = staticmethod(run_user_code)
-    user_cls._run_user_code_ws = monkeyed.__func__
-    return executor, user_cls.wsapp(executor)
+        assert cache.get("keep") == b"ok"
+        assert cache._total_bytes == 2
 
 
 class TestExecutionIsAtMostOnce:
@@ -383,3 +336,211 @@ class TestSessionRegistry:
 
         assert executor._ws_session_seen("s1") is True
         assert executor._ws_session_seen("s2") is False
+
+
+class TestBaseExceptionFromUserCode:
+    def test_system_exit_returns_an_error_frame_instead_of_killing_the_conn(
+        self, modal_app
+    ) -> None:
+        # Untrusted user code can call sys.exit(). concurrent.futures
+        # re-raises SystemExit in the coroutine, so `except Exception` missed
+        # it: the exception escaped the shielded task, tore the connection
+        # down with nothing cached, and poisoned the request id for the whole
+        # executed-marker TTL.
+        from fastapi.testclient import TestClient
+
+        def run_user_code(self, *args, **kwargs):
+            raise SystemExit(2)
+
+        executor, app = _ws_app(modal_app, run_user_code)
+        frame = msgpack.packb({"request_id": "req-1", "inputs": {}}, use_bin_type=True)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(frame)
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+            # The connection is still usable afterwards.
+            ws.send_bytes(frame)
+            resent = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is False
+        assert resp["error_type"] == "SystemExit"
+        assert resp["server_error"] is True
+        # The payload was cached, so the resend is answered, not re-run.
+        assert resent == resp
+
+    def test_a_request_that_never_ran_stays_resendable(self, modal_app) -> None:
+        # If the worker thread never entered the user code, the executed
+        # marker must be rolled back — otherwise every resend of that id
+        # gets ResponseNoLongerAvailable for the whole TTL.
+        registry = modal_app._TtlKeySet(ttl_seconds=60, max_entries=8)
+        registry.add("req-1")
+        assert "req-1" in registry
+
+        registry.discard("req-1")
+
+        assert "req-1" not in registry
+
+
+class TestMalformedFrames:
+    def test_non_map_execution_frame_is_reported_not_fatal(self, modal_app) -> None:
+        # request.get(...) on a list used to raise AttributeError outside
+        # every handler and kill the connection.
+        from fastapi.testclient import TestClient
+
+        def run_user_code(self, *args, **kwargs):
+            raise AssertionError("must not run")
+
+        _, app = _ws_app(modal_app, run_user_code)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(msgpack.packb([1, 2, 3], use_bin_type=True))
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is False
+        assert resp["error_type"] == "InvalidRequest"
+
+    @pytest.mark.parametrize("chunk_count", [0, -1, 10**9, "many"])
+    def test_bogus_chunk_header_closes_with_a_server_error(
+        self, modal_app, chunk_count
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        def run_user_code(self, *args, **kwargs):
+            raise AssertionError("must not run")
+
+        _, app = _ws_app(modal_app, run_user_code)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(msgpack.packb({"_chunked": chunk_count}, use_bin_type=True))
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is False
+        assert "chunk count" in resp["error"]
+
+
+class TestWireBoundaryTypes:
+    def test_non_string_request_id_is_ignored_rather_than_half_registered(
+        self, modal_app
+    ) -> None:
+        # _TtlKeySet.add() used to store any hashable while __contains__
+        # gated on isinstance(str), so an int request_id was recorded as
+        # executed but never found again — the at-most-once backstop
+        # silently did not hold.
+        from fastapi.testclient import TestClient
+
+        calls = []
+
+        def run_user_code(self, *args, **kwargs):
+            calls.append(1)
+            return {"success": True, "result": {}}
+
+        executor, app = _ws_app(modal_app, run_user_code)
+        frame = msgpack.packb({"request_id": 12345, "inputs": {}}, use_bin_type=True)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(frame)
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is True
+        # Treated as "no request id at all": nothing registered anywhere.
+        assert 12345 not in executor._ws_executed
+        assert len(executor._ws_executed._seen) == 0
+        assert executor._ws_inflight == {}
+
+    def test_registries_agree_on_what_a_key_is(self, modal_app) -> None:
+        registry = modal_app._TtlKeySet(ttl_seconds=60, max_entries=8)
+
+        for bogus in (12345, None, "", (1, 2)):
+            registry.add(bogus)
+            assert bogus not in registry
+            assert registry.refresh(bogus) is False
+        assert len(registry._seen) == 0
+
+    def test_unhashable_session_id_does_not_kill_the_connection(
+        self, modal_app
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        def run_user_code(self, *args, **kwargs):
+            return {"success": True, "result": {}}
+
+        _, app = _ws_app(modal_app, run_user_code)
+
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(
+                msgpack.packb(
+                    {"_kind": "hello", "session_id": {"a": 1}}, use_bin_type=True
+                )
+            )
+            reply = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert reply["_kind"] == "hello"
+        assert reply["session_known"] is False
+
+
+class TestInflightDedup:
+    def test_concurrent_resend_awaits_the_running_execution(self, modal_app) -> None:
+        # The one genuinely new concurrency guarantee: a second connection
+        # resending the same request_id WHILE the first execution is still
+        # running must await the in-flight task, not start a second one.
+        import asyncio
+        import threading
+
+        from fastapi.testclient import TestClient
+
+        release = threading.Event()
+        calls = []
+
+        def run_user_code(self, *args, **kwargs):
+            calls.append(1)
+            release.wait(timeout=5)
+            return {"success": True, "result": {"n": len(calls)}}
+
+        _, app = _ws_app(modal_app, run_user_code)
+        frame = msgpack.packb({"request_id": "req-1", "inputs": {}}, use_bin_type=True)
+        # One TestClient context => one portal => one event loop, matching a
+        # real container where every connection shares the ASGI loop.
+        client = TestClient(app)
+        client.__enter__()
+
+        results = {}
+
+        def second_connection():
+            with client.websocket_connect("/ws") as ws2:
+                # Wait until the first execution is actually running.
+                while not calls:
+                    time.sleep(0.01)
+                ws2.send_bytes(frame)
+                release.set()
+                results["second"] = msgpack.unpackb(ws2.receive_bytes(), raw=False)
+
+        with client.websocket_connect("/ws") as ws1:
+            ws1.send_bytes(frame)
+            worker = threading.Thread(target=second_connection)
+            worker.start()
+            results["first"] = msgpack.unpackb(ws1.receive_bytes(), raw=False)
+            worker.join(timeout=10)
+        client.__exit__(None, None, None)
+
+        assert len(calls) == 1, "the resend must not start a second execution"
+        assert results["first"] == results["second"]
+
+
+class TestContainerIdentity:
+    def test_two_containers_get_distinct_ids(self, modal_app, monkeypatch) -> None:
+        # The client trusts container_id to decide whether a resend may be
+        # answered from this container's dedup registry. Two containers
+        # sharing an id (e.g. if identify() were ever marked snap=True and
+        # ran pre-snapshot) would let a resend re-execute user code silently.
+        monkeypatch.delenv("MODAL_TASK_ID", raising=False)
+        cls = modal_app.Executor
+        user_cls = cls._get_user_cls() if hasattr(cls, "_get_user_cls") else cls
+
+        ids = set()
+        for _ in range(2):
+            executor = user_cls.__new__(user_cls)
+            executor.workspace_id = "test-ws"
+            user_cls.identify(executor)
+            ids.add(executor._container_id)
+
+        assert len(ids) == 2

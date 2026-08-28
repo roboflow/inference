@@ -34,23 +34,27 @@ WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
+# Hard cap on how long one websocket connection is served before this side
+# closes it cleanly (code 1000).
+#
+# It MUST stay below the executor's Modal ``timeout`` (700s, see
+# _executor_decorator_kwargs): an ASGI websocket connection is a single Modal
+# input, so at 700s Modal kills the input outright — no close frame, in-flight
+# executions cancelled mid-run. Closing ourselves first turns that into an
+# orderly reconnect. Raise this only together with the Modal timeout.
+#
 # NOTE: this cap and the protocol v2 session guarantee interact. Sessions are
 # container-local and reconnects are not routed with any affinity, so every
 # forced close of a STATEFUL run is likely to land on another container and
-# surface as a (correct, but scheduled) session-lost failure.
-#
-# How often that happens is NOT settled by this constant alone: the executor's
-# Modal ``timeout`` (700s, see _executor_decorator_kwargs) bounds a single
-# input, and an ASGI websocket connection is one input, so connections may in
-# practice be torn down at ~700s rather than at this cap — which would make
-# this value effectively dead config. Confirm against Modal's websocket
-# timeout semantics before relying on either number.
+# surface as a (correct, but scheduled) session-lost failure. Clients that
+# cannot tolerate that can disable the check with
+# WEBEXEC_WS_FAIL_ON_SESSION_LOSS=False.
 #
 # Making long stateful runs survive needs session-affine reconnect routing,
 # externalized session state, or a drain/handoff before the cap — none of
 # which exist yet.
 WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
-    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "600")
 )
 WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
@@ -61,6 +65,10 @@ WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
 # _WS_MAX_FRAME_BYTES in
 # inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py.
 WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
+# Upper bound on the chunk count a peer may announce in a ``_chunked`` control
+# frame. A negative/huge/non-int value would otherwise stall the receive loop
+# or allocate without bound. Must match _WS_MAX_CHUNKS in modal_executor.py.
+WEBEXEC_WS_MAX_CHUNKS = 1024
 
 
 class _TtlKeySet:
@@ -91,22 +99,35 @@ class _TtlKeySet:
                 break
             del self._seen[key]
 
+    @staticmethod
+    def _valid(key: object) -> bool:
+        # Keys arrive from a msgpack frame, so anything can show up here. The
+        # three accessors below must agree on what counts as a key: an add()
+        # that stored a non-str while __contains__ rejected it would silently
+        # void the at-most-once backstop.
+        return isinstance(key, str) and bool(key)
+
     def add(self, key: str) -> None:
-        if not key:
+        if not self._valid(key):
             return
         self._seen.pop(key, None)
         self._seen[key] = time.monotonic()
         self._prune()
 
+    def discard(self, key: str) -> None:
+        if not self._valid(key):
+            return
+        self._seen.pop(key, None)
+
     def refresh(self, key: str) -> bool:
         """Re-stamp an existing entry. Never adds. Returns whether present."""
-        if not key or key not in self._seen:
+        if not self._valid(key) or key not in self._seen:
             return False
         self.add(key)
         return True
 
     def __contains__(self, key: object) -> bool:
-        if not isinstance(key, str) or not key:
+        if not self._valid(key):
             return False
         self._prune()
         return key in self._seen
@@ -162,13 +183,20 @@ class _WsResponseCache:
         entry = self._entries.get(key)
         if entry is None:
             return None
-        # Re-stamp on hit so LRU order stays age-sorted for the
-        # early-exit expiry scan above.
-        self._entries[key] = (time.monotonic(), entry[1])
-        self._entries.move_to_end(key)
+        # Deliberately no re-stamp / move_to_end: entries stay in age order so
+        # the early-exit expiry scan above stays correct, and the TTL stays a
+        # real TTL rather than a sliding window extended by every resend.
         return entry[1]
 
     def put(self, key: str, payload: bytes) -> None:
+        if not key:
+            return
+        if len(payload) * 2 > self._max_bytes:
+            # Inserting it would evict every other entry and then itself, so a
+            # single large response would wipe the dedup cache for every
+            # concurrent connection on this container. Skip the insert; the
+            # executed-request registry still bars a re-run.
+            return
         old = self._entries.pop(key, None)
         if old is not None:
             self._total_bytes -= len(old[1])
@@ -366,7 +394,14 @@ class Executor:
         self._namespace_lock = threading.RLock()
         # Protocol v2 websocket state (see wsapp): all touched only on the
         # event loop thread.
-        self._container_id = uuid.uuid4().hex
+        # Prefer Modal's own task id so a client-reported session-lost error
+        # can be correlated with container logs; fall back to a uuid locally.
+        # NOTE: this runs in a non-``snap=True`` @modal.enter(), i.e. AFTER a
+        # memory-snapshot restore, so every restored container gets a fresh
+        # id. Adding ``snap=True`` here would make restored containers share
+        # one id and let the client's same-container resend check pass across
+        # different containers — re-executing user code. Keep it post-restore.
+        self._container_id = os.environ.get("MODAL_TASK_ID") or uuid.uuid4().hex
         self._ws_sessions = _TtlKeySet(
             ttl_seconds=self._WS_SESSION_TTL_SECONDS,
             max_entries=self._WS_SESSION_MAX_ENTRIES,
@@ -1085,7 +1120,6 @@ from datetime import datetime
                 await websocket.send_bytes(payload)
 
         def _pack_ws_error(
-            msgpack_module: Any,
             error_type: str,
             error: str,
             request_id: Optional[str],
@@ -1095,10 +1129,17 @@ from datetime import datetime
                 "success": False,
                 "error": str(error),
                 "error_type": str(error_type),
+                # Marks the failure as the transport's, not the user block's:
+                # every caller of this helper is server infrastructure (a
+                # frame the server could not decode, a response it could not
+                # return, a resend it refused). The client uses this to avoid
+                # reporting a DynamicBlockCodeError against code that either
+                # never ran or ran fine.
+                "server_error": True,
             }
             if request_id:
                 resp["request_id"] = request_id
-            return msgpack_module.packb(resp, use_bin_type=True)
+            return msgpack.packb(resp, use_bin_type=True)
 
         async def execute_request(
             request: dict, request_id: Optional[str], session_id: str
@@ -1111,14 +1152,31 @@ from datetime import datetime
             time; the completed payload then moves to the response cache for
             resends that arrive after completion.
 
-            Never raises: user code is at-most-once, so once execution has
-            started every outcome — including a result this server cannot
-            serialize — has to come back as a packed response that is also
-            cached. An escaping exception would kill the connection without
-            a cache entry and invite the client to resend a request whose
-            side effects already happened.
+            Only ``asyncio.CancelledError`` escapes (task cancellation must
+            propagate), and even then a packed error is cached first. Every
+            other outcome — including ``SystemExit`` from user code calling
+            ``sys.exit()``, or a result this server cannot serialize — comes
+            back as a packed response that is also cached. An escaping
+            exception would kill the connection without a cache entry and
+            invite the client to resend a request whose side effects already
+            happened.
             """
             payload: Optional[bytes] = None
+            if not isinstance(request, dict):
+                # Nothing has executed; report the malformed frame instead of
+                # raising AttributeError out of the handler and killing the
+                # connection.
+                if request_id:
+                    executor_self._ws_inflight.pop(request_id, None)
+                return _pack_ws_error(
+                    error_type="InvalidRequest",
+                    error=(
+                        "Expected a msgpack map for an execution request, got "
+                        f"{type(request).__name__}; the custom Python block was "
+                        "not run."
+                    ),
+                    request_id=request_id,
+                )
             code_str = request.get("code_str", "")
             imports = request.get("imports", [])
             run_function_name = request.get("run_function_name", "")
@@ -1135,7 +1193,6 @@ from datetime import datetime
             except Exception as error:
                 traceback.print_exc()
                 payload = _pack_ws_error(
-                    msgpack,
                     error_type=type(error).__name__,
                     error=(
                         "The server could not decode this request's inputs; "
@@ -1147,13 +1204,16 @@ from datetime import datetime
                     executor_self._ws_inflight.pop(request_id, None)
                 return payload
 
-            try:
-                # Mark BEFORE running: from here on a resend must never
-                # re-execute, however this call ends.
-                if request_id:
-                    executor_self._ws_executed.add(request_id)
-                resp = await asyncio.to_thread(
-                    Executor._run_user_code_ws,
+            # Set by the worker thread itself, so it distinguishes "the user
+            # code started" from "the request was cancelled while still queued
+            # in the thread pool". Only the former must stay barred from a
+            # resend.
+            started_running = False
+
+            def _run_user_code():
+                nonlocal started_running
+                started_running = True
+                return Executor._run_user_code_ws(
                     executor_self,
                     code_str,
                     imports,
@@ -1162,6 +1222,13 @@ from datetime import datetime
                     client_code_hash,
                     workflow_context,
                 )
+
+            try:
+                # Mark BEFORE running: from here on a resend must never
+                # re-execute, however this call ends.
+                if request_id:
+                    executor_self._ws_executed.add(request_id)
+                resp = await asyncio.to_thread(_run_user_code)
 
                 if resp.get("success"):
                     resp["result"] = Executor._serialize_msgpack_result(resp["result"])
@@ -1173,22 +1240,45 @@ from datetime import datetime
                     resp["request_id"] = request_id
 
                 payload = msgpack.packb(resp, use_bin_type=True)
-            except Exception as error:
+            except BaseException as error:
+                # BaseException, not Exception: untrusted user code can raise
+                # SystemExit (``sys.exit()``), which concurrent.futures
+                # re-raises here, and Modal cancelling the input raises
+                # CancelledError. Both used to escape uncaught, tearing the
+                # connection down with no cached payload and leaving the
+                # request id poisoned for the whole executed-marker TTL.
                 traceback.print_exc()
-                payload = _pack_ws_error(
-                    msgpack,
-                    error_type=type(error).__name__,
-                    error=(
-                        "The custom Python block ran, but the server could not "
-                        f"return its response: {error}"
-                    ),
-                    request_id=request_id,
-                )
+                if not started_running:
+                    # The worker thread never entered the user code (cancelled
+                    # while queued, or the dispatch itself failed), so leave
+                    # the id resendable instead of poisoning it for the whole
+                    # executed-marker TTL.
+                    if request_id:
+                        executor_self._ws_executed.discard(request_id)
+                    payload = _pack_ws_error(
+                        error_type=type(error).__name__,
+                        error=(
+                            "The server failed before the custom Python block "
+                            f"was run: {error}"
+                        ),
+                        request_id=request_id,
+                    )
+                else:
+                    payload = _pack_ws_error(
+                        error_type=type(error).__name__,
+                        error=(
+                            "The custom Python block ran, but the server could "
+                            f"not return its response: {error}"
+                        ),
+                        request_id=request_id,
+                    )
+                if isinstance(error, asyncio.CancelledError):
+                    # Cache/clear via ``finally``, then let cancellation
+                    # propagate — swallowing it would desynchronise the task.
+                    raise
             finally:
                 # Cache before clearing in-flight so a resend arriving in
-                # between finds one or the other, never a gap. On
-                # cancellation payload stays None: nothing to cache, but the
-                # executed marker already bars a re-run.
+                # between finds one or the other, never a gap.
                 if request_id:
                     if payload is not None:
                         executor_self._ws_response_cache.put(request_id, payload)
@@ -1218,8 +1308,17 @@ from datetime import datetime
                         return
                     request = msgpack.unpackb(raw, raw=False)
                     if isinstance(request, dict) and "_chunked" in request:
+                        chunk_count = request["_chunked"]
+                        if (
+                            not isinstance(chunk_count, int)
+                            or isinstance(chunk_count, bool)
+                            or not 1 <= chunk_count <= WEBEXEC_WS_MAX_CHUNKS
+                        ):
+                            raise ValueError(
+                                f"invalid websocket chunk count: {chunk_count!r}"
+                            )
                         parts = []
-                        for _ in range(request["_chunked"]):
+                        for _ in range(chunk_count):
                             parts.append(
                                 await asyncio.wait_for(
                                     websocket.receive_bytes(),
@@ -1231,7 +1330,14 @@ from datetime import datetime
                     # ---- protocol v2 control frames ----
                     kind = request.get("_kind") if isinstance(request, dict) else None
                     if kind == "hello":
-                        conn_session_id = request.get("session_id") or ""
+                        # Coerce at the boundary: everything downstream (the
+                        # session registry, the dedup registries) assumes a
+                        # non-empty str, and a decoded msgpack map here would
+                        # otherwise raise TypeError and kill the connection.
+                        raw_session_id = request.get("session_id")
+                        conn_session_id = (
+                            raw_session_id if isinstance(raw_session_id, str) else ""
+                        )
                         await websocket.send_bytes(
                             msgpack.packb(
                                 {
@@ -1261,8 +1367,13 @@ from datetime import datetime
                         )
                         continue
 
-                    request_id = (
+                    raw_request_id = (
                         request.get("request_id") if isinstance(request, dict) else None
+                    )
+                    request_id = (
+                        raw_request_id
+                        if isinstance(raw_request_id, str) and raw_request_id
+                        else None
                     )
                     if request_id:
                         cached_payload = executor_self._ws_response_cache.get(
@@ -1288,7 +1399,6 @@ from datetime import datetime
                                 await send_payload(
                                     websocket,
                                     _pack_ws_error(
-                                        msgpack,
                                         error_type="ResponseNoLongerAvailable",
                                         error=(
                                             "This request already executed on "
@@ -1305,6 +1415,17 @@ from datetime import datetime
                                 execute_request(request, request_id, conn_session_id)
                             )
                             executor_self._ws_inflight[request_id] = task
+                            # execute_request's ``finally`` clears the entry
+                            # in the normal case, but a task cancelled before
+                            # its body ever starts (loop shutdown, container
+                            # teardown at the input timeout) never reaches it.
+                            # _ws_inflight is the one v2 structure with no cap
+                            # and no TTL, so close that leak here.
+                            task.add_done_callback(
+                                lambda _t, rid=request_id: (
+                                    executor_self._ws_inflight.pop(rid, None)
+                                )
+                            )
                         # shield: this connection dying must not cancel an
                         # execution another connection may be waiting on
                         # (or will resend for).
@@ -1314,5 +1435,26 @@ from datetime import datetime
                     await send_payload(websocket, payload)
             except WebSocketDisconnect:
                 pass
+            except Exception as error:
+                # Anything the per-request paths did not already turn into a
+                # response frame (a malformed control frame, a broken chunk
+                # header, a send failure) would otherwise tear the connection
+                # down silently. Report it, then close with 1011 so the client
+                # sees a server error rather than an opaque disconnect.
+                traceback.print_exc()
+                try:
+                    await websocket.send_bytes(
+                        _pack_ws_error(
+                            error_type=type(error).__name__,
+                            error=f"websocket handler failed: {error}",
+                            request_id=None,
+                        )
+                    )
+                except Exception:
+                    pass
+                try:
+                    await websocket.close(code=1011)
+                except Exception:
+                    pass
 
         return ws_app
