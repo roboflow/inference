@@ -13,6 +13,9 @@ from inference_models.models.base.video_segment_classification import (
     VideoSegmentClassificationModel,
     VideoSegmentClassificationPrediction,
 )
+from inference_models.models.common.roboflow.model_packages import (
+    parse_class_names_file,
+)
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     SYSTEM_PROMPT_SENTINEL,
     Cosmos3EdgeReasoner,
@@ -441,16 +444,12 @@ def _read_package_json(model_name_or_path: str, file_name: str) -> Optional[dict
     return config if isinstance(config, dict) else None
 
 
-def _read_configured_class_names(model_name_or_path: str) -> Optional[List[str]]:
-    model_config = _read_package_json(model_name_or_path, "model_config.json")
-    if model_config is None:
+def _read_class_names_file(model_name_or_path: str) -> Optional[List[str]]:
+    """Read the package class list, one name per line, in class-token order."""
+    class_names_path = Path(model_name_or_path) / "class_names.txt"
+    if not class_names_path.is_file():
         return None
-    configured_class_names = model_config.get("class_names")
-    if isinstance(configured_class_names, list) and all(
-        isinstance(class_name, str) for class_name in configured_class_names
-    ):
-        return configured_class_names
-    return None
+    return parse_class_names_file(class_names_path=str(class_names_path)) or None
 
 
 _CLASS_TOKEN_PATTERN = re.compile(r"^<\|cls:(?P<label>[^|]+?)\|>$")
@@ -547,7 +546,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeVideoSegmentClassification":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
-        class_names = _read_configured_class_names(model_name_or_path)
+        class_names = _read_class_names_file(model_name_or_path)
         if class_names is None:
             class_names = _class_names_from_tokenizer(
                 getattr(reasoner._processor, "tokenizer", None)

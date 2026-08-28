@@ -469,14 +469,10 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
     assert calls == [("nvidia/Cosmos3-Edge", {"local_files_only": False})]
 
 
-def test_from_pretrained_reads_class_names_from_model_config(
-    monkeypatch, tmp_path
-) -> None:
+def test_from_pretrained_reads_class_names_file(monkeypatch, tmp_path) -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(tokenizer=tokenizer)
-    (tmp_path / "model_config.json").write_text(
-        json.dumps({"class_names": ["walking", "running"]})
-    )
+    (tmp_path / "class_names.txt").write_text("walking\nrunning\n")
     monkeypatch.setattr(
         Cosmos3EdgeReasoner,
         "from_pretrained",
