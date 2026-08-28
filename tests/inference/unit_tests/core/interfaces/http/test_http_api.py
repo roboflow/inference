@@ -641,7 +641,9 @@ def test_serverless_auth_middleware_logs_request_received_with_execution_id(
     monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
     monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
     log_mock = MagicMock()
-    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    # Request-received logs at DEBUG since #2877 (per-request INFO doubled
+    # serverless log volume); the denial log below stays at INFO.
+    monkeypatch.setattr(http_api.logger, "debug", log_mock)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -679,7 +681,10 @@ def test_serverless_auth_middleware_skips_request_received_log_when_api_logging_
 
     monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", False)
     log_mock = MagicMock()
-    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    # Watch DEBUG (where request-received logs since #2877) so this test
+    # actually guards the API_LOGGING_ENABLED gate instead of passing
+    # vacuously against a level the message never uses.
+    monkeypatch.setattr(http_api.logger, "debug", log_mock)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(

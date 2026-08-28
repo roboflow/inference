@@ -394,6 +394,10 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+# Probe/health endpoints whose access-log lines are demoted to DEBUG.
+HEALTH_CHECK_LOG_PATHS = frozenset(
+    {"/", "/info", "/healthz", "/ready", "/readiness", "/live", "/liveness"}
+)
 
 
 if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
@@ -551,7 +555,9 @@ def _log_serverless_request_received(
     }
     if execution_id_value is not None:
         log_fields["execution_id"] = execution_id_value
-    logger.info(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+    # Debug: one INFO line per request doubles serverless log volume; the
+    # structured access log already records every request with the same ids.
+    logger.debug(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
 
 
 class HttpInterface(BaseInterface):
@@ -1383,7 +1389,17 @@ class HttpInterface(BaseInterface):
                     if len(parts) >= 3:
                         log_fields["trace_id"] = parts[1]
 
-                logger.info(
+                # Health/probe endpoints log at DEBUG: kube-probe and LB
+                # health traffic otherwise dominates access-log volume.
+                # Real request paths MUST stay at INFO — the dedicated
+                # deployment auto-pause daemon reads these lines as its
+                # activity signal (see GEV-28).
+                access_log = (
+                    logger.debug
+                    if request.url.path in HEALTH_CHECK_LOG_PATHS
+                    else logger.info
+                )
+                access_log(
                     f"{request.method} {request.url.path} {response.status_code}",
                     **log_fields,
                 )
