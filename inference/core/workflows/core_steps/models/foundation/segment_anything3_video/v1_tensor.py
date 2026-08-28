@@ -301,6 +301,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[30],
         json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
     )
+    prompt_frame_number: Optional[Union[int, Selector(kind=[INTEGER_KIND])]] = Field(
+        default=None,
+        title="Prompt Frame Number",
+        description=(
+            "Visual mode only. Hold the visual prompts until the stream "
+            "reaches this frame number. Earlier frames emit no detections "
+            "and leave the session untouched; the first frame at or past "
+            "this number becomes the prompt frame and tracking continues "
+            "from there."
+        ),
+        examples=[120],
+        json_schema_extra={"relevant_for": {"tracking_mode": {"values": ["visual"]}}},
+    )
     threshold: Union[
         Selector(kind=[FLOAT_KIND]),
         float,
@@ -430,6 +443,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         boxes: Optional[Batch] = None,
         prompt_mode: PromptMode = "first_frame",
         prompt_interval: int = 30,
+        prompt_frame_number: Optional[int] = None,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -443,6 +457,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 boxes=boxes,
                 prompt_mode=prompt_mode,
                 prompt_interval=prompt_interval,
+                prompt_frame_number=prompt_frame_number,
                 threshold=threshold,
             )
         return self._run_concept(
@@ -519,6 +534,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         boxes: Optional[Batch],
         prompt_mode: PromptMode,
         prompt_interval: int,
+        prompt_frame_number: Optional[int],
         threshold: float,
     ) -> BlockResult:
         mask_representation = _resolve_mask_representation()
@@ -530,6 +546,23 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             metadata = single_image.video_metadata
             video_id = metadata.video_identifier
             frame_number = metadata.frame_number or 0
+            if prompt_frame_number is not None and frame_number < prompt_frame_number:
+                height, width = single_image._read_shape_without_materialization()
+                results.append(
+                    {
+                        "predictions": masks_to_instance_detections(
+                            masks=np.zeros((0, height, width), dtype=bool),
+                            obj_ids=np.zeros((0,), dtype=np.int64),
+                            image=single_image,
+                            obj_id_metadata={},
+                            threshold=threshold,
+                            mask_representation=mask_representation,
+                            fallback_class_id=SYNTHETIC_POINT_PROMPT_CLASS_ID,
+                            fallback_class_name=SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+                        )
+                    }
+                )
+                continue
             session = self._visual_sessions.setdefault(
                 video_id, VideoSessionBookkeeping()
             )
@@ -555,7 +588,6 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                     bboxes=boxes_xyxy,
                     points=point_prompts,
                     clear_old_prompts=True,
-                    frame_idx=frame_number,
                 )
                 session.obj_id_metadata = build_obj_id_metadata_from_visual_prompts(
                     obj_ids=obj_ids,

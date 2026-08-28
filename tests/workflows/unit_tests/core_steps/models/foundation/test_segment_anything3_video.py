@@ -154,7 +154,7 @@ class _FakeVisualModel:
         points,
         state_dict=None,
         clear_old_prompts=True,
-        frame_idx=0,
+        frame_idx=None,
     ):
         self.calls.append(
             (
@@ -773,9 +773,13 @@ def test_visual_stream_restart_reprompts(block_factory):
         )
 
     assert [call[0] for call in fake.calls] == ["prompt", "track", "prompt"]
-    assert [
-        call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"
-    ] == [5, 0]
+    # The block must NOT forward the stream frame number as the model's
+    # frame_idx: a fresh session numbers frames internally from 0, and a
+    # mismatched index leaves every streamed frame unconditioned.
+    assert [call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"] == [
+        None,
+        None,
+    ]
     assert [
         call[1]["had_prior_state"] for call in fake.calls if call[0] == "prompt"
     ] == [False, False]
@@ -802,8 +806,77 @@ def test_visual_every_frame_mode_prompts_each_frame(block_factory):
         )
 
     assert [call[0] for call in fake.calls] == ["prompt", "prompt", "prompt"]
-    assert [call[1]["frame_idx"] for call in fake.calls] == [0, 1, 2]
+    assert [call[1]["frame_idx"] for call in fake.calls] == [None, None, None]
     assert [call[1]["had_prior_state"] for call in fake.calls] == [False] * 3
+
+
+@pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
+def test_manifest_accepts_prompt_frame_number(manifest_type):
+    manifest = manifest_type.model_validate(
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "sam3_video_step",
+            "images": "$inputs.image",
+            "tracking_mode": "visual",
+            "points": [{"x": 10, "y": 20, "positive": True}],
+            "prompt_frame_number": 120,
+        }
+    )
+
+    assert manifest.prompt_frame_number == 120
+
+    properties = manifest_type.model_json_schema()["properties"]
+    assert properties["prompt_frame_number"]["relevant_for"]["tracking_mode"] == {
+        "values": ["visual"]
+    }
+
+
+@pytest.mark.parametrize(
+    "block_factory",
+    [_make_visual_block_with_fake_model, _make_tensor_visual_block_with_fake_model],
+    ids=["numpy", "tensor"],
+)
+def test_visual_prompt_frame_number_holds_prompt_until_target_frame(block_factory):
+    block, fake = block_factory()
+
+    results = []
+    for frame_number in range(4):
+        results.append(
+            block.run(
+                images=[_make_frame(frame_number=frame_number)],
+                class_names=None,
+                model_id="sam3video",
+                visual_model_id="sam3trackervideo",
+                threshold=0.0,
+                tracking_mode="visual",
+                points=[{"x": 10, "y": 12, "positive": True}],
+                prompt_frame_number=2,
+            )
+        )
+
+    assert [call[0] for call in fake.calls] == ["prompt", "track"]
+    assert len(results[0][0]["predictions"]) == 0
+    assert len(results[1][0]["predictions"]) == 0
+    assert len(results[2][0]["predictions"]) == 1
+    assert len(results[3][0]["predictions"]) == 1
+
+
+def test_visual_prompt_frame_number_leaves_session_untouched_before_target():
+    block, fake = _make_visual_block_with_fake_model()
+
+    block.run(
+        images=[_make_frame(frame_number=0), _make_frame(frame_number=1)],
+        class_names=None,
+        model_id="sam3video",
+        visual_model_id="sam3trackervideo",
+        threshold=0.0,
+        tracking_mode="visual",
+        points=[{"x": 10, "y": 12, "positive": True}],
+        prompt_frame_number=2,
+    )
+
+    assert fake.calls == []
+    assert block._visual_sessions == {}
 
 
 @pytest.mark.parametrize(

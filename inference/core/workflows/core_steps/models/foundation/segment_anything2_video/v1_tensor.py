@@ -339,7 +339,6 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                     bboxes=boxes_xyxy,
                     state_dict=session.state_dict,
                     clear_old_prompts=True,
-                    frame_idx=frame_number,
                 )
                 session.obj_id_metadata = build_obj_id_metadata_from_boxes(
                     obj_ids=obj_ids, box_metas=per_box_meta

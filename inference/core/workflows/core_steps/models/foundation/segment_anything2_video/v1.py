@@ -324,7 +324,6 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                     state_dict=session.state_dict,
                     # clear old points is implied by our own reset gating
                     clear_old_prompts=True,
-                    frame_idx=frame_number,
                 )
                 session.obj_id_metadata = build_obj_id_metadata_from_boxes(
                     obj_ids=obj_ids, box_metas=per_box_meta

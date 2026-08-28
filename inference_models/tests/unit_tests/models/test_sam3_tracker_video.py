@@ -27,6 +27,9 @@ class _FakeSession:
     def __init__(self):
         self.obj_ids: List[int] = []
         self.boxes_added: List[List[float]] = []
+        # Real sessions start with no streamed frames; the model's
+        # ``add_new_frame`` fills this dict as frames arrive.
+        self.processed_frames: Optional[dict] = None
 
 
 class _FakeBatchEncoding:
@@ -197,6 +200,38 @@ def test_sam3_tracker_video_keeps_boxes_and_points_as_separate_objects():
         ]
     ]
     assert processor.last_add_inputs_kwargs["input_labels"] == [[[2, 3], [2, 3], [1]]]
+
+
+def test_sam3_tracker_video_prompt_anchors_inputs_to_first_streamed_frame():
+    """A fresh session numbers frames from 0, whatever the caller passes.
+
+    Registering prompts at the caller's stream frame number (e.g. an
+    InferencePipeline ``frame_number``) left every streamed frame
+    unconditioned and the tracker emitted empty masks."""
+    tracker, processor, _ = _build_model()
+    frame = np.zeros((32, 48, 3), dtype=np.uint8)
+
+    tracker.prompt(image=frame, bboxes=[(1, 2, 10, 12)], frame_idx=41)
+
+    assert processor.last_add_inputs_kwargs["frame_idx"] == 0
+
+
+def test_sam3_tracker_video_prompt_anchors_inputs_to_next_frame_of_ongoing_session():
+    tracker, processor, _ = _build_model()
+    frame = np.zeros((32, 48, 3), dtype=np.uint8)
+
+    _, _, state = tracker.prompt(image=frame, bboxes=[(1, 2, 10, 12)])
+    state[SESSION_KEY].processed_frames = {0: object(), 1: object()}
+
+    tracker.prompt(
+        image=frame,
+        bboxes=[(3, 4, 11, 13)],
+        state_dict=state,
+        clear_old_prompts=False,
+        frame_idx=99,
+    )
+
+    assert processor.last_add_inputs_kwargs["frame_idx"] == 2
 
 
 def test_sam3_tracker_video_track_without_state_raises():

@@ -172,7 +172,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
         text: Optional[str] = None,
         state_dict: Optional[dict] = None,
         clear_old_prompts: bool = True,
-        frame_idx: int = 0,
+        frame_idx: Optional[int] = None,
         points: Optional[List[Tuple[float, float, bool]]] = None,
     ) -> Tuple[np.ndarray, np.ndarray, dict]:
         """Seed a session and run one streaming step.
@@ -180,6 +180,13 @@ class HFStreamingVideoBase(HFVideoModelBase):
         ``clear_old_prompts=True`` starts a fresh session (discarding
         any prior state).  Pass ``False`` along with ``state_dict`` to
         append prompts to an ongoing session.
+
+        ``frame_idx`` is deprecated and ignored.  Prompts always attach
+        to the frame passed in ``image``: the session numbers streamed
+        frames internally from 0, so prompts registered at any other
+        index leave the streamed frames unconditioned and the tracker
+        emits empty masks (the caller's stream frame number is not the
+        session's frame index).
         """
         if text is not None and not self._supports_text_prompts:
             raise ModelRuntimeError(
@@ -197,6 +204,10 @@ class HFStreamingVideoBase(HFVideoModelBase):
             session = self._resolve_session(
                 state_dict=state_dict, reset=clear_old_prompts
             )
+            # The index `add_new_frame` will assign to `image` when the model
+            # processes it below. Prompt inputs must be registered under the
+            # same index or the model treats the frame as unconditioned.
+            prompt_frame_idx = _next_streaming_frame_idx(session)
 
             inputs = self._processor(
                 images=image_np, device=self._device, return_tensors="pt"
@@ -221,7 +232,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
                 point_labels = [1 if positive else 0 for _x, _y, positive in point_list]
                 self._processor.add_inputs_to_inference_session(
                     inference_session=session,
-                    frame_idx=frame_idx,
+                    frame_idx=prompt_frame_idx,
                     obj_ids=list(range(len(box_list) + 1)),
                     input_points=[[*box_points, point_coordinates]],
                     input_labels=[[*[[2, 3] for _box in box_list], point_labels]],
@@ -230,7 +241,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
             elif box_list:
                 self._processor.add_inputs_to_inference_session(
                     inference_session=session,
-                    frame_idx=frame_idx,
+                    frame_idx=prompt_frame_idx,
                     obj_ids=list(range(len(box_list))),
                     input_boxes=[[[float(v) for v in xyxy] for xyxy in box_list]],
                     original_size=original_sizes[0],
@@ -239,7 +250,7 @@ class HFStreamingVideoBase(HFVideoModelBase):
             elif point_list:
                 self._processor.add_inputs_to_inference_session(
                     inference_session=session,
-                    frame_idx=frame_idx,
+                    frame_idx=prompt_frame_idx,
                     obj_ids=[0],
                     input_points=[[[[x, y] for x, y, _positive in point_list]]],
                     input_labels=[
@@ -339,6 +350,18 @@ class HFStreamingVideoBase(HFVideoModelBase):
 # ---------------------------------------------------------------------------
 # Module-level helpers (pure, easy to unit-test)
 # ---------------------------------------------------------------------------
+
+
+def _next_streaming_frame_idx(session: Any) -> int:
+    """Return the index the session's ``add_new_frame`` will assign next.
+
+    Mirrors the HF implementation: ``len(processed_frames)`` with ``None``
+    (no frame streamed yet) counting as 0.
+    """
+    processed_frames = getattr(session, "processed_frames", None)
+    if not processed_frames:
+        return 0
+    return len(processed_frames)
 
 
 def _ensure_numpy_image(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
