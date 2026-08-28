@@ -83,7 +83,7 @@ from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.model_types import bind_usage_model_identity
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -144,7 +144,7 @@ class RoboflowInferenceModel(Model):
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
-        bind_usage_model_identity(self, model_id)
+        bind_usage_model_descriptor(self, model_id)
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = get_cache_dir_for_read(
             model_id=self.endpoint, cache_dir_root=cache_dir_root

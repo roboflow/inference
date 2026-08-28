@@ -139,7 +139,7 @@ def test_get_versions_of_execution_engine(
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.15.0"]
+    assert response_data["versions"] == ["1.15.1"]
 
 
 FUNCTION = """

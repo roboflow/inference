@@ -128,6 +128,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
         "model_id": "qwen/qwen3.8-max",
         "reasoning_required": True,
     },
+    "Qwen 3.8 Flash": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.8-flash",
+    },
     "Qwen 3.7 Plus": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.7-plus",

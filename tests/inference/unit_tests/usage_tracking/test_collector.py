@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from queue import Queue
+from types import SimpleNamespace
 from typing import Optional
 from unittest import mock
 
@@ -16,7 +17,10 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
-from inference.usage_tracking.decorator_helpers import usage_billing_suppressed
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+    usage_billing_suppressed,
+)
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     record_measured_model_input,
@@ -2536,7 +2540,8 @@ def test_record_usage_accumulates_megapixel_buckets(
         resource_details={
             "billable": True,
             "task_type": "instance-segmentation",
-            "model_type": "rfdetr-seg-nano",
+            "model_architecture": "rfdetr",
+            "model_variant": "rfdetr-seg-nano",
         },
         execution_duration=0.4,
         megapixel_buckets={
@@ -2552,7 +2557,8 @@ def test_record_usage_accumulates_megapixel_buckets(
         resource_details={
             "billable": True,
             "task_type": "instance-segmentation",
-            "model_type": "rfdetr-seg-nano",
+            "model_architecture": "rfdetr",
+            "model_variant": "rfdetr-seg-nano",
         },
         execution_duration=0.2,
         megapixel_buckets={
@@ -2569,7 +2575,82 @@ def test_record_usage_accumulates_megapixel_buckets(
         0.6
     )
     details = json.loads(row["resource_details"])
-    assert details["model_type"] == "rfdetr-seg-nano"
+    assert details["model_architecture"] == "rfdetr"
+    assert details["model_variant"] == "rfdetr-seg-nano"
+
+
+def test_clip_shaped_infer_from_request_records_model_row(
+    usage_collector_with_mocked_threads,
+):
+    """CLIP serves production traffic through infer_from_request, not infer().
+
+    The request entrypoint must emit a model-category row. Canvas size is
+    attributed via megapixel buckets when the model exposes a fixed size
+    that ``get_fixed_model_input_hw`` already recognizes (``image_size``).
+    """
+    usage_collector = usage_collector_with_mocked_threads
+
+    class ClipLike:
+        api_key = "test_key"
+        dataset_id = "clip"
+        version_id = "ViT-B-32"
+        task_type = "embedding"
+        image_size = 224
+
+        @usage_collector(category="model")
+        def infer_from_request(self, request):
+            return {"ok": True}
+
+    request = SimpleNamespace(
+        image=object(),
+        model_id="clip/ViT-B-32",
+        api_key="test_key",
+    )
+
+    ClipLike().infer_from_request(request)
+
+    key = usage_key("model", "clip/ViT-B-32")
+    row = usage_collector._usage["test_key"][key]
+    details = json.loads(row["resource_details"])
+    assert details["task_type"] == "embedding"
+    assert row["processed_frames"] == 1
+    assert row["megapixel_buckets"]["0-0.25"]["processed_frames"] == 1
+
+
+def test_sam2_cache_hit_embed_keeps_published_canvas_bucket(
+    usage_collector_with_mocked_threads,
+):
+    """SAM2 /sam2/embed_image reuses a cached embedding with image=None.
+
+    record_fixed_model_input_for_request still publishes the encoder canvas;
+    that size must land in a real megapixel bucket, not unknown.
+    """
+    usage_collector = usage_collector_with_mocked_threads
+
+    class Sam2Like:
+        api_key = "test_key"
+        dataset_id = "sam2"
+        version_id = "hiera-large"
+        image_size = 1024
+
+        @usage_collector(category="model")
+        def infer_from_request(self, request):
+            record_fixed_model_input_for_request(self, request)
+            return {"ok": True}
+
+    request = SimpleNamespace(
+        image=None,
+        image_id="cached-embed",
+        model_id="sam2/hiera-large",
+        api_key="test_key",
+    )
+
+    Sam2Like().infer_from_request(request)
+
+    key = usage_key("model", "sam2/hiera-large")
+    row = usage_collector._usage["test_key"][key]
+    assert row["processed_frames"] == 1
+    assert row["megapixel_buckets"]["1-2"]["processed_frames"] == 1
 
 
 def test_model_decorator_records_fixed_input_megapixel_buckets(
@@ -2582,7 +2663,8 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
         dataset_id = "st-inst-seg"
         version_id = "9"
         task_type = "instance-segmentation"
-        model_type = "rfdetr-seg-nano"
+        model_architecture = "rfdetr"
+        model_variant = "rfdetr-seg-nano"
         img_size_h = 640
         img_size_w = 640
 
@@ -2597,7 +2679,10 @@ def test_model_decorator_records_fixed_input_megapixel_buckets(
     assert row["processed_frames"] == 2
     assert row["megapixel_buckets"]["0.25-0.5"]["processed_frames"] == 2
     details = json.loads(row["resource_details"])
-    assert details["model_type"] == "rfdetr-seg-nano"
+    assert details["model_architecture"] == "rfdetr"
+    assert details["model_variant"] == "rfdetr-seg-nano"
+    assert details["model_input_height"] == 640
+    assert details["model_input_width"] == 640
     assert details["task_type"] == "instance-segmentation"
 
 
@@ -2611,7 +2696,8 @@ def test_model_decorator_does_not_count_batch_padding(
         dataset_id = "padded"
         version_id = "1"
         task_type = "object-detection"
-        model_type = "yolov8n"
+        model_architecture = "yolov8"
+        model_variant = "yolov8-n"
         img_size_h = 640
         img_size_w = 640
 
@@ -2671,7 +2757,8 @@ def test_model_decorator_isolates_measured_input_across_threads(
         dataset_id = "dynamic"
         version_id = "1"
         task_type = "object-detection"
-        model_type = "yolov8n"
+        model_architecture = "yolov8"
+        model_variant = "yolov8-n"
 
         @usage_collector(category="model")
         def infer(self, image, tag=None, **kwargs):
