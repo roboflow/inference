@@ -312,18 +312,9 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
     ),
-    (
-        "cosmos-3-edge",
-        ACTION_RECOGNITION_TASK,
-        BackendType.HF,
-    ): LazyClass(
-        module_name=(
-            "inference_models.models.cosmos3.cosmos3_action_recognition"
-        ),
-        class_name="Cosmos3EdgeActionRecognition",
-    ),
     # roboflow-train emits fine-tune packages under the dash-less trainer
-    # slug with the platform task `vlm`.
+    # slug, with the platform task `vlm`. The hosted base keeps the dash
+    # and stays a plain reasoner, which the block wraps at load time.
     ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name=(
             "inference_models.models.cosmos3.cosmos3_action_recognition"
