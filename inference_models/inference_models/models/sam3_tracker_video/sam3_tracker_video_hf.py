@@ -35,8 +35,8 @@ from inference_models.models.common.hf_streaming_video import HFStreamingVideoBa
 class SAM3TrackerVideo(HFStreamingVideoBase):
     """SAM3 visually prompted streaming tracker via the transformers port.
 
-    Accepts box prompts only (the SAM2-shaped contract); text prompting
-    belongs to the ``sam3video`` concept tracker.
+    Accepts point and box prompts. Text prompting belongs to the
+    ``sam3video`` concept tracker.
     """
 
     _supports_text_prompts = False

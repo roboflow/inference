@@ -3,6 +3,24 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inference.core import roboflow_api
+from inference.usage_tracking import collector
+
+SERVICE_SECRET = "shared-secret"
+
+
+@pytest.fixture
+def configured_service_secret(monkeypatch):
+    """Configure the shared secret that authorizes `countinference=false`.
+
+    Two modules bind the secret at import time, and they have to agree: one
+    validates an incoming secret, and one publishes it as the SDK's outbound
+    forwarding authority.
+    """
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", SERVICE_SECRET)
+    monkeypatch.setattr(collector, "ROBOFLOW_SERVICE_SECRET", SERVICE_SECRET)
+    return SERVICE_SECRET
+
 
 @pytest.fixture
 def usage_collector_with_mocked_threads():

@@ -11,6 +11,7 @@ from inference.core.entities.requests.clip import (
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -35,7 +36,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use a CLIP model to create semantic embeddings of text and images.
@@ -234,6 +235,9 @@ class ClipModelBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

@@ -203,6 +203,14 @@ def test_fixed_input_hw_ignores_malformed_image_size():
     assert get_fixed_model_input_hw(SimpleNamespace(image_size=(None, None))) is None
 
 
+def test_fixed_input_hw_reads_clip_resolution_attribute():
+    # CLIP takes its square canvas from the ONNX visual session input shape and
+    # stores it as `resolution` rather than image_size / img_size_h.
+    assert get_fixed_model_input_hw(SimpleNamespace(resolution=224)) == (224, 224)
+    assert get_fixed_model_input_hw(SimpleNamespace(resolution=0)) is None
+    assert get_fixed_model_input_hw(SimpleNamespace(resolution="dynamic")) is None
+
+
 def test_fixed_input_hw_reads_wrapped_owlv2_backend():
     # SerializedOwlV2 delegates inference to a wrapped OwlV2 instance.
     model = SimpleNamespace(owlv2=SimpleNamespace(image_size=(960, 960)))

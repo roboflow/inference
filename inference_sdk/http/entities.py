@@ -9,8 +9,12 @@ from PIL import Image
 from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
+    outbound_service_secret,
 )
-from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
+from inference_sdk.http.errors import (
+    InvalidParameterError,
+    ModelTaskTypeNotSupportedError,
+)
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
@@ -83,6 +87,28 @@ class HTTPClientMode(str, Enum):
     V1 = "v1"
 
 
+class ApiKeyTransport(str, Enum):
+    """Enum for the channel used to send the Roboflow API key to the server.
+
+    Attributes:
+        LEGACY: Today's behaviour byte-for-byte - the key travels as the
+            `api_key` query parameter (API v0) or JSON-body field (API v1).
+            Works against every server version.
+        BOTH: Legacy channels untouched, plus an `Authorization: Bearer
+            <api_key>` header on top. Safe against every server version -
+            older servers ignore the header, newer servers read the header
+            first (it carries the same key as the legacy channels).
+        HEADER: The key travels ONLY in the `Authorization: Bearer <api_key>`
+            header - no key in URLs or request bodies. Requires an inference
+            server with header-based auth support; against an older server
+            requests are keyless.
+    """
+
+    LEGACY = "legacy"
+    BOTH = "both"
+    HEADER = "header"
+
+
 class VisualisationResponseFormat(str, Enum):
     """Enum for the visualisation response format.
 
@@ -150,6 +176,27 @@ class InferenceConfiguration:
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
+    # None means "not chosen by the user" - the client resolves it to LEGACY
+    # and emits a one-time recommendation to move to the header transport.
+    # Pass "legacy" explicitly to keep the old behaviour silently.
+    api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
+
+    def __post_init__(self) -> None:
+        # Normalise the transport to the enum so the client can rely on
+        # identity checks. NOTE: this field configures the credential CHANNEL
+        # only - it is deliberately absent from every to_*_parameters()
+        # allowlist below, so it can never leak onto the wire.
+        if self.api_key_transport is None:
+            return
+        try:
+            object.__setattr__(
+                self, "api_key_transport", ApiKeyTransport(self.api_key_transport)
+            )
+        except ValueError:
+            raise InvalidParameterError(
+                f"Invalid api_key_transport: {self.api_key_transport}. Expected "
+                f"one of: {[transport.value for transport in ApiKeyTransport]}."
+            )
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -181,12 +228,27 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
-    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
-        """Extract v1 API query-string parameters from the current configuration.
+    def to_billing_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract the usage-billing query-string parameters.
+
+        Spelled the same way on both API versions, so every endpoint can send
+        them regardless of client mode.
+
+        An active outbound forwarding-authority context (set by the usage
+        decorator for a call it proved carries an authenticated opt-out) always
+        wins over this object's own configuration: it forces `countinference`
+        to `False` and supplies its own secret, so an explicit
+        `count_inference=True` can never upgrade an authenticated suppression.
+        With no such context, this object's own configuration is preserved
+        exactly, unchanged - that is how an SDK caller's own explicit
+        configuration keeps working.
 
         Returns:
             Optional[Dict[str, Any]]: The query parameters, or None if unset.
         """
+        outbound_secret = outbound_service_secret.get()
+        if outbound_secret is not None:
+            return {"service_secret": outbound_secret, "countinference": False}
         query = remove_empty_values(
             {
                 "service_secret": self.service_secret,
@@ -194,6 +256,14 @@ class InferenceConfiguration:
             }
         )
         return query or None
+
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
+        return self.to_billing_query_parameters()
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.
@@ -279,6 +349,10 @@ class InferenceConfiguration:
     def to_legacy_call_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to legacy call parameters.
 
+        Billing fields are obtained through `to_billing_query_parameters()`
+        rather than a second mapping of their own, so API v0 picks up the
+        outbound forwarding-authority context the same way v1 does.
+
         Returns:
             Dict[str, Any]: The legacy call parameters.
         """
@@ -292,8 +366,6 @@ class InferenceConfiguration:
             ("max_detections", "max_detections"),
             ("iou_threshold", "overlap"),
             ("stroke_width", "stroke"),
-            ("count_inference", "countinference"),
-            ("service_secret", "service_secret"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -304,10 +376,14 @@ class InferenceConfiguration:
             ("source_info", "source_info"),
             ("response_mask_format", "response_mask_format"),
         ]
-        return get_non_empty_attributes(
+        parameters = get_non_empty_attributes(
             source_object=self,
             specification=parameters_specs,
         )
+        billing_parameters = self.to_billing_query_parameters()
+        if billing_parameters:
+            parameters.update(billing_parameters)
+        return parameters
 
 
 def get_non_empty_attributes(
