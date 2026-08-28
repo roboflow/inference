@@ -1,7 +1,10 @@
+import errno
 import io
 import json
 import os
+import re
 import tarfile
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
@@ -10,11 +13,16 @@ from uuid import uuid4
 
 import supervision as sv
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
+from pydantic import (
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    field_validator,
+)
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.logger import logger
-from inference.core.utils.file_system import dump_bytes_atomic
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.sinks.local_file.v1 import (
     path_is_within_specified_directory,
@@ -55,6 +63,7 @@ from inference.core.workflows.prototypes.block import (
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
 )
 
 BUNDLE_FORMAT_VERSION = 1
@@ -68,6 +77,19 @@ MAX_BUNDLE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MiB
 # more entries trigger a consumer-side fallback that silently drops *all*
 # images, so we enforce the cap before attaching annotations to the payload.
 MAX_ANNOTATIONS_PER_LIST = 1000
+
+DEFAULT_FILE_NAME_PREFIX = "event_"
+BUNDLE_FILE_NAME_SUFFIX = ".tar.gz"
+
+# A custom file name replaces the generated one wholesale, so it must not be
+# able to redirect the write (path separators, `..`) nor collide with the
+# dot-prefixed temporary files that file movers are told to skip.  Matched with
+# `fullmatch` - `$` alone would also accept a trailing newline.
+BUNDLE_FILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+# `AtomicPath` writes through a `.tmp_<random>_<file name>` sibling, so the
+# name must stay clear of the 255-byte path-segment limit with that padding.
+MAX_FILE_NAME_LENGTH = 200
 
 SHORT_DESCRIPTION = (
     "Write vision events as self-contained tarball bundles to a local directory."
@@ -85,7 +107,7 @@ to Roboflow's `POST /vision-events/bundle` endpoint without unpacking it.
 One tarball per event, written to `target_directory`:
 
 ```
-event_<UTC timestamp>_<eventId>.tar.gz
+event_<UTC timestamp>_<eventId>.tar.gz    # or your own `file_name`
 ├── payload.json               # the event payload (versioned contract, camelCase)
 └── images/<file_id>.jpg       # image members, file_id is a uuid4
 ```
@@ -106,9 +128,25 @@ use sibling directories, so consumers should ignore unknown top-level directorie
 ## Atomic Writes
 
 Bundles are written to a dot-prefixed temporary file in the target directory, fsynced, and
-atomically renamed to their final `event_*.tar.gz` name (the directory is fsynced after the
-rename). A file-mover service that matches `event_*.tar.gz` (or skips dotfiles) can never
-pick up a partially written bundle.
+atomically renamed to their final `*.tar.gz` name (the directory is fsynced after the
+rename). A file-mover service that matches `*.tar.gz` (or skips dotfiles) can never pick
+up a partially written bundle.
+
+## Output Routing
+
+By default the file name is `event_<UTC timestamp>_<eventId>.tar.gz`. Set **File Name** to
+replace it outright - typically wired from another step that composes the name - so no part
+of Roboflow's naming is imposed on the output. `.tar.gz` is appended when absent.
+
+Because `target_directory` is per-block too, several bundle blocks in one workflow can own
+their output completely: a person-detection block writing `person_*.tar.gz` into
+`/media/person` alongside an episode block writing the default `event_*.tar.gz` into
+`/media/event`, letting a downstream file mover route purely by folder and name. The upload
+endpoint ignores the file name entirely, so it is free to carry deployment-specific meaning.
+
+The generated name embeds a uuid4 and is unique by construction. A custom name is not: if
+the target file already exists the block raises rather than overwriting it, so a name that
+repeats across events will fail the workflow run. Compose something unique per event.
 
 ## Rate Limiting
 
@@ -169,6 +207,21 @@ class BlockManifest(WorkflowBlockManifest):
         "automatically if it does not exist. If WORKFLOW_BLOCKS_WRITE_DIRECTORY is "
         "set, this path must be a subdirectory of the allowed directory.",
         examples=["/data/vision-event-bundles"],
+        json_schema_extra={"always_visible": True},
+    )
+    file_name: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
+        title="File Name",
+        description="Optional file name for the bundle, replacing the generated "
+        "`event_<UTC timestamp>_<eventId>.tar.gz` name entirely. Usually wired "
+        "from another step that composes the name, so nothing of Roboflow's "
+        "naming is imposed. `.tar.gz` is appended when absent. May contain "
+        "letters, digits, `.`, `_` and `-`, must start with a letter or digit, "
+        "and must be at most 200 characters. The block errors if the "
+        "resulting file already exists, so a "
+        "custom name must be unique per event. Leave unset for the default "
+        "name, which is unique by construction.",
+        examples=["$steps.compose_name.output", "person_batch7.tar.gz"],
         json_schema_extra={"always_visible": True},
     )
     input_image: Optional[Selector(kind=[IMAGE_KIND])] = Field(
@@ -406,6 +459,13 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
 
+    @field_validator("file_name")
+    @classmethod
+    def ensure_file_name_is_safe(cls, value: Any) -> Any:
+        if isinstance(value, str) and not is_workflow_selector(value):
+            validate_bundle_file_name(value)
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -519,6 +579,9 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
         custom_value: Optional[str] = None,
         related_event_id: Optional[str] = None,
         feedback: Optional[str] = None,
+        # Appended last on purpose: inserting it earlier would silently
+        # rebind any positional caller's event-data arguments.
+        file_name: Optional[str] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -555,12 +618,17 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
                 "message": "Sink cooldown applies",
             }
 
+        # Selector-resolved values bypass manifest validation, so an unsafe
+        # name would otherwise reach the path unchecked.
+        if file_name is not None:
+            validate_bundle_file_name(file_name)
         event_id = str(uuid4())
         timestamp = datetime.now(timezone.utc)
         target_path = _generate_bundle_path(
             target_directory=target_directory,
             timestamp=timestamp,
             event_id=event_id,
+            file_name=file_name,
         )
         # Misconfiguration should fail loudly here, not vanish into a
         # fire-and-forget background task.
@@ -572,7 +640,17 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
                 f"`roboflow_core/vision_event_bundle@v1` block cannot write to "
                 f"`{target_directory}` - the directory is not writable."
             )
-
+        # A generated name carries a uuid4 and cannot collide; a custom one
+        # repeats as often as its author repeats it.  Checked here so the
+        # ordinary repeated-name case fails loudly and synchronously, before a
+        # fire-and-forget dispatch can swallow it.  The publish below is what
+        # actually guarantees no bundle is ever overwritten.
+        if os.path.exists(target_path):
+            raise ValueError(
+                f"`roboflow_core/vision_event_bundle@v1` block cannot write "
+                f"`{target_path}` - the file already exists. A custom "
+                f"`file_name` must be unique for every event."
+            )
         event_data = _build_event_data(
             event_type=event_type,
             external_id=external_id,
@@ -646,12 +724,115 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
             )
 
 
+def validate_bundle_file_name(file_name: str) -> None:
+    if not file_name:
+        raise ValueError(
+            "`file_name` must not be empty - leave it unset for the default "
+            "generated name."
+        )
+    if len(file_name) > MAX_FILE_NAME_LENGTH:
+        raise ValueError(
+            f"`file_name` must be at most {MAX_FILE_NAME_LENGTH} characters "
+            f"long, got {len(file_name)}."
+        )
+    if not BUNDLE_FILE_NAME_PATTERN.fullmatch(file_name):
+        raise ValueError(
+            f"`file_name` must start with a letter or digit and may only "
+            f"contain letters, digits, `.`, `_` and `-`, got `{file_name}`."
+        )
+
+
+# Only these mean "this filesystem cannot do hard links".  Every other OSError
+# is a real write failure and must not silently reach the replacing fallback.
+_LINK_UNSUPPORTED_ERRNOS = frozenset(
+    {errno.EPERM, errno.EOPNOTSUPP, errno.ENOSYS, errno.EXDEV, errno.EMLINK}
+)
+
+
+def _publish_bundle(target_path: str, content: bytes) -> None:
+    """Write `content` and publish it at `target_path` without replacing.
+
+    `os.link` fails atomically when the destination already exists, so two
+    concurrent events that pass the foreground collision check cannot both
+    believe they won - and unlike a reservation marker, an interrupted process
+    leaves only the dot-prefixed temporary file that file movers already skip.
+
+    On filesystems with no hard-link support (FAT-family removable media, the
+    usual way bundles leave an air-gapped network) this degrades to a checked
+    replacing rename: repeated names are still caught, but two genuinely
+    concurrent events with the same name can race.
+    """
+    directory = os.path.dirname(os.path.abspath(target_path))
+    temp_file = tempfile.NamedTemporaryFile(
+        dir=directory,
+        prefix=".tmp_",
+        suffix=f"_{os.path.basename(target_path)}",
+        delete=False,
+    )
+    temp_path = temp_file.name
+    try:
+        temp_file.write(content)
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+        temp_file.close()
+        try:
+            os.link(temp_path, target_path)
+        except FileExistsError:
+            raise ValueError(
+                f"`roboflow_core/vision_event_bundle@v1` block cannot write "
+                f"`{target_path}` - the file already exists. A custom "
+                f"`file_name` must be unique for every event."
+            )
+        except OSError as error:
+            if error.errno not in _LINK_UNSUPPORTED_ERRNOS:
+                raise
+            # FAT-family removable media - the way bundles physically leave an
+            # air-gapped network - cannot do hard links.  Falling back keeps
+            # those targets working, at the cost of the atomic guarantee: the
+            # re-check below narrows the window but cannot close it.
+            if os.path.exists(target_path):
+                raise ValueError(
+                    f"`roboflow_core/vision_event_bundle@v1` block cannot write "
+                    f"`{target_path}` - the file already exists. A custom "
+                    f"`file_name` must be unique for every event."
+                )
+            logger.warning(
+                "Hard links unsupported under %s - publishing vision event "
+                "bundle with a replacing rename, which cannot guarantee that "
+                "a concurrent event with the same file name is not "
+                "overwritten.",
+                directory,
+            )
+            os.replace(temp_path, target_path)
+    finally:
+        # Cleanup must never turn a published bundle into a reported failure,
+        # nor mask the original write error.
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            logger.warning(
+                "Failed to remove vision event bundle temporary file %s: %s",
+                temp_path,
+                error,
+            )
+
+
 def _generate_bundle_path(
     target_directory: str,
     timestamp: datetime,
     event_id: str,
+    file_name: Optional[str] = None,
 ) -> str:
-    file_name = f"event_{timestamp.strftime('%Y%m%dT%H%M%S_%f')}_{event_id}.tar.gz"
+    if file_name:
+        if not file_name.endswith(BUNDLE_FILE_NAME_SUFFIX):
+            file_name = f"{file_name}{BUNDLE_FILE_NAME_SUFFIX}"
+    else:
+        file_name = (
+            f"{DEFAULT_FILE_NAME_PREFIX}{timestamp.strftime('%Y%m%dT%H%M%S_%f')}"
+            f"_{event_id}{BUNDLE_FILE_NAME_SUFFIX}"
+        )
     return os.path.abspath(os.path.join(target_directory, file_name))
 
 
@@ -712,7 +893,7 @@ def _write_event_bundle(
                 f"limit of {MAX_BUNDLE_SIZE_BYTES:,} bytes (25 MiB). Reduce the "
                 "number or size of images in this event."
             )
-        dump_bytes_atomic(target_path, tar_bytes)
+        _publish_bundle(target_path=target_path, content=tar_bytes)
         _fsync_directory(target_directory)
         return False, "Vision event bundle written successfully", event_id, target_path
     except Exception as error:
