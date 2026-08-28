@@ -322,6 +322,24 @@ REGISTERED_MODELS: Dict[
         ),
         class_name="Cosmos3EdgeVideoSegmentClassification",
     ),
+    # roboflow-train emits fine-tune packages under the dash-less trainer
+    # slug with the platform task `vlm`.
+    ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
+        module_name=(
+            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
+        ),
+        class_name="Cosmos3EdgeVideoSegmentClassification",
+    ),
+    (
+        "cosmos3-edge",
+        VIDEO_SEGMENT_CLASSIFICATION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name=(
+            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
+        ),
+        class_name="Cosmos3EdgeVideoSegmentClassification",
+    ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",
         class_name="Cosmos3EdgeWorldModel",

@@ -431,14 +431,73 @@ def _answer_text(response: Any) -> str:
     return response if isinstance(response, str) else ""
 
 
+def _read_package_json(model_name_or_path: str, file_name: str) -> Optional[dict]:
+    try:
+        with open(Path(model_name_or_path) / file_name) as config_file:
+            config = json.load(config_file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    return config if isinstance(config, dict) else None
+
+
+def _read_configured_class_names(model_name_or_path: str) -> Optional[List[str]]:
+    model_config = _read_package_json(model_name_or_path, "model_config.json")
+    if model_config is None:
+        return None
+    configured_class_names = model_config.get("class_names")
+    if isinstance(configured_class_names, list) and all(
+        isinstance(class_name, str) for class_name in configured_class_names
+    ):
+        return configured_class_names
+    return None
+
+
+_CLASS_TOKEN_PATTERN = re.compile(r"^<\|cls:(?P<label>[^|]+?)\|>$")
+
+
+def _class_names_from_tokenizer(tokenizer: Any) -> Optional[List[str]]:
+    """Derive the trained class list from the added <|cls:...|> tokens.
+
+    Token-id order keeps class ids stable across loads.
+    """
+    get_added_vocab = getattr(tokenizer, "get_added_vocab", None)
+    if not callable(get_added_vocab):
+        return None
+    try:
+        added_vocabulary = get_added_vocab()
+    except Exception:  # pragma: no cover - third-party tokenizer behavior
+        return None
+    if not isinstance(added_vocabulary, dict):
+        return None
+    class_tokens = sorted(
+        (token_id, match.group("label"))
+        for token, token_id in added_vocabulary.items()
+        if _is_token_id(token_id)
+        and (match := _CLASS_TOKEN_PATTERN.match(token)) is not None
+    )
+    return [label for _, label in class_tokens] or None
+
+
+def _read_video_pre_processing(model_name_or_path: str) -> Optional[Dict[str, Any]]:
+    inference_config = _read_package_json(
+        model_name_or_path, "inference_config.json"
+    )
+    if inference_config is None:
+        return None
+    video_pre_processing = inference_config.get("video_pre_processing")
+    return video_pre_processing if isinstance(video_pre_processing, dict) else None
+
+
 class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     def __init__(
         self,
         reasoner: Cosmos3EdgeReasoner,
         class_names: Optional[List[str]] = None,
+        video_pre_processing: Optional[Dict[str, Any]] = None,
     ):
         self._reasoner = reasoner
         self._class_names = class_names
+        self._video_pre_processing = video_pre_processing
 
         processor = getattr(reasoner, "_processor", None)
         tokenizer = getattr(processor, "tokenizer", None)
@@ -459,24 +518,25 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     def class_names(self) -> Optional[List[str]]:
         return self._class_names
 
+    @property
+    def video_pre_processing(self) -> Optional[Dict[str, Any]]:
+        return self._video_pre_processing
+
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeVideoSegmentClassification":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
-        class_names = None
-        try:
-            with open(Path(model_name_or_path) / "model_config.json") as config_file:
-                model_config = json.load(config_file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            model_config = None
-        if isinstance(model_config, dict):
-            configured_class_names = model_config.get("class_names")
-            if isinstance(configured_class_names, list) and all(
-                isinstance(class_name, str) for class_name in configured_class_names
-            ):
-                class_names = configured_class_names
-        return cls(reasoner=reasoner, class_names=class_names)
+        class_names = _read_configured_class_names(model_name_or_path)
+        if class_names is None:
+            class_names = _class_names_from_tokenizer(
+                getattr(reasoner._processor, "tokenizer", None)
+            )
+        return cls(
+            reasoner=reasoner,
+            class_names=class_names,
+            video_pre_processing=_read_video_pre_processing(model_name_or_path),
+        )
 
     def infer(
         self,
@@ -513,7 +573,12 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         **kwargs,
     ) -> List[VideoSegmentClassificationPrediction]:
         assert self.class_names is not None
-        frames = _cap_frame_side(frames=frames, max_side=FINE_TUNE_MAX_FRAME_SIDE)
+        max_frame_side = FINE_TUNE_MAX_FRAME_SIDE
+        if self._video_pre_processing is not None:
+            configured_side = self._video_pre_processing.get("max_frame_side")
+            if isinstance(configured_side, (int, float)) and configured_side > 0:
+                max_frame_side = int(configured_side)
+        frames = _cap_frame_side(frames=frames, max_side=max_frame_side)
         if class_filter is None:
             classes = list(self.class_names)
         else:
@@ -552,8 +617,16 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             video_fps=fps,
             **generation_kwargs,
         )
+        # skip_special_tokens=False keeps the class tokens but also keeps
+        # the chat end token on the final line, which fails the line grammar.
+        answer = _answer_text(response)
+        eos_token = getattr(
+            getattr(self._reasoner._processor, "tokenizer", None), "eos_token", None
+        )
+        if isinstance(eos_token, str) and eos_token:
+            answer = answer.replace(eos_token, "")
         return _parse_fine_tune_segments(
-            text=_answer_text(response),
+            text=answer,
             class_names=classes,
             num_frames=len(frames),
             fps=fps,

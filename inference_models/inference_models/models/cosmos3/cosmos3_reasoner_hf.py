@@ -3,13 +3,15 @@ This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
 originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
+import os
 import re
 from threading import Lock
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from peft import PeftModel
+from transformers import AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
 from transformers.utils import is_flash_attn_2_available
 from transformers.video_utils import VideoMetadata
 
@@ -83,8 +85,18 @@ class Cosmos3EdgeReasoner:
     ) -> "Cosmos3EdgeReasoner":
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_cosmos3_attn_implementation(device)
+        # roboflow-train packages are LoRA layouts: the adapter and the
+        # class-token tokenizer at the top level, the full base under base/.
+        is_adapter_package = os.path.exists(
+            os.path.join(model_name_or_path, "adapter_config.json")
+        )
+        weights_path = (
+            os.path.join(model_name_or_path, "base")
+            if is_adapter_package
+            else model_name_or_path
+        )
         model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
+            weights_path,
             device_map=device,
             dtype=dtype,
             trust_remote_code=trust_remote_code,
@@ -93,10 +105,29 @@ class Cosmos3EdgeReasoner:
             attn_implementation=attn_implementation,
         ).eval()
         processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
+            weights_path,
             trust_remote_code=trust_remote_code,
             local_files_only=local_files_only,
         )
+        if is_adapter_package:
+            processor.tokenizer = AutoTokenizer.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
+            template_path = os.path.join(model_name_or_path, "chat_template.jinja")
+            if os.path.exists(template_path):
+                with open(template_path) as template_file:
+                    processor.chat_template = template_file.read()
+            # The shipped base keeps the original vocab rows; the adapter's
+            # trainable-token rows index the added class tokens, so the
+            # table must grow before the adapter attaches.
+            embedding_rows = model.get_input_embeddings().weight.shape[0]
+            if embedding_rows < len(processor.tokenizer):
+                model.resize_token_embeddings(len(processor.tokenizer))
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model = model.merge_and_unload()
+            model.eval()
         return cls(model=model, processor=processor, device=device)
 
     def __init__(

@@ -50,6 +50,7 @@ class _FakeTokenizer:
         self.unk_token_id = 0
         self.eos_token_id = 99
         self.pad_token_id = 99
+        self.eos_token = "<|im_end|>"
         self._vocabulary = {
             token: index + 1 for index, token in enumerate(ordinary_tokens)
         }
@@ -486,6 +487,67 @@ def test_from_pretrained_reads_class_names_from_model_config(
 
     assert wrapper.class_names == ["walking", "running"]
     assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
+
+
+def test_from_pretrained_derives_class_names_from_class_tokens(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+
+    assert wrapper.class_names == ["walking", "running"]
+    assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
+
+
+def test_from_pretrained_reads_video_pre_processing(monkeypatch, tmp_path) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(
+            {"video_pre_processing": {"max_frame_side": 100, "window_seconds": 8.0}}
+        )
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+    assert wrapper.video_pre_processing == {
+        "max_frame_side": 100,
+        "window_seconds": 8.0,
+    }
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+    sent_frames = reasoner.calls[0]["frames"]
+    assert all(frame.shape == (56, 100, 3) for frame in sent_frames)
+
+
+def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(
+        response=(
+            "<|cls:walking|> <0.00> <1.00>\n"
+            "<|cls:running|> <1.00> <2.00><|im_end|>"
+        ),
+        tokenizer=tokenizer,
+    )
+    wrapper = Cosmos3EdgeVideoSegmentClassification(
+        reasoner=reasoner, class_names=["walking", "running"]
+    )
+
+    result = wrapper.infer(frames=_frames(8), fps=4.0)
+
+    assert [segment.class_name for segment in result] == ["walking", "running"]
 
 
 def test_infer_accepts_chw_tensor_frames() -> None:
