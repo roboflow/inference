@@ -2,13 +2,10 @@
 
 ## Unreleased
 
-<<<<<<< HEAD
-### Added
+---
 
-- Optional S3-compatible shared caching for content-hashed model files. Cache
-  misses, errors, corrupt objects, and timeouts fail open to the original model
-  source.
-=======
+## `0.36.0`
+
 ### Fixed
 
 - TensorRT CUDA graphs are now captured in thread-local capture mode and serialized behind a
@@ -18,13 +15,16 @@
   input shape, which broke concurrent inference on devices running several pipelines in one process.
   On torch builds whose `torch.cuda.graph` does not accept `capture_error_mode` (pre-`2.1`), the
   capture transparently falls back to the legacy global mode.
->>>>>>> main
+
+### Added
+
+- Optional S3-compatible shared caching for content-hashed model files. Cache
+  misses, errors, corrupt objects, and timeouts fail open to the original model
+  source.
 
 ---
 
 ## `0.36.0`
-
-### Added
 
 
 ### Changed
