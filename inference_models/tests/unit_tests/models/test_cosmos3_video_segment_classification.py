@@ -141,6 +141,31 @@ def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
     assert SYSTEM_PROMPT_SENTINEL not in call["prompt"]
 
 
+def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeVideoSegmentClassification(
+        reasoner=reasoner, class_names=["walking"]
+    )
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+
+    sent_frames = reasoner.calls[0]["frames"]
+    assert all(frame.shape == (202, 360, 3) for frame in sent_frames)
+
+
+def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
+    reasoner = _FakeReasoner(response="B")
+    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, class_names=["walking"], fps=2.0)
+
+    sent_frames = reasoner.calls[0]["frames"]
+    assert all(frame.shape == (480, 854, 3) for frame in sent_frames)
+
+
 @pytest.mark.parametrize(
     ("answer", "expected"),
     [

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
 
@@ -18,6 +19,10 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
 
 ZERO_SHOT_MAX_NEW_TOKENS = 256
 FINE_TUNE_MAX_NEW_TOKENS = 256
+# Fine-tunes train on frames decoded with this cap (roboflow-train#880);
+# serving at native resolution is a train/serve skew. Zero-shot keeps
+# native pixels: at 360 the base model loses small-object events.
+FINE_TUNE_MAX_FRAME_SIDE = 360
 
 ZERO_SHOT_OPEN_VOCABULARY_PROMPT = (
     "Describe the main action in this video clip in one short lowercase "
@@ -388,6 +393,24 @@ def _parse_fine_tune_segments(
     return result
 
 
+def _cap_frame_side(frames: List[np.ndarray], max_side: int) -> List[np.ndarray]:
+    resized_frames = []
+    for frame in frames:
+        height, width = frame.shape[:2]
+        scale = max_side / max(height, width)
+        if scale >= 1.0:
+            resized_frames.append(frame)
+            continue
+        resized_frames.append(
+            cv2.resize(
+                frame,
+                (round(width * scale), round(height * scale)),
+                interpolation=cv2.INTER_AREA,
+            )
+        )
+    return resized_frames
+
+
 def _normalize_frames(
     frames: List[Union[np.ndarray, torch.Tensor]],
 ) -> List[np.ndarray]:
@@ -490,6 +513,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         **kwargs,
     ) -> List[VideoSegmentClassificationPrediction]:
         assert self.class_names is not None
+        frames = _cap_frame_side(frames=frames, max_side=FINE_TUNE_MAX_FRAME_SIDE)
         if class_filter is None:
             classes = list(self.class_names)
         else:
