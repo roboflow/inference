@@ -1,7 +1,8 @@
+import inspect
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -45,6 +46,25 @@ except ImportError as import_error:
         f"model, You can also contact Roboflow to get support.",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
+
+
+_CUDA_GRAPH_CAPTURE_LOCK = threading.Lock()
+
+
+def _torch_cuda_graph_supports_capture_error_mode() -> bool:
+    try:
+        return "capture_error_mode" in inspect.signature(torch.cuda.graph).parameters
+    except Exception:
+        # Introspection can fail on exotic builds; fall back to the legacy
+        # global capture mode instead of risking a TypeError at capture time.
+        return False
+
+
+_CUDA_GRAPH_CAPTURE_KWARGS: Dict[str, str] = (
+    {"capture_error_mode": "thread_local"}
+    if _torch_cuda_graph_supports_capture_error_mode()
+    else {}
+)
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -863,13 +883,14 @@ def _capture_cuda_graph(
     stream.synchronize()
 
     cuda_graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(cuda_graph, stream=stream):
-        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
-        if not status:
-            raise ModelRuntimeError(
-                message="Failed to capture CUDA graph from TRT model execution.",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-            )
+    with _CUDA_GRAPH_CAPTURE_LOCK:
+        with torch.cuda.graph(cuda_graph, stream=stream, **_CUDA_GRAPH_CAPTURE_KWARGS):
+            status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
+            if not status:
+                raise ModelRuntimeError(
+                    message="Failed to capture CUDA graph from TRT model execution.",
+                    help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                )
     with torch.cuda.stream(stream):
         results = [buf.clone() for buf in output_buffers]
     stream.synchronize()
