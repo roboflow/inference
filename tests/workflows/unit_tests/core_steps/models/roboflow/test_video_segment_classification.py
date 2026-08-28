@@ -1247,7 +1247,7 @@ def test_tensor_sibling_forwards_tensor_materialised_frames():
     assert all(isinstance(frame, torch.Tensor) for frame in model.calls[0]["frames"])
     assert tuple(model.calls[0]["frames"][0].shape) == (3, 2, 2)
     torch.testing.assert_close(
-        model.calls[0]["frames"][0][:, 0, 0],
+        model.calls[0]["frames"][0][:, 0, 0].cpu(),
         torch.tensor([1, 2, 3], dtype=torch.uint8),
     )
 
