@@ -252,7 +252,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN python3 -m pip install --break-system-packages -U pip uv
+RUN python3 -m pip install --break-system-packages --ignore-installed pip uv
 
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
