@@ -634,6 +634,7 @@ from datetime import datetime
                 deserialize_image_kind,
                 deserialize_video_metadata_kind,
             )
+            from inference.core.workflows.execution_engine.entities.base import Batch
             from inference.core.workflows.prototypes.block import BlockResult
 
             def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
@@ -706,9 +707,22 @@ from datetime import datetime
 
                     return serialized
 
-                serialized_inputs = {}
-                for key, value in inputs.items():
-                    serialized_inputs[key] = patch_for_modal_serialization(value)
+                # This also serialises the block's RETURN value (see the
+                # `serialize_for_modal_remote_execution(result)` call below), and a
+                # BlockResult is a list whenever the block increases output
+                # dimensionality (offset-1) or declares batch_oriented_parameters —
+                # one entry per element. The dict-only path raised
+                # `AttributeError: 'list' object has no attribute 'items'`, which
+                # made both kinds of block unusable over the HTTP transport. The
+                # websocket path already handled lists (_serialize_msgpack_result).
+                if isinstance(inputs, list):
+                    serialized_inputs = [
+                        patch_for_modal_serialization(item) for item in inputs
+                    ]
+                else:
+                    serialized_inputs = {}
+                    for key, value in inputs.items():
+                        serialized_inputs[key] = patch_for_modal_serialization(value)
 
                 # Convert to JSON string
                 return json.dumps(serialized_inputs, cls=InputJSONEncoder)
@@ -728,6 +742,19 @@ from datetime import datetime
                             elif obj["_type"] == "ndarray":
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
+                            elif obj["_type"] == "batch":
+                                # Without this arm a Batch arrives stringified
+                                # and blocks declaring batch_oriented_parameters
+                                # get a repr instead of their data.
+                                indices = obj.get("indices")
+                                return Batch(
+                                    content=[decode_inputs(v) for v in obj["value"]],
+                                    indices=(
+                                        [tuple(i) for i in indices]
+                                        if indices is not None
+                                        else None
+                                    ),
+                                )
                             elif obj["_type"] == "object":
                                 return obj["value"]
                             elif obj["_type"] == "sv_detections":
@@ -961,6 +988,7 @@ from datetime import datetime
             deserialize_image_kind,
             deserialize_video_metadata_kind,
         )
+        from inference.core.workflows.execution_engine.entities.base import Batch
 
         def _decode(obj):
             if isinstance(obj, dict):
@@ -1035,6 +1063,14 @@ from datetime import datetime
                 if _type == "ndarray":
                     return np.array(obj["value"], dtype=obj["dtype"]).reshape(
                         obj["shape"]
+                    )
+                if _type == "batch":
+                    indices = obj.get("indices")
+                    return Batch(
+                        content=[_decode(v) for v in obj["value"]],
+                        indices=(
+                            [tuple(i) for i in indices] if indices is not None else None
+                        ),
                     )
                 if _type == "bytes":
                     return (

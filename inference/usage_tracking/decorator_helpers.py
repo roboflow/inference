@@ -13,10 +13,14 @@ from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     consume_measured_model_input,
     count_inference_images,
+    get_fixed_model_input_hw,
     record_measured_model_hw,
     resolve_model_input_hw,
 )
-from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.model_types import (
+    ModelDescriptor,
+    get_recorded_model_descriptor,
+)
 from inference.usage_tracking.utils import (
     coerce_optional_bool,
     collect_func_params,
@@ -296,21 +300,29 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow model type (variant when known, else architecture).
+def get_model_descriptor_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[ModelDescriptor]:
+    """Resolve the Roboflow architecture / variant / task behind a model call.
 
-    Prefer ``self.model_type`` (bound at load to the platform variant when
-    known, otherwise the architecture). Fall back to the process-local map
-    keyed by model id. Asking the model registry would be a network call on
-    the inference hot path. A model whose type was never recorded is reported
-    without one.
+    Prefer the labels bound onto the instance at load time. Fall back to the
+    process-local map keyed by model id. Asking the model registry would be a
+    network call on the inference hot path. A model whose descriptor was never
+    recorded is reported without one.
     """
     model = func_kwargs.get("self")
     if model is not None:
-        model_type = getattr(model, "model_type", None)
-        if model_type:
-            return str(model_type)
-    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
+        architecture = getattr(model, "model_architecture", None)
+        if architecture:
+            variant = getattr(model, "model_variant", None)
+            task_type = getattr(model, "task_type", None)
+            return ModelDescriptor(
+                architecture=str(architecture),
+                variant=str(variant) if variant else None,
+                task_type=str(task_type) if task_type else None,
+            )
+
+    return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
@@ -326,13 +338,26 @@ def get_model_resource_details_from_kwargs(
     )
     if source is not None:
         resource_details["source"] = source
-    if "self" in func_kwargs:
-        _self = func_kwargs["self"]
-        if hasattr(_self, "task_type"):
-            resource_details["task_type"] = _self.task_type
-    model_type = get_model_type_from_kwargs(func_kwargs)
-    if model_type:
-        resource_details["model_type"] = model_type
+    model = func_kwargs.get("self")
+    task_type = getattr(model, "task_type", None) if model is not None else None
+    model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
+    if model_descriptor:
+        resource_details["model_architecture"] = model_descriptor.architecture
+        if model_descriptor.variant:
+            resource_details["model_variant"] = model_descriptor.variant
+        if not task_type:
+            task_type = model_descriptor.task_type
+
+    if task_type:
+        resource_details["task_type"] = str(task_type)
+    # Only the configured canvas, never the observed one. Rows aggregate over
+    # calls that may each see a different upload, and resource details merge
+    # last-write-wins, so a size that varies per call would be attributed to
+    # every frame in the row. Per-call size is reported as megapixel buckets.
+    fixed_input_hw = get_fixed_model_input_hw(func_kwargs.get("self"))
+    if fixed_input_hw:
+        resource_details["model_input_height"] = fixed_input_hw[0]
+        resource_details["model_input_width"] = fixed_input_hw[1]
     return resource_details
 
 

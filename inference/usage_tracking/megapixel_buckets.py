@@ -110,6 +110,16 @@ def _image_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
     return size, size
 
 
+def _wrapped_backend_fixed_hw(backend: Any) -> Optional[Tuple[int, int]]:
+    """Fixed canvas of a backend an adapter delegates inference to."""
+    for attr in ("image_size", "_image_size", "img_size"):
+        size = _image_size_to_hw(getattr(backend, attr, None))
+        if size is not None:
+            return size
+
+    return None
+
+
 def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     """Return (height, width) when the model has a fixed numeric input size."""
     height = _as_positive_int(getattr(model, "img_size_h", None))
@@ -117,26 +127,25 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     if height is not None and width is not None:
         return height, width
 
-    for attr in ("image_size", "img_size"):
+    # CLIP names its square canvas `resolution`, read off the ONNX input shape.
+    for attr in ("image_size", "img_size", "resolution"):
         size = _image_size_to_hw(getattr(model, attr, None))
         if size is not None:
             return size
 
     # Adapters wrap backends that expose image_size / _image_size.
+    # Package backends that only keep the canvas on inference-config copy it
+    # onto the adapter as img_size_h / img_size_w at load time.
     for attr in ("_model", "sam", "sam_model", "owlv2"):
         inner = getattr(model, attr, None)
         if inner is None:
             continue
-        for size_attr in ("image_size", "_image_size", "img_size"):
-            size = _image_size_to_hw(getattr(inner, size_attr, None))
+        for candidate in (inner, getattr(inner, "_model", None)):
+            if candidate is None:
+                continue
+            size = _wrapped_backend_fixed_hw(candidate)
             if size is not None:
                 return size
-        nested = getattr(inner, "_model", None)
-        if nested is not None:
-            for size_attr in ("image_size", "_image_size", "img_size"):
-                size = _image_size_to_hw(getattr(nested, size_attr, None))
-                if size is not None:
-                    return size
 
     environment = getattr(model, "environment", None)
     if isinstance(environment, dict):

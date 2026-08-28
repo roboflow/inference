@@ -4,6 +4,19 @@
 the ``inference`` package, so it is imported here by path with a stubbed
 ``modal`` module. Loading the real server module is what makes the websocket
 protocol tests genuine behavior tests rather than mock theater.
+
+Two equivalent harnesses were written independently (one on ``main``, one on
+the webexec websocket branch) and met here. This file keeps ONE
+implementation and re-exports the older public names, so neither set of tests
+had to be rewritten to land the merge:
+
+* ``load_modal_app(monkeypatch, module_name)`` — the loader. Takes the module
+  name so each test can hold a FRESH module, which matters because the server
+  keeps container-local state (compiled namespaces, session and dedup
+  registries) at module/class scope.
+* ``modal_app`` / ``modal_app_with_fake_modal`` — fixtures over that loader.
+* ``FakeModalApp`` / ``FakeModalImage`` / ``identity_decorator`` — the stubs,
+  also exported under their original underscore-free names.
 """
 
 import importlib.util
@@ -45,7 +58,13 @@ def _identity_decorator(*args, **kwargs):
     return lambda obj: obj
 
 
-def load_modal_app(monkeypatch, module_name: str):
+# Names the tests that arrived via ``main`` import directly.
+FakeModalImage = _FakeModalImage
+FakeModalApp = _FakeModalApp
+identity_decorator = _identity_decorator
+
+
+def load_modal_app(monkeypatch, module_name: str = "modal_app_under_test"):
     """Import ``modal/modal_app.py`` fresh, with ``modal`` stubbed out.
 
     A fresh module per test keeps container-local state (namespaces, session
@@ -81,4 +100,10 @@ def build_ws_app(modal_app, run_user_code):
 
 @pytest.fixture()
 def modal_app(monkeypatch):
+    return load_modal_app(monkeypatch, "modal_app_under_test")
+
+
+@pytest.fixture()
+def modal_app_with_fake_modal(monkeypatch):
+    """Alias of :func:`modal_app`, kept for the tests that arrived via ``main``."""
     return load_modal_app(monkeypatch, "modal_app_under_test")
