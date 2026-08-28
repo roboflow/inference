@@ -20,6 +20,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm import (
 from inference.core.workflows.core_steps.models.foundation.spacexai import (
     v2 as spacexai_v2,
 )
+from inference.core.workflows.core_steps.models.foundation.zai_vlm import (
+    v1 as zai_vlm_v1,
+)
 
 _LEVELS = {"model-a": ["low", "high"], "model-b": []}
 
@@ -88,6 +91,12 @@ BLOCK_CONTRACTS = {
         qwen_vlm_v3.REASONING_EFFORT_OPTIONS,
         qwen_vlm_v3.OPENROUTER_MODEL_VERSION_METADATA,
         "none",
+    ),
+    "zai_vlm@v1": (
+        zai_vlm_v1.MODEL_REASONING_LEVELS,
+        zai_vlm_v1.REASONING_EFFORT_OPTIONS,
+        zai_vlm_v1.MODEL_VERSION_METADATA,
+        zai_vlm_v1.DEFAULT_REASONING_EFFORT,
     ),
 }
 

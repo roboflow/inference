@@ -721,6 +721,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2 import (
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     QwenVlmBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.zai_vlm.v1 import (
+    ZaiVlmBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
@@ -1938,6 +1941,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QwenVlmBlockV1,
         QwenVlmBlockV2,
         QwenVlmBlockV3,
+        ZaiVlmBlockV1,
         OpenAICompatibleBlockV1,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,

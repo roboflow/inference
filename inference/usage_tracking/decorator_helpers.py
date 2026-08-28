@@ -1,7 +1,10 @@
-from typing import Any, Dict, List, Optional, Tuple
+from contextvars import ContextVar, Token
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
+from inference.core.roboflow_api import service_secret_is_valid
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -10,10 +13,228 @@ from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
     consume_measured_model_input,
     count_inference_images,
+    get_fixed_model_input_hw,
     record_measured_model_hw,
     resolve_model_input_hw,
 )
-from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.model_types import (
+    ModelDescriptor,
+    get_recorded_model_descriptor,
+)
+from inference.usage_tracking.utils import (
+    coerce_optional_bool,
+    collect_func_params,
+    get_signature,
+)
+
+# Whether usage rows recorded in the current execution context must be marked
+# non-billable. Bound by the `usage_collector` wrappers from the arguments the
+# decorated call was made with, and inherited by everything that runs inside
+# them: nested decorators, and Execution Engine steps, whose thread pool
+# re-enters the caller's context in every worker.
+usage_billing_suppressed: ContextVar[bool] = ContextVar(
+    "usage_billing_suppressed", default=False
+)
+
+EXTERNAL_SOURCE_SENTINEL = "external"
+
+# Source tags (`source` / `source_info`) the current request-level call
+# carried, resolved once by the `usage_collector` wrappers and inherited the
+# same way as billing suppression - so a nested model decorator, which is
+# handed only the typed request, can attribute its row to the caller. The
+# default is never mutated, only replaced by `set()`.
+usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
+    "usage_source_tags", default={}
+)
+
+
+def _meaningful_source(value: Any) -> Optional[str]:
+    """A source tag worth recording, or None.
+
+    ``"external"`` is the placeholder the HTTP layer fills in when the caller
+    said nothing, so it identifies no one and is dropped rather than recorded as
+    a bucket of its own.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    if value == EXTERNAL_SOURCE_SENTINEL:
+        return None
+
+    return value
+
+
+def _lookup_in_func_kwargs(func_kwargs: Dict[str, Any], key: str) -> Any:
+    """Read a named parameter that may have landed in a catch-all ``**kwargs``."""
+    if func_kwargs.get(key) is not None:
+        return func_kwargs[key]
+    nested_kwargs = func_kwargs.get("kwargs")
+    if isinstance(nested_kwargs, dict):
+        return nested_kwargs.get(key)
+
+    return None
+
+
+def _source_tag_bound_to_handler(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Resolve a source tag from a handler's arguments, however it was declared.
+
+    Handlers spell these three ways. The legacy route declares them plainly. Two
+    SAM3 routes declare them under ``request_``-prefixed names, deliberately, so
+    that the raw names stay out of ``func_kwargs`` where ``source_info`` would
+    displace ``roboflow_service_name``. Every other route declares nothing at
+    all, leaving the value reachable only through the request's query string.
+    """
+    for candidate in (func_kwargs.get(f"request_{key}"), func_kwargs.get(key)):
+        tag = _meaningful_source(candidate)
+        if tag is not None:
+            return tag
+    query_params = getattr(func_kwargs.get("request"), "query_params", None)
+    if query_params is None:
+        return None
+
+    return _meaningful_source(query_params.get(key))
+
+
+def _source_tag_on_bound_requests(
+    func_kwargs: Dict[str, Any],
+    key: str,
+) -> Optional[str]:
+    """Read a source tag persisted on a bound request payload."""
+    for request_key in ("inference_request", "request", "workflow_request"):
+        tag = _meaningful_source(getattr(func_kwargs.get(request_key), key, None))
+        if tag is not None:
+            return tag
+
+    return None
+
+
+def read_source_tags_bound_to_call(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> Dict[str, str]:
+    """Source tags the decorated call carries, however the handler declares them.
+
+    Gated the same way as the billing intent: only request-level handlers
+    declare ``countinference``, so the model hot path never binds its call.
+    A handler's explicit declaration wins over what the request payload already
+    carries, matching how the tags used to be stamped onto the payload.
+
+    Usage tracking must never break inference, so binding failures are swallowed
+    the same way the surrounding recording calls swallow theirs.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return {}
+        func_kwargs = collect_func_params(func, args, kwargs)
+        tags = {}
+        for key in ("source", "source_info"):
+            tag = _source_tag_bound_to_handler(
+                func_kwargs, key
+            ) or _source_tag_on_bound_requests(func_kwargs, key)
+            if tag is not None:
+                tags[key] = tag
+        return tags
+    except Exception as exc:
+        logger.debug("Failed to read source tags from call - %s", exc)
+        return {}
+
+
+def non_billable_intent_is_authenticated(
+    countinference: Any,
+    service_secret: Any,
+) -> bool:
+    """Whether a caller both asked to skip billing and proved it may.
+
+    ``countinference=false`` is an internal-services affordance, not a public
+    one. It is honoured only alongside a valid service secret, matching the gate
+    applied in ``roboflow_api`` before contacting the platform and in the
+    serverless authorization middleware. An unauthenticated request to skip
+    billing is ignored rather than rejected, so this stays a telemetry decision
+    and never turns an otherwise valid inference into an error.
+
+    Args:
+        countinference: Raw per-request flag, as a bool or a string.
+        service_secret: Shared secret supplied alongside the flag.
+
+    Returns:
+        True when billing should be suppressed for this call.
+    """
+    if coerce_optional_bool(countinference) is not False:
+        return False
+    if not service_secret_is_valid(service_secret):
+        logger.debug("Ignoring countinference=false - service secret is not valid")
+        return False
+
+    return True
+
+
+def call_carries_authenticated_non_billable_intent(
+    func: Callable[..., Any],
+    args: Any,
+    kwargs: Dict[str, Any],
+) -> bool:
+    """Whether the call bound to a usage decorator opted out of billing, provably.
+
+    The HTTP handler owns the query string; everything nested beneath it - the
+    workflow, the models it runs - is handed nothing about billing at all. So
+    the intent is read once, here, from the arguments the decorated call was
+    actually made with, and published as context for the rest of the call.
+
+    Handlers that cannot carry the intent are answered from the cached signature
+    rather than by binding the call: the model hot path goes through the same
+    decorator.
+
+    Usage tracking must never break inference, so binding failures are swallowed
+    the same way the surrounding recording calls swallow theirs.
+
+    Args:
+        func: The decorated function.
+        args: Positional arguments it was called with.
+        kwargs: Keyword arguments it was called with.
+
+    Returns:
+        True when the call carries an authenticated ``countinference=false``.
+    """
+    try:
+        if "countinference" not in get_signature(func).parameters:
+            return False
+        func_kwargs = collect_func_params(func, args, kwargs)
+        return non_billable_intent_is_authenticated(
+            func_kwargs.get("countinference"),
+            func_kwargs.get("service_secret"),
+        )
+    except Exception as exc:
+        logger.debug("Failed to read billing intent from call - %s", exc)
+        return False
+
+
+def bind_billing_suppression(
+    authenticated_opt_out: bool,
+    usage_billable: bool,
+) -> Optional[Token[bool]]:
+    """Suppress billing for the current call, unless it already is suppressed.
+
+    Suppression is downgrade-only: an inherited one is left alone, so nothing
+    nested can restore billing for a caller who opted out - and nothing has to
+    be reset that this call did not set.
+
+    Args:
+        authenticated_opt_out: Whether the call proved an intent to skip billing.
+        usage_billable: The decorator argument the call was made with.
+
+    Returns:
+        The token to reset once the call is recorded, or None when this call
+        bound nothing.
+    """
+    if usage_billing_suppressed.get():
+        return None
+    if usage_billable and not authenticated_opt_out:
+        return None
+
+    return usage_billing_suppressed.set(True)
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:
@@ -71,55 +292,127 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         api_key = getattr(request, "api_key", None)
         if api_key:
             return api_key
+    if "self" in func_kwargs:
+        _self = func_kwargs["self"]
+        api_key = getattr(_self, "api_key", None) or getattr(_self, "_api_key", None)
+        if api_key:
+            return api_key
     return None
 
 
-def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow model type (variant when known, else architecture).
+def get_model_descriptor_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[ModelDescriptor]:
+    """Resolve the Roboflow architecture / variant / task behind a model call.
 
-    Prefer ``self.model_type`` (bound at load to the platform variant when
-    known, otherwise the architecture). Fall back to the process-local map
-    keyed by model id. Asking the model registry would be a network call on
-    the inference hot path. A model whose type was never recorded is reported
-    without one.
+    Prefer the labels bound onto the instance at load time. Fall back to the
+    process-local map keyed by model id. Asking the model registry would be a
+    network call on the inference hot path. A model whose descriptor was never
+    recorded is reported without one.
     """
     model = func_kwargs.get("self")
     if model is not None:
-        model_type = getattr(model, "model_type", None)
-        if model_type:
-            return str(model_type)
-    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
+        architecture = getattr(model, "model_architecture", None)
+        if architecture:
+            variant = getattr(model, "model_variant", None)
+            task_type = getattr(model, "task_type", None)
+            return ModelDescriptor(
+                architecture=str(architecture),
+                variant=str(variant) if variant else None,
+                task_type=str(task_type) if task_type else None,
+            )
+
+    return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
     func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     resource_details = {}
-    if "source" in func_kwargs:
-        resource_details["source"] = func_kwargs["source"]
-    elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
-        resource_details["source"] = func_kwargs["kwargs"]["source"]
-    if "self" in func_kwargs:
-        _self = func_kwargs["self"]
-        if hasattr(_self, "task_type"):
-            resource_details["task_type"] = _self.task_type
-    model_type = get_model_type_from_kwargs(func_kwargs)
-    if model_type:
-        resource_details["model_type"] = model_type
+    # A model decorator nested under an HTTP handler never sees the query
+    # string, so a tag that arrived there reaches it only as request context.
+    source = (
+        _meaningful_source(_lookup_in_func_kwargs(func_kwargs, "source"))
+        or _source_tag_on_bound_requests(func_kwargs, "source")
+        or usage_source_tags.get().get("source")
+    )
+    if source is not None:
+        resource_details["source"] = source
+    model = func_kwargs.get("self")
+    task_type = getattr(model, "task_type", None) if model is not None else None
+    model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
+    if model_descriptor:
+        resource_details["model_architecture"] = model_descriptor.architecture
+        if model_descriptor.variant:
+            resource_details["model_variant"] = model_descriptor.variant
+        if not task_type:
+            task_type = model_descriptor.task_type
+
+    if task_type:
+        resource_details["task_type"] = str(task_type)
+    # Only the configured canvas, never the observed one. Rows aggregate over
+    # calls that may each see a different upload, and resource details merge
+    # last-write-wins, so a size that varies per call would be attributed to
+    # every frame in the row. Per-call size is reported as megapixel buckets.
+    fixed_input_hw = get_fixed_model_input_hw(func_kwargs.get("self"))
+    if fixed_input_hw:
+        resource_details["model_input_height"] = fixed_input_hw[0]
+        resource_details["model_input_width"] = fixed_input_hw[1]
     return resource_details
+
+
+def _as_image_sequence(value: Any) -> Any:
+    """Normalize a workflow Batch of images to a list for frame counting.
+
+    ``Batch`` is sized and iterable but is not a list/tuple, so
+    ``count_inference_images`` would otherwise treat a multi-image batch as
+    a single frame.
+    """
+    if isinstance(value, Batch):
+        return list(value)
+    return value
+
+
+def _compare_request_images(request: Any) -> Optional[List[Any]]:
+    """Imagery carried by a CLIP/PE compare request, which has no ``image``.
+
+    Compare requests hold their images under ``subject`` / ``prompt``; each
+    side participates only when its ``*_type`` says it is an image.
+    """
+    images = []
+    if getattr(request, "subject_type", None) == "image":
+        subject = getattr(request, "subject", None)
+        if subject is not None:
+            images.append(subject)
+    if getattr(request, "prompt_type", None) == "image":
+        prompt = getattr(request, "prompt", None)
+        if isinstance(prompt, dict):
+            images.extend(prompt.values())
+        elif isinstance(prompt, (list, tuple)):
+            images.extend(prompt)
+        elif prompt is not None:
+            images.append(prompt)
+    return images or None
 
 
 def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
     if "image" in func_kwargs:
-        return func_kwargs["image"]
+        return _as_image_sequence(func_kwargs["image"])
+    if "images" in func_kwargs:
+        return _as_image_sequence(func_kwargs["images"])
     nested_kwargs = func_kwargs.get("kwargs")
     if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
-        return nested_kwargs["image"]
+        return _as_image_sequence(nested_kwargs["image"])
+    if isinstance(nested_kwargs, dict) and "images" in nested_kwargs:
+        return _as_image_sequence(nested_kwargs["images"])
     for request_key in ("inference_request", "request"):
         request = func_kwargs.get(request_key)
         image = getattr(request, "image", None)
         if image is not None:
             return image
+        compare_images = _compare_request_images(request)
+        if compare_images is not None:
+            return compare_images
     return None
 
 
@@ -142,7 +435,15 @@ def get_model_frames_and_input_hw(
     if frames <= 0 and measured_frames:
         frames = measured_frames
     if frames <= 0:
-        frames = 1
+        # No imagery anywhere in the call (text-only embeds). One frame is
+        # still billed, but crediting the model's visual canvas to it would
+        # fabricate image-resolution telemetry — leave the bucket unknown
+        # unless the call explicitly published a size (SAM2/SAM3 cache-hit
+        # embed_image with image=None).
+        if measured_hw is None:
+            return 1, None
+
+        return 1, resolve_model_input_hw(model, measured_hw=measured_hw)
 
     return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 
@@ -200,9 +501,7 @@ def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
                 source_info = request.source_info
                 if source_info:
                     break
-    if source_info and source_info != "external":
-        return source_info
-    return None
+    return _meaningful_source(source_info) or usage_source_tags.get().get("source_info")
 
 
 def get_resource_details_from_workflow_json(
@@ -321,8 +620,11 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
-    if func_kwargs.get("countinference") is not None:
-        resource_details["billable"] = func_kwargs["countinference"]
+    source = _source_tag_bound_to_handler(
+        func_kwargs, "source"
+    ) or _source_tag_on_bound_requests(func_kwargs, "source")
+    if source is not None:
+        resource_details["source"] = source
     model_id = getattr(func_kwargs.get("inference_request"), "model_id", None)
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE
