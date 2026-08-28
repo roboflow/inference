@@ -1,4 +1,6 @@
+import errno
 import json
+import os
 import re
 import tarfile
 import time
@@ -9,6 +11,7 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.sinks.roboflow import vision_events_bundle
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
@@ -31,6 +34,10 @@ from inference.core.workflows.execution_engine.entities.base import (
 BUNDLE_FILE_NAME_PATTERN = re.compile(
     r"^event_\d{8}T\d{6}_\d{6}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tar\.gz$"
 )
+
+
+def files_in(directory) -> list:
+    return sorted(p.name for p in directory.iterdir() if not p.name.startswith("."))
 
 
 def _make_workflow_image(width: int = 100, height: int = 100) -> WorkflowImageData:
@@ -144,6 +151,71 @@ def test_manifest_accepts_optional_solution() -> None:
     }
     manifest = BlockManifest.model_validate(raw_manifest)
     assert manifest.solution == "my-use-case"
+
+
+def test_manifest_defaults_file_name_to_none() -> None:
+    raw_manifest = {
+        "type": "roboflow_core/vision_event_bundle@v1",
+        "name": "test_step",
+        "event_type": "quality_check",
+        "target_directory": "/data/bundles",
+    }
+    manifest = BlockManifest.model_validate(raw_manifest)
+    assert manifest.file_name is None
+
+
+@pytest.mark.parametrize(
+    "file_name", ["person_batch7", "person_batch7.tar.gz", "cam-01.2026", "a"]
+)
+def test_manifest_accepts_valid_file_name(file_name: str) -> None:
+    raw_manifest = {
+        "type": "roboflow_core/vision_event_bundle@v1",
+        "name": "test_step",
+        "event_type": "quality_check",
+        "target_directory": "/data/bundles",
+        "file_name": file_name,
+    }
+    manifest = BlockManifest.model_validate(raw_manifest)
+    assert manifest.file_name == file_name
+
+
+@pytest.mark.parametrize(
+    "file_name",
+    [
+        "",
+        "../escape",
+        "nested/bundle",
+        ".hidden",
+        "-leading-dash",
+        "with space",
+        "unicode_\u00e9",
+        "trailing_newline\n",
+        "embedded\nnewline",
+        "x" * 201,
+    ],
+)
+def test_manifest_rejects_unsafe_file_name(file_name: str) -> None:
+    raw_manifest = {
+        "type": "roboflow_core/vision_event_bundle@v1",
+        "name": "test_step",
+        "event_type": "quality_check",
+        "target_directory": "/data/bundles",
+        "file_name": file_name,
+    }
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(raw_manifest)
+
+
+def test_manifest_accepts_selector_as_file_name() -> None:
+    raw_manifest = {
+        "type": "roboflow_core/vision_event_bundle@v1",
+        "name": "test_step",
+        "event_type": "quality_check",
+        "target_directory": "/data/bundles",
+        "file_name": "$steps.compose.output",
+    }
+    manifest = BlockManifest.model_validate(raw_manifest)
+    assert manifest.file_name == "$steps.compose.output"
 
 
 # === Happy path (sync) ===
@@ -436,7 +508,7 @@ def test_failed_write_leaves_no_partial_bundle(tmp_path, monkeypatch) -> None:
     def _explode(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(vision_events_bundle.v1, "dump_bytes_atomic", _explode)
+    monkeypatch.setattr(vision_events_bundle.v1, "_publish_bundle", _explode)
 
     result = _run_block(block, str(tmp_path), output_image=_make_workflow_image())
 
@@ -449,25 +521,24 @@ def test_failed_write_leaves_no_partial_bundle(tmp_path, monkeypatch) -> None:
 
 
 def test_temp_files_are_dot_prefixed(tmp_path, monkeypatch) -> None:
+    # a file mover matching *.tar.gz must never see a partially written bundle,
+    # so whatever the publish writes first has to be a dotfile
     observed_temp_names = []
-    original_dump = vision_events_bundle.v1.dump_bytes_atomic
+    real_link = os.link
 
-    def _spy(path, content, **kwargs):
-        from inference.core.utils.file_system import AtomicPath
+    def _spy(source, destination, **kwargs):
+        observed_temp_names.append(os.path.basename(source))
+        return real_link(source, destination, **kwargs)
 
-        with AtomicPath(path) as temp_path:
-            observed_temp_names.append(temp_path.split("/")[-1])
-            with open(temp_path, "wb") as f:
-                f.write(content)
-
-    monkeypatch.setattr(vision_events_bundle.v1, "dump_bytes_atomic", _spy)
+    monkeypatch.setattr(vision_events_bundle.v1.os, "link", _spy)
 
     result = _run_block(block=_make_block(tmp_path), target_directory=str(tmp_path))
 
     assert result["error_status"] is False
     assert len(observed_temp_names) == 1
     assert observed_temp_names[0].startswith(".")
-    assert original_dump is not None
+    # and nothing dot-prefixed survives the publish
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".")]
 
 
 # === P1 regression: 25 MiB bundle size limit ===
@@ -636,6 +707,255 @@ def test_valid_float_in_payload_is_serialized_correctly(tmp_path) -> None:
     assert payload["images"][0]["objectDetections"][0]["confidence"] == pytest.approx(
         0.9
     )
+
+
+# === Custom file name ===
+
+
+def test_default_name_used_when_file_name_unset(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path))
+
+    assert result["error_status"] is False
+    assert BUNDLE_FILE_NAME_PATTERN.match(os.path.basename(result["bundle_path"]))
+
+
+def test_custom_file_name_replaces_generated_name(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), file_name="person_batch7")
+
+    assert result["error_status"] is False
+    # nothing of the generated name survives - no timestamp, no event id
+    assert os.path.basename(result["bundle_path"]) == "person_batch7.tar.gz"
+    assert files_in(tmp_path) == ["person_batch7.tar.gz"]
+
+
+def test_custom_file_name_keeps_existing_suffix(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), file_name="person_batch7.tar.gz")
+
+    assert os.path.basename(result["bundle_path"]) == "person_batch7.tar.gz"
+
+
+def test_custom_file_name_bundle_contents_are_valid(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(
+        block,
+        str(tmp_path),
+        file_name="custom_name",
+        input_image=_make_workflow_image(),
+    )
+
+    payload, members = _read_bundle(result["bundle_path"])
+    assert payload["bundleFormatVersion"] == BUNDLE_FORMAT_VERSION
+    # the event id still lives in the payload even though the name omits it
+    assert payload["eventId"]
+    assert any(m.startswith("images/") for m in members)
+
+
+def test_two_blocks_route_by_directory_and_name(tmp_path) -> None:
+    # each block owns its own directory and file name, so a downstream file
+    # mover can route purely by folder and name
+    person_directory = tmp_path / "person"
+    event_directory = tmp_path / "event"
+
+    person_result = _run_block(
+        _make_block(tmp_path), str(person_directory), file_name="person_001"
+    )
+    event_result = _run_block(_make_block(tmp_path), str(event_directory))
+
+    assert person_result["error_status"] is False
+    assert event_result["error_status"] is False
+    assert files_in(person_directory) == ["person_001.tar.gz"]
+    assert BUNDLE_FILE_NAME_PATTERN.match(files_in(event_directory)[0])
+
+
+def test_repeated_custom_file_name_raises_and_preserves_original(tmp_path) -> None:
+    block = _make_block(tmp_path)
+    first = _run_block(block, str(tmp_path), file_name="collides")
+    original_bytes = (tmp_path / "collides.tar.gz").read_bytes()
+
+    with pytest.raises(ValueError, match="already exists"):
+        _run_block(block, str(tmp_path), file_name="collides")
+
+    assert first["error_status"] is False
+    assert files_in(tmp_path) == ["collides.tar.gz"]
+    assert (tmp_path / "collides.tar.gz").read_bytes() == original_bytes
+
+
+def test_collision_raises_before_background_dispatch(tmp_path) -> None:
+    # fire_and_forget returns before the write happens, so the guard has to run
+    # in the foreground - otherwise a clobbering write is reported as success
+    (tmp_path / "collides.tar.gz").write_bytes(b"existing bundle")
+    background_tasks = MagicMock()
+    block = _make_block(tmp_path, background_tasks=background_tasks)
+
+    with pytest.raises(ValueError, match="already exists"):
+        _run_block(block, str(tmp_path), file_name="collides", fire_and_forget=True)
+
+    background_tasks.add_task.assert_not_called()
+    assert (tmp_path / "collides.tar.gz").read_bytes() == b"existing bundle"
+
+
+def test_concurrent_writes_of_one_name_never_overwrite(tmp_path) -> None:
+    # a plain exists() check lets both threads through and the later write
+    # clobbers the earlier one; the reservation makes exactly one win
+    from concurrent.futures import ThreadPoolExecutor
+
+    def attempt(_):
+        try:
+            result = _run_block(
+                _make_block(tmp_path), str(tmp_path), file_name="shared"
+            )
+        except ValueError:
+            # lost the foreground check
+            return "rejected"
+        # lost the publish race: reported through error_status, not an exception
+        return "rejected" if result["error_status"] else "written"
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = list(pool.map(attempt, range(8)))
+
+    assert outcomes.count("written") == 1
+    assert outcomes.count("rejected") == 7
+    assert files_in(tmp_path) == ["shared.tar.gz"]
+    # the single winner's bundle is intact, not a half-written loser's
+    payload, _ = _read_bundle(str(tmp_path / "shared.tar.gz"))
+    assert payload["bundleFormatVersion"] == BUNDLE_FORMAT_VERSION
+
+
+def test_interrupted_write_leaves_no_marker_blocking_the_name(
+    tmp_path, monkeypatch
+) -> None:
+    # a durable reservation would survive the failure and poison the name for
+    # every later event; only dot-prefixed temporaries may be left behind
+    monkeypatch.setattr(
+        vision_events_bundle.v1,
+        "_publish_bundle",
+        MagicMock(side_effect=OSError("disk on fire")),
+    )
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), file_name="retryable")
+
+    assert result["error_status"] is True
+    assert files_in(tmp_path) == []
+
+    monkeypatch.undo()
+    retry = _run_block(block, str(tmp_path), file_name="retryable")
+    assert retry["error_status"] is False
+    assert files_in(tmp_path) == ["retryable.tar.gz"]
+
+
+def test_publish_never_replaces_an_existing_bundle(tmp_path) -> None:
+    # the foreground check is skipped here on purpose, so this exercises the
+    # publish itself - the guarantee that survives a lost race
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+        _publish_bundle,
+    )
+
+    target = tmp_path / "taken.tar.gz"
+    target.write_bytes(b"original")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _publish_bundle(target_path=str(target), content=b"replacement")
+
+    assert target.read_bytes() == b"original"
+    # the temporary file is cleaned up rather than left for a file mover
+    assert files_in(tmp_path) == ["taken.tar.gz"]
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".")]
+
+
+def test_publish_falls_back_when_hard_links_are_unavailable(
+    tmp_path, monkeypatch
+) -> None:
+    # FAT-family removable media is how bundles leave an air-gapped network, so
+    # the block must still write there rather than failing outright
+    monkeypatch.setattr(
+        vision_events_bundle.v1.os,
+        "link",
+        MagicMock(side_effect=OSError(errno.EOPNOTSUPP, "not supported")),
+    )
+    result = _run_block(_make_block(tmp_path), str(tmp_path), file_name="fallback")
+
+    assert result["error_status"] is False
+    assert files_in(tmp_path) == ["fallback.tar.gz"]
+
+
+def test_fallback_still_refuses_an_existing_bundle(tmp_path, monkeypatch) -> None:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
+        _publish_bundle,
+    )
+
+    monkeypatch.setattr(
+        vision_events_bundle.v1.os,
+        "link",
+        MagicMock(side_effect=OSError(errno.EOPNOTSUPP, "not supported")),
+    )
+    target = tmp_path / "taken.tar.gz"
+    target.write_bytes(b"original")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _publish_bundle(target_path=str(target), content=b"replacement")
+
+    assert target.read_bytes() == b"original"
+
+
+def test_publish_does_not_fall_back_on_a_real_write_error(
+    tmp_path, monkeypatch
+) -> None:
+    # only "this filesystem cannot do hard links" may reach the fallback; a
+    # genuine failure must surface instead of being papered over by a rename
+    replace = MagicMock()
+    monkeypatch.setattr(
+        vision_events_bundle.v1.os,
+        "link",
+        MagicMock(side_effect=OSError(errno.EIO, "disk on fire")),
+    )
+    monkeypatch.setattr(vision_events_bundle.v1.os, "replace", replace)
+
+    result = _run_block(_make_block(tmp_path), str(tmp_path), file_name="broken")
+
+    assert result["error_status"] is True
+    replace.assert_not_called()
+    assert files_in(tmp_path) == []
+
+
+def test_default_names_do_not_collide_across_events(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    for _ in range(5):
+        assert _run_block(block, str(tmp_path))["error_status"] is False
+
+    assert len(files_in(tmp_path)) == 5
+
+
+@pytest.mark.parametrize(
+    "file_name", ["../escape", "nested/bundle", ".hidden", "", "x" * 201]
+)
+def test_run_rejects_unsafe_file_name_resolved_from_selector(
+    tmp_path, file_name: str
+) -> None:
+    # selector-resolved values bypass manifest validation, so run() must guard
+    block = _make_block(tmp_path)
+
+    with pytest.raises(ValueError):
+        _run_block(block, str(tmp_path), file_name=file_name)
+
+    assert files_in(tmp_path) == []
+
+
+def test_disabled_sink_does_not_validate_file_name(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), disable_sink=True, file_name="../escape")
+
+    assert result["error_status"] is False
+    assert result["bundle_path"] == ""
 
 
 # === Tensor-native sibling smoke coverage ===

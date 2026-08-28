@@ -67,6 +67,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 
@@ -274,6 +275,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
             self._sessions.clear()
         return self._model
 
+    @usage_collector("model")
     def run(
         self,
         images: Batch[WorkflowImageData],
