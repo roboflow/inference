@@ -16,7 +16,7 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     Cosmos3EdgeReasoner,
 )
 
-ZERO_SHOT_MAX_NEW_TOKENS = 512
+ZERO_SHOT_MAX_NEW_TOKENS = 256
 FINE_TUNE_MAX_NEW_TOKENS = 256
 
 ZERO_SHOT_OPEN_VOCABULARY_PROMPT = (

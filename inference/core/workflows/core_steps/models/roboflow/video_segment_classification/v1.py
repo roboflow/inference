@@ -54,20 +54,23 @@ from inference.core.workflows.prototypes.block import (
 
 DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
+SAMPLE_FPS = 4.0
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
 timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the 2 s window and 0.5 s
-stride slide with 75 percent overlap. Ranges can overlap. Timeline ranges only
-grow when the block merges model evidence. The block does not extend ranges
-provisionally. When a stream provides no source FPS, the block assumes 30 FPS
-and logs a warning.
+Later classifications run at each stride. By default, the stride equals the
+window, so consecutive windows tile the stream without overlap. Set a smaller
+stride to slide overlapping windows for finer range boundaries. Ranges can
+overlap. Timeline ranges only grow when the block merges model evidence. The
+block does not extend ranges provisionally. When a stream provides no source
+FPS, the block assumes 30 FPS and logs a warning.
 
-Frames per call equal window_seconds x sample_fps. A longer window gives
-each classification more temporal context. A shorter window and stride give
-more frequent results.
+The block samples 4 frames per second of video, matching the sampling that
+model training uses. Windows of 1 to 16 seconds match the trained range. A
+longer window gives each classification more temporal context. A shorter
+window and stride give more frequent results.
 
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. On a finite clip,
@@ -103,8 +106,8 @@ class _VideoSegmentClassificationBookkeeping:
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float, float] = field(
-        default_factory=lambda: ((), 0.0, 0.0, 0.0)
+    signature: Tuple[Tuple[str, ...], float, float] = field(
+        default_factory=lambda: ((), 0.0, 0.0)
     )
 
 
@@ -149,43 +152,34 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=2.0,
+        default=16.0,
         description=(
-            "Duration of the sliding classification window in seconds. Frames "
-            "per call equal window_seconds x sample_fps. A longer window gives "
-            "the model more temporal context per classification."
+            "Duration of the classification window in seconds. Windows of 1 "
+            "to 16 seconds match the trained range. A longer window gives the "
+            "model more temporal context per classification."
         ),
-        examples=[2.0],
+        examples=[16.0],
     )
-    stride_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.5,
+    stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
+        default=None,
         description=(
-            "Time between classification calls. Boundary precision equals the "
-            "stride; a smaller stride costs more model calls."
+            "Time between classification calls. Leave empty to classify "
+            "consecutive windows without overlap. A smaller stride slides "
+            "overlapping windows for finer range boundaries at the cost of "
+            "more model calls."
         ),
-        examples=[0.5, 1.0],
-    )
-    sample_fps: float = Field(
-        default=4.0,
-        description=(
-            "Frames sampled per second for model input. Frames per call equal "
-            "window_seconds x sample_fps. A higher value gives denser temporal "
-            "coverage."
-        ),
-        examples=[4.0],
+        examples=[16.0, 2.0],
     )
 
     @model_validator(mode="after")
     def validate_window_inputs(self) -> "BlockManifest":
-        numeric_values = [self.sample_fps]
+        numeric_values = []
         if isinstance(self.window_seconds, (int, float)):
             numeric_values.append(self.window_seconds)
         if isinstance(self.stride_seconds, (int, float)):
             numeric_values.append(self.stride_seconds)
         if any(value <= 0 or not math.isfinite(value) for value in numeric_values):
-            raise ValueError(
-                "Window, stride, and sample FPS must be positive and finite."
-            )
+            raise ValueError("Window and stride must be positive and finite.")
         return self
 
     @classmethod
@@ -300,9 +294,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         class_filter: Optional[List[str]] = None,
-        window_seconds: float = 2.0,
-        stride_seconds: float = 0.5,
-        sample_fps: float = 4.0,
+        window_seconds: float = 16.0,
+        stride_seconds: Optional[float] = None,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -319,7 +312,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                     id_vocabulary=id_vocabulary,
                     window_seconds=window_seconds,
                     stride_seconds=stride_seconds,
-                    sample_fps=sample_fps,
                 )
             )
         return results
@@ -331,30 +323,27 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         window_seconds: float,
-        stride_seconds: float,
-        sample_fps: float,
+        stride_seconds: Optional[float],
     ) -> dict:
         metadata = image.video_metadata
-        requested_sample_fps = float(sample_fps)
         requested_window_seconds = float(window_seconds)
-        requested_stride_seconds = float(stride_seconds)
+        requested_stride_seconds = (
+            requested_window_seconds
+            if stride_seconds is None
+            else float(stride_seconds)
+        )
         if (
-            requested_sample_fps <= 0
-            or not math.isfinite(requested_sample_fps)
-            or requested_window_seconds <= 0
+            requested_window_seconds <= 0
             or not math.isfinite(requested_window_seconds)
             or requested_stride_seconds <= 0
             or not math.isfinite(requested_stride_seconds)
         ):
-            raise ValueError(
-                "Window, stride, and sample FPS must be positive and finite."
-            )
+            raise ValueError("Window and stride must be positive and finite.")
 
         signature = (
             tuple(block_filter or ()),
             requested_window_seconds,
             requested_stride_seconds,
-            requested_sample_fps,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
@@ -380,7 +369,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         else:
             source_fps = bookkeeping.source_fps
 
-        effective_sample_fps = min(requested_sample_fps, source_fps)
+        effective_sample_fps = min(SAMPLE_FPS, source_fps)
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))

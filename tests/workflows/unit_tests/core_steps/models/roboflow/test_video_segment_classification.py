@@ -204,14 +204,20 @@ def _run(
     stride_seconds=0.5,
     sample_fps=2.0,
 ):
-    return block.run(
-        images=[frame],
-        class_filter=list(class_filter) if class_filter is not None else None,
-        model_id="cosmos-3-edge",
-        window_seconds=window_seconds,
-        stride_seconds=stride_seconds,
-        sample_fps=sample_fps,
-    )[0]
+    # The sample rate is no longer a block parameter; tests keep their
+    # designed sampling grids by patching the module constant.
+    original_sample_fps = video_classification_module.SAMPLE_FPS
+    video_classification_module.SAMPLE_FPS = sample_fps
+    try:
+        return block.run(
+            images=[frame],
+            class_filter=list(class_filter) if class_filter is not None else None,
+            model_id="cosmos-3-edge",
+            window_seconds=window_seconds,
+            stride_seconds=stride_seconds,
+        )[0]
+    finally:
+        video_classification_module.SAMPLE_FPS = original_sample_fps
 
 
 def _timeline_as_dicts(result):
@@ -275,9 +281,8 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
-    assert manifest.window_seconds == 2.0
-    assert manifest.stride_seconds == 0.5
-    assert manifest.sample_fps == 4.0
+    assert manifest.window_seconds == 16.0
+    assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     assert manifest_type.describe_outputs()[0].kind == [
         VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND
@@ -329,10 +334,6 @@ def test_manifest_requires_model_id(manifest_type):
         ("stride_seconds", -1),
         ("stride_seconds", math.inf),
         ("stride_seconds", math.nan),
-        ("sample_fps", 0),
-        ("sample_fps", -1),
-        ("sample_fps", math.inf),
-        ("sample_fps", math.nan),
     ],
 )
 def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
@@ -797,7 +798,7 @@ def test_reset_re_resolves_source_fps(reset_frame_number, reset_window_seconds):
     assert reset_bookkeeping.source_fps == 30.0
 
 
-def test_run_default_stride_fires_every_half_second():
+def test_run_default_stride_equals_the_window():
     block, model = _make_block()
     for frame_number in range(9):
         block.run(
@@ -805,10 +806,9 @@ def test_run_default_stride_fires_every_half_second():
             class_filter=["walk", "run"],
             model_id="cosmos-3-edge",
             window_seconds=1.0,
-            sample_fps=2.0,
         )
 
-    assert len(model.calls) == 4
+    assert len(model.calls) == 2
     bookkeeping = block._video_bookkeeping["stream-0"]
     assert bookkeeping.last_fire_frame_number == 8
 
@@ -1035,7 +1035,6 @@ def test_deserializer_rejects_malformed_values(value):
         {"class_filter": ("run",)},
         {"window_seconds": 2.0},
         {"stride_seconds": 1.0},
-        {"sample_fps": 1.0},
     ],
 )
 def test_window_defining_input_change_clears_all_state(reset_kwargs):
@@ -1049,14 +1048,12 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
     stride_seconds = reset_kwargs.get("stride_seconds", 0.5)
-    sample_fps = reset_kwargs.get("sample_fps", 2.0)
     reset_result = _run(
         block,
         _make_frame(3),
         class_filter=class_filter,
         window_seconds=window_seconds,
         stride_seconds=stride_seconds,
-        sample_fps=sample_fps,
     )
 
     assert reset_result["timeline"] == []
@@ -1073,7 +1070,6 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
             class_filter=class_filter,
             window_seconds=window_seconds,
             stride_seconds=stride_seconds,
-            sample_fps=sample_fps,
         )
 
     assert result["timeline"] == []
