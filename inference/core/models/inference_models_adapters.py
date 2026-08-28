@@ -207,6 +207,35 @@ def _supports_independent_stage_execution(pre_process) -> bool:
     }
 
 
+def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
+    """Return a fixed canvas from an inference-models backend, if it has one.
+
+    Package backends (YOLO26 TRT and friends) keep the network size on
+    ``_inference_config.network_input``. Packages that accept a per-call
+    spatial size return ``None``.
+    """
+    network_input = getattr(
+        getattr(backend, "_inference_config", None),
+        "network_input",
+        None,
+    )
+    if network_input is None:
+        return None
+    if getattr(network_input, "dynamic_spatial_size_supported", False):
+        return None
+
+    training_input_size = getattr(network_input, "training_input_size", None)
+    try:
+        height = int(getattr(training_input_size, "height", None))
+        width = int(getattr(training_input_size, "width", None))
+    except (TypeError, ValueError):
+        return None
+    if height <= 0 or width <= 0:
+        return None
+
+    return height, width
+
+
 class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -233,6 +262,9 @@ class InferenceModelsObjectDetectionAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self._preprocess_supports_independent_stage_execution = (
             _supports_independent_stage_execution(self._model.pre_process)
         )
@@ -396,6 +428,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
         # Stream pipelining: depth=1 means original synchronous behavior
         # (preprocess→forward→postprocess on each frame, in order). depth=2
@@ -1105,6 +1140,9 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
         self.key_points_classes = list(self._model.key_points_classes)
 
@@ -1324,6 +1362,9 @@ class InferenceModelsClassificationAdapter(Model):
                 **kwargs,
             )
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     def run_tensor_native_inference(
@@ -1660,6 +1701,9 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     @property
@@ -1824,6 +1868,9 @@ class InferenceModelsDepthEstimationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
 
     def run_tensor_native_inference(
         self,

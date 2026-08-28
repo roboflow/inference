@@ -1,4 +1,5 @@
 import logging
+import math
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -64,6 +65,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    wrap_with_context_snapshot,
 )
 from inference.core.workflows.prototypes.block import BlockResult
 
@@ -605,91 +609,9 @@ def post_process_ocr_result(
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
-    tasks = _propagate_inference_context(tasks)
+    tasks = [wrap_with_context_snapshot(task) for task in tasks]
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(lambda f: f(), tasks))
-
-
-def _propagate_inference_context(
-    tasks: List[Callable[[], T]],
-) -> List[Callable[[], T]]:
-    """Wrap each task so that inference_sdk context vars and server-side
-    context vars are propagated into worker threads.  Returns the tasks
-    unchanged when no context is active.
-    """
-    from inference.core.managers.model_load_collector import (
-        model_load_info,
-        request_model_ids,
-    )
-
-    load_collector = model_load_info.get(None)
-    ids_collector = request_model_ids.get(None)
-
-    try:
-        from asgi_correlation_id import correlation_id as _cid_ctx
-
-        corr_id = _cid_ctx.get()
-    except Exception:
-        corr_id = None
-
-    try:
-        from inference_sdk.config import (
-            apply_duration_minimum,
-            execution_id,
-            remote_processing_times,
-        )
-
-        exec_id = execution_id.get() if execution_id is not None else None
-        rpt_collector = (
-            remote_processing_times.get()
-            if remote_processing_times is not None
-            else None
-        )
-        duration_min = (
-            apply_duration_minimum.get() if apply_duration_minimum is not None else None
-        )
-    except ImportError:
-        exec_id = None
-        rpt_collector = None
-        duration_min = None
-
-    if (
-        exec_id is None
-        and rpt_collector is None
-        and duration_min is None
-        and load_collector is None
-        and ids_collector is None
-        and corr_id is None
-    ):
-        return tasks
-
-    def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
-        def _with_context() -> T:
-            if corr_id is not None:
-                from asgi_correlation_id import correlation_id as _cid_ctx
-
-                _cid_ctx.set(corr_id)
-            if exec_id is not None:
-                from inference_sdk.config import execution_id
-
-                execution_id.set(exec_id)
-            if rpt_collector is not None:
-                from inference_sdk.config import remote_processing_times
-
-                remote_processing_times.set(rpt_collector)
-            if duration_min is not None:
-                from inference_sdk.config import apply_duration_minimum
-
-                apply_duration_minimum.set(duration_min)
-            if load_collector is not None:
-                model_load_info.set(load_collector)
-            if ids_collector is not None:
-                request_model_ids.set(ids_collector)
-            return fun()
-
-        return _with_context
-
-    return [_wrap(t) for t in tasks]
 
 
 DETECTION_MAX_EDGE_PIXELS = 2048
@@ -726,3 +648,84 @@ def scale_dimensions_to_max_edge(
         scaled_width = max(round(width * max_edge / height), 1)
 
     return (scaled_width, scaled_height)
+
+
+ANTHROPIC_DETECTION_MAX_EDGE_PIXELS = 2576
+"""Maximum padded edge length of images uploaded to Anthropic Claude models.
+
+High-resolution tier limit from Anthropic's vision documentation; edges are
+padded up to a multiple of ``ANTHROPIC_IMAGE_TILE_PIXELS`` before the check.
+"""
+
+ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS = 4784
+"""Maximum visual-token budget of images uploaded to Anthropic Claude models."""
+
+ANTHROPIC_IMAGE_TILE_PIXELS = 28
+"""Edge length of the square tiles Claude tokenizes images with."""
+
+
+def count_anthropic_image_tokens(width: int, height: int) -> int:
+    """Count the visual tokens Claude spends on an image of given dimensions.
+
+    Args:
+        width: Image width in pixels.
+        height: Image height in pixels.
+
+    Returns:
+        Number of visual tokens.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+    return math.ceil(width / tile) * math.ceil(height / tile)
+
+
+def compute_anthropic_upload_dimensions(
+    width: int,
+    height: int,
+    max_edge: int = ANTHROPIC_DETECTION_MAX_EDGE_PIXELS,
+    max_tokens: int = ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS,
+) -> Tuple[int, int]:
+    """Compute the dimensions Claude resizes an image to before processing.
+
+    Mirrors the reference implementation from Anthropic's vision coordinates
+    documentation, so pixel coordinates returned by Claude map one-to-one onto
+    an image pre-resized to these dimensions. Never upscales. The Claude block
+    that pre-resizes detection uploads and the parser that maps returned pixel
+    coordinates back onto the original image must use this exact arithmetic.
+
+    Args:
+        width: Original image width in pixels.
+        height: Original image height in pixels.
+        max_edge: Maximum padded edge length in pixels.
+        max_tokens: Maximum visual-token budget.
+
+    Returns:
+        Target ``(width, height)`` after Claude's internal resize.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+
+    def fits(candidate_width: int, candidate_height: int) -> bool:
+        return (
+            math.ceil(candidate_width / tile) * tile <= max_edge
+            and math.ceil(candidate_height / tile) * tile <= max_edge
+            and count_anthropic_image_tokens(candidate_width, candidate_height)
+            <= max_tokens
+        )
+
+    if fits(width, height):
+        return (width, height)
+
+    if height > width:
+        resized_height, resized_width = compute_anthropic_upload_dimensions(
+            height, width, max_edge, max_tokens
+        )
+        return (resized_width, resized_height)
+
+    aspect_ratio = width / height
+    low, high = 1, width
+    while low + 1 < high:
+        mid = (low + high) // 2
+        if fits(mid, max(round(mid / aspect_ratio), 1)):
+            low = mid
+        else:
+            high = mid
+    return (low, max(round(low / aspect_ratio), 1))

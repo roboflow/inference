@@ -39,9 +39,7 @@ def test_spacexai_step_validation_when_input_is_valid() -> None:
     assert result.api_key == "$inputs.xai_api_key"
 
 
-def test_spacexai_step_validation_requires_api_key_when_managed_key_disabled() -> None:
-    # WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED is off by default, so the block
-    # must demand a user-provided xAI key instead of defaulting to rf_key.
+def test_spacexai_step_validation_defaults_api_key_to_rf_key_account() -> None:
     specification = {
         "type": "roboflow_core/spacexai@v1",
         "name": "step_1",
@@ -49,8 +47,9 @@ def test_spacexai_step_validation_requires_api_key_when_managed_key_disabled() -
         "task_type": "caption",
     }
 
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(specification)
+    result = BlockManifest.model_validate(specification)
+
+    assert result.api_key == "rf_key:account"
 
 
 def test_spacexai_step_discovers_dependent_model() -> None:
@@ -176,49 +175,6 @@ def test_encode_image_for_task_uses_jpeg_for_caption() -> None:
     raw = base64.b64decode(base64_image)
     assert raw.startswith(JPEG_MAGIC_BYTES)
     assert (width, height) == (200, 100)
-
-
-def test_execute_spacexai_request_rejects_rf_key_when_managed_key_disabled() -> None:
-    # Default flag state: managed keys are off and the proxy must never be
-    # contacted; the block demands a user-provided xAI key.
-    with pytest.raises(ValueError, match="Provide your own xAI API key"):
-        execute_spacexai_request(
-            roboflow_api_key="rf_abc",
-            xai_api_key="rf_key:account",
-            instructions=None,
-            input_content=[{"role": "user", "content": []}],
-            model_version="grok-4.6",
-            reasoning_effort=None,
-            max_tokens=None,
-            temperature=None,
-        )
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
-    "WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED",
-    True,
-)
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v1."
-    "_execute_proxied_spacexai_request"
-)
-def test_execute_spacexai_request_routes_rf_key_to_proxy(
-    proxied_mock: MagicMock,
-) -> None:
-    proxied_mock.return_value = "proxied"
-    result = execute_spacexai_request(
-        roboflow_api_key="rf_abc",
-        xai_api_key="rf_key:account",
-        instructions=None,
-        input_content=[{"role": "user", "content": []}],
-        model_version="grok-4.6",
-        reasoning_effort=None,
-        max_tokens=None,
-        temperature=None,
-    )
-    assert result == "proxied"
-    proxied_mock.assert_called_once()
 
 
 @patch(

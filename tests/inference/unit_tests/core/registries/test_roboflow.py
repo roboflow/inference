@@ -1,7 +1,7 @@
 import json
 import os.path
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -29,8 +29,9 @@ from inference.core.registries.roboflow import (
 )
 from inference.core.roboflow_api import ModelEndpointType
 from inference.usage_tracking.model_types import (
-    clear_recorded_model_types,
-    get_recorded_model_type,
+    ModelDescriptor,
+    clear_recorded_model_descriptors,
+    get_recorded_model_descriptor,
 )
 
 
@@ -1080,10 +1081,70 @@ def test_get_model_type_when_generic_model_is_utilised(
     expected_result: Tuple[TaskType, ModelType],
 ) -> None:
     # when
-    result = get_model_type(model_id=model_id, api_key="my_api_key")
+    try:
+        result = get_model_type(model_id=model_id, api_key="my_api_key")
 
-    # then
-    assert result == expected_result
+        # then
+        assert result == expected_result
+    finally:
+        clear_recorded_model_descriptors()
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_descriptor",
+    [
+        (
+            "sam2/hiera_large",
+            ModelDescriptor("sam2", "hiera_large", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_small",
+            ModelDescriptor("sam2", "hiera_small", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_tiny",
+            ModelDescriptor("sam2", "hiera_tiny", task_type="embed"),
+        ),
+        (
+            "sam2/hiera_b_plus",
+            ModelDescriptor("sam2", "hiera_b_plus", task_type="embed"),
+        ),
+        (
+            "sam3/sam3_final",
+            ModelDescriptor("sam3", "sam3_final", task_type="embed"),
+        ),
+        (
+            "sam3/sam3_interactive",
+            ModelDescriptor(
+                "sam3", "sam3_interactive", task_type="interactive-segmentation"
+            ),
+        ),
+        (
+            "yolo_world/l",
+            ModelDescriptor("yolo-world", "l", task_type="object-detection"),
+        ),
+        # A bare architecture id is served in a single flavour - no variant.
+        ("clip", ModelDescriptor("clip", None, task_type="embed")),
+        (
+            "qwen3_5-0.8b",
+            ModelDescriptor("qwen3_5-0.8b", None, task_type="lmm"),
+        ),
+    ],
+)
+def test_get_model_type_records_coded_model_suffix_as_usage_variant(
+    model_id: str,
+    expected_descriptor: ModelDescriptor,
+) -> None:
+    # when
+    try:
+        task_type, model_type = get_model_type(model_id=model_id, api_key="my_api_key")
+
+        # then - class lookup stays on the architecture, usage keeps both labels
+        assert task_type
+        assert model_type == expected_descriptor.architecture
+        assert get_recorded_model_descriptor(model_id) == expected_descriptor
+    finally:
+        clear_recorded_model_descriptors()
 
 
 def test_model_pipelines_enumerate_all_coded_pp_ocr_ids() -> None:
@@ -1283,13 +1344,21 @@ def test_get_model_type_for_pipeline_when_inference_models_enabled(
     model_id: str,
 ) -> None:
     # when
-    result = get_model_type(model_id=model_id, api_key="my_api_key")
+    try:
+        result = get_model_type(model_id=model_id, api_key="my_api_key")
 
-    # then - pipeline recognition is static and must not call any remote API
-    assert result == ("ocr", "pp_ocr")
-    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
-    get_roboflow_model_data_mock.assert_not_called()
-    get_roboflow_instant_model_data_mock.assert_not_called()
+        # then - pipeline recognition is static and must not call any remote API.
+        # Usage keeps the requested stage sizes so tiny vs small stay distinct.
+        assert result == ("ocr", "pp_ocr")
+        _, _, expected_variant = model_id.partition("/")
+        assert get_recorded_model_descriptor(model_id) == ModelDescriptor(
+            "pp_ocr", expected_variant or None, task_type="ocr"
+        )
+        get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+        get_roboflow_model_data_mock.assert_not_called()
+        get_roboflow_instant_model_data_mock.assert_not_called()
+    finally:
+        clear_recorded_model_descriptors()
 
 
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
@@ -1545,23 +1614,57 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         )
 
         assert result == ("instance-segmentation", "yolov8")
-        assert get_recorded_model_type("yolov8n-seg-640") == "yolov8-n"
+        assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
+            "yolov8", "yolov8-n", task_type="instance-segmentation"
+        )
         with open(metadata_path) as f:
             persisted_metadata = json.load(f)
         assert persisted_metadata["model_type"] == "yolov8"
         assert persisted_metadata["model_variant"] == "yolov8-n"
 
         _in_process_metadata_cache.cache.clear()
-        clear_recorded_model_types()
+        clear_recorded_model_descriptors()
         cached_result = get_model_type(
             model_id="yolov8n-seg-640",
             api_key="my_api_key",
         )
         assert cached_result == ("instance-segmentation", "yolov8")
-        assert get_recorded_model_type("yolov8n-seg-640") == "yolov8-n"
+        assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
+            "yolov8", "yolov8-n", task_type="instance-segmentation"
+        )
         get_model_metadata_from_inference_models_registry_mock.assert_called_once()
     finally:
-        clear_recorded_model_types()
+        clear_recorded_model_descriptors()
+
+
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_records_architecture_when_registry_omits_variant(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given - older projects resolve without a modelVariant field
+    construct_model_type_cache_path_mock.return_value = os.path.join(
+        empty_local_dir, "model_type.json"
+    )
+    get_model_metadata_from_inference_models_registry_mock.return_value = {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+    # when
+    try:
+        result = get_model_type(model_id="some-project/3", api_key="my_api_key")
+
+        # then - the architecture is still labelled, the variant stays absent
+        assert result == ("object-detection", "yolov8")
+        assert get_recorded_model_descriptor("some-project/3") == ModelDescriptor(
+            "yolov8", None, task_type="object-detection"
+        )
+    finally:
+        clear_recorded_model_descriptors()
 
 
 @mock.patch.object(
@@ -1941,7 +2044,9 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
     # when
     with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
         roboflow, "find_cached_model_package_dir", return_value=package_dir
-    ) as find_cached_package:
+    ) as find_cached_package, mock.patch.object(
+        roboflow, "load_record_raw", return_value=None
+    ):
         result = roboflow._get_model_metadata_from_inference_models_cache(
             model_id="coco/22",
             api_key="credential-a",
@@ -1953,6 +2058,174 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
         model_id="coco/22",
         api_key="credential-a",
     )
+
+
+def test_get_model_metadata_from_inference_models_cache_reads_offline_registry_variant(
+    empty_local_dir: str,
+) -> None:
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": "coco/38",
+                "task_type": "object-detection",
+                "model_architecture": "rfdetr",
+                "backend_type": "torch",
+            },
+            f,
+        )
+
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
+    ), mock.patch.object(
+        roboflow,
+        "load_record_raw",
+        return_value={
+            "canonical_model_id": "coco/38",
+            "model": {
+                "model_architecture": "rfdetr",
+                "task_type": "object-detection",
+                "model_variant": "rfdetr-nano",
+            },
+        },
+    ) as load_record_raw_mock:
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/38",
+            api_key="credential-a",
+        )
+
+    assert result == ("object-detection", "rfdetr", "rfdetr-nano")
+    load_record_raw_mock.assert_called_once_with(model_id="coco/38")
+
+
+def test_get_model_metadata_from_inference_models_cache_reads_variant_by_canonical_id(
+    empty_local_dir: str,
+) -> None:
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": "rfdetr-nano",
+                "canonical_model_id": "coco/38",
+                "task_type": "object-detection",
+                "model_architecture": "rfdetr",
+                "backend_type": "torch",
+            },
+            f,
+        )
+
+    def _load_record(model_id: str):
+        if model_id == "coco/38":
+            return {
+                "canonical_model_id": "coco/38",
+                "model": {"model_variant": "rfdetr-nano"},
+            }
+        return None
+
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
+    ), mock.patch.object(
+        roboflow, "load_record_raw", side_effect=_load_record
+    ) as load_record_raw_mock:
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="rfdetr-nano"
+        )
+
+    assert result == ("object-detection", "rfdetr", "rfdetr-nano")
+    assert [
+        call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
+    ] == [
+        "rfdetr-nano",
+        "coco/38",
+    ]
+
+
+@pytest.mark.parametrize("corrupt_value", [["coco/38"], {"id": "coco/38"}, 38, None])
+def test_get_model_metadata_from_inference_models_cache_survives_corrupt_id_fields(
+    corrupt_value: Any,
+    empty_local_dir: str,
+) -> None:
+    # given - model_config.json is read without schema validation, so a
+    # hand-edited or truncated file must degrade to "no variant", not raise
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": corrupt_value,
+                "canonical_model_id": corrupt_value,
+                "task_type": "object-detection",
+                "model_architecture": "rfdetr",
+                "backend_type": "torch",
+            },
+            f,
+        )
+
+    # when
+    with mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True), mock.patch.object(
+        roboflow, "find_cached_model_package_dir", return_value=package_dir
+    ), mock.patch.object(
+        roboflow, "load_record_raw", return_value=None
+    ) as load_record_raw_mock:
+        result = roboflow._get_model_metadata_from_inference_models_cache(
+            model_id="coco/38"
+        )
+
+    # then - the unusable candidates are skipped, the requested id is still tried
+    assert result == ("object-detection", "rfdetr", None)
+    assert [
+        call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
+    ] == ["coco/38"]
+
+
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "find_cached_model_package_dir")
+@mock.patch.object(roboflow, "load_record_raw")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_records_offline_registry_variant_when_model_type_json_missing(
+    load_record_raw_mock: MagicMock,
+    find_cached_model_package_dir_mock: MagicMock,
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    construct_model_type_cache_path_mock.return_value = os.path.join(
+        empty_local_dir, "missing", "model_type.json"
+    )
+    package_dir = os.path.join(empty_local_dir, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_id": "coco/38",
+                "task_type": "object-detection",
+                "model_architecture": "rfdetr",
+                "backend_type": "torch",
+            },
+            f,
+        )
+    find_cached_model_package_dir_mock.return_value = package_dir
+    load_record_raw_mock.return_value = {
+        "canonical_model_id": "coco/38",
+        "model": {
+            "model_architecture": "rfdetr",
+            "model_variant": "rfdetr-nano",
+        },
+    }
+
+    try:
+        result = get_model_type(model_id="coco/38", api_key="my_api_key")
+
+        assert result == ("object-detection", "rfdetr")
+        assert get_recorded_model_descriptor("coco/38") == ModelDescriptor(
+            "rfdetr", "rfdetr-nano", task_type="object-detection"
+        )
+        get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+    finally:
+        clear_recorded_model_descriptors()
 
 
 def test_get_model_metadata_from_inference_models_cache_when_no_package_found() -> None:
