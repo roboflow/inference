@@ -15,8 +15,8 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
 from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
     FINE_TUNE_MAX_NEW_TOKENS,
     FINE_TUNE_SYSTEM_PROMPT,
-    SINGLE_CALL_MAX_NEW_TOKENS,
-    SINGLE_CALL_OPEN_VOCABULARY_PROMPT,
+    ZERO_SHOT_MAX_NEW_TOKENS,
+    ZERO_SHOT_OPEN_VOCABULARY_PROMPT,
     Cosmos3EdgeVideoSegmentClassification,
     _FineTunePrefixAllowedTokensFn,
     _parse_fine_tune_segments,
@@ -125,7 +125,7 @@ def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
     assert SYSTEM_PROMPT_SENTINEL in call["prompt"]
 
 
-def test_missing_class_tokens_routes_long_clip_to_single_call_mode() -> None:
+def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
     reasoner = _FakeReasoner(response="B", tokenizer=_FakeTokenizer())
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -136,7 +136,7 @@ def test_missing_class_tokens_routes_long_clip_to_single_call_mode() -> None:
 
     assert result == [_prediction(0, 199, "running")]
     call = reasoner.calls[0]
-    assert call["max_new_tokens"] == SINGLE_CALL_MAX_NEW_TOKENS
+    assert call["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
     assert call["prefix_allowed_tokens_fn"] is None
     assert SYSTEM_PROMPT_SENTINEL not in call["prompt"]
 
@@ -150,7 +150,7 @@ def test_missing_class_tokens_routes_long_clip_to_single_call_mode() -> None:
         ("no letter here", []),
     ],
 )
-def test_single_call_maps_first_answer_letter_to_class(answer, expected) -> None:
+def test_zero_shot_maps_first_answer_letter_to_class(answer, expected) -> None:
     reasoner = _FakeReasoner(response=answer)
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
 
@@ -165,11 +165,11 @@ def test_single_call_maps_first_answer_letter_to_class(answer, expected) -> None
         "What happens in this video clip? (A) walking (B) running "
         "(C) none of the above. Answer with the letter only."
     )
-    assert reasoner.calls[0]["max_new_tokens"] == SINGLE_CALL_MAX_NEW_TOKENS
+    assert reasoner.calls[0]["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
     assert reasoner.calls[0]["enable_thinking"] is False
 
 
-def test_single_call_uses_caller_max_new_tokens() -> None:
+def test_zero_shot_uses_caller_max_new_tokens() -> None:
     reasoner = _FakeReasoner(response="A")
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
 
@@ -183,7 +183,7 @@ def test_single_call_uses_caller_max_new_tokens() -> None:
     assert reasoner.calls[0]["max_new_tokens"] == 17
 
 
-def test_single_call_empty_call_vocabulary_falls_back_to_model_classes() -> None:
+def test_zero_shot_empty_call_vocabulary_falls_back_to_model_classes() -> None:
     reasoner = _FakeReasoner(response="B")
     wrapper = Cosmos3EdgeVideoSegmentClassification(
         reasoner=reasoner,
@@ -199,7 +199,7 @@ def test_single_call_empty_call_vocabulary_falls_back_to_model_classes() -> None
     assert result == [_prediction(0, 1, "running")]
 
 
-def test_single_call_rejects_more_than_25_classes() -> None:
+def test_zero_shot_rejects_more_than_25_classes() -> None:
     reasoner = _FakeReasoner(response="A")
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
 
@@ -213,14 +213,14 @@ def test_single_call_rejects_more_than_25_classes() -> None:
     assert reasoner.calls == []
 
 
-def test_single_call_open_vocabulary_normalizes_first_line() -> None:
+def test_zero_shot_open_vocabulary_normalizes_first_line() -> None:
     reasoner = _FakeReasoner(response="Pick_Up   Green_Cup\nextra details")
     wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
 
     result = wrapper.infer(frames=_frames(3), fps=5.0)
 
     assert result == [_prediction(0, 2, "pick up green cup")]
-    assert reasoner.calls[0]["prompt"] == SINGLE_CALL_OPEN_VOCABULARY_PROMPT
+    assert reasoner.calls[0]["prompt"] == ZERO_SHOT_OPEN_VOCABULARY_PROMPT
 
 
 @pytest.mark.parametrize(
@@ -231,7 +231,7 @@ def test_single_call_open_vocabulary_normalizes_first_line() -> None:
         "one two three four five six seven eight nine",
     ],
 )
-def test_single_call_open_vocabulary_rejects_empty_or_overlong_first_line(
+def test_zero_shot_open_vocabulary_rejects_empty_or_overlong_first_line(
     answer,
 ) -> None:
     reasoner = _FakeReasoner(response=answer)

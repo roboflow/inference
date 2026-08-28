@@ -16,10 +16,10 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     Cosmos3EdgeReasoner,
 )
 
-SINGLE_CALL_MAX_NEW_TOKENS = 512
+ZERO_SHOT_MAX_NEW_TOKENS = 512
 FINE_TUNE_MAX_NEW_TOKENS = 256
 
-SINGLE_CALL_OPEN_VOCABULARY_PROMPT = (
+ZERO_SHOT_OPEN_VOCABULARY_PROMPT = (
     "Describe the main action in this video clip in one short lowercase "
     "phrase of at most 6 words."
 )
@@ -475,7 +475,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
                 fps=fps,
                 **kwargs,
             )
-        return self._infer_single_call(
+        return self._infer_zero_shot(
             frames=normalized_frames,
             class_names=class_names,
             fps=fps,
@@ -535,7 +535,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             fps=fps,
         )
 
-    def _infer_single_call(
+    def _infer_zero_shot(
         self,
         frames: List[np.ndarray],
         class_names: Optional[List[str]],
@@ -544,10 +544,10 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     ) -> List[VideoSegmentClassificationPrediction]:
         vocabulary = class_names or self.class_names or None
         if vocabulary is not None and len(vocabulary) > 25:
-            raise ValueError("Cosmos3 single-call mode supports at most 25 classes")
+            raise ValueError("Cosmos3 zero-shot mode supports at most 25 classes")
 
         if vocabulary is None:
-            prompt = SINGLE_CALL_OPEN_VOCABULARY_PROMPT
+            prompt = ZERO_SHOT_OPEN_VOCABULARY_PROMPT
         else:
             choices = " ".join(
                 f"({chr(ord('A') + index)}) {class_name}"
@@ -560,7 +560,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
             )
 
         generation_kwargs = dict(kwargs)
-        generation_kwargs.setdefault("max_new_tokens", SINGLE_CALL_MAX_NEW_TOKENS)
+        generation_kwargs.setdefault("max_new_tokens", ZERO_SHOT_MAX_NEW_TOKENS)
         generation_kwargs.update(
             enable_thinking=False,
             prefix_allowed_tokens_fn=None,
