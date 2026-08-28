@@ -11,6 +11,7 @@ from typing import (
     Tuple,
     Union,
 )
+from urllib.parse import urlencode
 
 import aiohttp
 import numpy as np
@@ -1205,6 +1206,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1274,6 +1278,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1450,6 +1457,8 @@ class InferenceHTTPClient:
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
                 json=payload,
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
+                # Billing parameters travel on the URL via __wrap_url_with_api_key; kept explicit because aioresponses tests pin this kwarg.
+                params=None,
             ) as response:
                 response.raise_for_status()
                 collect_remote_processing_metadata_from_headers(
@@ -1593,6 +1602,8 @@ class InferenceHTTPClient:
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
                 json=payload,
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
+                # Billing parameters travel on the URL via __wrap_url_with_api_key; kept explicit because aioresponses tests pin this kwarg.
+                params=None,
             ) as response:
                 response.raise_for_status()
                 collect_remote_processing_metadata_from_headers(
@@ -2050,6 +2061,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2120,6 +2134,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2607,6 +2624,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2661,6 +2681,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2986,6 +3009,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -3019,6 +3045,9 @@ class InferenceHTTPClient:
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -3107,12 +3136,25 @@ class InferenceHTTPClient:
         return {}
 
     def __wrap_url_with_api_key(self, url: str) -> str:
+        # The one URL seam every hand-built request method routes through, so
+        # it also appends the current billing query parameters (explicit
+        # configuration, or the outbound forwarding-authority context read at
+        # send time) - the standard v0/v1 `infer()` methods serialize those
+        # through `InferenceConfiguration` instead, and never call this.
+        query_params: Dict[str, Any] = {}
         if (
-            self.__client_mode is not HTTPClientMode.V0
-            or self.__resolved_api_key_transport() is ApiKeyTransport.HEADER
+            self.__client_mode is HTTPClientMode.V0
+            and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
+            query_params["api_key"] = self.__api_key
+        billing_query_parameters = (
+            self.__inference_configuration.to_billing_query_parameters()
+        )
+        if billing_query_parameters:
+            query_params.update(billing_query_parameters)
+        if not query_params:
             return url
-        return f"{url}?api_key={self.__api_key}"
+        return f"{url}?{urlencode(query_params)}"
 
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:

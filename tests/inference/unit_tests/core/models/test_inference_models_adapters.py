@@ -17,6 +17,7 @@ from inference.core.models.inference_models_adapters import (
     InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
     InferenceModelsObjectDetectionAdapter,
+    _fixed_input_hw_from_backend,
     _supports_independent_stage_execution,
     prepare_classification_response,
     prepare_multi_label_classification_response,
@@ -697,3 +698,46 @@ def test_semantic_segmentation_adapter_postprocess_numpy_mask_format():
         (confidence * 255).to(torch.uint8).numpy(),
     )
     assert prediction.present_class_ids == [0, 1]
+
+
+def _backend_with_network_input(
+    *,
+    height: int,
+    width: int,
+    dynamic_spatial_size_supported: bool = False,
+):
+    return SimpleNamespace(
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=dynamic_spatial_size_supported,
+                training_input_size=SimpleNamespace(height=height, width=width),
+            )
+        )
+    )
+
+
+def test_fixed_input_hw_from_backend():
+    assert _fixed_input_hw_from_backend(
+        _backend_with_network_input(height=518, width=640)
+    ) == (518, 640)
+
+
+def test_fixed_input_hw_from_backend_skips_dynamic_spatial():
+    assert (
+        _fixed_input_hw_from_backend(
+            _backend_with_network_input(
+                height=640,
+                width=640,
+                dynamic_spatial_size_supported=True,
+            )
+        )
+        is None
+    )
+
+
+def test_fixed_input_hw_from_backend_skips_missing_or_invalid_network_input():
+    assert _fixed_input_hw_from_backend(SimpleNamespace(_inference_config=None)) is None
+    assert (
+        _fixed_input_hw_from_backend(_backend_with_network_input(height=0, width=640))
+        is None
+    )

@@ -9,6 +9,7 @@ from PIL import Image
 from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
+    outbound_service_secret,
 )
 from inference_sdk.http.errors import (
     InvalidParameterError,
@@ -227,12 +228,27 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
-    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
-        """Extract v1 API query-string parameters from the current configuration.
+    def to_billing_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract the usage-billing query-string parameters.
+
+        Spelled the same way on both API versions, so every endpoint can send
+        them regardless of client mode.
+
+        An active outbound forwarding-authority context (set by the usage
+        decorator for a call it proved carries an authenticated opt-out) always
+        wins over this object's own configuration: it forces `countinference`
+        to `False` and supplies its own secret, so an explicit
+        `count_inference=True` can never upgrade an authenticated suppression.
+        With no such context, this object's own configuration is preserved
+        exactly, unchanged - that is how an SDK caller's own explicit
+        configuration keeps working.
 
         Returns:
             Optional[Dict[str, Any]]: The query parameters, or None if unset.
         """
+        outbound_secret = outbound_service_secret.get()
+        if outbound_secret is not None:
+            return {"service_secret": outbound_secret, "countinference": False}
         query = remove_empty_values(
             {
                 "service_secret": self.service_secret,
@@ -240,6 +256,14 @@ class InferenceConfiguration:
             }
         )
         return query or None
+
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
+        return self.to_billing_query_parameters()
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.
@@ -325,6 +349,10 @@ class InferenceConfiguration:
     def to_legacy_call_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to legacy call parameters.
 
+        Billing fields are obtained through `to_billing_query_parameters()`
+        rather than a second mapping of their own, so API v0 picks up the
+        outbound forwarding-authority context the same way v1 does.
+
         Returns:
             Dict[str, Any]: The legacy call parameters.
         """
@@ -338,8 +366,6 @@ class InferenceConfiguration:
             ("max_detections", "max_detections"),
             ("iou_threshold", "overlap"),
             ("stroke_width", "stroke"),
-            ("count_inference", "countinference"),
-            ("service_secret", "service_secret"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -350,10 +376,14 @@ class InferenceConfiguration:
             ("source_info", "source_info"),
             ("response_mask_format", "response_mask_format"),
         ]
-        return get_non_empty_attributes(
+        parameters = get_non_empty_attributes(
             source_object=self,
             specification=parameters_specs,
         )
+        billing_parameters = self.to_billing_query_parameters()
+        if billing_parameters:
+            parameters.update(billing_parameters)
+        return parameters
 
 
 def get_non_empty_attributes(

@@ -315,3 +315,110 @@ def test_initialise_step_when_initialisation_failed() -> None:
             },
             initializers={},
         )
+
+
+@pytest.mark.parametrize(
+    "explicit_init_parameters",
+    [
+        {"some.step_execution_mode": StepExecutionMode.REMOTE},
+        {"step_execution_mode": StepExecutionMode.REMOTE},
+        {"step_execution_mode": "remote"},
+    ],
+)
+def test_retrieve_init_parameter_values_rejects_remote_hosted_behind_secure_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+    explicit_init_parameters,
+) -> None:
+    # env.py rewrites WORKFLOWS_STEP_EXECUTION_MODE for this combination, but that
+    # only moves the default: a per-run override never reads it.
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+    monkeypatch.setattr(offline, "SECURE_GATEWAY", "https://gateway.local")
+    monkeypatch.setattr(offline, "WORKFLOWS_REMOTE_API_TARGET", "hosted")
+
+    with pytest.raises(
+        WorkflowEnvironmentConfigurationError,
+        match="SECURE_GATEWAY",
+    ):
+        retrieve_init_parameter_values(
+            block_name="block",
+            block_init_parameter="step_execution_mode",
+            block_source="some",
+            explicit_init_parameters=explicit_init_parameters,
+            initializers={},
+        )
+
+
+def test_retrieve_init_parameter_values_rejects_remote_callable_initializer_behind_secure_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+    monkeypatch.setattr(offline, "SECURE_GATEWAY", "https://gateway.local")
+    monkeypatch.setattr(offline, "WORKFLOWS_REMOTE_API_TARGET", "hosted")
+
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        retrieve_init_parameter_values(
+            block_name="block",
+            block_init_parameter="step_execution_mode",
+            block_source="some",
+            explicit_init_parameters={},
+            initializers={
+                "some.step_execution_mode": lambda: StepExecutionMode.REMOTE,
+            },
+        )
+
+
+def test_retrieve_init_parameter_values_allows_remote_self_hosted_behind_secure_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A self-hosted target inside the gateway perimeter is reachable, so this is
+    # the configuration the error message points users at and it must keep working.
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+    monkeypatch.setattr(offline, "SECURE_GATEWAY", "https://gateway.local")
+    monkeypatch.setattr(offline, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
+
+    result = retrieve_init_parameter_values(
+        block_name="block",
+        block_init_parameter="step_execution_mode",
+        block_source="some",
+        explicit_init_parameters={"step_execution_mode": StepExecutionMode.REMOTE},
+        initializers={},
+    )
+
+    assert result is StepExecutionMode.REMOTE
+
+
+def test_retrieve_init_parameter_values_allows_remote_hosted_without_secure_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The guard must not fire when no gateway is configured.
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+    monkeypatch.setattr(offline, "SECURE_GATEWAY", None)
+    monkeypatch.setattr(offline, "WORKFLOWS_REMOTE_API_TARGET", "hosted")
+
+    result = retrieve_init_parameter_values(
+        block_name="block",
+        block_init_parameter="step_execution_mode",
+        block_source="some",
+        explicit_init_parameters={"step_execution_mode": StepExecutionMode.REMOTE},
+        initializers={},
+    )
+
+    assert result is StepExecutionMode.REMOTE
+
+
+def test_retrieve_init_parameter_values_allows_local_behind_secure_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(offline, "OFFLINE_MODE", False)
+    monkeypatch.setattr(offline, "SECURE_GATEWAY", "https://gateway.local")
+    monkeypatch.setattr(offline, "WORKFLOWS_REMOTE_API_TARGET", "hosted")
+
+    result = retrieve_init_parameter_values(
+        block_name="block",
+        block_init_parameter="step_execution_mode",
+        block_source="some",
+        explicit_init_parameters={"step_execution_mode": StepExecutionMode.LOCAL},
+        initializers={},
+    )
+
+    assert result is StepExecutionMode.LOCAL

@@ -49,7 +49,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.15.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.15.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
