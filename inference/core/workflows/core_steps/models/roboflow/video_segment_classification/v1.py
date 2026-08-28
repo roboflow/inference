@@ -158,7 +158,7 @@ class BlockManifest(WorkflowBlockManifest):
             "overlapping windows for finer range boundaries at the cost of "
             "more model calls."
         ),
-        examples=[16.0, 2.0],
+        examples=[None, 2.0],
     )
 
     @model_validator(mode="after")
