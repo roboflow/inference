@@ -295,7 +295,7 @@ RUN uv pip install --system \
 RUN python3 -m pip install --break-system-packages packaging==24.1 && rm -rf ~/.cache/pip
 
 
-RUN FLASH_ATTN_CUDA_ARCHS="8.9;9.0;12.0" \
+RUN FLASH_ATTN_CUDA_ARCHS="89;90;120" \
     MAX_JOBS=4 \
     NVCC_THREADS=2 \
     python3 -m pip install --break-system-packages -r requirements.pali.flash_attn.cu13.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
