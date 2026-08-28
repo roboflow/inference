@@ -54,6 +54,15 @@ def usage_collector_with_mocked_threads():
         yield usage_collector
 
     finally:
-        threading.Thread = original_thread
-        threading.Event = original_event
-        importlib.reload(collector_module)
+        # Mocked across the teardown reload too: reload defines a new class
+        # object, so `UsageCollector.__new__`'s `_instance` guard resets and
+        # `__init__` really does start both daemon threads again. Nothing
+        # terminates the instance being discarded, so reloading with the real
+        # `Thread` leaks a live usage sender for the rest of the process.
+        threading.Thread = MagicMock()
+        threading.Event = MagicMock()
+        try:
+            importlib.reload(collector_module)
+        finally:
+            threading.Thread = original_thread
+            threading.Event = original_event

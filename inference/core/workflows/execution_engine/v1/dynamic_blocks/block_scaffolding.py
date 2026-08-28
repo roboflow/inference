@@ -1,4 +1,6 @@
 import hashlib
+import json
+import sys
 import threading
 import time
 import types
@@ -33,10 +35,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     create_dynamic_block_code_error,
     extract_code_snippet,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.execution_timing import (
-    clear_remote_execution_duration,
-    consume_remote_execution_duration,
-)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     collect_declared_input_kind_names,
     collect_declared_output_kind_names,
@@ -51,11 +49,9 @@ from inference.core.workflows.prototypes.block import (
 from inference.usage_tracking.block_execution import (
     BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
     BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
-    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     BLOCK_DURATION_SOURCE_UNAVAILABLE,
-    BLOCK_EXECUTION_MODE_LOCAL,
-    BLOCK_EXECUTION_MODE_REMOTE,
     clear_measured_block_execution,
+    peek_measured_block_execution,
     record_measured_block_execution,
 )
 from inference.usage_tracking.collector import usage_collector
@@ -205,29 +201,50 @@ def compute_block_code_fingerprint(python_code: PythonCode) -> str:
     of the Modal executor's code hash, which keys a sandbox namespace cache and
     must match the sandbox's own implementation.
     """
-    content = "\n".join(
+    # JSON rather than a join: concatenating with a separator that can occur
+    # inside the parts is not injective, so a newline moved from the end of the
+    # run code to the start of the init code would keep the same digest.
+    content = json.dumps(
         [
             python_code.run_function_code or "",
             python_code.init_function_code or "",
-            *(python_code.imports or []),
+            list(python_code.imports or []),
         ]
     )
     return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
 
 
 @usage_collector("workflow_block")
-def _usage_tracked_run(self, *args, **kwargs) -> BlockResult:
+def _metered_run(self, block_args, block_kwargs) -> BlockResult:
     """Usage-metered entrypoint shared by every assembled dynamic block.
 
     Decorated once here rather than per assembled closure: the usage decorator
     memoizes signatures keyed by function object, and workflows are recompiled
     often enough that decorating each closure would pin every dynamic module
     for the life of the process.
+
+    The block's own inputs are carried in a single ``block_kwargs`` mapping
+    rather than spread over ``**kwargs``. A dynamic block's parameter names come
+    straight from the workflow definition with no reserved-name validation, so
+    spreading them would let an input named after one of the decorator's
+    keyword-only arguments (``usage_billable``, ``usage_api_key``,
+    ``usage_inference_test_run``, ...) bind to it - suppressing billing or
+    redirecting the row - and be swallowed before the user's function ever saw
+    it. Nesting also keeps those names out of ``collect_func_params``' flattened
+    view, where ``api_key`` / ``service_secret`` / ``source_info`` feed the
+    collector's generic fallbacks.
     """
-    # Worker threads are reused between steps, so a measurement left behind by
-    # an invocation whose usage recording failed must not be billed to this one.
+    return self._run_dynamic_block(*block_args, **block_kwargs)
+
+
+def _usage_tracked_run(self, *args, **kwargs) -> BlockResult:
+    """Undecorated ``run`` seen by the engine; see :func:`_metered_run`."""
+    # `run()` is called once per SIMD element inside a single context
+    # (`executor/core.py` `run_simd_step_in_non_batch_mode`), so a measurement
+    # left behind by an element whose usage recording failed must not be billed
+    # to the next one.
     clear_measured_block_execution()
-    return self._run_dynamic_block(*args, **kwargs)
+    return _metered_run(self, block_args=args, block_kwargs=kwargs)
 
 
 def _record_remote_block_execution(
@@ -235,34 +252,33 @@ def _record_remote_block_execution(
     *,
     error: Optional[BaseException] = None,
 ) -> None:
-    """Attribute a remote invocation to the sandbox runtime when it reported one.
+    """Fill in a duration for a remote invocation the sandbox did not measure.
 
-    Falling back to the client's wall clock over-reports by the serialization
-    and round-trip cost, so the source is recorded alongside the duration.
-    A transport-level ``DynamicBlockError`` with no sandbox duration is
-    recorded as zero: the sandbox never ran, and leaving the measurement
-    empty would let the decorator bill its own wall clock, which includes
-    the connect timeout.
+    The executor publishes the sandbox's own runtime straight into the
+    measurement channel, so when it reported one there is nothing to add.
+
+    A failed call is recorded as zero rather than as the client's wall clock,
+    whatever raised it: that wall clock is dominated by connect timeouts and
+    sandbox cold start, none of which is time the block ran. Classifying on the
+    exception type instead would split user-code failures from transport
+    failures - `DynamicBlockCodeError` is not a `DynamicBlockError` - and bill
+    the two differently for the same non-event.
+
+    A *successful* call the sandbox did not measure still falls back to the
+    client's wall clock: the block did run, and over-reporting by the round trip
+    beats reporting nothing. `duration_source` marks it as an estimate.
     """
-    remote_duration = consume_remote_execution_duration()
-    if remote_duration is not None:
-        record_measured_block_execution(
-            duration=remote_duration,
-            source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-            execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
-        )
+    if peek_measured_block_execution() is not None:
         return
-    if isinstance(error, DynamicBlockError):
+    if error is not None:
         record_measured_block_execution(
             duration=0,
             source=BLOCK_DURATION_SOURCE_UNAVAILABLE,
-            execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
         )
         return
     record_measured_block_execution(
         duration=wall_clock_duration,
         source=BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
-        execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
     )
 
 
@@ -348,10 +364,8 @@ def assembly_custom_python_block(
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            clear_remote_execution_duration()
             with _acquire_modal_executor(workspace_id) as executor:
                 started_at = time.monotonic()
-                remote_error: Optional[BaseException] = None
                 try:
                     remote_result = executor.execute_remote(
                         block_type_name=block_type_name,
@@ -360,13 +374,14 @@ def assembly_custom_python_block(
                         workspace_id=workspace_id,
                         workflow_context=self.get_workflow_context(),
                     )
-                except BaseException as error:
-                    remote_error = error
-                    raise
                 finally:
+                    # `sys.exc_info()` rather than binding the exception to a
+                    # local: `except ... as e` is deleted on purpose, and
+                    # rebinding would keep this frame - and the decoded input
+                    # images in `kwargs` - alive until the cycle collector runs.
                     _record_remote_block_execution(
                         time.monotonic() - started_at,
-                        error=remote_error,
+                        error=sys.exc_info()[1],
                     )
             return convert_block_result_to_native(
                 result=remote_result,
@@ -390,13 +405,24 @@ def assembly_custom_python_block(
                 declared_input_kinds=declared_input_kinds,
             )
             import_lines_count = len(_get_python_code_imports(python_code).splitlines())
-            started_at = time.monotonic()
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # stdout/stderr already reach the process streams in real time via the
                     # tee in capture_output(); buffers are also forwarded to the active
                     # debug collector (if any) and used to attach context on error.
-                    result = run_function(self, *args, **kwargs)
+                    #
+                    # Timed here, innermost, so the measurement excludes the
+                    # engine's representation-boundary conversions AND - on the
+                    # error path - the traceback extraction and log forwarding
+                    # below, which run before any enclosing `finally` would.
+                    started_at = time.monotonic()
+                    try:
+                        result = run_function(self, *args, **kwargs)
+                    finally:
+                        record_measured_block_execution(
+                            duration=time.monotonic() - started_at,
+                            source=BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+                        )
             except Exception as error:
                 # Record on failure too: the error payload carries this step's
                 # streams via BlockTraceback, but the collector is the only place
@@ -410,14 +436,6 @@ def assembly_custom_python_block(
                     stderr=stderr_buf.getvalue() or None,
                     block_type_name=block_type_name,
                 ) from error
-            finally:
-                # Excludes the representation-boundary conversions around this
-                # block: those are engine overhead, not the block's runtime.
-                record_measured_block_execution(
-                    duration=time.monotonic() - started_at,
-                    source=BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
-                    execution_mode=BLOCK_EXECUTION_MODE_LOCAL,
-                )
             _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
             return convert_block_result_to_native(
                 result=result,

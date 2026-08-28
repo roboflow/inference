@@ -3,12 +3,16 @@
 ``usage_collector("workflow_block")`` times the call it decorates, but that wall
 clock is not always the number that should be billed. A custom Python block
 running in a Modal sandbox spends part of the decorated call serializing inputs
-and waiting on the network, which is not time the block itself ran. Blocks
-publish the duration they want attributed here and the collector prefers it
-over its own measurement.
+and waiting on the network, which is not time the block itself ran. Whoever
+actually measured the block - the in-process scaffolding, or the sandbox that
+reported its own runtime - publishes the duration here, and the collector
+prefers it over its own measurement.
 
-The duration is published through a :class:`~contextvars.ContextVar` rather than
-an attribute on the block. Block instances are shared across the server's worker
+This is the single channel: the Modal executor publishes straight into it, so a
+sandbox-reported runtime does not need relaying through a second ContextVar.
+
+The duration travels through a :class:`~contextvars.ContextVar` rather than an
+attribute on the block. Block instances are shared across the server's worker
 threads, so an attribute would let one step overwrite the duration of another
 step that is still running.
 """
@@ -30,11 +34,20 @@ BLOCK_DURATION_SOURCE_UNAVAILABLE = "unavailable"
 BLOCK_EXECUTION_MODE_LOCAL = "local"
 BLOCK_EXECUTION_MODE_REMOTE = "modal"
 
+# Derived, not published: every duration source already implies where the block
+# ran. `decorator_wall_clock` is deliberately absent - nothing measured the
+# block, so nothing knows which arm it took.
+EXECUTION_MODE_BY_DURATION_SOURCE = {
+    BLOCK_DURATION_SOURCE_LOCAL_RUNTIME: BLOCK_EXECUTION_MODE_LOCAL,
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME: BLOCK_EXECUTION_MODE_REMOTE,
+    BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK: BLOCK_EXECUTION_MODE_REMOTE,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE: BLOCK_EXECUTION_MODE_REMOTE,
+}
+
 
 class MeasuredBlockExecution(NamedTuple):
     duration: float
     source: str
-    execution_mode: Optional[str] = None
 
 
 _measured_block_execution: ContextVar[Optional[MeasuredBlockExecution]] = ContextVar(
@@ -56,12 +69,7 @@ def clear_measured_block_execution() -> None:
     _measured_block_execution.set(None)
 
 
-def record_measured_block_execution(
-    *,
-    duration: Any,
-    source: str,
-    execution_mode: Optional[str] = None,
-) -> None:
+def record_measured_block_execution(*, duration: Any, source: str) -> None:
     """Publish the duration to bill for the block invocation now running.
 
     Values that cannot be summed (non-numeric, negative, NaN, infinity) are
@@ -72,12 +80,17 @@ def record_measured_block_execution(
     if measured_duration is None:
         return
     _measured_block_execution.set(
-        MeasuredBlockExecution(
-            duration=measured_duration,
-            source=source,
-            execution_mode=execution_mode,
-        )
+        MeasuredBlockExecution(duration=measured_duration, source=source)
     )
+
+
+def peek_measured_block_execution() -> Optional[MeasuredBlockExecution]:
+    """Whether this invocation already published a duration, without taking it.
+
+    Lets the remote arm decide it has nothing to add when the sandbox reported
+    its own runtime, while leaving the value for the collector to consume.
+    """
+    return _measured_block_execution.get()
 
 
 def consume_measured_block_execution() -> Optional[MeasuredBlockExecution]:

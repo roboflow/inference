@@ -52,10 +52,11 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     build_traceback_string,
     extract_code_snippet,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.execution_timing import (
-    record_remote_execution_duration,
-)
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.usage_tracking.block_execution import (
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    record_measured_block_execution,
+)
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
@@ -501,7 +502,10 @@ class ModalExecutor:
 
             # Published before the failure branch below raises, so an errored
             # block is still billed for the time the sandbox spent on it.
-            record_remote_execution_duration(result.get("execution_time_seconds"))
+            record_measured_block_execution(
+                duration=result.get("execution_time_seconds"),
+                source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+            )
 
             if result.get("success", False):
                 self._known_code_hashes.add(code_hash)
@@ -1170,7 +1174,10 @@ class WebSocketModalExecutor:
 
         # Published before _raise_code_error below, so an errored block is
         # still billed for the time the sandbox spent on it.
-        record_remote_execution_duration(result.get("execution_time_seconds"))
+        record_measured_block_execution(
+            duration=result.get("execution_time_seconds"),
+            source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+        )
 
         if result.get("success", False):
             self._hashes_sent_on_ws.add(code_hash)

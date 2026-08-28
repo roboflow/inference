@@ -26,21 +26,18 @@ def test_consume_returns_the_recorded_measurement():
     record_measured_block_execution(
         duration=0.25,
         source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-        execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
     )
 
     measured = consume_measured_block_execution()
 
     assert measured.duration == 0.25
     assert measured.source == BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
-    assert measured.execution_mode == BLOCK_EXECUTION_MODE_REMOTE
 
 
 def test_consume_clears_so_a_stale_duration_is_not_billed_twice():
     record_measured_block_execution(
         duration=0.5,
         source=BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
-        execution_mode=BLOCK_EXECUTION_MODE_LOCAL,
     )
 
     assert consume_measured_block_execution() is not None

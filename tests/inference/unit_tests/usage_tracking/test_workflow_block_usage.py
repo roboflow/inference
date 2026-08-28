@@ -81,7 +81,7 @@ def test_resource_details_describe_the_block():
 
 
 def test_frames_default_to_one_for_a_scalar_invocation():
-    frames = get_workflow_block_frames_from_kwargs({"kwargs": {"a": 1, "b": 2}})
+    frames = get_workflow_block_frames_from_kwargs({"block_kwargs": {"a": 1, "b": 2}})
 
     assert frames == 1
 
@@ -90,10 +90,22 @@ def test_frames_count_batch_elements_for_a_batch_oriented_block():
     batch = Batch.init(content=[1, 2, 3], indices=[(0,), (1,), (2,)])
 
     frames = get_workflow_block_frames_from_kwargs(
-        {"kwargs": {"images": batch, "threshold": 0.5}}
+        {"block_kwargs": {"images": batch, "threshold": 0.5}}
     )
 
     assert frames == 3
+
+
+def test_frames_count_leaf_elements_for_a_nested_batch():
+    inner = [
+        Batch.init(content=[1, 2, 3, 4], indices=[(0, i) for i in range(4)]),
+        Batch.init(content=[5, 6], indices=[(1, i) for i in range(2)]),
+    ]
+    nested = Batch.init(content=inner, indices=[(0,), (1,)])
+
+    frames = get_workflow_block_frames_from_kwargs({"block_kwargs": {"crops": nested}})
+
+    assert frames == 6, "Outer length (2) under-reports the 6 items handed to run()"
 
 
 def _extract_workflow_block_params(collector, execution_duration=1.0, **block_kwargs):
@@ -141,7 +153,6 @@ def test_extract_usage_params_prefers_the_duration_the_block_measured(
     record_measured_block_execution(
         duration=0.25,
         source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-        execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
     )
 
     # when
@@ -185,7 +196,6 @@ def test_measured_duration_is_not_reused_by_the_next_invocation(
     record_measured_block_execution(
         duration=0.25,
         source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-        execution_mode=BLOCK_EXECUTION_MODE_REMOTE,
     )
     _extract_workflow_block_params(usage_collector_with_mocked_threads)
 
