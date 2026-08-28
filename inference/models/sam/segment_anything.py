@@ -25,6 +25,7 @@ from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
 
 
 class SegmentAnything(RoboflowCoreModel):
@@ -54,6 +55,8 @@ class SegmentAnything(RoboflowCoreModel):
         )
         self.sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
         self.predictor = SamPredictor(self.sam)
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        self.image_size = self.sam.image_encoder.img_size
         self.ort_session = onnxruntime.InferenceSession(
             self.cache_file("decoder.onnx"),
             providers=[
@@ -122,6 +125,7 @@ class SegmentAnything(RoboflowCoreModel):
                 del self.image_size_cache[cache_key]
         return (embedding, img_in.shape[:2])
 
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
 
