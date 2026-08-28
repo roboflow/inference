@@ -45,6 +45,12 @@ slack-sdk~=3.33.4
 twilio~=9.3.7
 httpx~=0.28.1
 msgpack
+# Both are hard requirements of WEBEXEC_TRANSPORT=websocket (the custom Python
+# block transport in
+# inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py).
+# websocket-client was previously only present transitively via the docker SDK,
+# which made an opt-in transport depend on an unrelated package's dependency.
+websocket-client
 pylogix==1.0.5
 pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0

@@ -960,8 +960,11 @@ WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
 # With this enabled the executor fails loudly instead of silently continuing
 # with reset globals. Set to False to restore the pre-protocol-v2 behaviour
 # (silent continuation) without rolling back the whole websocket transport.
-WEBEXEC_WS_FAIL_ON_SESSION_LOSS = (
-    os.getenv("WEBEXEC_WS_FAIL_ON_SESSION_LOSS", "True").lower() == "true"
+# str2bool, like every other boolean in this file: it raises on a value that
+# is neither "true" nor "false", so a typo ("1", "yes", "True ") fails at boot
+# instead of silently resolving to False and disabling this safety net.
+WEBEXEC_WS_FAIL_ON_SESSION_LOSS = str2bool(
+    os.getenv("WEBEXEC_WS_FAIL_ON_SESSION_LOSS", True)
 )
 
 WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))

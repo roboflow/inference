@@ -259,8 +259,57 @@ class TestErrorTypeContract:
             resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
 
         # The literal the client keys its resend-with-full-code retry on.
+        # (This stubs _run_user_code_ws, so it pins the wire literal only;
+        # the real server's stamping is covered by
+        # test_unknown_code_hash_is_stamped_as_server_originated below.)
         assert resp["error_type"] == "UnknownCodeHash"
-        assert "UnknownCodeHash" in Path(client.__file__).read_text()
+
+    def test_unknown_code_hash_actually_drives_the_full_code_resend(self) -> None:
+        # Grepping the client source for the literal proves nothing: a broken
+        # retry condition, or one that resends with a stale hash, passes that
+        # check. Drive the real path instead — first attempt hash-only, and
+        # assert the retry carries the full code and succeeds.
+        executor = client.WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = client._ServerInfo(
+            proto=2, idle_timeout=10.0, container_id="container-1"
+        )
+        code_hash = client._compute_code_hash("def run(): return 1", [])
+        executor._hashes_sent_on_ws = {code_hash}
+        sent: list = []
+
+        def fake_send_recv(frame_bytes, workspace, request_id=None):
+            sent.append(msgpack.unpackb(frame_bytes, raw=False))
+            if len(sent) == 1:
+                return msgpack.packb(
+                    {
+                        "success": False,
+                        "error": "unknown hash",
+                        "error_type": "UnknownCodeHash",
+                        "server_error": True,
+                        "request_id": request_id,
+                    },
+                    use_bin_type=True,
+                )
+            return msgpack.packb(
+                {"success": True, "result": {}, "request_id": request_id},
+                use_bin_type=True,
+            )
+
+        executor._send_recv_with_retry = fake_send_recv
+        code = SimpleNamespace(
+            run_function_code="def run(): return 1",
+            run_function_name="run",
+            imports=[],
+        )
+
+        executor._execute_ws("MyBlock", code, {}, "test-ws", msgpack, {})
+
+        assert len(sent) == 2
+        assert "code_str" not in sent[0], "first attempt should be hash-only"
+        assert sent[1]["code_str"] == "def run(): return 1"
+        # A distinct logical request, or the server's dedup cache would just
+        # replay the failure it already cached for the first id.
+        assert sent[0]["request_id"] != sent[1]["request_id"]
 
     def test_response_no_longer_available_is_recognised_by_the_client(
         self, modal_app
@@ -287,10 +336,9 @@ class TestErrorTypeContract:
             DynamicBlockError,
         )
 
+        executor = client.WebSocketModalExecutor(workspace_id="test-ws")
         with pytest.raises(DynamicBlockError) as excinfo:
-            client.WebSocketModalExecutor._raise_server_error_if_infrastructure(
-                resp, "MyBlock"
-            )
+            executor._raise_server_error_if_infrastructure(resp, "MyBlock")
         assert not isinstance(excinfo.value, DynamicBlockCodeError)
 
     def test_server_stamps_infrastructure_errors(self, modal_app) -> None:
@@ -312,6 +360,62 @@ class TestErrorTypeContract:
 
         assert resp["success"] is False
         assert resp.get("server_error") is True
+
+    def test_unknown_code_hash_is_stamped_as_server_originated(self, modal_app) -> None:
+        # Drives the REAL _run_user_code_ws hash-only path with nothing
+        # cached, so it pins the stamping the client now relies on instead of
+        # matching a forgeable error_type name.
+        from fastapi.testclient import TestClient
+
+        # Deliberately NOT stubbed: this is the one path where the real
+        # implementation is what we are pinning.
+        real_run_user_code = modal_app.Executor._run_user_code_ws
+        _, app = _ws_app(modal_app, real_run_user_code)
+        with TestClient(app).websocket_connect("/ws") as ws:
+            ws.send_bytes(
+                msgpack.packb(
+                    {
+                        "request_id": "req-1",
+                        "inputs": {},
+                        "code_hash": "never-compiled-here",
+                        "run_function_name": "run",
+                    },
+                    use_bin_type=True,
+                )
+            )
+            resp = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+        assert resp["success"] is False
+        assert resp["error_type"] == "UnknownCodeHash"
+        assert resp["server_error"] is True
+
+    def test_chunk_count_at_the_limit_round_trips(self, modal_app) -> None:
+        # Only invalid counts were covered, so an off-by-one in either
+        # side's ``1 <= n <= MAX`` guard passed every test. Pin the valid
+        # upper boundary from both directions.
+        payload = b"z" * (client._WS_MAX_FRAME_BYTES * client._WS_MAX_CHUNKS)
+        frames = client._split_ws_frames(payload, msgpack)
+
+        assert msgpack.unpackb(frames[0], raw=False) == {
+            "_chunked": client._WS_MAX_CHUNKS
+        }
+        assert b"".join(frames[1:]) == payload
+
+        executor = client.WebSocketModalExecutor(workspace_id="test-ws")
+        executor._ws = SimpleNamespace(
+            recv=iter(frames).__next__,
+            gettimeout=lambda: None,
+            settimeout=lambda _v: None,
+        )
+        assert executor._recv_reassembled(msgpack) == payload
+
+    def test_one_chunk_over_the_limit_is_refused_before_the_wire(self) -> None:
+        payload = b"z" * (client._WS_MAX_FRAME_BYTES * client._WS_MAX_CHUNKS + 1)
+
+        from inference.core.workflows.errors import DynamicBlockError
+
+        with pytest.raises(DynamicBlockError, match="too large"):
+            client._split_ws_frames(payload, msgpack)
 
 
 class _BridgeWS:

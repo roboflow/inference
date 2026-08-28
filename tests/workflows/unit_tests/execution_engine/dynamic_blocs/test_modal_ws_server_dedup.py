@@ -9,6 +9,7 @@ import time
 
 import msgpack
 import pytest
+from types import SimpleNamespace
 
 from .conftest import build_ws_app as _ws_app
 
@@ -91,17 +92,26 @@ class TestResponseCache:
         assert cache.get("b") is not None
         assert cache.get("c") is not None
 
-    def test_hit_does_not_extend_the_ttl(self, modal_app) -> None:
+    def test_hit_does_not_extend_the_ttl(self, modal_app, monkeypatch) -> None:
+        # Driven by a fake clock rather than a real busy-wait: the previous
+        # form spun on wall time for 0.2s, which burns CPU and can flake on a
+        # loaded CI runner.
+        now = [1000.0]
+        monkeypatch.setattr(
+            modal_app, "time", SimpleNamespace(monotonic=lambda: now[0])
+        )
         cache = modal_app._WsResponseCache(
-            max_entries=8, max_bytes=10**9, ttl_seconds=0.05
+            max_entries=8, max_bytes=10**9, ttl_seconds=60.0
         )
         cache.put("a", b"payload")
-        assert cache.get("a") == b"payload"
 
-        deadline = time.monotonic() + 0.2
-        while time.monotonic() < deadline:
-            cache.get("a")
+        # Repeated hits inside the TTL must not slide the expiry forward.
+        for _ in range(5):
+            now[0] += 20.0
+            if now[0] < 1060.0:
+                assert cache.get("a") == b"payload"
 
+        now[0] = 1061.0
         assert cache.get("a") is None
 
     def test_expired_entry_is_not_served(self, modal_app) -> None:

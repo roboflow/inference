@@ -434,6 +434,86 @@ class TestKeepaliveIdleRelease:
         assert executor._session_id == old_session
         assert executor._had_success is True
 
+    def test_keepalive_backs_off_while_a_request_holds_the_lock(self) -> None:
+        # The whole design rests on the request path and the heartbeat never
+        # touching the socket at the same time: they share one connection and
+        # both read frames, so an interleave would hand a response to the
+        # keepalive (or an ack to the request). The keepalive must therefore
+        # take _io_lock non-blockingly and give up when a real frame holds it.
+        ws = _FakeWS()
+        executor = _executor_with_ws(ws)
+        executor._had_success = True
+        old_session = executor._session_id
+        executor._last_activity = _time.monotonic() - (
+            WEBEXEC_WS_IDLE_RELEASE_SECONDS + 5
+        )
+
+        # Held for the whole pass by "another thread", never released.
+        assert executor._io_lock.acquire(blocking=False)
+        try:
+            executor._keepalive_loop(_single_pass_stop_event())
+        finally:
+            executor._io_lock.release()
+
+        # Nothing was written, nothing was read, and the idle release did not
+        # fire — the in-flight frame owns the socket.
+        assert ws.sent == []
+        assert not ws.closed
+        assert executor._ws is ws
+        assert executor._session_id == old_session
+        assert executor._had_success is True
+
+
+class TestGracefulServerClose:
+    """A close the server announced is proof the frame was never read.
+
+    The server decides to close at the TOP of its receive loop and never
+    reads again, so a frame written concurrently is unprocessed. Reporting
+    that as "may have already executed" fails work that never ran — and at
+    the default connection cap it happens on a schedule.
+    """
+
+    def test_closing_frame_in_the_execution_slot_is_not_a_response(self) -> None:
+        executor = _executor_with_ws(_FakeWS([_pack({"_kind": "closing"})]))
+
+        with pytest.raises(modal_executor._ServerClosingError):
+            executor._recv_reassembled(msgpack)
+
+    def test_closing_frame_during_a_heartbeat_is_not_an_ack(self) -> None:
+        ws = _FakeWS([_pack({"_kind": "closing"})])
+        executor = _executor_with_ws(ws)
+
+        with pytest.raises(modal_executor._ServerClosingError):
+            executor._send_heartbeat(ws)
+
+    def test_graceful_close_retries_on_any_container(self, monkeypatch: Any) -> None:
+        # Attempt 1: the frame goes out, then the server's announced close
+        # arrives instead of a response. Attempt 2 lands on a DIFFERENT
+        # container. Without proof of non-delivery the same-container guard
+        # would refuse the resend and report "may have already executed";
+        # with it, the frame is simply retried and succeeds.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        containers = iter(["container-1", "container-2"])
+        sockets = [
+            _FakeWS([_pack({"_kind": "closing"})]),
+            _FakeWS([_pack({"success": True, "request_id": "req-1", "result": {}})]),
+        ]
+
+        def fake_ensure_connection(_workspace: str) -> None:
+            if executor._ws is None:
+                executor._ws = sockets.pop(0)
+                executor._server = _ServerInfo(
+                    proto=2, idle_timeout=10.0, container_id=next(containers)
+                )
+
+        monkeypatch.setattr(executor, "_ensure_connection", fake_ensure_connection)
+
+        resp = executor._send_recv_with_retry(
+            _pack({"request_id": "req-1"}), "test-ws", request_id="req-1"
+        )
+
+        assert msgpack.unpackb(resp, raw=False)["success"] is True
+
 
 class TestResponseIdGuard:
     def test_mismatched_request_id_drops_connection(self) -> None:
@@ -642,7 +722,11 @@ class TestIdleTimeoutCoercion:
             (0, 10.0),
             (-5, 10.0),
             (float("nan"), 10.0),
-            (1, 3.0),  # clamped up: a 1s timeout would mean an RTT/s forever
+            # Never clamped UP: believing the server allows more idle time
+            # than it does is what reinstates the idle-close this protocol
+            # fixes. The floor lives on the derived interval instead.
+            (1, 1.0),
+            (2, 2.0),
             (10_000, 300.0),  # clamped down: must stay under the idle release
             (30, 30.0),
         ],
@@ -651,6 +735,21 @@ class TestIdleTimeoutCoercion:
         self, advertised: Any, expected: float
     ) -> None:
         assert modal_executor._coerce_idle_timeout(advertised) == expected
+
+    @pytest.mark.parametrize("advertised", [1.5, 2, 3, 10, 30, 300])
+    def test_heartbeat_gap_stays_under_the_advertised_timeout(
+        self, advertised: float
+    ) -> None:
+        # The keepalive skips a tick when ``idle < interval``, so the real
+        # worst case between two app-level frames is 2 x interval. If that
+        # ever reaches the server's deadline the connection dies on idle --
+        # exactly the bug protocol v2 exists to fix.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = _ServerInfo(
+            proto=2, idle_timeout=modal_executor._coerce_idle_timeout(advertised)
+        )
+
+        assert 2 * executor._heartbeat_interval() < advertised
 
     def test_handshake_survives_a_garbage_idle_timeout(self) -> None:
         executor = WebSocketModalExecutor(workspace_id="test-ws")
@@ -731,19 +830,45 @@ class TestServerInfrastructureErrors:
     ) -> None:
         # DynamicBlockCodeError means "the user's Python raised". These
         # failures mean the block either never ran or ran fine.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
         with pytest.raises(DynamicBlockError) as excinfo:
-            WebSocketModalExecutor._raise_server_error_if_infrastructure(
-                result, "MyBlock"
-            )
+            executor._raise_server_error_if_infrastructure(result, "MyBlock")
 
         assert not isinstance(excinfo.value, DynamicBlockCodeError)
         assert "websocket_server_error" in excinfo.value.context
 
     def test_user_code_errors_still_fall_through(self) -> None:
-        WebSocketModalExecutor._raise_server_error_if_infrastructure(
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._raise_server_error_if_infrastructure(
             {"success": False, "error_type": "ZeroDivisionError", "error": "x"},
             "MyBlock",
         )
+
+    def test_v2_ignores_a_forged_infrastructure_error_type(self) -> None:
+        # error_type is an exception CLASS NAME chosen by untrusted user code.
+        # On v2 the server stamps server_error on its own responses, so a
+        # block raising ``class InvalidRequest(Exception)`` must still be
+        # reported as the user's code failing -- with its traceback intact.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = _ServerInfo(proto=2, idle_timeout=10.0)
+
+        executor._raise_server_error_if_infrastructure(
+            {"success": False, "error_type": "InvalidRequest", "error": "x"},
+            "MyBlock",
+        )
+
+    def test_v1_still_trusts_the_error_type_names(self) -> None:
+        # A v1 server cannot stamp the flag, so there the names must still
+        # classify -- otherwise every legacy transport failure is reported as
+        # the user's block raising.
+        executor = WebSocketModalExecutor(workspace_id="test-ws")
+        executor._server = _ServerInfo(proto=1)
+
+        with pytest.raises(DynamicBlockError):
+            executor._raise_server_error_if_infrastructure(
+                {"success": False, "error_type": "InvalidRequest", "error": "x"},
+                "MyBlock",
+            )
 
 
 class TestChunkedResponseValidation:

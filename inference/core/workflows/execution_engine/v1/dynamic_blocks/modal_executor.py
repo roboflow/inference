@@ -97,15 +97,63 @@ def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
         frame_bytes[i : i + _WS_MAX_FRAME_BYTES]
         for i in range(0, len(frame_bytes), _WS_MAX_FRAME_BYTES)
     ]
+    if len(chunks) > _WS_MAX_CHUNKS:
+        # Fail here, naming the real cause. Announcing a count the server
+        # structurally rejects makes it answer with an error frame carrying
+        # no request_id, which the response-id guard then reports as a frame
+        # desync — a misleading message on a request that would fail
+        # identically on every retry.
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block payload is too large for the websocket "
+                f"transport: {len(frame_bytes)} bytes needs {len(chunks)} "
+                f"chunks, above the {_WS_MAX_CHUNKS}-chunk limit "
+                f"({_WS_MAX_FRAME_BYTES * _WS_MAX_CHUNKS} bytes). Reduce the "
+                "size of the block's inputs."
+            ),
+            context="modal_executor | websocket_payload_too_large",
+        )
     return [msgpack.packb({"_chunked": len(chunks)}, use_bin_type=True), *chunks]
 
 
 # The heartbeat interval is idle_timeout/3, so a server advertising something
-# absurd must not be able to brick the transport: too small pins _io_lock with
-# a full RTT every tick, too large lets the server close before we heartbeat.
-_MIN_ADVERTISED_IDLE_TIMEOUT_SECONDS = 3.0
+# absurd must not be able to brick the transport: too large lets the server
+# close before we heartbeat, hence the ceiling. There is deliberately no floor
+# on the advertised value — see ``_coerce_idle_timeout``; the floor lives on
+# the derived interval instead, where it cannot inflate the client's idea of
+# the server's deadline.
 _MAX_ADVERTISED_IDLE_TIMEOUT_SECONDS = 300.0
 _DEFAULT_ADVERTISED_IDLE_TIMEOUT_SECONDS = 10.0
+# Floor on the derived interval, so a tiny advertised timeout cannot make the
+# keepalive spin with a full RTT every tick. Kept small enough that the
+# "worst-case gap is 2 x interval" invariant still holds for any advertised
+# timeout at or above 1.5s; below that a deployment is simply misconfigured.
+_MIN_HEARTBEAT_INTERVAL_SECONDS = 0.5
+
+
+def _get_socket_timeout(ws: Any) -> Optional[float]:
+    """Current socket deadline, or None if this socket cannot report one."""
+    if ws is None:
+        return None
+    try:
+        return ws.gettimeout()
+    except Exception:
+        return None
+
+
+def _set_socket_timeout(ws: Any, value: Optional[float]) -> None:
+    """Best-effort deadline change.
+
+    A deadline is a guard against a stalled peer, never a correctness
+    requirement, so a transport that does not expose ``settimeout`` must not
+    break the read path that wanted one.
+    """
+    if ws is None or value is None:
+        return
+    try:
+        ws.settimeout(value)
+    except Exception:
+        pass
 
 
 def _coerce_idle_timeout(advertised: Any) -> float:
@@ -121,10 +169,15 @@ def _coerce_idle_timeout(advertised: Any) -> float:
         return _DEFAULT_ADVERTISED_IDLE_TIMEOUT_SECONDS
     if value != value or value <= 0:  # NaN or non-positive
         return _DEFAULT_ADVERTISED_IDLE_TIMEOUT_SECONDS
-    return min(
-        max(value, _MIN_ADVERTISED_IDLE_TIMEOUT_SECONDS),
-        _MAX_ADVERTISED_IDLE_TIMEOUT_SECONDS,
-    )
+    # Clamp DOWNWARD only. Raising a small advertised value would make the
+    # client believe it has more headroom than the server actually gives it:
+    # the keepalive skips a tick when ``idle < interval``, so the real
+    # worst-case gap between app-level frames is 2 x interval. A server
+    # advertising 2s clamped up to 3.0 yields a 1.0s interval and a 2.0s
+    # worst-case gap — at the server's deadline, reinstating the very
+    # idle-close this protocol exists to fix. The floor belongs on the
+    # derived interval (see ``_heartbeat_interval``), not on the timeout.
+    return min(value, _MAX_ADVERTISED_IDLE_TIMEOUT_SECONDS)
 
 
 def _build_webexec_endpoint_base(method_label: str) -> str:
@@ -900,6 +953,23 @@ class _ResendUnsafeError(Exception):
     """
 
 
+class _ServerClosingError(Exception):
+    """Internal: the server announced a graceful close before reading us.
+
+    A v2 server sends ``{"_kind": "closing"}`` immediately before
+    ``close(1000)`` on its idle and connection-cap paths, both of which are
+    decided at the TOP of its receive loop — after that point it never reads
+    again. So a frame we had just written was provably never processed.
+
+    That proof is what makes this different from every other mid-exchange
+    failure: the request can be retried on ANY container without risking a
+    duplicate execution, instead of being reported as the ambiguous "the
+    block may have already executed". Without it, the routine cap-close
+    (every ``WEBEXEC_WS_MAX_CONNECTION_SECONDS``) surfaces as a spurious
+    user-visible error on work that never ran.
+    """
+
+
 class WebSocketModalExecutor:
     """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
 
@@ -917,6 +987,11 @@ class WebSocketModalExecutor:
     # Generous enough for a cold container to answer, far below the
     # execution-sized read timeout the handshake would otherwise inherit.
     _HANDSHAKE_REPLY_TIMEOUT_SECONDS = 60.0
+
+    # Chunks of one response follow their control frame back-to-back, so this
+    # bounds a stalled reassembly instead of letting it hold _io_lock for the
+    # execution-sized read timeout.
+    _CHUNK_CONTINUATION_TIMEOUT_SECONDS = 30.0
 
     # How long ``close()`` waits for _io_lock before tearing down anyway.
     _CLOSE_LOCK_TIMEOUT_SECONDS = 1.0
@@ -1253,10 +1328,15 @@ class WebSocketModalExecutor:
         Must be an application-level frame interval well under the server's
         ``receive_bytes`` timeout: protocol-level ws pings are answered by
         the ASGI layer and never reset that timer.
+
+        The loop skips a tick when ``idle < interval``, so the real
+        worst-case gap between two app-level frames is ``2 x interval``.
+        Dividing by 3 keeps that at 2/3 of the server's deadline; the floor
+        below is small enough not to break that invariant in practice.
         """
         server = self._server
         if server.proto == 2 and server.idle_timeout:
-            return max(1.0, server.idle_timeout / 3.0)
+            return max(_MIN_HEARTBEAT_INTERVAL_SECONDS, server.idle_timeout / 3.0)
         return self._KEEPALIVE_IDLE_SECONDS
 
     # A heartbeat ack is tiny and immediate; waiting the full read timeout
@@ -1279,21 +1359,31 @@ class WebSocketModalExecutor:
         return self._HEARTBEAT_ACK_TIMEOUT_SECONDS
 
     def _send_heartbeat(self, ws: Any) -> None:
-        """One heartbeat round-trip. Caller must hold ``_io_lock``."""
+        """One heartbeat round-trip. Caller must hold ``_io_lock``.
+
+        The deadline is installed BEFORE the write, not just around the read:
+        ``settimeout`` maps to ``socket.settimeout``, which bounds sends too.
+        A black-holed path with a full send buffer would otherwise block the
+        write for the execution-sized read timeout (720s) while this thread
+        holds ``_io_lock``, stalling every request for the workspace behind
+        it — the exact failure ``_HEARTBEAT_ACK_TIMEOUT_SECONDS`` exists to
+        prevent, reintroduced one line too late.
+        """
         import msgpack
 
-        if self._server.proto != 2:
-            # Legacy server: protocol ping is all v1 offers. It cannot reset
-            # the server's app-level idle timer, and it only writes — the
-            # first write after a peer-side close usually still succeeds at
-            # the TCP layer — so it does not reliably detect a dead socket
-            # either. Against a v1 server the connection is expected to die
-            # on idle and be re-established by the next request.
-            ws.ping()
-            return
-        ws.send_binary(msgpack.packb({"_kind": "heartbeat"}, use_bin_type=True))
         ws.settimeout(self._heartbeat_ack_timeout())
         try:
+            if self._server.proto != 2:
+                # Legacy server: protocol ping is all v1 offers. It cannot
+                # reset the server's app-level idle timer, and it only
+                # writes — the first write after a peer-side close usually
+                # still succeeds at the TCP layer — so it does not reliably
+                # detect a dead socket either. Against a v1 server the
+                # connection is expected to die on idle and be
+                # re-established by the next request.
+                ws.ping()
+                return
+            ws.send_binary(msgpack.packb({"_kind": "heartbeat"}, use_bin_type=True))
             reply_raw = self._recv_bytes_frame(ws)
             try:
                 reply = msgpack.unpackb(reply_raw, raw=False)
@@ -1303,6 +1393,13 @@ class WebSocketModalExecutor:
                 ) from error
         finally:
             ws.settimeout(WEBEXEC_WS_READ_TIMEOUT_SECONDS)
+        if isinstance(reply, dict) and reply.get("_kind") == "closing":
+            # Expected end of a connection's life (idle or the connection
+            # cap), not a fault: the caller drops the socket either way, but
+            # this keeps a routine close out of the failure logs.
+            raise _ServerClosingError(
+                "server announced a graceful close in response to a heartbeat"
+            )
         if not (isinstance(reply, dict) and reply.get("_kind") == "heartbeat_ack"):
             raise ConnectionError(f"unexpected heartbeat reply: {reply!r}")
 
@@ -1511,6 +1608,26 @@ class WebSocketModalExecutor:
                     resp_bytes = self._recv_reassembled(msgpack)
                     self._last_activity = _time.monotonic()
                 return resp_bytes
+            except _ServerClosingError as e:
+                # Proof of non-delivery: the server decided to close at the
+                # top of its receive loop and never read again, so whatever
+                # we just wrote was not processed. Clear the delivery state
+                # so the frame is retried on ANY container, instead of being
+                # reported as "may have already executed" — the routine
+                # connection-cap close would otherwise fail real work that
+                # never ran.
+                self._drop_ws_connection()
+                sent_ok = False
+                resend_pending = False
+                sent_to_container = None
+                last_exc = e
+                logger.debug(
+                    "[webexec-ws] server closed gracefully (attempt %d/%d); "
+                    "frame was not read, retrying",
+                    attempt + 1,
+                    attempts,
+                )
+                continue
             except _ResendUnsafeError:
                 self._drop_ws_connection()
                 raise DynamicBlockError(
@@ -1590,13 +1707,23 @@ class WebSocketModalExecutor:
         return resp
 
     def _recv_reassembled(self, msgpack: Any) -> bytes:
-        """Receive one logical frame, joining chunked frames if signalled."""
+        """Receive one logical frame, joining chunked frames if signalled.
+
+        A ``closing`` control frame is intercepted here rather than at each
+        call site: it can land in the handshake slot and in the execution
+        slot, and both must treat it as "the server never read us" rather
+        than as a response.
+        """
         resp_bytes = self._recv_bytes_frame()
         if len(resp_bytes) < 64:
             try:
                 head = msgpack.unpackb(resp_bytes, raw=False)
             except Exception:
                 return resp_bytes
+            if isinstance(head, dict) and head.get("_kind") == "closing":
+                raise _ServerClosingError(
+                    "server announced a graceful close before reading the frame"
+                )
             if isinstance(head, dict) and "_chunked" in head:
                 chunk_count = head["_chunked"]
                 if (
@@ -1608,7 +1735,31 @@ class WebSocketModalExecutor:
                         f"invalid websocket chunk count from server: "
                         f"{chunk_count!r}; treating connection as dead"
                     )
-                return b"".join(self._recv_bytes_frame() for _ in range(chunk_count))
+                # Continuation chunks follow the control frame within
+                # milliseconds, so they must not inherit the execution-sized
+                # read timeout: a path that black-holes mid-response would
+                # otherwise block here for WEBEXEC_WS_READ_TIMEOUT_SECONDS
+                # (720s) while _io_lock is held, stalling every other run on
+                # this executor. Mirrors the handshake and heartbeat deadlines.
+                # Restore whatever deadline was in force rather than assuming
+                # the execution one: this also runs inside _handshake, which
+                # installs its own shorter reply timeout.
+                ws = self._ws
+                previous_timeout = _get_socket_timeout(ws)
+                _set_socket_timeout(ws, self._CHUNK_CONTINUATION_TIMEOUT_SECONDS)
+                try:
+                    return b"".join(
+                        self._recv_bytes_frame() for _ in range(chunk_count)
+                    )
+                finally:
+                    _set_socket_timeout(
+                        ws,
+                        (
+                            previous_timeout
+                            if previous_timeout is not None
+                            else WEBEXEC_WS_READ_TIMEOUT_SECONDS
+                        ),
+                    )
         return resp_bytes
 
     def _execute_ws(
@@ -1663,6 +1814,7 @@ class WebSocketModalExecutor:
             not send_full_code
             and not result.get("success", False)
             and result.get("error_type") == "UnknownCodeHash"
+            and self._is_server_originated(result)
         ):
             self._hashes_sent_on_ws.discard(code_hash)
             logger.info(
@@ -1756,8 +1908,9 @@ class WebSocketModalExecutor:
         return result
 
     # Failures the server reports that are NOT failures of the user's code.
-    # Newer servers also stamp ``server_error: True``; the names cover servers
-    # deployed before that flag existed.
+    # These names are only a fallback for v1 servers, which predate the
+    # ``server_error`` flag: user code can raise an exception class of any
+    # name, so on v2 the flag is what decides. See ``_is_server_originated``.
     _SERVER_INFRASTRUCTURE_ERROR_TYPES = frozenset(
         {
             "ResponseNoLongerAvailable",
@@ -1766,8 +1919,29 @@ class WebSocketModalExecutor:
         }
     )
 
-    @staticmethod
+    def _is_server_originated(self, result: dict) -> bool:
+        """Whether the server, not the user's code, produced this failure.
+
+        On protocol v2 the server stamps ``server_error: True`` on its own
+        control responses, so the flag is authoritative and the name list is
+        ignored. That matters because ``error_type`` carries an exception
+        CLASS NAME chosen by untrusted user code: a block raising
+        ``class UnknownCodeHash(Exception)`` would otherwise trigger the
+        client's resend-with-full-code path and execute twice, and one named
+        ``InvalidRequest`` would have its traceback, line number and output
+        discarded as if it were a transport fault.
+
+        A v1 server can never set the flag, so there the names still decide.
+        """
+        if result.get("server_error") is True:
+            return True
+        if self._server.proto == 2:
+            return False
+        error_type = result.get("error_type") or "RuntimeError"
+        return error_type in self._SERVER_INFRASTRUCTURE_ERROR_TYPES
+
     def _raise_server_error_if_infrastructure(
+        self,
         result: dict,
         block_type_name: str,
     ) -> None:
@@ -1779,10 +1953,7 @@ class WebSocketModalExecutor:
         or ran successfully.
         """
         error_type = result.get("error_type") or "RuntimeError"
-        if not (
-            result.get("server_error") is True
-            or error_type in WebSocketModalExecutor._SERVER_INFRASTRUCTURE_ERROR_TYPES
-        ):
+        if not self._is_server_originated(result):
             return
         raise DynamicBlockError(
             public_message=(

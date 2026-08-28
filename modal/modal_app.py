@@ -71,6 +71,16 @@ WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 WEBEXEC_WS_MAX_CHUNKS = 1024
 
 
+class _InputsDecodeError(Exception):
+    """A request's inputs could not be decoded, so user code never ran.
+
+    Raised inside the worker thread (where decoding happens, to keep the
+    shared event loop responsive) and recognised by the handler so the
+    failure is still reported as never-executed and the request id stays
+    resendable — the same contract as when decoding ran on the loop.
+    """
+
+
 class _TtlKeySet:
     """TTL'd, size-capped set of ids with refreshable timestamps.
 
@@ -598,6 +608,11 @@ from datetime import datetime
                         f"{code_hash}; client must resend full code."
                     ),
                     "error_type": "UnknownCodeHash",
+                    # This is the server's own control response, not the
+                    # user's code failing. Without the flag the client has to
+                    # match on the error_type NAME, which untrusted user code
+                    # can forge by raising a class of the same name.
+                    "server_error": True,
                     "code_hash": code_hash,
                 }
         else:
@@ -605,6 +620,7 @@ from datetime import datetime
                 "success": False,
                 "error": "Request must include either 'code_str' or 'code_hash'.",
                 "error_type": "InvalidRequest",
+                "server_error": True,
             }
 
         try:
@@ -872,6 +888,11 @@ from datetime import datetime
                         f"{code_hash}; client must resend full code."
                     ),
                     "error_type": "UnknownCodeHash",
+                    # This is the server's own control response, not the
+                    # user's code failing. Without the flag the client has to
+                    # match on the error_type NAME, which untrusted user code
+                    # can forge by raising a class of the same name.
+                    "server_error": True,
                     "code_hash": code_hash,
                 }
         else:
@@ -879,6 +900,7 @@ from datetime import datetime
                 "success": False,
                 "error": "Request must include either 'code_str' or 'code_hash'.",
                 "error_type": "InvalidRequest",
+                "server_error": True,
             }
 
         if run_function_name not in namespace:
@@ -1104,13 +1126,38 @@ from datetime import datetime
 
         executor_self = self
 
-        async def send_payload(websocket: WebSocket, payload: bytes) -> None:
-            """Send one logical response, chunking oversized payloads."""
+        async def send_payload(
+            websocket: WebSocket, payload: bytes, request_id: Optional[str] = None
+        ) -> None:
+            """Send one logical response, chunking oversized payloads.
+
+            ``request_id`` is echoed on any error frame this helper generates
+            itself: on protocol v2 the client rejects a response that does not
+            carry the in-flight id, so an unaddressed error frame reaches the
+            user as a generic "frame desync" instead of the real cause.
+            """
             if len(payload) > WEBEXEC_WS_MAX_FRAME_BYTES:
                 chunks = [
                     payload[i : i + WEBEXEC_WS_MAX_FRAME_BYTES]
                     for i in range(0, len(payload), WEBEXEC_WS_MAX_FRAME_BYTES)
                 ]
+                if len(chunks) > WEBEXEC_WS_MAX_CHUNKS:
+                    # The client enforces the same ceiling on receive, so
+                    # announcing more would strand it waiting for chunks it
+                    # will refuse. Report the size instead of desyncing.
+                    await websocket.send_bytes(
+                        _pack_ws_error(
+                            error_type="ResponseTooLarge",
+                            error=(
+                                f"The block's result is too large to return "
+                                f"over the websocket transport: {len(payload)} "
+                                f"bytes needs {len(chunks)} chunks, above the "
+                                f"{WEBEXEC_WS_MAX_CHUNKS}-chunk limit."
+                            ),
+                            request_id=request_id,
+                        )
+                    )
+                    return
                 await websocket.send_bytes(
                     msgpack.packb({"_chunked": len(chunks)}, use_bin_type=True)
                 )
@@ -1184,36 +1231,36 @@ from datetime import datetime
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
 
-            # Decoding the request happens BEFORE the executed marker and
-            # outside the "it already ran" error path: nothing has executed
-            # yet, so a malformed payload must be reported as what it is and
-            # must stay safely retryable.
-            try:
-                inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
-            except Exception as error:
-                traceback.print_exc()
-                payload = _pack_ws_error(
-                    error_type=type(error).__name__,
-                    error=(
-                        "The server could not decode this request's inputs; "
-                        f"the custom Python block was not run: {error}"
-                    ),
-                    request_id=request_id,
-                )
-                if request_id:
-                    executor_self._ws_inflight.pop(request_id, None)
-                return payload
-
             # Set by the worker thread itself, so it distinguishes "the user
             # code started" from "the request was cancelled while still queued
-            # in the thread pool". Only the former must stay barred from a
-            # resend.
+            # in the thread pool" or "its inputs never decoded". Only the
+            # former must stay barred from a resend.
             started_running = False
 
             def _run_user_code():
+                """Decode, run and pack — all off the event loop.
+
+                This container serves up to ``max_inputs=10`` websocket
+                connections from ONE event loop. Decoding (``cv2.imdecode``
+                plus pydantic validation per image) and encoding
+                (``ndarray.tolist()`` — a 1920x1080x3 result is 6.2M Python
+                ints) are both GIL-held CPU work measured in seconds. Doing
+                either on the loop stalls the other nine connections past the
+                idle deadline of their ``receive_bytes``, closing sockets
+                whose heartbeat was already on the wire — i.e. it defeats the
+                heartbeat this protocol adds. Only packed bytes cross back.
+
+                Decoding stays BEFORE ``started_running`` so a malformed
+                payload is still reported as never-executed and stays safely
+                resendable, exactly as when it ran on the loop.
+                """
                 nonlocal started_running
+                try:
+                    inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                except Exception as error:
+                    raise _InputsDecodeError(str(error)) from error
                 started_running = True
-                return Executor._run_user_code_ws(
+                resp = Executor._run_user_code_ws(
                     executor_self,
                     code_str,
                     imports,
@@ -1222,24 +1269,26 @@ from datetime import datetime
                     client_code_hash,
                     workflow_context,
                 )
+                succeeded = bool(resp.get("success"))
+                if succeeded:
+                    resp["result"] = Executor._serialize_msgpack_result(resp["result"])
+                if request_id:
+                    resp["request_id"] = request_id
+                return succeeded, msgpack.packb(resp, use_bin_type=True)
 
             try:
                 # Mark BEFORE running: from here on a resend must never
                 # re-execute, however this call ends.
                 if request_id:
                     executor_self._ws_executed.add(request_id)
-                resp = await asyncio.to_thread(_run_user_code)
+                succeeded, payload = await asyncio.to_thread(_run_user_code)
 
-                if resp.get("success"):
-                    resp["result"] = Executor._serialize_msgpack_result(resp["result"])
+                if succeeded:
                     # Only now has runtime state actually been built here;
-                    # see the note on _ws_register_session.
+                    # see the note on _ws_register_session. Stays on the loop
+                    # thread, which is where the registry is documented to be
+                    # touched.
                     executor_self._ws_register_session(session_id)
-
-                if request_id:
-                    resp["request_id"] = request_id
-
-                payload = msgpack.packb(resp, use_bin_type=True)
             except BaseException as error:
                 # BaseException, not Exception: untrusted user code can raise
                 # SystemExit (``sys.exit()``), which concurrent.futures
@@ -1249,18 +1298,29 @@ from datetime import datetime
                 # request id poisoned for the whole executed-marker TTL.
                 traceback.print_exc()
                 if not started_running:
-                    # The worker thread never entered the user code (cancelled
-                    # while queued, or the dispatch itself failed), so leave
-                    # the id resendable instead of poisoning it for the whole
-                    # executed-marker TTL.
+                    # The worker thread never entered the user code (inputs
+                    # that would not decode, cancelled while queued, or the
+                    # dispatch itself failed), so leave the id resendable
+                    # instead of poisoning it for the whole executed-marker
+                    # TTL.
                     if request_id:
                         executor_self._ws_executed.discard(request_id)
-                    payload = _pack_ws_error(
-                        error_type=type(error).__name__,
-                        error=(
+                    if isinstance(error, _InputsDecodeError):
+                        message = (
+                            "The server could not decode this request's "
+                            f"inputs; the custom Python block was not run: "
+                            f"{error}"
+                        )
+                        error_type = type(error.__cause__ or error).__name__
+                    else:
+                        message = (
                             "The server failed before the custom Python block "
                             f"was run: {error}"
-                        ),
+                        )
+                        error_type = type(error).__name__
+                    payload = _pack_ws_error(
+                        error_type=error_type,
+                        error=message,
                         request_id=request_id,
                     )
                 else:
@@ -1290,13 +1350,50 @@ from datetime import datetime
             await websocket.accept()
             connected_at = time.monotonic()
             conn_session_id = ""
+            # Last request id seen on this connection, so the terminal error
+            # handler below can address its frame. On protocol v2 the client
+            # rejects a response without the in-flight id, so an unaddressed
+            # error frame is reported to the user as a frame desync and the
+            # real diagnostic is lost.
+            conn_last_request_id: Optional[str] = None
+            # Set once this connection has spoken protocol v2 (i.e. sent a
+            # hello). A v1 client would try to msgpack-decode the ``closing``
+            # frame below as an execution response, so it must never see one.
+            conn_is_v2 = False
+
+            async def _close_gracefully() -> None:
+                """Close after telling a v2 client the frame it may have just
+                sent was never read.
+
+                Both callers close from the TOP of the loop, before any
+                ``receive_bytes``: once we decide to close we never read
+                again, so anything the client wrote concurrently is
+                guaranteed unprocessed. Saying so explicitly is what lets the
+                client retry it on any container instead of reporting the
+                ambiguous "may have already executed". The error paths close
+                with 1011 and their own error frame, so ``closing`` + 1000 is
+                unambiguously "nothing ran".
+                """
+                if conn_is_v2:
+                    try:
+                        await websocket.send_bytes(
+                            msgpack.packb({"_kind": "closing"}, use_bin_type=True)
+                        )
+                    except Exception:
+                        # The peer is already gone; the close below is enough.
+                        pass
+                try:
+                    await websocket.close(code=1000)
+                except Exception:
+                    pass
+
             try:
                 while True:
                     remaining = WEBEXEC_WS_MAX_CONNECTION_SECONDS - (
                         time.monotonic() - connected_at
                     )
                     if remaining <= 0:
-                        await websocket.close(code=1000)
+                        await _close_gracefully()
                         return
                     try:
                         raw = await asyncio.wait_for(
@@ -1304,7 +1401,7 @@ from datetime import datetime
                             timeout=min(remaining, WEBEXEC_WS_IDLE_TIMEOUT_SECONDS),
                         )
                     except asyncio.TimeoutError:
-                        await websocket.close(code=1000)
+                        await _close_gracefully()
                         return
                     request = msgpack.unpackb(raw, raw=False)
                     if isinstance(request, dict) and "_chunked" in request:
@@ -1318,13 +1415,28 @@ from datetime import datetime
                                 f"invalid websocket chunk count: {chunk_count!r}"
                             )
                         parts = []
+                        # Bound the BYTES, not just the chunk count. The count
+                        # ceiling alone still admits 1024 max-size frames, and
+                        # ``b"".join`` then doubles the peak — enough for a
+                        # handful of concurrent connections to OOM the
+                        # container, which drops the namespaces, sessions and
+                        # dedup caches of every tenant sharing it.
+                        reassembled_bytes = 0
+                        max_reassembled_bytes = (
+                            WEBEXEC_WS_MAX_CHUNKS * WEBEXEC_WS_MAX_FRAME_BYTES
+                        )
                         for _ in range(chunk_count):
-                            parts.append(
-                                await asyncio.wait_for(
-                                    websocket.receive_bytes(),
-                                    timeout=WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
-                                )
+                            part = await asyncio.wait_for(
+                                websocket.receive_bytes(),
+                                timeout=WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
                             )
+                            reassembled_bytes += len(part)
+                            if reassembled_bytes > max_reassembled_bytes:
+                                raise ValueError(
+                                    "chunked websocket request exceeds "
+                                    f"{max_reassembled_bytes} bytes"
+                                )
+                            parts.append(part)
                         request = msgpack.unpackb(b"".join(parts), raw=False)
 
                     # ---- protocol v2 control frames ----
@@ -1338,6 +1450,9 @@ from datetime import datetime
                         conn_session_id = (
                             raw_session_id if isinstance(raw_session_id, str) else ""
                         )
+                        # From here the peer understands v2 control frames, so
+                        # a graceful close may announce itself with ``closing``.
+                        conn_is_v2 = True
                         await websocket.send_bytes(
                             msgpack.packb(
                                 {
@@ -1375,6 +1490,7 @@ from datetime import datetime
                         if isinstance(raw_request_id, str) and raw_request_id
                         else None
                     )
+                    conn_last_request_id = request_id
                     if request_id:
                         cached_payload = executor_self._ws_response_cache.get(
                             request_id
@@ -1383,7 +1499,7 @@ from datetime import datetime
                             # Resend of a request already executed (the
                             # client lost the response): answer from cache,
                             # never run user code twice.
-                            await send_payload(websocket, cached_payload)
+                            await send_payload(websocket, cached_payload, request_id)
                             continue
                         # No await between the in-flight lookup and the
                         # insert below, so two connections can't both start
@@ -1432,7 +1548,7 @@ from datetime import datetime
                         payload = await asyncio.shield(task)
                     else:
                         payload = await execute_request(request, None, conn_session_id)
-                    await send_payload(websocket, payload)
+                    await send_payload(websocket, payload, request_id)
             except WebSocketDisconnect:
                 pass
             except Exception as error:
@@ -1447,7 +1563,7 @@ from datetime import datetime
                         _pack_ws_error(
                             error_type=type(error).__name__,
                             error=f"websocket handler failed: {error}",
-                            request_id=None,
+                            request_id=conn_last_request_id,
                         )
                     )
                 except Exception:
