@@ -188,4 +188,4 @@ class CacheGetBlockV1(WorkflowBlock):
                 cache = WorkflowMemoryCache.get_dict(namespace)
             else:
                 cache = WorkflowMemoryCache.cache[namespace]
-        return {"output": cache.get(key, False)}
+            return {"output": cache.get(key, False)}

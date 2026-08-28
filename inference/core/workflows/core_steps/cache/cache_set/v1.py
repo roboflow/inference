@@ -198,5 +198,5 @@ class CacheSetBlockV1(WorkflowBlock):
                 cache = WorkflowMemoryCache.get_dict(namespace)
             else:
                 cache = WorkflowMemoryCache.cache[namespace]
-        cache[key] = value
+            cache[key] = value
         return {"output": value}
