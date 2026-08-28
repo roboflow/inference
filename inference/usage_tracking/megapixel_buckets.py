@@ -110,6 +110,53 @@ def _image_size_to_hw(value: Any) -> Optional[Tuple[int, int]]:
     return size, size
 
 
+def _get_inference_config_fixed_hw(model: Any) -> Optional[Tuple[int, int]]:
+    """Read a fixed canvas from an inference-models backend's network input.
+
+    Package backends such as YOLO26 TRT keep the network size in
+    ``_inference_config.network_input`` rather than on ``image_size`` /
+    ``img_size_h``. Only an object that pre-processes with that config is read:
+    the vLLM proxy also holds a parsed ``InferenceConfig`` but never applies it,
+    sizing uploads with the HF processor's smart resize instead.
+
+    Packages that accept a per-call spatial size are skipped. Resource details
+    merge last-write-wins, so a size that can vary per call must not be
+    reported as a row-level scalar.
+    """
+    if not callable(getattr(model, "pre_process", None)) or not callable(
+        getattr(model, "post_process", None)
+    ):
+        return None
+
+    network_input = getattr(
+        getattr(model, "_inference_config", None),
+        "network_input",
+        None,
+    )
+    if network_input is None:
+        return None
+    if getattr(network_input, "dynamic_spatial_size_supported", False):
+        return None
+
+    training_input_size = getattr(network_input, "training_input_size", None)
+    height = _as_positive_int(getattr(training_input_size, "height", None))
+    width = _as_positive_int(getattr(training_input_size, "width", None))
+    if height is None or width is None:
+        return None
+
+    return height, width
+
+
+def _wrapped_backend_fixed_hw(backend: Any) -> Optional[Tuple[int, int]]:
+    """Fixed canvas of a backend an adapter delegates inference to."""
+    for attr in ("image_size", "_image_size", "img_size"):
+        size = _image_size_to_hw(getattr(backend, attr, None))
+        if size is not None:
+            return size
+
+    return _get_inference_config_fixed_hw(backend)
+
+
 def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
     """Return (height, width) when the model has a fixed numeric input size."""
     height = _as_positive_int(getattr(model, "img_size_h", None))
@@ -123,21 +170,22 @@ def get_fixed_model_input_hw(model: Any) -> Optional[Tuple[int, int]]:
         if size is not None:
             return size
 
-    # Adapters wrap backends that expose image_size / _image_size.
+    size = _get_inference_config_fixed_hw(model)
+    if size is not None:
+        return size
+
+    # Adapters wrap backends that expose image_size / _image_size, or keep the
+    # canvas on the inference-models network input.
     for attr in ("_model", "sam", "sam_model", "owlv2"):
         inner = getattr(model, attr, None)
         if inner is None:
             continue
-        for size_attr in ("image_size", "_image_size", "img_size"):
-            size = _image_size_to_hw(getattr(inner, size_attr, None))
+        for candidate in (inner, getattr(inner, "_model", None)):
+            if candidate is None:
+                continue
+            size = _wrapped_backend_fixed_hw(candidate)
             if size is not None:
                 return size
-        nested = getattr(inner, "_model", None)
-        if nested is not None:
-            for size_attr in ("image_size", "_image_size", "img_size"):
-                size = _image_size_to_hw(getattr(nested, size_attr, None))
-                if size is not None:
-                    return size
 
     environment = getattr(model, "environment", None)
     if isinstance(environment, dict):

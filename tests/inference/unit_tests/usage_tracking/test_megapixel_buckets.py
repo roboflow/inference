@@ -242,6 +242,87 @@ def test_get_fixed_model_input_hw_from_image_size_and_nested_backend():
     ) == (1024, 1024)
 
 
+def _inference_models_backend(
+    *,
+    height: int,
+    width: int,
+    dynamic_spatial_size_supported: bool = False,
+):
+    """An inference-models backend, which sizes its input from the config it
+    applies in `pre_process` (YOLO26 TRT and friends)."""
+    return SimpleNamespace(
+        pre_process=lambda images, **kwargs: None,
+        post_process=lambda results, **kwargs: None,
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=dynamic_spatial_size_supported,
+                training_input_size=SimpleNamespace(height=height, width=width),
+            )
+        ),
+    )
+
+
+def test_fixed_input_hw_reads_inference_config_network_input():
+    # YOLO26 TRT (and other package backends) keep the canvas on
+    # `_inference_config.network_input`, not image_size / img_size_h.
+    backend = _inference_models_backend(height=518, width=640)
+
+    assert get_fixed_model_input_hw(backend) == (518, 640)
+
+
+def test_fixed_input_hw_reads_inference_config_on_wrapped_backend():
+    backend = _inference_models_backend(height=640, width=640)
+    adapter = SimpleNamespace(_model=backend)
+
+    assert get_fixed_model_input_hw(adapter) == (640, 640)
+    assert get_fixed_model_input_hw(SimpleNamespace(_model=adapter)) == (640, 640)
+
+
+def test_fixed_input_hw_omits_dynamic_spatial_inference_config():
+    # RFDETR packages declare dynamic spatial support, so their canvas can shift
+    # per call and must not be reported as a row-level scalar.
+    backend = _inference_models_backend(
+        height=640,
+        width=640,
+        dynamic_spatial_size_supported=True,
+    )
+
+    assert get_fixed_model_input_hw(backend) is None
+
+
+def test_fixed_input_hw_ignores_inference_config_a_model_never_applies():
+    # The vLLM proxy parses the adapter package's inference_config but sizes
+    # uploads with the HF processor's smart resize, so that canvas is fiction.
+    proxy = SimpleNamespace(
+        preprocess=lambda image, **kwargs: None,
+        postprocess=lambda predictions, metadata, **kwargs: None,
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=False,
+                training_input_size=SimpleNamespace(height=1024, width=1024),
+            )
+        ),
+    )
+
+    assert get_fixed_model_input_hw(proxy) is None
+
+
+def test_fixed_input_hw_ignores_malformed_inference_config_network_input():
+    assert (
+        get_fixed_model_input_hw(
+            SimpleNamespace(
+                pre_process=lambda images, **kwargs: None,
+                post_process=lambda results, **kwargs: None,
+                _inference_config=None,
+            )
+        )
+        is None
+    )
+    assert (
+        get_fixed_model_input_hw(_inference_models_backend(height=0, width=640)) is None
+    )
+
+
 def test_fixed_input_hw_reads_hf_processor_size():
     model = SimpleNamespace(
         processor=SimpleNamespace(

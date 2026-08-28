@@ -351,6 +351,27 @@ def test_model_resource_details_report_non_square_configured_input():
     assert resource_details["model_input_width"] == 640
 
 
+def test_model_resource_details_report_inference_config_network_input():
+    # Adapters wrap inference-models backends that only expose the canvas on
+    # `_inference_config.network_input` (YOLO26 TRT depth is the example).
+    backend = SimpleNamespace(
+        pre_process=lambda images, **kwargs: None,
+        post_process=lambda results, **kwargs: None,
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=False,
+                training_input_size=SimpleNamespace(height=518, width=640),
+            )
+        ),
+    )
+    adapter = SimpleNamespace(_model=backend, task_type="depth-estimation")
+
+    resource_details = get_model_resource_details_from_kwargs({"self": adapter})
+
+    assert resource_details["model_input_height"] == 518
+    assert resource_details["model_input_width"] == 640
+
+
 def test_model_resource_details_omit_input_size_for_dynamic_input_model():
     # A model with no configured canvas sizes itself from the upload, so the
     # size varies per call and must not be reported as a row-level scalar.
