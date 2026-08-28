@@ -15,7 +15,24 @@ class VideoSegmentClassificationPrediction:
     class_name: str
 
 
+@dataclass(frozen=True)
+class VideoSampling:
+    """The temporal contract a model is trained (or validated) for.
+
+    Consumers window and sample video to match: window length in seconds,
+    frames sampled per second, and the fewest frames worth classifying.
+    """
+
+    window_seconds: float = 16.0
+    sample_fps: float = 4.0
+    min_frames: int = 4
+
+
 class VideoSegmentClassificationModel(ABC):
+
+    @property
+    def video_sampling(self) -> VideoSampling:
+        return VideoSampling()
 
     @classmethod
     @abstractmethod

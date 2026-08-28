@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from inference_models.models.base.video_segment_classification import (
+    VideoSampling,
     VideoSegmentClassificationModel,
     VideoSegmentClassificationPrediction,
 )
@@ -521,6 +522,25 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     @property
     def video_pre_processing(self) -> Optional[Dict[str, Any]]:
         return self._video_pre_processing
+
+    @property
+    def video_sampling(self) -> VideoSampling:
+        config = self._video_pre_processing or {}
+        default = VideoSampling()
+
+        def _positive_number(key: str, fallback: float) -> float:
+            value = config.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return float(value)
+            return fallback
+
+        return VideoSampling(
+            window_seconds=_positive_number(
+                "window_seconds", default.window_seconds
+            ),
+            sample_fps=_positive_number("sample_fps", default.sample_fps),
+            min_frames=int(_positive_number("min_frames", default.min_frames)),
+        )
 
     @classmethod
     def from_pretrained(

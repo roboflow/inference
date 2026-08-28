@@ -73,6 +73,7 @@ from inference_models.models.base.object_detection import (
 from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.base.video_segment_classification import (
+    VideoSampling,
     VideoSegmentClassificationModel,
     VideoSegmentClassificationPrediction,
 )

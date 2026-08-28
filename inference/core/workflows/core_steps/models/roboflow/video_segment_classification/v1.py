@@ -9,6 +9,7 @@ import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
 from inference_models.models.base.video_segment_classification import (
+    VideoSampling,
     VideoSegmentClassificationModel,
 )
 from inference_models.models.base.video_segment_classification import (
@@ -54,7 +55,6 @@ from inference.core.workflows.prototypes.block import (
 
 DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
-SAMPLE_FPS = 4.0
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
@@ -67,10 +67,9 @@ overlap. Timeline ranges only grow when the block merges model evidence. The
 block does not extend ranges provisionally. When a stream provides no source
 FPS, the block assumes 30 FPS and logs a warning.
 
-The block samples 4 frames per second of video, matching the sampling that
-model training uses. Windows of 1 to 16 seconds match the trained range. A
-longer window gives each classification more temporal context. A shorter
-window and stride give more frequent results.
+The window length and the sample rate are part of the model, not block
+settings: a fine-tuned model declares the values its training used, and other
+models declare their defaults (a 16 second window at 4 frames per second).
 
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a new result. On a finite clip,
@@ -151,15 +150,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["a", "b", "c"], "$inputs.class_filter"],
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=16.0,
-        description=(
-            "Duration of the classification window in seconds. Windows of 1 "
-            "to 16 seconds match the trained range. A longer window gives the "
-            "model more temporal context per classification."
-        ),
-        examples=[16.0],
-    )
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
         description=(
@@ -173,13 +163,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_window_inputs(self) -> "BlockManifest":
-        numeric_values = []
-        if isinstance(self.window_seconds, (int, float)):
-            numeric_values.append(self.window_seconds)
-        if isinstance(self.stride_seconds, (int, float)):
-            numeric_values.append(self.stride_seconds)
-        if any(value <= 0 or not math.isfinite(value) for value in numeric_values):
-            raise ValueError("Window and stride must be positive and finite.")
+        if isinstance(self.stride_seconds, (int, float)) and (
+            self.stride_seconds <= 0 or not math.isfinite(self.stride_seconds)
+        ):
+            raise ValueError("Stride must be positive and finite.")
         return self
 
     @classmethod
@@ -294,7 +281,6 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         class_filter: Optional[List[str]] = None,
-        window_seconds: float = 16.0,
         stride_seconds: Optional[float] = None,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
@@ -302,6 +288,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         model = self._get_model(model_id=model_id)
         block_filter = normalise_class_names(class_filter) or None
         id_vocabulary = getattr(model, "class_names", None) or block_filter or None
+        video_sampling = getattr(model, "video_sampling", None) or VideoSampling()
         results = []
         for image in images:
             results.append(
@@ -310,7 +297,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                     image=image,
                     block_filter=block_filter,
                     id_vocabulary=id_vocabulary,
-                    window_seconds=window_seconds,
+                    video_sampling=video_sampling,
                     stride_seconds=stride_seconds,
                 )
             )
@@ -322,23 +309,20 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
-        window_seconds: float,
+        video_sampling: VideoSampling,
         stride_seconds: Optional[float],
     ) -> dict:
         metadata = image.video_metadata
-        requested_window_seconds = float(window_seconds)
+        requested_window_seconds = float(video_sampling.window_seconds)
         requested_stride_seconds = (
             requested_window_seconds
             if stride_seconds is None
             else float(stride_seconds)
         )
-        if (
-            requested_window_seconds <= 0
-            or not math.isfinite(requested_window_seconds)
-            or requested_stride_seconds <= 0
-            or not math.isfinite(requested_stride_seconds)
+        if requested_stride_seconds <= 0 or not math.isfinite(
+            requested_stride_seconds
         ):
-            raise ValueError("Window and stride must be positive and finite.")
+            raise ValueError("Stride must be positive and finite.")
 
         signature = (
             tuple(block_filter or ()),
@@ -369,7 +353,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         else:
             source_fps = bookkeeping.source_fps
 
-        effective_sample_fps = min(SAMPLE_FPS, source_fps)
+        effective_sample_fps = min(float(video_sampling.sample_fps), source_fps)
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
@@ -396,8 +380,11 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             # A single frame has no temporal content to classify; anchor the
             # fire cadence at stream start and wait for a full stride.
             bookkeeping.last_fire_frame_number = frame_number
-        should_classify = bookkeeping.sampled and (
-            frame_number >= bookkeeping.last_fire_frame_number + stride_frames
+        # The model declares the fewest frames worth classifying; a fire
+        # waits until the buffer reaches it.
+        should_classify = (
+            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
+            and frame_number >= bookkeeping.last_fire_frame_number + stride_frames
         )
         if should_classify:
             bookkeeping.last_fire_frame_number = frame_number

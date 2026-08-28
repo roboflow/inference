@@ -12,7 +12,7 @@ import pytest
 import torch
 
 import inference.core.env as core_env
-from inference_models import VideoSegmentClassificationModel
+from inference_models import VideoSampling, VideoSegmentClassificationModel
 from inference_models import (
     VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
 )
@@ -68,6 +68,10 @@ from inference_models.models.base.classification import (
 
 
 class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
+    # A plain class attribute overrides the ABC property so tests can set
+    # per-instance temporal contracts.
+    video_sampling = VideoSampling()
+
     def __init__(
         self,
         responses: Optional[
@@ -204,20 +208,20 @@ def _run(
     stride_seconds=0.5,
     sample_fps=2.0,
 ):
-    # The sample rate is no longer a block parameter; tests keep their
-    # designed sampling grids by patching the module constant.
-    original_sample_fps = video_classification_module.SAMPLE_FPS
-    video_classification_module.SAMPLE_FPS = sample_fps
-    try:
-        return block.run(
-            images=[frame],
-            class_filter=list(class_filter) if class_filter is not None else None,
-            model_id="cosmos-3-edge",
+    # The temporal contract travels with the model; min_frames stays 1 so
+    # the fire-cadence expectations below hold unchanged.
+    if block._model is not None:
+        block._model.video_sampling = VideoSampling(
             window_seconds=window_seconds,
-            stride_seconds=stride_seconds,
-        )[0]
-    finally:
-        video_classification_module.SAMPLE_FPS = original_sample_fps
+            sample_fps=sample_fps,
+            min_frames=1,
+        )
+    return block.run(
+        images=[frame],
+        class_filter=list(class_filter) if class_filter is not None else None,
+        model_id="cosmos-3-edge",
+        stride_seconds=stride_seconds,
+    )[0]
 
 
 def _timeline_as_dicts(result):
@@ -281,7 +285,6 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
-    assert manifest.window_seconds == 16.0
     assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     assert manifest_type.describe_outputs()[0].kind == [
@@ -326,10 +329,6 @@ def test_manifest_requires_model_id(manifest_type):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("window_seconds", 0),
-        ("window_seconds", -1),
-        ("window_seconds", math.inf),
-        ("window_seconds", math.nan),
         ("stride_seconds", 0),
         ("stride_seconds", -1),
         ("stride_seconds", math.inf),
@@ -800,17 +799,43 @@ def test_reset_re_resolves_source_fps(reset_frame_number, reset_window_seconds):
 
 def test_run_default_stride_equals_the_window():
     block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=1.0, sample_fps=4.0, min_frames=1
+    )
     for frame_number in range(9):
         block.run(
             images=[_make_frame(frame_number, fps=4.0)],
             class_filter=["walk", "run"],
             model_id="cosmos-3-edge",
-            window_seconds=1.0,
         )
 
     assert len(model.calls) == 2
     bookkeeping = block._video_bookkeeping["stream-0"]
     assert bookkeeping.last_fire_frame_number == 8
+
+
+def test_min_frames_gates_the_first_fire():
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=2.0, sample_fps=4.0, min_frames=4
+    )
+
+    fired_at = []
+    for frame_number in range(8):
+        previous_call_count = len(model.calls)
+        block.run(
+            images=[_make_frame(frame_number, fps=4.0)],
+            class_filter=["walk", "run"],
+            model_id="cosmos-3-edge",
+            stride_seconds=0.25,
+        )
+        if len(model.calls) > previous_call_count:
+            fired_at.append(frame_number)
+
+    # Stride alone allows a fire every frame; the model's 4-frame floor
+    # delays the first fire until the buffer holds 4 samples.
+    assert fired_at[0] == 3
+    assert len(model.calls[0]["frames"]) == 4
 
 
 def test_fractional_sampling_stride_keeps_the_true_sample_rate():
