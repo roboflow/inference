@@ -23,10 +23,6 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
 
 ZERO_SHOT_MAX_NEW_TOKENS = 256
 FINE_TUNE_MAX_NEW_TOKENS = 256
-# Fine-tunes train on frames decoded with this cap (roboflow-train#880);
-# serving at native resolution is a train/serve skew. Zero-shot keeps
-# native pixels: at 360 the base model loses small-object events.
-FINE_TUNE_MAX_FRAME_SIDE = 360
 
 ZERO_SHOT_OPEN_VOCABULARY_PROMPT = (
     "Describe the main action in this video clip in one short lowercase "
@@ -435,15 +431,6 @@ def _answer_text(response: Any) -> str:
     return response if isinstance(response, str) else ""
 
 
-def _read_package_json(model_name_or_path: str, file_name: str) -> Optional[dict]:
-    try:
-        with open(Path(model_name_or_path) / file_name) as config_file:
-            config = json.load(config_file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-    return config if isinstance(config, dict) else None
-
-
 def _read_class_names_file(model_name_or_path: str) -> Optional[List[str]]:
     """Read the package class list, one name per line, in class-token order."""
     class_names_path = Path(model_name_or_path) / "class_names.txt"
@@ -452,40 +439,40 @@ def _read_class_names_file(model_name_or_path: str) -> Optional[List[str]]:
     return parse_class_names_file(class_names_path=str(class_names_path)) or None
 
 
-_CLASS_TOKEN_PATTERN = re.compile(r"^<\|cls:(?P<label>[^|]+?)\|>$")
-
-
-def _class_names_from_tokenizer(tokenizer: Any) -> Optional[List[str]]:
-    """Derive the trained class list from the added <|cls:...|> tokens.
-
-    Token-id order keeps class ids stable across loads.
-    """
-    get_added_vocab = getattr(tokenizer, "get_added_vocab", None)
-    if not callable(get_added_vocab):
-        return None
+def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
+    """Read the sampling the training run recorded, or the zero-shot default."""
+    default = VideoSampling()
     try:
-        added_vocabulary = get_added_vocab()
-    except Exception:  # pragma: no cover - third-party tokenizer behavior
-        return None
-    if not isinstance(added_vocabulary, dict):
-        return None
-    class_tokens = sorted(
-        (token_id, match.group("label"))
-        for token, token_id in added_vocabulary.items()
-        if _is_token_id(token_id)
-        and (match := _CLASS_TOKEN_PATTERN.match(token)) is not None
+        with open(Path(model_name_or_path) / "inference_config.json") as config_file:
+            inference_config = json.load(config_file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+    config = (
+        inference_config.get("video_pre_processing")
+        if isinstance(inference_config, dict)
+        else None
     )
-    return [label for _, label in class_tokens] or None
+    if not isinstance(config, dict):
+        return default
 
+    def _positive(key: str, fallback: float) -> float:
+        value = config.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
+        return fallback
 
-def _read_video_pre_processing(model_name_or_path: str) -> Optional[Dict[str, Any]]:
-    inference_config = _read_package_json(
-        model_name_or_path, "inference_config.json"
+    mode = config.get("mode")
+    frames = config.get("window_frames")
+    return VideoSampling(
+        window_seconds=_positive("window_seconds", default.window_seconds),
+        sample_fps=_positive("sample_fps", default.sample_fps),
+        min_frames=int(_positive("min_frames", default.min_frames)),
+        mode=mode if isinstance(mode, str) and mode else default.mode,
+        frame_budget=(
+            int(frames) if isinstance(frames, (int, float)) and frames > 0 else None
+        ),
+        max_frame_side=int(_positive("max_frame_side", default.max_frame_side)),
     )
-    if inference_config is None:
-        return None
-    video_pre_processing = inference_config.get("video_pre_processing")
-    return video_pre_processing if isinstance(video_pre_processing, dict) else None
 
 
 class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
@@ -493,11 +480,11 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         self,
         reasoner: Cosmos3EdgeReasoner,
         class_names: Optional[List[str]] = None,
-        video_pre_processing: Optional[Dict[str, Any]] = None,
+        video_sampling: Optional[VideoSampling] = None,
     ):
         self._reasoner = reasoner
         self._class_names = class_names
-        self._video_pre_processing = video_pre_processing
+        self._video_sampling = video_sampling or VideoSampling()
 
         processor = getattr(reasoner, "_processor", None)
         tokenizer = getattr(processor, "tokenizer", None)
@@ -519,51 +506,18 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         return self._class_names
 
     @property
-    def video_pre_processing(self) -> Optional[Dict[str, Any]]:
-        return self._video_pre_processing
-
-    @property
     def video_sampling(self) -> VideoSampling:
-        config = self._video_pre_processing or {}
-        default = VideoSampling()
-
-        def _positive_number(key: str, fallback: float) -> float:
-            value = config.get(key)
-            if isinstance(value, (int, float)) and value > 0:
-                return float(value)
-            return fallback
-
-        mode = config.get("mode")
-        configured_frames = config.get("window_frames")
-        frame_budget = (
-            int(configured_frames)
-            if isinstance(configured_frames, (int, float)) and configured_frames > 0
-            else None
-        )
-        return VideoSampling(
-            window_seconds=_positive_number(
-                "window_seconds", default.window_seconds
-            ),
-            sample_fps=_positive_number("sample_fps", default.sample_fps),
-            min_frames=int(_positive_number("min_frames", default.min_frames)),
-            mode=mode if isinstance(mode, str) and mode else default.mode,
-            frame_budget=frame_budget,
-        )
+        return self._video_sampling
 
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeActionRecognition":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
-        class_names = _read_class_names_file(model_name_or_path)
-        if class_names is None:
-            class_names = _class_names_from_tokenizer(
-                getattr(reasoner._processor, "tokenizer", None)
-            )
         return cls(
             reasoner=reasoner,
-            class_names=class_names,
-            video_pre_processing=_read_video_pre_processing(model_name_or_path),
+            class_names=_read_class_names_file(model_name_or_path),
+            video_sampling=_read_video_sampling(model_name_or_path),
         )
 
     def infer(
@@ -601,12 +555,9 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         assert self.class_names is not None
-        max_frame_side = FINE_TUNE_MAX_FRAME_SIDE
-        if self._video_pre_processing is not None:
-            configured_side = self._video_pre_processing.get("max_frame_side")
-            if isinstance(configured_side, (int, float)) and configured_side > 0:
-                max_frame_side = int(configured_side)
-        frames = _cap_frame_side(frames=frames, max_side=max_frame_side)
+        frames = _cap_frame_side(
+            frames=frames, max_side=self._video_sampling.max_frame_side
+        )
         if class_filter is None:
             classes = list(self.class_names)
         else:

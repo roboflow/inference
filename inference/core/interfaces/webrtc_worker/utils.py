@@ -40,6 +40,23 @@ def detect_image_output(
     return None
 
 
+def _first_workflow_output(
+    inference_result: Any,
+) -> Dict[str, Union[WorkflowImageData, Any]]:
+    """Take one frame's outputs from whichever shape the handler returns.
+
+    A workflow holding a stream-pipelined block runs behind a handler that
+    returns an ``InferenceHandlerResult``, and buffering handlers return
+    nothing until their buffer fills.
+    """
+    if inference_result is None:
+        return {}
+    predictions = getattr(inference_result, "predictions", inference_result)
+    if not predictions:
+        return {}
+    return predictions[0]
+
+
 def process_frame(
     frame: VideoFrame,
     frame_id: int,
@@ -68,7 +85,9 @@ def process_frame(
             fps=declared_fps,
             measured_fps=measured_fps,
         )
-        workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
+        workflow_output = _first_workflow_output(
+            inference_pipeline._on_video_frame([video_frame])
+        )
     except Exception as e:
         logger.exception("Error in workflow processing")
         errors.append(str(e))

@@ -485,26 +485,10 @@ def test_from_pretrained_reads_class_names_file(monkeypatch, tmp_path) -> None:
     assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
 
 
-def test_from_pretrained_derives_class_names_from_class_tokens(
-    monkeypatch, tmp_path
-) -> None:
-    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
-    reasoner = _FakeReasoner(tokenizer=tokenizer)
-    monkeypatch.setattr(
-        Cosmos3EdgeReasoner,
-        "from_pretrained",
-        MagicMock(return_value=reasoner),
-    )
-
-    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
-
-    assert wrapper.class_names == ["walking", "running"]
-    assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
-
-
-def test_from_pretrained_reads_video_pre_processing(monkeypatch, tmp_path) -> None:
+def test_from_pretrained_reads_the_recorded_sampling(monkeypatch, tmp_path) -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
     (tmp_path / "inference_config.json").write_text(
         json.dumps(
             {"video_pre_processing": {"max_frame_side": 100, "window_seconds": 8.0}}
@@ -517,10 +501,8 @@ def test_from_pretrained_reads_video_pre_processing(monkeypatch, tmp_path) -> No
     )
 
     wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
-    assert wrapper.video_pre_processing == {
-        "max_frame_side": 100,
-        "window_seconds": 8.0,
-    }
+    assert wrapper.video_sampling.max_frame_side == 100
+    assert wrapper.video_sampling.window_seconds == 8.0
 
     large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
     wrapper.infer(frames=large_frames, fps=2.0)
@@ -535,6 +517,7 @@ def test_video_sampling_prefers_the_declared_frame_budget(
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
     # whole_video gives the window length no meaning, so window_frames is
     # the authoritative budget even when it disagrees with fps x seconds.
+    (tmp_path / "class_names.txt").write_text("walking\n")
     (tmp_path / "inference_config.json").write_text(
         json.dumps(
             {

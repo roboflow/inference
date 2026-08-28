@@ -23,7 +23,8 @@ class VideoSampling:
     """The temporal contract a model is trained (or validated) for.
 
     Consumers window and sample video to match: window length in seconds,
-    frames sampled per second, and the fewest frames worth classifying.
+    frames sampled per second, the fewest frames worth classifying, and
+    the longest frame side the model was trained on.
 
     ``whole_video`` mode models read a clip as one unit, with the frame
     budget spread over its full length, so consumers classify once at the
@@ -35,6 +36,7 @@ class VideoSampling:
     min_frames: int = 4
     mode: str = "sliding_window"
     frame_budget: Optional[int] = None
+    max_frame_side: int = 360
 
     @property
     def classifies_whole_video(self) -> bool:
