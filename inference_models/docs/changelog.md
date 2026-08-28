@@ -9,6 +9,8 @@
   fail with `CUDA error 906` (`cudaErrorStreamCaptureImplicit`, "operation would make the legacy
   stream depend on a capturing blocking stream") whenever a graph was captured for a newly seen
   input shape, which broke concurrent inference on devices running several pipelines in one process.
+  On torch builds whose `torch.cuda.graph` does not accept `capture_error_mode` (pre-`2.1`), the
+  capture transparently falls back to the legacy global mode.
 
 ---
 
