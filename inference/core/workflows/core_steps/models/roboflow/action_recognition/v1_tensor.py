@@ -1,4 +1,4 @@
-"""Tensor-input sibling of the video segment classification workflow block."""
+"""Tensor-input sibling of the action recognition workflow block."""
 
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -7,11 +7,11 @@ import numpy as np
 import torch
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1 import (
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
     BlockManifest,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1 import (
-    VideoSegmentClassificationModelBlockV1 as _NumpyVideoSegmentClassificationModelBlockV1,
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
+    ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -29,13 +29,13 @@ from inference_models.models.base.classification import (
 )
 
 
-class VideoSegmentClassificationModelBlockV1(_NumpyVideoSegmentClassificationModelBlockV1):
+class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():
             frame = image.tensor_image
             if frame.dim() != 3 or frame.shape[0] != 3:
                 raise ValueError(
-                    "Video Segment Classification Model expects a CHW RGB frame tensor."
+                    "Action Recognition Model expects a CHW RGB frame tensor."
                 )
             return frame
         return np.ascontiguousarray(image.numpy_image[:, :, ::-1])

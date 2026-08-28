@@ -24,7 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
-VIDEO_SEGMENT_CLASSIFICATION_TASK = "video-segment-classification"
+ACTION_RECOGNITION_TASK = "action-recognition"
 
 
 @dataclass(frozen=True)
@@ -314,31 +314,31 @@ REGISTERED_MODELS: Dict[
     ),
     (
         "cosmos-3-edge",
-        VIDEO_SEGMENT_CLASSIFICATION_TASK,
+        ACTION_RECOGNITION_TASK,
         BackendType.HF,
     ): LazyClass(
         module_name=(
-            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
+            "inference_models.models.cosmos3.cosmos3_action_recognition"
         ),
-        class_name="Cosmos3EdgeVideoSegmentClassification",
+        class_name="Cosmos3EdgeActionRecognition",
     ),
     # roboflow-train emits fine-tune packages under the dash-less trainer
     # slug with the platform task `vlm`.
     ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name=(
-            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
+            "inference_models.models.cosmos3.cosmos3_action_recognition"
         ),
-        class_name="Cosmos3EdgeVideoSegmentClassification",
+        class_name="Cosmos3EdgeActionRecognition",
     ),
     (
         "cosmos3-edge",
-        VIDEO_SEGMENT_CLASSIFICATION_TASK,
+        ACTION_RECOGNITION_TASK,
         BackendType.HF,
     ): LazyClass(
         module_name=(
-            "inference_models.models.cosmos3.cosmos3_video_segment_classification"
+            "inference_models.models.cosmos3.cosmos3_action_recognition"
         ),
-        class_name="Cosmos3EdgeVideoSegmentClassification",
+        class_name="Cosmos3EdgeActionRecognition",
     ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",

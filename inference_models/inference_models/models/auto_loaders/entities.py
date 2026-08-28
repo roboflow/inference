@@ -19,7 +19,7 @@ from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
-from inference_models.models.base.video_segment_classification import VideoSegmentClassificationModel
+from inference_models.models.base.action_recognition import ActionRecognitionModel
 
 ModelArchitecture = str
 TaskType = Optional[str]
@@ -48,7 +48,7 @@ AnyModel = Union[
     OpenVocabularyObjectDetectionModel,
     SemanticSegmentationModel,
     TextOnlyOCRModel,
-    VideoSegmentClassificationModel,
+    ActionRecognitionModel,
 ]
 
 

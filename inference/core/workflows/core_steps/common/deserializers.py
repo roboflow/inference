@@ -64,7 +64,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     ParentOrigin,
-    VideoSegmentClassificationPrediction,
+    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -215,10 +215,10 @@ def deserialize_video_metadata_kind(
         )
 
 
-def deserialize_video_segment_classification_prediction_kind(
+def deserialize_action_recognition_prediction_kind(
     parameter: str,
     value: Any,
-) -> List[VideoSegmentClassificationPrediction]:
+) -> List[ActionRecognitionPrediction]:
     if not isinstance(value, list):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
@@ -228,16 +228,16 @@ def deserialize_video_segment_classification_prediction_kind(
     if not all(isinstance(entry, dict) for entry in value):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-            "a list of video segment classifications, but at least one entry "
+            "a list of action recognitions, but at least one entry "
             "is not a dict.",
             context="workflow_execution | runtime_input_validation",
         )
     try:
-        return [VideoSegmentClassificationPrediction.model_validate(entry) for entry in value]
+        return [ActionRecognitionPrediction.model_validate(entry) for entry in value]
     except ValidationError as error:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-            "a list of video segment classifications, but the provided value "
+            "a list of action recognitions, but the provided value "
             "is malformed. See details in inner error.",
             context="workflow_execution | runtime_input_validation",
             inner_error=error,

@@ -1,4 +1,4 @@
-"""Stateful video segment classification workflow block."""
+"""Stateful action recognition workflow block."""
 
 import math
 from dataclasses import dataclass, field
@@ -8,12 +8,12 @@ from uuid import uuid4
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
-from inference_models.models.base.video_segment_classification import (
+from inference_models.models.base.action_recognition import (
     VideoSampling,
-    VideoSegmentClassificationModel,
+    ActionRecognitionModel,
 )
-from inference_models.models.base.video_segment_classification import (
-    VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
 
 from inference.core import logger
@@ -26,7 +26,7 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
-    VideoSegmentClassificationPrediction,
+    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -37,7 +37,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
-    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
+    ACTION_RECOGNITION_PREDICTION_KIND,
     ImageInputField,
     RoboflowModelField,
     Selector,
@@ -109,9 +109,9 @@ class _ResolvedVideoSampling:
 
 
 @dataclass
-class _VideoSegmentClassificationBookkeeping:
+class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
-    timeline: List[VideoSegmentClassificationPrediction] = field(default_factory=list)
+    timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
     window_class_names: List[str] = field(default_factory=list)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -130,7 +130,7 @@ class _VideoSegmentClassificationBookkeeping:
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Video Segment Classification Model",
+            "name": "Action Recognition Model",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -151,7 +151,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/video_segment_classification_model@v1"]
+    type: Literal["roboflow_core/action_recognition_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     class_filter: Union[
         Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])
@@ -195,7 +195,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="timeline",
-                kind=[VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND],
+                kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(
                 name="window_classes", kind=[CLASSIFICATION_PREDICTION_KIND]
@@ -213,7 +213,7 @@ class BlockManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             RuntimeRestriction(
                 severity=Severity.HARD,
-                note="Requires a GPU; video segment classification needs CUDA.",
+                note="Requires a GPU; action recognition needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
@@ -225,11 +225,11 @@ class BlockManifest(WorkflowBlockManifest):
         return [DEFAULT_MODEL_ID]
 
 
-class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
+class ActionRecognitionModelBlockV1(WorkflowBlock):
     """Classify temporal segments in independent video streams."""
 
     _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
-        "Video Segment Classification Model only supports LOCAL workflow step "
+        "Action Recognition Model only supports LOCAL workflow step "
         "execution. Remote execution sends frames to separate processes and "
         "breaks the per-video state. Set "
         "WORKFLOWS_STEP_EXECUTION_MODE=local to use this block."
@@ -246,7 +246,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         self._step_execution_mode = step_execution_mode
         self._model = None
         self._current_model_id: Optional[str] = None
-        self._video_bookkeeping: Dict[str, _VideoSegmentClassificationBookkeeping] = {}
+        self._video_bookkeeping: Dict[str, _ActionRecognitionBookkeeping] = {}
         self._warned_fps_video_ids: Set[str] = set()
 
     @classmethod
@@ -269,21 +269,21 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 weights_provider_extra_headers=get_extra_weights_provider_headers(),
             )
-            if not isinstance(loaded_model, VideoSegmentClassificationModel):
+            if not isinstance(loaded_model, ActionRecognitionModel):
                 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
                     Cosmos3EdgeReasoner,
                 )
-                from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
-                    Cosmos3EdgeVideoSegmentClassification,
+                from inference_models.models.cosmos3.cosmos3_action_recognition import (
+                    Cosmos3EdgeActionRecognition,
                 )
 
                 if isinstance(loaded_model, Cosmos3EdgeReasoner):
-                    loaded_model = Cosmos3EdgeVideoSegmentClassification(
+                    loaded_model = Cosmos3EdgeActionRecognition(
                         reasoner=loaded_model
                     )
                 else:
                     raise ValueError(
-                        f"Model {model_id} does not support video segment classification."
+                        f"Model {model_id} does not support action recognition."
                     )
             self._model = loaded_model
             self._current_model_id = model_id
@@ -359,7 +359,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
-            bookkeeping = _VideoSegmentClassificationBookkeeping(signature=signature)
+            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
 
         # The fps pin holds for the video's life; per-frame re-resolution
@@ -516,7 +516,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     def _resolve_source_fps(
         self,
         metadata: VideoMetadata,
-        bookkeeping: _VideoSegmentClassificationBookkeeping,
+        bookkeeping: _ActionRecognitionBookkeeping,
     ) -> float:
         # measured_fps is never consumed: under processing-paced delivery
         # (WebRTC ACK windows) it tracks model latency, not the source
@@ -530,7 +530,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
         if metadata.video_identifier not in self._warned_fps_video_ids:
             logger.warning(
-                "Video Segment Classification Model did not receive a valid source FPS. "
+                "Action Recognition Model did not receive a valid source FPS. "
                 "It uses 30 FPS for windowing and sampling."
             )
             self._warned_fps_video_ids.add(metadata.video_identifier)
@@ -540,7 +540,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
     def _classify_buffer(
         self,
         model,
-        bookkeeping: _VideoSegmentClassificationBookkeeping,
+        bookkeeping: _ActionRecognitionBookkeeping,
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
@@ -559,7 +559,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             )
         except Exception as error:
             logger.warning(
-                "Video Segment Classification Model call failed: %s",
+                "Action Recognition Model call failed: %s",
                 error,
                 exc_info=True,
             )
@@ -567,7 +567,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
         # Separates "the model output one range" from "the block merged
         # several".
         logger.debug(
-            "Video Segment Classification model call over sampled frames "
+            "Action Recognition model call over sampled frames "
             "[%s, %s] returned %d pre-merge segment(s): %s",
             bookkeeping.sampled[0][0],
             bookkeeping.sampled[-1][0],
@@ -606,8 +606,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
     def _merge_segments(
         self,
-        bookkeeping: _VideoSegmentClassificationBookkeeping,
-        segments: List[ModelVideoSegmentClassificationPrediction],
+        bookkeeping: _ActionRecognitionBookkeeping,
+        segments: List[ModelActionRecognitionPrediction],
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         stride: float,
@@ -627,7 +627,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
             )
             if start_idx > end_idx:
                 start_idx, end_idx = end_idx, start_idx
-            segment = VideoSegmentClassificationPrediction(
+            segment = ActionRecognitionPrediction(
                 start_frame_idx=bookkeeping.sampled[start_idx][0],
                 end_frame_idx=bookkeeping.sampled[end_idx][0],
                 class_name=class_name,
@@ -652,8 +652,8 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
     @staticmethod
     def _merge_segment(
-        timeline: List[VideoSegmentClassificationPrediction],
-        segment: VideoSegmentClassificationPrediction,
+        timeline: List[ActionRecognitionPrediction],
+        segment: ActionRecognitionPrediction,
         stride: float,
     ) -> None:
         matching = [
@@ -679,7 +679,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
     def _build_output(
         self,
-        bookkeeping: _VideoSegmentClassificationBookkeeping,
+        bookkeeping: _ActionRecognitionBookkeeping,
         image: WorkflowImageData,
         id_vocabulary: Optional[List[str]],
         frame_number: int,
@@ -709,7 +709,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
     def _build_window_classes(
         self,
-        bookkeeping: _VideoSegmentClassificationBookkeeping,
+        bookkeeping: _ActionRecognitionBookkeeping,
         image: WorkflowImageData,
         id_vocabulary: Optional[List[str]],
     ) -> Any:
@@ -739,7 +739,7 @@ class VideoSegmentClassificationModelBlockV1(WorkflowBlock):
 
 
 def _buffer_sample_fps(
-    bookkeeping: "_VideoSegmentClassificationBookkeeping",
+    bookkeeping: "_ActionRecognitionBookkeeping",
     resolved_sampling: "_ResolvedVideoSampling",
 ) -> float:
     """The rate the buffered frames actually represent.

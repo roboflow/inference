@@ -66,7 +66,7 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ParentOrigin,
-    VideoSegmentClassificationPrediction,
+    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -350,8 +350,8 @@ def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
     return video_metadata.dict()
 
 
-def serialize_video_segment_classification_prediction_kind(
-    value: List[VideoSegmentClassificationPrediction],
+def serialize_action_recognition_prediction_kind(
+    value: List[ActionRecognitionPrediction],
 ) -> List[dict]:
     return [entry.model_dump(by_alias=True) for entry in value]
 

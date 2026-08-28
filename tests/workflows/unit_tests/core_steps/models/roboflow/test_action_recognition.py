@@ -1,4 +1,4 @@
-"""Tests for the stateful Video Segment Classification Model workflow block."""
+"""Tests for the stateful Action Recognition Model workflow block."""
 
 import importlib
 import math
@@ -12,33 +12,33 @@ import pytest
 import torch
 
 import inference.core.env as core_env
-from inference_models import VideoSampling, VideoSegmentClassificationModel
+from inference_models import VideoSampling, ActionRecognitionModel
 from inference_models import (
-    VideoSegmentClassificationPrediction as ModelVideoSegmentClassificationPrediction,
+    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
-from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
-    Cosmos3EdgeVideoSegmentClassification,
+from inference_models.models.cosmos3.cosmos3_action_recognition import (
+    Cosmos3EdgeActionRecognition,
 )
 from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_video_segment_classification_prediction_kind,
+    deserialize_action_recognition_prediction_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
-    serialize_video_segment_classification_prediction_kind,
+    serialize_action_recognition_prediction_kind,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification import (
+from inference.core.workflows.core_steps.models.roboflow.action_recognition import (
     v1 as video_classification_module,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1 import (
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
     BlockManifest,
-    VideoSegmentClassificationModelBlockV1,
+    ActionRecognitionModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1_tensor import (
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
     BlockManifest as TensorBlockManifest,
 )
-from inference.core.workflows.core_steps.models.roboflow.video_segment_classification.v1_tensor import (
-    VideoSegmentClassificationModelBlockV1 as TensorVideoSegmentClassificationModelBlockV1,
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+    ActionRecognitionModelBlockV1 as TensorActionRecognitionModelBlockV1,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
@@ -54,21 +54,21 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
-    VideoSegmentClassificationPrediction,
+    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
-    VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND,
+    ACTION_RECOGNITION_PREDICTION_KIND,
 )
 from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
 
 
-class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
+class _FakeActionRecognitionModel(ActionRecognitionModel):
     # A plain class attribute overrides the ABC property so tests can set
     # per-instance temporal contracts.
     video_sampling = VideoSampling()
@@ -76,7 +76,7 @@ class _FakeVideoSegmentClassificationModel(VideoSegmentClassificationModel):
     def __init__(
         self,
         responses: Optional[
-            List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
+            List[Union[List[ModelActionRecognitionPrediction], Exception]]
         ] = None,
         class_names: Optional[List[str]] = None,
     ):
@@ -124,8 +124,8 @@ def _model_segment(
     class_name: str,
     start_frame_idx: int = 0,
     end_frame_idx: int = 0,
-) -> ModelVideoSegmentClassificationPrediction:
-    return ModelVideoSegmentClassificationPrediction(
+) -> ModelActionRecognitionPrediction:
+    return ModelActionRecognitionPrediction(
         start_frame_idx=start_frame_idx,
         end_frame_idx=end_frame_idx,
         class_name=class_name,
@@ -168,22 +168,22 @@ def _make_frame(
 
 def _make_block(
     responses: Optional[
-        List[Union[List[ModelVideoSegmentClassificationPrediction], Exception]]
+        List[Union[List[ModelActionRecognitionPrediction], Exception]]
     ] = None,
     tensor: bool = False,
     model_class_names: Optional[List[str]] = None,
 ):
     block_type = (
-        TensorVideoSegmentClassificationModelBlockV1
+        TensorActionRecognitionModelBlockV1
         if tensor
-        else VideoSegmentClassificationModelBlockV1
+        else ActionRecognitionModelBlockV1
     )
     block = block_type(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
-    model = _FakeVideoSegmentClassificationModel(
+    model = _FakeActionRecognitionModel(
         responses=responses,
         class_names=model_class_names,
     )
@@ -239,7 +239,7 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     reasoner = _make_cosmos3_reasoner()
     load_model = MagicMock(return_value=reasoner)
     monkeypatch.setattr(AutoModel, "from_pretrained", load_model)
-    block = VideoSegmentClassificationModelBlockV1(
+    block = ActionRecognitionModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
@@ -247,7 +247,7 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
 
     loaded = block._get_model(model_id="cosmos-3-edge")
 
-    assert isinstance(loaded, Cosmos3EdgeVideoSegmentClassification)
+    assert isinstance(loaded, Cosmos3EdgeActionRecognition)
     assert loaded._reasoner is reasoner
 
 
@@ -259,7 +259,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
         "from_pretrained",
         MagicMock(return_value=object()),
     )
-    block = VideoSegmentClassificationModelBlockV1(
+    block = ActionRecognitionModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
@@ -267,7 +267,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 
     with pytest.raises(
         ValueError,
-        match="unrelated-model does not support video segment classification",
+        match="unrelated-model does not support action recognition",
     ):
         block._get_model(model_id="unrelated-model")
 
@@ -276,7 +276,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
 def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     manifest = manifest_type.model_validate(
         {
-            "type": "roboflow_core/video_segment_classification_model@v1",
+            "type": "roboflow_core/action_recognition_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
             "class_filter": ["walk", "run"],
@@ -289,7 +289,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     assert manifest_type.describe_outputs()[0].kind == [
-        VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND
+        ACTION_RECOGNITION_PREDICTION_KIND
     ]
     assert manifest_type.describe_outputs()[1].kind == [
         CLASSIFICATION_PREDICTION_KIND
@@ -303,7 +303,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
 def test_manifest_allows_omitted_class_filter(manifest_type):
     manifest = manifest_type.model_validate(
         {
-            "type": "roboflow_core/video_segment_classification_model@v1",
+            "type": "roboflow_core/action_recognition_model@v1",
             "name": "video_classifier",
             "images": "$inputs.image",
             "model_id": "cosmos-3-edge",
@@ -318,7 +318,7 @@ def test_manifest_requires_model_id(manifest_type):
     with pytest.raises(Exception):
         manifest_type.model_validate(
             {
-                "type": "roboflow_core/video_segment_classification_model@v1",
+                "type": "roboflow_core/action_recognition_model@v1",
                 "name": "video_classifier",
                 "images": "$inputs.image",
                 "class_filter": ["walk"],
@@ -340,7 +340,7 @@ def test_manifest_rejects_non_positive_or_non_finite_time_inputs(
     manifest_type, field, value
 ):
     data = {
-        "type": "roboflow_core/video_segment_classification_model@v1",
+        "type": "roboflow_core/action_recognition_model@v1",
         "name": "video_classifier",
         "images": "$inputs.image",
         "model_id": "cosmos-3-edge",
@@ -1290,14 +1290,14 @@ def test_timeline_advances_only_as_model_confirmed_monotone_staircase():
 
 
 def test_wire_contract_and_alias_round_trip():
-    entity = VideoSegmentClassificationPrediction(
+    entity = ActionRecognitionPrediction(
         start_frame_idx=3,
         end_frame_idx=9,
         class_name="walk",
         class_id=2,
     )
 
-    serialized = serialize_video_segment_classification_prediction_kind([entity])
+    serialized = serialize_action_recognition_prediction_kind([entity])
 
     assert set(serialized[0]) == {
         "start_frame_idx",
@@ -1306,7 +1306,7 @@ def test_wire_contract_and_alias_round_trip():
         "class_id",
     }
     assert serialized[0]["class"] == "walk"
-    assert deserialize_video_segment_classification_prediction_kind(
+    assert deserialize_action_recognition_prediction_kind(
         parameter="timeline", value=serialized
     ) == [entity]
 
@@ -1314,7 +1314,7 @@ def test_wire_contract_and_alias_round_trip():
 @pytest.mark.parametrize("value", [None, {}, ["bad"], [{"class": "walk"}]])
 def test_deserializer_rejects_malformed_values(value):
     with pytest.raises(RuntimeInputError):
-        deserialize_video_segment_classification_prediction_kind(
+        deserialize_action_recognition_prediction_kind(
             parameter="timeline", value=value
         )
 
@@ -1506,7 +1506,7 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
 
 
 def test_remote_mode_raises():
-    block = VideoSegmentClassificationModelBlockV1(
+    block = ActionRecognitionModelBlockV1(
         model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.REMOTE,
@@ -1572,26 +1572,26 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
         )
         reloaded_loader = importlib.reload(loader)
 
-        assert reloaded_loader.VideoSegmentClassificationModelBlockV1 in (
+        assert reloaded_loader.ActionRecognitionModelBlockV1 in (
             reloaded_loader.load_blocks()
         )
         assert (
-            reloaded_loader.VideoSegmentClassificationModelBlockV1.__module__.endswith(
+            reloaded_loader.ActionRecognitionModelBlockV1.__module__.endswith(
                 "v1_tensor"
             )
             is tensor_enabled
         )
-        assert VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND in (
+        assert ACTION_RECOGNITION_PREDICTION_KIND in (
             reloaded_loader.load_kinds()
         )
-        kind_name = VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND.name
+        kind_name = ACTION_RECOGNITION_PREDICTION_KIND.name
         assert (
             reloaded_loader.KINDS_SERIALIZERS[kind_name]
-            is serialize_video_segment_classification_prediction_kind
+            is serialize_action_recognition_prediction_kind
         )
         assert (
             reloaded_loader.KINDS_DESERIALIZERS[kind_name]
-            is deserialize_video_segment_classification_prediction_kind
+            is deserialize_action_recognition_prediction_kind
         )
     finally:
         monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", original)

@@ -148,7 +148,7 @@ VIDEO_METADATA_KIND = Kind(
     internal_data_type="VideoMetadata",
 )
 
-VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND_DOCS = """
+ACTION_RECOGNITION_PREDICTION_KIND_DOCS = """
 This kind represents classified segments in a video. The serialized value is a
 list of dictionaries. Each dictionary has these keys:
 
@@ -161,12 +161,12 @@ A range that contains the last classified frame is open and provisional. Its
 `end_frame_idx` advances as the stream advances. A later classification window
 closes the range when the class is absent.
 """
-VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND = Kind(
-    name="video_segment_classification_prediction",
+ACTION_RECOGNITION_PREDICTION_KIND = Kind(
+    name="action_recognition_prediction",
     description="Classified frame segments in a video",
-    docs=VIDEO_SEGMENT_CLASSIFICATION_PREDICTION_KIND_DOCS,
+    docs=ACTION_RECOGNITION_PREDICTION_KIND_DOCS,
     serialised_data_type="List[dict]",
-    internal_data_type="List[VideoSegmentClassificationPrediction]",
+    internal_data_type="List[ActionRecognitionPrediction]",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """

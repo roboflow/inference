@@ -239,7 +239,7 @@ When `AutoModel.from_pretrained()` is called:
 
 - `"gaze-detection"` - Detect gaze direction
 
-- `"video-segment-classification"` - Classify overlapping video events
+- `"action-recognition"` - Classify overlapping video events
 
 - `"open-vocabulary-object-detection"` - Open-vocabulary detection
 

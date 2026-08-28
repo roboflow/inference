@@ -7,7 +7,7 @@ import torch
 
 
 @dataclass(frozen=True)
-class VideoSegmentClassificationPrediction:
+class ActionRecognitionPrediction:
     """One classified frame segment; ranges may overlap."""
 
     start_frame_idx: int
@@ -52,7 +52,7 @@ class VideoSampling:
         return max(1, round(self.window_seconds * self.sample_fps))
 
 
-class VideoSegmentClassificationModel(ABC):
+class ActionRecognitionModel(ABC):
 
     @property
     def video_sampling(self) -> VideoSampling:
@@ -62,7 +62,7 @@ class VideoSegmentClassificationModel(ABC):
     @abstractmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
-    ) -> "VideoSegmentClassificationModel":
+    ) -> "ActionRecognitionModel":
         pass
 
     @property
@@ -81,7 +81,7 @@ class VideoSegmentClassificationModel(ABC):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassificationPrediction]:
+    ) -> List[ActionRecognitionPrediction]:
         """Classify RGB frames and return segments in their index space.
 
         Frames are numpy HWC arrays or torch CHW tensors. ``class_names``
@@ -96,7 +96,7 @@ class VideoSegmentClassificationModel(ABC):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassificationPrediction]:
+    ) -> List[ActionRecognitionPrediction]:
         return self.infer(
             frames=frames,
             class_names=class_names,

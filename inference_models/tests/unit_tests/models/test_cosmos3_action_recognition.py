@@ -5,19 +5,19 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.models.base.video_segment_classification import (
-    VideoSegmentClassificationPrediction,
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionPrediction,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     SYSTEM_PROMPT_SENTINEL,
     Cosmos3EdgeReasoner,
 )
-from inference_models.models.cosmos3.cosmos3_video_segment_classification import (
+from inference_models.models.cosmos3.cosmos3_action_recognition import (
     FINE_TUNE_MAX_NEW_TOKENS,
     FINE_TUNE_SYSTEM_PROMPT,
     ZERO_SHOT_MAX_NEW_TOKENS,
     ZERO_SHOT_OPEN_VOCABULARY_PROMPT,
-    Cosmos3EdgeVideoSegmentClassification,
+    Cosmos3EdgeActionRecognition,
     _FineTunePrefixAllowedTokensFn,
     _parse_fine_tune_segments,
 )
@@ -101,7 +101,7 @@ def _frames(count):
 
 
 def _prediction(start, end, label):
-    return VideoSegmentClassificationPrediction(
+    return ActionRecognitionPrediction(
         start_frame_idx=start,
         end_frame_idx=end,
         class_name=label,
@@ -111,7 +111,7 @@ def _prediction(start, end, label):
 def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
     )
@@ -128,7 +128,7 @@ def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
 
 def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
     reasoner = _FakeReasoner(response="B", tokenizer=_FakeTokenizer())
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
     )
@@ -145,7 +145,7 @@ def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
 def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner, class_names=["walking"]
     )
 
@@ -158,7 +158,7 @@ def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
 
 def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
     reasoner = _FakeReasoner(response="B")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
     wrapper.infer(frames=large_frames, class_names=["walking"], fps=2.0)
@@ -178,7 +178,7 @@ def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
 )
 def test_zero_shot_maps_first_answer_letter_to_class(answer, expected) -> None:
     reasoner = _FakeReasoner(response=answer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     result = wrapper.infer(
         frames=_frames(4),
@@ -197,7 +197,7 @@ def test_zero_shot_maps_first_answer_letter_to_class(answer, expected) -> None:
 
 def test_zero_shot_uses_caller_max_new_tokens() -> None:
     reasoner = _FakeReasoner(response="A")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     wrapper.infer(
         frames=_frames(2),
@@ -211,7 +211,7 @@ def test_zero_shot_uses_caller_max_new_tokens() -> None:
 
 def test_zero_shot_empty_call_vocabulary_falls_back_to_model_classes() -> None:
     reasoner = _FakeReasoner(response="B")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
     )
@@ -227,7 +227,7 @@ def test_zero_shot_empty_call_vocabulary_falls_back_to_model_classes() -> None:
 
 def test_zero_shot_rejects_more_than_25_classes() -> None:
     reasoner = _FakeReasoner(response="A")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     with pytest.raises(ValueError, match="at most 25"):
         wrapper.infer(
@@ -241,7 +241,7 @@ def test_zero_shot_rejects_more_than_25_classes() -> None:
 
 def test_zero_shot_open_vocabulary_normalizes_first_line() -> None:
     reasoner = _FakeReasoner(response="Pick_Up   Green_Cup\nextra details")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     result = wrapper.infer(frames=_frames(3), fps=5.0)
 
@@ -261,7 +261,7 @@ def test_zero_shot_open_vocabulary_rejects_empty_or_overlong_first_line(
     answer,
 ) -> None:
     reasoner = _FakeReasoner(response=answer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     assert wrapper.infer(frames=_frames(3), fps=5.0) == []
 
@@ -269,7 +269,7 @@ def test_zero_shot_open_vocabulary_rejects_empty_or_overlong_first_line(
 def test_fine_tune_prompt_contains_exact_legend_instruction_and_system_prompt() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
     )
@@ -342,7 +342,7 @@ def test_fine_tune_class_filter_drops_non_members_and_limits_parser() -> None:
         ),
         tokenizer=tokenizer,
     )
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
     )
@@ -362,7 +362,7 @@ def test_fine_tune_class_filter_drops_non_members_and_limits_parser() -> None:
 def test_fine_tune_empty_valid_class_filter_returns_without_generation() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking"],
     )
@@ -381,7 +381,7 @@ def test_fine_tune_empty_valid_class_filter_returns_without_generation() -> None
 def test_fine_tune_mode_detection_is_cached_at_construction() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking"],
     )
@@ -445,7 +445,7 @@ def test_constrained_decoder_allowed_tokens_follow_line_grammar() -> None:
 
 
 def test_class_names_is_none_for_open_vocabulary_model() -> None:
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=_FakeReasoner())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner())
 
     assert wrapper.class_names is None
 
@@ -460,7 +460,7 @@ def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
 
     monkeypatch.setattr(Cosmos3EdgeReasoner, "from_pretrained", load_reasoner)
 
-    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(
         "nvidia/Cosmos3-Edge",
         local_files_only=False,
     )
@@ -479,7 +479,7 @@ def test_from_pretrained_reads_class_names_file(monkeypatch, tmp_path) -> None:
         MagicMock(return_value=reasoner),
     )
 
-    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
 
     assert wrapper.class_names == ["walking", "running"]
     assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
@@ -496,7 +496,7 @@ def test_from_pretrained_derives_class_names_from_class_tokens(
         MagicMock(return_value=reasoner),
     )
 
-    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
 
     assert wrapper.class_names == ["walking", "running"]
     assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
@@ -516,7 +516,7 @@ def test_from_pretrained_reads_video_pre_processing(monkeypatch, tmp_path) -> No
         MagicMock(return_value=reasoner),
     )
 
-    wrapper = Cosmos3EdgeVideoSegmentClassification.from_pretrained(str(tmp_path))
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
     assert wrapper.video_pre_processing == {
         "max_frame_side": 100,
         "window_seconds": 8.0,
@@ -554,7 +554,7 @@ def test_video_sampling_prefers_the_declared_frame_budget(
         MagicMock(return_value=reasoner),
     )
 
-    sampling = Cosmos3EdgeVideoSegmentClassification.from_pretrained(
+    sampling = Cosmos3EdgeActionRecognition.from_pretrained(
         str(tmp_path)
     ).video_sampling
 
@@ -564,7 +564,7 @@ def test_video_sampling_prefers_the_declared_frame_budget(
 
 def test_video_sampling_derives_frames_when_the_package_omits_them() -> None:
     reasoner = _FakeReasoner(response="B")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     sampling = wrapper.video_sampling
 
@@ -581,7 +581,7 @@ def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
         ),
         tokenizer=tokenizer,
     )
-    wrapper = Cosmos3EdgeVideoSegmentClassification(
+    wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner, class_names=["walking", "running"]
     )
 
@@ -592,7 +592,7 @@ def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
 
 def test_infer_accepts_chw_tensor_frames() -> None:
     reasoner = _FakeReasoner(response="moving")
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=reasoner)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
 
     result = wrapper.infer(frames=frames, fps=4.0)
@@ -604,7 +604,7 @@ def test_infer_accepts_chw_tensor_frames() -> None:
 
 
 def test_infer_requires_fps() -> None:
-    wrapper = Cosmos3EdgeVideoSegmentClassification(reasoner=_FakeReasoner())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner())
 
     with pytest.raises(ValueError, match="fps"):
         wrapper.infer(frames=_frames(1), class_names=["moving"])

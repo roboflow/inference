@@ -44,6 +44,11 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     PreProcessingOverrides,
 )
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionModel,
+    ActionRecognitionPrediction,
+    VideoSampling,
+)
 from inference_models.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,
@@ -72,11 +77,6 @@ from inference_models.models.base.object_detection import (
 )
 from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.base.video_segment_classification import (
-    VideoSampling,
-    VideoSegmentClassificationModel,
-    VideoSegmentClassificationPrediction,
-)
 from inference_models.weights_providers.entities import Quantization
 from inference_models.weights_providers.offline_registry import (
     OfflinePackagePresence,

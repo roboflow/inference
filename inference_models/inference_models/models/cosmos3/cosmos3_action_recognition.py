@@ -8,10 +8,10 @@ import cv2
 import numpy as np
 import torch
 
-from inference_models.models.base.video_segment_classification import (
+from inference_models.models.base.action_recognition import (
     VideoSampling,
-    VideoSegmentClassificationModel,
-    VideoSegmentClassificationPrediction,
+    ActionRecognitionModel,
+    ActionRecognitionPrediction,
 )
 from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
@@ -369,7 +369,7 @@ def _parse_fine_tune_segments(
     class_names: List[str],
     num_frames: int,
     fps: float,
-) -> List[VideoSegmentClassificationPrediction]:
+) -> List[ActionRecognitionPrediction]:
     if not isinstance(text, str) or text.strip().lower() == "none":
         return []
 
@@ -388,7 +388,7 @@ def _parse_fine_tune_segments(
         if frame_indices is None:
             continue
         result.append(
-            VideoSegmentClassificationPrediction(
+            ActionRecognitionPrediction(
                 start_frame_idx=frame_indices[0],
                 end_frame_idx=frame_indices[1],
                 class_name=match.group("label"),
@@ -488,7 +488,7 @@ def _read_video_pre_processing(model_name_or_path: str) -> Optional[Dict[str, An
     return video_pre_processing if isinstance(video_pre_processing, dict) else None
 
 
-class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
+class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
     def __init__(
         self,
         reasoner: Cosmos3EdgeReasoner,
@@ -553,7 +553,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
-    ) -> "Cosmos3EdgeVideoSegmentClassification":
+    ) -> "Cosmos3EdgeActionRecognition":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
         class_names = _read_class_names_file(model_name_or_path)
         if class_names is None:
@@ -572,9 +572,9 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         class_names: Optional[List[str]] = None,
         fps: Optional[float] = None,
         **kwargs,
-    ) -> List[VideoSegmentClassificationPrediction]:
+    ) -> List[ActionRecognitionPrediction]:
         if fps is None:
-            raise ValueError("fps is required for video segment classification")
+            raise ValueError("fps is required for action recognition")
 
         normalized_frames = _normalize_frames(frames)
         if not normalized_frames:
@@ -599,7 +599,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         class_filter: Optional[List[str]],
         fps: float,
         **kwargs,
-    ) -> List[VideoSegmentClassificationPrediction]:
+    ) -> List[ActionRecognitionPrediction]:
         assert self.class_names is not None
         max_frame_side = FINE_TUNE_MAX_FRAME_SIDE
         if self._video_pre_processing is not None:
@@ -666,7 +666,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
         class_names: Optional[List[str]],
         fps: float,
         **kwargs,
-    ) -> List[VideoSegmentClassificationPrediction]:
+    ) -> List[ActionRecognitionPrediction]:
         vocabulary = class_names or self.class_names or None
         if vocabulary is not None and len(vocabulary) > 25:
             raise ValueError("Cosmos3 zero-shot mode supports at most 25 classes")
@@ -713,7 +713,7 @@ class Cosmos3EdgeVideoSegmentClassification(VideoSegmentClassificationModel):
                 return []
 
         return [
-            VideoSegmentClassificationPrediction(
+            ActionRecognitionPrediction(
                 start_frame_idx=0,
                 end_frame_idx=len(frames) - 1,
                 class_name=label,
