@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction,
 )
@@ -483,6 +484,37 @@ def test_from_pretrained_reads_class_names_file(monkeypatch, tmp_path) -> None:
 
     assert wrapper.class_names == ["walking", "running"]
     assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
+
+
+def test_from_pretrained_rejects_a_fine_tune_without_class_names(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+
+def test_from_pretrained_accepts_a_base_model_without_class_names(
+    monkeypatch, tmp_path
+) -> None:
+    reasoner = _FakeReasoner(tokenizer=_FakeTokenizer())
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+    assert wrapper.class_names is None
+    assert wrapper._fine_tune_prefix_allowed_tokens_fn is None
 
 
 def test_from_pretrained_reads_the_recorded_sampling(monkeypatch, tmp_path) -> None:

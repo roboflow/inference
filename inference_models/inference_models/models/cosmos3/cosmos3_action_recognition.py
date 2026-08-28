@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import torch
 
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.action_recognition import (
     VideoSampling,
     ActionRecognitionModel,
@@ -431,6 +432,20 @@ def _answer_text(response: Any) -> str:
     return response if isinstance(response, str) else ""
 
 
+def _has_class_tokens(tokenizer: Any) -> bool:
+    """Whether the tokenizer carries fine-tune class tokens."""
+    get_added_vocab = getattr(tokenizer, "get_added_vocab", None)
+    if not callable(get_added_vocab):
+        return False
+    try:
+        added_vocabulary = get_added_vocab()
+    except Exception:  # pragma: no cover - third-party tokenizer behavior
+        return False
+    if not isinstance(added_vocabulary, dict):
+        return False
+    return any(token.startswith("<|cls:") for token in added_vocabulary)
+
+
 def _read_class_names_file(model_name_or_path: str) -> Optional[List[str]]:
     """Read the package class list, one name per line, in class-token order."""
     class_names_path = Path(model_name_or_path) / "class_names.txt"
@@ -514,9 +529,21 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeActionRecognition":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
+        class_names = _read_class_names_file(model_name_or_path)
+        if class_names is None and _has_class_tokens(
+            getattr(reasoner._processor, "tokenizer", None)
+        ):
+            # Falling through would serve a fine-tune as a zero-shot model.
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Model package {model_name_or_path} was fine-tuned for "
+                    f"action recognition but carries no class_names.txt."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
         return cls(
             reasoner=reasoner,
-            class_names=_read_class_names_file(model_name_or_path),
+            class_names=class_names,
             video_sampling=_read_video_sampling(model_name_or_path),
         )
 

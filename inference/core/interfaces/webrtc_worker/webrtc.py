@@ -295,6 +295,8 @@ class VideoFrameProcessor:
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
+        self._last_frame: Optional[VideoFrame] = None
+        self._last_frame_timestamp: Optional[datetime.datetime] = None
         self.heartbeat_callback = heartbeat_callback
 
         self.has_video_track = has_video_track
@@ -544,6 +546,38 @@ class VideoFrameProcessor:
         if not success:
             logger.error("[SEND_OUTPUT] Frame %d failed", frame_id)
 
+    async def _flush_stream_pipeline(self):
+        """Emit what a stream-pipelined block still holds, once the stream ends.
+
+        Blocks that classify a window of frames keep the frames that arrived
+        after their last call; without this they never reach the client.
+        """
+        if self._last_frame is None:
+            return
+        flush = getattr(
+            getattr(self._inference_pipeline, "_on_video_frame", None), "flush", None
+        )
+        if not callable(flush):
+            return
+        try:
+            flush_result = flush()
+        except Exception as error:
+            logger.error("Error flushing stream pipeline: %s", error)
+            return
+        if flush_result is None:
+            return
+        results = (
+            flush_result if isinstance(flush_result, list) else [flush_result]
+        )
+        for result in results:
+            for workflow_output in getattr(result, "predictions", None) or []:
+                await self._send_data_output(
+                    workflow_output,
+                    self._last_frame_timestamp or datetime.datetime.now(),
+                    self._last_frame,
+                    [],
+                )
+
     async def _send_processing_complete(self):
         """Send final message indicating processing is complete.
 
@@ -555,6 +589,7 @@ class VideoFrameProcessor:
         if not self.data_channel or self.data_channel.readyState != "open":
             return
 
+        await self._flush_stream_pipeline()
         self._processing_complete_sent = True
         completion_output = WebRTCOutput(
             processing_complete=True,
@@ -605,6 +640,8 @@ class VideoFrameProcessor:
                 self._received_frames += 1
                 self._fps_monitor.tick()
                 frame_timestamp = datetime.datetime.now()
+                self._last_frame = frame
+                self._last_frame_timestamp = frame_timestamp
 
                 workflow_output, _, errors = await self._process_frame_async(
                     frame=frame,
@@ -833,6 +870,8 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         self._fps_monitor.tick()
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
+        self._last_frame = frame
+        self._last_frame_timestamp = frame_timestamp
 
         if self.stream_output is None and frame_id == 1:
             await self._auto_detect_stream_output(frame, frame_id)
