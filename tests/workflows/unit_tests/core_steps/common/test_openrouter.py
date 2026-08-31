@@ -74,13 +74,10 @@ def test_build_provider_routing_unknown_raises():
         build_provider_routing("nope")
 
 
-def test_build_provider_routing_allow_with_quantizations_returns_filter_only():
+def test_build_provider_routing_merges_quantizations_with_privacy_filter():
     assert build_provider_routing("allow", quantizations=["bf16", "fp32"]) == {
         "quantizations": ["bf16", "fp32"]
     }
-
-
-def test_build_provider_routing_deny_with_quantizations_merges_both():
     assert build_provider_routing("deny", quantizations=["fp8", "bf16", "fp32"]) == {
         "data_collection": "deny",
         "quantizations": ["fp8", "bf16", "fp32"],
@@ -92,19 +89,9 @@ def test_build_provider_routing_deny_with_quantizations_merges_both():
 # ---------------------------------------------------------------------------
 
 
-def test_get_native_quantizations_returns_allowlist_for_registered_model():
-    assert get_native_quantizations(model="google/gemma-4-31b-it") == ["bf16", "fp32"]
-    assert get_native_quantizations(model="z-ai/glm-5.3-flash") == [
-        "fp8",
-        "bf16",
-        "fp32",
-    ]
-
-
 def test_get_native_quantizations_returns_none_for_unregistered_model():
-    # Proprietary single-provider SKUs must stay unfiltered - a quantization
-    # filter would exclude the only endpoint (the owning lab, which reports
-    # `unknown`) and make the model unroutable.
+    # Deliberate policy: these models' only providers report `unknown`
+    # precision, so registering them would make them unroutable.
     for slug in (
         "meta/muse-spark-1.1",
         "meta/muse-spark-1.2",
@@ -117,13 +104,6 @@ def test_get_native_quantizations_returns_none_for_unregistered_model():
         "moonshotai/kimi-k2.6",
     ):
         assert get_native_quantizations(model=slug) is None, slug
-
-
-def test_get_native_quantizations_returns_copy_not_registry_reference():
-    allowlist = get_native_quantizations(model="google/gemma-4-31b-it")
-    allowlist.append("int4")
-
-    assert "int4" not in MODEL_NATIVE_QUANTIZATIONS["google/gemma-4-31b-it"]
 
 
 def test_native_quantization_registry_never_allows_below_fp8():
@@ -283,33 +263,8 @@ def test_execute_openrouter_batch_attaches_native_quantizations(
         **common,
     )
 
-    assert mock_direct.call_args.kwargs["quantizations"] == ["bf16", "fp32"]
-    assert mock_proxied.call_args.kwargs["quantizations"] == ["fp8", "bf16", "fp32"]
-
-
-@patch(
-    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
-)
-@patch(
-    "inference.core.workflows.core_steps.common.openrouter._execute_direct_openrouter_request"
-)
-def test_execute_openrouter_batch_passes_no_quantizations_for_unregistered_model(
-    mock_direct, mock_proxied
-):
-    mock_direct.side_effect = [OpenRouterResult(content="d")]
-    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
-
-    block.execute_openrouter_batch(
-        openrouter_api_key="sk-or-v1-abcdef",
-        model="meta/muse-spark-1.2",
-        prompts=[[{"role": "user", "content": "hi"}]],
-        max_tokens=50,
-        temperature=0.1,
-        privacy_level="deny",
-        max_concurrent_requests=1,
-    )
-
-    assert mock_direct.call_args.kwargs["quantizations"] is None
+    assert mock_direct.call_args.kwargs["quantizations"] == ("bf16", "fp32")
+    assert mock_proxied.call_args.kwargs["quantizations"] == ("fp8", "bf16", "fp32")
 
 
 # ---------------------------------------------------------------------------

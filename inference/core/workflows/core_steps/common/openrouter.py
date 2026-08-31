@@ -27,7 +27,17 @@ import base64
 import json
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from openai import APIStatusError, OpenAI
 from pydantic import ConfigDict, Field
@@ -94,7 +104,7 @@ PRIVACY_LEVEL_METADATA = {
 
 def build_provider_routing(
     privacy_level: str,
-    quantizations: Optional[List[str]] = None,
+    quantizations: Optional[Sequence[str]] = None,
 ) -> Optional[dict]:
     """Build OpenRouter's ``provider`` payload object for a request.
 
@@ -138,79 +148,58 @@ def build_provider_routing(
 # filter, meaning "the model's native precision or higher". Endpoints whose
 # self-reported quantization is not in the list (including `unknown`) are
 # excluded from routing.
-BF16_OR_HIGHER = ("bf16", "fp32")
-FP8_OR_HIGHER = ("fp8", "bf16", "fp32")
+BF16_NATIVE = ("bf16", "fp32")
+FP8_NATIVE = ("fp8", "bf16", "fp32")
+# BF16-native models for which no OpenRouter provider currently serves a
+# BF16 endpoint; allowing FP8 keeps the highest precision actually served
+# instead of making the model unroutable.
+BF16_NATIVE_FP8_FLOOR = FP8_NATIVE
 
 # Central registry mapping OpenRouter model slugs to the quantization levels
 # acceptable for that model, derived from each model's native release
-# precision (original model cards / official repos) and the precisions
-# actually served on the OpenRouter marketplace.
+# precision and the precisions actually served on OpenRouter.
 #
-# Models deliberately absent from this registry get NO quantization filter:
-#
-# * proprietary single-provider SKUs served only by the owning lab
-#   (Muse Spark 1.1/1.2, hosted Qwen Flash/Plus/Max SKUs, the entire Qwen 3.7
-#   line, GLM-5V-Turbo, DeepSeek V4 Flash Vision Exp) - the lab serves at an
-#   undisclosed precision and reports `unknown`, so any filter would only
-#   make the model unroutable;
-# * DeepSeek V4 additionally is natively FP4+FP8 (quantization-aware
-#   trained) - there is no higher-precision original to prefer;
-# * open models whose only current endpoint reports `unknown` quantization
-#   (Qwen3 VL 8B Thinking, Qwen3 VL 32B Instruct) - filtering would leave
-#   zero providers.
-#
-# Entries marked "FP8 floor" are BF16-native models for which no OpenRouter
-# provider currently serves a BF16 endpoint; FP8_OR_HIGHER keeps the highest
-# precision actually available instead of making the model unroutable.
+# Models deliberately absent from this registry get NO quantization filter,
+# because in each case a filter would only make the model unroutable:
+# proprietary single-provider SKUs (Muse Spark 1.1/1.2, hosted Qwen
+# Flash/Plus/Max SKUs, the Qwen 3.7 line, GLM-5V-Turbo, DeepSeek V4 Flash
+# Vision Exp) report `unknown` precision; DeepSeek V4 is natively FP4+FP8
+# with no higher-precision original; and some open models' only endpoints
+# report `unknown` (Qwen3 VL 8B Thinking, Qwen3 VL 32B Instruct).
 MODEL_NATIVE_QUANTIZATIONS: Dict[str, Tuple[str, ...]] = {
-    # Meta - Muse Glimmer is BF16-native open weights (Muse Spark is
-    # API-only and stays unfiltered).
-    "meta/muse-glimmer-30b": BF16_OR_HIGHER,
-    # Qwen 3.5 - BF16-native open weights.
-    "qwen/qwen3.5-9b": BF16_OR_HIGHER,
-    "qwen/qwen3.5-27b": BF16_OR_HIGHER,
-    "qwen/qwen3.5-35b-a3b": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    "qwen/qwen3.5-122b-a10b": BF16_OR_HIGHER,
-    "qwen/qwen3.5-397b-a17b": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    # Qwen 3.6 - BF16-native open weights; no BF16 endpoints exist today.
-    "qwen/qwen3.6-27b": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    "qwen/qwen3.6-35b-a3b": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    # Qwen 3.8 - BF16-native open weights; no BF16 endpoints exist today.
-    "qwen/qwen3.8-27b": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    # Qwen3 VL - BF16-native open weights.
-    "qwen/qwen3-vl-8b-instruct": BF16_OR_HIGHER,
-    "qwen/qwen3-vl-30b-a3b-instruct": BF16_OR_HIGHER,
-    "qwen/qwen3-vl-30b-a3b-thinking": FP8_OR_HIGHER,  # BF16-native; FP8 floor
-    "qwen/qwen3-vl-235b-a22b-instruct": BF16_OR_HIGHER,
-    "qwen/qwen3-vl-235b-a22b-thinking": BF16_OR_HIGHER,
-    # Z.ai - GLM 5.3 Flash ships FP8 e4m3 as its primary (native) checkpoint;
-    # this excludes providers serving FP4 cuts (GLM-5V-Turbo is API-only and
-    # stays unfiltered).
-    "z-ai/glm-5.3-flash": FP8_OR_HIGHER,
-    # Google - Gemma 4 is BF16-native; excludes QAT Q4_0 / FP8 derivatives.
-    "google/gemma-4-31b-it": BF16_OR_HIGHER,
-    "google/gemma-4-26b-a4b-it": BF16_OR_HIGHER,
-    # Meta - Llama 3.2 Vision is BF16-native.
-    "meta-llama/llama-3.2-11b-vision-instruct": BF16_OR_HIGHER,
+    "meta/muse-glimmer-30b": BF16_NATIVE,
+    "qwen/qwen3.5-9b": BF16_NATIVE,
+    "qwen/qwen3.5-27b": BF16_NATIVE,
+    "qwen/qwen3.5-35b-a3b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.5-122b-a10b": BF16_NATIVE,
+    "qwen/qwen3.5-397b-a17b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.6-27b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.6-35b-a3b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.8-27b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3-vl-8b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-30b-a3b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-30b-a3b-thinking": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3-vl-235b-a22b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-235b-a22b-thinking": BF16_NATIVE,
+    "z-ai/glm-5.3-flash": FP8_NATIVE,
+    "google/gemma-4-31b-it": BF16_NATIVE,
+    "google/gemma-4-26b-a4b-it": BF16_NATIVE,
+    "meta-llama/llama-3.2-11b-vision-instruct": BF16_NATIVE,
 }
 
 
-def get_native_quantizations(model: str) -> Optional[List[str]]:
+def get_native_quantizations(model: str) -> Optional[Tuple[str, ...]]:
     """Return the quantization allowlist for an OpenRouter model slug.
 
     Args:
         model: OpenRouter model slug, e.g. ``qwen/qwen3.5-27b``.
 
     Returns:
-        The list of acceptable provider quantization labels, or ``None``
-        when the model has no entry in :data:`MODEL_NATIVE_QUANTIZATIONS`
-        (in which case no quantization filter should be applied).
+        The acceptable provider quantization labels, or ``None`` when the
+        model has no entry in :data:`MODEL_NATIVE_QUANTIZATIONS` (in which
+        case no quantization filter should be applied).
     """
-    quantizations = MODEL_NATIVE_QUANTIZATIONS.get(model)
-    if quantizations is None:
-        return None
-
-    return list(quantizations)
+    return MODEL_NATIVE_QUANTIZATIONS.get(model)
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +500,7 @@ def _execute_proxied_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-    quantizations: Optional[List[str]] = None,
+    quantizations: Optional[Sequence[str]] = None,
 ) -> OpenRouterResult:
     payload = {
         "openrouter_api_key": openrouter_api_key,
@@ -525,9 +514,7 @@ def _execute_proxied_openrouter_request(
     if reasoning is not None:
         payload["reasoning"] = reasoning
     if quantizations is not None:
-        # Forwarded upstream as the provider `quantizations` allowlist;
-        # proxy versions that predate the field ignore it.
-        payload["quantizations"] = quantizations
+        payload["quantizations"] = list(quantizations)
     try:
         response_data = post_to_roboflow_api(
             endpoint="apiproxy/openrouter",
@@ -602,7 +589,7 @@ def _execute_direct_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
-    quantizations: Optional[List[str]] = None,
+    quantizations: Optional[Sequence[str]] = None,
 ) -> OpenRouterResult:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}

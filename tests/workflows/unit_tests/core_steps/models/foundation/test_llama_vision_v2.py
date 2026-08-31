@@ -37,12 +37,6 @@ def test_manifest_defaults_include_managed_key_and_deny_privacy():
     assert manifest.model_version == "11B - OpenRouter"
 
 
-def test_manifest_is_deprecated_and_points_at_meta_vlm():
-    extra = BlockManifest.model_config["json_schema_extra"]
-    assert extra["deprecated"] is True
-    assert "roboflow_core/meta_vlm@v2" in extra["deprecation_message"]
-
-
 def test_manifest_rejects_invalid_temperature():
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(

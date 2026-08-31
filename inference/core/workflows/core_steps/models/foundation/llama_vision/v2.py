@@ -33,11 +33,7 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# OpenRouter listed one remaining Llama 3.2 vision variant (the paid 11B).
-# The :free tier and the 90B variant that the v1 block listed were already
-# gone from the catalog; the paid 11B now also has zero live endpoints
-# (OpenRouter returns "No endpoints found"). This block is deprecated —
-# use Meta VLM (Muse Spark / Glimmer) instead.
+# Deprecated: OpenRouter has no live Llama 3.2 Vision endpoints left.
 MODEL_VERSION_MAPPING = {
     "11B - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
 }
