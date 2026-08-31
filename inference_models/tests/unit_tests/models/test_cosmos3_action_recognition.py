@@ -11,6 +11,7 @@ from inference_models.models.base.action_recognition import (
     WHOLE_VIDEO_MODE,
     ActionRecognitionPrediction,
 )
+from inference_models.models.cosmos3 import cosmos3_action_recognition
 from inference_models.models.cosmos3.cosmos3_action_recognition import (
     FINE_TUNE_MAX_NEW_TOKENS,
     FINE_TUNE_SYSTEM_PROMPT,
@@ -570,19 +571,21 @@ def test_zero_shot_returns_nothing_when_the_answer_does_not_parse(response) -> N
     assert wrapper.infer(frames=_frames(10), fps=4.0) == []
 
 
-def test_zero_shot_ignores_a_requested_vocabulary_and_says_so(caplog) -> None:
+def test_zero_shot_ignores_a_requested_vocabulary_and_says_so(monkeypatch) -> None:
     # The checkpoint ignores classes stated inside the localization prompt,
     # so the wrapper says so rather than look like it applied them.
     reasoner = _FakeReasoner(response=_cookbook_response())
     wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+    warn = MagicMock()
+    monkeypatch.setattr(cosmos3_action_recognition.LOGGER, "warning", warn)
 
-    with caplog.at_level("WARNING", logger="inference-models"):
-        result = wrapper.infer(
-            frames=_frames(10), class_names=["walking", "running"], fps=4.0
-        )
+    result = wrapper.infer(
+        frames=_frames(10), class_names=["walking", "running"], fps=4.0
+    )
 
     assert result == [_prediction(0, 8, "a person walks")]
-    assert "ignored" in caplog.text
+    warn.assert_called_once()
+    assert "ignored" in warn.call_args.args[0]
     assert "walking" not in reasoner.calls[0]["prompt"]
 
 

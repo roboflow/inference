@@ -146,11 +146,9 @@ class BlockManifest(WorkflowBlockManifest):
         Field(
             default=None,
             description=(
-                "List of accepted classes. For fine-tuned models, classes must exist "
-                "in the model's training set and the output is restricted to this "
-                "subset. For zero-shot models, detected events are classified "
-                "into this list. Leave empty to accept all classes (open "
-                "vocabulary on zero-shot models)."
+                "List of accepted classes. Classes must exist in the model's "
+                "training set, and the output is restricted to this subset. "
+                "Leave empty to report every class the model carries."
             ),
             examples=[["a", "b", "c"], "$inputs.class_filter"],
         )

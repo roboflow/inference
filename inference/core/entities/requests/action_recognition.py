@@ -30,9 +30,9 @@ class ActionRecognitionInferenceRequest(BaseRequest):
     Attributes:
         model_id (str): The model to classify with.
         video (InferenceRequestVideo): The clip to classify.
-        class_filter (Optional[List[str]]): For a fine-tuned model, the subset
-            of its classes to report. For a zero-shot model, the vocabulary to
-            classify into; leave it empty to let the model label events itself.
+        class_filter (Optional[List[str]]): The subset of a fine-tuned
+            model's classes to report. A zero-shot model answers in its own
+            words and ignores this.
     """
 
     model_id: str = Field(

@@ -2592,18 +2592,17 @@ class InferenceHTTPClient:
     ) -> dict:
         """Classify the actions in a video clip.
 
-        The model states how the clip is cut into windows and how its frames
-        are sampled, so this call sends the clip and nothing else. Frame
-        indices in the result count from the first frame of the clip.
+        The model states how the clip is cut and how its frames are sampled,
+        so this call sends the clip and nothing else. Frame indices in the
+        result count from the first frame of the clip.
 
         Args:
             video: The clip, as a URL or as base64 content.
             model_id: The model to classify with.
             video_type: Whether `video` holds a "url" or "base64" content.
-            class_filter: For a fine-tuned model, the subset of its classes to
-                report. For a zero-shot model, the vocabulary to classify into
-                (at most 25 classes); leave it empty to let the model label
-                events itself.
+            class_filter: The subset of a fine-tuned model's classes to
+                report. A zero-shot model answers in its own words and ignores
+                this.
 
         Returns:
             A dictionary holding `timeline`, `source_fps`, `frame_count` and

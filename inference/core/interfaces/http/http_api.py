@@ -4234,12 +4234,12 @@ class HttpInterface(BaseInterface):
                     summary="Action Recognition",
                     description=(
                         "Classify the actions in a video clip. The model states "
-                        "how the clip is cut into windows and how its frames are "
-                        "sampled, so a caller sends the clip and nothing else. "
-                        "Frame indices in the response count from the first frame "
-                        "of the clip. A fine-tuned model reports ranges inside a "
-                        "window; a zero-shot model reports one verdict per window, "
-                        "so its range boundaries land on window edges."
+                        "how the clip is cut and how its frames are sampled, so a "
+                        "caller sends the clip and nothing else. Frame indices in "
+                        "the response count from the first frame of the clip. A "
+                        "fine-tuned model reports its own classes. A zero-shot "
+                        "model reads the whole clip in one call and names the "
+                        "events it finds in its own words."
                     ),
                 )
                 @with_route_exceptions

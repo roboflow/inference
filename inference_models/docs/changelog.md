@@ -4,10 +4,32 @@
 
 ### Added
 
+- New task `action-recognition`: video events returned as class-labeled frame
+  ranges, which can overlap. The task ships `ActionRecognitionModel`, the
+  frozen `ActionRecognitionPrediction`, and a `VideoSampling` contract that
+  travels with the model. That contract carries the window length, the sample
+  rate, the fewest frames worth reading, the trained frame side, and the mode
+  training used. A caller therefore never states how to cut a video. The
+  shared `plan_windows` and `merge_segment` helpers turn that contract into
+  windows and union the results into one timeline.
+
 - NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, tasks `vlm` and
-  `action-recognition`, backend `hugging-face`): video events returned as
-  class-labelled frame ranges. Fine-tune packages carry their own class list
-  and sampling contract; the hosted `cosmos-3-edge` base stays a reasoner.
+  `action-recognition`, backend `hugging-face`). The package decides the mode.
+  A tokenizer holding `<|cls:...|>` tokens is a fine-tune: it answers in the
+  training format, under a decoding constraint that admits only tokens which
+  continue a valid span line, and it reads its classes from `class_names.txt`
+  and its sampling from `inference_config.json`. Anything else runs zero-shot,
+  which reads a whole clip in one call, names the events it finds in its own
+  words, and cannot be steered by a class list. A package that carries class
+  tokens but no class list raises `CorruptedModelPackageError` instead of
+  loading as zero-shot, and so does a package declaring a sampling mode this
+  version does not support.
+
+- `Cosmos3EdgeReasoner` gained LoRA package loading (base weights under
+  `base/`, the class-token tokenizer on top, and an embedding resize before
+  the adapter attaches), plus `enable_thinking` and constrained decoding on
+  the video path. It now passes real `VideoMetadata`, so the timestamps the
+  model reads match the clip it was given.
 
 ---
 
