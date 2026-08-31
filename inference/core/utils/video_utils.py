@@ -27,6 +27,10 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
     OpenCV reads containers from a file, not from a buffer, so a clip that
     arrives in a request is written to a temporary file for the length of the
     request. URL fetching runs the same address policy as image input.
+
+    A URL is the preferred transport. Both branches hold the whole clip in
+    memory before it reaches disk, and base64 adds a third again on the wire
+    and another copy in the parsed request, so base64 suits short clips only.
     """
     if video_type == VIDEO_TYPE_URL:
         if OFFLINE_MODE:

@@ -4239,7 +4239,9 @@ class HttpInterface(BaseInterface):
                         "the response count from the first frame of the clip. A "
                         "fine-tuned model reports its own classes. A zero-shot "
                         "model reads the whole clip in one call and names the "
-                        "events it finds in its own words."
+                        "events it finds in its own words. Send the clip as a "
+                        "URL. Base64 grows it by a third and holds the whole "
+                        "request in memory, so it suits short clips only."
                     ),
                 )
                 @with_route_exceptions
@@ -4703,7 +4705,10 @@ class HttpInterface(BaseInterface):
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 if task_type == "action-recognition":
                     # The payload is a clip, so none of the image-shaped
-                    # arguments below apply to it.
+                    # arguments below apply to it. The `image` query parameter
+                    # carries a URL here, which is the transport to prefer: a
+                    # base64 body grows the clip by a third and is held whole
+                    # in memory.
                     inference_response = self.model_manager.infer_from_request_sync(
                         request_model_id,
                         ActionRecognitionInferenceRequest(

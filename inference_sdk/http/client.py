@@ -2596,10 +2596,15 @@ class InferenceHTTPClient:
         so this call sends the clip and nothing else. Frame indices in the
         result count from the first frame of the clip.
 
+        Pass a URL, which is the default. Base64 grows the clip by a third and
+        holds the whole request in memory, so a gateway rejects a large one;
+        it suits a short clip and a quick test.
+
         Args:
             video: The clip, as a URL or as base64 content.
             model_id: The model to classify with.
             video_type: Whether `video` holds a "url" or "base64" content.
+                Defaults to "url", which is the preferred transport.
             class_filter: The subset of a fine-tuned model's classes to
                 report. A zero-shot model answers in its own words and ignores
                 this.

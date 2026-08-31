@@ -8,6 +8,10 @@ from inference.core.entities.requests.inference import BaseRequest
 class InferenceRequestVideo(BaseModel):
     """Video data for an inference request.
 
+    Prefer a URL. Base64 grows the clip by a third, and the whole request is
+    held in memory before the clip reaches disk, so gateways reject a large
+    one. Base64 suits a short clip and a quick test.
+
     Attributes:
         type (str): The type of video data provided, one of 'url' or 'base64'.
         value (Optional[Any]): Video data corresponding to the video type.
@@ -15,7 +19,11 @@ class InferenceRequestVideo(BaseModel):
 
     type: str = Field(
         examples=["url"],
-        description="The type of video data provided, one of 'url' or 'base64'",
+        description=(
+            "The type of video data provided, one of 'url' or 'base64'. Prefer "
+            "'url': base64 grows the clip by a third and holds the whole "
+            "request in memory, which gateways reject above a few megabytes."
+        ),
     )
     value: Optional[Any] = Field(
         None,
