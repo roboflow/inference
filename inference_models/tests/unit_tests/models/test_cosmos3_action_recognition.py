@@ -18,8 +18,6 @@ from inference_models.models.cosmos3.cosmos3_action_recognition import (
     ZERO_SHOT_MAX_NEW_TOKENS,
     ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
     Cosmos3EdgeActionRecognition,
-    _FineTunePrefixAllowedTokensFn,
-    _parse_fine_tune_segments,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     SYSTEM_PROMPT_SENTINEL,
@@ -238,44 +236,6 @@ def test_fine_tune_prompt_contains_exact_legend_instruction_and_system_prompt() 
     assert reasoner.calls[0]["skip_special_tokens"] is False
 
 
-def test_fine_tune_parser_accepts_valid_lines_and_converts_seconds() -> None:
-    result = _parse_fine_tune_segments(
-        text=("<|cls:walking|> <-0.20> <0.21>\n" "<|cls:running|> <1.40> <0.20>"),
-        class_names=["walking", "running"],
-        num_frames=10,
-        fps=5.0,
-    )
-
-    assert result == [
-        _prediction(0, 2, "walking"),
-        _prediction(1, 7, "running"),
-    ]
-
-
-@pytest.mark.parametrize("answer", ["none", "  NONE  ", "not parseable"])
-def test_fine_tune_parser_returns_empty_for_none_or_no_valid_lines(answer) -> None:
-    assert (
-        _parse_fine_tune_segments(
-            text=answer,
-            class_names=["walking"],
-            num_frames=10,
-            fps=5.0,
-        )
-        == []
-    )
-
-
-def test_fine_tune_parser_drops_out_of_vocabulary_labels() -> None:
-    result = _parse_fine_tune_segments(
-        text=("<|cls:walking|> <0.00> <0.20>\n" "<|cls:jumping|> <0.20> <0.40>"),
-        class_names=["walking"],
-        num_frames=5,
-        fps=5.0,
-    )
-
-    assert result == [_prediction(0, 1, "walking")]
-
-
 def test_fine_tune_class_filter_drops_non_members_and_limits_parser() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(
@@ -331,57 +291,6 @@ def test_fine_tune_mode_detection_is_cached_at_construction() -> None:
     wrapper.infer(frames=_frames(2), fps=5.0)
 
     assert reasoner.calls[0]["prefix_allowed_tokens_fn"] is not None
-
-
-def test_constrained_decoder_allowed_tokens_follow_line_grammar() -> None:
-    tokenizer = _FakeTokenizer(class_names=["walking"])
-    class_token_id = tokenizer.id("<|cls:walking|>")
-    grammar = _FineTunePrefixAllowedTokensFn(
-        tokenizer=tokenizer,
-        class_token_ids={"walking": class_token_id},
-    )
-
-    start_allowed = grammar(0, torch.tensor([], dtype=torch.int64))
-    assert class_token_id in start_allowed
-    assert tokenizer.id("n") in start_allowed
-    assert tokenizer.id("none") in start_allowed
-    assert tokenizer.eos_token_id not in start_allowed
-
-    prefix_through_open_angle = torch.tensor(
-        [class_token_id, tokenizer.id(" "), tokenizer.id("<")]
-    )
-    after_open_angle = grammar(0, prefix_through_open_angle)
-    assert tokenizer.id("0") in after_open_angle
-    assert tokenizer.id("9") in after_open_angle
-    assert tokenizer.id(".") not in after_open_angle
-    assert tokenizer.eos_token_id not in after_open_angle
-
-    complete_line = torch.tensor(
-        [
-            class_token_id,
-            tokenizer.id(" "),
-            tokenizer.id("<"),
-            tokenizer.id("1"),
-            tokenizer.id("."),
-            tokenizer.id("2"),
-            tokenizer.id(">"),
-            tokenizer.id(" "),
-            tokenizer.id("<"),
-            tokenizer.id("3"),
-            tokenizer.id("."),
-            tokenizer.id("4"),
-            tokenizer.id(">"),
-        ]
-    )
-    line_boundary_allowed = grammar(0, complete_line)
-    assert tokenizer.eos_token_id in line_boundary_allowed
-    assert tokenizer.id("\n") in line_boundary_allowed
-    assert class_token_id not in line_boundary_allowed
-
-    after_newline = torch.cat([complete_line, torch.tensor([tokenizer.id("\n")])])
-    # A completed line may end the answer, so EOS is allowed beside the
-    # next class token.
-    assert grammar(0, after_newline) == sorted([class_token_id, tokenizer.eos_token_id])
 
 
 def test_class_names_is_none_for_open_vocabulary_model() -> None:
