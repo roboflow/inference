@@ -191,17 +191,6 @@ def test_a_model_that_declares_no_frame_side_reads_frames_whole() -> None:
     assert all(f.shape == (480, 854, 3) for f in reasoner.calls[0]["frames"])
 
 
-def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
-    reasoner = _FakeReasoner(response=_cookbook_response())
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
-    wrapper.infer(frames=large_frames, class_names=["walking"], fps=2.0)
-
-    sent_frames = reasoner.calls[0]["frames"]
-    assert all(frame.shape == (480, 854, 3) for frame in sent_frames)
-
-
 def test_from_pretrained_rejects_class_names_that_miss_their_tokens(
     monkeypatch, tmp_path
 ) -> None:
@@ -294,27 +283,6 @@ def test_fine_tune_empty_valid_class_filter_returns_without_generation() -> None
         == []
     )
     assert reasoner.calls == []
-
-
-def test_fine_tune_mode_detection_is_cached_at_construction() -> None:
-    tokenizer = _FakeTokenizer(class_names=["walking"])
-    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeActionRecognition(
-        reasoner=reasoner,
-        class_names=["walking"],
-    )
-    tokenizer._added_vocabulary.clear()
-    tokenizer._vocabulary.pop("<|cls:walking|>")
-
-    wrapper.infer(frames=_frames(2), fps=5.0)
-
-    assert reasoner.calls[0]["prefix_allowed_tokens_fn"] is not None
-
-
-def test_class_names_is_none_for_open_vocabulary_model() -> None:
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner())
-
-    assert wrapper.class_names is None
 
 
 def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:

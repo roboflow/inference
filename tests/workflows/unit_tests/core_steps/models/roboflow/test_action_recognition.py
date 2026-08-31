@@ -697,7 +697,7 @@ def test_window_classes_keep_alive_through_negative_fire_and_errors_then_clear(
     assert len(model.calls) == 4
 
 
-def test_default_stride_fires_every_half_window():
+def test_half_window_stride_fires_twice_per_window():
     block, model = _make_block()
 
     call_counts = []
