@@ -300,6 +300,10 @@ class OWLv2HF(
         iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     ) -> List[Detections]:
+        reference_examples = [
+            ReferenceExample.model_validate(r) if isinstance(r, dict) else r
+            for r in reference_examples
+        ]
         reference_embeddings = self.prepare_reference_examples_embeddings(
             reference_examples=reference_examples,
             iou_threshold=iou_threshold,

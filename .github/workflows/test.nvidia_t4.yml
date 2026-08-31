@@ -33,6 +33,14 @@ on:
         description: "Prebuilt roboflow/roboflow-inference-server-gpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
         default: ""
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 32-minute in-job image build is skipped. test_name `fast_track` runs
@@ -63,6 +71,9 @@ jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
+    env:
+      LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+      LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
     strategy:
       matrix:
         use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}

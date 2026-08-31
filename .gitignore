@@ -224,10 +224,12 @@ openspec*/
 opsx/
 checkpoints/
 development/_private
-# Local credential material — never commit. Both of these were found untracked
-# but NOT ignored, so a single `git add -A` would have committed them.
-*.key
-modal/deploy_modal_*.sh
 
 # Font assets embedded in roboflow-workflows wheel — downloaded at build time, not committed
 workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets/
+
+# Test-downloaded model artifacts
+inference_model_manager/tests/integration_tests/assets/
+
+# Private CLAUDE context
+CLAUDE.local.md

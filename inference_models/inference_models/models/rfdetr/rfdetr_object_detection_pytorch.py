@@ -10,6 +10,7 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    RFDETR_MAX_INPUT_RESOLUTION,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -92,6 +93,8 @@ class RFDetrForObjectDetectionTorch(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
+        if rf_detr_max_input_resolution is None:
+            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         if os.path.isfile(model_name_or_path):
             return cls.from_checkpoint_file(
                 checkpoint_path=model_name_or_path,
