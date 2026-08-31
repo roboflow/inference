@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ DEFAULT_REPORTS = (
     NVTX_PUSHPOP_TRACE_REPORT,
     NVTX_GPU_PROJECTION_TRACE_REPORT,
 )
+VALIDATED_NSYS_VERSION_FAMILY = (2025, 1)
+_NSYS_VERSION_PATTERN = re.compile(r"\b(?P<major>\d{4})\.(?P<minor>\d+)\b")
 
 
 class NsysStatsError(RuntimeError):
@@ -108,6 +111,7 @@ def run_nsys_stats(
     if not trace_path.is_file():
         raise NsysStatsError(f"Nsight trace does not exist: {trace_path}")
 
+    nsys_version = _read_nsys_version(resolved_executable)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_base = output_dir / "nsys"
     command = build_nsys_stats_command(
@@ -120,7 +124,8 @@ def run_nsys_stats(
     if result.returncode != 0:
         details = (result.stderr or result.stdout).strip()
         raise NsysStatsError(
-            f"`nsys stats` failed with exit code {result.returncode}: {details}"
+            f"`nsys stats` failed with exit code {result.returncode} using "
+            f"{nsys_version}: {details}"
         )
 
     report_paths = {
@@ -136,7 +141,7 @@ def run_nsys_stats(
         )
 
     return NsysStatsArtifacts(
-        nsys_version=_read_nsys_version(resolved_executable),
+        nsys_version=nsys_version,
         report_paths=report_paths,
     )
 
@@ -200,6 +205,7 @@ def parse_nvtx_gpu_projection_trace(path: Path) -> list[GpuProjectedRange]:
             "RangeId",
             "ParentId",
         ),
+        allow_empty=True,
     )
 
     return [
@@ -233,16 +239,41 @@ def _read_nsys_version(executable: str) -> str:
     if result.returncode != 0:
         return "unknown"
 
-    return result.stdout.strip() or "unknown"
+    return (result.stdout or result.stderr).strip() or "unknown"
+
+
+def get_nsys_version_warning(nsys_version: str) -> str | None:
+    """Return a compatibility warning for an unvalidated Nsight version."""
+    match = _NSYS_VERSION_PATTERN.search(nsys_version)
+    if match is None:
+        return (
+            "Could not determine the Nsight Systems version; report parsing is "
+            "validated against Nsight Systems 2025.1."
+        )
+
+    version_family = int(match.group("major")), int(match.group("minor"))
+    if version_family == VALIDATED_NSYS_VERSION_FAMILY:
+        return None
+
+    return (
+        f"{nsys_version} has not been validated; report parsing is validated "
+        "against Nsight Systems 2025.1."
+    )
 
 
 def _read_csv_rows(
     path: Path,
     *,
     required_columns: Sequence[str],
+    allow_empty: bool = False,
 ) -> list[dict[str, str]]:
     try:
         with path.open(newline="", encoding="utf-8") as file:
+            if file.read(1) == "":
+                if allow_empty:
+                    return []
+                raise NsysStatsError(f"Nsight report contains no rows: {path}")
+            file.seek(0)
             reader = csv.DictReader(file)
             columns = set(reader.fieldnames or ())
             missing_columns = [
@@ -257,7 +288,7 @@ def _read_csv_rows(
     except OSError as error:
         raise NsysStatsError(f"Could not read Nsight report {path}: {error}") from error
 
-    if not rows:
+    if not rows and not allow_empty:
         raise NsysStatsError(f"Nsight report contains no rows: {path}")
 
     return rows

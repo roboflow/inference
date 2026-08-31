@@ -78,15 +78,15 @@ def test_nsys_command_uses_capture_range_and_does_not_execute_nsys(tmp_path):
         }
     )
 
+    run_dir = tmp_path / "smoke" / "runs" / "run-1"
     command = build_nsys_command(
         config=config,
-        run_dir=tmp_path / "smoke" / "runs" / "run-1",
+        run_dir=run_dir,
         config_path="configs/profile config.yaml",
     )
 
-    assert command.startswith(
-        f"mkdir -p {tmp_path}/smoke/runs/run-1 && \\\nnsys \\\n  profile"
-    )
+    assert run_dir.is_dir()
+    assert command.startswith("nsys \\\n  profile")
     assert "--nvtx-capture=custom-target@* \\" in command
     assert "-e \\\n  NSYS_NVTX_PROFILER_REGISTER_ONLY=0" in command
     assert "--record-loading \\\n  lazy" in command

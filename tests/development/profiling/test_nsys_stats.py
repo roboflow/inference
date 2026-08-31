@@ -47,12 +47,55 @@ def test_parse_nvtx_gpu_projection_trace_from_real_nsys_output():
     assert second_iteration.range_id == 7
 
 
+def test_gpu_projection_parser_accepts_header_only_report(tmp_path):
+    report = tmp_path / "gpu.csv"
+    header = (
+        (FIXTURES / "nvtx_gpu_proj_trace.csv")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )
+    report.write_text(f"{header}\n", encoding="utf-8")
+
+    assert parse_nvtx_gpu_projection_trace(report) == []
+
+
+def test_gpu_projection_parser_accepts_empty_report(tmp_path):
+    report = tmp_path / "gpu.csv"
+    report.touch()
+
+    assert parse_nvtx_gpu_projection_trace(report) == []
+
+
+def test_host_parser_rejects_header_only_report(tmp_path):
+    report = tmp_path / "host.csv"
+    header = (
+        (FIXTURES / "nvtx_pushpop_trace.csv")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )
+    report.write_text(f"{header}\n", encoding="utf-8")
+
+    with pytest.raises(NsysStatsError, match="contains no rows"):
+        parse_nvtx_pushpop_trace(report)
+
+
+def test_host_parser_rejects_empty_report(tmp_path):
+    report = tmp_path / "host.csv"
+    report.touch()
+
+    with pytest.raises(NsysStatsError, match="contains no rows"):
+        parse_nvtx_pushpop_trace(report)
+
+
 def test_parser_rejects_report_without_required_columns(tmp_path):
     report = tmp_path / "invalid.csv"
     report.write_text("Name,Duration (ns)\n:range,10\n", encoding="utf-8")
 
     with pytest.raises(NsysStatsError, match="missing required columns"):
         parse_nvtx_pushpop_trace(report)
+
+    with pytest.raises(NsysStatsError, match="missing required columns"):
+        parse_nvtx_gpu_projection_trace(report)
 
 
 def test_build_nsys_stats_command_uses_argument_list(tmp_path):

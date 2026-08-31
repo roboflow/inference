@@ -36,20 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     ),
     help="Profiling run directory containing manifest.yaml and trace.nsys-rep.",
 )
-@click.option(
-    "--trace",
-    "trace_path",
-    type=click.Path(
-        exists=True,
-        dir_okay=False,
-        path_type=Path,
-    ),
-    help="Optional trace path. Defaults to <run-dir>/trace.nsys-rep.",
-)
-def cli(run_dir: Path, trace_path: Path | None) -> int:
+def cli(run_dir: Path) -> int:
     """Export Nsight reports and write a stable analysis JSON file."""
     try:
-        output_path = analyze_run(run_dir=run_dir, trace_path=trace_path)
+        output_path = analyze_run(run_dir=run_dir)
     except (NsysStatsError, OSError, ProfileAnalysisError, ValueError) as error:
         raise click.ClickException(str(error)) from error
 
@@ -61,15 +51,14 @@ def cli(run_dir: Path, trace_path: Path | None) -> int:
 def analyze_run(
     *,
     run_dir: Path,
-    trace_path: Path | None = None,
     nsys_executable: str = "nsys",
 ) -> Path:
     """Analyze one profiling run and write ``analysis.json``."""
     manifest_path = run_dir / "manifest.yaml"
     manifest = _load_manifest(manifest_path)
-    resolved_trace_path = trace_path or run_dir / "trace.nsys-rep"
+    trace_path = run_dir / "trace.nsys-rep"
     artifacts = run_nsys_stats(
-        trace_path=resolved_trace_path,
+        trace_path=trace_path,
         output_dir=run_dir / "stats",
         executable=nsys_executable,
     )
@@ -85,7 +74,7 @@ def analyze_run(
         gpu_projected_ranges=gpu_projected_ranges,
         nsys_version=artifacts.nsys_version,
         run_dir=run_dir,
-        trace_path=resolved_trace_path,
+        trace_path=trace_path,
         report_paths=artifacts.report_paths,
     )
 
