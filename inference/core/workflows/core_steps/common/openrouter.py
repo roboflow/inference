@@ -16,15 +16,28 @@ Two key paths are supported per call:
        proxy in the loop.
 
 Both paths honor a user-selected ``privacy_level`` of ``allow``, ``deny``, or
-``zdr`` (zero data retention). Full task-type prompt builders shared across
-the VLM blocks live here too so the per-block files stay small.
+``zdr`` (zero data retention). Both also attach a per-model provider
+``quantizations`` allowlist (:data:`MODEL_NATIVE_QUANTIZATIONS`) so OpenRouter
+only routes to providers serving the model at native precision or higher.
+Full task-type prompt builders shared across the VLM blocks live here too so
+the per-block files stay small.
 """
 
 import base64
 import json
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from openai import APIStatusError, OpenAI
 from pydantic import ConfigDict, Field
@@ -89,20 +102,86 @@ PRIVACY_LEVEL_METADATA = {
 }
 
 
-def build_provider_routing(privacy_level: str) -> Optional[dict]:
-    """Translate a privacy level into OpenRouter's ``provider`` payload object.
+def build_provider_routing(
+    privacy_level: str,
+    quantizations: Optional[Sequence[str]] = None,
+) -> Optional[dict]:
+    """Build the ``provider`` object for an OpenRouter request.
 
-    Returns ``None`` for ``allow`` (no filter), an object with
-    ``data_collection: deny`` for ``deny``, and an object with both
-    ``data_collection`` and ``zdr`` set for ``zdr``.
+    Merges the ``privacy_level`` filter (``allow`` adds nothing, ``deny``
+    blocks data collection, ``zdr`` additionally requires zero data
+    retention) with an optional ``quantizations`` allowlist. Returns ``None``
+    when neither applies.
+
+    Raises:
+        ValueError: If ``privacy_level`` is not a known level.
     """
     if privacy_level == "allow":
-        return None
-    if privacy_level == "deny":
-        return {"data_collection": "deny"}
-    if privacy_level == "zdr":
-        return {"data_collection": "deny", "zdr": True}
-    raise ValueError(f"unknown privacy_level: {privacy_level}")
+        provider: Dict[str, Any] = {}
+    elif privacy_level == "deny":
+        provider = {"data_collection": "deny"}
+    elif privacy_level == "zdr":
+        provider = {"data_collection": "deny", "zdr": True}
+    else:
+        raise ValueError(f"unknown privacy_level: {privacy_level}")
+
+    if quantizations:
+        provider["quantizations"] = list(quantizations)
+
+    return provider or None
+
+
+# ---------------------------------------------------------------------------
+# Native model precision (provider quantization filter)
+# ---------------------------------------------------------------------------
+
+# Allowlists for OpenRouter's `provider.quantizations` filter, meaning "the
+# model's native precision or higher". Endpoints reporting any other
+# quantization (including `unknown`) are excluded from routing.
+BF16_NATIVE = ("bf16", "fp32")
+FP8_NATIVE = ("fp8", "bf16", "fp32")
+# BF16-native models with no BF16 endpoint on OpenRouter today; FP8 keeps
+# them routable at the highest precision actually served.
+BF16_NATIVE_FP8_FLOOR = FP8_NATIVE
+
+# OpenRouter model slug -> acceptable provider quantization labels, from the
+# model's native release precision and what OpenRouter providers serve today.
+#
+# Absent models get no filter, because a filter would leave them with zero
+# providers: single-provider hosted SKUs (Muse Spark 1.1/1.2, Qwen
+# Flash/Plus/Max, the Qwen 3.7 line, GLM-5V-Turbo, DeepSeek V4 Flash Vision
+# Exp) report `unknown` precision; DeepSeek V4 is natively FP4+FP8; the only
+# endpoints for Qwen3 VL 8B Thinking and 32B Instruct report `unknown`.
+MODEL_NATIVE_QUANTIZATIONS: Dict[str, Tuple[str, ...]] = {
+    "meta/muse-glimmer-30b": BF16_NATIVE,
+    "qwen/qwen3.5-9b": BF16_NATIVE,
+    "qwen/qwen3.5-27b": BF16_NATIVE,
+    "qwen/qwen3.5-35b-a3b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.5-122b-a10b": BF16_NATIVE,
+    "qwen/qwen3.5-397b-a17b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.6-27b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.6-35b-a3b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3.8-27b": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3-vl-8b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-30b-a3b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-30b-a3b-thinking": BF16_NATIVE_FP8_FLOOR,
+    "qwen/qwen3-vl-235b-a22b-instruct": BF16_NATIVE,
+    "qwen/qwen3-vl-235b-a22b-thinking": BF16_NATIVE,
+    "z-ai/glm-5.3-flash": FP8_NATIVE,
+    "google/gemma-4-31b-it": BF16_NATIVE,
+    "google/gemma-4-26b-a4b-it": BF16_NATIVE,
+    "meta-llama/llama-3.2-11b-vision-instruct": BF16_NATIVE,
+}
+
+
+def get_native_quantizations(model: str) -> Optional[Tuple[str, ...]]:
+    """Return the quantization allowlist for an OpenRouter model slug.
+
+    Returns ``None`` for models absent from
+    :data:`MODEL_NATIVE_QUANTIZATIONS`; absence means the model must not
+    be filtered by quantization.
+    """
+    return MODEL_NATIVE_QUANTIZATIONS.get(model)
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +343,14 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         Roboflow platform proxy version that forwards the key upstream
         (older proxy versions strip it and the model applies its
         provider-default reasoning behavior).
+
+        Models registered in :data:`MODEL_NATIVE_QUANTIZATIONS` get a
+        provider ``quantizations`` allowlist on every request, restricting
+        routing to native precision or higher. On the proxied path the
+        Roboflow proxy must forward the field upstream.
         """
+        quantizations = get_native_quantizations(model=model)
+
         is_managed = openrouter_api_key.startswith(("rf_key:account", "rf_key:user:"))
         if is_managed:
             single = partial(
@@ -274,6 +360,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
+                quantizations=quantizations,
             )
         else:
             single = partial(
@@ -282,6 +369,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
                 model=model,
                 privacy_level=privacy_level,
                 reasoning=reasoning,
+                quantizations=quantizations,
             )
         tasks = [
             partial(
@@ -392,6 +480,7 @@ def _execute_proxied_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
+    quantizations: Optional[Sequence[str]] = None,
 ) -> OpenRouterResult:
     payload = {
         "openrouter_api_key": openrouter_api_key,
@@ -404,6 +493,8 @@ def _execute_proxied_openrouter_request(
         payload["temperature"] = temperature
     if reasoning is not None:
         payload["reasoning"] = reasoning
+    if quantizations is not None:
+        payload["quantizations"] = list(quantizations)
     try:
         response_data = post_to_roboflow_api(
             endpoint="apiproxy/openrouter",
@@ -478,10 +569,11 @@ def _execute_direct_openrouter_request(
     temperature: Optional[float],
     privacy_level: str,
     reasoning: Optional[dict] = None,
+    quantizations: Optional[Sequence[str]] = None,
 ) -> OpenRouterResult:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     extra_body: Dict[str, Any] = {}
-    provider = build_provider_routing(privacy_level)
+    provider = build_provider_routing(privacy_level, quantizations=quantizations)
     if provider is not None:
         extra_body["provider"] = provider
     if reasoning is not None:
