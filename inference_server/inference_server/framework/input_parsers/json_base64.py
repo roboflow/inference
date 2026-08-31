@@ -20,6 +20,7 @@ from typing import Optional
 from fastapi import Request, Response
 
 from inference_server.errors import PayloadTooLargeError, error_response
+from inference_server.framework.input_parsers.image_limits import too_many_images
 
 
 async def extract_json_base64(
@@ -54,6 +55,9 @@ async def extract_json_base64(
         )
 
     specs = image_spec if isinstance(image_spec, list) else [image_spec]
+    limit_error = too_many_images(len(specs))
+    if limit_error is not None:
+        return [], {}, limit_error
     images: list[bytes] = []
     for i, spec in enumerate(specs):
         if not isinstance(spec, dict) or spec.get("type") != "base64":

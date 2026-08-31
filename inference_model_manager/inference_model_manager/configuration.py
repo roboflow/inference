@@ -24,6 +24,16 @@ INFERENCE_PROCESS_TIMEOUT_S = get_float_from_env(
     "INFERENCE_PROCESS_TIMEOUT_S", default=300.0
 )
 
+# ── Decode gate (backends/decode.py) ───────────────────────────────────────
+# Decompression-bomb ceiling: encoded-byte limits say nothing about how much
+# memory a decode allocates (a few hundred KB of PNG expands to gigabytes).
+# Generous enough for real payloads — a 512MP image is ~1.5GB decoded — so it
+# only ever catches deliberate bombs. Checked from the container header before
+# decode where the format allows, and again on the decoded array. 0 disables.
+INFERENCE_DECODE_MAX_MEGAPIXELS = get_float_from_env(
+    "INFERENCE_DECODE_MAX_MEGAPIXELS", default=512.0
+)
+
 # ── In-memory model caches (backends/base.py attach_model_caches) ──────────
 # Env names shared with the legacy inference package for deployment parity.
 SAM_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
