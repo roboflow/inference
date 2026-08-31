@@ -10,11 +10,11 @@
   states how to cut a video. `plan_windows` and `merge_segment` apply it.
 
 - NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, tasks `vlm` and
-  `action-recognition`, backend `hugging-face`). A package holding
-  `<|cls:...|>` tokens is a fine-tune, and answers in the training span format
-  under a decoding constraint. Anything else runs zero-shot over a whole clip,
-  in its own words. A malformed package raises `CorruptedModelPackageError`
-  rather than loading as zero-shot.
+  `action-recognition`, backend `hugging-face`). A package whose class list
+  resolves to `<|cls:...|>` tokens is a fine-tune, and answers in the training
+  span format under a decoding constraint. Anything else runs zero-shot over
+  a whole clip, in its own words. A malformed package raises
+  `CorruptedModelPackageError` rather than loading as zero-shot.
 
 - `Cosmos3EdgeReasoner` gained LoRA package loading, `enable_thinking`, and
   constrained decoding on the video path. It now passes real `VideoMetadata`,
