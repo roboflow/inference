@@ -33,6 +33,8 @@ from inference_models.models.cosmos3.span_format import (
 
 # Think plus one JSON entry per event outgrows a small budget.
 ZERO_SHOT_MAX_NEW_TOKENS = 4096
+# What training resizes to when its config does not say (COSMOS3_MAX_FRAME_SIDE).
+TRAINED_FRAME_SIDE = 360
 FINE_TUNE_MAX_NEW_TOKENS = 256
 
 # https://github.com/NVIDIA/cosmos/blob/main/cookbooks/cosmos3/reasoner/reasoner_prompt_guide.md#temporal-localization
@@ -132,7 +134,11 @@ def _parse_cookbook_segments(
     return result
 
 
-def _cap_frame_side(frames: List[np.ndarray], max_side: int) -> List[np.ndarray]:
+def _cap_frame_side(
+    frames: List[np.ndarray], max_side: Optional[int]
+) -> List[np.ndarray]:
+    if not max_side or max_side <= 0:
+        return frames
     resized_frames = []
     for frame in frames:
         height, width = frame.shape[:2]
@@ -225,12 +231,18 @@ def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
             ),
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
+    window_frames = config.get("window_frames")
     return VideoSampling(
         window_seconds=_positive("window_seconds", default.window_seconds),
         sample_fps=_positive("sample_fps", default.sample_fps),
         min_frames=int(_positive("min_frames", default.min_frames)),
-        max_frame_side=int(_positive("max_frame_side", default.max_frame_side)),
+        max_frame_side=int(_positive("max_frame_side", TRAINED_FRAME_SIDE)),
         mode=mode,
+        max_frames=(
+            int(window_frames)
+            if isinstance(window_frames, (int, float)) and window_frames > 0
+            else None
+        ),
     )
 
 

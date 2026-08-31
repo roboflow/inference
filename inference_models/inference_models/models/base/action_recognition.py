@@ -29,21 +29,28 @@ class VideoSampling:
 
     ``mode`` says how training cut a video. Under ``sliding_window`` a video
     becomes tiled windows of ``window_seconds``. Under ``whole_video`` it
-    becomes one sample, and ``window_seconds`` only states the frame budget:
-    a longer video keeps every frame of that budget and is sampled below
-    ``sample_fps`` instead of being cut.
+    becomes one sample.
+
+    ``max_frame_side`` and ``max_frames`` are trained values, so both stay
+    ``None`` for a model that never trained on them, and the frames then reach
+    the model at their own size and rate. Reading a model below what it
+    expects costs the detail the answer is made of.
+
+    ``max_frames`` is the budget one sample holds, which only a trained model
+    has. A fine-tune records it, and a clip longer than the budget is sampled
+    below ``sample_fps`` so the frames still span it. It stays ``None`` for a
+    model that never trained on a budget, and then the clip is sampled at
+    ``sample_fps`` however long it runs. The processor pools frames to its own
+    token budget, so an unbounded count costs decode time and host memory
+    rather than accelerator memory.
     """
 
     window_seconds: float = 16.0
     sample_fps: float = 4.0
     min_frames: int = 4
-    max_frame_side: int = 360
+    max_frame_side: Optional[int] = None
     mode: str = SLIDING_WINDOW_MODE
-
-    @property
-    def window_frames(self) -> int:
-        """The frames one sample holds, which training records as a budget."""
-        return max(1, round(self.window_seconds * self.sample_fps))
+    max_frames: Optional[int] = None
 
 
 class ActionRecognitionModel(ABC):
@@ -172,25 +179,34 @@ def _plan_whole_video(
 ) -> List[WindowSpec]:
     """One sample spanning the clip, drawn the way training draws it.
 
-    Training fixes the frame count first and divides the clip by it, so the
-    budget holds and the step stretches. A clip longer than the budget is
-    therefore sampled below ``sample_fps`` rather than cut into windows.
+    Sampling runs at ``sample_fps`` across the clip. A model that records a
+    frame budget holds it, and the step stretches so the frames still span the
+    clip. A model without one keeps the rate, because the rate is what the
+    frame timestamps are built from, and reading below it costs the detail
+    this mode exists for.
     """
     duration_seconds = frame_count / source_fps
-    count = min(
-        sampling.window_frames,
-        max(1, round(duration_seconds * sampling.sample_fps)),
-        frame_count,
-    )
+    effective_fps = min(sampling.sample_fps, source_fps)
+    count = min(max(1, round(duration_seconds * effective_fps)), frame_count)
+    # The model reads a timestamp per frame, derived from the rate reported
+    # here. Reporting a rate the frames were not drawn at moves every stamp
+    # off the values training used, and the answer degrades to a summary, so
+    # the nominal rate is carried through exactly rather than re-derived.
+    step = source_fps / effective_fps
+    if sampling.max_frames is not None and count > sampling.max_frames:
+        # A declared budget holds, so the step stretches to still span the
+        # clip and the rate genuinely drops.
+        count = max(1, sampling.max_frames)
+        effective_fps = count / duration_seconds
+        step = frame_count / count
     if count < max(1, sampling.min_frames):
         return []
-    step = frame_count / count
     return [
         WindowSpec(
             frame_indices=tuple(
                 min(frame_count - 1, int(index * step)) for index in range(count)
             ),
-            sample_fps=count / duration_seconds,
+            sample_fps=effective_fps,
         )
     ]
 

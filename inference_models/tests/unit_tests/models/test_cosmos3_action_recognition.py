@@ -10,6 +10,7 @@ from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
     WHOLE_VIDEO_MODE,
     ActionRecognitionPrediction,
+    VideoSampling,
 )
 from inference_models.models.cosmos3 import cosmos3_action_recognition
 from inference_models.models.cosmos3.cosmos3_action_recognition import (
@@ -164,13 +165,30 @@ def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
 def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner, class_names=["walking"])
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking"],
+        video_sampling=VideoSampling(max_frame_side=360),
+    )
 
     large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
     wrapper.infer(frames=large_frames, fps=2.0)
 
     sent_frames = reasoner.calls[0]["frames"]
     assert all(frame.shape == (202, 360, 3) for frame in sent_frames)
+
+
+def test_a_model_that_declares_no_frame_side_reads_frames_whole() -> None:
+    # Only training fixes a frame side. Without one the frames go in as they
+    # arrive, which is what the zero-shot path needs.
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner, class_names=["walking"])
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+
+    assert all(f.shape == (480, 854, 3) for f in reasoner.calls[0]["frames"])
 
 
 def test_zero_shot_mode_keeps_native_frame_resolution() -> None:

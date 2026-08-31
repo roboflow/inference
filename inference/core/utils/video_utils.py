@@ -3,7 +3,7 @@ import binascii
 import contextlib
 import os
 import tempfile
-from typing import Iterator, List, Sequence, Tuple
+from typing import Iterator, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -84,9 +84,12 @@ def probe_video(path: str) -> Tuple[float, int]:
 
 
 def read_frames(
-    path: str, frame_indices: Sequence[int], max_frame_side: int
+    path: str, frame_indices: Sequence[int], max_frame_side: Optional[int] = None
 ) -> List[np.ndarray]:
     """Read the named frames as RGB, longest side capped at ``max_frame_side``.
+
+    ``max_frame_side`` of ``None`` reads the frames at their own size, which is
+    what a model that never trained on a frame side needs.
 
     Frames are read in order rather than sought. A sought frame and a
     sequentially decoded one are not the same pixels for every codec, and the
@@ -117,9 +120,9 @@ def read_frames(
     return [by_index[index] for index in frame_indices if index in by_index]
 
 
-def _to_rgb(frame: np.ndarray, max_side: int) -> np.ndarray:
+def _to_rgb(frame: np.ndarray, max_side: Optional[int]) -> np.ndarray:
     height, width = frame.shape[:2]
-    scale = max_side / max(height, width) if max_side > 0 else 1.0
+    scale = max_side / max(height, width) if max_side and max_side > 0 else 1.0
     if scale < 1.0:
         frame = cv2.resize(
             frame,

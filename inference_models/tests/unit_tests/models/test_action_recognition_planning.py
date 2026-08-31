@@ -134,12 +134,12 @@ def _whole_video(**kwargs) -> VideoSampling:
 
 
 def test_whole_video_mode_never_cuts_a_long_clip() -> None:
-    # 60 s at 10 fps against a 16 s budget: training kept the budget and
-    # stretched the step rather than tiling.
+    # 60 s at 10 fps with a declared budget: the budget holds and the step
+    # stretches, rather than the clip being tiled.
     windows = plan_windows(
         frame_count=600,
         source_fps=10.0,
-        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0, max_frames=64),
     )
 
     assert len(windows) == 1
@@ -196,5 +196,43 @@ def test_sliding_windows_report_the_rate_they_sampled_at() -> None:
     assert [window.sample_fps for window in windows] == [2.0, 2.0, 2.0]
 
 
-def test_window_frames_states_the_budget_training_recorded() -> None:
-    assert VideoSampling(window_seconds=16.0, sample_fps=4.0).window_frames == 64
+def test_whole_video_holds_the_rate_when_no_budget_is_declared() -> None:
+    # Zero-shot never trained on a budget, so the rate is what must hold: the
+    # frame timestamps are built from it.
+    windows = plan_windows(
+        frame_count=600,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
+    )
+
+    assert len(windows) == 1
+    # 60 s at 4 fps, not the 64 a trained window would have capped it to.
+    assert len(windows[0].frame_indices) == 240
+    # Exactly the nominal rate, not a rate re-derived from the frame count:
+    # the model builds its frame timestamps from this number.
+    assert windows[0].sample_fps == 4.0
+
+
+def test_whole_video_holds_a_declared_budget_and_stretches_the_step() -> None:
+    windows = plan_windows(
+        frame_count=600,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0, max_frames=64),
+    )
+
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 64
+    assert windows[0].sample_fps == pytest.approx(64 / 60.0)
+
+
+def test_whole_video_reports_the_nominal_rate_when_the_count_rounds() -> None:
+    # 18.77 s at 4 fps rounds to 75 frames, and 75 / 18.77 is not 4.0. The
+    # window still reports 4.0, because that is the rate it sampled at.
+    windows = plan_windows(
+        frame_count=563,
+        source_fps=30.0,
+        sampling=_whole_video(sample_fps=4.0),
+    )
+
+    assert len(windows[0].frame_indices) == 75
+    assert windows[0].sample_fps == 4.0
