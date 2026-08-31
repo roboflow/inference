@@ -18,6 +18,7 @@ class ActionRecognitionPrediction:
 
 SLIDING_WINDOW_MODE = "sliding_window"
 WHOLE_VIDEO_MODE = "whole_video"
+_MICROSECONDS = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -127,41 +128,33 @@ def plan_windows(
 ) -> List[WindowSpec]:
     """Cut a clip into the windows a model trained for ``sampling`` expects.
 
-    Windows are measured in time, not in frames, because training slices them
-    that way. Under ``sliding_window`` the clip tiles from the start and the
-    trailing remainder is dropped, which is how training validates. A clip
-    shorter than one window becomes a single sample spanning it, which is also
-    what training does. Under ``whole_video`` the clip is always one sample.
+    Windows are measured in whole microseconds, not in frames, because that is
+    what training does. Under ``sliding_window`` the clip tiles from the start
+    and the trailing remainder is dropped, which is how training validates. A
+    clip shorter than one window becomes a single sample spanning it, which is
+    also what training does. Under ``whole_video`` the clip is one sample.
     """
-    if frame_count <= 0 or source_fps <= 0:
+    if frame_count <= 0 or source_fps <= 0 or sampling.sample_fps <= 0:
         return []
-    if min(sampling.sample_fps, source_fps) <= 0:
-        return []
-    duration_seconds = frame_count / source_fps
-    window_seconds = sampling.window_seconds
-    if (
-        sampling.mode == WHOLE_VIDEO_MODE
-        or window_seconds <= 0
-        or duration_seconds <= window_seconds
-    ):
-        return [
-            _plan_interval(0.0, duration_seconds, frame_count, source_fps, sampling)
-        ]
+    duration_us = int(round(frame_count / source_fps * _MICROSECONDS))
+    window_us = int(round(sampling.window_seconds * _MICROSECONDS))
+    if sampling.mode == WHOLE_VIDEO_MODE or window_us <= 0 or duration_us <= window_us:
+        return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
     return [
         _plan_interval(
-            index * window_seconds,
-            (index + 1) * window_seconds,
+            index * window_us,
+            (index + 1) * window_us,
             frame_count,
             source_fps,
             sampling,
         )
-        for index in range(int(duration_seconds // window_seconds))
+        for index in range(duration_us // window_us)
     ]
 
 
 def _plan_interval(
-    start_seconds: float,
-    end_seconds: float,
+    start_us: int,
+    end_us: int,
     frame_count: int,
     source_fps: float,
     sampling: VideoSampling,
@@ -170,42 +163,57 @@ def _plan_interval(
 
     Two grids exist, and a model reads the one it was trained on.
 
-    A model that recorded ``max_frames`` was trained by the platform, which
-    fixes the frame count first, divides the interval by it, and takes the
-    first frame at or after each timestamp. Its frames therefore span the
-    whole interval, and the rate is ``count / duration``, which is what the
-    trainer stamped them with.
+    A model that recorded ``max_frames`` was trained by the platform. That
+    picks the count from the recorded rate alone, divides the interval into
+    whole-microsecond timestamps, and takes the first frame at or after each
+    one. A source too slow to supply that many distinct frames yields repeats,
+    which is what training fed. The rate is ``count / duration``, which is
+    what the trainer stamped the frames with.
 
     A model that recorded nothing has only its pretraining to match, and that
-    used a plain rate. Its frames sit exactly ``1 / sample_fps`` apart and the
-    rate is nominal. Reporting anything else moves every frame timestamp off
-    the values the model saw, and the answer degrades to a summary.
+    used a plain rate. Its frames sit ``1 / sample_fps`` apart, capped at what
+    the source can actually supply, and the rate is nominal. Reporting
+    anything else moves every frame timestamp off the values the model saw,
+    and the answer degrades to a summary.
     """
-    duration_seconds = end_seconds - start_seconds
-    effective_fps = min(sampling.sample_fps, source_fps)
-    count = int(round(duration_seconds * effective_fps))
-    if sampling.max_frames is not None:
-        count = min(count, sampling.max_frames)
-    # Training clamps up to the floor last, so a clip too short to fill it is
-    # read at a higher rate rather than refused.
-    count = max(count, max(1, sampling.min_frames))
+    span_us = end_us - start_us
+    duration_seconds = span_us / _MICROSECONDS
     last_frame = frame_count - 1
+    floor = max(1, sampling.min_frames)
     if sampling.max_frames is not None:
-        step_seconds = duration_seconds / count
-        indices = tuple(
+        count = max(
+            floor,
             min(
-                last_frame,
-                math.ceil((start_seconds + index * step_seconds) * source_fps),
-            )
+                sampling.max_frames, int(round(duration_seconds * sampling.sample_fps))
+            ),
+        )
+        step_us = span_us / count
+        indices = tuple(
+            min(last_frame, _frame_at_or_after(start_us + index * step_us, source_fps))
             for index in range(count)
         )
         return WindowSpec(frame_indices=indices, sample_fps=count / duration_seconds)
-    step_seconds = 1.0 / effective_fps
+    effective_fps = min(sampling.sample_fps, source_fps)
+    count = max(floor, int(round(duration_seconds * effective_fps)))
+    step_us = _MICROSECONDS / effective_fps
     indices = tuple(
-        min(last_frame, int((start_seconds + index * step_seconds) * source_fps))
+        min(
+            last_frame,
+            int(int(start_us + index * step_us) * source_fps / _MICROSECONDS),
+        )
         for index in range(count)
     )
     return WindowSpec(frame_indices=indices, sample_fps=effective_fps)
+
+
+def _frame_at_or_after(timestamp_us: float, source_fps: float) -> int:
+    """The first frame no earlier than a timestamp, which is how training reads.
+
+    The timestamp truncates to whole microseconds first, and the frame comes
+    from one multiplication rather than a chain. Both keep binary floating
+    point from drifting a frame off the trainer's grid.
+    """
+    return math.ceil(int(timestamp_us) * source_fps / _MICROSECONDS)
 
 
 def merge_segment(timeline: list, segment, stride: float) -> None:

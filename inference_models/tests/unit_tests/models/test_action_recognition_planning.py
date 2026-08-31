@@ -244,3 +244,42 @@ def test_a_model_without_a_budget_keeps_the_nominal_grid() -> None:
 
     assert windows[0].frame_indices[:5] == (0, 7, 15, 22, 30)
     assert windows[0].sample_fps == 4.0
+
+
+def test_a_trained_model_keeps_its_rate_when_the_source_is_slower() -> None:
+    # Training picks the count from the recorded rate alone and repeats frames
+    # a slow source cannot supply distinctly. Capping at the source rate would
+    # hand the model a different count and a different stamp on every frame.
+    windows = plan_windows(
+        frame_count=20,
+        source_fps=2.0,
+        sampling=VideoSampling(max_frames=64),
+    )
+
+    assert len(windows[0].frame_indices) == 40
+    assert windows[0].frame_indices[:8] == (0, 1, 1, 2, 2, 3, 3, 4)
+    assert windows[0].sample_fps == pytest.approx(4.0)
+
+
+def test_a_model_without_a_budget_still_caps_at_the_source_rate() -> None:
+    # Zero-shot has no training to reproduce, so repeating frames buys nothing.
+    windows = plan_windows(
+        frame_count=20,
+        source_fps=2.0,
+        sampling=_whole_video(sample_fps=4.0),
+    )
+
+    assert len(windows[0].frame_indices) == 20
+    assert windows[0].sample_fps == 2.0
+
+
+def test_the_trained_grid_does_not_drift_on_binary_floats() -> None:
+    # 0.4 s over 4 samples steps by 0.1 s, and (0.1 * 3) * 30 lands just above
+    # 9.0 in binary floating point, which rounds the fourth frame up to 10.
+    windows = plan_windows(
+        frame_count=12,
+        source_fps=30.0,
+        sampling=VideoSampling(max_frames=64),
+    )
+
+    assert windows[0].frame_indices == (0, 3, 6, 9)
