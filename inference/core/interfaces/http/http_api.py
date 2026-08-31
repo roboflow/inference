@@ -47,6 +47,7 @@ from inference.core.constants import (
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.action_recognition import (
     ActionRecognitionInferenceRequest,
+    InferenceRequestVideo,
 )
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -565,6 +566,14 @@ def _log_serverless_request_received(
     # Debug: one INFO line per request doubles serverless log volume; the
     # structured access log already records every request with the same ids.
     logger.debug(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    """Read the comma separated class list the legacy route carries."""
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 class HttpInterface(BaseInterface):
@@ -4518,6 +4527,14 @@ class HttpInterface(BaseInterface):
                     "base64",
                     description="One of base64 or numpy. Note, numpy input is not supported for Roboflow Hosted Inference.",
                 ),
+                class_filter: Optional[str] = Query(
+                    None,
+                    description=(
+                        "Action recognition only: comma separated classes. For a "
+                        "fine-tuned model, the subset of its classes to report. For "
+                        "a zero-shot model, the vocabulary to classify into."
+                    ),
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4684,6 +4701,24 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
+                if task_type == "action-recognition":
+                    # The payload is a clip, so none of the image-shaped
+                    # arguments below apply to it.
+                    inference_response = self.model_manager.infer_from_request_sync(
+                        request_model_id,
+                        ActionRecognitionInferenceRequest(
+                            api_key=api_key,
+                            model_id=model_id,
+                            video=InferenceRequestVideo(
+                                type=request_image.type, value=request_image.value
+                            ),
+                            class_filter=_parse_legacy_class_filter(
+                                class_filter=class_filter
+                            ),
+                        ),
+                    )
+                    logger.debug("Response ready.")
+                    return orjson_response(inference_response)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":

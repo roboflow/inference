@@ -166,3 +166,20 @@ def test_the_wire_shape_names_the_class_field_class() -> None:
     serialized = response.model_dump(by_alias=True)
     assert "class" in serialized["timeline"][0]
     assert "class_name" not in serialized["timeline"][0]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("walk,run", ["walk", "run"]),
+        (" walk , run ", ["walk", "run"]),
+        ("walk", ["walk"]),
+        ("", None),
+        (None, None),
+        (",, ,", None),
+    ],
+)
+def test_the_legacy_route_reads_a_comma_separated_class_list(raw, expected) -> None:
+    from inference.core.interfaces.http.http_api import _parse_legacy_class_filter
+
+    assert _parse_legacy_class_filter(class_filter=raw) == expected
