@@ -16,11 +16,11 @@ Two key paths are supported per call:
        proxy in the loop.
 
 Both paths honor a user-selected ``privacy_level`` of ``allow``, ``deny``, or
-``zdr`` (zero data retention), and both attach a per-model provider
-``quantizations`` allowlist (see :data:`MODEL_NATIVE_QUANTIZATIONS`) so
-OpenRouter only routes to providers serving each model at its native
-precision or higher. Full task-type prompt builders shared across the VLM
-blocks live here too so the per-block files stay small.
+``zdr`` (zero data retention). Both also attach a per-model provider
+``quantizations`` allowlist (:data:`MODEL_NATIVE_QUANTIZATIONS`) so OpenRouter
+only routes to providers serving the model at native precision or higher.
+Full task-type prompt builders shared across the VLM blocks live here too so
+the per-block files stay small.
 """
 
 import base64
@@ -106,21 +106,12 @@ def build_provider_routing(
     privacy_level: str,
     quantizations: Optional[Sequence[str]] = None,
 ) -> Optional[dict]:
-    """Build OpenRouter's ``provider`` payload object for a request.
+    """Build the ``provider`` object for an OpenRouter request.
 
-    Combines the privacy filter with an optional provider ``quantizations``
-    allowlist (see :data:`MODEL_NATIVE_QUANTIZATIONS`).
-
-    Args:
-        privacy_level: One of ``allow``, ``deny``, or ``zdr``. ``allow``
-            contributes no privacy filter; ``deny`` adds
-            ``data_collection: deny``; ``zdr`` additionally sets ``zdr``.
-        quantizations: Provider quantization labels to allow (e.g.
-            ``["bf16", "fp32"]``). ``None`` adds no quantization filter.
-
-    Returns:
-        The ``provider`` object to attach to the request, or ``None`` when
-        neither filter applies.
+    Merges the ``privacy_level`` filter (``allow`` adds nothing, ``deny``
+    blocks data collection, ``zdr`` additionally requires zero data
+    retention) with an optional ``quantizations`` allowlist. Returns ``None``
+    when neither applies.
 
     Raises:
         ValueError: If ``privacy_level`` is not a known level.
@@ -144,28 +135,23 @@ def build_provider_routing(
 # Native model precision (provider quantization filter)
 # ---------------------------------------------------------------------------
 
-# Quantization allowlists passed to OpenRouter's `provider.quantizations`
-# filter, meaning "the model's native precision or higher". Endpoints whose
-# self-reported quantization is not in the list (including `unknown`) are
-# excluded from routing.
+# Allowlists for OpenRouter's `provider.quantizations` filter, meaning "the
+# model's native precision or higher". Endpoints reporting any other
+# quantization (including `unknown`) are excluded from routing.
 BF16_NATIVE = ("bf16", "fp32")
 FP8_NATIVE = ("fp8", "bf16", "fp32")
-# BF16-native models for which no OpenRouter provider currently serves a
-# BF16 endpoint; allowing FP8 keeps the highest precision actually served
-# instead of making the model unroutable.
+# BF16-native models with no BF16 endpoint on OpenRouter today; FP8 keeps
+# them routable at the highest precision actually served.
 BF16_NATIVE_FP8_FLOOR = FP8_NATIVE
 
-# Central registry mapping OpenRouter model slugs to the quantization levels
-# acceptable for that model, derived from each model's native release
-# precision and the precisions actually served on OpenRouter.
+# OpenRouter model slug -> acceptable provider quantization labels, from the
+# model's native release precision and what OpenRouter providers serve today.
 #
-# Models deliberately absent from this registry get NO quantization filter,
-# because in each case a filter would only make the model unroutable:
-# proprietary single-provider SKUs (Muse Spark 1.1/1.2, hosted Qwen
-# Flash/Plus/Max SKUs, the Qwen 3.7 line, GLM-5V-Turbo, DeepSeek V4 Flash
-# Vision Exp) report `unknown` precision; DeepSeek V4 is natively FP4+FP8
-# with no higher-precision original; and some open models' only endpoints
-# report `unknown` (Qwen3 VL 8B Thinking, Qwen3 VL 32B Instruct).
+# Absent models get no filter, because a filter would leave them with zero
+# providers: single-provider hosted SKUs (Muse Spark 1.1/1.2, Qwen
+# Flash/Plus/Max, the Qwen 3.7 line, GLM-5V-Turbo, DeepSeek V4 Flash Vision
+# Exp) report `unknown` precision; DeepSeek V4 is natively FP4+FP8; the only
+# endpoints for Qwen3 VL 8B Thinking and 32B Instruct report `unknown`.
 MODEL_NATIVE_QUANTIZATIONS: Dict[str, Tuple[str, ...]] = {
     "meta/muse-glimmer-30b": BF16_NATIVE,
     "qwen/qwen3.5-9b": BF16_NATIVE,
@@ -191,13 +177,9 @@ MODEL_NATIVE_QUANTIZATIONS: Dict[str, Tuple[str, ...]] = {
 def get_native_quantizations(model: str) -> Optional[Tuple[str, ...]]:
     """Return the quantization allowlist for an OpenRouter model slug.
 
-    Args:
-        model: OpenRouter model slug, e.g. ``qwen/qwen3.5-27b``.
-
-    Returns:
-        The acceptable provider quantization labels, or ``None`` when the
-        model has no entry in :data:`MODEL_NATIVE_QUANTIZATIONS` (in which
-        case no quantization filter should be applied).
+    Returns ``None`` for models absent from
+    :data:`MODEL_NATIVE_QUANTIZATIONS`; absence means the model must not
+    be filtered by quantization.
     """
     return MODEL_NATIVE_QUANTIZATIONS.get(model)
 
@@ -362,12 +344,10 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         (older proxy versions strip it and the model applies its
         provider-default reasoning behavior).
 
-        When ``model`` has an entry in :data:`MODEL_NATIVE_QUANTIZATIONS`,
-        the corresponding provider ``quantizations`` allowlist is attached
-        to every request so OpenRouter only routes to providers serving the
-        model at its native precision (or higher). On the proxied path the
-        allowlist is forwarded in the payload and requires a Roboflow proxy
-        version that passes it upstream.
+        Models registered in :data:`MODEL_NATIVE_QUANTIZATIONS` get a
+        provider ``quantizations`` allowlist on every request, restricting
+        routing to native precision or higher. On the proxied path the
+        Roboflow proxy must forward the field upstream.
         """
         quantizations = get_native_quantizations(model=model)
 

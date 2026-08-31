@@ -90,8 +90,8 @@ def test_build_provider_routing_merges_quantizations_with_privacy_filter():
 
 
 def test_get_native_quantizations_returns_none_for_unregistered_model():
-    # Deliberate policy: these models' only providers report `unknown`
-    # precision, so registering them would make them unroutable.
+    # Deliberate: registering these `unknown`-precision SKUs would make them
+    # unroutable.
     for slug in (
         "meta/muse-spark-1.1",
         "meta/muse-spark-1.2",
@@ -107,8 +107,7 @@ def test_get_native_quantizations_returns_none_for_unregistered_model():
 
 
 def test_native_quantization_registry_never_allows_below_fp8():
-    # The registry exists to guarantee native-or-higher precision; sub-FP8
-    # labels appearing here would defeat its purpose.
+    # Sub-FP8 labels would break the registry's native-or-higher guarantee.
     for slug, allowlist in MODEL_NATIVE_QUANTIZATIONS.items():
         assert not {"int4", "int8", "fp4", "fp6", "unknown"} & set(allowlist), slug
 
