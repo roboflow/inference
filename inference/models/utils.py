@@ -501,7 +501,7 @@ try:
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
-        from inference.models.cosmos3.cosmos3_action_recognition_inference_models import (
+        from inference.core.models.inference_models_adapters import (
             InferenceModelsActionRecognitionAdapter,
         )
         from inference.models.cosmos3.cosmos3_reasoner_inference_models import (

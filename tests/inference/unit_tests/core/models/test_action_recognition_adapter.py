@@ -14,7 +14,7 @@ from inference_models.models.base.action_recognition import (
     VideoSampling,
 )
 
-MODULE = "inference.models.cosmos3.cosmos3_action_recognition_inference_models"
+MODULE = "inference.core.models.inference_models_adapters"
 
 
 class _FakeModel:
@@ -40,7 +40,7 @@ class _FakeModel:
 
 
 def _adapter(model):
-    from inference.models.cosmos3.cosmos3_action_recognition_inference_models import (
+    from inference.core.models.inference_models_adapters import (
         InferenceModelsActionRecognitionAdapter,
     )
 
