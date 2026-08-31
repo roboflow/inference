@@ -13,6 +13,12 @@ from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 impor
 )
 
 
+def test_manifest_is_deprecated_and_points_at_meta_vlm():
+    extra = BlockManifest.model_config["json_schema_extra"]
+    assert extra["deprecated"] is True
+    assert "roboflow_core/meta_vlm@v2" in extra["deprecation_message"]
+
+
 @pytest.mark.parametrize("value", [None, 1, "a", True])
 def test_llama_3_2_vision_step_validation_when_image_is_invalid(
     value: Any,

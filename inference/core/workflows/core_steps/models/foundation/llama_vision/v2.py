@@ -33,10 +33,11 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# OpenRouter currently only ships one Llama 3.2 vision variant (the paid 11B).
-# The :free tier and the 90B variant that the v1 block listed have all been
-# removed from OpenRouter's catalog (verified against /api/v1/models on the
-# branch's E2E test). We only ship the variant that actually responds.
+# OpenRouter listed one remaining Llama 3.2 vision variant (the paid 11B).
+# The :free tier and the 90B variant that the v1 block listed were already
+# gone from the catalog; the paid 11B now also has zero live endpoints
+# (OpenRouter returns "No endpoints found"). This block is deprecated —
+# use Meta VLM (Muse Spark / Glimmer) instead.
 MODEL_VERSION_MAPPING = {
     "11B - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
 }
@@ -83,6 +84,12 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         json_schema_extra={
             "name": "Llama 3.2 Vision",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": (
+                "OpenRouter no longer hosts Llama 3.2 Vision — the remaining "
+                "11B endpoint has no live providers. Use the Meta block "
+                "(`roboflow_core/meta_vlm@v2`) for Muse Spark and Muse Glimmer."
+            ),
             "short_description": "Run Llama 3.2 Vision via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community License",
