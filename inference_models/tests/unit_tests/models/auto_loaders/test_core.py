@@ -1006,14 +1006,17 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
         "on_file_created",
         "model_id",
     ]
-    assert list(inspect.signature(initialize_model).parameters)[-2:] == [
+    assert list(inspect.signature(initialize_model).parameters)[-3:] == [
         "requested_model_id",
         "api_key",
+        "content_addressed_artifact_cache",
     ]
-    assert (
-        list(inspect.signature(attempt_loading_matching_model_packages).parameters)[-1]
-        == "requested_model_id"
-    )
+    assert list(inspect.signature(attempt_loading_matching_model_packages).parameters)[
+        -2:
+    ] == [
+        "requested_model_id",
+        "content_addressed_artifact_cache",
+    ]
     assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-2:] == [
         "canonical_model_id",
         "api_key",
@@ -1230,6 +1233,7 @@ def test_initialize_model_supports_nested_artifact_handles(
     )
     model_class = MagicMock()
     model_class.from_pretrained.side_effect = [MagicMock()]
+    artifact_cache = MagicMock()
 
     def download_files(**kwargs):
         if kwargs.get("name_after") != "md5_hash":
@@ -1247,7 +1251,7 @@ def test_initialize_model_supports_nested_artifact_handles(
         model_cache_paths, "INFERENCE_HOME", empty_local_dir
     ), mock.patch.object(
         core, "download_files_to_directory", side_effect=download_files
-    ), mock.patch.object(
+    ) as download, mock.patch.object(
         core, "resolve_model_class", return_value=model_class
     ), mock.patch.object(
         core, "model_implementation_exists", return_value=True
@@ -1263,11 +1267,17 @@ def test_initialize_model_supports_nested_artifact_handles(
             model_dependencies=[],
             model_dependencies_instances={},
             model_dependencies_directories={},
+            content_addressed_artifact_cache=artifact_cache,
         )
         cached_dir = find_cached_model_package_dir(model_id=model_id)
 
     assert cached_dir == package_dir
     assert model_class.from_pretrained.call_count == 1
+    assert download.call_count == 2
+    for download_call in download.call_args_list:
+        assert (
+            download_call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+        )
     assert os.path.islink(os.path.join(package_dir, "vit/config.json"))
     assert os.path.islink(os.path.join(package_dir, "vit/model.safetensors"))
 
@@ -2528,6 +2538,7 @@ def test_auto_load_cache_rejects_dependencies_when_disabled() -> None:
 
 
 def test_auto_load_cache_does_not_mutate_dependency_model_parameters() -> None:
+    artifact_cache = MagicMock()
     cache_entry = AutoResolutionCacheEntry(
         model_id="workspace/model/1",
         model_package_id="package",
@@ -2610,6 +2621,7 @@ def test_auto_load_cache_does_not_mutate_dependency_model_parameters() -> None:
             allow_loading_dependency_models=True,
             forwarded_kwargs_values={},
             dependency_models_params=caller_owned_params,
+            content_addressed_artifact_cache=artifact_cache,
         )
 
     assert result is parent_model
@@ -2621,6 +2633,10 @@ def test_auto_load_cache_does_not_mutate_dependency_model_parameters() -> None:
     }
     dependency_load.assert_called_once()
     assert dependency_load.call_args.kwargs["custom_option"] == "keep-me"
+    assert (
+        dependency_load.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
 
 
 def test_exact_cache_rejects_dependency_resolved_to_unbound_package() -> None:
@@ -3192,6 +3208,7 @@ def test_cache_discovery_entrypoints_reject_invalid_remote_model_identity(
 def test_online_retry_error_does_not_use_cache_fallback() -> None:
     model_id = "test/1"
     auto_resolution_cache = MagicMock(spec=AutoResolutionCache)
+    artifact_cache = MagicMock()
 
     with mock.patch.object(core, "OFFLINE_MODE", False), mock.patch.object(
         core, "ROBOFLOW_API_KEY", None
@@ -3201,14 +3218,19 @@ def test_online_retry_error_does_not_use_cache_fallback() -> None:
         side_effect=RetryError(message="network down", help_url="https://help"),
     ), mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache", return_value=None
-    ):
+    ) as cached_load:
         with pytest.raises(RetryError):
             core.AutoModel.from_pretrained(
                 model_id,
                 api_key=None,
                 auto_resolution_cache=auto_resolution_cache,
+                content_addressed_artifact_cache=artifact_cache,
             )
 
+    assert (
+        cached_load.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
     auto_resolution_cache.find_model_candidates.assert_not_called()
 
 
@@ -3583,6 +3605,8 @@ def test_from_pretrained_hash_normalizes_semantically_equivalent_choice_sets() -
     model_id = "workspace/model/1"
     cached_model = MagicMock()
     auto_resolution_cache = MagicMock()
+    first_artifact_cache = MagicMock()
+    second_artifact_cache = MagicMock()
 
     with mock.patch.object(
         core, "attempt_loading_model_with_auto_load_cache", return_value=cached_model
@@ -3594,12 +3618,14 @@ def test_from_pretrained_hash_normalizes_semantically_equivalent_choice_sets() -
             backend="ONNX",
             quantization="fp16",
             auto_resolution_cache=auto_resolution_cache,
+            content_addressed_artifact_cache=first_artifact_cache,
         )
         second = core.AutoModel.from_pretrained(
             model_id,
             backend=["onnx", BackendType.ONNX, "ONNX"],
             quantization=["fp16", Quantization.FP16, "fp16"],
             auto_resolution_cache=auto_resolution_cache,
+            content_addressed_artifact_cache=second_artifact_cache,
         )
 
     assert first is cached_model
@@ -3609,6 +3635,14 @@ def test_from_pretrained_hash_normalizes_semantically_equivalent_choice_sets() -
         for cache_call in exact_cache_load.call_args_list
     ]
     assert exact_hashes[0] == exact_hashes[1]
+    assert (
+        exact_cache_load.call_args_list[0].kwargs["content_addressed_artifact_cache"]
+        is first_artifact_cache
+    )
+    assert (
+        exact_cache_load.call_args_list[1].kwargs["content_addressed_artifact_cache"]
+        is second_artifact_cache
+    )
     provider.assert_not_called()
 
 
@@ -3651,6 +3685,7 @@ def test_online_dependency_load_does_not_mutate_input_params() -> None:
     model_id = "workspace/model/1"
     dependency_model = MagicMock()
     parent_model = MagicMock()
+    artifact_cache = MagicMock()
     caller_owned_params = {
         "encoder": {
             "device": "cpu",
@@ -3687,6 +3722,7 @@ def test_online_dependency_load_does_not_mutate_input_params() -> None:
             model_id,
             use_auto_resolution_cache=False,
             dependency_models_params=caller_owned_params,
+            content_addressed_artifact_cache=artifact_cache,
         )
 
     assert result is parent_model
@@ -3698,6 +3734,14 @@ def test_online_dependency_load_does_not_mutate_input_params() -> None:
     }
     dependency_load.assert_called_once()
     assert dependency_load.call_args.kwargs["custom_option"] == "keep-me"
+    assert (
+        dependency_load.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
+    assert (
+        matching_load.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
     assert matching_load.call_args.kwargs["model_dependencies_instances"] == {
         "encoder": dependency_model
     }
@@ -4096,3 +4140,68 @@ def test_verified_auto_cache_package_dir_accepts_stray_trt_engine_cache_file(
 
     # then - the undeclared engine file is harmless
     assert result == package_dir
+
+
+def test_auto_model_pipeline_forwards_artifact_cache() -> None:
+    from inference_models.model_pipelines.auto_loaders import core as pipeline_core
+
+    artifact_cache = MagicMock()
+    model = MagicMock()
+    pipeline = MagicMock()
+    pipeline.with_models.return_value = mock.sentinel.pipeline
+
+    with mock.patch.object(
+        pipeline_core, "resolve_pipeline_class", return_value=pipeline
+    ), mock.patch.object(
+        pipeline_core, "get_default_pipeline_parameters", return_value=["model/1"]
+    ), mock.patch.object(
+        pipeline_core.AutoModel, "from_pretrained", return_value=model
+    ) as model_loader:
+        result = pipeline_core.AutoModelPipeline.from_pretrained(
+            "pipeline/1",
+            content_addressed_artifact_cache=artifact_cache,
+        )
+
+    assert result is mock.sentinel.pipeline
+    assert (
+        model_loader.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
+
+
+def test_matching_package_loader_forwards_artifact_cache() -> None:
+    artifact_cache = MagicMock()
+    model = MagicMock()
+    package = ModelPackageMetadata(
+        package_id="package",
+        backend=BackendType.ONNX,
+        package_artefacts=[],
+        trusted_source=True,
+    )
+
+    with mock.patch.object(
+        core,
+        "initialize_model",
+        return_value=(model, "/cache/model"),
+    ) as initialize:
+        result = attempt_loading_matching_model_packages(
+            model_id="model/1",
+            model_architecture="yolov8",
+            task_type="object-detection",
+            matching_model_packages=[package],
+            model_init_kwargs={},
+            model_access_manager=MagicMock(),
+            auto_resolution_cache=MagicMock(),
+            auto_negotiation_hash="a" * 64,
+            api_key=None,
+            model_dependencies=[],
+            model_dependencies_instances={},
+            model_dependencies_directories={},
+            content_addressed_artifact_cache=artifact_cache,
+        )
+
+    assert result is model
+    assert (
+        initialize.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )

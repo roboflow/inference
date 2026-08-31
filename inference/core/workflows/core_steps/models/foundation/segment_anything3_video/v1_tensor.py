@@ -16,7 +16,9 @@ sibling. Only image and prediction representations differ:
   ``WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION`` env variable ("rle"/"dense",
   same convention as the SAM2 video sibling; GCP_SERVERLESS forces "rle") —
   NOT a manifest field, so the manifest stays identical to the numpy
-  sibling. Per-box
+  sibling. This sibling does not decorate ``run()`` / ``_tracked_run()``
+  with ``@usage_collector("model")``, so flag-on deployments emit no
+  model-category usage row for SAM3 video. Per-box
   ``bboxes_metadata`` carries ``detection_id`` / ``class`` / ``tracker_id``;
   ``image_metadata`` is built via ``build_native_image_metadata`` with the
   full prompt-position ``class_id -> name`` map (``class_id`` is the
@@ -403,6 +405,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
@@ -410,6 +415,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             self._visual_sessions.clear()
         return self._model
 
+    # No @usage_collector("model") here: the numpy sibling attributes usage
+    # via decorated _tracked_run(); this tensor-native path is left without
+    # a model-category usage row.
     def run(
         self,
         images: Batch[WorkflowImageData],

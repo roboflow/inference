@@ -913,12 +913,6 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
 )
-# Enables the Roboflow-managed (rf_key) API key option in the SpaceXAI block.
-# Off by default until the platform-side xAI proxy (apiproxy/xai) is deployed;
-# with the flag off users must provide their own xAI API key.
-WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED = str2bool(
-    os.getenv("WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED", False)
-)
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )

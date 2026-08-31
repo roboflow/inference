@@ -11,7 +11,7 @@ from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.roboflow import get_model_id_chunks
-from inference.usage_tracking.model_types import bind_usage_model_identity
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 
 class ModelStub(Model):
@@ -20,7 +20,7 @@ class ModelStub(Model):
         self.model_id = model_id
         self.api_key = api_key
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
-        bind_usage_model_identity(self, model_id)
+        bind_usage_model_descriptor(self, model_id)
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         initialise_cache(model_id=model_id)
 

@@ -53,6 +53,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.usage_tracking.block_execution import (
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    record_measured_block_execution,
+)
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
@@ -281,6 +285,7 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
             serialize_video_metadata_kind,
         )
         from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
             VideoMetadata,
             WorkflowImageData,
         )
@@ -288,6 +293,20 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
         if isinstance(value, sv.Detections):
             serialized = serialise_sv_detections(detections=value)
             serialized["_type"] = "sv_detections"
+        elif isinstance(value, Batch):
+            # Batch is not a list/dict subclass, so without an explicit case it
+            # falls through to the generic encoder, which stringifies it via
+            # `str(obj)` and destroys the payload. Batch-oriented dynamic blocks
+            # then receive the repr instead of their data.
+            serialized = {
+                "_type": "batch",
+                "value": [patch_for_modal_serialization(item) for item in value],
+                "indices": (
+                    [list(index) for index in value.indices]
+                    if value.indices is not None
+                    else None
+                ),
+            }
         elif isinstance(value, WorkflowImageData):
             serialized = _serialise_image_for_webexec(value)
             serialized["_type"] = "workflow_image"
@@ -495,6 +514,13 @@ class ModalExecutor:
                     send_full_code=True,
                     workflow_context=workflow_context or {},
                 )
+
+            # Published before the failure branch below raises, so an errored
+            # block is still billed for the time the sandbox spent on it.
+            record_measured_block_execution(
+                duration=result.get("execution_time_seconds"),
+                source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+            )
 
             if result.get("success", False):
                 self._known_code_hashes.add(code_hash)
@@ -747,6 +773,7 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
         serialize_video_metadata_kind,
     )
     from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
         VideoMetadata,
         WorkflowImageData,
     )
@@ -756,6 +783,18 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
             d = serialise_sv_detections(detections=value)
             d["_type"] = "sv_detections"
             return {k: _pack(v) for k, v in d.items()}
+        if isinstance(value, Batch):
+            # Mirrors the JSON transport: Batch is neither list nor dict, so it
+            # needs an explicit case or its contents never reach the block.
+            return {
+                "_type": "batch",
+                "value": [_pack(item) for item in value],
+                "indices": (
+                    [list(index) for index in value.indices]
+                    if value.indices is not None
+                    else None
+                ),
+            }
         if isinstance(value, WorkflowImageData):
             d = _serialize_image_for_msgpack(value)
             return {k: _pack(v) for k, v in d.items()}
@@ -1160,6 +1199,13 @@ class WebSocketModalExecutor:
             )
             resp_bytes = self._send_recv_with_retry(retry_frame, workspace)
             result = msgpack.unpackb(resp_bytes, raw=False)
+
+        # Published before _raise_code_error below, so an errored block is
+        # still billed for the time the sandbox spent on it.
+        record_measured_block_execution(
+            duration=result.get("execution_time_seconds"),
+            source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+        )
 
         if result.get("success", False):
             self._hashes_sent_on_ws.add(code_hash)

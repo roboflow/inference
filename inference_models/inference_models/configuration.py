@@ -140,6 +140,49 @@ CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
 )
+
+
+# Single source of truth for the optional shared model blob cache. Values are
+# only parsed here - `ModelBlobCacheConfig` validates them on construction so a
+# misconfigured cache falls open instead of breaking the library import.
+MODEL_BLOB_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED", default=False
+)
+MODEL_BLOB_CACHE_BUCKET = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET")
+MODEL_BLOB_CACHE_PREFIX = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX", "model-blobs"
+)
+MODEL_BLOB_CACHE_ENDPOINT_URL = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL"
+)
+MODEL_BLOB_CACHE_REGION = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION")
+MODEL_BLOB_CACHE_ACCESS_KEY_ID = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID"
+)
+MODEL_BLOB_CACHE_SECRET_ACCESS_KEY = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY"
+)
+MODEL_BLOB_CACHE_ADDRESSING_STYLE = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE", "auto"
+)
+MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
+    default=1.0,
+)
+MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
+    default=2.0,
+)
+MODEL_BLOB_CACHE_FAILURE_THRESHOLD = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD", default=3
+)
+MODEL_BLOB_CACHE_COOLDOWN_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS", default=60.0
+)
+MODEL_BLOB_CACHE_MAX_OBJECT_BYTES = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES",
+    default=20 * 1024**3,  # 20 GiB
+)
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
     variable_name="ALLOW_NON_HTTPS_URL_INPUT", default=False
