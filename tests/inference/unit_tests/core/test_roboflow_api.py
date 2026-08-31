@@ -4842,7 +4842,7 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {
@@ -4966,7 +4966,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {

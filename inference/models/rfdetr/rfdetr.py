@@ -449,6 +449,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             input_resolution = None
         if (
             input_resolution is not None
+            and RFDETR_ONNX_MAX_RESOLUTION is not None
             and input_resolution >= RFDETR_ONNX_MAX_RESOLUTION
         ):
             logger.error(

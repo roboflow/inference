@@ -59,7 +59,11 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*"
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),

@@ -1,0 +1,91 @@
+name: publish inference-server stack
+on:
+  #release:
+  #  types: [created]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Actually publish the package to PyPI"
+        required: false
+        default: false
+        type: boolean
+      candidate_run_id:
+        description: "Run id of the build-candidates run to publish"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  build-candidates:
+    if: ${{ !inputs.publish }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: 📦 Set up uv
+        uses: astral-sh/setup-uv@v5
+      - name: Assert matching versions
+        run: |
+          python - <<'EOF'
+          import tomllib
+          v1 = tomllib.load(open("inference_model_manager/pyproject.toml","rb"))["project"]["version"]
+          v2 = tomllib.load(open("inference_server/pyproject.toml","rb"))["project"]["version"]
+          assert v1 == v2, f"version mismatch: {v1} != {v2}"
+          EOF
+      - name: 🔨 Build inference-model-manager
+        run: cd inference_model_manager && uv build
+      - name: 🔨 Build inference-server
+        run: cd inference_server && uv build
+      - name: Guard against private module leaks
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          server_whls=(inference_server/dist/*.whl)
+          manager_whls=(inference_model_manager/dist/*.whl)
+          if [ ${#server_whls[@]} -eq 0 ]; then
+            echo "no wheel found matching inference_server/dist/*.whl"; exit 1
+          fi
+          if [ ${#manager_whls[@]} -eq 0 ]; then
+            echo "no wheel found matching inference_model_manager/dist/*.whl"; exit 1
+          fi
+          for whl in "${server_whls[@]}" "${manager_whls[@]}"; do
+            if ! listing=$(unzip -l "$whl"); then
+              echo "$whl: unzip failed"; exit 1
+            fi
+            if printf '%s\n' "$listing" \
+              | grep -Eq "proxies/mmp_client|serving_manager|serving_configuration|shm_pool|subproc|shared_base|model_manager_process|decode_fast"; then
+              echo "private module leaked into $whl"; exit 1
+            fi
+          done
+      - name: 📦 Bundle candidates
+        run: |
+          mkdir -p /tmp/candidate/dists
+          cp inference_model_manager/dist/* inference_server/dist/* /tmp/candidate/dists/
+          (cd /tmp/candidate/dists && shasum -a 256 * > ../SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-wheels
+          path: /tmp/candidate/
+  publish-gated:
+    if: ${{ inputs.publish }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: public-wheels
+          path: /tmp/candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify candidate checksums
+        run: cd /tmp/candidate/dists && shasum -a 256 -c ../SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: /tmp/candidate/dists/

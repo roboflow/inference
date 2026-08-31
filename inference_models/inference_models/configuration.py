@@ -22,6 +22,23 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     .strip("[")
     .strip("]")
 )
+# Backends excluded from auto-negotiation when the caller does not pass an
+# explicit `backend` to `from_pretrained`. Same env var the legacy server
+# reads, so every load path in one deployment converges on one identity.
+DISABLED_INFERENCE_MODELS_BACKENDS = set(
+    parse_comma_separated_values(
+        values=os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS", "")
+    )
+)
+# Default package-resolution cap for RF-DETR loads when the caller does not
+# pass `rf_detr_max_input_resolution`; matches the legacy server default.
+# Set the env to 0 to disable the cap entirely.
+_RFDETR_MAX_INPUT_RESOLUTION_RAW = get_integer_from_env(
+    "RFDETR_ONNX_MAX_RESOLUTION", default=1600
+)
+RFDETR_MAX_INPUT_RESOLUTION: Optional[int] = (
+    _RFDETR_MAX_INPUT_RESOLUTION_RAW if _RFDETR_MAX_INPUT_RESOLUTION_RAW > 0 else None
+)
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
     ("cuda" if torch.cuda.is_available() else "cpu"),

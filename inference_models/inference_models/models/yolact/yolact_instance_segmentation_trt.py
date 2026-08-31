@@ -59,7 +59,10 @@ from inference_models.models.yolact.common import prepare_dense_masks, prepare_r
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLA-CT model with TRT backend on GPU requires pycuda installation, which is brought with "

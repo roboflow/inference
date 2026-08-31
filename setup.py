@@ -33,6 +33,10 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*",
         ),
     ),
     package_data={
