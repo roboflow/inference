@@ -7,20 +7,22 @@ import torch
 
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.action_recognition import (
+    SLIDING_WINDOW_MODE,
+    WHOLE_VIDEO_MODE,
     ActionRecognitionPrediction,
-)
-from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
-    SYSTEM_PROMPT_SENTINEL,
-    Cosmos3EdgeReasoner,
 )
 from inference_models.models.cosmos3.cosmos3_action_recognition import (
     FINE_TUNE_MAX_NEW_TOKENS,
     FINE_TUNE_SYSTEM_PROMPT,
     ZERO_SHOT_MAX_NEW_TOKENS,
-    ZERO_SHOT_OPEN_VOCABULARY_PROMPT,
+    ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
     Cosmos3EdgeActionRecognition,
     _FineTunePrefixAllowedTokensFn,
     _parse_fine_tune_segments,
+)
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+    SYSTEM_PROMPT_SENTINEL,
+    Cosmos3EdgeReasoner,
 )
 
 
@@ -110,6 +112,19 @@ def _prediction(start, end, label):
     )
 
 
+def _cookbook_response(entries=None) -> str:
+    """The cookbook answer shape: a JSON list wrapped in the model's prose."""
+    entries = (
+        entries
+        if entries is not None
+        else [{"start": 0.0, "end": 2.0, "caption": "a person walks"}]
+    )
+    return (
+        "Looking at the clip, I can see the following events.\n\n"
+        "```json\n" + json.dumps(entries, indent=1) + "\n```"
+    )
+
+
 def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
@@ -129,7 +144,7 @@ def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
 
 
 def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
-    reasoner = _FakeReasoner(response="B", tokenizer=_FakeTokenizer())
+    reasoner = _FakeReasoner(response=_cookbook_response(), tokenizer=_FakeTokenizer())
     wrapper = Cosmos3EdgeActionRecognition(
         reasoner=reasoner,
         class_names=["walking", "running"],
@@ -137,11 +152,14 @@ def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
 
     result = wrapper.infer(frames=_frames(200), fps=2.0)
 
-    assert result == [_prediction(0, 199, "running")]
+    assert result == [_prediction(0, 4, "a person walks")]
     call = reasoner.calls[0]
     assert call["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
     assert call["prefix_allowed_tokens_fn"] is None
     assert SYSTEM_PROMPT_SENTINEL not in call["prompt"]
+    assert call["prompt"] == ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT
+    # The reasoning pass is what keeps the output dense.
+    assert call["enable_thinking"] is True
 
 
 def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
@@ -157,7 +175,7 @@ def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
 
 
 def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
-    reasoner = _FakeReasoner(response="B")
+    reasoner = _FakeReasoner(response=_cookbook_response())
     wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
@@ -165,49 +183,6 @@ def test_zero_shot_mode_keeps_native_frame_resolution() -> None:
 
     sent_frames = reasoner.calls[0]["frames"]
     assert all(frame.shape == (480, 854, 3) for frame in sent_frames)
-
-
-@pytest.mark.parametrize(
-    ("answer", "expected"),
-    [
-        ("a", [_prediction(0, 3, "walking")]),
-        ("B", [_prediction(0, 3, "running")]),
-        ("C", []),
-        ("no letter here", []),
-    ],
-)
-def test_zero_shot_maps_first_answer_letter_to_class(answer, expected) -> None:
-    reasoner = _FakeReasoner(response=answer)
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    result = wrapper.infer(
-        frames=_frames(4),
-        class_names=["walking", "running"],
-        fps=5.0,
-    )
-
-    assert result == expected
-    assert reasoner.calls[0]["prompt"] == (
-        "What happens in this video clip? (A) walking (B) running "
-        "(C) none of the above. Answer with the letter only."
-    )
-    assert reasoner.calls[0]["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
-    assert reasoner.calls[0]["enable_thinking"] is False
-
-
-@pytest.mark.parametrize(
-    "answer",
-    ["Answer: B", "Based on the clip the vehicle stops", "12345"],
-)
-def test_zero_shot_rejects_an_answer_that_is_not_a_bare_letter(answer) -> None:
-    reasoner = _FakeReasoner(response=answer)
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    result = wrapper.infer(
-        frames=_frames(4), class_names=["walking", "running"], fps=5.0
-    )
-
-    assert result == []
 
 
 def test_from_pretrained_rejects_class_names_that_miss_their_tokens(
@@ -226,7 +201,7 @@ def test_from_pretrained_rejects_class_names_that_miss_their_tokens(
 
 
 def test_zero_shot_uses_caller_max_new_tokens() -> None:
-    reasoner = _FakeReasoner(response="A")
+    reasoner = _FakeReasoner(response=_cookbook_response())
     wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
 
     wrapper.infer(
@@ -237,63 +212,6 @@ def test_zero_shot_uses_caller_max_new_tokens() -> None:
     )
 
     assert reasoner.calls[0]["max_new_tokens"] == 17
-
-
-def test_zero_shot_empty_call_vocabulary_falls_back_to_model_classes() -> None:
-    reasoner = _FakeReasoner(response="B")
-    wrapper = Cosmos3EdgeActionRecognition(
-        reasoner=reasoner,
-        class_names=["walking", "running"],
-    )
-
-    result = wrapper.infer(
-        frames=_frames(2),
-        class_names=[],
-        fps=5.0,
-    )
-
-    assert result == [_prediction(0, 1, "running")]
-
-
-def test_zero_shot_rejects_more_than_25_classes() -> None:
-    reasoner = _FakeReasoner(response="A")
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    with pytest.raises(ValueError, match="at most 25"):
-        wrapper.infer(
-            frames=_frames(2),
-            class_names=[f"class {index}" for index in range(26)],
-            fps=5.0,
-        )
-
-    assert reasoner.calls == []
-
-
-def test_zero_shot_open_vocabulary_normalizes_first_line() -> None:
-    reasoner = _FakeReasoner(response="Pick_Up   Green_Cup\nextra details")
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    result = wrapper.infer(frames=_frames(3), fps=5.0)
-
-    assert result == [_prediction(0, 2, "pick up green cup")]
-    assert reasoner.calls[0]["prompt"] == ZERO_SHOT_OPEN_VOCABULARY_PROMPT
-
-
-@pytest.mark.parametrize(
-    "answer",
-    [
-        "",
-        "\nvalid phrase on the second line",
-        "one two three four five six seven eight nine",
-    ],
-)
-def test_zero_shot_open_vocabulary_rejects_empty_or_overlong_first_line(
-    answer,
-) -> None:
-    reasoner = _FakeReasoner(response=answer)
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    assert wrapper.infer(frames=_frames(3), fps=5.0) == []
 
 
 def test_fine_tune_prompt_contains_exact_legend_instruction_and_system_prompt() -> None:
@@ -580,7 +498,9 @@ def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
 
 
 def test_infer_accepts_chw_tensor_frames() -> None:
-    reasoner = _FakeReasoner(response="moving")
+    reasoner = _FakeReasoner(
+        response=_cookbook_response([{"start": 0.0, "end": 0.5, "caption": "moving"}])
+    )
     wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
     frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
 
@@ -597,3 +517,87 @@ def test_infer_requires_fps() -> None:
 
     with pytest.raises(ValueError, match="fps"):
         wrapper.infer(frames=_frames(1), class_names=["moving"])
+
+
+def test_zero_shot_reads_every_event_the_cookbook_list_holds() -> None:
+    reasoner = _FakeReasoner(
+        response=_cookbook_response(
+            [
+                {"start": 0.0, "end": 2.0, "caption": "a person walks"},
+                {"start": 3.0, "end": 5.0, "caption": "a person sits down"},
+            ]
+        )
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(frames=_frames(40), fps=4.0)
+
+    # Seconds become frame indices at the rate the frames were drawn at.
+    assert result == [
+        _prediction(0, 8, "a person walks"),
+        _prediction(12, 20, "a person sits down"),
+    ]
+
+
+def test_zero_shot_clamps_segments_to_the_frames_it_was_given() -> None:
+    reasoner = _FakeReasoner(
+        response=_cookbook_response(
+            [{"start": -1.0, "end": 999.0, "caption": "the whole clip"}]
+        )
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(frames=_frames(10), fps=4.0)
+
+    assert result == [_prediction(0, 9, "the whole clip")]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "",
+        "no json here at all",
+        '```json\n{"start": 0}\n```',
+        '```json\n[{"start": 0.0, "end": 1.0}]\n```',
+        '```json\n[{"caption": "walking"}]\n```',
+        '```json\n[{"start": null, "end": 1.0, "caption": "walking"}]\n```',
+    ],
+)
+def test_zero_shot_returns_nothing_when_the_answer_does_not_parse(response) -> None:
+    reasoner = _FakeReasoner(response=response)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    assert wrapper.infer(frames=_frames(10), fps=4.0) == []
+
+
+def test_zero_shot_ignores_a_requested_vocabulary_and_says_so(caplog) -> None:
+    # The checkpoint ignores classes stated inside the localization prompt,
+    # so the wrapper says so rather than look like it applied them.
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    with caplog.at_level("WARNING", logger="inference-models"):
+        result = wrapper.infer(
+            frames=_frames(10), class_names=["walking", "running"], fps=4.0
+        )
+
+    assert result == [_prediction(0, 8, "a person walks")]
+    assert "ignored" in caplog.text
+    assert "walking" not in reasoner.calls[0]["prompt"]
+
+
+def test_zero_shot_declares_whole_video_sampling() -> None:
+    # Zero-shot has no trained window, so it reads a clip in one call.
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner(response="none"))
+
+    assert wrapper.video_sampling.mode == WHOLE_VIDEO_MODE
+
+
+def test_a_fine_tune_keeps_the_sampling_mode_its_package_declares() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=_FakeReasoner(response="none", tokenizer=tokenizer),
+        class_names=["walking"],
+    )
+
+    assert wrapper.video_sampling.mode == SLIDING_WINDOW_MODE

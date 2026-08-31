@@ -1,6 +1,7 @@
 import json
 import math
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -9,7 +10,10 @@ import numpy as np
 import torch
 
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.logger import LOGGER
 from inference_models.models.base.action_recognition import (
+    SLIDING_WINDOW_MODE,
+    WHOLE_VIDEO_MODE,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
@@ -22,13 +26,34 @@ from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     Cosmos3EdgeReasoner,
 )
 
-ZERO_SHOT_MAX_NEW_TOKENS = 256
+# Think plus one JSON entry per event outgrows a small budget.
+ZERO_SHOT_MAX_NEW_TOKENS = 4096
 FINE_TUNE_MAX_NEW_TOKENS = 256
 
-ZERO_SHOT_OPEN_VOCABULARY_PROMPT = (
-    "Describe the main action in this video clip in one short lowercase "
-    "phrase of at most 6 words."
-)
+# https://github.com/NVIDIA/cosmos/blob/main/cookbooks/cosmos3/reasoner/reasoner_prompt_guide.md#temporal-localization
+# Only this trained phrasing gives dense output. Reworded variants collapse
+# to one whole-clip segment, and the reasoning pass is what keeps it dense:
+# with thinking off, every trained temporal format lands on round numbers
+# that do not follow the content.
+ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT = """List all action segments in the video.
+
+Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
+
+```json
+[
+{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT1
+},
+{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT2
+},
+...
+]
+```"""
 FINE_TUNE_SYSTEM_PROMPT = (
     "You are Cosmos 3 Edge, a physical AI reasoning model. Watch the video "
     "carefully and answer with only what is asked."
@@ -332,8 +357,71 @@ class _FineTunePrefixAllowedTokensFn:
         return sorted(result)
 
 
-def _normalize_condensed_label(label: str) -> str:
-    return " ".join(label.replace("_", " ").lower().split())
+def _parse_seconds(value: Any) -> Optional[float]:
+    """Return a finite JSON number as seconds, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _parse_cookbook_segments(
+    text: str,
+    num_frames: int,
+    fps: float,
+) -> List[ActionRecognitionPrediction]:
+    """Read the cookbook's second-based JSON list into frame-index ranges."""
+    if (
+        not isinstance(text, str)
+        or num_frames <= 0
+        or fps <= 0
+        or not math.isfinite(fps)
+    ):
+        return []
+    decoder = json.JSONDecoder()
+    entries = None
+    # The reasoning pass writes prose around the list, so the first array
+    # that decodes is the answer.
+    for match in re.finditer(r"\[", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, list):
+            entries = value
+            break
+    if entries is None:
+        return []
+    max_frame_idx = num_frames - 1
+    duration = num_frames / fps
+    result = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        label_value = entry.get("caption")
+        if not isinstance(label_value, str):
+            continue
+        label = label_value.strip()
+        if not label:
+            continue
+        start_seconds = _parse_seconds(entry.get("start"))
+        end_seconds = _parse_seconds(entry.get("end"))
+        if start_seconds is None or end_seconds is None:
+            continue
+        if end_seconds < 0 or start_seconds > duration:
+            continue
+        start_frame_idx = min(max(math.floor(start_seconds * fps), 0), max_frame_idx)
+        end_frame_idx = min(max(math.ceil(end_seconds * fps), 0), max_frame_idx)
+        if start_frame_idx > end_frame_idx:
+            start_frame_idx, end_frame_idx = end_frame_idx, start_frame_idx
+        result.append(
+            ActionRecognitionPrediction(
+                start_frame_idx=start_frame_idx,
+                end_frame_idx=end_frame_idx,
+                class_name=label,
+            )
+        )
+    return result
 
 
 def _seconds_to_frame_indices(
@@ -476,11 +564,23 @@ def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
             return float(value)
         return fallback
 
+    mode = config.get("mode", default.mode)
+    if mode not in (SLIDING_WINDOW_MODE, WHOLE_VIDEO_MODE):
+        raise CorruptedModelPackageError(
+            message=(
+                f"Model package {model_name_or_path} declares video sampling mode "
+                f"{mode!r}, which this version of inference does not support. "
+                f"Sampling a video the wrong way changes what the model reads, "
+                f"so the package is rejected rather than served under a guess."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        )
     return VideoSampling(
         window_seconds=_positive("window_seconds", default.window_seconds),
         sample_fps=_positive("sample_fps", default.sample_fps),
         min_frames=int(_positive("min_frames", default.min_frames)),
         max_frame_side=int(_positive("max_frame_side", default.max_frame_side)),
+        mode=mode,
     )
 
 
@@ -509,6 +609,11 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
             if self._fine_tune_class_token_ids is not None
             else None
         )
+        if self._fine_tune_prefix_allowed_tokens_fn is None:
+            # Only training fixes a window. Zero-shot reads a whole clip in
+            # one call, which is why it is served over the API and not on a
+            # stream that never ends.
+            self._video_sampling = replace(self._video_sampling, mode=WHOLE_VIDEO_MODE)
 
     @property
     def class_names(self) -> Optional[List[str]]:
@@ -658,56 +763,33 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         fps: float,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
-        vocabulary = class_names or self.class_names or None
-        if vocabulary is not None and len(vocabulary) > 25:
-            raise ValueError("Cosmos3 zero-shot mode supports at most 25 classes")
-
-        if vocabulary is None:
-            prompt = ZERO_SHOT_OPEN_VOCABULARY_PROMPT
-        else:
-            choices = " ".join(
-                f"({chr(ord('A') + index)}) {class_name}"
-                for index, class_name in enumerate(vocabulary)
+        if class_names:
+            # The checkpoint ignores a vocabulary stated inside the
+            # localization prompt, so constraining it here would only look
+            # like it worked.
+            LOGGER.warning(
+                "Cosmos3 zero-shot action recognition answers in its own "
+                "words, so the %d requested class(es) are ignored. Fine-tune "
+                "the model to classify into a fixed vocabulary.",
+                len(class_names),
             )
-            none_letter = chr(ord("A") + len(vocabulary))
-            prompt = (
-                f"What happens in this video clip? {choices} "
-                f"({none_letter}) none of the above. Answer with the letter only."
-            )
-
         generation_kwargs = dict(kwargs)
         generation_kwargs.setdefault("max_new_tokens", ZERO_SHOT_MAX_NEW_TOKENS)
         generation_kwargs.update(
-            enable_thinking=False,
+            # The reasoning pass is what keeps the output dense; without it
+            # the model answers with round numbers that ignore the content.
+            enable_thinking=True,
             prefix_allowed_tokens_fn=None,
         )
         response = self._reasoner.prompt_video(
             frames=frames,
-            prompt=prompt,
+            prompt=ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
             input_color_format="rgb",
             video_fps=fps,
             **generation_kwargs,
         )
-        answer = _answer_text(response)
-        if vocabulary is not None:
-            # Anchored: "Answer: B" must not read as the letter A.
-            match = re.fullmatch(r"\s*\(?([A-Za-z])\)?[\s.,:;)]*", answer)
-            if match is None:
-                return []
-            class_index = ord(match.group(1).upper()) - ord("A")
-            if class_index < 0 or class_index >= len(vocabulary):
-                return []
-            label = vocabulary[class_index]
-        else:
-            first_line = answer.splitlines()[0] if answer.splitlines() else ""
-            label = _normalize_condensed_label(first_line)
-            if not label or len(label.split()) > 8:
-                return []
-
-        return [
-            ActionRecognitionPrediction(
-                start_frame_idx=0,
-                end_frame_idx=len(frames) - 1,
-                class_name=label,
-            )
-        ]
+        return _parse_cookbook_segments(
+            text=_answer_text(response),
+            num_frames=len(frames),
+            fps=fps,
+        )

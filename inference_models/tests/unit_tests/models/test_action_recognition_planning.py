@@ -1,6 +1,7 @@
 import pytest
 
 from inference_models.models.base.action_recognition import (
+    WHOLE_VIDEO_MODE,
     ActionRecognitionPrediction,
     VideoSampling,
     merge_segment,
@@ -126,3 +127,74 @@ def test_merge_never_shrinks_a_range() -> None:
     merge_segment(timeline=timeline, segment=_Segment(10, 20, "walk"), stride=4)
 
     assert timeline == [_Segment(0, 100, "walk")]
+
+
+def _whole_video(**kwargs) -> VideoSampling:
+    return VideoSampling(mode=WHOLE_VIDEO_MODE, **kwargs)
+
+
+def test_whole_video_mode_never_cuts_a_long_clip() -> None:
+    # 60 s at 10 fps against a 16 s budget: training kept the budget and
+    # stretched the step rather than tiling.
+    windows = plan_windows(
+        frame_count=600,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
+    )
+
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 64
+    # The single window spans the clip rather than its first 16 s.
+    assert windows[0].frame_indices[0] == 0
+    assert windows[0].frame_indices[-1] >= 580
+    # 64 frames over 60 s is well under the nominal 4 fps.
+    assert windows[0].sample_fps == pytest.approx(64 / 60.0)
+
+
+def test_whole_video_mode_keeps_the_nominal_rate_inside_the_budget() -> None:
+    # 8 s at 10 fps is inside the 16 s budget, so no stretch is needed.
+    windows = plan_windows(
+        frame_count=80,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
+    )
+
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 32
+    assert windows[0].sample_fps == pytest.approx(4.0)
+
+
+def test_whole_video_mode_yields_nothing_below_the_minimum_frames() -> None:
+    windows = plan_windows(
+        frame_count=4,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0, min_frames=4),
+    )
+
+    assert windows == []
+
+
+def test_whole_video_mode_never_draws_more_frames_than_the_clip_holds() -> None:
+    # A 2 fps source cannot supply 4 fps worth of distinct frames.
+    windows = plan_windows(
+        frame_count=20,
+        source_fps=2.0,
+        sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
+    )
+
+    assert len(windows[0].frame_indices) == 20
+    assert len(set(windows[0].frame_indices)) == 20
+
+
+def test_sliding_windows_report_the_rate_they_sampled_at() -> None:
+    windows = plan_windows(
+        frame_count=300,
+        source_fps=10.0,
+        sampling=VideoSampling(window_seconds=8.0, sample_fps=2.0),
+    )
+
+    assert [window.sample_fps for window in windows] == [2.0, 2.0, 2.0]
+
+
+def test_window_frames_states_the_budget_training_recorded() -> None:
+    assert VideoSampling(window_seconds=16.0, sample_fps=4.0).window_frames == 64

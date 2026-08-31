@@ -63,6 +63,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     ACTION_RECOGNITION_PREDICTION_KIND,
 )
+from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
@@ -1342,3 +1343,22 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
     finally:
         monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", original)
         importlib.reload(loader)
+
+
+def test_the_block_refuses_a_whole_video_model() -> None:
+    # Whole-video training spans a clip, and a stream never ends, so the
+    # block declines rather than sample the model a way it never saw.
+    block, model = _make_block(responses=[[_model_segment("walk", 0, 3)]])
+    model.video_sampling = VideoSampling(mode=WHOLE_VIDEO_MODE)
+    frame = _make_frame(frame_number=1)
+
+    with pytest.raises(ValueError, match="whole videos"):
+        block.run(
+            images=[frame],
+            class_filter=None,
+            model_id="cosmos-3-edge",
+            stride_seconds=None,
+        )
+
+    # It refuses before it asks the model for anything.
+    assert model.calls == []

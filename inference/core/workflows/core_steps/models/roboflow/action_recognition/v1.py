@@ -45,13 +45,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_models.models.base.action_recognition import ActionRecognitionModel
+from inference_models.models.base.action_recognition import (
+    WHOLE_VIDEO_MODE,
+    ActionRecognitionModel,
+)
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
 from inference_models.models.base.action_recognition import VideoSampling, merge_segment
 
-DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
 # per-video state needs a ceiling of its own.
@@ -82,9 +84,12 @@ Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
 temporal content, so these paths return an empty timeline.
 
-The class vocabulary is optional. Provide classes for zero-shot models, leave
-them empty for fine-tuned models that carry their own class list, or leave them
-empty on open-vocabulary models to let the model label events. The
+This block serves fine-tuned models only. A model trained on whole videos
+spans each clip in one call, and a stream has no end to span, so the block
+refuses it and names the action recognition endpoint instead.
+
+The class vocabulary is optional. Leave it empty to report every class the
+model carries, or list classes to report a subset of them. The
 window_classes output lists classes whose range can still merge with a future
 classification. A class stays listed for one window plus the sample tolerance
 after its range ends. It clears when the range closes. This output works with
@@ -206,7 +211,9 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        return [DEFAULT_MODEL_ID]
+        # Fine-tuned packages carry their own base weights, so the block
+        # depends on no separately cached foundation model.
+        return None
 
 
 class ActionRecognitionModelBlockV1(WorkflowBlock):
@@ -287,6 +294,15 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         block_filter = normalise_class_names(class_filter) or None
         id_vocabulary = getattr(model, "class_names", None) or block_filter or None
         video_sampling = getattr(model, "video_sampling", None) or VideoSampling()
+        if video_sampling.mode == WHOLE_VIDEO_MODE:
+            # Whole-video training fed one sample spanning each clip, and a
+            # stream has no end to span. Any window this block picked would
+            # sample differently from training, so it refuses instead.
+            raise ValueError(
+                f"Model {model_id} was trained on whole videos, so it cannot run "
+                f"on a stream. Send whole clips to the action recognition "
+                f"endpoint instead, or train the model with sliding windows."
+            )
         results = []
         for image in images:
             results.append(

@@ -90,11 +90,11 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     segments=self._model.infer(
                         frames=frames,
                         class_names=class_filter,
-                        fps=min(sampling.sample_fps, source_fps),
+                        fps=window.sample_fps,
                     ),
                     id_vocabulary=id_vocabulary,
                     source_fps=source_fps,
-                    sampling=sampling,
+                    window_sample_fps=window.sample_fps,
                 )
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         return ActionRecognitionInferenceResponse(
@@ -111,14 +111,14 @@ class InferenceModelsActionRecognitionAdapter(Model):
         segments: List[Any],
         id_vocabulary: Optional[List[str]],
         source_fps: float,
-        sampling: Any,
+        window_sample_fps: float,
     ) -> None:
         sample_count = len(window_frame_indices)
         if sample_count == 0:
             return
         # A window's segments index its own frames; the timeline counts the
         # clip's.
-        stride = max(1.0, source_fps / min(sampling.sample_fps, source_fps))
+        stride = max(1.0, source_fps / window_sample_fps)
         for segment in segments:
             start_idx = min(sample_count - 1, max(0, int(segment.start_frame_idx)))
             end_idx = min(sample_count - 1, max(0, int(segment.end_frame_idx)))

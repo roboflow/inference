@@ -44,8 +44,7 @@ class ActionRecognitionInferenceRequest(BaseRequest):
         None,
         examples=[["entering", "leaving"]],
         description=(
-            "For a fine-tuned model, the subset of its classes to report. For "
-            "a zero-shot model, the vocabulary to classify into (at most 25 "
-            "classes); leave empty to let the model label events itself."
+            "The subset of a fine-tuned model's classes to report. A "
+            "zero-shot model answers in its own words and ignores this."
         ),
     )

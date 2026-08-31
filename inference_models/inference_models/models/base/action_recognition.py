@@ -15,6 +15,10 @@ class ActionRecognitionPrediction:
     class_name: str
 
 
+SLIDING_WINDOW_MODE = "sliding_window"
+WHOLE_VIDEO_MODE = "whole_video"
+
+
 @dataclass(frozen=True)
 class VideoSampling:
     """The temporal contract a model is trained (or validated) for.
@@ -23,12 +27,23 @@ class VideoSampling:
     frames sampled per second, the fewest frames worth classifying, and
     the longest frame side the model was trained on.
 
+    ``mode`` says how training cut a video. Under ``sliding_window`` a video
+    becomes tiled windows of ``window_seconds``. Under ``whole_video`` it
+    becomes one sample, and ``window_seconds`` only states the frame budget:
+    a longer video keeps every frame of that budget and is sampled below
+    ``sample_fps`` instead of being cut.
     """
 
     window_seconds: float = 16.0
     sample_fps: float = 4.0
     min_frames: int = 4
     max_frame_side: int = 360
+    mode: str = SLIDING_WINDOW_MODE
+
+    @property
+    def window_frames(self) -> int:
+        """The frames one sample holds, which training records as a budget."""
+        return max(1, round(self.window_seconds * self.sample_fps))
 
 
 class ActionRecognitionModel(ABC):
@@ -86,9 +101,15 @@ class ActionRecognitionModel(ABC):
 
 @dataclass(frozen=True)
 class WindowSpec:
-    """The source frames one classification reads, in order."""
+    """The source frames one classification reads, in order.
+
+    ``sample_fps`` is the rate those frames stand for, which is what turns a
+    frame index back into a timestamp. Under ``whole_video`` the step
+    stretches, so this drops below the model's nominal rate.
+    """
 
     frame_indices: Tuple[int, ...]
+    sample_fps: float
 
 
 def plan_windows(
@@ -105,6 +126,10 @@ def plan_windows(
     """
     if frame_count <= 0 or source_fps <= 0:
         return []
+    if sampling.mode == WHOLE_VIDEO_MODE:
+        return _plan_whole_video(
+            frame_count=frame_count, source_fps=source_fps, sampling=sampling
+        )
     effective_fps = min(sampling.sample_fps, source_fps)
     if effective_fps <= 0:
         return []
@@ -122,7 +147,10 @@ def plan_windows(
     window_start = 0
     while window_start + window_span <= frame_count:
         windows.append(
-            WindowSpec(frame_indices=_sample(window_start, samples_per_window))
+            WindowSpec(
+                frame_indices=_sample(window_start, samples_per_window),
+                sample_fps=effective_fps,
+            )
         )
         window_start += window_span
     if windows:
@@ -130,7 +158,41 @@ def plan_windows(
     whole_clip_samples = max(1, int(frame_count / source_frames_per_sample))
     if whole_clip_samples < max(1, sampling.min_frames):
         return []
-    return [WindowSpec(frame_indices=_sample(0, whole_clip_samples))]
+    return [
+        WindowSpec(
+            frame_indices=_sample(0, whole_clip_samples), sample_fps=effective_fps
+        )
+    ]
+
+
+def _plan_whole_video(
+    frame_count: int,
+    source_fps: float,
+    sampling: VideoSampling,
+) -> List[WindowSpec]:
+    """One sample spanning the clip, drawn the way training draws it.
+
+    Training fixes the frame count first and divides the clip by it, so the
+    budget holds and the step stretches. A clip longer than the budget is
+    therefore sampled below ``sample_fps`` rather than cut into windows.
+    """
+    duration_seconds = frame_count / source_fps
+    count = min(
+        sampling.window_frames,
+        max(1, round(duration_seconds * sampling.sample_fps)),
+        frame_count,
+    )
+    if count < max(1, sampling.min_frames):
+        return []
+    step = frame_count / count
+    return [
+        WindowSpec(
+            frame_indices=tuple(
+                min(frame_count - 1, int(index * step)) for index in range(count)
+            ),
+            sample_fps=count / duration_seconds,
+        )
+    ]
 
 
 def merge_segment(timeline: list, segment, stride: float) -> None:

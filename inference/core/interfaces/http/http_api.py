@@ -4530,9 +4530,9 @@ class HttpInterface(BaseInterface):
                 class_filter: Optional[str] = Query(
                     None,
                     description=(
-                        "Action recognition only: comma separated classes. For a "
-                        "fine-tuned model, the subset of its classes to report. For "
-                        "a zero-shot model, the vocabulary to classify into."
+                        "Action recognition only: comma separated classes. The "
+                        "subset of a fine-tuned model's classes to report. A "
+                        "zero-shot model answers in its own words and ignores it."
                     ),
                 ),
                 labels: Optional[bool] = Query(
