@@ -19,6 +19,7 @@ from inference_models.models.cosmos3.cosmos3_action_recognition import (
     ZERO_SHOT_MAX_NEW_TOKENS,
     ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
     Cosmos3EdgeActionRecognition,
+    _normalize_frames,
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
     SYSTEM_PROMPT_SENTINEL,
@@ -579,3 +580,52 @@ def test_a_key_the_package_never_wrote_keeps_the_default(monkeypatch, tmp_path) 
     assert sampling.sample_fps == 2.0
     assert sampling.window_seconds == VideoSampling().window_seconds
     assert sampling.max_frames is None
+
+
+def test_batched_and_per_frame_transfer_give_the_same_arrays() -> None:
+    # The batched path must be a transfer optimisation only: same values,
+    # same dtype, same shape as converting each frame on its own.
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        _normalize_frames,
+    )
+
+    tensors = [torch.randint(0, 255, (3, 6, 8), dtype=torch.uint8) for _ in range(5)]
+
+    batched = _normalize_frames(list(tensors))
+    per_frame = [t.detach().cpu().permute(1, 2, 0).numpy() for t in tensors]
+
+    assert len(batched) == len(per_frame)
+    for actual, expected in zip(batched, per_frame):
+        assert actual.shape == expected.shape == (6, 8, 3)
+        assert actual.dtype == expected.dtype
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_ragged_tensor_frames_still_convert() -> None:
+    # Frames of differing shape cannot stack, so they keep the per-frame path.
+    frames = [
+        torch.zeros((3, 4, 4), dtype=torch.uint8),
+        torch.zeros((3, 6, 8), dtype=torch.uint8),
+    ]
+
+    result = _normalize_frames(frames)
+
+    assert [f.shape for f in result] == [(4, 4, 3), (6, 8, 3)]
+
+
+def test_numpy_frames_pass_through_untouched() -> None:
+    frames = [np.zeros((4, 4, 3), dtype=np.uint8)]
+
+    result = _normalize_frames(frames)
+
+    assert result[0] is frames[0]
+
+
+def test_a_mixed_batch_converts_only_the_tensors() -> None:
+    numpy_frame = np.ones((6, 8, 3), dtype=np.uint8)
+    frames = [torch.zeros((3, 6, 8), dtype=torch.uint8), numpy_frame]
+
+    result = _normalize_frames(frames)
+
+    assert result[1] is numpy_frame
+    assert result[0].shape == (6, 8, 3)

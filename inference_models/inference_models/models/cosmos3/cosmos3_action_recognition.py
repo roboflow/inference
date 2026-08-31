@@ -157,14 +157,39 @@ def _cap_frame_side(
 def _normalize_frames(
     frames: List[Union[np.ndarray, torch.Tensor]],
 ) -> List[np.ndarray]:
-    normalized_frames = []
-    for frame in frames:
-        if isinstance(frame, torch.Tensor):
-            frame = frame.detach().cpu().permute(1, 2, 0)
-            if frame.dtype == torch.bfloat16:
-                frame = frame.float()
-            frame = frame.numpy()
-        normalized_frames.append(frame)
+    """Present every frame to the processor as a numpy HWC array.
+
+    Tensor frames cross from their device together rather than one at a time.
+    A window holds tens of frames, so the per-frame form paid a separate
+    transfer and a separate synchronisation for each. The bytes and the values
+    are the same either way.
+    """
+    tensor_positions = [
+        index for index, frame in enumerate(frames) if isinstance(frame, torch.Tensor)
+    ]
+    normalized_frames = list(frames)
+    if not tensor_positions:
+        return normalized_frames
+    tensors = [frames[index].detach() for index in tensor_positions]
+    stackable = (
+        len({tuple(tensor.shape) for tensor in tensors}) == 1
+        and len({tensor.dtype for tensor in tensors}) == 1
+        and len({tensor.device for tensor in tensors}) == 1
+    )
+    if stackable:
+        batch = torch.stack(tensors).cpu()
+        if batch.dtype == torch.bfloat16:
+            batch = batch.float()
+        batch = batch.permute(0, 2, 3, 1).numpy()
+        for offset, index in enumerate(tensor_positions):
+            normalized_frames[index] = np.ascontiguousarray(batch[offset])
+        return normalized_frames
+    # Ragged input cannot stack, so it keeps the per-frame path.
+    for index in tensor_positions:
+        frame = frames[index].detach().cpu().permute(1, 2, 0)
+        if frame.dtype == torch.bfloat16:
+            frame = frame.float()
+        normalized_frames[index] = frame.numpy()
     return normalized_frames
 
 
