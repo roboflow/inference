@@ -41,24 +41,105 @@ jobs:
       - name: Guard against private module leaks
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          server_whls=(inference_server/dist/*.whl)
-          manager_whls=(inference_model_manager/dist/*.whl)
-          if [ ${#server_whls[@]} -eq 0 ]; then
-            echo "no wheel found matching inference_server/dist/*.whl"; exit 1
-          fi
-          if [ ${#manager_whls[@]} -eq 0 ]; then
-            echo "no wheel found matching inference_model_manager/dist/*.whl"; exit 1
-          fi
-          for whl in "${server_whls[@]}" "${manager_whls[@]}"; do
-            if ! listing=$(unzip -l "$whl"); then
-              echo "$whl: unzip failed"; exit 1
-            fi
-            if printf '%s\n' "$listing" \
-              | grep -Eq "proxies/mmp_client|serving_manager|serving_configuration|shm_pool|subproc|shared_base|model_manager_process|decode_fast"; then
-              echo "private module leaked into $whl"; exit 1
-            fi
-          done
+          python - <<'EOF'
+          import fnmatch
+          import pathlib
+          import sys
+          import tarfile
+          import zipfile
+
+          DISTS = {
+              "inference_model_manager": pathlib.Path("inference_model_manager/dist"),
+              "inference_server": pathlib.Path("inference_server/dist"),
+          }
+          SDIST_SCAFFOLDING = {
+              "PKG-INFO",
+              "MANIFEST.in",
+              "pyproject.toml",
+              "setup.cfg",
+              "setup.py",
+              "README",
+              "README.md",
+              "README.rst",
+              "README.txt",
+              "LICENSE",
+              "LICENCE",
+              "LICENSE.md",
+              "LICENSE.txt",
+              "NOTICE",
+              "NOTICE.md",
+              "NOTICE.txt",
+          }
+
+          failures = []
+
+          def allowed(package, name):
+              if name == package:
+                  return True
+              for pattern in (
+                  f"{package}-*.dist-info",
+                  f"{package}-*.data",
+                  f"{package}.egg-info",
+                  f"{package}-*.egg-info",
+              ):
+                  if fnmatch.fnmatch(name, pattern):
+                      return True
+              return name in SDIST_SCAFFOLDING
+
+          def members_of(path):
+              if path.name.endswith(".whl"):
+                  with zipfile.ZipFile(path) as archive:
+                      return [n for n in archive.namelist() if n.strip("/")], False
+              if path.name.endswith((".tar.gz", ".tgz")):
+                  with tarfile.open(path) as archive:
+                      return [m.name for m in archive.getmembers() if m.name.strip("./")], True
+              raise ValueError(f"unrecognised distribution file: {path}")
+
+          def top_levels(path):
+              names, is_sdist = members_of(path)
+              if not names:
+                  raise ValueError(f"{path}: archive is empty")
+              tops = set()
+              for name in names:
+                  parts = [p for p in name.replace("\\", "/").split("/") if p not in ("", ".")]
+                  if not parts:
+                      continue
+                  if is_sdist:
+                      # sdists nest everything under a single <name>-<version>/ root
+                      if len(parts) < 2:
+                          continue
+                      tops.add(parts[1])
+                  else:
+                      tops.add(parts[0])
+              if not tops:
+                  raise ValueError(f"{path}: no inspectable entries")
+              return tops
+
+          for package, dist_dir in DISTS.items():
+              if not dist_dir.is_dir():
+                  failures.append(f"{dist_dir}: directory missing")
+                  continue
+              files = sorted(p for p in dist_dir.iterdir() if p.is_file())
+              if not files:
+                  failures.append(f"{dist_dir}: no distribution files built")
+                  continue
+              print(f"{package}: inspecting {len(files)} distribution file(s)")
+              for path in files:
+                  try:
+                      tops = top_levels(path)
+                  except (ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
+                      failures.append(str(error))
+                      continue
+                  for name in sorted(tops):
+                      if not allowed(package, name):
+                          failures.append(f"{path}: disallowed top-level entry {name!r}")
+
+          if failures:
+              for failure in failures:
+                  print(f"LEAK GUARD FAILURE: {failure}")
+              sys.exit(1)
+          print("leak guard: all distribution files contain only allowlisted top-level entries")
+          EOF
       - name: 📦 Bundle candidates
         run: |
           mkdir -p /tmp/candidate/dists

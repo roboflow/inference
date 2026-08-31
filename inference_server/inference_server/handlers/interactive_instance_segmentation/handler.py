@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from inference_server.framework.entities import ServerHooks
+from inference_server.framework.fanout import gather_bounded
 
 
 async def handle_interactive_instance_segmentation(
@@ -37,7 +37,7 @@ async def handle_interactive_instance_segmentation(
             request=hooks.request,
         )
 
-    return await asyncio.gather(
+    return await gather_bounded(
         *(
             proxy.infer(
                 model_id=common.model_id,

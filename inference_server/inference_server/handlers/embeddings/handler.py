@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import math
 from typing import Any
 
 from inference_server.framework.entities import ServerHooks
+from inference_server.framework.fanout import gather_bounded
 
 
 def _cosine(a, b) -> float:
@@ -66,7 +66,7 @@ async def handle_embeddings(
                 params=params,
                 request=hooks.request,
             )
-        return await asyncio.gather(
+        return await gather_bounded(
             *(_embed_image(proxy, common, hooks, img) for img in images)
         )
 
@@ -89,7 +89,7 @@ async def handle_embeddings(
     if prompt_images:
         prompt_embs.extend(
             _flatten(e)
-            for e in await asyncio.gather(
+            for e in await gather_bounded(
                 *(_embed_image(proxy, common, hooks, img) for img in prompt_images)
             )
         )

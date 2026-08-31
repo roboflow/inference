@@ -34,6 +34,20 @@ _ERR_NOT_LOADED = 6
 _LOAD_DEFAULT_TIMEOUT_S = 30.0
 
 
+def routing_key(model_id: str, instance: str = "") -> str:
+    """Key a model instance is registered and routed under.
+
+    Matches the MMP wire format exactly: the bare ``model_id`` when no instance
+    is requested, ``model_id:instance`` otherwise.
+    """
+    return f"{model_id}:{instance}" if instance else model_id
+
+
+def routed_model_id(key: str) -> str:
+    """Weights identifier behind a routing key (drops the ``:instance`` suffix)."""
+    return key.rsplit(":", 1)[0]
+
+
 def _translate_manager_infer_error(exc: Exception) -> Exception:
     """Map manager/backend failures onto the MMPGateway exception surface."""
     if type(exc).__name__ == "ModelInputError":
@@ -91,23 +105,36 @@ class ModelManagerGateway:
         """No-op — manager is constructed externally and passed in."""
 
     async def shutdown(self) -> None:
-        """Shut down the underlying ModelManager."""
+        """Shut down the underlying ModelManager.
+
+        Runs off the manager's own pool on purpose: manager.shutdown() joins
+        that pool, which would deadlock if submitted to it.
+        """
         await asyncio.get_running_loop().run_in_executor(None, self.manager.shutdown)
 
     # ------------------------------------------------------------------
     # Gateway duck surface
     # ------------------------------------------------------------------
 
-    def _load_sync(
-        self, model_id: str, api_key: str, device: Optional[str] = None
-    ) -> None:
+    @property
+    def _model_executor(self):
+        """The manager's own worker pool. Model work must not escape onto the
+        loop's default executor, which is unrelated to the manager's limits."""
+        return getattr(self.manager, "executor", None)
+
+    def _load_sync(self, key: str, api_key: str, device: Optional[str] = None) -> None:
         kwargs: dict = dict(self.load_kwargs)
         if device:
             kwargs["device"] = device
-        self.manager.load(model_id, api_key, **kwargs)
+        model_id = routed_model_id(key)
+        if model_id != key:
+            # Multi-instance routing key: register under the key, fetch the
+            # weights named by the bare model id (mirrors the MMP).
+            kwargs["model_id_or_path"] = model_id
+        self.manager.load(key, api_key, **kwargs)
 
     async def _acquire_load_future(
-        self, model_id: str, api_key: str, device: Optional[str] = None
+        self, key: str, api_key: str, device: Optional[str] = None
     ) -> Optional[asyncio.Future]:
         """None when the model is present and healthy; else the shared load.
 
@@ -118,54 +145,56 @@ class ModelManagerGateway:
         unload here means a stale unload can never remove a freshly loaded
         replacement.
         """
-        lock = self._load_locks.setdefault(model_id, asyncio.Lock())
+        lock = self._load_locks.setdefault(key, asyncio.Lock())
         if not performance_profiler.enabled:
             async with lock:
-                return self._acquire_load_future_locked(model_id, api_key, device)
+                return self._acquire_load_future_locked(key, api_key, device)
 
         lock_started = performance_profiler.start()
         await lock.acquire()
         performance_profiler.stop("wrapper.ensure.lock", lock_started)
         check_started = performance_profiler.start()
         try:
-            return self._acquire_load_future_locked(model_id, api_key, device)
+            return self._acquire_load_future_locked(key, api_key, device)
         finally:
             lock.release()
             performance_profiler.stop("wrapper.ensure.check", check_started)
 
     def _acquire_load_future_locked(
-        self, model_id: str, api_key: str, device: Optional[str]
+        self, key: str, api_key: str, device: Optional[str]
     ) -> Optional[asyncio.Future]:
-        future = self._pending_loads.get(model_id)
+        future = self._pending_loads.get(key)
         if future is not None:
             return future
         drop_dead = False
-        if model_id in self.manager:
+        if key in self.manager:
             is_healthy = getattr(self.manager, "is_healthy", None)
-            if is_healthy is None or is_healthy(model_id):
+            if is_healthy is None or is_healthy(key):
                 return None
             logger.warning(
-                "ModelManagerGateway: backend for '%s' is dead — reloading", model_id
+                "ModelManagerGateway: backend for '%s' is dead — reloading", key
             )
             drop_dead = True
 
         def _reload() -> None:
             if drop_dead:
                 try:
-                    self.manager.unload(model_id)
+                    self.manager.unload(key)
                 except Exception:
                     logger.warning(
                         "ModelManagerGateway: dead-backend unload failed",
                         exc_info=True,
                     )
-            self._load_sync(model_id, api_key, device)
+            self._load_sync(key, api_key, device)
 
         # Unload+load run as ONE executor job registered before the lock
         # releases: no await window a cancelled caller could exploit, and
         # followers join the same future covering the whole replacement.
-        future = asyncio.get_running_loop().run_in_executor(None, _reload)
-        self._pending_loads[model_id] = future
-        future.add_done_callback(lambda _f: self._pending_loads.pop(model_id, None))
+        future = asyncio.get_running_loop().run_in_executor(
+            self._model_executor, _reload
+        )
+        self._pending_loads[key] = future
+        future.add_done_callback(lambda _f: self._pending_loads.pop(key, None))
         return future
 
     async def _await_load(
@@ -218,7 +247,9 @@ class ModelManagerGateway:
     ) -> tuple:
         started = performance_profiler.start()
         try:
-            future = await self._acquire_load_future(model_id, api_key, device or None)
+            future = await self._acquire_load_future(
+                routing_key(model_id, instance), api_key, device or None
+            )
             if future is None:
                 return ("model_ready",)
             failure = await self._await_load(
@@ -251,7 +282,7 @@ class ModelManagerGateway:
     async def unload(self, model_id: str) -> tuple:
         try:
             await asyncio.get_running_loop().run_in_executor(
-                None, lambda: self.manager.unload(model_id)
+                self._model_executor, lambda: self.manager.unload(model_id)
             )
         except KeyError:
             return ("error", _ERR_NOT_LOADED)
@@ -293,9 +324,9 @@ class ModelManagerGateway:
         params: Optional[dict] = None,
         request: Optional[Request] = None,
     ) -> Any:
-        # `instance` and `request` are ignored in-process: no multi-instance
-        # routing (single ModelManager), no client-disconnect race
+        # `request` is ignored in-process: no client-disconnect race
         # (process_async runs in executor; cancellation propagates via task).
+        key = routing_key(model_id, instance)
         call_kwargs = dict(params) if params else {}
         # Empty payload = params-only request; the model resolves inputs from
         # params (mirrors the MMP worker contract for zero-byte slots).
@@ -314,7 +345,7 @@ class ModelManagerGateway:
                 # backends get the worker-equivalent decode/rle/numpy/unwrap
                 # handling (no-op on subprocess backends — the worker does it).
                 return await self.manager.process_async(
-                    model_id,
+                    key,
                     task=task,
                     serialize=False,
                     wire_marshalling=True,

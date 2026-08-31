@@ -78,5 +78,5 @@ without a code change here:
 | `INFERENCE_LOAD_WAIT_S` | `10.0` | Seconds `ensure_loaded()` waits before reporting a load timeout |
 | `INFERENCE_INFER_TIMEOUT_S` | `30.0` | Per-request inference timeout |
 | `INFERENCE_MAX_BODY_BYTES` | `100MB` | Max request body / aggregate URL-image size |
-| `INFERENCE_MAX_IMAGE_URLS` | `32` | Max `?image=<url>` params per request |
+| `INFERENCE_MAX_IMAGES_PER_REQUEST` | `32` | Max images per request (body, multipart, or `?image=<url>` params) |
 | `API_BASE_URL` | `https://api.roboflow.com` | Roboflow API for auth |

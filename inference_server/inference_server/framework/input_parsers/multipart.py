@@ -8,6 +8,8 @@ from typing import Optional
 
 from fastapi import Request, Response
 
+from inference_server.framework.input_parsers.image_limits import too_many_images
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +28,11 @@ async def extract_multipart(
     extra_params: dict = {}
     for key, value in form.multi_items():
         if key == "image":
+            # Checked before the read so an over-long part list is refused
+            # without buffering every part.
+            limit_error = too_many_images(len(images) + 1)
+            if limit_error is not None:
+                return [], {}, limit_error
             images.append(await value.read())
         elif key == "inputs" and isinstance(value, str):
             try:

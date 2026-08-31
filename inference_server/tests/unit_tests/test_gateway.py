@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from inference_server.gateway import ModelManagerGateway
+from inference_server.gateway import (
+    ModelManagerGateway,
+    routed_model_id,
+    routing_key,
+)
 
 
 def _fake_manager(process_return=None):
@@ -14,6 +18,9 @@ def _fake_manager(process_return=None):
     mgr.unload = MagicMock()
     mgr.stats = MagicMock(return_value={"models": []})
     mgr.n_slots = 32
+    # No dedicated pool on the double — the gateway falls back to the loop's
+    # default executor.
+    mgr.executor = None
     return mgr
 
 
@@ -722,3 +729,89 @@ async def test_infer_empty_image_becomes_images_none():
     kwargs = mgr.process_async.await_args.kwargs
     assert kwargs["images"] is None
     assert kwargs["image_hashes"] == ["h1"]
+
+
+# ---------------------------------------------------------------------------
+# multi-instance routing keys
+# ---------------------------------------------------------------------------
+
+
+def test_routing_key_matches_mmp_composite_format():
+    assert routing_key("acme/1") == "acme/1"
+    assert routing_key("acme/1", "") == "acme/1"
+    assert routing_key("acme/1", "b") == "acme/1:b"
+
+
+def test_routed_model_id_strips_instance_suffix():
+    assert routed_model_id("acme/1") == "acme/1"
+    assert routed_model_id("acme/1:b") == "acme/1"
+
+
+@pytest.mark.asyncio
+async def test_infer_routes_by_instance():
+    mgr = _fake_manager(process_return="ok")
+    wrapper = ModelManagerGateway(mgr)
+    await wrapper.infer(model_id="acme/1", image=b"x", instance="b")
+    assert mgr.process_async.await_args.args[0] == "acme/1:b"
+
+
+@pytest.mark.asyncio
+async def test_infer_without_instance_keeps_bare_model_id():
+    mgr = _fake_manager(process_return="ok")
+    wrapper = ModelManagerGateway(mgr)
+    await wrapper.infer(model_id="acme/1", image=b"x")
+    assert mgr.process_async.await_args.args[0] == "acme/1"
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_registers_instance_under_composite_key():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    status = await wrapper.ensure_loaded("acme/1", "b", "key")
+    assert status[0] == "model_ready"
+    args, kwargs = mgr.load.call_args
+    assert args[0] == "acme/1:b"
+    assert kwargs["model_id_or_path"] == "acme/1"
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_without_instance_passes_no_path_override():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    await wrapper.ensure_loaded("acme/1", "", "key")
+    args, kwargs = mgr.load.call_args
+    assert args[0] == "acme/1"
+    assert "model_id_or_path" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_isolates_instances_from_each_other():
+    mgr = _fake_manager()
+    present: set[str] = set()
+    mgr.__contains__ = MagicMock(side_effect=lambda key: key in present)
+    mgr.load = MagicMock(side_effect=lambda key, *a, **kw: present.add(key))
+    mgr.is_healthy = MagicMock(return_value=True)
+    wrapper = ModelManagerGateway(mgr)
+
+    await wrapper.ensure_loaded("acme/1", "b", "key")
+    await wrapper.ensure_loaded("acme/1", "c", "key")
+    await wrapper.ensure_loaded("acme/1", "b", "key")
+
+    assert present == {"acme/1:b", "acme/1:c"}
+    assert [call.args[0] for call in mgr.load.call_args_list] == [
+        "acme/1:b",
+        "acme/1:c",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_load_admin_route_splits_instance_suffix_for_weights():
+    mgr = _fake_manager()
+    mgr.__contains__ = MagicMock(return_value=False)
+    wrapper = ModelManagerGateway(mgr)
+    assert (await wrapper.load("acme/1:b", "key"))[0] == "ok"
+    args, kwargs = mgr.load.call_args
+    assert args[0] == "acme/1:b"
+    assert kwargs["model_id_or_path"] == "acme/1"
