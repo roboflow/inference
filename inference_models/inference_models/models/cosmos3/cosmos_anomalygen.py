@@ -12,8 +12,12 @@ from inference_models.models.cosmos3.runtime_loading import load_runtime_from_pa
 RUNTIME_MODULE_FILE = "cosmos_anomalygen_runtime.py"
 RUNTIME_CLASS_NAME = "CosmosAnomalyGenRuntime"
 
-DEFAULT_GUIDANCE = 7.0
+# NVIDIA's production recipe: guidance 1.5 (an extrapolation scale; equals a
+# standard classifier-free-guidance scale of 2.5), 35 steps, crop window 4x
+# the mask bbox, crop-and-paste on, Poisson blend off.
+DEFAULT_GUIDANCE = 1.5
 DEFAULT_NUM_STEPS = 35
+DEFAULT_CROP_RATIO = 4.0
 
 
 class CosmosAnomalyGen:
@@ -58,7 +62,7 @@ class CosmosAnomalyGen:
         seed: int = 0,
         num_images: int = 1,
         crop_and_paste: bool = True,
-        crop_ratio: float = 2.0,
+        crop_ratio: float = DEFAULT_CROP_RATIO,
         poisson_blend: bool = False,
         input_color_format: ColorFormat = None,
         **kwargs,

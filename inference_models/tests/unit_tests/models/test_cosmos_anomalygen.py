@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.errors import ModelInputError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.cosmos3.cosmos_anomalygen import CosmosAnomalyGen
 
 
@@ -43,6 +43,25 @@ def test_generate_passes_sdg_parameters_to_runtime() -> None:
     assert kwargs["seed"] == 7
     assert kwargs["crop_and_paste"] is True
     assert len(result) == 1
+
+
+def test_generate_defaults_match_the_production_recipe() -> None:
+    model = _model()
+    model._runtime.generate.return_value = []
+
+    model.generate(image=_image(), mask=_mask(), anomaly_type="wood+crack")
+
+    kwargs = model._runtime.generate.call_args.kwargs
+    assert kwargs["guidance"] == 1.5
+    assert kwargs["num_steps"] == 35
+    assert kwargs["crop_ratio"] == 4.0
+    assert kwargs["crop_and_paste"] is True
+    assert kwargs["poisson_blend"] is False
+
+
+def test_from_pretrained_rejects_package_without_runtime_module(tmp_path) -> None:
+    with pytest.raises(ModelRuntimeError):
+        CosmosAnomalyGen.from_pretrained(str(tmp_path), device=torch.device("cpu"))
 
 
 def test_generate_binarizes_uint8_mask_with_128_threshold() -> None:

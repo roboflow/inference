@@ -7,9 +7,15 @@
 - NVIDIA Cosmos AnomalyGen (`cosmos-anomalygen`, new task `image-generation`, backend
   `custom`): mask-conditioned defect inpainting via `generate(image, mask,
   anomaly_type, ...)`, mirroring the upstream SDG generation-entry contract
-  (guidance / num_steps / seed / crop-and-paste) so JSONL-driven pipelines map one
-  entry to one call. Runtime ships inside the model package, like the Cosmos 3 Edge
-  generator.
+  (guidance / num_steps / seed / crop-and-paste / crop_ratio / poisson_blend) so
+  JSONL-driven pipelines map one entry to one call. Defaults follow NVIDIA's
+  production recipe (guidance 1.5, 35 steps, crop ratio 4.0). The runtime ships
+  inside the model package (`cosmos_anomalygen_runtime.py`, reference
+  implementation and packaging tool under `development/cosmos3/`) and drives the
+  GA `paidf-anomalygen` stack, so serving requires a container built on that base
+  image. The `roboflow_core/cosmos_anomalygen@v1` workflow block also reports
+  `visibility` - the mean absolute pixel change inside the placement mask - so
+  callers can filter or regenerate empty generations.
 
 ---
 

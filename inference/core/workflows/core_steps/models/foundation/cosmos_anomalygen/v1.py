@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -46,6 +47,12 @@ detection datasets where real defect data is scarce.
 The placement mask comes in as an instance segmentation prediction - draw it
 upstream (e.g. a polygon zone converted to detections) or chain a
 segmentation model.
+
+Alongside the generated image the block reports `visibility` - the mean
+absolute pixel change inside the placement mask (0-255 gray levels). The
+model sometimes returns the canvas unchanged; filter or regenerate when
+visibility is low (>=15 separated real defects from empty generations in
+practice).
 """
 
 
@@ -96,9 +103,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["cosmos-anomalygen"],
     )
     guidance: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=7.0,
-        description="Anomaly conditioning strength.",
-        examples=[7.0],
+        default=1.5,
+        description=(
+            "Anomaly conditioning strength (upstream extrapolation scale; 1.5 "
+            "corresponds to a standard classifier-free-guidance scale of 2.5 and "
+            "is NVIDIA's production default). Higher values make defects more "
+            "pronounced."
+        ),
+        examples=[1.5],
     )
     num_steps: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=35,
@@ -110,6 +122,21 @@ class BlockManifest(WorkflowBlockManifest):
         description="Random seed for reproducible generation.",
         examples=[0],
     )
+    crop_ratio: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        default=4.0,
+        description=(
+            "Size of the generation window relative to the mask's bounding box. "
+            "Larger values give the model more context but resample a larger "
+            "region; for defects bigger than ~1/4 of the frame a smaller ratio "
+            "keeps the surrounding image sharp."
+        ),
+        examples=[4.0],
+    )
+    poisson_blend: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
+        default=False,
+        description="Poisson-blend the generated region into the original image.",
+        examples=[False],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -118,6 +145,16 @@ class BlockManifest(WorkflowBlockManifest):
                 name="image",
                 kind=[IMAGE_KIND],
                 description="The clean image with the synthetic defect inpainted.",
+            ),
+            OutputDefinition(
+                name="visibility",
+                kind=[FLOAT_KIND],
+                description=(
+                    "Mean absolute pixel change inside the placement mask "
+                    "(0-255). Low values mean the model returned the canvas "
+                    "nearly unchanged; >=15 separated real defects from empty "
+                    "generations in practice."
+                ),
             ),
         ]
 
@@ -156,6 +193,11 @@ class CosmosAnomalyGenBlockV1(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
+        if step_execution_mode is not StepExecutionMode.LOCAL:
+            raise NotImplementedError(
+                "Cosmos AnomalyGen only supports local execution - there is no "
+                "remote endpoint for this model."
+            )
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
         self._model = None
@@ -178,12 +220,9 @@ class CosmosAnomalyGenBlockV1(WorkflowBlock):
         guidance: float,
         num_steps: int,
         seed: int,
+        crop_ratio: float,
+        poisson_blend: bool,
     ) -> BlockResult:
-        if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "Cosmos AnomalyGen only supports local execution - there is no "
-                "remote endpoint for this model."
-            )
         model = self._resolve_model(model_id=model_version)
         numpy_image = image.numpy_image
         mask = rasterize_placement_mask(
@@ -197,11 +236,16 @@ class CosmosAnomalyGenBlockV1(WorkflowBlock):
             num_steps=num_steps,
             seed=seed,
             num_images=1,
+            crop_ratio=crop_ratio,
+            poisson_blend=poisson_blend,
         )
         return {
             "image": WorkflowImageData.copy_and_replace(
                 origin_image_data=image,
                 numpy_image=generated[0],
+            ),
+            "visibility": compute_visibility(
+                original=numpy_image, generated=generated[0], mask=mask
             ),
         }
 
@@ -229,3 +273,21 @@ def rasterize_placement_mask(
     mask_annotator = sv.MaskAnnotator(color=Color.WHITE, opacity=1.0)
     mask = mask_annotator.annotate(black_image, segmentation_mask)
     return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+
+def compute_visibility(
+    original: np.ndarray,
+    generated: np.ndarray,
+    mask: np.ndarray,
+) -> float:
+    """Mean absolute gray-level change (0-255) inside the placement mask.
+
+    The model sometimes returns the canvas unchanged; this is the measure
+    callers filter or regenerate on.
+    """
+    original_gray = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    generated_gray = cv2.cvtColor(generated, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    inside = mask >= 128
+    if not inside.any():
+        return 0.0
+    return float(np.abs(generated_gray - original_gray)[inside].mean())

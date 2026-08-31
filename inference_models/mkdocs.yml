@@ -104,6 +104,8 @@ nav:
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:
           - L2CS-Net: models/l2cs.md
+      - Image Generation:
+          - Cosmos AnomalyGen: models/cosmos-anomalygen.md
   - How-To:
       - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
