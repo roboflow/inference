@@ -87,7 +87,7 @@ class CosmosAnomalyGenRuntime:
         config_module = get_config_module("cosmos_predict2/configs/base/ag_config.py")
         config = importlib.import_module(config_module).make_config()
         experiment = inference_config.get("experiment", DEFAULT_EXPERIMENT)
-        config = override(config, [f"experiment={experiment}"])
+        config = override(config, ["--", f"experiment={experiment}"])
 
         ag_config_path = os.path.join(package_dir, "ag_config.yaml")
         with open(ag_config_path) as fp:
@@ -134,7 +134,7 @@ class CosmosAnomalyGenRuntime:
         if getattr(config.model.config, "fsdp_shard_size", 0) != 0:
             config.model.config.fsdp_shard_size = 0
 
-        if device.type == "cuda":
+        if device.type == "cuda" and device.index is not None:
             torch.cuda.set_device(device)
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cuda.matmul.allow_tf32 = True

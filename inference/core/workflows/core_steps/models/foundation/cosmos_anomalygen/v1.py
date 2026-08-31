@@ -28,11 +28,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
 
 LONG_DESCRIPTION = """
@@ -185,6 +187,9 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return ["cosmos-anomalygen"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
 
 
 class CosmosAnomalyGenBlockV1(WorkflowBlock):
