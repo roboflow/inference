@@ -16,6 +16,7 @@ from development.profiling.nsys_stats import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "nsys_2025_1"
+VALIDATED_NSYS_VERSION = "NVIDIA Nsight Systems version 2025.1.3"
 
 
 def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
@@ -27,7 +28,7 @@ def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
         manifest=manifest,
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
-        nsys_version="NVIDIA Nsight Systems version 2025.1.3",
+        nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
         report_paths={
@@ -92,6 +93,48 @@ def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
     assert analysis["iteration_summary"]["gpu_projected"]["total_ns"] == 291334
 
 
+def test_build_profile_analysis_preserves_host_data_without_gpu_ranges(tmp_path):
+    host_ranges = parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
+
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=host_ranges,
+        gpu_projected_ranges=[],
+        nsys_version=VALIDATED_NSYS_VERSION,
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
+    assert analysis["gpu_projected_ranges"] == []
+    assert all(item["gpu_projection"] is None for item in analysis["iterations"])
+    assert analysis["iteration_summary"]["gpu_projected_iterations"] == 0
+    assert analysis["iteration_summary"]["gpu_projected"] is None
+    assert analysis["warnings"] == [
+        "Missing GPU projections for iterations: [0, 1].",
+        "GPU projection report does not contain capture range 'profile-target'.",
+    ]
+
+
+def test_build_profile_analysis_warns_for_unvalidated_nsys_version(tmp_path):
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv"),
+        gpu_projected_ranges=parse_nvtx_gpu_projection_trace(
+            FIXTURES / "nvtx_gpu_proj_trace.csv"
+        ),
+        nsys_version="NVIDIA Nsight Systems version 2026.2.0",
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
+    assert analysis["warnings"] == [
+        "NVIDIA Nsight Systems version 2026.2.0 has not been validated; report "
+        "parsing is validated against Nsight Systems 2025.1."
+    ]
+
+
 def test_build_profile_analysis_warns_when_manifest_iteration_count_differs(
     tmp_path,
 ):
@@ -104,7 +147,7 @@ def test_build_profile_analysis_warns_when_manifest_iteration_count_differs(
         manifest=manifest,
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
-        nsys_version="version",
+        nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
         report_paths={},
@@ -137,7 +180,7 @@ def test_build_profile_analysis_uses_hierarchy_for_harness_iterations(tmp_path):
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
-        nsys_version="version",
+        nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
         report_paths={},
@@ -153,6 +196,74 @@ def test_build_profile_analysis_uses_hierarchy_for_harness_iterations(tmp_path):
         ]
         == 2112
     )
+
+
+def test_build_profile_analysis_scopes_range_names_below_iterations(tmp_path):
+    scope_updates = {
+        3: ("preprocessing", 2, 2),
+        4: ("resize", 3, 3),
+        5: ("postprocessing", 2, 2),
+        6: ("resize", 5, 3),
+        8: ("preprocessing", 7, 2),
+        9: ("resize", 8, 3),
+        10: ("postprocessing", 7, 2),
+        11: ("resize", 10, 3),
+    }
+
+    def apply_scope(item):
+        update = scope_updates.get(item.range_id)
+        if update is None:
+            return item
+        name, parent_id, level = update
+        return replace(
+            item,
+            name=name,
+            raw_name=f":{name}",
+            parent_id=parent_id,
+            level=level,
+        )
+
+    host_ranges = [
+        apply_scope(item)
+        for item in parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv")
+    ]
+    gpu_ranges = [
+        apply_scope(item)
+        for item in parse_nvtx_gpu_projection_trace(
+            FIXTURES / "nvtx_gpu_proj_trace.csv"
+        )
+        if item.range_id not in {3, 5, 8, 10}
+    ]
+
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=host_ranges,
+        gpu_projected_ranges=gpu_ranges,
+        nsys_version=VALIDATED_NSYS_VERSION,
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
+    host_preprocessing = _range_by_name(analysis["host_ranges"], "preprocessing.resize")
+    host_postprocessing = _range_by_name(
+        analysis["host_ranges"], "postprocessing.resize"
+    )
+    assert host_preprocessing["instances"] == 2
+    assert host_preprocessing["inclusive"]["total_ns"] == 87805
+    assert host_postprocessing["instances"] == 2
+    assert host_postprocessing["inclusive"]["total_ns"] == 43903
+
+    gpu_preprocessing = _range_by_name(
+        analysis["gpu_projected_ranges"], "preprocessing.resize"
+    )
+    gpu_postprocessing = _range_by_name(
+        analysis["gpu_projected_ranges"], "postprocessing.resize"
+    )
+    assert gpu_preprocessing["instances"] == 2
+    assert gpu_preprocessing["projected"]["total_ns"] == 8192
+    assert gpu_postprocessing["instances"] == 2
+    assert gpu_postprocessing["projected"]["total_ns"] == 8000
 
 
 def test_build_profile_analysis_warns_for_wrong_iteration_index_set(tmp_path):
@@ -179,7 +290,7 @@ def test_build_profile_analysis_warns_for_wrong_iteration_index_set(tmp_path):
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
-        nsys_version="version",
+        nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
         report_paths={},
@@ -214,17 +325,25 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
         report_paths[NVTX_GPU_PROJECTION_TRACE_REPORT],
     )
 
+    stats_call = {}
+
+    def fake_run_nsys_stats(**kwargs):
+        stats_call.update(kwargs)
+        return NsysStatsArtifacts(
+            nsys_version=VALIDATED_NSYS_VERSION,
+            report_paths=report_paths,
+        )
+
     monkeypatch.setattr(
         "development.profiling.analyze.run_nsys_stats",
-        lambda **kwargs: NsysStatsArtifacts(
-            nsys_version="NVIDIA Nsight Systems version 2025.1.3",
-            report_paths=report_paths,
-        ),
+        fake_run_nsys_stats,
     )
 
     output_path = analyze_run(run_dir=run_dir)
 
     assert output_path == run_dir / "analysis.json"
+    assert stats_call["trace_path"] == run_dir / "trace.nsys-rep"
+    assert stats_call["output_dir"] == run_dir / "stats"
     saved = json.loads(output_path.read_text(encoding="utf-8"))
     assert saved["provenance"]["manifest_path"] == "manifest.yaml"
     assert saved["provenance"]["trace_path"] == "trace.nsys-rep"

@@ -56,6 +56,11 @@ Read `analysis.json` in this order:
 6. Use `host_ranges` for CPU-side orchestration and nested-range costs.
 7. Use `gpu_projected_ranges` for GPU work associated with each NVTX range.
 
+Range names are scoped below the harness iteration. Treat
+`preprocessing.resize` and `postprocessing.resize` as separate operations.
+When GPU projections are unavailable, expect an empty
+`gpu_projected_ranges` list, `null` iteration GPU measurements, and a warning.
+
 All durations use nanoseconds and include the `_ns` suffix.
 
 ## Preserve timing semantics

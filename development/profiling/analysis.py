@@ -6,7 +6,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from development.profiling.nsys_stats import GpuProjectedRange, HostRange
+from development.profiling.nsys_stats import (
+    GpuProjectedRange,
+    HostRange,
+    get_nsys_version_warning,
+)
 
 ANALYSIS_SCHEMA_VERSION = 1
 ITERATION_RANGE_PATTERN = re.compile(r"^iteration (?P<index>\d+)$")
@@ -31,13 +35,20 @@ def build_profile_analysis(
     if not isinstance(capture_range, str):
         raise ProfileAnalysisError("Manifest must define a string capture_range.")
 
-    host_iterations, host_summaries = _summarize_host_ranges(
+    (
+        host_iterations,
+        host_summaries,
+        harness_range_keys,
+        host_scope_paths,
+    ) = _summarize_host_ranges(
         host_ranges,
         capture_range_name=capture_range,
     )
     gpu_iterations, gpu_summaries = _summarize_gpu_ranges(
         gpu_projected_ranges,
         host_iterations=host_iterations,
+        harness_range_keys=harness_range_keys,
+        host_scope_paths=host_scope_paths,
     )
     iterations = _build_iteration_analysis(host_iterations, gpu_iterations)
     warnings = _build_warnings(
@@ -45,6 +56,7 @@ def build_profile_analysis(
         iterations=iterations,
         host_range_names={item["name"] for item in host_summaries},
         gpu_range_names={item["name"] for item in gpu_summaries},
+        nsys_version=nsys_version,
     )
 
     workload = manifest.get("workload")
@@ -87,10 +99,14 @@ def _summarize_host_ranges(
     ranges: Sequence[HostRange],
     *,
     capture_range_name: str,
-) -> tuple[dict[int, HostRange], list[dict[str, Any]]]:
+) -> tuple[
+    dict[int, HostRange],
+    list[dict[str, Any]],
+    set[tuple[int, int, int]],
+    dict[tuple[int, int, int], tuple[str, ...]],
+]:
     capture_range = _find_capture_range(ranges, capture_range_name)
     iterations: dict[int, HostRange] = {}
-    groups: dict[str, list[HostRange]] = defaultdict(list)
 
     for item in ranges:
         iteration_index = _iteration_index(item.name)
@@ -100,7 +116,6 @@ def _summarize_host_ranges(
             and item.parent_id == capture_range.range_id
         )
         if iteration_index is None or not is_direct_capture_child:
-            groups[item.name].append(item)
             continue
         if iteration_index in iterations:
             raise ProfileAnalysisError(
@@ -108,11 +123,24 @@ def _summarize_host_ranges(
             )
         iterations[iteration_index] = item
 
+    capture_range_key = _range_key(capture_range)
+    iteration_range_keys = {_range_key(item) for item in iterations.values()}
+    harness_range_keys = {capture_range_key} | iteration_range_keys
+    scope_paths = _build_scope_paths(
+        ranges,
+        harness_range_keys=harness_range_keys,
+    )
+    groups: dict[tuple[str, ...], list[HostRange]] = defaultdict(list)
+    for item in ranges:
+        if _range_key(item) in iteration_range_keys:
+            continue
+        groups[scope_paths[_range_key(item)]].append(item)
+
     summaries = []
-    for name, items in sorted(groups.items()):
+    for scope_path, items in sorted(groups.items()):
         summaries.append(
             {
-                "name": name,
+                "name": ".".join(scope_path),
                 "instances": len(items),
                 "inclusive": _duration_summary([item.duration_ns for item in items]),
                 "exclusive": _duration_summary(
@@ -122,19 +150,28 @@ def _summarize_host_ranges(
             }
         )
 
-    return iterations, summaries
+    return iterations, summaries, harness_range_keys, scope_paths
 
 
 def _summarize_gpu_ranges(
     ranges: Sequence[GpuProjectedRange],
     *,
     host_iterations: Mapping[int, HostRange],
+    harness_range_keys: set[tuple[int, int, int]],
+    host_scope_paths: Mapping[tuple[int, int, int], tuple[str, ...]],
 ) -> tuple[dict[int, GpuProjectedRange], list[dict[str, Any]]]:
     iterations: dict[int, GpuProjectedRange] = {}
     iteration_indexes_by_range_key = {
         _range_key(item): index for index, item in host_iterations.items()
     }
-    groups: dict[tuple[str, str], list[GpuProjectedRange]] = defaultdict(list)
+    gpu_scope_paths = _build_scope_paths(
+        ranges,
+        harness_range_keys=harness_range_keys,
+    )
+    groups: dict[
+        tuple[tuple[str, ...], str],
+        list[GpuProjectedRange],
+    ] = defaultdict(list)
 
     for item in ranges:
         iteration_index = iteration_indexes_by_range_key.get(_range_key(item))
@@ -146,13 +183,17 @@ def _summarize_gpu_ranges(
             iterations[iteration_index] = item
             continue
 
-        groups[(item.name, item.style)].append(item)
+        item_key = _range_key(item)
+        scope_path = host_scope_paths.get(item_key)
+        if scope_path is None:
+            scope_path = gpu_scope_paths[item_key]
+        groups[(scope_path, item.style)].append(item)
 
     summaries = []
-    for (name, style), items in sorted(groups.items()):
+    for (scope_path, style), items in sorted(groups.items()):
         summaries.append(
             {
-                "name": name,
+                "name": ".".join(scope_path),
                 "style": style,
                 "instances": len(items),
                 "projected": _duration_summary(
@@ -164,6 +205,45 @@ def _summarize_gpu_ranges(
         )
 
     return iterations, summaries
+
+
+def _build_scope_paths(
+    ranges: Sequence[HostRange | GpuProjectedRange],
+    *,
+    harness_range_keys: set[tuple[int, int, int]],
+) -> dict[tuple[int, int, int], tuple[str, ...]]:
+    ranges_by_key = {_range_key(item): item for item in ranges}
+    scope_paths = {}
+
+    for item in ranges:
+        item_key = _range_key(item)
+        current = item
+        scope_path = []
+        visited_keys = set()
+
+        while _range_key(current) not in harness_range_keys:
+            current_key = _range_key(current)
+            if current_key in visited_keys:
+                raise ProfileAnalysisError(
+                    f"Cycle in NVTX range hierarchy at {current_key}."
+                )
+            visited_keys.add(current_key)
+            scope_path.append(current.name)
+            if current.parent_id is None:
+                break
+            parent_key = (
+                current.process_id,
+                current.thread_id,
+                current.parent_id,
+            )
+            parent = ranges_by_key.get(parent_key)
+            if parent is None:
+                break
+            current = parent
+
+        scope_paths[item_key] = tuple(reversed(scope_path)) or (item.name,)
+
+    return scope_paths
 
 
 def _build_iteration_analysis(
@@ -209,8 +289,12 @@ def _build_warnings(
     iterations: Sequence[Mapping[str, Any]],
     host_range_names: set[str],
     gpu_range_names: set[str],
+    nsys_version: str,
 ) -> list[str]:
     warnings = []
+    version_warning = get_nsys_version_warning(nsys_version)
+    if version_warning is not None:
+        warnings.append(version_warning)
     workload = manifest.get("workload")
     expected_iterations = (
         workload.get("iterations") if isinstance(workload, Mapping) else None
