@@ -33,8 +33,6 @@ from inference_models.models.cosmos3.span_format import (
 
 # Think plus one JSON entry per event outgrows a small budget.
 ZERO_SHOT_MAX_NEW_TOKENS = 4096
-# What training resizes to when its config does not say (COSMOS3_MAX_FRAME_SIDE).
-TRAINED_FRAME_SIDE = 360
 FINE_TUNE_MAX_NEW_TOKENS = 256
 
 # https://github.com/NVIDIA/cosmos/blob/main/cookbooks/cosmos3/reasoner/reasoner_prompt_guide.md#temporal-localization
@@ -231,18 +229,25 @@ def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
             ),
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    window_frames = config.get("window_frames")
+
+    def _optional_count(key: str) -> Optional[int]:
+        """A limit the model did not record is a limit it does not have."""
+        value = config.get(key)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value > 0
+        ):
+            return int(value)
+        return None
+
     return VideoSampling(
         window_seconds=_positive("window_seconds", default.window_seconds),
         sample_fps=_positive("sample_fps", default.sample_fps),
         min_frames=int(_positive("min_frames", default.min_frames)),
-        max_frame_side=int(_positive("max_frame_side", TRAINED_FRAME_SIDE)),
+        max_frame_side=_optional_count("max_frame_side"),
         mode=mode,
-        max_frames=(
-            int(window_frames)
-            if isinstance(window_frames, (int, float)) and window_frames > 0
-            else None
-        ),
+        max_frames=_optional_count("window_frames"),
     )
 
 

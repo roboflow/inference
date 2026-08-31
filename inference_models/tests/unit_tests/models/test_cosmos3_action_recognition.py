@@ -531,3 +531,25 @@ def test_a_fine_tune_keeps_the_sampling_mode_its_package_declares() -> None:
     )
 
     assert wrapper.video_sampling.mode == SLIDING_WINDOW_MODE
+
+
+def test_a_package_that_omits_a_limit_declares_no_limit(monkeypatch, tmp_path) -> None:
+    # Guessing a frame side is how a model gets read at a size it never
+    # trained on, so an absent key means absent, not a default.
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps({"video_pre_processing": {"sample_fps": 4.0}})
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+
+    sampling = Cosmos3EdgeActionRecognition.from_pretrained(
+        str(tmp_path)
+    ).video_sampling
+
+    assert sampling.max_frame_side is None
+    assert sampling.max_frames is None
+    assert sampling.sample_fps == 4.0
