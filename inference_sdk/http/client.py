@@ -2583,6 +2583,52 @@ class InferenceHTTPClient:
         return response
 
     @wrap_errors
+    def infer_action_recognition(
+        self,
+        video: str,
+        model_id: str,
+        video_type: str = "url",
+        class_filter: Optional[List[str]] = None,
+    ) -> dict:
+        """Classify the actions in a video clip.
+
+        The model states how the clip is cut into windows and how its frames
+        are sampled, so this call sends the clip and nothing else. Frame
+        indices in the result count from the first frame of the clip.
+
+        Args:
+            video: The clip, as a URL or as base64 content.
+            model_id: The model to classify with.
+            video_type: Whether `video` holds a "url" or "base64" content.
+            class_filter: For a fine-tuned model, the subset of its classes to
+                report. For a zero-shot model, the vocabulary to classify into
+                (at most 25 classes); leave it empty to let the model label
+                events itself.
+
+        Returns:
+            A dictionary holding `timeline`, `source_fps`, `frame_count` and
+            `windows_classified`. Each timeline entry carries
+            `start_frame_idx`, `end_frame_idx`, `class` and `class_id`.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        payload = self.__initialise_payload()
+        payload["model_id"] = model_id
+        payload["video"] = {"type": video_type, "value": video}
+        if class_filter is not None:
+            payload["class_filter"] = class_filter
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/infer/action_recognition")
+        response = requests.post(
+            url,
+            json=payload,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @wrap_errors
     def infer_from_yolo_world(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],

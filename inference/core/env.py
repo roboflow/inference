@@ -279,6 +279,7 @@ QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
 
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
+ACTION_RECOGNITION_ENABLED = str2bool(os.getenv("ACTION_RECOGNITION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 

@@ -1,0 +1,51 @@
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, Field
+
+from inference.core.entities.requests.inference import BaseRequest
+
+
+class InferenceRequestVideo(BaseModel):
+    """Video data for an inference request.
+
+    Attributes:
+        type (str): The type of video data provided, one of 'url' or 'base64'.
+        value (Optional[Any]): Video data corresponding to the video type.
+    """
+
+    type: str = Field(
+        examples=["url"],
+        description="The type of video data provided, one of 'url' or 'base64'",
+    )
+    value: Optional[Any] = Field(
+        None,
+        examples=["https://example.com/clip.mp4"],
+        description="Video data corresponding to the video type",
+    )
+
+
+class ActionRecognitionInferenceRequest(BaseRequest):
+    """Request for action recognition over a video clip.
+
+    Attributes:
+        model_id (str): The model to classify with.
+        video (InferenceRequestVideo): The clip to classify.
+        class_filter (Optional[List[str]]): For a fine-tuned model, the subset
+            of its classes to report. For a zero-shot model, the vocabulary to
+            classify into; leave it empty to let the model label events itself.
+    """
+
+    model_id: str = Field(
+        examples=["workspace/action-recognition-1"],
+        description="The model to classify with",
+    )
+    video: InferenceRequestVideo
+    class_filter: Optional[List[str]] = Field(
+        None,
+        examples=[["entering", "leaving"]],
+        description=(
+            "For a fine-tuned model, the subset of its classes to report. For "
+            "a zero-shot model, the vocabulary to classify into (at most 25 "
+            "classes); leave empty to let the model label events itself."
+        ),
+    )

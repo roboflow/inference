@@ -501,6 +501,9 @@ try:
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.models.cosmos3.cosmos3_action_recognition_inference_models import (
+            InferenceModelsActionRecognitionAdapter,
+        )
         from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
             InferenceModelsCosmos3ReasonerAdapter,
         )
@@ -511,6 +514,17 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Fine-tunes ship under the dash-less trainer slug; the hosted base
+            # keeps the dash and is wrapped for the task on load.
+            ("vlm", "cosmos3-edge"): InferenceModelsActionRecognitionAdapter,
+            (
+                "action-recognition",
+                "cosmos3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
+            (
+                "action-recognition",
+                "cosmos-3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:

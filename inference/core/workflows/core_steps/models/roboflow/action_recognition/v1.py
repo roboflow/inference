@@ -49,7 +49,7 @@ from inference_models.models.base.action_recognition import ActionRecognitionMod
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
-from inference_models.models.base.action_recognition import VideoSampling
+from inference_models.models.base.action_recognition import VideoSampling, merge_segment
 
 DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
@@ -536,7 +536,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     else -1
                 ),
             )
-            self._merge_segment(
+            merge_segment(
                 timeline=bookkeeping.timeline,
                 segment=segment,
                 stride=stride,
@@ -548,33 +548,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 entry.end_frame_idx,
             )
         )
-
-    @staticmethod
-    def _merge_segment(
-        timeline: List[ActionRecognitionPrediction],
-        segment: ActionRecognitionPrediction,
-        stride: float,
-    ) -> None:
-        matching = [
-            existing
-            for existing in timeline
-            if existing.class_name == segment.class_name
-            and existing.start_frame_idx <= segment.end_frame_idx + stride
-            and segment.start_frame_idx <= existing.end_frame_idx + stride
-        ]
-        if not matching:
-            timeline.append(segment)
-            return
-        segment.start_frame_idx = min(
-            segment.start_frame_idx,
-            *(entry.start_frame_idx for entry in matching),
-        )
-        segment.end_frame_idx = max(
-            segment.end_frame_idx,
-            *(entry.end_frame_idx for entry in matching),
-        )
-        timeline[:] = [entry for entry in timeline if entry not in matching]
-        timeline.append(segment)
 
     def _build_output(
         self,

@@ -88,6 +88,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "sam3": ("embed", "sam3"),
     "sam3/sam3_interactive": ("interactive-segmentation", "sam3"),
+    "cosmos-3-edge/action_recognition": ("action-recognition", "cosmos-3-edge"),
     "sam3-3d-objects": ("3d-reconstruction", "sam3-3d-objects"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
