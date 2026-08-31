@@ -4,7 +4,6 @@ import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
-from uuid import uuid4
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
@@ -25,7 +24,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
@@ -88,12 +86,9 @@ spans each clip in one call, and a stream has no end to span, so the block
 refuses it and names the action recognition endpoint instead.
 
 The class vocabulary is optional. Leave it empty to report every class the
-model carries, or list classes to report a subset of them. The
-window_classes output lists classes whose range can still merge with a future
-classification. A class stays listed for one window plus the sample tolerance
-after its range ends. It clears when the range closes. This output works with
-Classification Label Visualization. When a model call fails, error_status
-carries the error text for that frame and the stream continues.
+model carries, or list classes to report a subset of them. When a model call
+fails, error_status carries the error text for that frame and the stream
+continues.
 """
 
 
@@ -105,7 +100,6 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
-    window_class_names: List[str] = field(default_factory=list)
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
@@ -182,9 +176,6 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="timeline",
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
-            ),
-            OutputDefinition(
-                name="window_classes", kind=[CLASSIFICATION_PREDICTION_KIND]
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
         ]
@@ -365,7 +356,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         sampling_stride = max(1.0, source_fps / effective_sample_fps)
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
-        keep_alive_frames = window_frames + math.ceil(sampling_stride)
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
@@ -403,14 +393,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         bookkeeping.last_frame_number = frame_number
-        return self._build_output(
-            bookkeeping=bookkeeping,
-            image=image,
-            id_vocabulary=id_vocabulary,
-            frame_number=frame_number,
-            keep_alive_frames=keep_alive_frames,
-            error_status=error_status,
-        )
+        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
 
     def _resolve_source_fps(
         self,
@@ -530,58 +513,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     def _build_output(
         self,
         bookkeeping: _ActionRecognitionBookkeeping,
-        image: WorkflowImageData,
-        id_vocabulary: Optional[List[str]],
-        frame_number: int,
-        keep_alive_frames: int,
         error_status: str,
     ) -> dict:
-        timeline = [entry.model_copy() for entry in bookkeeping.timeline]
-        # A class stays visible while a future positive fire could still merge
-        # with its range, then clears exactly when that range is closed.
-        bookkeeping.window_class_names = list(
-            dict.fromkeys(
-                entry.class_name
-                for entry in bookkeeping.timeline
-                if frame_number - entry.end_frame_idx <= keep_alive_frames
-            )
-        )
-        window_classes = self._build_window_classes(
-            bookkeeping=bookkeeping,
-            image=image,
-            id_vocabulary=id_vocabulary,
-        )
         return {
-            "timeline": timeline,
-            "window_classes": window_classes,
+            "timeline": [entry.model_copy() for entry in bookkeeping.timeline],
             "error_status": error_status,
-        }
-
-    def _build_window_classes(
-        self,
-        bookkeeping: _ActionRecognitionBookkeeping,
-        image: WorkflowImageData,
-        id_vocabulary: Optional[List[str]],
-    ) -> Any:
-        window_class_names = list(bookkeeping.window_class_names)
-        height, width = image._read_shape_without_materialization()
-        parent_id = image.parent_metadata.parent_id
-        return {
-            "image": {"width": width, "height": height},
-            "predictions": {
-                class_name: {
-                    "confidence": 1.0,
-                    "class_id": (
-                        id_vocabulary.index(class_name)
-                        if id_vocabulary is not None and class_name in id_vocabulary
-                        else -1
-                    ),
-                }
-                for class_name in window_class_names
-            },
-            "predicted_classes": window_class_names,
-            "prediction_type": "classification",
-            "parent_id": parent_id,
-            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
-            "inference_id": str(uuid4()),
         }

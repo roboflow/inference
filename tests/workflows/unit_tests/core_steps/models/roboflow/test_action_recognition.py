@@ -5,21 +5,12 @@ import math
 from datetime import datetime
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
-from uuid import UUID
 
 import numpy as np
 import pytest
 import torch
 
 import inference.core.env as core_env
-from inference_models import VideoSampling, ActionRecognitionModel
-from inference_models import (
-    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
-)
-from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
-from inference_models.models.cosmos3.cosmos3_action_recognition import (
-    Cosmos3EdgeActionRecognition,
-)
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
 )
@@ -31,42 +22,36 @@ from inference.core.workflows.core_steps.models.roboflow.action_recognition impo
     v1 as video_classification_module,
 )
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
-    BlockManifest,
     ActionRecognitionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
-    BlockManifest as TensorBlockManifest,
+    BlockManifest,
 )
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
     ActionRecognitionModelBlockV1 as TensorActionRecognitionModelBlockV1,
 )
-from inference.core.workflows.errors import RuntimeInputError
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
-    CLASSIFICATION_STYLE_KEY,
-    CLASSIFICATION_STYLE_MODEL,
-    IMAGE_DIMENSIONS_KEY,
-    INFERENCE_ID_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+    BlockManifest as TensorBlockManifest,
 )
+from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
-    ImageParentMetadata,
     ActionRecognitionPrediction,
+    ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    CLASSIFICATION_PREDICTION_KIND,
-    STRING_KIND,
     ACTION_RECOGNITION_PREDICTION_KIND,
+    STRING_KIND,
 )
+from inference_models import ActionRecognitionModel
+from inference_models import (
+    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
+)
+from inference_models import VideoSampling
 from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
-from inference_models.models.base.classification import (
-    MultiLabelClassificationPrediction,
+from inference_models.models.cosmos3.cosmos3_action_recognition import (
+    Cosmos3EdgeActionRecognition,
 )
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
 
 class _FakeActionRecognitionModel(ActionRecognitionModel):
@@ -230,10 +215,6 @@ def _timeline_as_dicts(result):
     return [entry.model_dump() for entry in result["timeline"]]
 
 
-def _window_class_names(result):
-    return result["window_classes"]["predicted_classes"]
-
-
 def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     from inference_models import AutoModel
 
@@ -289,13 +270,10 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.model_id == "cosmos-3-edge"
     assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
-    assert manifest_type.describe_outputs()[0].kind == [
-        ACTION_RECOGNITION_PREDICTION_KIND
-    ]
-    assert manifest_type.describe_outputs()[1].kind == [CLASSIFICATION_PREDICTION_KIND]
-    assert manifest_type.describe_outputs()[1].name == "window_classes"
-    assert manifest_type.describe_outputs()[2].name == "error_status"
-    assert manifest_type.describe_outputs()[2].kind == [STRING_KIND]
+    outputs = manifest_type.describe_outputs()
+    assert [output.name for output in outputs] == ["timeline", "error_status"]
+    assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
+    assert outputs[1].kind == [STRING_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -357,8 +335,6 @@ def test_first_frame_anchors_cadence_and_first_fire_waits_for_stride():
     first_result = _run(block, _make_frame(10))
 
     assert first_result["timeline"] == []
-    assert _window_class_names(first_result) == []
-    assert first_result["window_classes"]["predictions"] == {}
     assert model.calls == []
 
     _run(block, _make_frame(11))
@@ -377,7 +353,6 @@ def test_first_scheduled_classification_sends_rgb_stride_buffer():
     result = _run(block, _make_frame(2))
 
     assert [entry.class_name for entry in result["timeline"]] == ["walk"]
-    assert _window_class_names(result) == ["walk"]
     assert result["error_status"] == ""
     assert len(model.calls) == 1
     call = model.calls[0]
@@ -407,11 +382,6 @@ def test_open_vocabulary_keeps_arbitrary_labels_with_negative_class_ids():
         "sitting down",
     ]
     assert [entry.class_id for entry in result["timeline"]] == [-1, -1]
-    assert _window_class_names(result) == ["opening a door", "sitting down"]
-    assert result["window_classes"]["predictions"] == {
-        "opening a door": {"confidence": 1.0, "class_id": -1},
-        "sitting down": {"confidence": 1.0, "class_id": -1},
-    }
 
 
 def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
@@ -432,7 +402,6 @@ def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
             "class_id": 1,
         }
     ]
-    assert _window_class_names(result) == ["run"]
 
 
 def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
@@ -453,7 +422,6 @@ def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
             "class_id": 0,
         }
     ]
-    assert result["window_classes"]["predictions"]["run"]["class_id"] == 0
 
 
 def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
@@ -474,227 +442,6 @@ def test_baked_vocabulary_keeps_stable_ids_when_class_filter_is_set():
             "class_id": 1,
         }
     ]
-    assert result["window_classes"]["predictions"] == {
-        "b": {"confidence": 1.0, "class_id": 1}
-    }
-
-
-def test_numpy_window_classes_uses_legacy_multi_label_classification_shape():
-    block, _ = _make_block(
-        responses=[[_model_segment("walk")]],
-        tensor=False,
-    )
-    _run(block, _make_frame(0))
-    frame = _make_frame(2)
-
-    result = _run(block, frame)
-
-    window_classes = result["window_classes"]
-    assert window_classes["image"] == {"width": 2, "height": 2}
-    assert window_classes["predictions"] == {"walk": {"confidence": 1.0, "class_id": 0}}
-    assert window_classes["predicted_classes"] == ["walk"]
-    assert window_classes["prediction_type"] == "classification"
-    assert window_classes["parent_id"] == "stream-0:2"
-    assert window_classes["root_parent_id"] == "stream-0:root"
-    assert UUID(window_classes["inference_id"]).version == 4
-
-
-def test_tensor_window_classes_uses_dense_vocabulary():
-    block, _ = _make_block(
-        responses=[[_model_segment("run"), _model_segment("walk")]],
-        tensor=True,
-        model_class_names=["walk", "run", "idle"],
-    )
-    _run(
-        block,
-        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
-        class_filter=None,
-    )
-    frame = _make_frame(2, tensor_rgb_color=[4, 5, 6])
-
-    result = _run(block, frame, class_filter=None)
-
-    window_classes = result["window_classes"]
-    assert isinstance(window_classes, MultiLabelClassificationPrediction)
-    assert window_classes.class_ids.dtype is torch.long
-    assert window_classes.confidence.dtype is torch.float32
-    torch.testing.assert_close(
-        window_classes.class_ids.cpu(),
-        torch.tensor([0, 1], dtype=torch.long),
-    )
-    torch.testing.assert_close(
-        window_classes.confidence.cpu(),
-        torch.tensor([1.0, 1.0, 0.0], dtype=torch.float32),
-    )
-    metadata = window_classes.image_metadata
-    assert metadata[CLASS_NAMES_KEY] == {0: "walk", 1: "run", 2: "idle"}
-    assert metadata[CLASSIFICATION_STYLE_KEY] == CLASSIFICATION_STYLE_MODEL
-    assert metadata[PREDICTION_TYPE_KEY] == "classification"
-    assert metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
-    assert metadata[PARENT_ID_KEY] == "stream-0:2"
-    assert metadata[ROOT_PARENT_ID_KEY] == "stream-0:root"
-    assert UUID(metadata[INFERENCE_ID_KEY]).version == 4
-
-
-def test_tensor_window_classes_uses_open_vocabulary_label_order():
-    block, _ = _make_block(
-        responses=[
-            [
-                _model_segment("opening a door"),
-                _model_segment("sitting down"),
-            ]
-        ],
-        tensor=True,
-    )
-    _run(
-        block,
-        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
-        class_filter=None,
-    )
-
-    result = _run(
-        block,
-        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
-        class_filter=None,
-    )
-
-    window_classes = result["window_classes"]
-    assert window_classes.image_metadata[CLASS_NAMES_KEY] == {
-        0: "opening a door",
-        1: "sitting down",
-    }
-    torch.testing.assert_close(
-        window_classes.class_ids.cpu(),
-        torch.tensor([0, 1], dtype=torch.long),
-    )
-    torch.testing.assert_close(
-        window_classes.confidence.cpu(),
-        torch.ones(2, dtype=torch.float32),
-    )
-
-
-def test_tensor_window_classes_empty_fire_keeps_the_dense_confidence():
-    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
-        to_legacy_classification_prediction,
-    )
-
-    block, model = _make_block(
-        responses=[[]],
-        tensor=True,
-        model_class_names=["walk", "run"],
-    )
-    _run(
-        block,
-        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
-        class_filter=None,
-    )
-
-    result = _run(
-        block,
-        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
-        class_filter=None,
-    )
-
-    assert len(model.calls) == 1
-    window_classes = result["window_classes"]
-    assert window_classes.class_ids.dtype is torch.long
-    assert window_classes.class_ids.numel() == 0
-    assert window_classes.confidence.dtype is torch.float32
-    # A declared vocabulary keeps its full distribution; the native type
-    # promises one confidence per class on every frame.
-    torch.testing.assert_close(
-        window_classes.confidence.cpu(),
-        torch.zeros(2, dtype=torch.float32),
-    )
-    assert window_classes.image_metadata[CLASS_NAMES_KEY] == {
-        0: "walk",
-        1: "run",
-    }
-    assert window_classes.image_metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
-    assert to_legacy_classification_prediction(window_classes) == {
-        "image": {"width": 2, "height": 2},
-        "predictions": {
-            "walk": {"confidence": 0.0, "class_id": 0},
-            "run": {"confidence": 0.0, "class_id": 1},
-        },
-        "predicted_classes": [],
-    }
-
-
-def test_tensor_window_classes_round_trips_to_legacy_multi_label_shape():
-    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
-        to_legacy_classification_prediction,
-    )
-
-    block, _ = _make_block(
-        responses=[[_model_segment("run"), _model_segment("walk")]],
-        tensor=True,
-        model_class_names=["walk", "run", "idle"],
-    )
-    _run(
-        block,
-        _make_frame(0, tensor_rgb_color=[1, 2, 3]),
-        class_filter=None,
-    )
-    result = _run(
-        block,
-        _make_frame(2, tensor_rgb_color=[4, 5, 6]),
-        class_filter=None,
-    )
-
-    legacy = to_legacy_classification_prediction(result["window_classes"])
-
-    assert legacy == {
-        "image": {"width": 2, "height": 2},
-        "predictions": {
-            "walk": {"confidence": 1.0, "class_id": 0},
-            "run": {"confidence": 1.0, "class_id": 1},
-            "idle": {"confidence": 0.0, "class_id": 2},
-        },
-        "predicted_classes": ["walk", "run"],
-    }
-
-
-def test_window_classes_keep_alive_through_negative_fire_and_errors_then_clear(
-    monkeypatch,
-):
-    block, model = _make_block(
-        responses=[
-            [_model_segment("walk"), _model_segment("walk", 1, 1)],
-            RuntimeError("temporary model failure"),
-            [],
-        ]
-    )
-    monkeypatch.setattr(video_classification_module.logger, "warning", MagicMock())
-
-    assert _window_class_names(_run(block, _make_frame(0))) == []
-    assert _window_class_names(_run(block, _make_frame(1))) == []
-
-    fired = _run(block, _make_frame(2))
-    assert _window_class_names(fired) == ["walk"]
-    assert fired["timeline"][0].end_frame_idx == 2
-
-    held = _run(block, _make_frame(3))
-    assert _window_class_names(held) == ["walk"]
-
-    errored = _run(block, _make_frame(4))
-    assert errored["error_status"]
-    assert _window_class_names(errored) == ["walk"]
-
-    _run(block, _make_frame(5))
-    negative_fire = _run(block, _make_frame(6))
-    assert negative_fire["error_status"] == ""
-    assert _window_class_names(negative_fire) == ["walk"]
-
-    _run(block, _make_frame(7))
-    # window_frames=4 and ceil(sampling_stride)=2, so frame 8 is the final
-    # mergeable frame for the range that ends at frame 2.
-    last_mergeable_fire = _run(block, _make_frame(8))
-    assert _window_class_names(last_mergeable_fire) == ["walk"]
-
-    cleared = _run(block, _make_frame(9))
-    assert _window_class_names(cleared) == []
-    assert len(model.calls) == 4
 
 
 def test_half_window_stride_fires_twice_per_window():
@@ -933,7 +680,6 @@ def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
             "class_id": 0,
         }
     ]
-    assert _window_class_names(result) == ["walk"]
 
 
 def test_merges_reports_separated_by_a_fractional_stride_boundary():
@@ -969,7 +715,6 @@ def test_merges_reports_separated_by_a_fractional_stride_boundary():
             "class_id": 0,
         }
     ]
-    assert _window_class_names(result) == ["walk"]
 
 
 def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
@@ -992,7 +737,6 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
         ("walk", 0),
         ("run", 0),
     ]
-    assert _window_class_names(result) == ["walk", "run"]
 
 
 def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():
@@ -1082,7 +826,6 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     _run(block, _make_frame(1))
     result = _run(block, _make_frame(2))
     assert result["timeline"]
-    assert _window_class_names(result) == ["walk"]
 
     class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
@@ -1096,8 +839,6 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     )
 
     assert reset_result["timeline"] == []
-    assert _window_class_names(reset_result) == []
-    assert reset_result["window_classes"]["predictions"] == {}
     assert reset_result["error_status"] == ""
     assert len(model.calls) == 1
 
@@ -1160,28 +901,24 @@ def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
 
     _run(block, _make_frame(0))
     _run(block, _make_frame(1))
-    initial = _run(block, _make_frame(2))
+    _run(block, _make_frame(2))
     _run(block, _make_frame(3))
     failed = _run(block, _make_frame(4))
 
-    assert _window_class_names(initial) == ["walk"]
     assert failed["error_status"] == "temporary model failure"
     assert [entry.class_name for entry in failed["timeline"]] == ["walk"]
-    assert _window_class_names(failed) == ["walk"]
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 0
     warning.assert_called_once()
     assert warning.call_args.kwargs["exc_info"] is True
 
     after_failure = _run(block, _make_frame(5))
     assert after_failure["error_status"] == ""
-    assert _window_class_names(after_failure) == ["walk"]
     assert len(model.calls) == 2
 
     resumed = _run(block, _make_frame(6))
 
     assert resumed["error_status"] == ""
     assert [entry.class_name for entry in resumed["timeline"]] == ["walk", "run"]
-    assert _window_class_names(resumed) == ["walk", "run"]
     assert len(model.calls) == 3
 
 
