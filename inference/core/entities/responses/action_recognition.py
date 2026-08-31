@@ -3,8 +3,13 @@ from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ActionRecognitionSegment(BaseModel):
-    """One classified frame range of the submitted clip."""
+class ActionRecognitionPrediction(BaseModel):
+    """One classified frame range of a video.
+
+    The HTTP response and the workflow kind carry the same shape, so it is
+    declared once here and imported by both. A field added on one transport
+    would otherwise be silently missing from the other.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -26,7 +31,7 @@ class ActionRecognitionInferenceResponse(BaseModel):
     caller converts them to seconds with ``source_fps``.
     """
 
-    timeline: List[ActionRecognitionSegment] = Field(
+    timeline: List[ActionRecognitionPrediction] = Field(
         description="Classified frame ranges, which can overlap"
     )
     source_fps: float = Field(description="Frames per second of the clip")

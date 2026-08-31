@@ -320,9 +320,9 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
             class_names=class_names,
             video_sampling=_read_video_sampling(model_name_or_path),
         )
-        if (
-            class_names or carries_class_tokens
-        ) and model._fine_tune_prefix_allowed_tokens_fn is None:
+        # carries_class_tokens without class_names already raised above, so a
+        # class list is the only state left that has to resolve.
+        if class_names and model._fine_tune_prefix_allowed_tokens_fn is None:
             # Serving these weights zero-shot would answer with the wrong
             # prompt and no decoding constraint, and look like a result.
             raise CorruptedModelPackageError(

@@ -299,10 +299,12 @@ class SpanConstrainedDecoder:
 
     def __call__(self, batch_id: int, input_ids: torch.Tensor) -> List[int]:
         del batch_id
-        token_ids = input_ids.tolist()
-        if token_ids and isinstance(token_ids[0], list):
-            token_ids = token_ids[0]
-        token_ids = token_ids[self._input_length :]
+        # Generation calls this once per token, and the video prompt ahead of
+        # the answer runs to thousands of them. Drop the prompt on the tensor
+        # so only the answer crosses to host.
+        if input_ids.dim() > 1:
+            input_ids = input_ids[0]
+        token_ids = input_ids[self._input_length :].tolist()
 
         mode = "start"
         state = ""

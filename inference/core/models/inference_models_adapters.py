@@ -24,7 +24,7 @@ from inference.core.entities.requests.action_recognition import (
 )
 from inference.core.entities.responses.action_recognition import (
     ActionRecognitionInferenceResponse,
-    ActionRecognitionSegment,
+    ActionRecognitionPrediction,
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -59,6 +59,7 @@ from inference.core.env import (
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
 from inference.core.exceptions import PostProcessingError
+from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.semantic_segmentation_utils import (
     present_class_ids_from_label_map,
@@ -68,7 +69,11 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
-from inference.core.utils.video_utils import probe_video, read_frames, video_source_path
+from inference.core.utils.video_utils import (
+    probe_video,
+    read_frame_windows,
+    video_source_path,
+)
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -98,7 +103,6 @@ from inference_models.configuration import (
 )
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
-    merge_segment,
     plan_windows,
 )
 from inference_models.models.base.async_handoff import (
@@ -1983,27 +1987,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "action-recognition"
-        model_id = resolve_roboflow_model_alias(model_id=model_id)
-        extra_weights_provider_headers = get_extra_weights_provider_headers(
-            countinference=kwargs.get("countinference"),
-            service_secret=kwargs.get("service_secret"),
-        )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
-        loaded_model = AutoModel.from_pretrained(
-            model_id_or_path=_weights_id(model_id=model_id),
-            api_key=self.api_key,
-            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            weights_provider_extra_headers=extra_weights_provider_headers,
-            backend=backend,
-            **kwargs,
-        )
-        self._model: ActionRecognitionModel = _as_action_recognition_model(
-            model=loaded_model, model_id=model_id
+        self._model: ActionRecognitionModel = load_action_recognition_model(
+            model_id=model_id, api_key=self.api_key, **kwargs
         )
 
     def infer_from_request(
@@ -2021,26 +2006,27 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 source_fps=source_fps,
                 sampling=sampling,
             )
-            timeline: List[ActionRecognitionSegment] = []
-            for window in windows:
-                frames = read_frames(
-                    path=path,
-                    frame_indices=window.frame_indices,
-                    max_frame_side=sampling.max_frame_side,
-                )
+            timeline: List[ActionRecognitionPrediction] = []
+            window_frames = read_frame_windows(
+                path=path,
+                windows=[window.frame_indices for window in windows],
+                max_frame_side=sampling.max_frame_side,
+            )
+            for window, frames in zip(windows, window_frames):
                 if len(frames) < max(1, sampling.min_frames):
                     continue
-                self._merge_window(
+                # A window's segments index its own frames; the timeline
+                # counts the clip's.
+                merge_window_segments(
                     timeline=timeline,
-                    window_frame_indices=window.frame_indices[: len(frames)],
+                    frame_numbers=window.frame_indices[: len(frames)],
                     segments=self._model.infer(
                         frames=frames,
                         class_names=class_filter,
                         fps=window.sample_fps,
                     ),
                     id_vocabulary=id_vocabulary,
-                    source_fps=source_fps,
-                    window_sample_fps=window.sample_fps,
+                    stride=max(1.0, source_fps / window.sample_fps),
                 )
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         return ActionRecognitionInferenceResponse(
@@ -2049,42 +2035,6 @@ class InferenceModelsActionRecognitionAdapter(Model):
             frame_count=frame_count,
             windows_classified=len(windows),
         )
-
-    def _merge_window(
-        self,
-        timeline: List[ActionRecognitionSegment],
-        window_frame_indices: Any,
-        segments: List[Any],
-        id_vocabulary: Optional[List[str]],
-        source_fps: float,
-        window_sample_fps: float,
-    ) -> None:
-        sample_count = len(window_frame_indices)
-        if sample_count == 0:
-            return
-        # A window's segments index its own frames; the timeline counts the
-        # clip's.
-        stride = max(1.0, source_fps / window_sample_fps)
-        for segment in segments:
-            start_idx = min(sample_count - 1, max(0, int(segment.start_frame_idx)))
-            end_idx = min(sample_count - 1, max(0, int(segment.end_frame_idx)))
-            if start_idx > end_idx:
-                start_idx, end_idx = end_idx, start_idx
-            merge_segment(
-                timeline=timeline,
-                segment=ActionRecognitionSegment(
-                    start_frame_idx=window_frame_indices[start_idx],
-                    end_frame_idx=window_frame_indices[end_idx],
-                    class_name=segment.class_name,
-                    class_id=(
-                        id_vocabulary.index(segment.class_name)
-                        if id_vocabulary is not None
-                        and segment.class_name in id_vocabulary
-                        else -1
-                    ),
-                ),
-                stride=stride,
-            )
 
     def preprocess(self, *args, **kwargs):
         raise NotImplementedError(
@@ -2116,6 +2066,31 @@ def _weights_id(model_id: str) -> str:
     if model_id.endswith(task_suffix):
         return model_id[: -len(task_suffix)]
     return model_id
+
+
+def load_action_recognition_model(
+    model_id: str, api_key: Optional[str] = None, **kwargs
+) -> ActionRecognitionModel:
+    """Load a model for this task the way every entry point loads it.
+
+    The HTTP adapter and the workflow block both come through here, so one
+    model id cannot resolve to different weights, or load under different
+    trust settings, depending on which surface asked for it.
+    """
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
+    loaded_model = AutoModel.from_pretrained(
+        model_id_or_path=_weights_id(model_id=model_id),
+        api_key=api_key,
+        allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+        allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+        weights_provider_extra_headers=get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        ),
+        backend=_get_enabled_inference_models_backends(),
+        **kwargs,
+    )
+    return _as_action_recognition_model(model=loaded_model, model_id=model_id)
 
 
 def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognitionModel:

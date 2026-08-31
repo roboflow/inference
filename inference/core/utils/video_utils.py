@@ -3,10 +3,11 @@ import binascii
 import contextlib
 import os
 import tempfile
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+from requests import RequestException
 
 from inference.core.env import OFFLINE_MODE
 from inference.core.exceptions import InputImageLoadError, InvalidImageTypeDeclared
@@ -15,6 +16,7 @@ from inference.core.utils.image_utils import (
     _fetch_image_bytes_from_url,
     _validate_url_destination,
 )
+from inference.core.utils.url_input import URLAddressNotAllowedError
 
 VIDEO_TYPE_URL = "url"
 VIDEO_TYPE_BASE64 = "base64"
@@ -38,7 +40,18 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
             raise InputImageLoadError(message=message, public_message=message)
         _ensure_url_input_allowed()
         prepared_url = _validate_url_destination(value=value)
-        payload = _fetch_image_bytes_from_url(prepared_url=prepared_url)
+        try:
+            payload = _fetch_image_bytes_from_url(prepared_url=prepared_url)
+        except URLAddressNotAllowedError as error:
+            message = "URL points to a network destination that is not allowed."
+            raise InputImageLoadError(
+                message=f"{message} Details: {error}", public_message=message
+            ) from error
+        except (RequestException, ConnectionError) as error:
+            message = "Video could not be fetched from the URL."
+            raise InputImageLoadError(
+                message=f"{message} Details: {error}", public_message=message
+            ) from error
     elif video_type == VIDEO_TYPE_BASE64:
         try:
             payload = base64.b64decode(value)
@@ -83,41 +96,71 @@ def probe_video(path: str) -> Tuple[float, int]:
     return source_fps, frame_count
 
 
-def read_frames(
-    path: str, frame_indices: Sequence[int], max_frame_side: Optional[int] = None
-) -> List[np.ndarray]:
-    """Read the named frames as RGB, longest side capped at ``max_frame_side``.
+def read_frame_windows(
+    path: str,
+    windows: Sequence[Sequence[int]],
+    max_frame_side: Optional[int] = None,
+) -> Iterator[List[np.ndarray]]:
+    """Read every window's frames in one pass, yielding a window at a time.
 
-    ``max_frame_side`` of ``None`` reads the frames at their own size, which is
-    what a model that never trained on a frame side needs.
+    Windows tile forward, so one walk of the video serves all of them. Reading
+    each window on its own capture re-decodes everything the windows before it
+    already decoded, which grows with the square of the clip length.
 
     Frames are read in order rather than sought. A sought frame and a
     sequentially decoded one are not the same pixels for every codec, and the
-    model's answer moves with them.
+    model's answer moves with them. ``max_frame_side`` of ``None`` reads the
+    frames at their own size, which is what a model that never trained on a
+    frame side needs.
     """
-    wanted = sorted(set(int(index) for index in frame_indices))
-    if not wanted:
-        return []
-    by_index = {}
+    if not windows:
+        return
+    needed = {int(index) for window in windows for index in window}
+    last_of = [max((int(i) for i in window), default=-1) for window in windows]
+    by_index: Dict[int, np.ndarray] = {}
+    emitted = 0
+
+    def _window_frames(index: int) -> List[np.ndarray]:
+        return [by_index[i] for i in windows[index] if i in by_index]
+
     capture = cv2.VideoCapture(path)
     try:
         if not capture.isOpened():
             message = "Video could not be decoded."
             raise InputImageLoadError(message=message, public_message=message)
-        last_wanted = wanted[-1]
         position = 0
-        pending = set(wanted)
-        while position <= last_wanted:
+        stop = max(needed) if needed else -1
+        while emitted < len(windows) and position <= stop:
             read_succeeded, frame = capture.read()
             if not read_succeeded:
                 break
-            if position in pending:
+            if position in needed:
                 by_index[position] = _to_rgb(frame=frame, max_side=max_frame_side)
-                pending.discard(position)
+            while emitted < len(windows) and last_of[emitted] <= position:
+                yield _window_frames(emitted)
+                emitted += 1
+                # Hold only what a window still to come asks for.
+                still_wanted = {int(i) for window in windows[emitted:] for i in window}
+                by_index = {i: f for i, f in by_index.items() if i in still_wanted}
             position += 1
     finally:
         capture.release()
-    return [by_index[index] for index in frame_indices if index in by_index]
+    # A truncated video leaves the trailing windows short, and the caller
+    # drops the ones that fall under the model's minimum.
+    while emitted < len(windows):
+        yield _window_frames(emitted)
+        emitted += 1
+
+
+def read_frames(
+    path: str, frame_indices: Sequence[int], max_frame_side: Optional[int] = None
+) -> List[np.ndarray]:
+    """Read one window's frames. See :func:`read_frame_windows`."""
+    for frames in read_frame_windows(
+        path=path, windows=[list(frame_indices)], max_frame_side=max_frame_side
+    ):
+        return frames
+    return []
 
 
 def _to_rgb(frame: np.ndarray, max_side: Optional[int]) -> np.ndarray:

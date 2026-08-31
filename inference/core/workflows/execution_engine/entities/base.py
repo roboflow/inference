@@ -23,6 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionPrediction,
+)
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -217,17 +220,6 @@ class VideoMetadata(BaseModel):
         "if not possible to be determined - pass None",
         default=None,
     )
-
-
-class ActionRecognitionPrediction(BaseModel):
-    """A classified frame segment in a video."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    start_frame_idx: int
-    end_frame_idx: int
-    class_name: str = Field(alias="class")
-    class_id: int
 
 
 class ParentOrigin(BaseModel):

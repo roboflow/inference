@@ -65,9 +65,10 @@ def _clip(frame_count: int, source_fps: float):
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
         f"{MODULE}.probe_video", return_value=(source_fps, frame_count)
     ), patch(
-        f"{MODULE}.read_frames",
-        side_effect=lambda path, frame_indices, max_frame_side: [frame]
-        * len(frame_indices),
+        f"{MODULE}.read_frame_windows",
+        side_effect=lambda path, windows, max_frame_side: (
+            [frame] * len(window) for window in windows
+        ),
     ):
         source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
         source_path.return_value.__exit__ = MagicMock(return_value=False)

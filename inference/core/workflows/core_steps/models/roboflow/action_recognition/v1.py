@@ -3,7 +3,7 @@
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -11,7 +11,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference.core import logger
 from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.models.action_recognition import merge_window_segments
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
@@ -46,13 +46,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_models.models.base.action_recognition import (
-    WHOLE_VIDEO_MODE,
-    ActionRecognitionModel,
-)
-from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
-from inference_models.models.base.action_recognition import VideoSampling, merge_segment
+from inference_models.models.base.action_recognition import (
+    WHOLE_VIDEO_MODE,
+    VideoSampling,
+)
 
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
@@ -250,28 +249,15 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _get_model(self, model_id: str):
         if self._model is None or self._current_model_id != model_id:
-            from inference_models import AutoModel
-
-            loaded_model = AutoModel.from_pretrained(
-                model_id_or_path=model_id,
-                api_key=self._api_key,
-                weights_provider_extra_headers=get_extra_weights_provider_headers(),
+            # Imported here so loading the block does not pull the adapters
+            # module, and so both surfaces load a model id identically.
+            from inference.core.models.inference_models_adapters import (
+                load_action_recognition_model,
             )
-            if not isinstance(loaded_model, ActionRecognitionModel):
-                from inference_models.models.cosmos3.cosmos3_action_recognition import (
-                    Cosmos3EdgeActionRecognition,
-                )
-                from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
-                    Cosmos3EdgeReasoner,
-                )
 
-                if isinstance(loaded_model, Cosmos3EdgeReasoner):
-                    loaded_model = Cosmos3EdgeActionRecognition(reasoner=loaded_model)
-                else:
-                    raise ValueError(
-                        f"Model {model_id} does not support action recognition."
-                    )
-            self._model = loaded_model
+            self._model = load_action_recognition_model(
+                model_id=model_id, api_key=self._api_key
+            )
             self._current_model_id = model_id
             self._video_bookkeeping.clear()
         return self._model
@@ -525,36 +511,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         stride: float,
     ) -> None:
-        sampled_count = len(bookkeeping.sampled)
-        for segment in segments:
-            class_name = segment.class_name
-            if block_filter is not None and class_name not in block_filter:
-                continue
-            start_idx = min(
-                sampled_count - 1,
-                max(0, int(segment.start_frame_idx)),
-            )
-            end_idx = min(
-                sampled_count - 1,
-                max(0, int(segment.end_frame_idx)),
-            )
-            if start_idx > end_idx:
-                start_idx, end_idx = end_idx, start_idx
-            segment = ActionRecognitionPrediction(
-                start_frame_idx=bookkeeping.sampled[start_idx][0],
-                end_frame_idx=bookkeeping.sampled[end_idx][0],
-                class_name=class_name,
-                class_id=(
-                    id_vocabulary.index(class_name)
-                    if id_vocabulary is not None and class_name in id_vocabulary
-                    else -1
-                ),
-            )
-            merge_segment(
-                timeline=bookkeeping.timeline,
-                segment=segment,
-                stride=stride,
-            )
+        merge_window_segments(
+            timeline=bookkeeping.timeline,
+            frame_numbers=[frame_number for frame_number, _ in bookkeeping.sampled],
+            segments=segments,
+            id_vocabulary=id_vocabulary,
+            stride=stride,
+            class_filter=block_filter,
+        )
         bookkeeping.timeline.sort(
             key=lambda entry: (
                 entry.start_frame_idx,
