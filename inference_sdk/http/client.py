@@ -2600,6 +2600,11 @@ class InferenceHTTPClient:
         holds the whole request in memory, so a gateway rejects a large one;
         it suits a short clip and a quick test.
 
+        The call follows the client mode. ``select_api_v0()`` reaches the
+        legacy route, which is what serverless inference serves today, and
+        ``select_api_v1()`` reaches ``/infer/action_recognition``. Both answer
+        with the same shape.
+
         Args:
             video: The clip, as a URL or as base64 content.
             model_id: The model to classify with.
@@ -2618,6 +2623,13 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        if self.__client_mode is HTTPClientMode.V0:
+            return self.__infer_action_recognition_v0(
+                video=video,
+                model_id=model_id,
+                video_type=video_type,
+                class_filter=class_filter,
+            )
         payload = self.__initialise_payload()
         payload["model_id"] = model_id
         payload["video"] = {"type": video_type, "value": video}
@@ -2629,6 +2641,40 @@ class InferenceHTTPClient:
             json=payload,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    def __infer_action_recognition_v0(
+        self,
+        video: str,
+        model_id: str,
+        video_type: str,
+        class_filter: Optional[List[str]],
+    ) -> dict:
+        """Reach the same task on the legacy route, which serverless serves.
+
+        v0 carries options on the query string and the clip in the body, so a
+        URL rides in ``image`` and base64 content rides as the raw body.
+        """
+        model_id_chunks = model_id.split("/")
+        if len(model_id_chunks) != 2:
+            raise InvalidModelIdentifier(
+                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
+            )
+        params = self.__legacy_api_key_payload()
+        if class_filter:
+            params["class_filter"] = ",".join(class_filter)
+        url = f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}"
+        headers = self.__headers_with_auth(DEFAULT_HEADERS)
+        if video_type == "url":
+            params["image"] = video
+            response = requests.post(url, params=params, headers=headers)
+        else:
+            body_headers = dict(headers or {})
+            body_headers["Content-Type"] = "application/x-www-form-urlencoded"
+            response = requests.post(
+                url, params=params, data=video, headers=body_headers
+            )
         api_key_safe_raise_for_status(response=response)
         return response.json()
 

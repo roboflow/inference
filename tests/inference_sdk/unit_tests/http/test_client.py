@@ -5506,3 +5506,75 @@ def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> No
     with warnings.catch_warnings():
         warnings.simplefilter("error", InferenceSDKGuidanceWarning)
         http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+@mock.patch.object(client, "requests")
+def test_infer_action_recognition_uses_the_v1_route(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_action_recognition(
+        video="https://example.com/clip.mp4", model_id="some/1"
+    )
+
+    call = requests_mock.post.call_args
+    assert call.args[0].startswith("http://some.com/infer/action_recognition")
+    assert call.kwargs["json"]["video"] == {
+        "type": "url",
+        "value": "https://example.com/clip.mp4",
+    }
+
+
+@mock.patch.object(client, "requests")
+def test_infer_action_recognition_follows_the_client_into_v0(requests_mock) -> None:
+    # Serverless serves the legacy route, so select_api_v0 has to reach it
+    # rather than silently calling v1.
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_action_recognition(
+        video="https://example.com/clip.mp4",
+        model_id="some/1",
+        class_filter=["walk", "run"],
+    )
+
+    call = requests_mock.post.call_args
+    assert call.args[0] == "http://some.com/some/1"
+    # v0 carries the options on the query string.
+    assert call.kwargs["params"]["image"] == "https://example.com/clip.mp4"
+    assert call.kwargs["params"]["class_filter"] == "walk,run"
+
+
+@mock.patch.object(client, "requests")
+def test_infer_action_recognition_v0_sends_base64_as_the_body(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_action_recognition(
+        video="Zm9v", model_id="some/1", video_type="base64"
+    )
+
+    call = requests_mock.post.call_args
+    assert call.kwargs["data"] == "Zm9v"
+    assert "image" not in call.kwargs["params"]
+
+
+def test_infer_action_recognition_v0_rejects_a_model_id_without_a_version() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidModelIdentifier):
+        api_client.infer_action_recognition(video="Zm9v", model_id="no-version")
