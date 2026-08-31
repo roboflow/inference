@@ -297,6 +297,9 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
         dist/inference_sdk*.whl \
         "setuptools~=83.0.0"
 
+RUN python3 -m pip install --no-cache-dir --no-deps './inference_models[torch-cu124,onnx-cu12]' && \
+    python3 -m pip install --no-cache-dir ./inference_model_manager ./inference_server
+
 RUN find /usr/local/lib/python3.10 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \

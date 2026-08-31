@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     CreditsExceededError,
     FeatureDeprecatedError,
     InferenceModelNotFound,
+    InferencePayloadTooLargeError,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
     InvalidMaskDecodeArgument,
@@ -523,6 +524,12 @@ def with_route_exceptions(route):
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
+        except InferencePayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": str(error) or "Request payload too large."},
+            )
         except (
             ClientCausedStepExecutionError,
             RuntimeLimitsCausedStepExecutionError,
@@ -995,6 +1002,12 @@ def with_route_exceptions_async(route):
                 content={
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
+            )
+        except InferencePayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": str(error) or "Request payload too large."},
             )
         except (
             ClientCausedStepExecutionError,

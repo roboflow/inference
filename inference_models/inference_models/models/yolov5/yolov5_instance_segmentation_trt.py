@@ -60,7 +60,10 @@ from inference_models.models.yolov5.nms import run_yolov5_nms_for_instance_segme
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLOv5 model with TRT backend on GPU requires pycuda installation, which is brought with "
