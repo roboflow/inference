@@ -8,10 +8,10 @@ import torch
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
-    BlockManifest,
+    ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
-    ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
+    BlockManifest,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -53,22 +53,15 @@ class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
             }
             name_to_id = {name: index for index, name in class_names.items()}
             predicted_class_ids = [
-                name_to_id[name]
-                for name in window_class_names
-                if name in name_to_id
+                name_to_id[name] for name in window_class_names if name in name_to_id
             ]
             confidence = [0.0] * len(id_vocabulary)
             for class_id in predicted_class_ids:
                 confidence[class_id] = 1.0
         else:
-            class_names = {
-                index: name for index, name in enumerate(window_class_names)
-            }
+            class_names = {index: name for index, name in enumerate(window_class_names)}
             predicted_class_ids = list(range(len(window_class_names)))
             confidence = [1.0] * len(window_class_names)
-
-        if not window_class_names:
-            confidence = []
 
         height, width = image._read_shape_without_materialization()
         return MultiLabelClassificationPrediction(
@@ -84,6 +77,9 @@ class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
             ),
             image_metadata={
                 CLASS_NAMES_KEY: class_names,
+                # The vector is gap-filled, so the serialiser drops the
+                # inactive classes and matches the numpy sibling's payload.
+                "classification_confidence_threshold": 1.0,
                 CLASSIFICATION_STYLE_KEY: CLASSIFICATION_STYLE_MODEL,
                 PREDICTION_TYPE_KEY: "classification",
                 IMAGE_DIMENSIONS_KEY: [height, width],

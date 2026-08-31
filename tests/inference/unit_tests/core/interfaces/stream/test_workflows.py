@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.interfaces.stream.model_handlers.workflows import (
     PipelinedWorkflowRunner,
     WorkflowRunner,
@@ -211,48 +210,6 @@ class _FakeDownstreamPipelinedExecutionEngine:
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.flush_calls.append(frame_number)
         return [{"result": f"downstream-frame-{frame_number}"}]
-
-
-class _FakeZeroDepthStreamStep:
-    def is_stream_pipelined(self) -> bool:
-        return True
-
-    def stream_pipeline_depth(self) -> int:
-        return 0
-
-
-class _FakeZeroDepthExecutionEngine:
-    def __init__(self) -> None:
-        self.step = _FakeZeroDepthStreamStep()
-        self._engine = SimpleNamespace(
-            _compiled_workflow=SimpleNamespace(
-                steps={"video-classification": SimpleNamespace(step=self.step)}
-            )
-        )
-        self.flush_calls = []
-
-    def run(
-        self,
-        runtime_parameters,
-        fps,
-        serialize_results,
-        _is_preview,
-        defer_stream_pipeline_flush=False,
-        resolve_output_futures=True,
-    ):
-        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
-        return [{"timeline": f"frame-{frame_number}"}]
-
-    def flush_stream_pipeline(
-        self,
-        runtime_parameters,
-        fps,
-        serialize_results,
-        _is_preview,
-    ):
-        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
-        self.flush_calls.append(frame_number)
-        return [{"timeline": f"tail-{frame_number}"}]
 
 
 class _ImmediateExecutor:
@@ -624,34 +581,6 @@ def test_wrap_workflow_runner_leaves_non_pipelined_workflows_unchanged() -> None
         )
         is runner
     )
-
-
-def test_zero_depth_stream_pipeline_flush_uses_the_last_frame_batch() -> None:
-    engine = _FakeZeroDepthExecutionEngine()
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-    assert isinstance(runner, PipelinedWorkflowRunner)
-    frame = _make_frame(7)
-
-    result = runner([frame])
-    flushed_result = runner.flush()
-
-    assert result is not None
-    assert result.predictions == [{"timeline": "frame-7"}]
-    assert result.video_frames == [frame]
-    assert isinstance(flushed_result, InferenceHandlerResult)
-    assert flushed_result.predictions == [{"timeline": "tail-7"}]
-    assert flushed_result.video_frames == [frame]
-    assert engine.flush_calls == [7]
-    assert runner.flush() is None
 
 
 def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> None:

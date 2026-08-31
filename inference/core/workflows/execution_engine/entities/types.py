@@ -155,11 +155,13 @@ list of dictionaries. Each dictionary has these keys:
 * `start_frame_idx`: The first frame in the segment.
 * `end_frame_idx`: The last frame in the segment.
 * `class`: The class name.
-* `class_id`: The class position in the block's `class_names` input.
+* `class_id`: The class position in the model's own class list. A model
+without a class list reports -1.
 
-A range that contains the last classified frame is open and provisional. Its
-`end_frame_idx` advances as the stream advances. A later classification window
-closes the range when the class is absent.
+Ranges only grow, and only when a later classification gives the block
+evidence to merge. The block never extends or retracts a range on its own, so
+a range ends at the last frame a classification confirmed. Ranges of different
+classes can overlap.
 """
 ACTION_RECOGNITION_PREDICTION_KIND = Kind(
     name="action_recognition_prediction",

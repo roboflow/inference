@@ -106,9 +106,7 @@ class _FakeActionRecognitionModel(ActionRecognitionModel):
         self.calls.append(
             {
                 "frames": recorded_frames,
-                "class_names": (
-                    list(class_names) if class_names is not None else None
-                ),
+                "class_names": (list(class_names) if class_names is not None else None),
                 "fps": fps,
             }
         )
@@ -161,6 +159,9 @@ def _make_frame(
         image_kwargs["numpy_image"] = np.full((2, 2, 3), color, dtype=np.uint8)
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=f"{video_id}:{frame_number}"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            parent_id=f"{video_id}:root"
+        ),
         video_metadata=metadata,
         **image_kwargs,
     )
@@ -174,9 +175,7 @@ def _make_block(
     model_class_names: Optional[List[str]] = None,
 ):
     block_type = (
-        TensorActionRecognitionModelBlockV1
-        if tensor
-        else ActionRecognitionModelBlockV1
+        TensorActionRecognitionModelBlockV1 if tensor else ActionRecognitionModelBlockV1
     )
     block = block_type(
         model_manager=MagicMock(),
@@ -188,6 +187,7 @@ def _make_block(
         class_names=model_class_names,
     )
     block._model = model
+    block._current_model_id = "cosmos-3-edge"
     return block, model
 
 
@@ -291,9 +291,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest_type.describe_outputs()[0].kind == [
         ACTION_RECOGNITION_PREDICTION_KIND
     ]
-    assert manifest_type.describe_outputs()[1].kind == [
-        CLASSIFICATION_PREDICTION_KIND
-    ]
+    assert manifest_type.describe_outputs()[1].kind == [CLASSIFICATION_PREDICTION_KIND]
     assert manifest_type.describe_outputs()[1].name == "window_classes"
     assert manifest_type.describe_outputs()[2].name == "error_status"
     assert manifest_type.describe_outputs()[2].kind == [STRING_KIND]
@@ -368,15 +366,11 @@ def test_first_frame_anchors_cadence_and_first_fire_waits_for_stride():
     first_fire_result = _run(block, _make_frame(12))
 
     assert len(model.calls) == 1
-    assert [entry.class_name for entry in first_fire_result["timeline"]] == [
-        "walk"
-    ]
+    assert [entry.class_name for entry in first_fire_result["timeline"]] == ["walk"]
 
 
 def test_first_scheduled_classification_sends_rgb_stride_buffer():
-    block, model = _make_block(
-        responses=[[_model_segment("walk")]]
-    )
+    block, model = _make_block(responses=[[_model_segment("walk")]])
 
     _run(block, _make_frame(0, bgr_color=[1, 2, 3]))
     result = _run(block, _make_frame(2))
@@ -496,13 +490,11 @@ def test_numpy_window_classes_uses_legacy_multi_label_classification_shape():
 
     window_classes = result["window_classes"]
     assert window_classes["image"] == {"width": 2, "height": 2}
-    assert window_classes["predictions"] == {
-        "walk": {"confidence": 1.0, "class_id": 0}
-    }
+    assert window_classes["predictions"] == {"walk": {"confidence": 1.0, "class_id": 0}}
     assert window_classes["predicted_classes"] == ["walk"]
     assert window_classes["prediction_type"] == "classification"
     assert window_classes["parent_id"] == "stream-0:2"
-    assert window_classes["root_parent_id"] == "stream-0:2"
+    assert window_classes["root_parent_id"] == "stream-0:root"
     assert UUID(window_classes["inference_id"]).version == 4
 
 
@@ -539,7 +531,7 @@ def test_tensor_window_classes_uses_dense_vocabulary():
     assert metadata[PREDICTION_TYPE_KEY] == "classification"
     assert metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
     assert metadata[PARENT_ID_KEY] == "stream-0:2"
-    assert metadata[ROOT_PARENT_ID_KEY] == "stream-0:2"
+    assert metadata[ROOT_PARENT_ID_KEY] == "stream-0:root"
     assert UUID(metadata[INFERENCE_ID_KEY]).version == 4
 
 
@@ -580,7 +572,7 @@ def test_tensor_window_classes_uses_open_vocabulary_label_order():
     )
 
 
-def test_tensor_window_classes_empty_fire_uses_empty_tensors():
+def test_tensor_window_classes_empty_fire_keeps_the_dense_confidence():
     from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
         to_legacy_classification_prediction,
     )
@@ -607,7 +599,12 @@ def test_tensor_window_classes_empty_fire_uses_empty_tensors():
     assert window_classes.class_ids.dtype is torch.long
     assert window_classes.class_ids.numel() == 0
     assert window_classes.confidence.dtype is torch.float32
-    assert window_classes.confidence.numel() == 0
+    # A declared vocabulary keeps its full distribution; the native type
+    # promises one confidence per class on every frame.
+    torch.testing.assert_close(
+        window_classes.confidence.cpu(),
+        torch.zeros(2, dtype=torch.float32),
+    )
     assert window_classes.image_metadata[CLASS_NAMES_KEY] == {
         0: "walk",
         1: "run",
@@ -615,7 +612,10 @@ def test_tensor_window_classes_empty_fire_uses_empty_tensors():
     assert window_classes.image_metadata[IMAGE_DIMENSIONS_KEY] == [2, 2]
     assert to_legacy_classification_prediction(window_classes) == {
         "image": {"width": 2, "height": 2},
-        "predictions": {},
+        "predictions": {
+            "walk": {"confidence": 0.0, "class_id": 0},
+            "run": {"confidence": 0.0, "class_id": 1},
+        },
         "predicted_classes": [],
     }
 
@@ -839,268 +839,16 @@ def test_min_frames_gates_the_first_fire():
     assert len(model.calls[0]["frames"]) == 4
 
 
-def test_flush_classifies_short_clip_below_default_window():
-    block, model = _make_block(
-        responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=3)]]
-    )
-
-    for frame_number in range(4):
-        result = _run(
-            block,
-            _make_frame(frame_number),
-            window_seconds=2.0,
-            stride_seconds=None,
-            sample_fps=4.0,
-            min_frames=4,
-        )
-
-    assert block.is_stream_pipelined() is True
-    assert block.stream_pipeline_depth() == 0
-    assert result["timeline"] == []
-    assert model.calls == []
-
-    flushed = block.flush_stream_pipeline_outputs()
-
-    assert len(flushed) == 1
-    indices, outputs = flushed[0]
-    assert indices == [(0,)]
-    assert len(outputs) == 1
-    assert len(model.calls) == 1
-    assert len(model.calls[0]["frames"]) == 4
-    assert [frame[0, 0, 2] for frame in model.calls[0]["frames"]] == [
-        0,
-        1,
-        2,
-        3,
-    ]
-    assert _timeline_as_dicts(outputs[0]) == [
-        {
-            "start_frame_idx": 0,
-            "end_frame_idx": 3,
-            "class_name": "walk",
-            "class_id": 0,
-        }
-    ]
-    assert _window_class_names(outputs[0]) == ["walk"]
-
-
-def test_flush_classifies_tail_after_a_scheduled_fire():
-    block, model = _make_block(
-        responses=[
-            [_model_segment("walk", start_frame_idx=0, end_frame_idx=2)],
-            [_model_segment("walk", start_frame_idx=0, end_frame_idx=3)],
-        ]
-    )
-
-    for frame_number in range(4):
-        result = _run(
-            block,
-            _make_frame(frame_number),
-            sample_fps=4.0,
-        )
-
-    assert len(model.calls) == 1
-    assert result["timeline"][0].end_frame_idx == 2
-
-    flushed = block.flush_stream_pipeline_outputs()
-
-    assert len(model.calls) == 2
-    assert len(flushed) == 1
-    assert flushed[0][0] == [(0,)]
-    assert flushed[0][1][0]["timeline"][0].end_frame_idx == 3
-
-
-def test_flush_immediately_after_fire_without_new_sample_returns_empty():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
-
-    for frame_number in range(3):
-        _run(
-            block,
-            _make_frame(frame_number),
-            sample_fps=4.0,
-        )
-
-    assert len(model.calls) == 1
-    assert block.flush_stream_pipeline_outputs() == []
-    assert len(model.calls) == 1
-
-
-def test_flush_skips_buffer_below_model_minimum():
+def test_tracked_video_count_is_bounded():
     block, model = _make_block()
 
-    for frame_number in range(3):
-        _run(
-            block,
-            _make_frame(frame_number),
-            window_seconds=2.0,
-            stride_seconds=None,
-            sample_fps=4.0,
-            min_frames=4,
-        )
+    # A crop step mints a fresh video identifier per detection per frame.
+    for frame_number in range(video_classification_module.MAX_TRACKED_VIDEOS + 20):
+        _run(block, _make_frame(0, video_id=f"stream-{frame_number}"))
 
-    assert block.flush_stream_pipeline_outputs() == []
-    assert model.calls == []
-
-
-def test_flush_emits_only_video_with_a_pending_tail():
-    block, model = _make_block(
-        responses=[
-            [_model_segment("walk", start_frame_idx=0, end_frame_idx=2)],
-            [_model_segment("run", start_frame_idx=0, end_frame_idx=1)],
-        ]
+    assert (
+        len(block._video_bookkeeping) <= video_classification_module.MAX_TRACKED_VIDEOS
     )
-    model.video_sampling = VideoSampling(
-        window_seconds=1.0,
-        sample_fps=4.0,
-        min_frames=1,
-    )
-    first_batch = Batch.init(
-        content=[
-            _make_frame(0, video_id="a"),
-            _make_frame(0, video_id="b"),
-        ],
-        indices=[(0,), (1,)],
-    )
-    second_batch = Batch.init(
-        content=[
-            _make_frame(2, video_id="a"),
-            _make_frame(1, video_id="b"),
-        ],
-        indices=[(0,), (1,)],
-    )
-
-    block.run(
-        images=first_batch,
-        class_filter=["walk", "run"],
-        model_id="cosmos-3-edge",
-        stride_seconds=0.5,
-    )
-    block.run(
-        images=second_batch,
-        class_filter=["walk", "run"],
-        model_id="cosmos-3-edge",
-        stride_seconds=0.5,
-    )
-    assert len(model.calls) == 1
-
-    flushed = block.flush_stream_pipeline_outputs()
-
-    assert len(model.calls) == 2
-    assert len(flushed) == 1
-    assert flushed[0][0] == [(1,)]
-    assert [entry.class_name for entry in flushed[0][1][0]["timeline"]] == [
-        "run"
-    ]
-
-
-def test_whole_video_mode_never_fires_on_the_stride_schedule():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
-    model.video_sampling = VideoSampling(
-        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
-    )
-
-    for frame_number in range(40):
-        block.run(
-            images=[_make_frame(frame_number, fps=4.0)],
-            class_filter=["walk", "run"],
-            model_id="cosmos-3-edge",
-            stride_seconds=0.5,
-        )
-
-    assert model.calls == []
-
-
-def test_whole_video_mode_classifies_once_at_end_of_stream():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
-    model.video_sampling = VideoSampling(
-        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
-    )
-    for frame_number in range(40):
-        block.run(
-            images=[_make_frame(frame_number, fps=4.0)],
-            class_filter=["walk", "run"],
-            model_id="cosmos-3-edge",
-            stride_seconds=0.5,
-        )
-
-    flushed = block.flush_stream_pipeline_outputs()
-
-    assert len(model.calls) == 1
-    assert len(flushed) == 1
-    _, outputs = flushed[0]
-    assert [entry.class_name for entry in outputs[0]["timeline"]] == ["walk"]
-
-
-def test_whole_video_buffer_spans_the_stream_within_the_frame_budget():
-    block, model = _make_block()
-    # 4 s at 2 fps is an 8-frame budget.
-    model.video_sampling = VideoSampling(
-        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
-    )
-
-    for frame_number in range(60):
-        block.run(
-            images=[_make_frame(frame_number, fps=4.0)],
-            class_filter=["walk", "run"],
-            model_id="cosmos-3-edge",
-            stride_seconds=0.5,
-        )
-
-    sampled = block._video_bookkeeping["stream-0"].sampled
-    sampled_numbers = [number for number, _ in sampled]
-    # The buffer holds the trained budget, keeps stream start, and reaches
-    # the newest sample instead of sliding away from the beginning.
-    assert len(sampled) <= 8
-    assert sampled_numbers[0] == 0
-    assert sampled_numbers[-1] >= 56
-
-
-def test_whole_video_flush_reports_the_thinned_buffer_rate():
-    block, model = _make_block(responses=[[_model_segment("walk")]])
-    model.video_sampling = VideoSampling(
-        window_seconds=4.0, sample_fps=2.0, min_frames=2, mode="whole_video"
-    )
-    for frame_number in range(60):
-        block.run(
-            images=[_make_frame(frame_number, fps=4.0)],
-            class_filter=["walk", "run"],
-            model_id="cosmos-3-edge",
-            stride_seconds=0.5,
-        )
-
-    block.flush_stream_pipeline_outputs()
-
-    sampled = block._video_bookkeeping["stream-0"].sampled
-    span_seconds = (sampled[-1][0] - sampled[0][0]) / 4.0
-    expected_fps = (len(sampled) - 1) / span_seconds
-    # Thinning halves the real rate; the model must hear the rate its
-    # frames actually carry, not the configured sample rate.
-    assert model.calls[0]["fps"] == pytest.approx(expected_fps)
-    assert model.calls[0]["fps"] < 2.0
-
-
-def test_consecutive_flush_calls_do_not_repeat_the_tail():
-    block, model = _make_block(
-        responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
-    )
-    for frame_number in range(2):
-        _run(
-            block,
-            _make_frame(frame_number),
-            window_seconds=2.0,
-            stride_seconds=None,
-            sample_fps=4.0,
-            min_frames=2,
-        )
-
-    first_flush = block.flush_stream_pipeline_outputs()
-    second_flush = block.flush_stream_pipeline_outputs()
-
-    assert len(first_flush) == 1
-    assert second_flush == []
-    assert len(model.calls) == 1
-    block.close_stream_pipeline()
-    assert block._video_bookkeeping == {}
 
 
 def test_fractional_sampling_stride_keeps_the_true_sample_rate():
@@ -1581,9 +1329,7 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
             )
             is tensor_enabled
         )
-        assert ACTION_RECOGNITION_PREDICTION_KIND in (
-            reloaded_loader.load_kinds()
-        )
+        assert ACTION_RECOGNITION_PREDICTION_KIND in (reloaded_loader.load_kinds())
         kind_name = ACTION_RECOGNITION_PREDICTION_KIND.name
         assert (
             reloaded_loader.KINDS_SERIALIZERS[kind_name]

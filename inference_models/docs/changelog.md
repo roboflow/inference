@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, tasks `vlm` and
+  `action-recognition`, backend `hugging-face`): video events returned as
+  class-labelled frame ranges. Fine-tune packages carry their own class list
+  and sampling contract; the hosted `cosmos-3-edge` base stays a reasoner.
+
 ---
 
 ## `0.36.0`
@@ -400,9 +407,6 @@
 - NVIDIA Cosmos 3 Edge reasoner (`cosmos-3-edge`, task `vlm`, backend `hugging-face`):
   image/video + text prompting via `prompt(...)` / `prompt_video(...)`, following the
   standard VLM contract. The generative world-model tower ships separately.
-- NVIDIA Cosmos 3 Edge action recognition (`cosmos-3-edge`, task
-  `action-recognition`, backend `hugging-face`): overlapping video events
-  returned as class-labelled frame ranges.
 - NVIDIA Cosmos 3 Edge generator (`cosmos-3-edge-world`, task `world-model`, backend
   `custom`): image-to-video (`generate_video`), forward dynamics (`start_rollout` +
   `forward_dynamics` with explicit session-state threading), and inverse dynamics

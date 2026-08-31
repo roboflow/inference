@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set
 
 import torch
 
@@ -234,12 +234,10 @@ class PipelinedWorkflowRunner:
         self._workflow_runner = workflow_runner
         self._stream_steps = stream_steps
         self._pending_video_frames: List[List[VideoFrame]] = []
-        self._last_video_frames: Optional[List[VideoFrame]] = None
 
     def __call__(
         self, video_frames: List[VideoFrame]
     ) -> Optional[InferenceHandlerResult]:
-        self._last_video_frames = video_frames
         # Resolving RF-DETR output futures here serializes postprocess before the
         # next frame can launch. The stream dispatcher resolves them after the
         # frame buffer delay, when they should already be ready.
@@ -264,28 +262,15 @@ class PipelinedWorkflowRunner:
             video_frames=emit_video_frames,
         )
 
-    def flush(
-        self,
-    ) -> Optional[Union[InferenceHandlerResult, List[InferenceHandlerResult]]]:
+    def flush(self) -> Optional[List[InferenceHandlerResult]]:
         stream_steps = self._stream_steps
         if not stream_steps:
             self._pending_video_frames.clear()
-            self._last_video_frames = None
             return None
-        if self._last_video_frames is None:
+        if not self._pending_video_frames:
             return None
         if len(stream_steps) != 1:
             raise RuntimeError("Stream pipeline flushing supports one pipelined step")
-        if not self._pending_video_frames:
-            video_frames = self._last_video_frames
-            self._last_video_frames = None
-            prediction = self._workflow_runner._flush_stream_pipeline(
-                video_frames=video_frames,
-            )
-            return InferenceHandlerResult(
-                predictions=prediction,
-                video_frames=video_frames,
-            )
         results = []
         for pending_video_frames in list(self._pending_video_frames):
             prediction = self._workflow_runner._flush_stream_pipeline(
@@ -298,11 +283,9 @@ class PipelinedWorkflowRunner:
                     video_frames=emit_video_frames,
                 )
             )
-        self._last_video_frames = None
         return results
 
     def close(self) -> None:
-        self._last_video_frames = None
         for stream_step in self._stream_steps:
             close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
             if callable(close_fn):

@@ -125,7 +125,9 @@ class Cosmos3EdgeReasoner:
             embedding_rows = model.get_input_embeddings().weight.shape[0]
             if embedding_rows < len(processor.tokenizer):
                 model.resize_token_embeddings(len(processor.tokenizer))
-            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model = PeftModel.from_pretrained(
+                model, model_name_or_path, torch_device=str(device)
+            )
             model = model.merge_and_unload()
             model.eval()
         return cls(model=model, processor=processor, device=device)
@@ -195,9 +197,7 @@ class Cosmos3EdgeReasoner:
             video_fps=video_fps,
             enable_thinking=enable_thinking,
         )
-        set_input_length = getattr(
-            prefix_allowed_tokens_fn, "set_input_length", None
-        )
+        set_input_length = getattr(prefix_allowed_tokens_fn, "set_input_length", None)
         if callable(set_input_length):
             # Generated-answer grammars do not need to parse the video/chat
             # prompt. Generic Transformers callbacks continue to receive the

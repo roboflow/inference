@@ -15,9 +15,6 @@ class ActionRecognitionPrediction:
     class_name: str
 
 
-WHOLE_VIDEO_SAMPLING_MODE = "whole_video"
-
-
 @dataclass(frozen=True)
 class VideoSampling:
     """The temporal contract a model is trained (or validated) for.
@@ -26,32 +23,12 @@ class VideoSampling:
     frames sampled per second, the fewest frames worth classifying, and
     the longest frame side the model was trained on.
 
-    ``whole_video`` mode models read a clip as one unit, with the frame
-    budget spread over its full length, so consumers classify once at the
-    end of the stream instead of on a window schedule.
     """
 
     window_seconds: float = 16.0
     sample_fps: float = 4.0
     min_frames: int = 4
-    mode: str = "sliding_window"
-    frame_budget: Optional[int] = None
     max_frame_side: int = 360
-
-    @property
-    def classifies_whole_video(self) -> bool:
-        return self.mode == WHOLE_VIDEO_SAMPLING_MODE
-
-    @property
-    def window_frames(self) -> int:
-        """Frames per classification.
-
-        Whole-video models give no meaning to the window length, so the
-        budget the model declares wins over the length-derived count.
-        """
-        if self.frame_budget is not None and self.frame_budget > 0:
-            return self.frame_budget
-        return max(1, round(self.window_seconds * self.sample_fps))
 
 
 class ActionRecognitionModel(ABC):

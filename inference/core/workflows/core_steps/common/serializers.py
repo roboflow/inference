@@ -65,8 +65,8 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
-    ParentOrigin,
     ActionRecognitionPrediction,
+    ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -365,6 +365,10 @@ def serialize_wildcard_kind(value: Any) -> Any:
         value = serialize_list(elements=value)
     elif isinstance(value, sv.Detections):
         value = serialise_sv_detections(detections=value)
+    elif isinstance(value, ActionRecognitionPrediction):
+        # Without this the model reaches clients by field name, so the
+        # timeline arrives as "class_name" where the kind declares "class".
+        value = serialize_action_recognition_prediction_kind(value=[value])[0]
     elif isinstance(value, datetime):
         value = serialize_timestamp(timestamp=value)
     return value

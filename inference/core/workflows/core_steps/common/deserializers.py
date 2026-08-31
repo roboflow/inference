@@ -62,9 +62,9 @@ from inference.core.workflows.execution_engine.constants import (
     VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
     ImageParentMetadata,
     ParentOrigin,
-    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )

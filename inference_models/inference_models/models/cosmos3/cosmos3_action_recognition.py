@@ -10,9 +10,9 @@ import torch
 
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.action_recognition import (
-    VideoSampling,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
+    VideoSampling,
 )
 from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
@@ -248,9 +248,7 @@ class _FineTunePrefixAllowedTokensFn:
             state: {
                 token_id: next_state
                 for token_id, decoded in token_text.items()
-                if (
-                    next_state := _advance_line_state(state=state, text=decoded)
-                )
+                if (next_state := _advance_line_state(state=state, text=decoded))
                 is not None
             }
             for state in _LINE_STATES
@@ -266,9 +264,7 @@ class _FineTunePrefixAllowedTokensFn:
         self._input_length = 0
 
     def for_classes(self, class_names: List[str]) -> "_FineTunePrefixAllowedTokensFn":
-        bound = _FineTunePrefixAllowedTokensFn.__new__(
-            _FineTunePrefixAllowedTokensFn
-        )
+        bound = _FineTunePrefixAllowedTokensFn.__new__(_FineTunePrefixAllowedTokensFn)
         bound.__dict__ = self.__dict__.copy()
         bound._allowed_class_token_ids = {
             self._class_token_ids[class_name] for class_name in class_names
@@ -316,15 +312,19 @@ class _FineTunePrefixAllowedTokensFn:
 
         if mode == "start":
             return sorted(
-                self._allowed_class_token_ids
-                | set(self._none_transitions[""].keys())
+                self._allowed_class_token_ids | set(self._none_transitions[""].keys())
             )
         if mode == "none":
             if state == "none":
                 return [self._eos_token_id] if self._eos_token_id is not None else []
             return sorted(self._none_transitions[state].keys())
         if state == _EXPECT_CLASS:
-            return sorted(self._allowed_class_token_ids)
+            # A trailing newline ends a valid answer, so generation must be
+            # able to stop here instead of inventing another span.
+            allowed = set(self._allowed_class_token_ids)
+            if self._eos_token_id is not None:
+                allowed.add(self._eos_token_id)
+            return sorted(allowed)
 
         result = set(self._line_transitions.get(state, {}).keys())
         if state == _LINE_COMPLETE_CLOSED and self._eos_token_id is not None:
@@ -476,16 +476,10 @@ def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
             return float(value)
         return fallback
 
-    mode = config.get("mode")
-    frames = config.get("window_frames")
     return VideoSampling(
         window_seconds=_positive("window_seconds", default.window_seconds),
         sample_fps=_positive("sample_fps", default.sample_fps),
         min_frames=int(_positive("min_frames", default.min_frames)),
-        mode=mode if isinstance(mode, str) and mode else default.mode,
-        frame_budget=(
-            int(frames) if isinstance(frames, (int, float)) and frames > 0 else None
-        ),
         max_frame_side=int(_positive("max_frame_side", default.max_frame_side)),
     )
 
@@ -529,10 +523,10 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeActionRecognition":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
+        tokenizer = getattr(reasoner._processor, "tokenizer", None)
+        carries_class_tokens = _has_class_tokens(tokenizer)
         class_names = _read_class_names_file(model_name_or_path)
-        if class_names is None and _has_class_tokens(
-            getattr(reasoner._processor, "tokenizer", None)
-        ):
+        if class_names is None and carries_class_tokens:
             # Falling through would serve a fine-tune as a zero-shot model.
             raise CorruptedModelPackageError(
                 message=(
@@ -541,11 +535,32 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        return cls(
+        if class_names and any("|" in class_name for class_name in class_names):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Model package {model_name_or_path} declares a class name "
+                    f"containing '|', which the span format cannot express."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        model = cls(
             reasoner=reasoner,
             class_names=class_names,
             video_sampling=_read_video_sampling(model_name_or_path),
         )
+        if (
+            class_names or carries_class_tokens
+        ) and model._fine_tune_prefix_allowed_tokens_fn is None:
+            # Serving these weights zero-shot would answer with the wrong
+            # prompt and no decoding constraint, and look like a result.
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Model package {model_name_or_path} lists class names that "
+                    f"do not match its class tokens."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        return model
 
     def infer(
         self,
@@ -604,9 +619,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
             "with start and end in seconds from the frame timestamps, in order "
             "of start time. Output `none` if none occurs."
         )
-        prompt = (
-            f"{user_prompt}{SYSTEM_PROMPT_SENTINEL}{FINE_TUNE_SYSTEM_PROMPT}"
-        )
+        prompt = f"{user_prompt}{SYSTEM_PROMPT_SENTINEL}{FINE_TUNE_SYSTEM_PROMPT}"
         generation_kwargs = dict(kwargs)
         generation_kwargs.update(
             enable_thinking=False,
@@ -677,10 +690,11 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         )
         answer = _answer_text(response)
         if vocabulary is not None:
-            match = re.search(r"[A-Za-z]", answer)
+            # Anchored: "Answer: B" must not read as the letter A.
+            match = re.fullmatch(r"\s*\(?([A-Za-z])\)?[\s.,:;)]*", answer)
             if match is None:
                 return []
-            class_index = ord(match.group(0).upper()) - ord("A")
+            class_index = ord(match.group(1).upper()) - ord("A")
             if class_index < 0 or class_index >= len(vocabulary):
                 return []
             label = vocabulary[class_index]

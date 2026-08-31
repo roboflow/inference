@@ -1,20 +1,13 @@
 """Stateful action recognition workflow block."""
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
-
-from inference_models.models.base.action_recognition import (
-    VideoSampling,
-    ActionRecognitionModel,
-)
-from inference_models.models.base.action_recognition import (
-    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
-)
 
 from inference.core import logger
 from inference.core.managers.base import ModelManager
@@ -24,20 +17,20 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
     normalise_class_names,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
     Batch,
     OutputDefinition,
-    ActionRecognitionPrediction,
     VideoMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
-    ACTION_RECOGNITION_PREDICTION_KIND,
     ImageInputField,
     RoboflowModelField,
     Selector,
@@ -52,9 +45,17 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.action_recognition import ActionRecognitionModel
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionPrediction as ModelActionRecognitionPrediction,
+)
+from inference_models.models.base.action_recognition import VideoSampling
 
 DEFAULT_MODEL_ID = "cosmos-3-edge"
 DEFAULT_SOURCE_FPS = 30.0
+# A crop step mints a video identifier per detection per frame, so the
+# per-video state needs a ceiling of its own.
+MAX_TRACKED_VIDEOS = 256
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
@@ -71,14 +72,11 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-When a stream ends, the block classifies sampled frames that arrived after the
-final scheduled call, provided the buffer meets the model's minimum frame
-count. This gives shorter-than-window clips and longer clip tails a final
-result.
-
-A model trained to read a clip as one unit reports whole video sampling. For
-these models the block holds a thinned set of frames that spans the stream and
-classifies once, when the stream ends.
+The block does not run an extra classification when a stream ends, so frames
+after the final scheduled call do not receive a result. On a finite clip, keep
+the stride shorter than the clip: the first classification waits one full
+stride, so a longer stride never runs. Tail classification requires an
+end-of-stream signal and is planned separately.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -99,15 +97,6 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
     return np.ascontiguousarray(image.numpy_image[:, :, ::-1])
 
 
-@dataclass(frozen=True)
-class _ResolvedVideoSampling:
-    video_sampling: VideoSampling
-    stride_frames: int
-    effective_sample_fps: float
-    sampling_stride: float
-    keep_alive_frames: int
-
-
 @dataclass
 class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
@@ -120,11 +109,6 @@ class _ActionRecognitionBookkeeping:
     signature: Tuple[Tuple[str, ...], float, float] = field(
         default_factory=lambda: ((), 0.0, 0.0)
     )
-    resolved_sampling: Optional[_ResolvedVideoSampling] = None
-    block_filter: Optional[List[str]] = None
-    id_vocabulary: Optional[List[str]] = None
-    last_image: Optional[WorkflowImageData] = None
-    last_batch_index: Optional[Tuple[int, ...]] = None
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -153,18 +137,18 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/roboflow_action_recognition_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    class_filter: Union[
-        Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(
-        default=None,
-        description=(
-            "List of accepted classes. For fine-tuned models, classes must exist "
-            "in the model's training set and the output is restricted to this "
-            "subset. For zero-shot models, detected events are classified "
-            "into this list. Leave empty to accept all classes (open "
-            "vocabulary on zero-shot models)."
-        ),
-        examples=[["a", "b", "c"], "$inputs.class_filter"],
+    class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
+        Field(
+            default=None,
+            description=(
+                "List of accepted classes. For fine-tuned models, classes must exist "
+                "in the model's training set and the output is restricted to this "
+                "subset. For zero-shot models, detected events are classified "
+                "into this list. Leave empty to accept all classes (open "
+                "vocabulary on zero-shot models)."
+            ),
+            examples=[["a", "b", "c"], "$inputs.class_filter"],
+        )
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
@@ -246,7 +230,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         self._step_execution_mode = step_execution_mode
         self._model = None
         self._current_model_id: Optional[str] = None
-        self._video_bookkeeping: Dict[str, _ActionRecognitionBookkeeping] = {}
+        self._video_bookkeeping: "OrderedDict[str, _ActionRecognitionBookkeeping]" = (
+            OrderedDict()
+        )
         self._warned_fps_video_ids: Set[str] = set()
 
     @classmethod
@@ -258,9 +244,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return BlockManifest
 
     def _get_model(self, model_id: str):
-        if self._model is not None and self._current_model_id is None:
-            self._current_model_id = model_id
-            return self._model
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
@@ -270,17 +253,15 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 weights_provider_extra_headers=get_extra_weights_provider_headers(),
             )
             if not isinstance(loaded_model, ActionRecognitionModel):
-                from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
-                    Cosmos3EdgeReasoner,
-                )
                 from inference_models.models.cosmos3.cosmos3_action_recognition import (
                     Cosmos3EdgeActionRecognition,
                 )
+                from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+                    Cosmos3EdgeReasoner,
+                )
 
                 if isinstance(loaded_model, Cosmos3EdgeReasoner):
-                    loaded_model = Cosmos3EdgeActionRecognition(
-                        reasoner=loaded_model
-                    )
+                    loaded_model = Cosmos3EdgeActionRecognition(reasoner=loaded_model)
                 else:
                     raise ValueError(
                         f"Model {model_id} does not support action recognition."
@@ -307,12 +288,11 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary = getattr(model, "class_names", None) or block_filter or None
         video_sampling = getattr(model, "video_sampling", None) or VideoSampling()
         results = []
-        for batch_index, image in zip(_batch_indices(images=images), images):
+        for image in images:
             results.append(
                 self._process_frame(
                     model=model,
                     image=image,
-                    batch_index=batch_index,
                     block_filter=block_filter,
                     id_vocabulary=id_vocabulary,
                     video_sampling=video_sampling,
@@ -325,7 +305,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         self,
         model,
         image: WorkflowImageData,
-        batch_index: Tuple[int, ...],
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         video_sampling: VideoSampling,
@@ -338,9 +317,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             if stride_seconds is None
             else float(stride_seconds)
         )
-        if requested_stride_seconds <= 0 or not math.isfinite(
-            requested_stride_seconds
-        ):
+        if requested_stride_seconds <= 0 or not math.isfinite(requested_stride_seconds):
             raise ValueError("Stride must be positive and finite.")
 
         signature = (
@@ -351,6 +328,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
         bookkeeping = self._video_bookkeeping.get(video_id)
+        if bookkeeping is not None:
+            self._video_bookkeeping.move_to_end(video_id)
         if (
             bookkeeping is None
             or bookkeeping.signature != signature
@@ -361,6 +340,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         ):
             bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
+            while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
+                evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
+                self._warned_fps_video_ids.discard(evicted_video_id)
+                logger.warning(
+                    "Action Recognition Model tracks at most %s videos and "
+                    "dropped the state of %s. A step that gives every frame a "
+                    "new video identifier, such as a crop, causes this.",
+                    MAX_TRACKED_VIDEOS,
+                    evicted_video_id,
+                )
 
         # The fps pin holds for the video's life; per-frame re-resolution
         # would let estimator jitter reshuffle the frame math mid-stream.
@@ -377,24 +366,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
         keep_alive_frames = window_frames + math.ceil(sampling_stride)
-        bookkeeping.resolved_sampling = _ResolvedVideoSampling(
-            video_sampling=VideoSampling(
-                window_seconds=requested_window_seconds,
-                sample_fps=float(video_sampling.sample_fps),
-                min_frames=max(1, int(video_sampling.min_frames)),
-                mode=video_sampling.mode,
-                frame_budget=video_sampling.frame_budget,
-            ),
-            stride_frames=stride_frames,
-            effective_sample_fps=effective_sample_fps,
-            sampling_stride=sampling_stride,
-            keep_alive_frames=keep_alive_frames,
-        )
-        bookkeeping.block_filter = block_filter
-        bookkeeping.id_vocabulary = id_vocabulary
-        bookkeeping.last_image = image
-        bookkeeping.last_batch_index = batch_index
-
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
@@ -404,20 +375,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             while bookkeeping.next_sample_frame_number <= frame_number:
                 bookkeeping.next_sample_frame_number += sampling_stride
 
-        if video_sampling.classifies_whole_video:
-            # The model reads a clip as one unit, so the buffer spans
-            # everything seen so far, thinned to the trained frame budget.
-            _thin_to_frame_budget(
-                bookkeeping=bookkeeping,
-                frame_budget=video_sampling.window_frames,
-            )
-        else:
-            cutoff_frame_number = frame_number - window_frames
-            while (
-                bookkeeping.sampled
-                and bookkeeping.sampled[0][0] <= cutoff_frame_number
-            ):
-                bookkeeping.sampled.pop(0)
+        cutoff_frame_number = frame_number - window_frames
+        while bookkeeping.sampled and bookkeeping.sampled[0][0] <= cutoff_frame_number:
+            bookkeeping.sampled.pop(0)
 
         error_status = ""
         if bookkeeping.last_fire_frame_number is None:
@@ -426,14 +386,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             bookkeeping.last_fire_frame_number = frame_number
         # The model declares the fewest frames worth classifying; a fire
         # waits until the buffer reaches it.
-        next_fire_frame_number = (
-            bookkeeping.last_fire_frame_number
-            + bookkeeping.resolved_sampling.stride_frames
-        )
+        next_fire_frame_number = bookkeeping.last_fire_frame_number + stride_frames
         should_classify = (
-            not video_sampling.classifies_whole_video
-            and len(bookkeeping.sampled)
-            >= bookkeeping.resolved_sampling.video_sampling.min_frames
+            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
             and frame_number >= next_fire_frame_number
         )
         if should_classify:
@@ -456,62 +411,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             keep_alive_frames=keep_alive_frames,
             error_status=error_status,
         )
-
-    def is_stream_pipelined(self) -> bool:
-        return True
-
-    def stream_pipeline_depth(self) -> int:
-        return 0
-
-    def flush_stream_pipeline_outputs(
-        self,
-    ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
-        if self._model is None:
-            return []
-        results = []
-        for bookkeeping in self._video_bookkeeping.values():
-            resolved_sampling = bookkeeping.resolved_sampling
-            if (
-                not bookkeeping.sampled
-                or resolved_sampling is None
-                or bookkeeping.last_fire_frame_number is None
-                or bookkeeping.last_image is None
-                or bookkeeping.last_batch_index is None
-            ):
-                continue
-            newest_sample_frame_number = bookkeeping.sampled[-1][0]
-            if newest_sample_frame_number <= bookkeeping.last_fire_frame_number:
-                continue
-            if (
-                len(bookkeeping.sampled)
-                < resolved_sampling.video_sampling.min_frames
-            ):
-                continue
-            bookkeeping.last_fire_frame_number = newest_sample_frame_number
-            error_status = self._classify_buffer(
-                model=self._model,
-                bookkeeping=bookkeeping,
-                block_filter=bookkeeping.block_filter,
-                id_vocabulary=bookkeeping.id_vocabulary,
-                effective_sample_fps=_buffer_sample_fps(
-                    bookkeeping=bookkeeping,
-                    resolved_sampling=resolved_sampling,
-                ),
-                sampling_stride=resolved_sampling.sampling_stride,
-            )
-            output = self._build_output(
-                bookkeeping=bookkeeping,
-                image=bookkeeping.last_image,
-                id_vocabulary=bookkeeping.id_vocabulary,
-                frame_number=bookkeeping.last_frame_number,
-                keep_alive_frames=resolved_sampling.keep_alive_frames,
-                error_status=error_status,
-            )
-            results.append(([bookkeeping.last_batch_index], [output]))
-        return results
-
-    def close_stream_pipeline(self) -> None:
-        self._video_bookkeeping.clear()
 
     def _resolve_source_fps(
         self,
@@ -686,7 +585,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         keep_alive_frames: int,
         error_status: str,
     ) -> dict:
-        timeline = [entry.model_copy(deep=True) for entry in bookkeeping.timeline]
+        timeline = [entry.model_copy() for entry in bookkeeping.timeline]
         # A class stays visible while a future positive fire could still merge
         # with its range, then clears exactly when that range is closed.
         bookkeeping.window_class_names = list(
@@ -723,8 +622,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     "confidence": 1.0,
                     "class_id": (
                         id_vocabulary.index(class_name)
-                        if id_vocabulary is not None
-                        and class_name in id_vocabulary
+                        if id_vocabulary is not None and class_name in id_vocabulary
                         else -1
                     ),
                 }
@@ -733,48 +631,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             "predicted_classes": window_class_names,
             "prediction_type": "classification",
             "parent_id": parent_id,
-            "root_parent_id": parent_id,
+            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
             "inference_id": str(uuid4()),
         }
-
-
-def _buffer_sample_fps(
-    bookkeeping: "_ActionRecognitionBookkeeping",
-    resolved_sampling: "_ResolvedVideoSampling",
-) -> float:
-    """The rate the buffered frames actually represent.
-
-    Thinning a whole-video buffer lowers its real rate below the sampled
-    one, and the model reads its frame timestamps from this value.
-    """
-    if not resolved_sampling.video_sampling.classifies_whole_video:
-        return resolved_sampling.effective_sample_fps
-    source_fps = bookkeeping.source_fps
-    if len(bookkeeping.sampled) < 2 or not source_fps:
-        return resolved_sampling.effective_sample_fps
-    span_frames = bookkeeping.sampled[-1][0] - bookkeeping.sampled[0][0]
-    if span_frames <= 0:
-        return resolved_sampling.effective_sample_fps
-    return (len(bookkeeping.sampled) - 1) * source_fps / span_frames
-
-def _thin_to_frame_budget(bookkeeping, frame_budget: int) -> None:
-    """Keep a uniform spread of at most ``frame_budget`` samples.
-
-    Whole-video models see the frame budget spread over the full clip, and
-    a stream has no known end, so the buffer thins as it grows. Keeping the
-    first and last samples holds the span the model reasons over.
-    """
-    sample_count = len(bookkeeping.sampled)
-    if sample_count <= frame_budget:
-        return
-    step = (sample_count - 1) / (frame_budget - 1) if frame_budget > 1 else 0.0
-    kept_positions = sorted(
-        {round(index * step) for index in range(max(1, frame_budget))}
-    )
-    bookkeeping.sampled = [bookkeeping.sampled[index] for index in kept_positions]
-
-def _batch_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
-    indices = getattr(images, "indices", None)
-    if indices is not None:
-        return indices
-    return [(i,) for i in range(len(images))]

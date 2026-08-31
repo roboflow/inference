@@ -1085,7 +1085,7 @@ class InferencePipeline:
                     frames=video_frames,
                 )
                 predictions = self._on_video_frame(video_frames)
-                if self._stream_pipeline_handler_enabled():
+                if _rfdetr_stream_pipeline_enabled():
                     self._queue_inference_result(
                         inference_result=predictions,
                         fallback_video_frames=video_frames,
@@ -1105,7 +1105,7 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
-            if self._stream_pipeline_handler_enabled():
+            if _rfdetr_stream_pipeline_enabled():
                 self._drain_inference_handler()
 
         except Exception as error:
@@ -1122,7 +1122,7 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
-            if self._stream_pipeline_handler_enabled():
+            if _rfdetr_stream_pipeline_enabled():
                 self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
@@ -1141,7 +1141,7 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            if self._stream_pipeline_handler_enabled():
+            if _rfdetr_stream_pipeline_enabled():
                 predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
@@ -1217,9 +1217,6 @@ class InferencePipeline:
             inference_result=flush_result,
             fallback_video_frames=[],
         )
-
-    def _stream_pipeline_handler_enabled(self) -> bool:
-        return callable(getattr(self._on_video_frame, "flush", None))
 
     def _close_inference_handler(self) -> None:
         close_fn = getattr(self._on_video_frame, "close", None)

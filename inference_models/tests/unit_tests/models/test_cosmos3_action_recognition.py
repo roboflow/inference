@@ -96,6 +96,7 @@ class _FakeReasoner:
         self.calls.append(kwargs)
         return self.response
 
+
 def _frames(count):
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
     return [frame] * count
@@ -146,9 +147,7 @@ def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
 def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking"])
     reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    wrapper = Cosmos3EdgeActionRecognition(
-        reasoner=reasoner, class_names=["walking"]
-    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner, class_names=["walking"])
 
     large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
     wrapper.infer(frames=large_frames, fps=2.0)
@@ -194,6 +193,36 @@ def test_zero_shot_maps_first_answer_letter_to_class(answer, expected) -> None:
     )
     assert reasoner.calls[0]["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
     assert reasoner.calls[0]["enable_thinking"] is False
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["Answer: B", "Based on the clip the vehicle stops", "12345"],
+)
+def test_zero_shot_rejects_an_answer_that_is_not_a_bare_letter(answer) -> None:
+    reasoner = _FakeReasoner(response=answer)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(
+        frames=_frames(4), class_names=["walking", "running"], fps=5.0
+    )
+
+    assert result == []
+
+
+def test_from_pretrained_rejects_class_names_that_miss_their_tokens(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    # The package lists a class the tokenizer has no token for.
+    (tmp_path / "class_names.txt").write_text("walking\nrunning\n")
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
 
 
 def test_zero_shot_uses_caller_max_new_tokens() -> None:
@@ -292,10 +321,7 @@ def test_fine_tune_prompt_contains_exact_legend_instruction_and_system_prompt() 
 
 def test_fine_tune_parser_accepts_valid_lines_and_converts_seconds() -> None:
     result = _parse_fine_tune_segments(
-        text=(
-            "<|cls:walking|> <-0.20> <0.21>\n"
-            "<|cls:running|> <1.40> <0.20>"
-        ),
+        text=("<|cls:walking|> <-0.20> <0.21>\n" "<|cls:running|> <1.40> <0.20>"),
         class_names=["walking", "running"],
         num_frames=10,
         fps=5.0,
@@ -322,10 +348,7 @@ def test_fine_tune_parser_returns_empty_for_none_or_no_valid_lines(answer) -> No
 
 def test_fine_tune_parser_drops_out_of_vocabulary_labels() -> None:
     result = _parse_fine_tune_segments(
-        text=(
-            "<|cls:walking|> <0.00> <0.20>\n"
-            "<|cls:jumping|> <0.20> <0.40>"
-        ),
+        text=("<|cls:walking|> <0.00> <0.20>\n" "<|cls:jumping|> <0.20> <0.40>"),
         class_names=["walking"],
         num_frames=5,
         fps=5.0,
@@ -337,10 +360,7 @@ def test_fine_tune_parser_drops_out_of_vocabulary_labels() -> None:
 def test_fine_tune_class_filter_drops_non_members_and_limits_parser() -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(
-        response=(
-            "<|cls:walking|> <0.00> <0.20>\n"
-            "<|cls:running|> <0.20> <0.40>"
-        ),
+        response=("<|cls:walking|> <0.00> <0.20>\n" "<|cls:running|> <0.20> <0.40>"),
         tokenizer=tokenizer,
     )
     wrapper = Cosmos3EdgeActionRecognition(
@@ -439,10 +459,10 @@ def test_constrained_decoder_allowed_tokens_follow_line_grammar() -> None:
     assert tokenizer.id("\n") in line_boundary_allowed
     assert class_token_id not in line_boundary_allowed
 
-    after_newline = torch.cat(
-        [complete_line, torch.tensor([tokenizer.id("\n")])]
-    )
-    assert grammar(0, after_newline) == [class_token_id]
+    after_newline = torch.cat([complete_line, torch.tensor([tokenizer.id("\n")])])
+    # A completed line may end the answer, so EOS is allowed beside the
+    # next class token.
+    assert grammar(0, after_newline) == sorted([class_token_id, tokenizer.eos_token_id])
 
 
 def test_class_names_is_none_for_open_vocabulary_model() -> None:
@@ -542,57 +562,11 @@ def test_from_pretrained_reads_the_recorded_sampling(monkeypatch, tmp_path) -> N
     assert all(frame.shape == (56, 100, 3) for frame in sent_frames)
 
 
-def test_video_sampling_prefers_the_declared_frame_budget(
-    monkeypatch, tmp_path
-) -> None:
-    tokenizer = _FakeTokenizer(class_names=["walking"])
-    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
-    # whole_video gives the window length no meaning, so window_frames is
-    # the authoritative budget even when it disagrees with fps x seconds.
-    (tmp_path / "class_names.txt").write_text("walking\n")
-    (tmp_path / "inference_config.json").write_text(
-        json.dumps(
-            {
-                "video_pre_processing": {
-                    "mode": "whole_video",
-                    "sample_fps": 4.0,
-                    "window_frames": 48,
-                    "window_seconds": 12.0,
-                    "min_frames": 4,
-                }
-            }
-        )
-    )
-    monkeypatch.setattr(
-        Cosmos3EdgeReasoner,
-        "from_pretrained",
-        MagicMock(return_value=reasoner),
-    )
-
-    sampling = Cosmos3EdgeActionRecognition.from_pretrained(
-        str(tmp_path)
-    ).video_sampling
-
-    assert sampling.classifies_whole_video is True
-    assert sampling.window_frames == 48
-
-
-def test_video_sampling_derives_frames_when_the_package_omits_them() -> None:
-    reasoner = _FakeReasoner(response="B")
-    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
-
-    sampling = wrapper.video_sampling
-
-    assert sampling.classifies_whole_video is False
-    assert sampling.window_frames == 64
-
-
 def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
     tokenizer = _FakeTokenizer(class_names=["walking", "running"])
     reasoner = _FakeReasoner(
         response=(
-            "<|cls:walking|> <0.00> <1.00>\n"
-            "<|cls:running|> <1.00> <2.00><|im_end|>"
+            "<|cls:walking|> <0.00> <1.00>\n" "<|cls:running|> <1.00> <2.00><|im_end|>"
         ),
         tokenizer=tokenizer,
     )

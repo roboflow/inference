@@ -242,6 +242,7 @@ else:
     )
 
 from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_action_recognition_prediction_kind,
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
@@ -258,16 +259,15 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
-    deserialize_action_recognition_prediction_kind,
     deserialize_zone_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
+    serialize_action_recognition_prediction_kind,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
-    serialize_action_recognition_prediction_kind,
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_KIND,
@@ -426,6 +426,7 @@ else:
     from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
         DetectionsDifferenceBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -1087,6 +1088,7 @@ else:
     from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1,
     )
+
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1532,6 +1534,7 @@ else:
     )
 
 from inference.core.workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -1573,7 +1576,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
-    ACTION_RECOGNITION_PREDICTION_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
     Kind,

@@ -316,9 +316,7 @@ REGISTERED_MODELS: Dict[
     # slug, with the platform task `vlm`. The hosted base keeps the dash
     # and stays a plain reasoner, which the block wraps at load time.
     ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
-        module_name=(
-            "inference_models.models.cosmos3.cosmos3_action_recognition"
-        ),
+        module_name=("inference_models.models.cosmos3.cosmos3_action_recognition"),
         class_name="Cosmos3EdgeActionRecognition",
     ),
     (
@@ -326,9 +324,7 @@ REGISTERED_MODELS: Dict[
         ACTION_RECOGNITION_TASK,
         BackendType.HF,
     ): LazyClass(
-        module_name=(
-            "inference_models.models.cosmos3.cosmos3_action_recognition"
-        ),
+        module_name=("inference_models.models.cosmos3.cosmos3_action_recognition"),
         class_name="Cosmos3EdgeActionRecognition",
     ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
