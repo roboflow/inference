@@ -91,6 +91,9 @@ class ModelManager:
         self._lifecycle_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
+        # Set by shutdown() before draining — closes admission so nothing new
+        # is queued while in-flight work finishes.
+        self._closed = False
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
@@ -143,6 +146,7 @@ class ModelManager:
             ValueError: If model_id is already loaded.
             RuntimeError: If loading fails (bad weights, OOM, download error).
         """
+        self._check_open()
         load_target = model_id_or_path or model_id
 
         # Reserve under the lock; build OUTSIDE it. Holding the lock across
@@ -213,6 +217,10 @@ class ModelManager:
     @property
     def executor(self) -> ThreadPoolExecutor:
         return self._executor
+
+    def _check_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("ModelManager is shutting down")
 
     def _create_backend(
         self,
@@ -362,6 +370,7 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
+        self._check_open()
         backend = self._get_backend(model_id)
 
         if hasattr(backend, "submit_request"):
@@ -471,6 +480,12 @@ class ModelManager:
                             / 1_000_000,
                             "ms",
                         )
+            if serialize:
+                # Inside the in-flight lease: serialization still reads
+                # backend.model, which an unload would drop underneath it.
+                typed = _get_registry().serialize(backend.model, task_name, result)
+                if typed is not None:
+                    result = typed
         except Exception:
             backend.record_inference(t0, error=True)
             raise
@@ -479,13 +494,7 @@ class ModelManager:
             if _end is not None:
                 _end()
         backend.record_inference(t0, error=False)
-
-        if not serialize:
-            return result
-
-        # Serialize through registry (if entry exists)
-        typed = _get_registry().serialize(backend.model, task_name, result)
-        return typed if typed is not None else result
+        return result
 
     async def process_async(
         self,
@@ -504,10 +513,11 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
+        self._check_open()
         loop = asyncio.get_running_loop()
         if not performance_profiler.enabled:
             return await loop.run_in_executor(
-                None,
+                self._executor,
                 lambda: self.process(
                     model_id,
                     task=task,
@@ -539,7 +549,7 @@ class ModelManager:
                 return_started[0] = process_ended
 
         try:
-            result = await loop.run_in_executor(None, _run)
+            result = await loop.run_in_executor(self._executor, _run)
         except asyncio.CancelledError:
             performance_profiler.increment("manager.executor.cancelled")
             raise
@@ -589,6 +599,7 @@ class ModelManager:
         Raises:
             KeyError: If model_id is not loaded.
         """
+        self._check_open()
         backend = self._get_backend(model_id)
 
         if hasattr(backend, "submit_request"):
@@ -784,10 +795,14 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Unload all models and shut down the executor.
+        """Close admission, drain in-flight work, then unload all models.
 
-        Call this when the process is exiting.
+        Call this when the process is exiting. Unloading before the drain tore
+        models out from under inference still running in the executor.
         """
+        self._closed = True
+        self._executor.shutdown(wait=True, cancel_futures=True)
+
         with self._lifecycle_lock:
             model_ids = list(self._backends.keys())
 
@@ -798,8 +813,6 @@ class ModelManager:
                 logger.warning(
                     "Error unloading '%s' during shutdown", model_id, exc_info=True
                 )
-
-        self._executor.shutdown(wait=True, cancel_futures=True)
 
         logger.info("ModelManager shut down")
 

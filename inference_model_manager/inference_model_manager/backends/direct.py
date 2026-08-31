@@ -137,7 +137,18 @@ class DirectBackend(Backend):
     # ------------------------------------------------------------------
 
     def inflight_begin(self) -> None:
+        """Take an in-flight lease, or refuse if the backend stopped accepting.
+
+        Check and increment happen under one lock: a request that passed a
+        separate acceptance check could otherwise increment after a drain had
+        already observed zero in flight, and run against an unloaded model.
+        """
         with self._inflight_lock:
+            if self._state_value != "loaded" or self._model is None:
+                raise RuntimeError(
+                    f"Backend '{self._model_id}' not accepting requests "
+                    f"(state={self.state})"
+                )
             self._inflight += 1
 
     def inflight_end(self) -> None:
@@ -145,26 +156,34 @@ class DirectBackend(Backend):
             self._inflight = max(0, self._inflight - 1)
 
     def drain_and_unload(self, timeout_s: float = 30.0) -> None:
-        self._state_value = "draining"
+        with self._inflight_lock:
+            self._state_value = "draining"
         logger.info(
             "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
         )
         # Wait for in-flight forward passes — dropping the model under a live
         # invoke_task crashes (CUDA error / AttributeError).
         deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline and self._inflight > 0:
+        while time.monotonic() < deadline:
+            with self._inflight_lock:
+                remaining = self._inflight
+            if remaining == 0:
+                break
             time.sleep(0.05)
-        if self._inflight > 0:
+        with self._inflight_lock:
+            remaining = self._inflight
+        if remaining > 0:
             logger.warning(
                 "DirectBackend(%s): drain timeout — %d inference(s) still "
                 "in flight, force-unloading",
                 self._model_id,
-                self._inflight,
+                remaining,
             )
         self.unload()
 
     def unload(self) -> None:
-        self._state_value = "unhealthy"
+        with self._inflight_lock:
+            self._state_value = "unhealthy"
         del self._model
         self._model = None
 

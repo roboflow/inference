@@ -11,8 +11,19 @@ the ``os.environ.get`` so the read happens at the right moment.
 """
 
 import os
+from typing import Optional
 
-from inference_models.utils.environment import get_float_from_env, get_integer_from_env
+from inference_models.utils.environment import (
+    get_boolean_from_env,
+    get_float_from_env,
+    get_integer_from_env,
+)
+
+
+def _host_set(raw: Optional[str]) -> Optional[frozenset[str]]:
+    if raw is None:
+        return None
+    return frozenset(host.strip().lower() for host in raw.split(",") if host.strip())
 
 # ── State timeouts (gateway.py) ───────────────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
@@ -24,8 +35,37 @@ INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
 MAX_BODY_BYTES = get_integer_from_env(
     "INFERENCE_MAX_BODY_BYTES", default=100 * 1024 * 1024
 )
-# Max number of ?image=<url> params fetched per request.
-MAX_IMAGE_URLS = get_integer_from_env("INFERENCE_MAX_IMAGE_URLS", default=32)
+# Max number of images accepted in a single request, whatever the source
+# (JSON base64 list, repeated multipart parts, ?image=<url> params). The byte
+# budget alone does not bound the COUNT: a compact payload can carry a huge
+# list and spawn one executor submission per entry.
+MAX_IMAGES_PER_REQUEST = get_integer_from_env(
+    "INFERENCE_MAX_IMAGES_PER_REQUEST", default=32
+)
+# Max images of one request processed concurrently (0 = unbounded).
+MAX_CONCURRENT_IMAGES_PER_REQUEST = get_integer_from_env(
+    "INFERENCE_MAX_CONCURRENT_IMAGES_PER_REQUEST", default=8
+)
+
+# ── URL image inputs (framework/input_parsers/url_fetch.py) ───────────────
+# Destination guarding for ?image=<url>. Env names match the legacy inference
+# package so one deployment configures both the same way.
+# When set, only these hosts may be fetched — and they are trusted, so the
+# non-global address check does not apply to them.
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = _host_set(
+    os.environ.get("WHITELISTED_DESTINATIONS_FOR_URL_INPUT")
+)
+# Always rejected, on top of everything else.
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = _host_set(
+    os.environ.get("BLACKLISTED_DESTINATIONS_FOR_URL_INPUT")
+)
+# Loopback / RFC1918 / link-local (169.254.169.254) / reserved destinations are
+# refused unless this is turned on. Off by default: a URL input reaching them is
+# SSRF into the pod's own network.
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = get_boolean_from_env(
+    "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", default=False
+)
+MAX_IMAGE_URL_REDIRECTS = get_integer_from_env("MAX_IMAGE_URL_REDIRECTS", default=3)
 
 # ── Auth (auth.py) ────────────────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")

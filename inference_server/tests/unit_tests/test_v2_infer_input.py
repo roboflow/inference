@@ -251,10 +251,11 @@ class _FakeContent:
 
 
 class _FakeResp:
-    def __init__(self, chunks: list[bytes], content_length=None):
-        self.status = 200
+    def __init__(self, chunks: list[bytes], content_length=None, status=200, headers=None):
+        self.status = status
         self.content_length = content_length
         self.content = _FakeContent(chunks)
+        self.headers = headers or {}
 
     async def __aenter__(self):
         return self
@@ -264,10 +265,16 @@ class _FakeResp:
 
 
 class _FakeSession:
-    def __init__(self, resp: _FakeResp):
+    def __init__(self, resp, redirects=None):
         self._resp = resp
+        self._redirects = dict(redirects or {})
+        self.requested: list[str] = []
 
-    def get(self, url):
+    def get(self, url, allow_redirects=True):
+        self.requested.append(url)
+        location = self._redirects.get(url)
+        if location is not None:
+            return _FakeResp([], status=302, headers={"location": location})
         return self._resp
 
     async def __aenter__(self):
@@ -277,14 +284,34 @@ class _FakeSession:
         return False
 
 
-def _patch_http(chunks: list[bytes], content_length=None):
+def _patch_public_dns(addresses=("93.184.216.34",)):
+    from unittest.mock import patch
+
+    async def _resolve(host: str):
+        return list(addresses)
+
+    return patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host", _resolve
+    )
+
+
+def _patch_http(chunks: list[bytes], content_length=None, redirects=None):
+    """Patch aiohttp AND DNS: every unit test here must stay off the network."""
+    import contextlib
     from unittest.mock import patch
 
     resp = _FakeResp(chunks, content_length=content_length)
-    return patch(
-        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
-        return_value=_FakeSession(resp),
-    )
+    session = _FakeSession(resp, redirects=redirects)
+
+    @contextlib.contextmanager
+    def _both():
+        with _patch_public_dns(), patch(
+            "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+            return_value=session,
+        ):
+            yield session
+
+    return _both()
 
 
 @pytest.mark.asyncio
@@ -309,7 +336,7 @@ async def test_fetch_images_from_urls_too_many_urls_400():
     from inference_server.framework.input_parsers import fetch_images_from_urls
 
     with patch(
-        "inference_server.framework.input_parsers.url_fetch.configuration.MAX_IMAGE_URLS",
+        "inference_server.configuration.MAX_IMAGES_PER_REQUEST",
         2,
     ):
         images, err = await fetch_images_from_urls(
@@ -347,3 +374,358 @@ async def test_fetch_images_from_urls_under_limits_ok():
         )
     assert err is None
     assert images == [b"x" * 8, b"x" * 8]
+
+
+# ---------------------------------------------------------------------------
+# URL destination guarding (SSRF)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "10.1.2.3",
+        "172.16.9.9",
+        "192.168.0.5",
+        "169.254.169.254",  # cloud instance metadata
+        "0.0.0.0",
+        "::1",
+        "fd00::1",
+        "::ffff:127.0.0.1",  # IPv4-mapped loopback
+    ],
+)
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_rejects_non_global_destination(address):
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_public_dns((address,)):
+        data, err = await fetch_image_from_url("https://internal.example/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_rejects_when_any_address_is_internal():
+    """Split-horizon DNS answers must not slip through on one public entry."""
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_public_dns(("93.184.216.34", "127.0.0.1")):
+        data, err = await fetch_image_from_url("https://mixed.example/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_allows_public_destination():
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"x" * 8]):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert err is None
+    assert data == b"x" * 8
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_revalidates_redirect_hops():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    async def _resolve(host: str):
+        return ["127.0.0.1"] if host == "metadata.internal" else ["93.184.216.34"]
+
+    resp = _FakeResp([b"secret"])
+    session = _FakeSession(
+        resp,
+        redirects={"https://example.com/img.jpg": "http://metadata.internal/creds"},
+    )
+    with patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host", _resolve
+    ), patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=session,
+    ):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+    # The internal URL was never requested.
+    assert session.requested == ["https://example.com/img.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_follows_allowed_redirect():
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http(
+        [b"ok"],
+        redirects={"https://example.com/img.jpg": "https://cdn.example.com/img.jpg"},
+    ) as session:
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert err is None
+    assert data == b"ok"
+    assert session.requested == [
+        "https://example.com/img.jpg",
+        "https://cdn.example.com/img.jpg",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_bounds_redirect_chain():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    hops = {
+        f"https://example.com/{i}": f"https://example.com/{i + 1}" for i in range(50)
+    }
+    with _patch_http([b"ok"], redirects=hops), patch(
+        "inference_server.configuration.MAX_IMAGE_URL_REDIRECTS", 2
+    ) as _:
+        data, err = await fetch_image_from_url("https://example.com/0")
+    assert data is None
+    assert err.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_allowlist_permits_internal_host():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"ok"]), patch(
+        "inference_server.configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
+        frozenset({"images.internal"}),
+    ):
+        data, err = await fetch_image_from_url("https://images.internal/img.jpg")
+    assert err is None
+    assert data == b"ok"
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_allowlist_rejects_other_hosts():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"ok"]), patch(
+        "inference_server.configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
+        frozenset({"images.internal"}),
+    ):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_blocklist_rejects_public_host():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"ok"]), patch(
+        "inference_server.configuration.BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
+        frozenset({"example.com"}),
+    ):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_non_global_opt_in():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"ok"]), patch(
+        "inference_server.configuration.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True
+    ), _patch_public_dns(("127.0.0.1",)):
+        data, err = await fetch_image_from_url("http://localhost/img.jpg")
+    assert err is None
+    assert data == b"ok"
+
+
+# ---------------------------------------------------------------------------
+# DNS rebinding — the connection is pinned to the validated addresses
+# ---------------------------------------------------------------------------
+
+
+def _patch_pinning(answers: list[list[str]]):
+    """Serve ``answers`` in order to resolve_host and capture the connector."""
+    import contextlib
+    from unittest.mock import patch
+
+    captured: dict = {}
+    session = _FakeSession(_FakeResp([b"ok"]))
+
+    async def _resolve(host: str):
+        return list(answers.pop(0)) if answers else ["169.254.169.254"]
+
+    def _fake_connector(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    @contextlib.contextmanager
+    def _all():
+        with patch(
+            "inference_server.framework.input_parsers.url_fetch.resolve_host", _resolve
+        ), patch(
+            "inference_server.framework.input_parsers.url_fetch.aiohttp.TCPConnector",
+            _fake_connector,
+        ), patch(
+            "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+            return_value=session,
+        ):
+            yield captured
+
+    return _all()
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_pins_validated_addresses():
+    """A second, hostile DNS answer must never reach the connection."""
+    import socket
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_pinning([["93.184.216.34"], ["169.254.169.254"]]) as captured:
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+        assert err is None
+        assert data == b"ok"
+        # Nothing but the resolver and the cache switch — no ssl / hostname
+        # override that could relax certificate verification.
+        assert set(captured) == {"resolver", "use_dns_cache"}
+        assert captured["use_dns_cache"] is False
+        resolved = await captured["resolver"].resolve("example.com", 443)
+
+    assert [entry["host"] for entry in resolved] == ["93.184.216.34"]
+    assert resolved[0]["hostname"] == "example.com"
+    assert resolved[0]["port"] == 443
+    assert resolved[0]["family"] == socket.AF_INET
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_pins_allowlisted_host_too():
+    """The allowlist skips the address check, not the pinning."""
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_pinning([["10.0.0.5"], ["169.254.169.254"]]) as captured, patch(
+        "inference_server.configuration.WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
+        frozenset({"images.internal"}),
+    ):
+        data, err = await fetch_image_from_url("https://images.internal/img.jpg")
+        assert err is None
+        assert data == b"ok"
+        resolved = await captured["resolver"].resolve("images.internal", 443)
+
+    assert [entry["host"] for entry in resolved] == ["10.0.0.5"]
+
+
+@pytest.mark.asyncio
+async def test_pinned_resolver_fails_for_unvalidated_host():
+    from inference_server.framework.input_parsers.url_fetch import _PinnedResolver
+
+    resolver = _PinnedResolver({"example.com": ["93.184.216.34"]})
+    with pytest.raises(OSError):
+        await resolver.resolve("metadata.internal", 80)
+
+
+@pytest.mark.asyncio
+async def test_pinned_resolver_reports_ipv6_family():
+    import socket
+
+    from inference_server.framework.input_parsers.url_fetch import _PinnedResolver
+
+    resolver = _PinnedResolver({"example.com": ["2606:2800:220:1:248:1893:25c8:1946"]})
+    resolved = await resolver.resolve("example.com", 443)
+    assert resolved[0]["family"] == socket.AF_INET6
+
+
+@pytest.mark.asyncio
+async def test_ip_literal_url_is_validated_and_bypasses_the_resolver():
+    """aiohttp connects to an IP literal without consulting the resolver, so
+    the literal itself must be (and is) validated by the destination check."""
+    import aiohttp
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+    from inference_server.framework.input_parsers.url_fetch import _PinnedResolver
+
+    with _patch_public_dns(("169.254.169.254",)):
+        data, err = await fetch_image_from_url("https://169.254.169.254/img.jpg")
+    assert data is None
+    assert err.status_code == 403
+
+    connector = aiohttp.TCPConnector(
+        resolver=_PinnedResolver({}), use_dns_cache=False
+    )
+    try:
+        hosts = await connector._resolve_host("93.184.216.34", 443)
+    finally:
+        await connector.close()
+    assert [entry["host"] for entry in hosts] == ["93.184.216.34"]
+
+
+# ---------------------------------------------------------------------------
+# Per-request image count cap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_json_base64_rejects_more_images_than_cap():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import extract_images_and_params
+
+    b64 = base64.b64encode(_JPEG).decode()
+    body = {"inputs": {"image": [{"type": "base64", "value": b64}] * 4}}
+    req = _FakeRequest(content_type="application/json", json_body=body)
+    with patch("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 3):
+        imgs, params, err = await extract_images_and_params(req)
+    assert imgs == []
+    assert err.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_json_base64_allows_images_up_to_cap():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import extract_images_and_params
+
+    b64 = base64.b64encode(_JPEG).decode()
+    body = {"inputs": {"image": [{"type": "base64", "value": b64}] * 3}}
+    req = _FakeRequest(content_type="application/json", json_body=body)
+    with patch("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 3):
+        imgs, params, err = await extract_images_and_params(req)
+    assert err is None
+    assert len(imgs) == 3
+
+
+@pytest.mark.asyncio
+async def test_multipart_rejects_more_images_than_cap():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import extract_images_and_params
+
+    form = _FakeFormData({"image": [_FakeUploadFile(_JPEG)] * 4})
+    req = _FakeRequest(content_type="multipart/form-data", form_data=form)
+    with patch("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 3):
+        imgs, params, err = await extract_images_and_params(req)
+    assert imgs == []
+    assert err.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_multipart_allows_images_up_to_cap():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import extract_images_and_params
+
+    form = _FakeFormData({"image": [_FakeUploadFile(_JPEG)] * 3})
+    req = _FakeRequest(content_type="multipart/form-data", form_data=form)
+    with patch("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 3):
+        imgs, params, err = await extract_images_and_params(req)
+    assert err is None
+    assert len(imgs) == 3
