@@ -215,56 +215,6 @@ class Cosmos3EdgeReasoner:
             return_thinking=return_thinking,
         )[0]
 
-    def prompt_text(
-        self,
-        prompt: str,
-        max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
-        do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
-        skip_special_tokens: bool = True,
-        return_thinking: bool = False,
-        enable_thinking: bool = True,
-    ) -> Union[str, Dict[str, str]]:
-        """Text-only chat turn. ``enable_thinking=False`` pre-closes the
-        think block, so the model answers directly."""
-        parsed_prompt, system_prompt = self._parse_prompt(prompt=prompt)
-        conversation = [
-            {
-                "role": "system",
-                "content": [{"type": "text", "text": system_prompt}],
-            },
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": parsed_prompt}],
-            },
-        ]
-        template_kwargs = {} if enable_thinking else {"enable_thinking": False}
-        text_input = self._processor.apply_chat_template(
-            conversation,
-            tokenize=False,
-            add_generation_prompt=True,
-            **template_kwargs,
-        )
-        model_inputs = self._processor(
-            text=text_input,
-            return_tensors="pt",
-            padding=True,
-        )
-        inputs = {
-            k: v.to(self._device)
-            for k, v in model_inputs.items()
-            if isinstance(v, torch.Tensor)
-        }
-        generated_ids = self.generate(
-            inputs=inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=do_sample,
-        )
-        return self.post_process_generation(
-            generated_ids=generated_ids,
-            skip_special_tokens=skip_special_tokens,
-            return_thinking=return_thinking,
-        )[0]
-
     def pre_process_generation(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
