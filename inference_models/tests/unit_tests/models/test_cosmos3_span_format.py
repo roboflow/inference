@@ -162,3 +162,28 @@ def test_fine_tune_parser_returns_empty_for_none_or_no_valid_lines(answer) -> No
         )
         == []
     )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # 64 frames at 4 fps is a 16 s clip; neither span touches it.
+        "<|cls:walk|> <17.00> <18.00>",
+        "<|cls:walk|> <-5.00> <-2.00>",
+    ],
+)
+def test_a_span_outside_the_clip_is_not_an_edge_event(line) -> None:
+    # Clamping first would put a one-frame event on the nearest edge. The
+    # decoder constrains the shape of a line, not the times it names.
+    assert parse_spans(text=line, class_names=["walk"], num_frames=64, fps=4.0) == []
+
+
+def test_a_span_that_overlaps_the_clip_is_clamped_to_it() -> None:
+    result = parse_spans(
+        text="<|cls:walk|> <15.00> <20.00>",
+        class_names=["walk"],
+        num_frames=64,
+        fps=4.0,
+    )
+
+    assert [(s.start_frame_idx, s.end_frame_idx) for s in result] == [(60, 63)]

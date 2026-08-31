@@ -197,57 +197,82 @@ def _read_class_names_file(model_name_or_path: str) -> Optional[List[str]]:
 
 
 def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
-    """Read the sampling the training run recorded, or the zero-shot default."""
+    """Read the sampling the training run recorded, or the zero-shot default.
+
+    A key the package never wrote is a decision the model never made, and the
+    default stands. A key it wrote with a value we cannot honour is a corrupt
+    package: sampling a video the wrong way changes what the model reads, so
+    it is rejected rather than served under a guess.
+    """
     default = VideoSampling()
+    config_path = Path(model_name_or_path) / "inference_config.json"
+
+    def _reject(detail: str) -> "CorruptedModelPackageError":
+        return CorruptedModelPackageError(
+            message=(
+                f"Model package {model_name_or_path} {detail}. Sampling a video "
+                f"the wrong way changes what the model reads, so the package is "
+                f"rejected rather than served under a guess."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        )
+
     try:
-        with open(Path(model_name_or_path) / "inference_config.json") as config_file:
+        with open(config_path) as config_file:
             inference_config = json.load(config_file)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         return default
+    except json.JSONDecodeError as error:
+        raise _reject(f"has an inference_config.json that does not parse ({error})")
     config = (
         inference_config.get("video_pre_processing")
         if isinstance(inference_config, dict)
         else None
     )
-    if not isinstance(config, dict):
+    if config is None:
         return default
+    if not isinstance(config, dict):
+        raise _reject("declares a video_pre_processing block that is not an object")
 
-    def _positive(key: str, fallback: float) -> float:
-        value = config.get(key)
-        if isinstance(value, (int, float)) and value > 0:
-            return float(value)
-        return fallback
+    def _number(key: str) -> Optional[float]:
+        if key not in config:
+            return None
+        value = config[key]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise _reject(f"declares {key}={value!r}, which is not a positive number")
+        return float(value)
+
+    def _count(key: str) -> Optional[int]:
+        value = _number(key)
+        if value is None:
+            return None
+        if value != int(value):
+            raise _reject(f"declares {key}={value!r}, which is not a whole number")
+        return int(value)
 
     mode = config.get("mode", default.mode)
     if mode not in (SLIDING_WINDOW_MODE, WHOLE_VIDEO_MODE):
-        raise CorruptedModelPackageError(
-            message=(
-                f"Model package {model_name_or_path} declares video sampling mode "
-                f"{mode!r}, which this version of inference does not support. "
-                f"Sampling a video the wrong way changes what the model reads, "
-                f"so the package is rejected rather than served under a guess."
-            ),
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        raise _reject(
+            f"declares video sampling mode {mode!r}, which this version of "
+            f"inference does not support"
         )
-
-    def _optional_count(key: str) -> Optional[int]:
-        """A limit the model did not record is a limit it does not have."""
-        value = config.get(key)
-        if (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value > 0
-        ):
-            return int(value)
-        return None
-
+    window_seconds = _number("window_seconds")
+    sample_fps = _number("sample_fps")
+    min_frames = _count("min_frames")
     return VideoSampling(
-        window_seconds=_positive("window_seconds", default.window_seconds),
-        sample_fps=_positive("sample_fps", default.sample_fps),
-        min_frames=int(_positive("min_frames", default.min_frames)),
-        max_frame_side=_optional_count("max_frame_side"),
+        window_seconds=(
+            window_seconds if window_seconds is not None else default.window_seconds
+        ),
+        sample_fps=sample_fps if sample_fps is not None else default.sample_fps,
+        min_frames=min_frames if min_frames is not None else default.min_frames,
+        max_frame_side=_count("max_frame_side"),
         mode=mode,
-        max_frames=_optional_count("window_frames"),
+        max_frames=_count("window_frames"),
     )
 
 

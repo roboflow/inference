@@ -2007,6 +2007,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 sampling=sampling,
             )
             timeline: List[ActionRecognitionPrediction] = []
+            windows_classified = 0
             window_frames = read_frame_windows(
                 path=path,
                 windows=[window.frame_indices for window in windows],
@@ -2015,6 +2016,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             for window, frames in zip(windows, window_frames):
                 if len(frames) < max(1, sampling.min_frames):
                     continue
+                windows_classified += 1
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
                 merge_window_segments(
@@ -2033,7 +2035,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             timeline=timeline,
             source_fps=source_fps,
             frame_count=frame_count,
-            windows_classified=len(windows),
+            windows_classified=windows_classified,
         )
 
     def preprocess(self, *args, **kwargs):

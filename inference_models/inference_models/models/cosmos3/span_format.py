@@ -372,6 +372,14 @@ def _seconds_to_frame_indices(
         return None
 
     max_frame_idx = num_frames - 1
+    if start_seconds > end_seconds:
+        start_seconds, end_seconds = end_seconds, start_seconds
+    # Clamping first would turn a span the model placed outside the clip into
+    # a one-frame event on the nearest edge. The syntax constraint bounds the
+    # shape of a line, not the times it names.
+    duration_seconds = num_frames / fps
+    if end_seconds < 0 or start_seconds > duration_seconds:
+        return None
     start_frame_idx = math.floor(start_seconds * fps)
     end_frame_idx = math.ceil(end_seconds * fps)
     start_frame_idx = min(max(start_frame_idx, 0), max_frame_idx)

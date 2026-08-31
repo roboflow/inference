@@ -1,5 +1,6 @@
+import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -126,89 +127,85 @@ def plan_windows(
 ) -> List[WindowSpec]:
     """Cut a clip into the windows a model trained for ``sampling`` expects.
 
-    Windows tile from the start of the clip and the trailing remainder is
-    dropped, which is how training validates. A clip shorter than one window
-    stays whole, at a reduced frame count, and a clip too short to reach
-    ``min_frames`` yields nothing.
+    Windows are measured in time, not in frames, because training slices them
+    that way. Under ``sliding_window`` the clip tiles from the start and the
+    trailing remainder is dropped, which is how training validates. A clip
+    shorter than one window becomes a single sample spanning it, which is also
+    what training does. Under ``whole_video`` the clip is always one sample.
     """
     if frame_count <= 0 or source_fps <= 0:
         return []
-    if sampling.mode == WHOLE_VIDEO_MODE:
-        return _plan_whole_video(
-            frame_count=frame_count, source_fps=source_fps, sampling=sampling
-        )
-    effective_fps = min(sampling.sample_fps, source_fps)
-    if effective_fps <= 0:
+    if min(sampling.sample_fps, source_fps) <= 0:
         return []
-    source_frames_per_sample = source_fps / effective_fps
-    window_span = max(1, round(sampling.window_seconds * source_fps))
-    samples_per_window = max(1, round(sampling.window_seconds * effective_fps))
-
-    def _sample(first: int, count: int) -> Tuple[int, ...]:
-        return tuple(
-            min(frame_count - 1, first + round(index * source_frames_per_sample))
-            for index in range(count)
-        )
-
-    windows = []
-    window_start = 0
-    while window_start + window_span <= frame_count:
-        windows.append(
-            WindowSpec(
-                frame_indices=_sample(window_start, samples_per_window),
-                sample_fps=effective_fps,
-            )
-        )
-        window_start += window_span
-    if windows:
-        return windows
-    whole_clip_samples = max(1, int(frame_count / source_frames_per_sample))
-    if whole_clip_samples < max(1, sampling.min_frames):
-        return []
+    duration_seconds = frame_count / source_fps
+    window_seconds = sampling.window_seconds
+    if (
+        sampling.mode == WHOLE_VIDEO_MODE
+        or window_seconds <= 0
+        or duration_seconds <= window_seconds
+    ):
+        return [
+            _plan_interval(0.0, duration_seconds, frame_count, source_fps, sampling)
+        ]
     return [
-        WindowSpec(
-            frame_indices=_sample(0, whole_clip_samples), sample_fps=effective_fps
+        _plan_interval(
+            index * window_seconds,
+            (index + 1) * window_seconds,
+            frame_count,
+            source_fps,
+            sampling,
         )
+        for index in range(int(duration_seconds // window_seconds))
     ]
 
 
-def _plan_whole_video(
+def _plan_interval(
+    start_seconds: float,
+    end_seconds: float,
     frame_count: int,
     source_fps: float,
     sampling: VideoSampling,
-) -> List[WindowSpec]:
-    """One sample spanning the clip, drawn the way training draws it.
+) -> WindowSpec:
+    """The frames one sample reads, and the rate they stand for.
 
-    Sampling runs at ``sample_fps`` across the clip. A model that records a
-    frame budget holds it, and the step stretches so the frames still span the
-    clip. A model without one keeps the rate, because the rate is what the
-    frame timestamps are built from, and reading below it costs the detail
-    this mode exists for.
+    Two grids exist, and a model reads the one it was trained on.
+
+    A model that recorded ``max_frames`` was trained by the platform, which
+    fixes the frame count first, divides the interval by it, and takes the
+    first frame at or after each timestamp. Its frames therefore span the
+    whole interval, and the rate is ``count / duration``, which is what the
+    trainer stamped them with.
+
+    A model that recorded nothing has only its pretraining to match, and that
+    used a plain rate. Its frames sit exactly ``1 / sample_fps`` apart and the
+    rate is nominal. Reporting anything else moves every frame timestamp off
+    the values the model saw, and the answer degrades to a summary.
     """
-    duration_seconds = frame_count / source_fps
+    duration_seconds = end_seconds - start_seconds
     effective_fps = min(sampling.sample_fps, source_fps)
-    count = min(max(1, round(duration_seconds * effective_fps)), frame_count)
-    # The model reads a timestamp per frame, derived from the rate reported
-    # here. Reporting a rate the frames were not drawn at moves every stamp
-    # off the values training used, and the answer degrades to a summary, so
-    # the nominal rate is carried through exactly rather than re-derived.
-    step = source_fps / effective_fps
-    if sampling.max_frames is not None and count > sampling.max_frames:
-        # A declared budget holds, so the step stretches to still span the
-        # clip and the rate genuinely drops.
-        count = max(1, sampling.max_frames)
-        effective_fps = count / duration_seconds
-        step = frame_count / count
-    if count < max(1, sampling.min_frames):
-        return []
-    return [
-        WindowSpec(
-            frame_indices=tuple(
-                min(frame_count - 1, int(index * step)) for index in range(count)
-            ),
-            sample_fps=effective_fps,
+    count = int(round(duration_seconds * effective_fps))
+    if sampling.max_frames is not None:
+        count = min(count, sampling.max_frames)
+    # Training clamps up to the floor last, so a clip too short to fill it is
+    # read at a higher rate rather than refused.
+    count = max(count, max(1, sampling.min_frames))
+    last_frame = frame_count - 1
+    if sampling.max_frames is not None:
+        step_seconds = duration_seconds / count
+        indices = tuple(
+            min(
+                last_frame,
+                math.ceil((start_seconds + index * step_seconds) * source_fps),
+            )
+            for index in range(count)
         )
-    ]
+        return WindowSpec(frame_indices=indices, sample_fps=count / duration_seconds)
+    step_seconds = 1.0 / effective_fps
+    indices = tuple(
+        min(last_frame, int((start_seconds + index * step_seconds) * source_fps))
+        for index in range(count)
+    )
+    return WindowSpec(frame_indices=indices, sample_fps=effective_fps)
 
 
 def merge_segment(timeline: list, segment, stride: float) -> None:
@@ -229,11 +226,39 @@ def merge_segment(timeline: list, segment, stride: float) -> None:
     if not matching:
         timeline.append(segment)
         return
-    segment.start_frame_idx = min(
+    start_frame_idx = min(
         segment.start_frame_idx, *(entry.start_frame_idx for entry in matching)
     )
-    segment.end_frame_idx = max(
+    end_frame_idx = max(
         segment.end_frame_idx, *(entry.end_frame_idx for entry in matching)
     )
     timeline[:] = [entry for entry in timeline if entry not in matching]
-    timeline.append(segment)
+    # Replaced rather than mutated: the result type this module declares is
+    # frozen, so widening a range in place raises on its own predictions.
+    timeline.append(
+        _widened(
+            segment=segment,
+            start_frame_idx=start_frame_idx,
+            end_frame_idx=end_frame_idx,
+        )
+    )
+
+
+def _widened(segment, start_frame_idx: int, end_frame_idx: int):
+    """A copy of ``segment`` covering the wider range.
+
+    Timeline entries are frozen dataclasses on the model side and pydantic
+    models on the response side, so the copy uses whichever protocol the entry
+    offers rather than assuming one.
+    """
+    model_copy = getattr(segment, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(
+            update={
+                "start_frame_idx": start_frame_idx,
+                "end_frame_idx": end_frame_idx,
+            }
+        )
+    return replace(
+        segment, start_frame_idx=start_frame_idx, end_frame_idx=end_frame_idx
+    )

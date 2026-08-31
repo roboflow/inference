@@ -133,12 +133,33 @@ def test_class_filter_reaches_the_model() -> None:
     assert model.calls[0]["class_names"] == ["run"]
 
 
-def test_a_clip_too_short_to_classify_returns_an_empty_timeline() -> None:
+def test_a_very_short_clip_is_still_classified() -> None:
+    # Training clamps the sample count up to its floor rather than refusing,
+    # so a clip it trained on stays servable here.
     model = _FakeModel(responses=[[]], class_names=["walk"])
     with _clip(frame_count=3, source_fps=10.0):
         response = _adapter(model).infer_from_request(_request())
 
     assert response.timeline == []
+    assert response.windows_classified == 1
+    assert len(model.calls) == 1
+
+
+def test_windows_classified_counts_calls_not_plans() -> None:
+    # A truncated container plans a window whose frames never decode. The
+    # field names model calls, so a skipped window must not be counted.
+    model = _FakeModel(responses=[[]], class_names=["walk"])
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    with patch(f"{MODULE}.video_source_path") as source_path, patch(
+        f"{MODULE}.probe_video", return_value=(10.0, 80)
+    ), patch(
+        f"{MODULE}.read_frame_windows",
+        side_effect=lambda path, windows, max_frame_side: ([frame] for _ in windows),
+    ):
+        source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
+        source_path.return_value.__exit__ = MagicMock(return_value=False)
+        response = _adapter(model).infer_from_request(_request())
+
     assert response.windows_classified == 0
     assert model.calls == []
 

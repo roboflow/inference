@@ -521,3 +521,61 @@ def test_a_package_that_omits_a_limit_declares_no_limit(monkeypatch, tmp_path) -
     assert sampling.max_frame_side is None
     assert sampling.max_frames is None
     assert sampling.sample_fps == 4.0
+
+
+def _package_with_config(tmp_path, monkeypatch, config) -> str:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
+    (tmp_path / "inference_config.json").write_text(config)
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+    return str(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["-4", '"4"', "true", "0", "null"],
+)
+def test_a_sampling_value_we_cannot_honour_is_rejected(
+    monkeypatch, tmp_path, value
+) -> None:
+    # A key the package wrote with an unusable value is corruption. Falling
+    # back to a default would serve the model on a grid it never trained on.
+    path = _package_with_config(
+        tmp_path,
+        monkeypatch,
+        '{"video_pre_processing": {"sample_fps": ' + value + "}}",
+    )
+
+    with pytest.raises(CorruptedModelPackageError, match="sample_fps"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_a_fractional_frame_budget_is_rejected(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(
+        tmp_path, monkeypatch, '{"video_pre_processing": {"window_frames": 63.5}}'
+    )
+
+    with pytest.raises(CorruptedModelPackageError, match="whole number"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_an_unparseable_inference_config_is_rejected(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(tmp_path, monkeypatch, "{not json")
+
+    with pytest.raises(CorruptedModelPackageError, match="does not parse"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_a_key_the_package_never_wrote_keeps_the_default(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(
+        tmp_path, monkeypatch, '{"video_pre_processing": {"sample_fps": 2.0}}'
+    )
+
+    sampling = Cosmos3EdgeActionRecognition.from_pretrained(path).video_sampling
+
+    assert sampling.sample_fps == 2.0
+    assert sampling.window_seconds == VideoSampling().window_seconds
+    assert sampling.max_frames is None
