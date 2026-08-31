@@ -368,6 +368,8 @@ if modal is not None:
             logger.info("data_output: %s", webrtc_request.data_output)
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
+            logger.info("video_file_url: %s", webrtc_request.video_file_url)
+            logger.info("max_fps: %s", webrtc_request.max_fps)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
@@ -458,6 +460,8 @@ if modal is not None:
             video_source = "realtime browser stream"
             if webrtc_request.rtsp_url:
                 video_source = "rtsp"
+            elif webrtc_request.video_file_url:
+                video_source = "video_file_url"
             elif not webrtc_request.webrtc_realtime_processing:
                 video_source = "buffered browser stream"
             else:

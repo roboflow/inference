@@ -47,6 +47,10 @@ class WebRTCWorkerRequest(BaseModel):
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
     mjpeg_url: Optional[str] = None
+    # HTTP(S) video file streamed directly by ffmpeg - no upload needed
+    video_file_url: Optional[str] = None
+    # cap for video-file processing; unset = process all frames
+    max_fps: Optional[float] = Field(default=None, gt=0)
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     processing_session_started: Optional[datetime.datetime] = None
     requested_plan: Optional[str] = "webrtc-gpu-small"

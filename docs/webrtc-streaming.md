@@ -138,6 +138,26 @@ session = client.webrtc.stream(
 )
 ```
 
+### Processing a Video File by URL (server-side)
+
+The `POST /initialise_webrtc_worker` request accepts a `video_file_url` pointing at an HTTP(S)
+video file (mp4, webm, ogv, ...). The server streams it directly with ffmpeg - no upload needed.
+With `webrtc_realtime_processing: false` every frame is processed as fast as possible;
+`max_fps` optionally caps the processed rate (frames are decimated with ffmpeg's `fps` filter,
+and workflows see the effective rate). `max_fps` is ignored in realtime mode.
+
+```json
+{
+    "video_file_url": "https://example.com/video.mp4",
+    "webrtc_realtime_processing": false,
+    "max_fps": 5,
+    "data_output": ["*"]
+}
+```
+
+The URL is validated against the same allow/block lists as image URL inputs
+(`WHITELISTED_DESTINATIONS_FOR_URL_INPUT` / `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT`).
+
 ## Support
 
 For questions and support:

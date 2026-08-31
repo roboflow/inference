@@ -74,6 +74,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
+from inference.core.utils.image_utils import _validate_url_destination
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
@@ -851,6 +852,66 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         return new_frame
 
 
+def _begin_video_file_processing(
+    video_processor,
+    video_source: str,
+    webrtc_request: WebRTCWorkerRequest,
+    should_send_video: bool,
+) -> None:
+    """Start processing a video file - local path or HTTP URL (ffmpeg streams both)."""
+    video_processor._file_processing = True
+    logger.info(
+        "Video file processing: realtime=%s, source=%s",
+        webrtc_request.webrtc_realtime_processing,
+        video_source,
+    )
+
+    rotation = get_video_rotation(video_source)
+    rotation_code = get_cv2_rotation_code(rotation)
+    if rotation_code is not None:
+        logger.info("Video has %d° rotation, will correct", rotation)
+
+    detected_fps = get_video_fps(video_source)
+    # the fps filter duplicates frames above native rate, so only cap below it
+    target_fps = None
+    if (
+        webrtc_request.max_fps is not None
+        and not webrtc_request.webrtc_realtime_processing
+        and detected_fps is not None
+        and webrtc_request.max_fps < detected_fps
+    ):
+        target_fps = webrtc_request.max_fps
+    if detected_fps is not None:
+        # workflows must see the effective rate, or temporal analytics go wrong
+        video_processor._declared_fps = target_fps or detected_fps
+        logger.info(
+            "FPS detection: detected=%.2f, effective=%s",
+            detected_fps,
+            video_processor._declared_fps,
+        )
+    else:
+        logger.warning(
+            "FPS detection failed, keeping default: %s",
+            video_processor._declared_fps,
+        )
+
+    if webrtc_request.webrtc_realtime_processing:
+        if webrtc_request.max_fps is not None:
+            logger.warning("max_fps is ignored when webrtc_realtime_processing=True")
+        # We are dealing with a live video stream,
+        player = MediaPlayer(video_source, loop=False)
+        player._throttle_playback = True
+        video_processor.set_track(track=player.video, rotation_code=rotation_code)
+    else:
+        # we are dealing with a video file,
+        track = ThreadedVideoFileTrack(video_source, target_fps=target_fps)
+        video_processor.set_track(track=track, rotation_code=rotation_code)
+
+    if not should_send_video:
+        logger.info("Starting data-only processing for video file")
+        asyncio.create_task(video_processor.process_frames_data_only())
+
+
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
     if peer_connection.iceGatheringState == "complete":
         logger.info("ICE gathering state already complete")
@@ -1111,6 +1172,31 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Starting data-only processing for MJPEG stream")
             asyncio.create_task(video_processor.process_frames_data_only())
 
+    elif webrtc_request.video_file_url:
+        video_file_url = _validate_url_destination(value=webrtc_request.video_file_url)
+
+        async def _start_video_file_when_ready() -> None:
+            # the file is finite - starting before the connection is up would
+            # drop the outputs of every frame processed until the channel opens
+            while not terminate_event.is_set():
+                data_channel_open = (
+                    video_processor.data_channel is not None
+                    and video_processor.data_channel.readyState == "open"
+                )
+                if peer_connection.connectionState == "connected" and (
+                    data_channel_open or should_send_video
+                ):
+                    _begin_video_file_processing(
+                        video_processor,
+                        video_file_url,
+                        webrtc_request,
+                        should_send_video,
+                    )
+                    return
+                await asyncio.sleep(0.05)
+
+        asyncio.create_task(_start_video_file_when_ready())
+
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("Track received from client")
@@ -1231,49 +1317,9 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
-                    video_processor._file_processing = True
-                    logger.info(
-                        "Video upload complete, processing: realtime=%s, path=%s",
-                        webrtc_request.webrtc_realtime_processing,
-                        video_path,
+                    _begin_video_file_processing(
+                        video_processor, video_path, webrtc_request, should_send_video
                     )
-
-                    rotation = get_video_rotation(video_path)
-                    rotation_code = get_cv2_rotation_code(rotation)
-                    if rotation_code is not None:
-                        logger.info("Video has %d° rotation, will correct", rotation)
-
-                    detected_fps = get_video_fps(video_path)
-                    if detected_fps is not None:
-                        logger.info(
-                            "FPS detection: detected=%.2f, previous=%s",
-                            detected_fps,
-                            video_processor._declared_fps,
-                        )
-                        video_processor._declared_fps = detected_fps
-                    else:
-                        logger.warning(
-                            "FPS detection failed, keeping default: %s",
-                            video_processor._declared_fps,
-                        )
-
-                    if webrtc_request.webrtc_realtime_processing:
-                        # We are dealing with a live video stream,
-                        player = MediaPlayer(video_path, loop=False)
-                        player._throttle_playback = True
-                        video_processor.set_track(
-                            track=player.video, rotation_code=rotation_code
-                        )
-                    else:
-                        # we are dealing with a video file,
-                        track = ThreadedVideoFileTrack(video_path)
-                        video_processor.set_track(
-                            track=track, rotation_code=rotation_code
-                        )
-
-                    if not should_send_video:
-                        logger.info("Starting data-only processing for video file")
-                        asyncio.create_task(video_processor.process_frames_data_only())
 
             return
 

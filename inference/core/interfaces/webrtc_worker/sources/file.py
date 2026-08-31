@@ -13,7 +13,7 @@ from inference.core import logger
 from inference.core.interfaces.webrtc_worker.entities import VideoFileUploadState
 
 
-def _decode_worker(filepath: str, frame_queue, stop_event):
+def _decode_worker(filepath: str, frame_queue, stop_event, target_fps=None):
     """Decode video frames in a separate thread and put them on a queue.
 
     We decode in a background thread to avoid deadlocks. PyAV (the video decoder)
@@ -32,9 +32,27 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
 
+        # ffmpeg's fps filter decimates to target_fps; it duplicates frames when
+        # the target exceeds the source rate, so callers only set it below native
+        graph = None
+        if target_fps is not None:
+            graph = av.filter.Graph()
+            src = graph.add_buffer(template=stream)
+            fps_filter = graph.add("fps", f"fps={target_fps}")
+            sink = graph.add("buffersink")
+            src.link_to(fps_filter)
+            fps_filter.link_to(sink)
+            graph.configure()
+
         for frame in container.decode(stream):
             if stop_event.is_set():
                 break
+            if graph is not None:
+                graph.push(frame)
+                try:
+                    frame = graph.pull()
+                except av.error.BlockingIOError:
+                    continue  # frame decimated by the fps filter
             try:
                 frame_queue.put(frame, timeout=300)
                 frame_count += 1
@@ -47,6 +65,14 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
                     {"error": f"Queue full timeout at frame {frame_count}"}
                 )
                 return
+
+        if graph is not None and not stop_event.is_set():
+            graph.push(None)  # flush the frame buffered inside the filter
+            try:
+                frame_queue.put(graph.pull(), timeout=300)
+                frame_count += 1
+            except (av.error.EOFError, av.error.BlockingIOError):
+                pass
 
         container.close()
     except Exception as e:
@@ -72,14 +98,16 @@ class ThreadedVideoFileTrack(MediaStreamTrack):
 
     kind = "video"
 
-    def __init__(self, filepath: str, queue_size: int = 60):
+    def __init__(
+        self, filepath: str, queue_size: int = 60, target_fps: Optional[float] = None
+    ):
         # TODO: add parameter queue size in settings
         super().__init__()
         self._queue = queue.Queue(maxsize=queue_size)
         self._stop_event = threading.Event()
         self._decode_thread = threading.Thread(
             target=_decode_worker,
-            args=(filepath, self._queue, self._stop_event),
+            args=(filepath, self._queue, self._stop_event, target_fps),
             daemon=True,
         )
         self._decode_thread.start()
