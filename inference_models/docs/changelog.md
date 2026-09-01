@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- RF-DETR keypoint TensorRT backend (`RFDetrForKeyPointsTRT`).
+
 ---
 
 ## `0.36.0`
