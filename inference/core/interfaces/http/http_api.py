@@ -4713,7 +4713,11 @@ class HttpInterface(BaseInterface):
                     # base64 body grows the clip by a third and is held whole
                     # in memory.
                     inference_response = self.model_manager.infer_from_request_sync(
-                        request_model_id,
+                        # add_model above registers under the alias, which is
+                        # model_id, so the lookup asks for that. Under Lambda
+                        # request_model_id is the authorizer's endpoint and
+                        # names nothing the manager holds.
+                        model_id,
                         ActionRecognitionInferenceRequest(
                             api_key=api_key,
                             model_id=model_id,
