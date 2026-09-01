@@ -405,6 +405,20 @@ REGISTERED_MODELS: Dict[
             "num_select",
         },
     ),
+    ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.TRT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_trt",
+            class_name="RFDetrForKeyPointsTRT",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
