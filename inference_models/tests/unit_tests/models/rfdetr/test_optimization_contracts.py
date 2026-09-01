@@ -24,7 +24,6 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
-from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
@@ -246,7 +245,7 @@ def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
         "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     )
-    profiling_plan = InferenceExecutionPlan(
+    profiling_plan = RFDetrExecutionPlan(
         preprocessor_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
         buffer_strategy_id="base",
         scheduler_id="base",
