@@ -9,6 +9,7 @@ dependencies = [
   "numpy",
   "pillow-heif>=0.18.0",
   "imagecodecs",
+  "filelock",
 ]
 
 [project.optional-dependencies]

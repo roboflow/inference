@@ -78,6 +78,8 @@ AUTH_CACHE_MAX_SIZE = get_integer_from_env("AUTH_CACHE_MAX_SIZE", default=10000)
 ENABLE_CONTROL_PLANE_ROUTES = get_boolean_from_env(
     "ENABLE_CONTROL_PLANE_ROUTES", default=False
 )
+# API key used for INFERENCE_PRELOAD_MODELS startup loads (weight fetch).
+PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY", "")
 
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(
@@ -97,6 +99,11 @@ MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", defaul
 
 # ── Preload / readiness (routers/v2_server) ────────────────────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
+
+
+def preload_model_ids() -> list[str]:
+    raw = os.environ.get(INFERENCE_PRELOAD_MODELS_ENV, "")
+    return [m.strip() for m in raw.split(",") if m.strip()]
 
 # ── Gateway resolution (gateway_resolver.resolve_gateway) ─────────────────
 INFERENCE_GATEWAY_ENV = "INFERENCE_GATEWAY"

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend
@@ -19,6 +20,36 @@ from inference_models.utils.performance import performance_profiler
 logger = logging.getLogger(__name__)
 
 
+def _try_release_cuda_memory() -> None:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        logger.warning("CUDA cache release after unload failed", exc_info=True)
+
+
+def _memory_pressure_detected() -> bool:
+    threshold = cfg.INFERENCE_MEMORY_FREE_THRESHOLD
+    if not threshold:
+        return False
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        free, total = torch.cuda.mem_get_info()
+        if free / total >= threshold:
+            return False
+        torch.cuda.empty_cache()
+        free, total = torch.cuda.mem_get_info()
+        return free / total < threshold
+    except Exception:
+        logger.warning("GPU memory pressure check failed", exc_info=True)
+        return False
+
+
 BACKEND_FACTORIES: Dict[str, Callable[..., "Backend"]] = {}
 _ENTRY_POINT_BACKENDS_LOADED = False
 
@@ -30,6 +61,9 @@ def register_backend_factory(name: str, factory: Callable[..., "Backend"]) -> No
 def _direct_backend_factory(model_id, api_key, *, manager, **kwargs):
     from inference_model_manager.backends.direct import DirectBackend
 
+    kwargs.setdefault(
+        "torchscript_state_global_lock", manager.torchscript_state_global_lock
+    )
     return DirectBackend(model_id, api_key, executor=manager.executor, **kwargs)
 
 
@@ -89,8 +123,10 @@ class ModelManager:
     def __init__(self) -> None:
         self._backends: Dict[str, Backend] = {}
         self._lifecycle_lock = threading.Lock()
+        self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
+        self._pinned: set[str] = set()
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
         self._closed = False
@@ -121,6 +157,7 @@ class ModelManager:
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
         warmup_iters: int = 0,
+        pinned: bool = False,
         **kwargs,
     ) -> None:
         """Load a model and create its backend.
@@ -167,6 +204,7 @@ class ModelManager:
         )
 
         try:
+            self._evict_for_capacity(incoming=model_id)
             b = self._create_backend(
                 model_id=load_target,
                 api_key=api_key,
@@ -192,6 +230,8 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
+                if pinned:
+                    self._pinned.add(model_id)
             performance_profiler.set_metadata("manager.model_id", model_id)
             performance_profiler.set_metadata("manager.backend", backend)
             performance_profiler.set_metadata("manager.device", b.device)
@@ -213,6 +253,8 @@ class ModelManager:
             b.state,
             b.device,
         )
+
+        self._evict_for_capacity(incoming=model_id)
 
     @property
     def executor(self) -> ThreadPoolExecutor:
@@ -270,6 +312,7 @@ class ModelManager:
             backend = self._backends.pop(model_id, None)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
+            self._pinned.discard(model_id)
 
         if drain:
             logger.info(
@@ -281,6 +324,76 @@ class ModelManager:
         else:
             logger.info("Unloading model '%s'", model_id)
             backend.unload()
+
+        _try_release_cuda_memory()
+
+    def pin(self, model_id: str) -> None:
+        """Protect a loaded model from LRU eviction."""
+        with self._lifecycle_lock:
+            if model_id not in self._backends:
+                raise KeyError(f"Model '{model_id}' is not loaded")
+            self._pinned.add(model_id)
+
+    def _evict_for_capacity(self, incoming: str) -> None:
+        while True:
+            pressure = _memory_pressure_detected()
+            popped = self._select_and_pop_victims(
+                incoming=incoming, pressure=pressure, count=3 if pressure else 1
+            )
+            if popped is None:
+                return
+            if not popped:
+                logger.warning(
+                    "Cannot make room for '%s' — every loaded model is pinned; "
+                    "proceeding beyond INFERENCE_MAX_ACTIVE_MODELS",
+                    incoming,
+                )
+                return
+            for victim, backend in popped:
+                logger.info(
+                    "Evicting '%s' (LRU) to make room for '%s'", victim, incoming
+                )
+                try:
+                    backend.drain_and_unload(timeout_s=30.0)
+                except Exception:
+                    logger.warning(
+                        "Draining '%s' during eviction failed", victim, exc_info=True
+                    )
+                _try_release_cuda_memory()
+            gc.collect()
+
+    def _select_and_pop_victims(
+        self, incoming: str, pressure: bool, count: int
+    ) -> Optional[List[Tuple[str, Backend]]]:
+        """Atomically decide whether eviction is needed and, if so, remove the
+        victims from ``_backends`` in the same lock acquisition used to select
+        them — so a concurrent ``pin()`` cannot land between selection and
+        removal, and capacity accounts for reservations still in
+        ``_loading_ids`` (the incoming model's own reservation included).
+
+        Returns None if nothing needs to be evicted this pass, otherwise the
+        list of (model_id, backend) pairs already popped from ``_backends``
+        (possibly empty, if every remaining candidate is pinned).
+        """
+        with self._lifecycle_lock:
+            max_active = cfg.INFERENCE_MAX_ACTIVE_MODELS
+            total_reserved = len(self._backends) + len(self._loading_ids)
+            over_capacity = max_active > 0 and total_reserved > max_active
+            if not over_capacity and not pressure:
+                return None
+            candidates = sorted(
+                (getattr(b, "last_used_ts", None) or 0.0, mid)
+                for mid, b in self._backends.items()
+                if mid != incoming and mid not in self._pinned
+            )
+            popped: List[Tuple[str, Backend]] = []
+            for _, mid in candidates[:count]:
+                backend = self._backends.pop(mid, None)
+                if backend is None:
+                    continue
+                self._pinned.discard(mid)
+                popped.append((mid, backend))
+            return popped
 
     # ------------------------------------------------------------------
     # Processing — unified task dispatch

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
@@ -31,9 +30,8 @@ async def v2_ready(
     except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
-    preload_raw = os.environ.get(configuration.INFERENCE_PRELOAD_MODELS_ENV, "").strip()
-    if preload_raw:
-        preload_ids = {m.strip() for m in preload_raw.split(",") if m.strip()}
+    preload_ids = set(configuration.preload_model_ids())
+    if preload_ids:
         models = stats.get("models", {})
         for mid in preload_ids:
             m = models.get(mid, {})

@@ -289,3 +289,7 @@ class DirectBackend(Backend):
     @property
     def key_points_classes(self) -> Optional[List[List[str]]]:
         return getattr(self._model, "key_points_classes", None)
+
+    @property
+    def last_used_ts(self) -> Optional[float]:
+        return self._last_inference_ts or self._start_ts

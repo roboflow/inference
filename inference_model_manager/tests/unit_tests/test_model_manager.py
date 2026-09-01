@@ -53,6 +53,7 @@ class FakeBackend:
         self._fake_model = FakeModel(model_id)
         self._state = "loaded"
         self._unloaded = False
+        self.last_used_ts = None
 
     @property
     def model(self) -> FakeModel:
@@ -324,7 +325,10 @@ class TestModelManagerObservability:
 
 class TestModelManagerThreadSafety:
 
-    def test_concurrent_loads(self):
+    def test_concurrent_loads(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
         mm = ModelManager()
         _patch_create_backend(mm, {})
         errors = []
@@ -501,3 +505,311 @@ class TestDirectDrain:
         b.drain_and_unload(timeout_s=5.0)
         assert _time.monotonic() - t0 >= 0.15
         assert b._model is None
+
+
+class TestCudaReleaseOnUnload:
+    def test_unload_releases_cuda_cache(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_mod
+
+        calls = []
+        monkeypatch.setattr(
+            mm_mod, "_try_release_cuda_memory", lambda: calls.append(1)
+        )
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        mm.unload("model-a")
+        assert calls == [1]
+
+
+class TestCapacityEviction:
+    def _mm_at_cap(self, monkeypatch, cap):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        return mm, backends
+
+    def test_lru_evicted_at_capacity(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 2)
+        mm.load("old", api_key="")
+        mm.load("hot", api_key="")
+        backends["old"].last_used_ts = 1.0
+        backends["hot"].last_used_ts = 2.0
+        mm.load("new", api_key="")
+        assert "old" not in mm
+        assert set(mm.loaded_models) == {"hot", "new"}
+        assert backends["old"]._unloaded is True
+
+    def test_pinned_model_survives_eviction(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 2)
+        mm.load("keep", api_key="", pinned=True)
+        mm.load("bye", api_key="")
+        backends["keep"].last_used_ts = 1.0
+        backends["bye"].last_used_ts = 2.0
+        mm.load("new", api_key="")
+        assert "keep" in mm
+        assert "bye" not in mm
+
+    def test_all_pinned_proceeds_over_cap(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="", pinned=True)
+        mm.load("b", api_key="", pinned=True)
+        mm.load("c", api_key="")
+        assert len(mm) == 3
+
+    def test_pin_after_load(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+        mm.pin("a")
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 1.0
+        backends["b"].last_used_ts = 2.0
+        mm.load("c", api_key="")
+        assert "a" in mm
+        assert "b" not in mm
+
+    def test_pin_missing_raises(self):
+        mm = ModelManager()
+        with pytest.raises(KeyError):
+            mm.pin("nope")
+
+    def test_zero_cap_is_unbounded(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 0)
+        for i in range(12):
+            mm.load(f"m{i}", api_key="")
+        assert len(mm) == 12
+
+
+class TestEvictionFailureSafety:
+    def test_eviction_failure_does_not_leak_loading_id(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+
+        def boom(incoming):
+            raise RuntimeError("eviction blew up")
+
+        mm._evict_for_capacity = boom
+
+        with pytest.raises(RuntimeError, match="eviction blew up"):
+            mm.load("new", api_key="")
+
+        assert "new" not in mm._loading_ids
+
+        del mm._evict_for_capacity
+        mm.load("new", api_key="")
+        assert "new" in mm
+
+
+class TestEvictionConcurrencySafety:
+    def test_concurrent_loads_never_exceed_cap(self, monkeypatch):
+        import time as _time
+
+        import inference_model_manager.configuration as cfg
+
+        cap = 3
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+
+        for i in range(cap):
+            mm.load(f"old{i}", api_key="")
+            backends[f"old{i}"].last_used_ts = float(i)
+
+        def slow_create(model_id, api_key, backend, **kwargs):
+            fb = FakeBackend(model_id)
+            backends[model_id] = fb
+            _time.sleep(0.2)
+            return fb
+
+        mm._create_backend = slow_create
+
+        n_new = cap
+        errors: list = []
+
+        def load_model(name):
+            try:
+                mm.load(name, api_key="")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=load_model, args=(f"new{i}",))
+            for i in range(n_new)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(errors) == 0
+        assert len(mm) <= cap
+
+    def test_pin_race_during_eviction_selection(self, monkeypatch):
+        import time as _time
+
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+
+        pin_result: list = []
+        pin_thread_holder: list = []
+
+        def try_pin():
+            try:
+                mm.pin("old")
+                pin_result.append(("ok", None))
+            except KeyError as exc:
+                pin_result.append(("keyerror", exc))
+
+        def rigged_getter(self):
+            value = self.__dict__.get("_last_used_ts_raw")
+            if not self.__dict__.get("_hook_fired"):
+                self.__dict__["_hook_fired"] = True
+                t = threading.Thread(target=try_pin, daemon=True)
+                pin_thread_holder.append(t)
+                t.start()
+                _time.sleep(0.1)
+            return value
+
+        def rigged_setter(self, value):
+            self.__dict__["_last_used_ts_raw"] = value
+
+        monkeypatch.setattr(
+            FakeBackend,
+            "last_used_ts",
+            property(rigged_getter, rigged_setter),
+            raising=False,
+        )
+
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("old", api_key="")
+        backends["old"].last_used_ts = 1.0
+
+        mm.load("new", api_key="")
+        pin_thread_holder[0].join(timeout=5)
+
+        assert len(pin_result) == 1
+        kind, _ = pin_result[0]
+        if kind == "ok":
+            assert "old" in mm
+            assert "old" in mm._pinned
+        else:
+            assert kind == "keyerror"
+
+
+class TestEvictionConvergenceAndDrainSafety:
+    def test_cold_burst_converges_to_cap(self, monkeypatch):
+        import time as _time
+
+        import inference_model_manager.configuration as cfg
+
+        cap = 3
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+
+        def slow_create(model_id, api_key, backend, **kwargs):
+            fb = FakeBackend(model_id)
+            backends[model_id] = fb
+            _time.sleep(0.1)
+            return fb
+
+        mm._create_backend = slow_create
+
+        n = 6
+        errors: list = []
+
+        def load_model(name):
+            try:
+                mm.load(name, api_key="")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=load_model, args=(f"m{i}",)) for i in range(n)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(errors) == 0
+        assert len(mm) <= cap
+
+    def test_drain_failure_does_not_skip_remaining_victims(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+
+        for i, name in enumerate(["v1", "v2", "v3"]):
+            mm.load(name, api_key="")
+            backends[name].last_used_ts = float(i)
+
+        attempted: list = []
+
+        def boom(timeout_s=30.0):
+            attempted.append("v1")
+            raise RuntimeError("drain exploded")
+
+        backends["v1"].drain_and_unload = boom
+
+        pressure = [True, False, False]
+        monkeypatch.setattr(
+            mm_mod, "_memory_pressure_detected", lambda: pressure.pop(0)
+        )
+
+        mm.load("new", api_key="")
+
+        assert attempted == ["v1"]
+        assert "new" in mm
+        assert not {"v1", "v2", "v3"} & set(mm.loaded_models)
+        assert backends["v2"]._unloaded is True
+        assert backends["v3"]._unloaded is True
+
+
+class TestMemoryPressureEviction:
+    def test_pressure_evicts_up_to_three(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        pressure = [False] * 8 + [True, False, False]
+        monkeypatch.setattr(
+            mm_mod, "_memory_pressure_detected", lambda: pressure.pop(0)
+        )
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        for i, name in enumerate(["a", "b", "c", "d"]):
+            mm.load(name, api_key="")
+            backends[name].last_used_ts = float(i)
+        mm.load("new", api_key="")
+        assert "d" in mm and "new" in mm
+        assert not {"a", "b", "c"} & set(mm.loaded_models)
+
+    def test_no_pressure_no_eviction(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        assert len(mm) == 2
+
+    def test_threshold_zero_disables_check(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MEMORY_FREE_THRESHOLD", 0.0)
+        assert mm_mod._memory_pressure_detected() is False
