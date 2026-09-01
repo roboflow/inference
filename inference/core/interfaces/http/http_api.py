@@ -4236,12 +4236,15 @@ class HttpInterface(BaseInterface):
                         "Classify the actions in a video clip. The model states "
                         "how the clip is cut and how its frames are sampled, so a "
                         "caller sends the clip and nothing else. Frame indices in "
-                        "the response count from the first frame of the clip. A "
-                        "fine-tuned model reports its own classes. A zero-shot "
-                        "model reads the whole clip in one call and names the "
-                        "events it finds in its own words. Send the clip as a "
-                        "URL. Base64 grows it by a third and holds the whole "
-                        "request in memory, so it suits short clips only."
+                        "the response count from the first frame of the clip, and "
+                        "windows_classified reports how many calls the clip was "
+                        "cut into. A fine-tuned model reports its own classes. A "
+                        "zero-shot model names the events it finds in its own "
+                        "words. Frames are chosen by the clip's nominal frame "
+                        "rate, so a variable-frame-rate source is sampled at "
+                        "different instants than the model trained on. Send the "
+                        "clip as a URL. Base64 grows it by a third and holds the "
+                        "whole request in memory, so it suits short clips only."
                     ),
                 )
                 @with_route_exceptions

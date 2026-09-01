@@ -43,6 +43,13 @@ class VideoSampling:
     becomes tiled windows of ``window_seconds``. Under ``whole_video`` it
     becomes one sample.
 
+    Sampling assumes the source has a constant frame rate. Frame positions
+    come from one nominal rate for the whole clip, where training reads each
+    frame's own decoded timestamp. A variable-frame-rate source therefore
+    samples at different instants than training did, by however far its local
+    rate departs from the nominal one. Nothing detects or rejects such a
+    source today, here or elsewhere in the video stack.
+
     ``max_frame_side`` and ``max_frames`` are trained values, so both stay
     ``None`` for a model that never trained on them, and the frames then reach
     the model at their own size and rate. Reading a model below what it
@@ -264,6 +271,13 @@ def _frame_at_or_after(timestamp_us: float, source_fps: float) -> int:
     The timestamp truncates to whole microseconds first, and the frame comes
     from one multiplication rather than a chain. Both keep binary floating
     point from drifting a frame off the trainer's grid.
+
+    This assumes a constant frame rate. Training picks the frame by its
+    decoded timestamp, while ``source_fps`` here is one nominal rate for the
+    whole clip, so the two agree only while frames really are evenly spaced.
+    On a variable-frame-rate source they diverge by however far the local rate
+    departs from the nominal one, and the frames the model reads shift with
+    it. See the note on :class:`VideoSampling`.
     """
     return math.ceil(int(timestamp_us) * source_fps / _MICROSECONDS)
 
