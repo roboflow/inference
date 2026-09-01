@@ -72,6 +72,12 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
 AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)
 AUTH_CACHE_FAIL_TTL_S = get_integer_from_env("AUTH_CACHE_FAIL_TTL_S", default=60)
 AUTH_CACHE_MAX_SIZE = get_integer_from_env("AUTH_CACHE_MAX_SIZE", default=10000)
+# Model list/load/unload and server info/metrics validate a key but not its
+# workspace — any customer key can drive them. Off unless the deployment
+# trusts every key holder (single tenant).
+ENABLE_CONTROL_PLANE_ROUTES = get_boolean_from_env(
+    "ENABLE_CONTROL_PLANE_ROUTES", default=False
+)
 
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(

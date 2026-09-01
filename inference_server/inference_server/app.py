@@ -60,6 +60,17 @@ _AUTH_SKIP_PATHS = frozenset(
     }
 )
 
+_CONTROL_PLANE_ROUTES = frozenset(
+    {
+        ("GET", "/v2/models"),
+        ("DELETE", "/v2/models"),
+        ("POST", "/v2/models/load"),
+        ("POST", "/v2/models/unload"),
+        ("GET", "/v2/server/info"),
+        ("GET", "/v2/server/metrics"),
+    }
+)
+
 class _AuthMiddleware:
     """ASGI middleware for auth — does NOT buffer the request body.
 
@@ -86,6 +97,18 @@ class _AuthMiddleware:
         path = scope.get("path", "").rstrip("/") or "/"
         if path in _AUTH_SKIP_PATHS:
             await self.app(scope, receive, send)
+            return
+
+        if (
+            not _cfg.ENABLE_CONTROL_PLANE_ROUTES
+            and (scope.get("method", ""), path) in _CONTROL_PLANE_ROUTES
+        ):
+            response = Response(
+                status_code=403,
+                content=b"control-plane routes disabled; "
+                b"set ENABLE_CONTROL_PLANE_ROUTES=true to enable",
+            )
+            await response(scope, receive, send)
             return
 
         # Extract Bearer token from headers
