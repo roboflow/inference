@@ -179,14 +179,14 @@ def test_whole_video_holds_the_rate_when_no_budget_is_declared() -> None:
     # Zero-shot never trained on a budget, so the rate is what must hold: the
     # frame timestamps are built from it.
     windows = plan_windows(
-        frame_count=600,
+        frame_count=150,
         source_fps=10.0,
         sampling=_whole_video(window_seconds=16.0, sample_fps=4.0),
     )
 
     assert len(windows) == 1
-    # 60 s at 4 fps, not the 64 a trained window would have capped it to.
-    assert len(windows[0].frame_indices) == 240
+    # 15 s at 4 fps, not the 64 a trained window would have capped it to.
+    assert len(windows[0].frame_indices) == 60
     # Exactly the nominal rate, not a rate re-derived from the frame count:
     # the model builds its frame timestamps from this number.
     assert windows[0].sample_fps == 4.0
@@ -333,3 +333,44 @@ def test_whole_video_mode_ignores_the_window_entirely() -> None:
     )
 
     assert len(windows) == 1
+
+
+def test_a_model_without_a_budget_cuts_a_long_clip_at_the_ceiling() -> None:
+    # Nothing bounds an untrained sample, so a long clip read whole would hold
+    # every sampled frame at once.
+    windows = plan_windows(
+        frame_count=600,
+        source_fps=10.0,
+        sampling=_whole_video(sample_fps=4.0),
+    )
+
+    # 60 s at 4 fps is 240 samples; the ceiling cuts it into 19 s windows.
+    assert [len(window.frame_indices) for window in windows] == [76, 76, 76, 12]
+    assert all(window.sample_fps == 4.0 for window in windows)
+    # Nothing is dropped: the last window reaches the end of the clip.
+    assert max(windows[-1].frame_indices) >= 590
+
+
+def test_a_clip_under_the_ceiling_is_still_read_whole() -> None:
+    windows = plan_windows(
+        frame_count=563,
+        source_fps=30.0,
+        sampling=_whole_video(sample_fps=4.0),
+    )
+
+    # 18.8 s is 75 samples, under the 76 ceiling, so it stays one window.
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 75
+
+
+def test_a_trained_model_ignores_the_untrained_ceiling() -> None:
+    # Its own budget bounds it, so whole_video stays one sample however long
+    # the clip runs.
+    windows = plan_windows(
+        frame_count=9000,
+        source_fps=30.0,
+        sampling=_whole_video(sample_fps=4.0, max_frames=64),
+    )
+
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 64

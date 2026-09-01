@@ -12,9 +12,16 @@
 - NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, tasks `vlm` and
   `action-recognition`, backend `hugging-face`). A package whose class list
   resolves to `<|cls:...|>` tokens is a fine-tune, and answers in the training
-  span format under a decoding constraint. Anything else runs zero-shot over
-  a whole clip, in its own words. A malformed package raises
+  span format under a decoding constraint. Anything else runs zero-shot, in
+  its own words, over windows of 76 frames. A malformed package raises
   `CorruptedModelPackageError` rather than loading as zero-shot.
+
+- Zero-shot reads a clip in windows rather than whole. Nothing bounded an
+  untrained sample before, so a long clip held every sampled frame at once.
+  The 76-frame window is empirical: it is the only size at which
+  finer-grained answers have been observed, and windowing there also recovers
+  them on longer clips, where reading whole returned one coarse segment. A
+  trained model is unaffected, since its own budget already bounds its sample.
 
 - `Cosmos3EdgeReasoner` gained LoRA package loading, `enable_thinking`, and
   constrained decoding on the video path. It now passes real `VideoMetadata`,

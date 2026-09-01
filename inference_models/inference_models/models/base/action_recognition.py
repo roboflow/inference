@@ -19,6 +19,16 @@ class ActionRecognitionPrediction:
 SLIDING_WINDOW_MODE = "sliding_window"
 WHOLE_VIDEO_MODE = "whole_video"
 _MICROSECONDS = 1_000_000
+# The frames one sample holds when a model recorded no budget of its own.
+#
+# Nothing bounds an untrained sample otherwise, so a long clip is read whole
+# and every sampled frame is held at once, which grows without limit. This is
+# the cut, and the value is empirical rather than principled: 75 and 76 frames
+# are the only sizes at which finer-grained answers have been observed, on two
+# clips that have distinct actions to find. Neighbouring sizes on the same
+# clips returned coarse answers, and no mechanism explains why. Treat it as
+# the best available guess, not a threshold.
+UNTRAINED_MAX_FRAMES = 76
 
 
 @dataclass(frozen=True)
@@ -138,15 +148,8 @@ def plan_windows(
     if frame_count <= 0 or source_fps <= 0 or sampling.sample_fps <= 0:
         return []
     duration_us = int(round(frame_count / source_fps * _MICROSECONDS))
-    window_us = int(round(sampling.window_seconds * _MICROSECONDS))
-    if sampling.mode != WHOLE_VIDEO_MODE and window_us <= 0:
-        # Treating this as one whole-clip sample would guess at a window the
-        # model never declared, which is the reading its answer depends on.
-        raise ValueError(
-            f"Sliding-window sampling needs a positive window, got "
-            f"window_seconds={sampling.window_seconds!r}."
-        )
-    if sampling.mode == WHOLE_VIDEO_MODE or duration_us <= window_us:
+    window_us = _window_span_us(sampling=sampling)
+    if window_us is None or duration_us <= window_us:
         return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
     whole_windows = duration_us // window_us
     windows = [
@@ -175,6 +178,30 @@ def plan_windows(
             )
         )
     return windows
+
+
+def _window_span_us(sampling: VideoSampling) -> Optional[int]:
+    """How much of a clip one sample covers, or ``None`` for all of it.
+
+    A model that recorded a frame budget bounds its own sample, so under
+    ``whole_video`` it reads the clip in one go however long that clip runs.
+    A model that recorded nothing has no such bound, and reading a long clip
+    whole holds every sampled frame at once, so it is cut at
+    ``UNTRAINED_MAX_FRAMES``.
+    """
+    if sampling.mode == WHOLE_VIDEO_MODE:
+        if sampling.max_frames is not None:
+            return None
+        return int(round(UNTRAINED_MAX_FRAMES / sampling.sample_fps * _MICROSECONDS))
+    window_us = int(round(sampling.window_seconds * _MICROSECONDS))
+    if window_us <= 0:
+        # Treating this as one whole-clip sample would guess at a window the
+        # model never declared, which is the reading its answer depends on.
+        raise ValueError(
+            f"Sliding-window sampling needs a positive window, got "
+            f"window_seconds={sampling.window_seconds!r}."
+        )
+    return window_us
 
 
 def _plan_interval(
