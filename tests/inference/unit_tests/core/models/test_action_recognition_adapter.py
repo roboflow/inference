@@ -205,3 +205,19 @@ def test_the_legacy_route_reads_a_comma_separated_class_list(raw, expected) -> N
     from inference.core.interfaces.http.http_api import _parse_legacy_class_filter
 
     assert _parse_legacy_class_filter(class_filter=raw) == expected
+
+
+def test_a_request_filter_does_not_become_a_class_vocabulary() -> None:
+    # A zero-shot model ignores the filter and answers in its own words. A
+    # caption matching one of the requested names must not inherit its index.
+    model = _FakeModel(
+        responses=[[ActionRecognitionPrediction(0, 15, "running")]],
+        class_names=None,
+    )
+    with _clip(frame_count=64, source_fps=4.0):
+        response = _adapter(model).infer_from_request(
+            _request(class_filter=["walking", "running"])
+        )
+
+    assert [entry.class_name for entry in response.timeline] == ["running"]
+    assert [entry.class_id for entry in response.timeline] == [-1]

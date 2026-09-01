@@ -267,7 +267,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         block_filter = normalise_class_names(class_filter) or None
-        id_vocabulary = getattr(model, "class_names", None) or block_filter or None
+        # A filter is not a vocabulary; only the model's own class list
+        # carries ids. See the adapter for the zero-shot case this avoids.
+        id_vocabulary = getattr(model, "class_names", None) or None
         video_sampling = getattr(model, "video_sampling", None) or VideoSampling()
         if video_sampling.mode == WHOLE_VIDEO_MODE:
             # Whole-video training fed one sample spanning each clip, and a

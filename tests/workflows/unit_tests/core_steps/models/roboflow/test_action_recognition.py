@@ -404,7 +404,10 @@ def test_model_vocabulary_sets_class_ids_when_class_filter_is_omitted():
     ]
 
 
-def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
+def test_class_filter_reaches_the_model_but_supplies_no_class_ids():
+    # The filter still forms the prompt vocabulary. It is not a class list,
+    # though: a model carrying none has no ids to report, and borrowing the
+    # filter's order would invent one.
     block, model = _make_block(
         responses=[[_model_segment("run")]],
         model_class_names=None,
@@ -419,7 +422,7 @@ def test_class_filter_is_prompt_vocabulary_when_model_vocabulary_is_omitted():
             "start_frame_idx": 0,
             "end_frame_idx": 0,
             "class_name": "run",
-            "class_id": 0,
+            "class_id": -1,
         }
     ]
 
@@ -650,13 +653,13 @@ def test_dropped_frame_gap_fires_once_and_maps_the_current_buffer():
             "start_frame_idx": 10,
             "end_frame_idx": 10,
             "class_name": "walk",
-            "class_id": 0,
+            "class_id": -1,
         },
         {
             "start_frame_idx": 100,
             "end_frame_idx": 100,
             "class_name": "run",
-            "class_id": 1,
+            "class_id": -1,
         },
     ]
 
@@ -677,7 +680,7 @@ def test_merges_same_class_across_windows_when_gap_is_at_most_stride():
             "start_frame_idx": 0,
             "end_frame_idx": 4,
             "class_name": "walk",
-            "class_id": 0,
+            "class_id": -1,
         }
     ]
 
@@ -712,7 +715,7 @@ def test_merges_reports_separated_by_a_fractional_stride_boundary():
             "start_frame_idx": 0,
             "end_frame_idx": 53,
             "class_name": "walk",
-            "class_id": 0,
+            "class_id": -1,
         }
     ]
 
@@ -731,12 +734,11 @@ def test_preserves_overlapping_classes_and_unions_same_class_overlaps():
     _run(block, _make_frame(0))
     result = _run(block, _make_frame(2))
 
-    assert [
+    # Two classes covering the same range have no order between them, so the
+    # assertion is about which ranges survive, not how they are sequenced.
+    assert sorted(
         (entry.class_name, entry.start_frame_idx) for entry in result["timeline"]
-    ] == [
-        ("walk", 0),
-        ("run", 0),
-    ]
+    ) == [("run", 0), ("walk", 0)]
 
 
 def test_keeps_same_class_ranges_separate_when_gap_exceeds_stride():

@@ -1996,7 +1996,11 @@ class InferenceModelsActionRecognitionAdapter(Model):
     ) -> ActionRecognitionInferenceResponse:
         sampling = self._model.video_sampling
         class_filter = request.class_filter or None
-        id_vocabulary = self._model.class_names or class_filter or None
+        # Only a model that carries its own class list has ids to report. A
+        # request filter is not a vocabulary: a zero-shot model ignores it and
+        # answers in its own words, so a caption that happens to match one of
+        # the requested names would otherwise be given that name's index.
+        id_vocabulary = self._model.class_names or None
         with video_source_path(
             video_type=request.video.type, value=request.video.value
         ) as path:
