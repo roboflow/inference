@@ -374,3 +374,48 @@ def test_a_trained_model_ignores_the_untrained_ceiling() -> None:
 
     assert len(windows) == 1
     assert len(windows[0].frame_indices) == 64
+
+
+def test_a_remainder_of_one_frame_is_not_a_window() -> None:
+    sampling = VideoSampling(window_seconds=16.0, sample_fps=4.0, min_frames=4)
+
+    # One frame past a whole window. The sliver holds a single source frame,
+    # so a window over it repeats that frame and shows no motion.
+    windows = plan_windows(frame_count=481, source_fps=30.0, sampling=sampling)
+
+    assert len(windows) == 1
+    assert len(windows[0].frame_indices) == 64
+
+
+def test_a_remainder_holding_two_frames_is_a_window() -> None:
+    """Two distinct frames is a change, which is the least an action needs."""
+    sampling = VideoSampling(window_seconds=16.0, sample_fps=4.0, min_frames=4)
+
+    windows = plan_windows(frame_count=482, source_fps=30.0, sampling=sampling)
+
+    assert len(windows) == 2
+    assert len(set(windows[-1].frame_indices)) == 2
+
+
+def test_a_remainder_whose_samples_clamp_at_the_end_survives() -> None:
+    """The last samples of a tail can step past the clip and clamp onto its
+    final frame. That leaves fewer distinct frames than samples while still
+    covering real time, so the tail is honest and has to be kept."""
+    sampling = VideoSampling(window_seconds=8.0, sample_fps=2.0, min_frames=4)
+
+    windows = plan_windows(frame_count=170, source_fps=10.0, sampling=sampling)
+
+    assert len(windows) == 3
+    remainder = windows[-1]
+    assert len(remainder.frame_indices) > len(set(remainder.frame_indices))
+    assert len(set(remainder.frame_indices)) > 1
+
+
+def test_a_clip_shorter_than_one_window_keeps_its_only_window() -> None:
+    """The minimum applies to a trailing sliver, never to the whole clip."""
+    sampling = VideoSampling(window_seconds=16.0, sample_fps=4.0, min_frames=4)
+
+    windows = plan_windows(frame_count=1, source_fps=30.0, sampling=sampling)
+
+    assert len(windows) == 1
+    assert set(windows[0].frame_indices) == {0}

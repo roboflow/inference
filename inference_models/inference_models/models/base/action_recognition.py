@@ -175,15 +175,30 @@ def plan_windows(
     # window of its own, sampled the way a short clip is.
     remainder_us = duration_us - whole_windows * window_us
     if remainder_us > 0:
-        windows.append(
-            _plan_interval(
-                whole_windows * window_us,
-                duration_us,
-                frame_count,
-                source_fps,
-                sampling,
-            )
+        remainder = _plan_interval(
+            whole_windows * window_us,
+            duration_us,
+            frame_count,
+            source_fps,
+            sampling,
         )
+        # The tiling leaves whatever it leaves, so the remainder can be a
+        # sliver. _plan_interval lifts any span to min_frames by repeating
+        # the frames it finds, which is right for a source slower than the
+        # recorded rate and wrong for a one-frame tail: that becomes a window
+        # of one frame repeated, with no motion to classify, and the model
+        # answers it with a segment pinned to the end of the clip.
+        #
+        # Two distinct frames is the floor, because an action is a change and
+        # one frame cannot show one. Counting min_frames instead would drop
+        # honest tails: a tail whose last samples step past the clip end
+        # clamps them onto the final frame, so it holds fewer distinct frames
+        # than samples while still covering real time.
+        #
+        # A clip shorter than one window has no whole windows to fall back
+        # on, and it keeps its only window however short it is.
+        if not windows or len(set(remainder.frame_indices)) > 1:
+            windows.append(remainder)
     return windows
 
 
