@@ -1207,3 +1207,69 @@ def test_timeline_under_the_ceiling_keeps_every_range():
 
     assert bookkeeping.timeline == before
     assert bookkeeping.dropped_history is False
+
+
+def _make_block_with_side(max_frame_side, tensor: bool = False):
+    block, model = _make_block(responses=[[_model_segment("walk")]], tensor=tensor)
+    return block, model, max_frame_side
+
+
+def test_buffered_frames_are_capped_to_the_trained_side():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    block._model.video_sampling = VideoSampling(
+        window_seconds=1.0, sample_fps=2.0, min_frames=1, max_frame_side=8
+    )
+
+    _run(block, _make_frame(0), window_seconds=1.0, sample_fps=2.0, min_frames=1)
+    _run(block, _make_frame(2), window_seconds=1.0, sample_fps=2.0, min_frames=1)
+
+    assert len(model.calls) == 1
+    for frame in model.calls[0]["frames"]:
+        assert max(frame.shape[:2]) <= 8
+
+
+def test_a_model_declaring_no_side_keeps_frames_whole():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+
+    _run(block, _make_frame(0))
+    _run(block, _make_frame(2))
+
+    assert len(model.calls) == 1
+    original = _make_frame(0).numpy_image.shape[:2]
+    for frame in model.calls[0]["frames"]:
+        assert frame.shape[:2] == original
+
+
+def test_the_block_cap_matches_the_model_cap():
+    """The model caps again before inferring, so the pixels must agree."""
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        _cap_frame_side,
+    )
+
+    frame = np.arange(40 * 60 * 3, dtype=np.uint8).reshape(40, 60, 3)
+
+    from_block = ActionRecognitionModelBlockV1._cap_frame_side(frame=frame, max_side=16)
+    from_model = _cap_frame_side(frames=[frame], max_side=16)[0]
+
+    np.testing.assert_array_equal(from_block, from_model)
+
+
+def test_capping_leaves_a_frame_already_small_enough_untouched():
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+
+    result = ActionRecognitionModelBlockV1._cap_frame_side(frame=frame, max_side=16)
+
+    assert result is frame
+
+
+def test_tensor_block_caps_on_device_without_leaving_the_tensor():
+    frame = torch.zeros((3, 40, 60), dtype=torch.uint8)
+
+    result = TensorActionRecognitionModelBlockV1._cap_frame_side(
+        frame=frame, max_side=16
+    )
+
+    assert isinstance(result, torch.Tensor)
+    assert result.dtype == torch.uint8
+    assert result.device == frame.device
+    assert result.shape == (3, 11, 16)

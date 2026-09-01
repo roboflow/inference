@@ -5,6 +5,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
 
+import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
@@ -375,7 +376,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
-            frame = self._extract_frame(image=image)
+            frame = self._cap_frame_side(
+                frame=self._extract_frame(image=image),
+                max_side=video_sampling.max_frame_side,
+            )
             # Frames can arrive with gaps. A timestamp stranded in a gap has
             # no frame of its own, and copying this one under each would
             # flood the buffer, so the cursor snaps past them first.
@@ -509,6 +513,31 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 np.ascontiguousarray(frame.detach().permute(1, 2, 0).to("cpu").numpy())
             )
         return normalized
+
+    @staticmethod
+    def _cap_frame_side(frame: Any, max_side: Optional[int]) -> Any:
+        """Shrink a frame to the side the model trained on, before buffering.
+
+        The buffer holds one window of frames, so its size is set by the frame
+        the stream supplies rather than by anything the model asked for. At
+        1080p that is 398 MB per stream against 25 MB at a declared 360.
+
+        The model caps the side again before it infers, with this same
+        operation, so shrinking here leaves the pixels it reads unchanged and
+        only moves the work earlier. A model that declares no side keeps its
+        frames whole, because there is no size it is known to accept.
+        """
+        if not max_side or max_side <= 0:
+            return frame
+        height, width = frame.shape[:2]
+        scale = max_side / max(height, width)
+        if scale >= 1.0:
+            return frame
+        return cv2.resize(
+            frame,
+            (round(width * scale), round(height * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
 
     def _merge_segments(
         self,
