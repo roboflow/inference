@@ -269,7 +269,7 @@ async def test_load_kwargs_forwarded_to_manager_load():
     mgr_default = _Manager()
     wrapper_default = ModelManagerGateway(mgr_default)
     await wrapper_default.load("m", "key")
-    assert mgr_default.load_kwargs == {}
+    assert mgr_default.load_kwargs == {"pinned": True}
 
 
 def test_budget_attrs_default_and_override():
@@ -815,3 +815,269 @@ async def test_load_admin_route_splits_instance_suffix_for_weights():
     args, kwargs = mgr.load.call_args
     assert args[0] == "acme/1:b"
     assert kwargs["model_id_or_path"] == "acme/1"
+
+
+class TestLoadPinsModel:
+    @pytest.mark.asyncio
+    async def test_gateway_load_pins_after_success(self):
+        mgr = _fake_manager()
+        pinned = []
+        mgr.pin = lambda mid: pinned.append(mid)
+        wrapper = ModelManagerGateway(mgr)
+        result = await wrapper.load("m1", api_key="k")
+        assert result == ("ok",)
+        assert pinned == ["m1"]
+
+    @pytest.mark.asyncio
+    async def test_gateway_load_tolerates_manager_without_pin(self):
+        class _Manager:
+            def __contains__(self, model_id):
+                return False
+
+            def load(self, model_id, api_key, **kwargs):
+                pass
+
+        wrapper = ModelManagerGateway(_Manager())
+        result = await wrapper.load("m1", api_key="k")
+        assert result == ("ok",)
+
+    @pytest.mark.asyncio
+    async def test_gateway_load_pins_already_loaded_model(self):
+        mgr = _fake_manager()
+        mgr.__contains__ = MagicMock(return_value=True)
+        pinned = []
+        mgr.pin = lambda mid: pinned.append(mid)
+        wrapper = ModelManagerGateway(mgr)
+        result = await wrapper.load("m1", api_key="k")
+        assert result == ("ok",)
+        assert pinned == ["m1"]
+        mgr.load.assert_not_called()
+
+
+class TestPreloadModels:
+    @pytest.mark.asyncio
+    async def test_preloads_each_id_and_swallows_failures(self):
+        from inference_server.app import _preload_models
+
+        calls = []
+
+        class _Proxy:
+            async def load(self, mid, api_key="", timeout_s=None):
+                calls.append((mid, api_key))
+                if mid == "bad":
+                    raise RuntimeError("boom")
+                return ("ok",)
+
+        await _preload_models(_Proxy(), ["a", "bad", "b"], api_key="k")
+        assert {c[0] for c in calls} == {"a", "bad", "b"}
+        assert all(c[1] == "k" for c in calls)
+
+
+class _CapBackend:
+    """Backend stand-in for capacity/eviction tests against a real manager."""
+
+    model = None
+
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self.state = "loaded"
+        self.device = "cpu"
+        self.last_used_ts = None
+        self.drained = False
+
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        self.drained = True
+        self.state = "unhealthy"
+
+    def unload(self) -> None:
+        self.state = "unhealthy"
+
+
+class _PinTrackingManager:
+    """Manager double recording whether each load asked to be pinned."""
+
+    def __init__(self, evictions_before_pin: int = 0):
+        self.loaded: set[str] = set()
+        self.pinned: set[str] = set()
+        self.load_calls = 0
+        self._evictions_left = evictions_before_pin
+        self.release = None
+
+    def __contains__(self, model_id):
+        return model_id in self.loaded
+
+    def load(self, model_id, api_key, **kwargs):
+        self.load_calls += 1
+        if self.release is not None:
+            self.release.wait(timeout=5)
+        self.loaded.add(model_id)
+        if kwargs.get("pinned"):
+            self.pinned.add(model_id)
+
+    def pin(self, model_id):
+        if self._evictions_left:
+            self._evictions_left -= 1
+            self.loaded.discard(model_id)
+            self.pinned.discard(model_id)
+            raise KeyError(model_id)
+        if model_id not in self.loaded:
+            raise KeyError(model_id)
+        self.pinned.add(model_id)
+
+
+class TestPinnedLoadRace:
+    @pytest.mark.asyncio
+    async def test_concurrent_loads_at_cap_all_end_pinned_and_present(
+        self, monkeypatch
+    ):
+        import asyncio
+        import threading
+
+        import inference_model_manager.configuration as mm_cfg
+        from inference_model_manager.model_manager import ModelManager
+
+        monkeypatch.setattr(mm_cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        manager = ModelManager()
+        manager._create_backend = lambda model_id, api_key, backend, **kw: _CapBackend(
+            model_id
+        )
+        model_ids = ["m0", "m1", "m2", "m3"]
+
+        real_load = manager.load
+        counter_lock = threading.Lock()
+        pending = [len(model_ids)]
+        all_registered = threading.Event()
+
+        def _gated_load(model_id, api_key, **kwargs):
+            real_load(model_id, api_key, **kwargs)
+            with counter_lock:
+                pending[0] -= 1
+                if pending[0] == 0:
+                    all_registered.set()
+            all_registered.wait(timeout=5)
+
+        manager.load = _gated_load
+        try:
+            wrapper = ModelManagerGateway(manager)
+            results = await asyncio.gather(
+                *(wrapper.load(mid, "key") for mid in model_ids)
+            )
+            assert results == [("ok",)] * len(model_ids)
+            assert set(manager.loaded_models) == set(model_ids)
+            assert manager._pinned == set(model_ids)
+        finally:
+            manager.load = real_load
+            manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_ensure_loaded_keeps_auto_loads_unpinned(self):
+        mgr = _PinTrackingManager()
+        wrapper = ModelManagerGateway(mgr)
+
+        assert (await wrapper.ensure_loaded("m", "", "key"))[0] == "model_ready"
+        assert mgr.loaded == {"m"}
+        assert mgr.pinned == set()
+
+    @pytest.mark.asyncio
+    async def test_load_joining_inflight_ensure_loaded_ends_pinned(self):
+        import asyncio
+        import threading
+
+        mgr = _PinTrackingManager()
+        mgr.release = threading.Event()
+        wrapper = ModelManagerGateway(mgr)
+        try:
+            ensure = asyncio.create_task(wrapper.ensure_loaded("m", "", "key"))
+            await asyncio.sleep(0.05)
+            explicit = asyncio.create_task(wrapper.load("m", "key"))
+            await asyncio.sleep(0.05)
+        finally:
+            mgr.release.set()
+
+        assert (await ensure)[0] == "model_ready"
+        assert await explicit == ("ok",)
+        assert mgr.load_calls == 1
+        assert mgr.pinned == {"m"}
+
+    @pytest.mark.asyncio
+    async def test_load_reloads_when_eviction_wins_the_pin_race(self):
+        mgr = _PinTrackingManager(evictions_before_pin=1)
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.load("m", "key") == ("ok",)
+        assert "m" in mgr.loaded
+        assert mgr.pinned == {"m"}
+        assert mgr.load_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_load_errors_instead_of_ok_when_model_stays_absent(self):
+        mgr = _PinTrackingManager(evictions_before_pin=2)
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.load("m", "key") == ("error", 5)
+        assert "m" not in mgr.loaded
+        assert mgr.load_calls == 2
+
+
+class _VanishingManager:
+    """Manager double whose process_async fails the first N calls."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.process_calls = 0
+        self.load_calls = 0
+        self.loaded: set[str] = set()
+
+    def __contains__(self, model_id):
+        return model_id in self.loaded
+
+    def load(self, model_id, api_key, **kwargs):
+        self.load_calls += 1
+        self.loaded.add(model_id)
+
+    async def process_async(self, model_id, **kwargs):
+        self.process_calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return {"served": model_id}
+
+
+class TestInferRetriesLostModel:
+    @pytest.mark.asyncio
+    async def test_infer_reloads_and_retries_once_after_key_error(self):
+        mgr = _VanishingManager([KeyError("Model 'm' is not loaded")])
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
+        assert mgr.process_calls == 2
+        assert mgr.load_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_infer_reloads_and_retries_once_after_drained_backend(self):
+        mgr = _VanishingManager(
+            [RuntimeError("Backend 'm' not accepting requests (state=draining)")]
+        )
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
+        assert mgr.process_calls == 2
+        assert mgr.load_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_infer_propagates_second_failure(self):
+        mgr = _VanishingManager([KeyError("gone"), KeyError("gone again")])
+        wrapper = ModelManagerGateway(mgr)
+
+        with pytest.raises(KeyError):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_infer_does_not_retry_unrelated_runtime_error(self):
+        mgr = _VanishingManager([RuntimeError("ModelManager is shutting down")])
+        wrapper = ModelManagerGateway(mgr)
+
+        with pytest.raises(RuntimeError, match="shutting down"):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
+        assert mgr.load_calls == 0
