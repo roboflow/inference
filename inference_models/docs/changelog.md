@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.37.0`
+
 ### Added
 
 - New task `action-recognition`: class-labeled frame ranges, which can overlap.
