@@ -23,6 +23,7 @@ Package layout expected at `load(package_dir)` (all paths package-relative):
     checkpoints/nvidia/Cosmos-Predict2-2B-Text2Image/tokenizer/tokenizer.pth   frozen VAE
     checkpoints/google-t5/t5-large/...          frozen text encoder
     checkpoints/NVDINOV2/nv_dinov2_classification_model.ckpt           frozen mask encoder
+    checkpoints/facebook/dinov2-large/...       correspondence backbone (prefetched at init)
 
 The trained artifact and the frozen base towers share one `checkpoints/` tree
 on purpose: the GA loader reads `<ckpt_dir>/checkpoints/model/iter_*.pt` for
@@ -57,6 +58,7 @@ _DIT_PATH = "checkpoints/nvidia/Cosmos-Predict2-2B-Text2Image/model.pt"
 _VAE_PATH = "checkpoints/nvidia/Cosmos-Predict2-2B-Text2Image/tokenizer/tokenizer.pth"
 _T5_PATH = "checkpoints/google-t5/t5-large"
 _NVDINOV2_PATH = "checkpoints/NVDINOV2/nv_dinov2_classification_model.ckpt"
+_CORRESPONDENCE_PATH = "checkpoints/facebook/dinov2-large"
 
 
 class CosmosAnomalyGenRuntime:
@@ -102,6 +104,12 @@ class CosmosAnomalyGenRuntime:
             {
                 "model": {
                     "config": {
+                        # The GA model __init__ prefetches the correspondence
+                        # backbone unconditionally (early-stop metric), so it
+                        # must resolve inside the package too.
+                        "correspondence_backbone": os.path.join(
+                            package_dir, _CORRESPONDENCE_PATH
+                        ),
                         "model_manager_config": {
                             "dit_path": os.path.join(package_dir, _DIT_PATH),
                         },

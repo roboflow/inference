@@ -52,6 +52,11 @@ BASE_FILES = [
     "google-t5/t5-large/spiece.model",
     "google-t5/t5-large/tokenizer.json",
     "NVDINOV2/nv_dinov2_classification_model.ckpt",
+    # Correspondence backbone: the GA model's __init__ prefetches it
+    # unconditionally, so loading fails without it in the package.
+    "facebook/dinov2-large/config.json",
+    "facebook/dinov2-large/preprocessor_config.json",
+    "facebook/dinov2-large/model.safetensors",
 ]
 OPTIONAL_BASE_PATTERNS = [
     "nvidia/Cosmos-Guardrail1/*",
