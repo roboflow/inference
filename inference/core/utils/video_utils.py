@@ -9,8 +9,12 @@ import cv2
 import numpy as np
 from requests import RequestException
 
-from inference.core.env import OFFLINE_MODE
-from inference.core.exceptions import InputImageLoadError, InvalidImageTypeDeclared
+from inference.core.env import MAX_VIDEO_DOWNLOAD_SIZE_MB, OFFLINE_MODE
+from inference.core.exceptions import (
+    InputImageLoadError,
+    InvalidImageTypeDeclared,
+    PayloadTooLargeError,
+)
 from inference.core.utils.image_utils import (
     _ensure_url_input_allowed,
     _fetch_image_bytes_from_url,
@@ -28,31 +32,32 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
 
     OpenCV reads containers from a file, not from a buffer, so a clip that
     arrives in a request is written to a temporary file for the length of the
-    request. URL fetching runs the same address policy as image input.
+    request. URL fetching runs the same address policy as image input, and
+    streams to that file rather than holding the clip in memory.
 
-    A URL is the preferred transport. Both branches hold the whole clip in
-    memory before it reaches disk, and base64 adds a third again on the wire
-    and another copy in the parsed request, so base64 suits short clips only.
+    A URL is the preferred transport. Base64 arrives whole in the parsed
+    request and adds a third again on the wire, so it suits short clips only.
     """
+    if video_type not in (VIDEO_TYPE_URL, VIDEO_TYPE_BASE64):
+        message = (
+            f"Video type '{video_type}' is not supported, expected one of "
+            f"'{VIDEO_TYPE_URL}' or '{VIDEO_TYPE_BASE64}'."
+        )
+        raise InvalidImageTypeDeclared(message=message, public_message=message)
     if video_type == VIDEO_TYPE_URL:
         if OFFLINE_MODE:
             message = "Cannot load a video from URL while OFFLINE_MODE is enabled."
             raise InputImageLoadError(message=message, public_message=message)
         _ensure_url_input_allowed()
         prepared_url = _validate_url_destination(value=value)
-        try:
-            payload = _fetch_image_bytes_from_url(prepared_url=prepared_url)
-        except URLAddressNotAllowedError as error:
-            message = "URL points to a network destination that is not allowed."
-            raise InputImageLoadError(
-                message=f"{message} Details: {error}", public_message=message
-            ) from error
-        except (RequestException, ConnectionError) as error:
-            message = "Video could not be fetched from the URL."
-            raise InputImageLoadError(
-                message=f"{message} Details: {error}", public_message=message
-            ) from error
-    elif video_type == VIDEO_TYPE_BASE64:
+    else:
+        max_bytes = _max_download_bytes()
+        # Four base64 characters carry three bytes, so the decoded size is
+        # known before decoding. Checking it first keeps an oversized clip
+        # from being expanded into memory just to be rejected.
+        if max_bytes is not None and len(value) // 4 * 3 > max_bytes:
+            message = "Video is larger than this server accepts."
+            raise PayloadTooLargeError(message=message, public_message=message)
         try:
             payload = base64.b64decode(value)
         except (binascii.Error, TypeError, ValueError) as error:
@@ -60,21 +65,40 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
             raise InputImageLoadError(
                 message=f"{message} Details: {error}", public_message=message
             ) from error
-    else:
-        message = (
-            f"Video type '{video_type}' is not supported, expected one of "
-            f"'{VIDEO_TYPE_URL}' or '{VIDEO_TYPE_BASE64}'."
-        )
-        raise InvalidImageTypeDeclared(message=message, public_message=message)
 
     handle, path = tempfile.mkstemp(suffix=".video")
     try:
         with os.fdopen(handle, "wb") as file:
-            file.write(payload)
+            if video_type == VIDEO_TYPE_URL:
+                try:
+                    _fetch_image_bytes_from_url(
+                        prepared_url=prepared_url,
+                        sink=file.write,
+                        max_bytes=_max_download_bytes(),
+                    )
+                except URLAddressNotAllowedError as error:
+                    message = "URL points to a network destination that is not allowed."
+                    raise InputImageLoadError(
+                        message=f"{message} Details: {error}", public_message=message
+                    ) from error
+                except (RequestException, ConnectionError) as error:
+                    message = "Video could not be fetched from the URL."
+                    raise InputImageLoadError(
+                        message=f"{message} Details: {error}", public_message=message
+                    ) from error
+            else:
+                file.write(payload)
         yield path
     finally:
         with contextlib.suppress(OSError):
             os.remove(path)
+
+
+def _max_download_bytes() -> Optional[int]:
+    """The clip size this deployment accepts, or ``None`` when uncapped."""
+    if MAX_VIDEO_DOWNLOAD_SIZE_MB < 0:
+        return None
+    return MAX_VIDEO_DOWNLOAD_SIZE_MB * 1024 * 1024
 
 
 def probe_video(path: str) -> Tuple[float, int]:

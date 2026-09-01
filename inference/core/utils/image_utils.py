@@ -5,7 +5,7 @@ import re
 import urllib.parse
 from enum import Enum
 from io import BytesIO
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -468,10 +468,18 @@ def _validate_url_destination(value: str) -> str:
     return prepared_url
 
 
-def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
+def _fetch_image_bytes_from_url(
+    prepared_url: str,
+    sink: Optional[Callable[[bytes], Any]] = None,
+    max_bytes: Optional[int] = None,
+) -> Optional[bytes]:
     """Dispatch URL fetching to the hardened per-hop validator or the legacy
     (redirect-following) path, based on VALIDATE_IMAGE_URL_REDIRECTS. Non-global
     address blocking is applied by both paths, independently.
+
+    ``sink`` and ``max_bytes`` pass through to the fetcher. A caller giving a
+    sink receives ``None`` and takes the body itself, chunk by chunk, which is
+    how a large payload reaches disk without a copy in memory.
     """
     if VALIDATE_IMAGE_URL_REDIRECTS:
         return fetch_url_content_validating_redirects(
@@ -479,11 +487,15 @@ def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
             allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
             max_redirects=MAX_IMAGE_URL_REDIRECTS,
             validate_redirect=_validate_url_destination,
+            sink=sink,
+            max_bytes=max_bytes,
         )
     return fetch_url_content_legacy(
         url=prepared_url,
         allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
         max_redirects=MAX_IMAGE_URL_REDIRECTS,
+        sink=sink,
+        max_bytes=max_bytes,
     )
 
 

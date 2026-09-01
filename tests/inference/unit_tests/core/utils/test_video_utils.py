@@ -1,9 +1,13 @@
 """Tests for reading a clip's windows in one pass."""
 
+import base64
+from unittest.mock import MagicMock
+
 import cv2
 import numpy as np
 import pytest
 
+from inference.core.exceptions import PayloadTooLargeError
 from inference.core.utils.video_utils import read_frame_windows, read_frames
 
 
@@ -71,3 +75,115 @@ def test_read_frames_reads_one_window(clip) -> None:
 
 def test_no_windows_reads_nothing(clip) -> None:
     assert list(read_frame_windows(path=clip, windows=[])) == []
+
+
+class _FakeResponse:
+    """Enough of requests.Response for the drain to read."""
+
+    def __init__(self, chunks, declared=None):
+        self._chunks = chunks
+        self.headers = {} if declared is None else {"Content-Length": str(declared)}
+
+    def iter_content(self, chunk_size):
+        yield from self._chunks
+
+
+def test_the_drain_returns_bytes_when_no_sink_is_given() -> None:
+    from inference.core.utils.url_input import _drain_response
+
+    result = _drain_response(
+        response=_FakeResponse([b"abc", b"def"]), sink=None, max_bytes=None
+    )
+
+    assert result == b"abcdef"
+
+
+def test_the_drain_writes_to_a_sink_and_keeps_nothing() -> None:
+    from inference.core.utils.url_input import _drain_response
+
+    written = []
+
+    result = _drain_response(
+        response=_FakeResponse([b"abc", b"def"]), sink=written.append, max_bytes=None
+    )
+
+    assert result is None
+    assert b"".join(written) == b"abcdef"
+
+
+def test_a_declared_length_over_the_cap_is_rejected_before_reading() -> None:
+    from inference.core.utils.url_input import _drain_response
+
+    # Nothing is read: the chunks would raise if they were.
+    def _explode(chunk_size):
+        raise AssertionError("body must not be read")
+
+    response = _FakeResponse([], declared=100)
+    response.iter_content = _explode
+
+    with pytest.raises(PayloadTooLargeError):
+        _drain_response(response=response, sink=None, max_bytes=10)
+
+
+def test_a_body_that_grows_past_the_cap_is_stopped_mid_stream() -> None:
+    # The declared length is caller-controlled and can lie, so the running
+    # total is what actually enforces the cap.
+    from inference.core.utils.url_input import _drain_response
+
+    written = []
+
+    with pytest.raises(PayloadTooLargeError):
+        _drain_response(
+            response=_FakeResponse([b"x" * 8, b"x" * 8], declared=4),
+            sink=written.append,
+            max_bytes=10,
+        )
+
+    # It stopped rather than buffering the rest.
+    assert sum(len(chunk) for chunk in written) <= 10
+
+
+def test_a_body_under_the_cap_passes() -> None:
+    from inference.core.utils.url_input import _drain_response
+
+    result = _drain_response(
+        response=_FakeResponse([b"x" * 8], declared=8), sink=None, max_bytes=10
+    )
+
+    assert result == b"x" * 8
+
+
+def test_a_base64_clip_over_the_cap_is_rejected(monkeypatch) -> None:
+    import inference.core.utils.video_utils as video_utils
+
+    monkeypatch.setattr(video_utils, "MAX_VIDEO_DOWNLOAD_SIZE_MB", 0)
+    oversized = base64.b64encode(b"x" * 32).decode("ascii")
+
+    with pytest.raises(PayloadTooLargeError):
+        with video_utils.video_source_path(video_type="base64", value=oversized):
+            pass
+
+
+def test_an_oversized_base64_clip_is_rejected_without_decoding(monkeypatch) -> None:
+    # Decoding first would expand the clip into memory just to reject it.
+    import inference.core.utils.video_utils as video_utils
+
+    monkeypatch.setattr(video_utils, "MAX_VIDEO_DOWNLOAD_SIZE_MB", 0)
+    decoded = MagicMock(side_effect=AssertionError("must not decode"))
+    monkeypatch.setattr(video_utils.base64, "b64decode", decoded)
+
+    with pytest.raises(PayloadTooLargeError):
+        with video_utils.video_source_path(
+            video_type="base64", value=base64.b64encode(b"x" * 32).decode("ascii")
+        ):
+            pass
+
+    decoded.assert_not_called()
+
+
+def test_an_uncapped_deployment_reads_any_size(monkeypatch) -> None:
+    import inference.core.utils.video_utils as video_utils
+
+    monkeypatch.setattr(video_utils, "MAX_VIDEO_DOWNLOAD_SIZE_MB", -1)
+
+    assert video_utils._max_download_bytes() is None
