@@ -1,6 +1,7 @@
 """Tests for reading a clip's windows in one pass."""
 
 import base64
+import os
 from unittest.mock import MagicMock
 
 import cv2
@@ -8,7 +9,11 @@ import numpy as np
 import pytest
 
 from inference.core.exceptions import PayloadTooLargeError
-from inference.core.utils.video_utils import read_frame_windows, read_frames
+from inference.core.utils.video_utils import (
+    probe_video,
+    read_frame_windows,
+    read_frames,
+)
 
 
 @pytest.fixture
@@ -187,3 +192,63 @@ def test_an_uncapped_deployment_reads_any_size(monkeypatch) -> None:
     monkeypatch.setattr(video_utils, "MAX_VIDEO_DOWNLOAD_SIZE_MB", -1)
 
     assert video_utils._max_download_bytes() is None
+
+
+class _CaptureClaiming:
+    """Delegates to a real capture but reports a chosen frame count.
+
+    A wrapper rather than a subclass: subclassing cv2.VideoCapture segfaults,
+    and its instances reject attribute assignment.
+    """
+
+    def __init__(self, capture, frame_count: float):
+        self._capture = capture
+        self._frame_count = frame_count
+
+    def get(self, prop):
+        if prop == cv2.CAP_PROP_FRAME_COUNT:
+            return self._frame_count
+        return self._capture.get(prop)
+
+    def __getattr__(self, name):
+        return getattr(self._capture, name)
+
+
+def _capture_claiming(frame_count: float, monkeypatch):
+    """Make every capture report ``frame_count`` frames, as a header would."""
+    real_capture = cv2.VideoCapture
+    monkeypatch.setattr(
+        cv2,
+        "VideoCapture",
+        lambda *a, **k: _CaptureClaiming(real_capture(*a, **k), frame_count),
+    )
+
+
+def test_probe_video_trusts_a_frame_count_the_file_could_hold(clip, monkeypatch):
+    _capture_claiming(30.0, monkeypatch)
+
+    source_fps, frame_count = probe_video(path=clip)
+
+    assert source_fps == 10.0
+    assert frame_count == 30
+
+
+def test_probe_video_counts_when_the_header_claims_more_frames_than_bytes(
+    clip, monkeypatch
+):
+    # A frame needs at least one byte, so a count above the file size is a
+    # lie. Left unchecked it sizes window planning downstream.
+    inflated = float(os.path.getsize(clip) + 1)
+    _capture_claiming(inflated, monkeypatch)
+
+    _, frame_count = probe_video(path=clip)
+
+    assert frame_count == 30
+
+
+def test_probe_video_counts_when_the_header_declares_nothing(clip, monkeypatch):
+    _capture_claiming(0.0, monkeypatch)
+
+    _, frame_count = probe_video(path=clip)
+
+    assert frame_count == 30

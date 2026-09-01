@@ -102,7 +102,18 @@ def _max_download_bytes() -> Optional[int]:
 
 
 def probe_video(path: str) -> Tuple[float, int]:
-    """Report the clip's frame rate and frame count without decoding it."""
+    """Report the clip's frame rate and frame count without decoding it.
+
+    The frame count comes from the container header, which the sender writes
+    and nothing verifies. Everything downstream sizes itself from it: the
+    duration it implies decides how many windows get planned, and each window
+    holds a frame index per sample. A header claiming far more frames than it
+    has costs memory and time in proportion to the claim.
+
+    A frame cannot occupy less than one byte, so the file size is a ceiling
+    the header cannot honestly exceed. A claim above it gets counted instead,
+    and counting reads the real file, whose size is already capped.
+    """
     capture = cv2.VideoCapture(path)
     try:
         if not capture.isOpened():
@@ -115,7 +126,7 @@ def probe_video(path: str) -> Tuple[float, int]:
     if source_fps <= 0 or not np.isfinite(source_fps):
         message = "Video declares no usable frame rate."
         raise InputImageLoadError(message=message, public_message=message)
-    if frame_count <= 0:
+    if frame_count <= 0 or frame_count > os.path.getsize(path):
         frame_count = _count_frames(path=path)
     return source_fps, frame_count
 
