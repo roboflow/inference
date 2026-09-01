@@ -1,5 +1,8 @@
 """Integration tests for Cosmos 3 Edge (reasoner + world model) on real weights.
 
+Action recognition has its own suite in
+``test_cosmos3_action_recognition_predictions.py``.
+
 Both tests load from local package directories (the layouts produced by
 `development/cosmos3/pull_weights.py`) pointed to by env vars, so they can run
 before the packages are published to the weights provider:
@@ -46,41 +49,6 @@ def test_cosmos3_reasoner_answers_scene_question() -> None:
     assert len(answers) == 1
     assert isinstance(answers[0], str)
     assert len(answers[0].strip()) > 0
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(
-    not REASONER_PACKAGE_DIR or not CUDA_AVAILABLE,
-    reason="COSMOS3_REASONER_PACKAGE_DIR not set or CUDA unavailable",
-)
-def test_cosmos3_action_recognition_localizes_moving_object() -> None:
-    from inference_models.models.cosmos3.cosmos3_action_recognition import (
-        Cosmos3EdgeActionRecognition,
-    )
-
-    model = Cosmos3EdgeActionRecognition.from_pretrained(
-        REASONER_PACKAGE_DIR, device=torch.device("cuda")
-    )
-    fps = 8.0
-    frames = []
-    for x in np.linspace(20, 240, num=16, dtype=int):
-        frame = np.zeros((240, 320, 3), dtype=np.uint8)
-        frame[96:144, x : x + 48] = 255
-        frames.append(frame)
-
-    # Base weights run zero-shot, which answers in its own words. Asserting a
-    # requested phrase would test a vocabulary this mode ignores, so the gate
-    # is that real weights return a usable range with a non-empty label.
-    segments = model.infer(frames=frames, fps=fps)
-
-    assert isinstance(segments, list)
-    assert segments
-    for segment in segments:
-        assert isinstance(segment.class_name, str) and segment.class_name.strip()
-        assert isinstance(segment.start_frame_idx, int)
-        assert isinstance(segment.end_frame_idx, int)
-        assert 0 <= segment.start_frame_idx <= segment.end_frame_idx
-        assert segment.end_frame_idx < len(frames)
 
 
 @pytest.mark.slow
