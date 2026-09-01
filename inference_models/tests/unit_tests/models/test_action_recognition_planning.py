@@ -310,3 +310,26 @@ def test_a_trained_model_reads_the_remainder_on_its_own_grid() -> None:
     assert windows[0].sample_fps == pytest.approx(4.0)
     assert len(windows[1].frame_indices) == 16
     assert windows[1].sample_fps == pytest.approx(4.0)
+
+
+@pytest.mark.parametrize("window_seconds", [0.0, -4.0])
+def test_a_sliding_model_without_a_window_is_rejected(window_seconds) -> None:
+    # Reading it as one whole-clip sample would guess a window the model
+    # never declared, and the guess decides what the model sees.
+    with pytest.raises(ValueError, match="positive window"):
+        plan_windows(
+            frame_count=300,
+            source_fps=10.0,
+            sampling=VideoSampling(window_seconds=window_seconds),
+        )
+
+
+def test_whole_video_mode_ignores_the_window_entirely() -> None:
+    # That mode never consults a window, so an absent one is not a problem.
+    windows = plan_windows(
+        frame_count=300,
+        source_fps=10.0,
+        sampling=_whole_video(window_seconds=0.0, sample_fps=2.0),
+    )
+
+    assert len(windows) == 1

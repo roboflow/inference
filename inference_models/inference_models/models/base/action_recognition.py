@@ -139,7 +139,14 @@ def plan_windows(
         return []
     duration_us = int(round(frame_count / source_fps * _MICROSECONDS))
     window_us = int(round(sampling.window_seconds * _MICROSECONDS))
-    if sampling.mode == WHOLE_VIDEO_MODE or window_us <= 0 or duration_us <= window_us:
+    if sampling.mode != WHOLE_VIDEO_MODE and window_us <= 0:
+        # Treating this as one whole-clip sample would guess at a window the
+        # model never declared, which is the reading its answer depends on.
+        raise ValueError(
+            f"Sliding-window sampling needs a positive window, got "
+            f"window_seconds={sampling.window_seconds!r}."
+        )
+    if sampling.mode == WHOLE_VIDEO_MODE or duration_us <= window_us:
         return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
     whole_windows = duration_us // window_us
     windows = [
