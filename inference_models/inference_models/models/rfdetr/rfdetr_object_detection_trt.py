@@ -142,6 +142,37 @@ class RFDetrForObjectDetectionTRT(
 ):
     """Run RF-DETR object detection through TensorRT with selectable path stages."""
 
+    @staticmethod
+    def _resolve_requested_execution_plan(
+        *,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan],
+        execution_plan: Optional[
+            Union[InferenceExecutionPlan, Mapping[str, Any]]
+        ],
+    ) -> RFDetrExecutionPlan:
+        """Normalize the generic loader contract into a typed RF-DETR plan."""
+        if rfdetr_execution_plan is not None and execution_plan is not None:
+            raise ValueError(
+                "Pass either rfdetr_execution_plan or execution_plan, not both."
+            )
+
+        if execution_plan is None:
+            resolved_plan = RFDetrExecutionPlan.resolve(
+                execution_plan=rfdetr_execution_plan,
+            )
+
+            return resolved_plan
+
+        serialized_plan = (
+            execution_plan.to_dict()
+            if isinstance(execution_plan, InferenceExecutionPlan)
+            else execution_plan
+        )
+        parsed_plan = RFDetrExecutionPlan.from_dict(serialized_plan)
+        resolved_plan = cast(RFDetrExecutionPlan, parsed_plan)
+
+        return resolved_plan
+
     @classmethod
     def from_pretrained(
         cls,
@@ -181,6 +212,8 @@ class RFDetrForObjectDetectionTRT(
             Loaded RF-DETR TensorRT model.
 
         Raises:
+            ValueError: If execution-plan arguments conflict or a serialized plan is
+                invalid.
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
@@ -314,12 +347,9 @@ class RFDetrForObjectDetectionTRT(
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
             max_workers=rfdetr_preprocessor_max_workers
         )
-        if rfdetr_execution_plan is not None and execution_plan is not None:
-            raise ValueError(
-                "Pass either rfdetr_execution_plan or execution_plan, not both."
-            )
-        requested_plan = RFDetrExecutionPlan.resolve(
-            execution_plan=execution_plan or rfdetr_execution_plan,
+        requested_plan = self._resolve_requested_execution_plan(
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            execution_plan=execution_plan,
         )
         self._implementation_registry = build_rfdetr_implementation_registry(
             device=self._device,

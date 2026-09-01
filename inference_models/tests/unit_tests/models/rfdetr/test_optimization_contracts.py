@@ -256,8 +256,9 @@ def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
         allow_runtime_failure_fallback=False,
     )
 
-    resolved = RFDetrExecutionPlan.resolve(execution_plan=profiling_plan)
+    resolved = RFDetrExecutionPlan.from_dict(profiling_plan.to_dict())
 
+    assert isinstance(resolved, RFDetrExecutionPlan)
     assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
     assert resolved.buffer_strategy_id == "base"
     assert resolved.scheduler_id == "base"
