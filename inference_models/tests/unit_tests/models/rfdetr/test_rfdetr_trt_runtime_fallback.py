@@ -122,7 +122,6 @@ def test_model_boundary_parses_serialized_rfdetr_execution_plan(
     )
 
     resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
-        rfdetr_execution_plan=None,
         execution_plan=execution_plan.to_dict(),
     )
 
@@ -133,19 +132,20 @@ def test_model_boundary_parses_serialized_rfdetr_execution_plan(
     assert not resolved_plan.allow_runtime_failure_fallback
 
 
-def test_model_boundary_rejects_invalid_or_conflicting_execution_plans(
+def test_model_boundary_accepts_typed_plan_and_rejects_invalid_mapping(
     rfdetr_trt_model_class,
 ) -> None:
+    execution_plan = RFDetrExecutionPlan()
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan,
+    )
+
+    assert resolved_plan is execution_plan
+
     with pytest.raises(ValueError, match="must contain exactly"):
         rfdetr_trt_model_class._resolve_requested_execution_plan(
-            rfdetr_execution_plan=None,
             execution_plan={},
-        )
-
-    with pytest.raises(ValueError, match="either rfdetr_execution_plan"):
-        rfdetr_trt_model_class._resolve_requested_execution_plan(
-            rfdetr_execution_plan=RFDetrExecutionPlan(),
-            execution_plan=RFDetrExecutionPlan(),
         )
 
 
@@ -406,7 +406,7 @@ def test_preprocess_retries_base_then_short_circuits_recorded_failure(
     first_tensor, first_metadata = model.pre_process(
         images=np.zeros((2, 2, 3), dtype=np.uint8)
     )
-    first_selection = model._thread_local_storage.last_preprocess_selection
+    first_selection = model._thread_local_storage.last_preprocessor_selection
     second_tensor, second_metadata = model.pre_process(
         images=np.zeros((2, 2, 3), dtype=np.uint8)
     )
@@ -490,7 +490,7 @@ def test_preprocess_nonrecoverable_failure_records_attempted_selection(
     with pytest.raises(ValueError, match="non-recoverable failure"):
         model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
 
-    selection = model._thread_local_storage.last_preprocess_selection
+    selection = model._thread_local_storage.last_preprocessor_selection
     assert selection["requested_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     assert selection["effective_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     assert selection["fallback_reason"] is None
@@ -517,7 +517,7 @@ def test_postprocess_retries_base_then_short_circuits_recorded_failure(
         pre_processing_meta=[],
         confidence=0.5,
     )
-    first_selection = model._thread_local_storage.last_postprocess_selection
+    first_selection = model._thread_local_storage.last_postprocessor_selection
     second_results = model.post_process(
         model_results=model_results,
         pre_processing_meta=[],
@@ -593,7 +593,7 @@ def test_postprocess_nonrecoverable_failure_records_attempted_selection(
             confidence=0.5,
         )
 
-    selection = model._thread_local_storage.last_postprocess_selection
+    selection = model._thread_local_storage.last_postprocessor_selection
     assert selection["requested_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
     assert selection["effective_id"] == RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
     assert selection["fallback_reason"] is None
