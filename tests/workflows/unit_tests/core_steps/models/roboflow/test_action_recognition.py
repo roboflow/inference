@@ -1143,3 +1143,67 @@ def test_an_untrained_model_still_caps_at_the_source_rate() -> None:
 
     assert model.calls[-1]["fps"] == 2.0
     assert len(model.calls[-1]["frames"]) == 4
+
+
+def _timeline_entry(
+    start_frame_idx: int,
+    end_frame_idx: int,
+    class_name: str,
+) -> ActionRecognitionPrediction:
+    return ActionRecognitionPrediction(
+        start_frame_idx=start_frame_idx,
+        end_frame_idx=end_frame_idx,
+        class_name=class_name,
+        class_id=0,
+    )
+
+
+def test_timeline_entries_survive_frames_that_do_not_classify():
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+
+    _run(block, _make_frame(0))
+    fired = _run(block, _make_frame(2))
+    idle = _run(block, _make_frame(3))
+
+    assert len(model.calls) == 1
+    assert [entry.class_name for entry in idle["timeline"]] == ["walk"]
+    # Only a fire rebuilds the entries, so an idle frame reuses them rather
+    # than copying the whole timeline again.
+    assert idle["timeline"][0] is fired["timeline"][0]
+    # The list itself is still per frame.
+    assert idle["timeline"] is not fired["timeline"]
+    idle["timeline"].append(_timeline_entry(0, 0, "appended by a consumer"))
+    later = _run(block, _make_frame(3))
+    assert [entry.class_name for entry in later["timeline"]] == ["walk"]
+
+
+def test_timeline_evicts_the_ranges_that_ended_earliest():
+    bookkeeping = video_classification_module._ActionRecognitionBookkeeping()
+    # A range open since the stream began sorts first by start, yet it is the
+    # current one. Everything else ended long ago.
+    still_running = _timeline_entry(0, 10**9, "still running")
+    bookkeeping.timeline = [still_running] + [
+        _timeline_entry(index, index, f"ended_{index}")
+        for index in range(video_classification_module.MAX_TIMELINE_ACTIONS)
+    ]
+
+    ActionRecognitionModelBlockV1._evict_oldest_actions(bookkeeping=bookkeeping)
+
+    assert len(bookkeeping.timeline) == video_classification_module.MAX_TIMELINE_ACTIONS
+    assert still_running in bookkeeping.timeline
+    assert all(entry.class_name != "ended_0" for entry in bookkeeping.timeline)
+    assert bookkeeping.dropped_history is True
+
+
+def test_timeline_under_the_ceiling_keeps_every_range():
+    bookkeeping = video_classification_module._ActionRecognitionBookkeeping()
+    bookkeeping.timeline = [
+        _timeline_entry(0, 10, "walk"),
+        _timeline_entry(20, 30, "run"),
+    ]
+    before = list(bookkeeping.timeline)
+
+    ActionRecognitionModelBlockV1._evict_oldest_actions(bookkeeping=bookkeeping)
+
+    assert bookkeeping.timeline == before
+    assert bookkeeping.dropped_history is False

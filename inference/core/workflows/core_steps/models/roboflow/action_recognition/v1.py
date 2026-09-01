@@ -55,6 +55,11 @@ DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
 # per-video state needs a ceiling of its own.
 MAX_TRACKED_VIDEOS = 256
+# A stream that runs for days keeps adding ranges whenever its class changes.
+# The timeline is the block's output, so it is copied out per frame, and both
+# the copy and the memory grow with it. This holds each stream to a ceiling,
+# and 256 streams at the ceiling stay under a gigabyte.
+MAX_TIMELINE_ACTIONS = 5000
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
@@ -64,7 +69,9 @@ Later classifications run at each stride. By default, the stride equals the
 window, so consecutive windows tile the stream without overlap. Set a smaller
 stride to slide overlapping windows for finer range boundaries. Ranges can
 overlap. Timeline ranges only grow when the block merges model evidence. The
-block does not extend ranges provisionally. When a stream provides no source
+block does not extend ranges provisionally. The timeline holds at most 5000
+ranges per stream. A stream that passes that ceiling loses the ranges that
+ended earliest, so its timeline covers recent history rather than all of it. When a stream provides no source
 FPS, the block assumes 30 FPS and logs a warning.
 
 The window length and the sample rate are part of the model, not block
@@ -100,6 +107,8 @@ def _extract_rgb_frame(image: WorkflowImageData) -> np.ndarray:
 class _ActionRecognitionBookkeeping:
     sampled: List[Tuple[int, Any]] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
+    timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
+    dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
@@ -519,6 +528,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             stride=stride,
             class_filter=block_filter,
         )
+        self._evict_oldest_actions(bookkeeping=bookkeeping)
         bookkeeping.timeline.sort(
             key=lambda entry: (
                 entry.start_frame_idx,
@@ -526,13 +536,45 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 entry.end_frame_idx,
             )
         )
+        # A fire is the only thing that changes the timeline, so the copy the
+        # output needs belongs here rather than under every frame.
+        bookkeeping.timeline_snapshot = [
+            entry.model_copy() for entry in bookkeeping.timeline
+        ]
+
+    @staticmethod
+    def _evict_oldest_actions(bookkeeping: _ActionRecognitionBookkeeping) -> None:
+        """Hold the timeline at ``MAX_TIMELINE_ACTIONS``, dropping stale ranges.
+
+        Eviction goes by the frame an action last covered, not by where the
+        entry sorts. The timeline sorts by start, so an action that has run
+        since the stream opened sorts first while it is still the current one.
+        """
+        excess = len(bookkeeping.timeline) - MAX_TIMELINE_ACTIONS
+        if excess <= 0:
+            return
+        bookkeeping.timeline.sort(key=lambda entry: entry.end_frame_idx)
+        del bookkeeping.timeline[:excess]
+        if not bookkeeping.dropped_history:
+            bookkeeping.dropped_history = True
+            logger.warning(
+                "Action Recognition Model holds at most %s timeline ranges per "
+                "video and dropped the ranges that ended earliest. The timeline "
+                "covers recent history rather than the whole stream.",
+                MAX_TIMELINE_ACTIONS,
+            )
 
     def _build_output(
         self,
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
+        # Copying every entry here costs one full timeline copy per frame,
+        # which grows without bound and caps the frame rate the block keeps
+        # up with. The entries come from the snapshot the last fire built.
+        # The list is still fresh per frame, so a consumer that appends to
+        # one frame's output leaves the next frame alone.
         return {
-            "timeline": [entry.model_copy() for entry in bookkeeping.timeline],
+            "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
         }
