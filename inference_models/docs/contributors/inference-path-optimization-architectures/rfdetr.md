@@ -209,3 +209,19 @@ TensorRT forward does not need to know which preprocessor produced its input.
   execution failures still propagate.
 - Target-device profiling and output-snapshot parity checks remain required before an
   optimized choice is promoted for automatic selection.
+
+## Runtime selection observability
+
+`optimization_runtime_metadata` is the production-facing source of truth for the
+resolved execution path. It exposes the canonical `InferenceExecutionPlan`, model-time
+selection resolutions, the latest request-time resolution for each stage, and bounded
+implementation metadata. Selection snapshots are retained as immutable objects and
+serialized only when the property is read; repeated requests do not append history or
+re-store an unchanged thread-local selection.
+
+Profiling uses the same `InferenceExecutionPlan` as production. Its boundary validator
+requires explicit IDs for all five stages, rejects `auto`, and requires both fallback
+flags to be false. An incompatible implementation or recoverable stage failure therefore
+fails the profiling workload instead of silently measuring a fallback. A future
+production log exporter should read this property after initialization and when a plan
+or fallback changes, rather than logging every request.
