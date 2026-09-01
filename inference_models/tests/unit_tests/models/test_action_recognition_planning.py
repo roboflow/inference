@@ -18,20 +18,20 @@ class _Segment:
     class_name: str
 
 
-def test_windows_tile_from_the_start_and_drop_the_remainder() -> None:
-    # 30 s at 10 fps, 8 s windows -> three whole windows, 6 s left over.
+def test_windows_tile_from_the_start_and_cover_the_remainder() -> None:
+    # 30 s at 10 fps, 8 s windows -> three whole windows and a 6 s tail.
     windows = plan_windows(
         frame_count=300,
         source_fps=10.0,
         sampling=VideoSampling(window_seconds=8.0, sample_fps=2.0),
     )
 
-    assert len(windows) == 3
-    assert windows[0].frame_indices[0] == 0
-    assert windows[1].frame_indices[0] == 80
-    assert windows[2].frame_indices[0] == 160
-    # The tail beyond the last whole window is not classified.
-    assert max(windows[-1].frame_indices) < 300
+    assert len(windows) == 4
+    assert [window.frame_indices[0] for window in windows] == [0, 80, 160, 240]
+    # The tail is shorter than a window but still read, so the last frame of
+    # the clip falls inside the last window.
+    assert max(windows[-1].frame_indices) >= 290
+    assert len(windows[-1].frame_indices) < len(windows[0].frame_indices)
 
 
 def test_each_window_samples_at_the_declared_rate() -> None:
@@ -43,7 +43,7 @@ def test_each_window_samples_at_the_declared_rate() -> None:
 
     # 8 s at 2 fps is 16 frames, every fifth source frame.
     assert len(windows[0].frame_indices) == 16
-    assert [window.sample_fps for window in windows] == [2.0, 2.0, 2.0]
+    assert [window.sample_fps for window in windows] == [2.0, 2.0, 2.0, 2.0]
     gaps = {
         later - earlier
         for earlier, later in zip(
@@ -283,3 +283,30 @@ def test_the_trained_grid_does_not_drift_on_binary_floats() -> None:
     )
 
     assert windows[0].frame_indices == (0, 3, 6, 9)
+
+
+def test_a_clip_that_divides_evenly_gets_no_extra_window() -> None:
+    # 24 s at 10 fps against 8 s windows leaves nothing over.
+    windows = plan_windows(
+        frame_count=240,
+        source_fps=10.0,
+        sampling=VideoSampling(window_seconds=8.0, sample_fps=2.0),
+    )
+
+    assert len(windows) == 3
+
+
+def test_a_trained_model_reads_the_remainder_on_its_own_grid() -> None:
+    # 20 s at 30 fps against a 16 s contract: one whole window and a 4 s
+    # tail, which the trainer's grid spans at the rate it implies.
+    windows = plan_windows(
+        frame_count=600,
+        source_fps=30.0,
+        sampling=VideoSampling(max_frames=64),
+    )
+
+    assert len(windows) == 2
+    assert len(windows[0].frame_indices) == 64
+    assert windows[0].sample_fps == pytest.approx(4.0)
+    assert len(windows[1].frame_indices) == 16
+    assert windows[1].sample_fps == pytest.approx(4.0)

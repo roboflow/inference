@@ -83,8 +83,8 @@ def test_window_segments_map_to_clip_frame_indices() -> None:
     )
     with _clip(frame_count=100, source_fps=10.0):
         response = _adapter(model).infer_from_request(_request())
-
-    assert response.windows_classified == 1
+    # 10 s against an 8 s window: one whole window plus the 2 s tail.
+    assert response.windows_classified == 2
     assert response.source_fps == 10.0
     assert response.frame_count == 100
     # The model reported its own frames 0..15; the clip counts 0..75.
@@ -106,7 +106,8 @@ def test_ranges_of_one_class_merge_across_windows() -> None:
     with _clip(frame_count=170, source_fps=10.0):
         response = _adapter(model).infer_from_request(_request())
 
-    assert response.windows_classified == 2
+    # 17 s against an 8 s window: two whole windows plus the 1 s tail.
+    assert response.windows_classified == 3
     # Neighbouring windows of one class come back as a single range.
     assert len(response.timeline) == 1
     assert response.timeline[0].start_frame_idx == 0

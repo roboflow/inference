@@ -129,10 +129,11 @@ def plan_windows(
     """Cut a clip into the windows a model trained for ``sampling`` expects.
 
     Windows are measured in whole microseconds, not in frames, because that is
-    what training does. Under ``sliding_window`` the clip tiles from the start
-    and the trailing remainder is dropped, which is how training validates. A
-    clip shorter than one window becomes a single sample spanning it, which is
-    also what training does. Under ``whole_video`` the clip is one sample.
+    what training does. Under ``sliding_window`` the clip tiles from the start,
+    and whatever is left over gets a shorter window of its own so no part of a
+    clip goes unread. A clip shorter than one window becomes a single sample
+    spanning it, which is what training does. Under ``whole_video`` the clip is
+    one sample.
     """
     if frame_count <= 0 or source_fps <= 0 or sampling.sample_fps <= 0:
         return []
@@ -140,7 +141,8 @@ def plan_windows(
     window_us = int(round(sampling.window_seconds * _MICROSECONDS))
     if sampling.mode == WHOLE_VIDEO_MODE or window_us <= 0 or duration_us <= window_us:
         return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
-    return [
+    whole_windows = duration_us // window_us
+    windows = [
         _plan_interval(
             index * window_us,
             (index + 1) * window_us,
@@ -148,8 +150,24 @@ def plan_windows(
             source_fps,
             sampling,
         )
-        for index in range(duration_us // window_us)
+        for index in range(whole_windows)
     ]
+    # Training drops the trailing remainder when it validates, because a
+    # partial window there would score against labels it only half covers.
+    # A caller sending a clip wants all of it read, so the remainder gets a
+    # window of its own, sampled the way a short clip is.
+    remainder_us = duration_us - whole_windows * window_us
+    if remainder_us > 0:
+        windows.append(
+            _plan_interval(
+                whole_windows * window_us,
+                duration_us,
+                frame_count,
+                source_fps,
+                sampling,
+            )
+        )
+    return windows
 
 
 def _plan_interval(
