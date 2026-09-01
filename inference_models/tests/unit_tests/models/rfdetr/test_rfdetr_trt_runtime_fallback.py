@@ -19,11 +19,15 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     PreprocessRequest,
     PreprocessResult,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
@@ -106,6 +110,44 @@ def rfdetr_trt_model_class(monkeypatch):
                     delattr(parent, attribute)
             else:
                 setattr(parent, attribute, previous_attribute)
+
+
+def test_model_boundary_parses_serialized_generic_execution_plan(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = InferenceExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        rfdetr_execution_plan=None,
+        execution_plan=execution_plan.to_dict(),
+    )
+
+    assert isinstance(resolved_plan, RFDetrExecutionPlan)
+    assert resolved_plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert resolved_plan.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert not resolved_plan.allow_compatibility_fallback
+    assert not resolved_plan.allow_runtime_failure_fallback
+
+
+def test_model_boundary_rejects_invalid_or_conflicting_execution_plans(
+    rfdetr_trt_model_class,
+) -> None:
+    with pytest.raises(ValueError, match="must contain exactly"):
+        rfdetr_trt_model_class._resolve_requested_execution_plan(
+            rfdetr_execution_plan=None,
+            execution_plan={},
+        )
+
+    with pytest.raises(ValueError, match="either rfdetr_execution_plan"):
+        rfdetr_trt_model_class._resolve_requested_execution_plan(
+            rfdetr_execution_plan=RFDetrExecutionPlan(),
+            execution_plan=InferenceExecutionPlan(),
+        )
 
 
 class _RuntimeStage:
