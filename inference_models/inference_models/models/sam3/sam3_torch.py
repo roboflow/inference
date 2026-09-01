@@ -326,7 +326,7 @@ class SAM3Torch:
         load_from_mask_input_cache: bool = False,
         save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
-        mask_format: str = "dense",
+        mask_format: str = "rle",
         **kwargs,
     ) -> List[Union[SAM3Prediction, Dict]]:
         if mask_format not in ("dense", "rle"):
@@ -552,7 +552,7 @@ class SAM3Torch:
         prompts: List[Dict],
         output_prob_thresh: float = 0.5,
         max_detections: int = -1,
-        mask_format: str = "dense",
+        mask_format: str = "rle",
         **kwargs,
     ) -> List[Dict]:
         if mask_format not in ("dense", "rle"):
