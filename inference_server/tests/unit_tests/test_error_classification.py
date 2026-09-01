@@ -159,8 +159,8 @@ def _never_called():
     raise AssertionError("validate_api_key should not be called")
 
 
-def _http_scope(path, headers=()):
-    return {"type": "http", "path": path, "headers": list(headers)}
+def _http_scope(path, headers=(), method="GET"):
+    return {"type": "http", "path": path, "method": method, "headers": list(headers)}
 
 
 class TestAuthMiddleware:
@@ -178,7 +178,7 @@ class TestAuthMiddleware:
             raise AuthBackendUnavailable("api down")
 
         sent, downstream = _run_middleware(
-            _http_scope("/v2/models", [(b"authorization", b"Bearer k")]),
+            _http_scope("/v2/models/infer", [(b"authorization", b"Bearer k")]),
             validate=_unavailable,
         )
         assert downstream is False
@@ -191,7 +191,53 @@ class TestAuthMiddleware:
             return True, "ws"
 
         sent, downstream = _run_middleware(
-            _http_scope("/v2/models", [(b"authorization", b"bearer k")]),
+            _http_scope("/v2/models/infer", [(b"authorization", b"bearer k")]),
+            validate=_ok,
+        )
+        assert downstream is True
+
+
+class TestControlPlaneGate:
+    def test_control_route_403_when_disabled(self):
+        sent, downstream = _run_middleware(
+            _http_scope("/v2/models", [(b"authorization", b"Bearer k")])
+        )
+        assert downstream is False
+        start = [m for m in sent if m["type"] == "http.response.start"][0]
+        assert start["status"] == 403
+
+    def test_unload_all_403_when_disabled(self):
+        sent, downstream = _run_middleware(
+            _http_scope(
+                "/v2/models", [(b"authorization", b"Bearer k")], method="DELETE"
+            )
+        )
+        assert downstream is False
+        start = [m for m in sent if m["type"] == "http.response.start"][0]
+        assert start["status"] == 403
+
+    def test_control_route_passes_when_enabled(self, monkeypatch):
+        import inference_server.app as app_mod
+
+        monkeypatch.setattr(app_mod._cfg, "ENABLE_CONTROL_PLANE_ROUTES", True)
+
+        async def _ok(token):
+            return True, "ws"
+
+        sent, downstream = _run_middleware(
+            _http_scope("/v2/models", [(b"authorization", b"Bearer k")]),
+            validate=_ok,
+        )
+        assert downstream is True
+
+    def test_infer_not_gated(self):
+        async def _ok(token):
+            return True, "ws"
+
+        sent, downstream = _run_middleware(
+            _http_scope(
+                "/v2/models/infer", [(b"authorization", b"Bearer k")], method="POST"
+            ),
             validate=_ok,
         )
         assert downstream is True

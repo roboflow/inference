@@ -80,3 +80,4 @@ without a code change here:
 | `INFERENCE_MAX_BODY_BYTES` | `100MB` | Max request body / aggregate URL-image size |
 | `INFERENCE_MAX_IMAGES_PER_REQUEST` | `32` | Max images per request (body, multipart, or `?image=<url>` params) |
 | `API_BASE_URL` | `https://api.roboflow.com` | Roboflow API for auth |
+| `ENABLE_CONTROL_PLANE_ROUTES` | `false` | Enables model list/load/unload and server info/metrics routes; they accept any valid key without workspace scoping |
