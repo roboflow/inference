@@ -44,7 +44,6 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
-from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
@@ -118,12 +117,6 @@ except ImportError as import_error:
 _MODEL_RUNTIME_ERROR_HELP_URL = (
     "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror"
 )
-_SELECTION_STORAGE_STAGE = {
-    "preprocess": "preprocessor",
-    "postprocess": "postprocessor",
-}
-
-
 def _as_model_runtime_error(
     error: RecoverableStageExecutionError,
 ) -> ModelRuntimeError:
@@ -147,10 +140,10 @@ class RFDetrForObjectDetectionTRT(
         *,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan],
         execution_plan: Optional[
-            Union[InferenceExecutionPlan, Mapping[str, Any]]
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
         ],
     ) -> RFDetrExecutionPlan:
-        """Normalize the generic loader contract into a typed RF-DETR plan."""
+        """Normalize loader input into a typed RF-DETR execution plan."""
         if rfdetr_execution_plan is not None and execution_plan is not None:
             raise ValueError(
                 "Pass either rfdetr_execution_plan or execution_plan, not both."
@@ -163,12 +156,10 @@ class RFDetrForObjectDetectionTRT(
 
             return resolved_plan
 
-        serialized_plan = (
-            execution_plan.to_dict()
-            if isinstance(execution_plan, InferenceExecutionPlan)
-            else execution_plan
-        )
-        parsed_plan = RFDetrExecutionPlan.from_dict(serialized_plan)
+        if isinstance(execution_plan, RFDetrExecutionPlan):
+            return execution_plan
+
+        parsed_plan = RFDetrExecutionPlan.from_dict(execution_plan)
         resolved_plan = cast(RFDetrExecutionPlan, parsed_plan)
 
         return resolved_plan
@@ -185,7 +176,7 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         execution_plan: Optional[
-            Union[InferenceExecutionPlan, Mapping[str, Any]]
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
         ] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
@@ -329,7 +320,7 @@ class RFDetrForObjectDetectionTRT(
         rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         execution_plan: Optional[
-            Union[InferenceExecutionPlan, Mapping[str, Any]]
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
         ] = None,
         recommended_parameters=None,
     ):
@@ -543,10 +534,9 @@ class RFDetrForObjectDetectionTRT(
             "postprocess",
             "engine_plugin",
         ):
-            storage_stage = _SELECTION_STORAGE_STAGE.get(stage, stage)
             selection = getattr(
                 self._thread_local_storage,
-                f"last_{storage_stage}_selection",
+                f"last_{stage}_selection",
                 None,
             )
             if selection is not None:
@@ -902,8 +892,7 @@ class RFDetrForObjectDetectionTRT(
         effective_id: str,
         fallback_reason: Optional[str],
     ) -> None:
-        storage_stage = _SELECTION_STORAGE_STAGE.get(stage, stage)
-        attribute = f"last_{storage_stage}_selection"
+        attribute = f"last_{stage}_selection"
         previous = getattr(self._thread_local_storage, attribute, None)
         if (
             previous is not None
@@ -926,8 +915,7 @@ class RFDetrForObjectDetectionTRT(
         stage: str,
         selection: SelectionSnapshot,
     ) -> None:
-        storage_stage = _SELECTION_STORAGE_STAGE.get(stage, stage)
-        attribute = f"last_{storage_stage}_selection"
+        attribute = f"last_{stage}_selection"
         if getattr(self._thread_local_storage, attribute, None) == selection:
             return
 
