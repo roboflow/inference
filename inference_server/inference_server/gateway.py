@@ -33,6 +33,10 @@ _ERR_NOT_LOADED = 6
 # _lifecycle_req default); direct load() mirrors that.
 _LOAD_DEFAULT_TIMEOUT_S = 30.0
 
+# Backend.inflight_begin / ModelManager.submit refuse a drained backend with
+# this phrase.
+_NOT_ACCEPTING_MARKER = "not accepting requests"
+
 
 def routing_key(model_id: str, instance: str = "") -> str:
     """Key a model instance is registered and routed under.
@@ -59,6 +63,27 @@ def _translate_manager_infer_error(exc: Exception) -> Exception:
     if isinstance(exc, TimeoutError) and "No free SHM slots" in str(exc):
         return ServerBusyError(str(exc))
     return exc
+
+
+def _model_route_lost(exc: Exception) -> bool:
+    """Whether the model vanished under a request that had passed ensure_loaded.
+
+    Inference takes its in-flight lease inside process(), so capacity churn
+    between ensure_loaded() and that lease shows up either as a missing route
+    (KeyError) or as a backend already drained out of service.
+    """
+    if isinstance(exc, KeyError):
+        return True
+    return isinstance(exc, RuntimeError) and _NOT_ACCEPTING_MARKER in str(exc)
+
+
+def _try_pin(pin: Any, model_id: str) -> bool:
+    """False when the model was gone before the pin landed."""
+    try:
+        pin(model_id)
+        return True
+    except KeyError:
+        return False
 
 
 class ModelManagerGateway:
@@ -122,10 +147,21 @@ class ModelManagerGateway:
         loop's default executor, which is unrelated to the manager's limits."""
         return getattr(self.manager, "executor", None)
 
-    def _load_sync(self, key: str, api_key: str, device: Optional[str] = None) -> None:
+    def _load_sync(
+        self,
+        key: str,
+        api_key: str,
+        device: Optional[str] = None,
+        pinned: bool = False,
+    ) -> None:
         kwargs: dict = dict(self.load_kwargs)
         if device:
             kwargs["device"] = device
+        if pinned:
+            # The manager pins under the same lock acquisition that registers
+            # the backend — no window in which a concurrent load can evict a
+            # model this call is about to protect.
+            kwargs["pinned"] = True
         model_id = routed_model_id(key)
         if model_id != key:
             # Multi-instance routing key: register under the key, fetch the
@@ -134,7 +170,11 @@ class ModelManagerGateway:
         self.manager.load(key, api_key, **kwargs)
 
     async def _acquire_load_future(
-        self, key: str, api_key: str, device: Optional[str] = None
+        self,
+        key: str,
+        api_key: str,
+        device: Optional[str] = None,
+        pinned: bool = False,
     ) -> Optional[asyncio.Future]:
         """None when the model is present and healthy; else the shared load.
 
@@ -148,20 +188,20 @@ class ModelManagerGateway:
         lock = self._load_locks.setdefault(key, asyncio.Lock())
         if not performance_profiler.enabled:
             async with lock:
-                return self._acquire_load_future_locked(key, api_key, device)
+                return self._acquire_load_future_locked(key, api_key, device, pinned)
 
         lock_started = performance_profiler.start()
         await lock.acquire()
         performance_profiler.stop("wrapper.ensure.lock", lock_started)
         check_started = performance_profiler.start()
         try:
-            return self._acquire_load_future_locked(key, api_key, device)
+            return self._acquire_load_future_locked(key, api_key, device, pinned)
         finally:
             lock.release()
             performance_profiler.stop("wrapper.ensure.check", check_started)
 
     def _acquire_load_future_locked(
-        self, key: str, api_key: str, device: Optional[str]
+        self, key: str, api_key: str, device: Optional[str], pinned: bool = False
     ) -> Optional[asyncio.Future]:
         future = self._pending_loads.get(key)
         if future is not None:
@@ -185,7 +225,7 @@ class ModelManagerGateway:
                         "ModelManagerGateway: dead-backend unload failed",
                         exc_info=True,
                     )
-            self._load_sync(key, api_key, device)
+            self._load_sync(key, api_key, device, pinned)
 
         # Unload+load run as ONE executor job registered before the lock
         # releases: no await window a cancelled caller could exploit, and
@@ -263,21 +303,43 @@ class ModelManagerGateway:
         finally:
             performance_profiler.stop("wrapper.ensure.total", started)
 
+    async def _pinned_load(
+        self, model_id: str, api_key: str, timeout_s: float
+    ) -> Optional[tuple]:
+        """Run or join a pinned load; None once the model is loaded."""
+        future = await self._acquire_load_future(model_id, api_key, pinned=True)
+        if future is None:
+            return None
+        return await self._await_load(future, timeout_s, deadline_result=None)
+
     async def load(
         self, model_id: str, api_key: str = "", timeout_s: Optional[float] = None
     ) -> tuple:
-        future = await self._acquire_load_future(model_id, api_key)
-        if future is None:
-            return ("ok",)
         effective_timeout = (
             timeout_s if timeout_s is not None else _LOAD_DEFAULT_TIMEOUT_S
         )
-        failure = await self._await_load(
-            future, effective_timeout, deadline_result=None
-        )
+        failure = await self._pinned_load(model_id, api_key, effective_timeout)
         if failure is not None:
             return failure
-        return ("ok",)
+        pin = getattr(self.manager, "pin", None)
+        if pin is None:
+            return ("ok",)
+        if _try_pin(pin, model_id):
+            return ("ok",)
+        # Already loaded, or joined an unpinned in-flight load, and the model
+        # was evicted before the pin landed. Reload once — reporting ok for an
+        # absent model leaves /ready failing forever.
+        logger.warning(
+            "ModelManagerGateway: '%s' was evicted before it could be pinned "
+            "— reloading once",
+            model_id,
+        )
+        failure = await self._pinned_load(model_id, api_key, effective_timeout)
+        if failure is not None:
+            return failure
+        if _try_pin(pin, model_id):
+            return ("ok",)
+        return ("error", _ERR_LOAD_FAILED)
 
     async def unload(self, model_id: str) -> tuple:
         try:
@@ -337,20 +399,37 @@ class ModelManagerGateway:
                 else image
             )
 
+        async def _process() -> Any:
+            # serialize=False: L1 output serializers expect the RAW
+            # prediction — the MMP wire carries raw pickles, so the
+            # direct gateway must match. wire_marshalling: direct
+            # backends get the worker-equivalent decode/rle/numpy/unwrap
+            # handling (no-op on subprocess backends — the worker does it).
+            return await self.manager.process_async(
+                key,
+                task=task,
+                serialize=False,
+                wire_marshalling=True,
+                **call_kwargs,
+            )
+
         async def _run() -> Any:
             try:
-                # serialize=False: L1 output serializers expect the RAW
-                # prediction — the MMP wire carries raw pickles, so the
-                # direct gateway must match. wire_marshalling: direct
-                # backends get the worker-equivalent decode/rle/numpy/unwrap
-                # handling (no-op on subprocess backends — the worker does it).
-                return await self.manager.process_async(
-                    key,
-                    task=task,
-                    serialize=False,
-                    wire_marshalling=True,
-                    **call_kwargs,
-                )
+                try:
+                    return await _process()
+                except (KeyError, RuntimeError) as exc:
+                    if not _model_route_lost(exc):
+                        raise
+                    # Capacity churn took the model between ensure_loaded()
+                    # and the in-flight lease — reload and replay once rather
+                    # than failing a request that was admitted.
+                    logger.warning(
+                        "ModelManagerGateway: '%s' went away mid-request "
+                        "— reloading and retrying once",
+                        key,
+                    )
+                    await self.ensure_loaded(model_id, instance)
+                    return await _process()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

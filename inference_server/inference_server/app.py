@@ -10,8 +10,11 @@ returns.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, Response
 
@@ -20,9 +23,24 @@ from inference_server.auth import extract_bearer, validate_api_key
 from inference_server.errors import AuthBackendUnavailable
 from inference_server.routers import v2_models, v2_server
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Lifespan — initialize the per-process gateway
 # ---------------------------------------------------------------------------
+
+
+async def _preload_models(
+    proxy, model_ids: list[str], api_key: Optional[str]
+) -> None:
+    async def _one(mid):
+        try:
+            result = await proxy.load(mid, api_key=api_key, timeout_s=300.0)
+            logger.info("Preload of '%s': %s", mid, result)
+        except Exception:
+            logger.warning("Preload of '%s' failed", mid, exc_info=True)
+
+    await asyncio.gather(*(_one(m) for m in model_ids))
 
 
 @asynccontextmanager
@@ -35,12 +53,35 @@ async def _lifespan(app: FastAPI):
     from inference_server.gateway_resolver import resolve_gateway
 
     proxy = resolve_gateway()
+    preload_task = None
+    watchdog_daemons = []
     try:
         await proxy.start()
+
+        from inference_model_manager.watchdogs import start_enabled_watchdogs
+
+        watchdog_daemons = start_enabled_watchdogs()
+
         app.state.model_manager = proxy
+        preload_ids = _cfg.preload_model_ids()
+        preload_task = (
+            asyncio.create_task(
+                _preload_models(proxy, preload_ids, _cfg.PRELOAD_API_KEY or None)
+            )
+            if preload_ids
+            else None
+        )
         yield
     finally:
-        await proxy.shutdown()
+        if preload_task is not None:
+            if not preload_task.done():
+                preload_task.cancel()
+            await asyncio.gather(preload_task, return_exceptions=True)
+        try:
+            await proxy.shutdown()
+        finally:
+            for daemon in watchdog_daemons:
+                daemon.stop(timeout=5)
 
 
 # ---------------------------------------------------------------------------

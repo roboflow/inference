@@ -315,3 +315,9 @@ class Backend(ABC):
     def worker_pid(self) -> Optional[int]:
         """OS PID of the worker subprocess, if applicable. None for in-process backends."""
         return None
+
+    @property
+    def last_used_ts(self) -> Optional[float]:
+        """Monotonic timestamp of the last inference (load time if never
+        inferred), used for LRU eviction ordering. None = unknown."""
+        return None
