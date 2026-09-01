@@ -352,17 +352,32 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         else:
             source_fps = bookkeeping.source_fps
 
-        effective_sample_fps = min(float(video_sampling.sample_fps), source_fps)
-        sampling_stride = max(1.0, source_fps / effective_sample_fps)
+        if video_sampling.max_frames is not None:
+            # A trained model reads its recorded rate whatever the source
+            # supplies. Training drew that many timestamps and repeated the
+            # frame under each one, so capping here would hand the model a
+            # shorter input stamped at a rate it never saw.
+            effective_sample_fps = float(video_sampling.sample_fps)
+        else:
+            effective_sample_fps = min(float(video_sampling.sample_fps), source_fps)
+        sampling_stride = source_fps / effective_sample_fps
         window_frames = max(1, round(requested_window_seconds * source_fps))
         stride_frames = max(1, round(requested_stride_seconds * source_fps))
         if bookkeeping.next_sample_frame_number is None:
             bookkeeping.next_sample_frame_number = float(frame_number)
         if frame_number >= bookkeeping.next_sample_frame_number:
-            bookkeeping.sampled.append((frame_number, self._extract_frame(image=image)))
-            # Advance on the float grid; integer anchoring rounds every
-            # step up and drags the real sample rate below sample_fps.
+            frame = self._extract_frame(image=image)
+            # Frames can arrive with gaps. A timestamp stranded in a gap has
+            # no frame of its own, and copying this one under each would
+            # flood the buffer, so the cursor snaps past them first.
+            if bookkeeping.next_sample_frame_number < frame_number - 1:
+                bookkeeping.next_sample_frame_number = float(frame_number)
+            # Advance on the float grid; integer anchoring rounds every step
+            # up and drags the real sample rate below sample_fps. Several
+            # timestamps landing on one frame each take it, which is the
+            # repeat training fed a source slower than the recorded rate.
             while bookkeeping.next_sample_frame_number <= frame_number:
+                bookkeeping.sampled.append((frame_number, frame))
                 bookkeeping.next_sample_frame_number += sampling_stride
 
         cutoff_frame_number = frame_number - window_frames
@@ -467,7 +482,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             segments=segments,
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
-            stride=math.ceil(sampling_stride),
+            stride=max(1, math.ceil(sampling_stride)),
         )
         return ""
 

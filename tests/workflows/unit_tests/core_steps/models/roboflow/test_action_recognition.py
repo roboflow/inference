@@ -1099,3 +1099,45 @@ def test_the_block_refuses_a_whole_video_model() -> None:
 
     # It refuses before it asks the model for anything.
     assert model.calls == []
+
+
+def test_a_trained_model_keeps_its_rate_when_the_stream_is_slower() -> None:
+    # Training drew 4 timestamps a second and repeated the frame under each
+    # one. Capping to the source would hand the model a shorter input,
+    # stamped at a rate it never trained on.
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    model.video_sampling = VideoSampling(
+        window_seconds=2.0, sample_fps=4.0, min_frames=1, max_frames=8
+    )
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number, fps=2.0)],
+            class_filter=None,
+            model_id="cosmos-3-edge",
+            stride_seconds=2.0,
+        )
+
+    assert model.calls, "the block never fired"
+    # 2 fps source against a 4 fps contract: two samples per arriving frame.
+    assert model.calls[-1]["fps"] == 4.0
+    assert len(model.calls[-1]["frames"]) == 8
+
+
+def test_an_untrained_model_still_caps_at_the_source_rate() -> None:
+    # Zero-shot has no training to reproduce, so a repeat buys nothing.
+    block, model = _make_block(responses=[[_model_segment("walk")]])
+    model.video_sampling = VideoSampling(
+        window_seconds=2.0, sample_fps=4.0, min_frames=1
+    )
+
+    for frame_number in range(5):
+        block.run(
+            images=[_make_frame(frame_number, fps=2.0)],
+            class_filter=None,
+            model_id="cosmos-3-edge",
+            stride_seconds=2.0,
+        )
+
+    assert model.calls[-1]["fps"] == 2.0
+    assert len(model.calls[-1]["frames"]) == 4
