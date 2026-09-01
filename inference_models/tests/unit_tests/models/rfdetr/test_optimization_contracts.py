@@ -24,6 +24,7 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
+from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
@@ -236,6 +237,34 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
     assert resolved.engine_plugin_id == "future-plugin"
     assert not resolved.allow_compatibility_fallback
     assert resolved.allow_runtime_failure_fallback
+
+
+def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+    )
+    profiling_plan = InferenceExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+        buffer_strategy_id="base",
+        scheduler_id="base",
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        engine_plugin_id="base",
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved = RFDetrExecutionPlan.resolve(execution_plan=profiling_plan)
+
+    assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    assert resolved.buffer_strategy_id == "base"
+    assert resolved.scheduler_id == "base"
+    assert resolved.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert resolved.engine_plugin_id == "base"
+    assert not resolved.allow_compatibility_fallback
+    assert not resolved.allow_runtime_failure_fallback
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
