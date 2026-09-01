@@ -86,11 +86,12 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["Is the walkway free of obstacles?", "$inputs.prompt"],
     )
     model_version: Union[
-        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"], str
     ] = Field(
         default="nvidia/cosmos-3-edge",
-        description="The Cosmos 3 Edge model to be used for inference.",
-        examples=["nvidia/cosmos-3-edge"],
+        description="The Cosmos 3 Edge model to be used for inference: the base model, "
+        "or the model id of a Roboflow fine-tune.",
+        examples=["nvidia/cosmos-3-edge", "my-project/3"],
     )
     system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,

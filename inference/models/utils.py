@@ -511,6 +511,10 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Roboflow fine-tunes carry the platform's model type as their
+            # architecture.
+            ("text-image-pairs", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:

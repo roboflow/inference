@@ -3,12 +3,17 @@ This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
 originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
+import json
+import os
 import re
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import transformers
+from packaging.version import Version
+from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from transformers.utils import is_flash_attn_2_available
 
@@ -21,6 +26,9 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat
 
 DEFAULT_PROMPT = "Describe what's in this image."
+# The `cosmos3_edge` model type is what AutoModelForImageTextToText resolves the
+# checkpoint to; older transformers fail on it with an unhelpful config error.
+MIN_TRANSFORMERS_VERSION = "5.15.0"
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
 THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
 THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
@@ -51,6 +59,20 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
+def _require_cosmos3_transformers() -> None:
+    if Version(transformers.__version__) < Version(MIN_TRANSFORMERS_VERSION):
+        raise RuntimeError(
+            f"Cosmos 3 Edge needs transformers>={MIN_TRANSFORMERS_VERSION} (the "
+            f"cosmos3_edge model type); found {transformers.__version__}."
+        )
+
+
+def _adapter_trains_new_tokens(adapter_config_path: str) -> bool:
+    with open(adapter_config_path) as f:
+        adapter_config = json.load(f)
+    return bool(adapter_config.get("trainable_token_indices"))
+
+
 def _resolve_default_dtype(device: torch.device) -> torch.dtype:
     if device.type == "cuda":
         if torch.cuda.is_bf16_supported():
@@ -79,22 +101,55 @@ class Cosmos3EdgeReasoner:
         quantization_config: Any = None,
         **kwargs,
     ) -> "Cosmos3EdgeReasoner":
+        _require_cosmos3_transformers()
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_cosmos3_attn_implementation(device)
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
-            device_map=device,
-            dtype=dtype,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_files_only,
-            quantization_config=quantization_config,
-            attn_implementation=attn_implementation,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_files_only,
-        )
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            # A Roboflow fine-tune: the LoRA adapter sits at the package root and the
+            # base checkpoint (weights, tokenizer, chat template, processor configs)
+            # under base/, the same layout as the other fine-tuned VLMs. A video
+            # fine-tune adds one class token per class to the vocabulary, rows the
+            # base has no room for until it is resized; refuse it readably instead
+            # of failing on a shape mismatch inside PEFT.
+            if _adapter_trains_new_tokens(adapter_config_path):
+                raise NotImplementedError(
+                    "This Cosmos 3 Edge fine-tune adds class tokens to the vocabulary "
+                    "(a video fine-tune); only image fine-tunes can be served for now."
+                )
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = AutoModelForImageTextToText.from_pretrained(
+                base_model_path,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            if quantization_config is None:
+                model = model.merge_and_unload()
+            model = model.to(device).eval()
+            processor = AutoProcessor.from_pretrained(
+                base_model_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
+        else:
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_name_or_path,
+                device_map=device,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            ).eval()
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
         return cls(model=model, processor=processor, device=device)
 
     def __init__(

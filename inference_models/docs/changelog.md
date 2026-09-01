@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA adapter at the package
+  root over the base checkpoint under `base/`, the layout the other fine-tuned VLMs use. Image
+  fine-tunes only for now; a video fine-tune's class tokens are refused with a clear error. The
+  registry also resolves the architecture under the platform's model type, `cosmos3-edge`, and
+  the loader names the `transformers>=5.15` floor the `cosmos3_edge` model type needs.
+
 ---
 
 ## `0.36.0`

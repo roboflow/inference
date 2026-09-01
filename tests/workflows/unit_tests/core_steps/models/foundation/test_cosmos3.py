@@ -49,6 +49,11 @@ def test_manifest_accepts_model_version_selector():
     assert result.model_version == "$inputs.model_version"
 
 
+def test_manifest_accepts_a_fine_tuned_model_id():
+    result = BlockManifest.model_validate({**BASE, "model_version": "my-project/3"})
+    assert result.model_version == "my-project/3"
+
+
 def test_manifest_rejects_invalid_image_selector():
     with pytest.raises(ValidationError):
         BlockManifest.model_validate({**BASE, "images": 42})

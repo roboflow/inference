@@ -1,11 +1,14 @@
+import json
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 import torch
 
 from inference_models.configuration import (
     INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
 )
+from inference_models.models.cosmos3 import cosmos3_reasoner_hf as reasoner_module
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
 
@@ -149,3 +152,63 @@ def test_prompt_video_returns_single_string() -> None:
     )
 
     assert result == "a robot arm"
+
+
+def _fake_loaded_model() -> MagicMock:
+    model = MagicMock()
+    model.to.return_value = model
+    model.eval.return_value = model
+    model.parameters.return_value = iter([torch.tensor(0.0, dtype=torch.bfloat16)])
+    return model
+
+
+def test_from_pretrained_loads_a_roboflow_fine_tune_from_its_adapter(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / "adapter_config.json").write_text(json.dumps({"peft_type": "LORA"}))
+    (tmp_path / "base").mkdir()
+    base_model = MagicMock()
+    merged = _fake_loaded_model()
+    peft_model = MagicMock()
+    peft_model.merge_and_unload.return_value = merged
+    load_base = MagicMock(return_value=base_model)
+    load_adapter = MagicMock(return_value=peft_model)
+    load_processor = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText, "from_pretrained", load_base
+    )
+    monkeypatch.setattr(reasoner_module.PeftModel, "from_pretrained", load_adapter)
+    monkeypatch.setattr(
+        reasoner_module.AutoProcessor, "from_pretrained", load_processor
+    )
+
+    reasoner = Cosmos3EdgeReasoner.from_pretrained(
+        str(tmp_path), device=torch.device("cpu")
+    )
+
+    # The base checkpoint comes from base/, the adapter from the package root, and
+    # the merged model is what serves.
+    assert load_base.call_args.args[0] == str(tmp_path / "base")
+    assert load_adapter.call_args.args == (base_model, str(tmp_path))
+    assert load_processor.call_args.args[0] == str(tmp_path / "base")
+    assert reasoner._model is merged
+
+
+def test_from_pretrained_refuses_a_fine_tune_with_class_tokens(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / "adapter_config.json").write_text(
+        json.dumps({"trainable_token_indices": {"embed_tokens": [151669]}})
+    )
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+
+    with pytest.raises(NotImplementedError, match="video fine-tune"):
+        Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=torch.device("cpu"))
+
+
+def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
+    monkeypatch.setattr(reasoner_module.transformers, "__version__", "5.5.0")
+
+    with pytest.raises(RuntimeError, match="transformers>=5.15.0"):
+        reasoner_module._require_cosmos3_transformers()
