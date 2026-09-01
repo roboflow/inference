@@ -1,12 +1,14 @@
-"""Tensor-input sibling of the action recognition workflow block."""
+"""Tensor-input sibling of the action recognition workflow block.
+
+``BlockManifest`` is re-exported so a caller loading either module finds the
+same manifest.
+"""
 
 import numpy as np
 
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
     ActionRecognitionModelBlockV1 as _NumpyActionRecognitionModelBlockV1,
 )
-
-# Re-exported so a caller loading either module finds the same manifest.
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (  # noqa: F401
     BlockManifest,
 )

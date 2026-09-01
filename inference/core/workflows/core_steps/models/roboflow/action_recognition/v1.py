@@ -43,13 +43,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
-from inference_models.models.base.action_recognition import (
-    WHOLE_VIDEO_MODE,
-    VideoSampling,
-)
+from inference_models.models.base.action_recognition import VideoSampling
 
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
