@@ -1,0 +1,60 @@
+---
+description: Bootstrap and manage new Python projects with uv
+alwaysApply: true
+---
+
+# New Python projects — use uv
+
+When managing Python project,s use [uv](https://docs.astral.sh/uv/) for environments, dependencies, and packaging. Do not use Poetry, Pipenv, or a bare `requirements.txt` unless migrating an existing project.
+
+## Initializing projects
+
+```bash
+uv init <project-name>
+cd <project-name>
+```
+
+Or adopt an existing package: add `pyproject.toml` (PEP 621), then `uv lock` and `uv sync`.
+
+## Day-to-day
+
+| Task | Command |
+|------|---------|
+| Create venv only | `uv venv --python 3.12` |
+| Install from lockfile | `uv sync` |
+| Add / remove dependency | `uv add <pkg>` / `uv remove <pkg>` |
+| Add dev / test deps | `uv add --dev <pkg>` or `uv add --group dev <pkg>` |
+| Upgrade one package | `uv lock --upgrade-package <pkg>` |
+| Run in project env | `uv run pytest` / `uv run python -m ...` |
+| One-off script with deps | `uv add --script script.py <pkg>` then `uv run script.py` |
+
+Prefer `uv sync` for local development (creates `.venv`, editable install, honors lockfile). Use `uv pip install` when targeting a non-default environment (CI matrix, `--system`, `--python path/to/python`).
+
+## Lockfile and packaging
+
+- Commit `uv.lock` with dependency changes; update via `uv add` / `uv remove` / `uv lock`, not by editing the lockfile by hand.
+- Keep runtime deps in `[project.dependencies]`; use optional extras or dependency groups for dev/test/tooling.
+- Build and publish with `uv build` and `uv publish` in new release pipelines.
+
+## CI
+
+Reproducible installs:
+
+```bash
+uv sync --locked --all-extras   # or pass only needed --extra flags
+```
+
+Or, when installing into a pre-created venv:
+
+```bash
+uv venv
+uv pip install -e ".[test]" --python .venv
+```
+
+## Do not
+
+- Add `requirements.in` / `requirements.txt` as the primary dependency source.
+- Use `pip install` or `conda install` to mutate project dependencies outside uv.
+- Mix multiple lock systems (e.g. Poetry lock + `uv.lock`) in the same package.
+
+When joining an **existing** repo, follow that repo's established tooling unless the user asks to migrate.

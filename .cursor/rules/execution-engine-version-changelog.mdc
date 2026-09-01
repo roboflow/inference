@@ -1,0 +1,66 @@
+---
+description: Record unreleased Execution Engine changes; maintainers version them at release
+globs: inference/core/workflows/execution_engine/**/*.py
+alwaysApply: false
+---
+
+# Execution Engine version and changelog
+
+When you change **behavior** of workflow **compilation** or **execution** under
+`inference/core/workflows/execution_engine/`, add a user-facing entry to the
+Execution Engine changelog in the **same PR**. Do not bump a version; maintainers
+do that when preparing a release.
+
+## When this applies
+
+- Compiler pipeline, parsing, graph construction, inlining, dynamic blocks assembly
+- Runtime execution, input assembly/validation, step scheduling, error handling
+- Execution Engine v1 APIs that affect compile or run outcomes
+
+## When this does NOT apply
+
+- Comments, types-only refactors, or formatting with **no** behavior change
+- Workflow **block** implementations in `core_steps/` (unless they require an EE change)
+- Documentation or tests that only mirror existing behavior
+
+## Required updates
+
+1. **Changelog** — add short **What changed** bullets (user-facing behavior, not
+   file lists) under `## Unreleased` in the Execution Engine changelog. The
+   changelog now lives in the [roboflow/docs](https://github.com/roboflow/docs)
+   repository at `workflows/developer-guide/execution-engine-changelog.md`,
+   published at
+   <https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog>.
+   Open a PR against that repository in parallel with the code change.
+   `docs/workflows/execution_engine_changelog.md` in this repository is now only
+   a redirect stub: do not edit it.
+2. **Tests** — add or update behavior tests for the change. Do not update
+   hardcoded version assertions in a contributor PR.
+
+## Maintainer release updates
+
+When preparing a release, maintainers:
+
+1. Choose the Execution Engine version (patch for a fix, minor for a new
+   capability, major for a coordinated breaking change).
+2. Bump `EXECUTION_ENGINE_V1_VERSION` in
+   `inference/core/workflows/execution_engine/v1/core.py`.
+3. In the [roboflow/docs](https://github.com/roboflow/docs) repository, move the
+   `## Unreleased` entries in
+   `workflows/developer-guide/execution-engine-changelog.md` under
+   `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` using the release
+   value from `inference/core/version.py`, then leave a fresh `## Unreleased`
+   section at the top.
+4. Update hardcoded EE version assertions in
+   `tests/inference/integration_tests/test_workflow_endpoints.py` and
+   `tests/inference/hosted_platform_tests/test_workflows.py`.
+
+## Example changelog entry
+
+```markdown
+## Unreleased
+
+**What changed**
+
+* **Short title** — One or two sentences on compile/run impact for workflow authors.
+```

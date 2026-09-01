@@ -1,0 +1,27 @@
+---
+description: CLI option conventions for Python scripts
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python CLI Options
+
+When editing Python scripts that define command-line interfaces, use `click`
+for command-line options unless an existing script is already intentionally
+using another parser.
+
+Format each `@click.option(...)` decorator with every option argument and
+keyword parameter on its own line:
+
+```python
+@click.option(
+    "--batch-size",
+    type=click.IntRange(
+        min=1,
+    ),
+    default=1,
+    show_default=True,
+)
+```
+
+Avoid single-line option declarations, even for simple options.
