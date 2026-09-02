@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 import torch
 
 from inference_models.configuration import (
@@ -149,3 +150,115 @@ def test_prompt_video_returns_single_string() -> None:
     )
 
     assert result == "a robot arm"
+
+
+def test_pre_process_generation_video_with_fps_stamps_frames_without_resampling() -> (
+    None
+):
+    reasoner = _model_with_processor()
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
+
+    reasoner.pre_process_generation(images=frames, as_video=True, video_fps=2.0)
+
+    kwargs = reasoner._processor.call_args.kwargs
+    assert kwargs["do_sample_frames"] is False
+    metadata = kwargs["video_metadata"][0]
+    assert metadata.total_num_frames == 4
+    assert metadata.fps == 2.0
+    assert list(metadata.frames_indices) == [0, 1, 2, 3]
+
+
+def test_pre_process_generation_video_without_fps_leaves_sampling_to_processor() -> (
+    None
+):
+    reasoner = _model_with_processor()
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
+
+    reasoner.pre_process_generation(images=frames, as_video=True)
+
+    kwargs = reasoner._processor.call_args.kwargs
+    assert "video_metadata" not in kwargs
+    assert "do_sample_frames" not in kwargs
+
+
+def test_pre_process_generation_rejects_non_positive_fps() -> None:
+    reasoner = _model_with_processor()
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
+
+    with pytest.raises(ValueError):
+        reasoner.pre_process_generation(images=frames, as_video=True, video_fps=0)
+
+
+def test_package_prompt_defaults_are_used_when_request_has_none() -> None:
+    reasoner = _model_with_processor()
+    reasoner.default_prompt = "Find every clap."
+    reasoner.default_system_prompt = "You are a clap finder."
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    conversation = reasoner._processor.apply_chat_template.call_args.args[0]
+    assert conversation[0]["content"][0]["text"] == "You are a clap finder."
+    assert conversation[1]["content"][1]["text"] == "Find every clap."
+
+
+def test_post_process_generation_keeps_class_tokens_for_a_fine_tune() -> None:
+    reasoner = _model_with_processor()
+    reasoner.class_names = ["clap"]
+    tokenizer = reasoner._processor.tokenizer
+    tokenizer.eos_token = "<|im_end|>"
+    tokenizer.pad_token = "<|im_end|>"
+    tokenizer.bos_token = None
+    reasoner._processor.batch_decode.return_value = [
+        "<|cls:clap|> <0.10> <0.50><|im_end|>"
+    ]
+
+    result = reasoner.post_process_generation(torch.tensor([[1, 2]]))
+
+    assert result == ["<|cls:clap|> <0.10> <0.50>"]
+    assert (
+        reasoner._processor.batch_decode.call_args.kwargs["skip_special_tokens"]
+        is False
+    )
+
+
+def test_post_process_generation_skips_special_tokens_without_class_tokens() -> None:
+    reasoner = _model_with_processor()
+    reasoner._processor.batch_decode.return_value = ["a clap"]
+
+    result = reasoner.post_process_generation(torch.tensor([[1, 2]]))
+
+    assert result == ["a clap"]
+    assert (
+        reasoner._processor.batch_decode.call_args.kwargs["skip_special_tokens"] is True
+    )
+
+
+def test_load_generation_defaults_and_class_names_from_package(tmp_path) -> None:
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+        _load_class_names,
+        _load_generation_defaults,
+    )
+
+    (tmp_path / "inference_config.json").write_text(
+        '{"generation": {"prompt": "Find claps.", "system_prompt": "Be exact."}}'
+    )
+    (tmp_path / "class_names.txt").write_text("clap\nwave\n")
+
+    assert _load_generation_defaults(str(tmp_path)) == {
+        "prompt": "Find claps.",
+        "system_prompt": "Be exact.",
+    }
+    assert _load_class_names(str(tmp_path)) == ["clap", "wave"]
+    assert _load_generation_defaults(str(tmp_path / "missing")) == {}
+    assert _load_class_names(str(tmp_path / "missing")) == []
+
+
+def test_load_generation_defaults_rejects_non_string_prompt(tmp_path) -> None:
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+        _load_generation_defaults,
+    )
+
+    (tmp_path / "inference_config.json").write_text('{"generation": {"prompt": 3}}')
+
+    with pytest.raises(ValueError):
+        _load_generation_defaults(str(tmp_path))

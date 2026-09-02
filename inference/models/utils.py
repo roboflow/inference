@@ -511,6 +511,17 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Roboflow action-recognition fine-tunes: the platform's model type id is
+            # cosmos3-edge (what a versioned project/version id resolves to), the model
+            # package's architecture is cosmos-3-edge.
+            (
+                "action-recognition",
+                "cosmos3-edge",
+            ): InferenceModelsCosmos3ReasonerAdapter,
+            (
+                "action-recognition",
+                "cosmos-3-edge",
+            ): InferenceModelsCosmos3ReasonerAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:

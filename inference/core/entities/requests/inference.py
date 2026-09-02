@@ -394,6 +394,13 @@ class LMMInferenceRequest(CVInferenceRequest):
         default=None,
         description="Maximum number of tokens to generate. If not set, the model's default will be used.",
     )
+    video_fps: Optional[float] = Field(
+        default=None,
+        examples=[4.0],
+        description="When `image` is a list, the frames per second it was sampled at: the list is then one clip, "
+        "in order, for video-language models that reason over time (e.g. Cosmos 3). Not set means the list is "
+        "a batch of independent images.",
+    )
 
 
 def request_from_type(model_type, request_dict):

@@ -3,14 +3,18 @@ This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
 originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
+import json
+import os
 import re
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from transformers.utils import is_flash_attn_2_available
+from transformers.video_utils import VideoMetadata
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -21,7 +25,15 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat
 
 DEFAULT_PROMPT = "Describe what's in this image."
+DEFAULT_SYSTEM_PROMPT = (
+    "You are Cosmos, a helpful assistant that understands physical scenes "
+    "and answers questions about images and videos."
+)
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
+ADAPTER_CONFIG_FILE = "adapter_config.json"
+BASE_MODEL_DIR = "base"
+INFERENCE_CONFIG_FILE = "inference_config.json"
+CLASS_NAMES_FILE = "class_names.txt"
 THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
 THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
 
@@ -81,36 +93,68 @@ class Cosmos3EdgeReasoner:
     ) -> "Cosmos3EdgeReasoner":
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_cosmos3_attn_implementation(device)
-        model = AutoModelForImageTextToText.from_pretrained(
+        # A Roboflow fine-tune is a LoRA package: the adapter (and the processor, whose
+        # tokenizer carries the fine-tune's added class tokens) at the root, the base
+        # reasoner under base/. The pretrained package is the base reasoner itself.
+        adapter_config_path = os.path.join(model_name_or_path, ADAPTER_CONFIG_FILE)
+        is_adapter_package = os.path.exists(adapter_config_path)
+        base_model_path = (
+            os.path.join(model_name_or_path, BASE_MODEL_DIR)
+            if is_adapter_package
+            else model_name_or_path
+        )
+        processor = AutoProcessor.from_pretrained(
             model_name_or_path,
+            trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
+        )
+        model = AutoModelForImageTextToText.from_pretrained(
+            base_model_path,
             device_map=device,
             dtype=dtype,
             trust_remote_code=trust_remote_code,
             local_files_only=local_files_only,
             quantization_config=quantization_config,
             attn_implementation=attn_implementation,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_files_only,
         )
-        return cls(model=model, processor=processor, device=device)
+        if is_adapter_package:
+            # The fine-tune added one special token per class; their embedding and head
+            # rows live in the adapter (PEFT trainable tokens), so the base only needs the
+            # rows to exist before the adapter is applied.
+            model.resize_token_embeddings(len(processor.tokenizer))
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model = model.merge_and_unload()
+        model = model.eval()
+        generation = _load_generation_defaults(model_name_or_path)
+        return cls(
+            model=model,
+            processor=processor,
+            device=device,
+            default_prompt=generation.get("prompt", DEFAULT_PROMPT),
+            default_system_prompt=generation.get(
+                "system_prompt", DEFAULT_SYSTEM_PROMPT
+            ),
+            class_names=_load_class_names(model_name_or_path),
+        )
 
     def __init__(
         self,
         model,
         processor,
         device: torch.device,
+        default_prompt: str = DEFAULT_PROMPT,
+        default_system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        class_names: Optional[List[str]] = None,
     ):
         self._model = model
         self._processor = processor
         self._device = device
         self._torch_dtype = next(model.parameters()).dtype
-        self.default_system_prompt = (
-            "You are Cosmos, a helpful assistant that understands physical scenes "
-            "and answers questions about images and videos."
-        )
+        self.default_prompt = default_prompt
+        self.default_system_prompt = default_system_prompt
+        # A fine-tune answers in the special class tokens it was trained with, so decoding
+        # must keep special tokens for its answers to survive.
+        self.class_names = list(class_names) if class_names else []
         self._lock = Lock()
 
     def prompt(
@@ -147,6 +191,7 @@ class Cosmos3EdgeReasoner:
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         return_thinking: bool = False,
+        video_fps: Optional[float] = None,
         **kwargs,
     ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
@@ -154,6 +199,7 @@ class Cosmos3EdgeReasoner:
             prompt=prompt,
             input_color_format=input_color_format,
             as_video=True,
+            video_fps=video_fps,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -172,8 +218,16 @@ class Cosmos3EdgeReasoner:
         prompt: str = None,
         input_color_format: ColorFormat = None,
         as_video: bool = False,
+        video_fps: Optional[float] = None,
         **kwargs,
     ) -> dict:
+        """Tokenize a prompt around an image, or around a clip when ``as_video``.
+
+        ``video_fps`` is the rate the frames were sampled at. With it, frame ``i`` is stamped
+        ``i / video_fps`` seconds into the clip - the timestamps a temporal fine-tune answers
+        in - and the processor is told not to resample. Without it the processor applies its
+        own frame sampling and timing.
+        """
         if isinstance(images, np.ndarray):
             if input_color_format != "rgb":
                 images = images[:, :, ::-1]
@@ -206,6 +260,17 @@ class Cosmos3EdgeReasoner:
             conversation, tokenize=False, add_generation_prompt=True
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
+        if as_video and video_fps is not None:
+            if video_fps <= 0:
+                raise ValueError(f"video_fps must be positive, got {video_fps}")
+            processor_kwargs["video_metadata"] = [
+                VideoMetadata(
+                    total_num_frames=len(images),
+                    fps=video_fps,
+                    frames_indices=list(range(len(images))),
+                )
+            ]
+            processor_kwargs["do_sample_frames"] = False
         model_inputs = self._processor(
             text=text_input,
             return_tensors="pt",
@@ -253,10 +318,31 @@ class Cosmos3EdgeReasoner:
         return_thinking: bool = False,
         **kwargs,
     ) -> Union[List[str], List[Dict[str, str]]]:
-        decoded = self._processor.batch_decode(
-            generated_ids,
-            skip_special_tokens=skip_special_tokens,
-        )
+        if self.class_names:
+            # The answer is made of the fine-tune's class tokens, which are special
+            # tokens; only the turn/pad control tokens are dropped.
+            tokenizer = self._processor.tokenizer
+            control_tokens = [
+                token
+                for token in (
+                    tokenizer.eos_token,
+                    tokenizer.pad_token,
+                    tokenizer.bos_token,
+                )
+                if token
+            ]
+            decoded = []
+            for text in self._processor.batch_decode(
+                generated_ids, skip_special_tokens=False
+            ):
+                for token in control_tokens:
+                    text = text.replace(token, "")
+                decoded.append(text)
+        else:
+            decoded = self._processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=skip_special_tokens,
+            )
         result = []
         for text in decoded:
             text = text.replace("assistant\n", "")
@@ -287,9 +373,38 @@ class Cosmos3EdgeReasoner:
 
     def _parse_prompt(self, prompt: Optional[str]) -> Tuple[str, str]:
         if prompt is None:
-            return DEFAULT_PROMPT, self.default_system_prompt
+            return self.default_prompt, self.default_system_prompt
         split_prompt = prompt.split(SYSTEM_PROMPT_SENTINEL)
-        parsed_prompt = split_prompt[0] or DEFAULT_PROMPT
+        parsed_prompt = split_prompt[0] or self.default_prompt
         if len(split_prompt) == 1:
             return parsed_prompt, self.default_system_prompt
         return parsed_prompt, split_prompt[1] or self.default_system_prompt
+
+
+def _load_generation_defaults(model_name_or_path: str) -> Dict[str, str]:
+    """The prompt a fine-tune was trained with, from the package's inference_config.json.
+
+    Roboflow's Cosmos trainers record it under ``generation`` so a request without a prompt
+    asks the model exactly what it learned to answer.
+    """
+    config_path = os.path.join(model_name_or_path, INFERENCE_CONFIG_FILE)
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, "r") as config_file:
+        config = json.load(config_file)
+    generation = config.get("generation") or {}
+    for key in ("prompt", "system_prompt"):
+        if key in generation and not isinstance(generation[key], str):
+            raise ValueError(
+                f"{config_path}: generation.{key} must be a string, got {type(generation[key]).__name__}"
+            )
+    return generation
+
+
+def _load_class_names(model_name_or_path: str) -> List[str]:
+    """The class list a fine-tune answers with (one per line), when the package carries one."""
+    class_names_path = os.path.join(model_name_or_path, CLASS_NAMES_FILE)
+    if not os.path.exists(class_names_path):
+        return []
+    with open(class_names_path, "r") as class_names_file:
+        return [line.rstrip("\n") for line in class_names_file if line.strip()]

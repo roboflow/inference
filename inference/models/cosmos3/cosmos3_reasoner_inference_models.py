@@ -60,17 +60,46 @@ class InferenceModelsCosmos3ReasonerAdapter(Model):
         return kwargs
 
     def preprocess(self, image: Any, prompt: str = "", **kwargs):
-        is_batch = isinstance(image, list)
-        if is_batch:
-            raise ValueError("This model does not support batched-inference.")
+        """One image, or a list of images that is one clip.
+
+        The model does not batch independent images; a list is the consecutive frames of a
+        video window, and ``video_fps`` (the rate they were sampled at) says how far apart
+        they are in time. The response dims are those of the first frame.
+        """
+        disable_preproc_auto_orient = kwargs.get("disable_preproc_auto_orient", False)
+        video_fps = kwargs.pop("video_fps", None)
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if isinstance(image, list):
+            if video_fps is None:
+                raise ValueError(
+                    "A list of images is the frames of one clip for this model; pass "
+                    "video_fps, the rate the frames were sampled at."
+                )
+            if len(image) == 0:
+                raise ValueError("A clip needs at least one frame.")
+            frames = [
+                load_image_bgr(
+                    frame, disable_preproc_auto_orient=disable_preproc_auto_orient
+                )
+                for frame in image
+            ]
+            input_shape = PreprocessReturnMetadata(
+                {"image_dims": frames[0].shape[:2][::-1]}
+            )
+            return (
+                self._model.pre_process_generation(
+                    frames,
+                    prompt,
+                    as_video=True,
+                    video_fps=video_fps,
+                    **mapped_kwargs,
+                ),
+                input_shape,
+            )
         np_image = load_image_bgr(
-            image,
-            disable_preproc_auto_orient=kwargs.get(
-                "disable_preproc_auto_orient", False
-            ),
+            image, disable_preproc_auto_orient=disable_preproc_auto_orient
         )
         input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
         return (
             self._model.pre_process_generation(np_image, prompt, **mapped_kwargs),
             input_shape,
