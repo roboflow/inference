@@ -204,8 +204,8 @@ class BlockManifest(WorkflowBlockManifest):
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
-        'random / "creative" the generations are. Ignored (with a warning) for Claude Opus 4.7 and '
-        "newer, Sonnet 5, Opus 5 and Fable models, which no longer accept sampling parameters.",
+        'random / "creative" the generations are. Ignored by models that no longer accept '
+        "sampling parameters (Claude Opus 4.7 and newer).",
         ge=0.0,
         le=2.0,
     )

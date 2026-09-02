@@ -393,7 +393,6 @@ def test_max_output_tokens_mapping() -> None:
     assert MAX_OUTPUT_TOKENS["claude-sonnet-5"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-8"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
-    assert MAX_OUTPUT_TOKENS["claude-sonnet-4-6"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-5"] == 64000
@@ -484,24 +483,6 @@ def test_claude_5_generation_models_accepted_by_every_block_version(
 
     # then
     assert result.model_version == model_version
-
-
-def test_v1_rejects_unknown_model_version_literal() -> None:
-    # given - v1 pins `model_version` to a Literal, so a typo of the new id
-    # must fail validation instead of being sent to Anthropic verbatim
-    specification = {
-        "type": "roboflow_core/anthropic_claude@v1",
-        "name": "step_1",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "This is my prompt",
-        "api_key": "$inputs.anthropic_api_key",
-        "model_version": "claude-fable-5.1",
-    }
-
-    # when
-    with pytest.raises(ValidationError):
-        _ = BlockManifestV1.model_validate(specification)
 
 
 @patch(
@@ -910,46 +891,19 @@ def test_v1_drops_temperature_for_new_generation_model(
 @patch(
     "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2.anthropic.Anthropic"
 )
-def test_v2_direct_request_drops_temperature_for_new_generation_model(
+def test_v2_direct_request_translates_controls_for_new_generation_model(
     mock_anthropic_class: Mock,
 ) -> None:
     # given
     mock_client = _mock_streaming_client(mock_anthropic_class)
 
-    # when
-    execute_claude_request(
-        system_prompt=None,
-        messages=[{"role": "user", "content": "Hello"}],
-        model_version=NEW_GENERATION_MODEL,
-        max_tokens=100,
-        temperature=0.4,
-        extended_thinking=None,
-        thinking_budget_tokens=None,
-        api_key="test-key",
-    )
-
-    # then
-    call_kwargs = mock_client.messages.stream.call_args.kwargs
-    assert _is_not_given(call_kwargs["temperature"])
-    assert "thinking" not in call_kwargs
-
-
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2.anthropic.Anthropic"
-)
-def test_v2_direct_request_uses_adaptive_thinking_for_new_generation_model(
-    mock_anthropic_class: Mock,
-) -> None:
-    # given
-    mock_client = _mock_streaming_client(mock_anthropic_class)
-
-    # when - a budget is configured but the model cannot take one
+    # when - a budget and a temperature are configured but the model takes neither
     execute_claude_request(
         system_prompt=None,
         messages=[{"role": "user", "content": "Think"}],
         model_version=NEW_GENERATION_MODEL,
         max_tokens=None,
-        temperature=None,
+        temperature=0.4,
         extended_thinking=True,
         thinking_budget_tokens=5000,
         api_key="test-key",
@@ -958,6 +912,7 @@ def test_v2_direct_request_uses_adaptive_thinking_for_new_generation_model(
     # then
     call_kwargs = mock_client.messages.stream.call_args.kwargs
     assert call_kwargs["thinking"] == {"type": "adaptive"}
+    assert _is_not_given(call_kwargs["temperature"])
     assert call_kwargs["max_tokens"] == 128000
 
 

@@ -90,7 +90,7 @@ CLAUDE_MODELS = [
         "id": "claude-sonnet-4-6",
         "name": "Claude Sonnet 4.6",
         "exact_version": "claude-sonnet-4-6",
-        "max_output_tokens": 128000,
+        "max_output_tokens": 64000,
     },
     {
         "id": "claude-sonnet-4-5",
@@ -279,16 +279,15 @@ class BlockManifest(WorkflowBlockManifest):
     extended_thinking: Optional[bool] = Field(
         default=None,
         description="Enable extended thinking for deeper reasoning on complex tasks. "
-        "Note: temperature cannot be used when extended thinking is enabled. "
-        "On Claude Opus 4.7 and newer, Sonnet 5, Opus 5 and Fable models thinking is "
-        "adaptive: the model decides how much to think and `thinking_budget_tokens` is ignored.",
+        "Note: temperature cannot be used when extended thinking is enabled. Models that "
+        "only support adaptive thinking (Claude Opus 4.7 and newer) ignore `thinking_budget_tokens`.",
     )
     thinking_budget_tokens: Optional[int] = Field(
         default=None,
         description="Maximum number of tokens for internal thinking when extended thinking is enabled. "
         "Higher values allow deeper reasoning but increase latency and cost. "
-        "Must be less than max_tokens. Minimum: 1024. Ignored (with a warning) by models "
-        "that only support adaptive thinking (Claude Opus 4.7 and newer, Sonnet 5, Opus 5, Fable).",
+        "Must be less than max_tokens. Minimum: 1024. Ignored by models that only support "
+        "adaptive thinking (Claude Opus 4.7 and newer).",
         ge=1024,
         json_schema_extra={
             "relevant_for": {
@@ -307,8 +306,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Temperature to sample from the model - value in range 0.0-1.0, the higher - the more "
         'random / "creative" the generations are. Cannot be used when extended_thinking is enabled. '
-        "Ignored (with a warning) for Claude Opus 4.7 and newer, Sonnet 5, Opus 5 and Fable models, "
-        "which no longer accept sampling parameters.",
+        "Ignored by models that no longer accept sampling parameters (Claude Opus 4.7 and newer).",
         ge=0.0,
         le=1.0,
     )

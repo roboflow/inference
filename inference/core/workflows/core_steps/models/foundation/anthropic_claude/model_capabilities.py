@@ -1,19 +1,11 @@
 """Per-model request capabilities shared by the Anthropic Claude block versions.
 
-Starting with Claude Opus 4.7, Anthropic removed the sampling parameters
-(``temperature``, ``top_p``, ``top_k``) and manual extended thinking
-(``thinking: {"type": "enabled", "budget_tokens": N}``). Sending either to
-such a model returns HTTP 400. Thinking on those models is adaptive
-(``thinking: {"type": "adaptive"}``), while models up to the 4.6 generation
-still take the manual controls and Sonnet 4.5 / Haiku 4.5 / Opus 4.5 reject
-the adaptive form.
-
-The allow-lists below name the models that still accept the legacy controls,
-so unknown or future ids default to the current behaviour. They mirror
-``TEMPERATURE_SUPPORTED_MODELS`` in the Roboflow API proxy
-(``app/functions/services/anthropicProxy/anthropicProxyService.ts``) and the
-``capabilities.thinking.types`` flags returned by Anthropic's Models API; keep
-them in sync when a new model generation ships.
+Starting with Claude Opus 4.7, Anthropic rejects ``temperature`` and manual
+extended thinking (``thinking.type = "enabled"``) with HTTP 400; thinking on
+those models is ``adaptive``. The allow-list below names the models that still
+accept the legacy controls, so unknown or future ids default to the new
+behaviour. Keep it in sync with ``TEMPERATURE_SUPPORTED_MODELS`` in the
+Roboflow API proxy (``app/functions/services/anthropicProxy``).
 """
 
 import re
@@ -58,59 +50,23 @@ _THINKING_BUDGET_WARNINGS_EMITTED: Set[str] = set()
 
 
 def normalize_anthropic_model_id(model_version: str) -> str:
-    """Reduce a Claude model reference to the bare family slug.
-
-    Accepts friendly block labels, dated snapshot ids and ``-latest`` aliases
-    and returns the lower-case dash-separated slug used by the allow-lists,
-    e.g. ``claude-sonnet-4-5-20250929`` -> ``claude-sonnet-4-5`` and
-    ``anthropic.claude-fable-5-1`` -> ``anthropic-claude-fable-5-1``.
-
-    Args:
-        model_version: Model label or wire id as configured on the block.
-
-    Returns:
-        Normalised slug suitable for membership checks.
-    """
+    """Strip dated snapshot / ``-latest`` suffixes and slugify, e.g.
+    ``claude-sonnet-4-5-20250929`` -> ``claude-sonnet-4-5``."""
     slug = _NON_ALPHANUMERIC.sub("-", model_version.strip().lower()).strip("-")
     slug = _LATEST_SUFFIX.sub("", slug)
-    slug = _DATED_SNAPSHOT_SUFFIX.sub("", slug)
-
-    return slug
+    return _DATED_SNAPSHOT_SUFFIX.sub("", slug)
 
 
 def anthropic_model_supports_temperature(model_version: str) -> bool:
-    """Tell whether a Claude model still accepts a non-default ``temperature``.
-
-    Args:
-        model_version: Model label or wire id as configured on the block.
-
-    Returns:
-        ``True`` for models up to the 4.6 generation, ``False`` for Opus 4.7
-        and newer, Sonnet 5, Opus 5, the Fable line and any unknown id.
-    """
-    supported = normalize_anthropic_model_id(model_version) in (
-        TEMPERATURE_SUPPORTED_MODELS
-    )
-
-    return supported
+    """False for Claude Opus 4.7 and newer and for any unknown id."""
+    return normalize_anthropic_model_id(model_version) in TEMPERATURE_SUPPORTED_MODELS
 
 
 def anthropic_model_supports_manual_thinking(model_version: str) -> bool:
-    """Tell whether a Claude model accepts ``thinking.type = "enabled"``.
-
-    Args:
-        model_version: Model label or wire id as configured on the block.
-
-    Returns:
-        ``True`` for models up to the 4.6 generation, ``False`` for models
-        whose thinking is adaptive only (Opus 4.7 and newer, Sonnet 5,
-        Opus 5, the Fable line) and for any unknown id.
-    """
-    supported = normalize_anthropic_model_id(model_version) in (
-        MANUAL_THINKING_SUPPORTED_MODELS
+    """False for Claude Opus 4.7 and newer and for any unknown id."""
+    return (
+        normalize_anthropic_model_id(model_version) in MANUAL_THINKING_SUPPORTED_MODELS
     )
-
-    return supported
 
 
 def resolve_temperature(
