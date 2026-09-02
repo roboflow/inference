@@ -217,6 +217,22 @@ def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
         reasoner_module._require_cosmos3_transformers()
 
 
+def test_post_process_generation_returns_the_answer_as_answer_when_thinking_is_off() -> (
+    None
+):
+    reasoner = _model_with_processor()
+    reasoner._enable_thinking = False
+    reasoner._processor.batch_decode.return_value = ["Beer cans on production line"]
+
+    with_thinking = reasoner.post_process_generation(
+        torch.tensor([[1]]), return_thinking=True
+    )
+    plain = reasoner.post_process_generation(torch.tensor([[1]]))
+
+    assert with_thinking == [{"thinking": "", "answer": "Beer cans on production line"}]
+    assert plain == ["Beer cans on production line"]
+
+
 def test_pre_process_generation_leaves_thinking_on_for_the_base_model() -> None:
     reasoner = _model_with_processor()
 
@@ -257,3 +273,68 @@ def test_fine_tuned_reasoner_prompts_with_the_training_system_prompt() -> None:
         conversation[0]["content"][0]["text"] == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
     )
     assert reasoner_module.FINE_TUNE_SYSTEM_PROMPT != reasoner_module.BASE_SYSTEM_PROMPT
+
+
+VALID_INFERENCE_CONFIG = {
+    "image_pre_processing": {"grayscale": {"enabled": True}},
+    "network_input": {
+        "training_input_size": {"height": 64, "width": 64},
+        "dynamic_spatial_size_supported": True,
+        "dynamic_spatial_size_mode": {"type": "any-size"},
+        "color_mode": "rgb",
+        "resize_mode": "stretch",
+        "input_channels": 3,
+    },
+}
+# What roboflow-train writes for a version without a resize: rejected by the shared schema.
+TRAINER_NULL_INFERENCE_CONFIG = {
+    "image_pre_processing": None,
+    "network_input": {
+        "training_input_size": None,
+        "dynamic_spatial_size_supported": True,
+        "dynamic_spatial_size_mode": {"type": "any-size"},
+        "color_mode": "rgb",
+        "resize_mode": "stretch",
+        "padding_value": None,
+        "input_channels": 3,
+        "scaling_factor": None,
+        "normalization": None,
+    },
+}
+
+
+def test_load_inference_config_parses_a_valid_file(tmp_path) -> None:
+    (tmp_path / "inference_config.json").write_text(json.dumps(VALID_INFERENCE_CONFIG))
+
+    config = reasoner_module._load_inference_config(str(tmp_path))
+
+    assert config is not None
+    assert config.network_input.training_input_size.height == 64
+
+
+def test_load_inference_config_skips_the_trainers_null_config(tmp_path) -> None:
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(TRAINER_NULL_INFERENCE_CONFIG)
+    )
+
+    assert reasoner_module._load_inference_config(str(tmp_path)) is None
+    assert reasoner_module._load_inference_config(str(tmp_path / "missing")) is None
+
+
+def test_pre_process_generation_applies_the_packages_preprocessing(monkeypatch) -> None:
+    reasoner = _model_with_processor()
+    reasoner._inference_config = reasoner_module.InferenceConfig.model_validate(
+        VALID_INFERENCE_CONFIG
+    )
+    prepared = torch.zeros((1, 3, 8, 8))
+    pre_process = MagicMock(return_value=(prepared, [MagicMock()]))
+    monkeypatch.setattr(reasoner_module, "pre_process_network_input", pre_process)
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        pre_process.call_args.kwargs["network_input"]
+        is reasoner._inference_config.network_input
+    )
+    images_given = reasoner._processor.call_args.kwargs["images"]
+    assert len(images_given) == 1 and images_given[0].shape == (3, 8, 8)

@@ -259,6 +259,10 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
 
 
 def _combine_prompt(prompt: Optional[str], system_prompt: Optional[str]) -> str:
+    """Only a system prompt the user set rides the sentinel: with none, the model
+    applies its own default, which for a Roboflow fine-tune is the prompt it was
+    trained with rather than the base model's."""
     prompt = prompt or DEFAULT_PROMPT
-    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    if not system_prompt:
+        return prompt
     return prompt + "<system_prompt>" + system_prompt

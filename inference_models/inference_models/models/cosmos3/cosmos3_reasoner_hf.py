@@ -24,6 +24,16 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.errors import CorruptedModelPackageError
+from inference_models.logger import LOGGER
+from inference_models.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    ResizeMode,
+    parse_inference_config,
+)
+from inference_models.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 
 DEFAULT_PROMPT = "Describe what's in this image."
 BASE_SYSTEM_PROMPT = (
@@ -79,6 +89,38 @@ def _require_cosmos3_transformers() -> None:
         )
 
 
+def _load_inference_config(package_dir: str) -> Optional[InferenceConfig]:
+    """The package's inference_config.json when it has one that parses.
+
+    The Cosmos processor sizes images itself, so the config only carries the
+    version's photometric steps (auto-orient, grayscale, contrast, static crop).
+    roboflow-train currently writes it with training_input_size: null for
+    versions without a resize, which the shared schema rejects; that config
+    could not drive preprocessing anyway, so it is skipped with a warning
+    rather than failing the load.
+    """
+    config_path = os.path.join(package_dir, "inference_config.json")
+    if not os.path.exists(config_path):
+        return None
+    try:
+        return parse_inference_config(
+            config_path=config_path,
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
+            },
+        )
+    except CorruptedModelPackageError as error:
+        LOGGER.warning(
+            f"Ignoring {config_path}: {error.__cause__ or error}. Images reach the "
+            "Cosmos 3 Edge processor as-is."
+        )
+        return None
+
+
 def _adapter_trains_new_tokens(adapter_config_path: str) -> bool:
     with open(adapter_config_path) as f:
         adapter_config = json.load(f)
@@ -116,6 +158,7 @@ class Cosmos3EdgeReasoner:
         _require_cosmos3_transformers()
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_cosmos3_attn_implementation(device)
+        inference_config = _load_inference_config(model_name_or_path)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             # A Roboflow fine-tune: the LoRA adapter sits at the package root and the
@@ -132,6 +175,7 @@ class Cosmos3EdgeReasoner:
             base_model_path = os.path.join(model_name_or_path, "base")
             model = AutoModelForImageTextToText.from_pretrained(
                 base_model_path,
+                device_map=device,
                 dtype=dtype,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
@@ -141,7 +185,7 @@ class Cosmos3EdgeReasoner:
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
                 model = model.merge_and_unload()
-            model = model.to(device).eval()
+            model = model.eval()
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
                 trust_remote_code=trust_remote_code,
@@ -151,7 +195,13 @@ class Cosmos3EdgeReasoner:
             # the trainer's system prompt, and only answer as trained when served
             # the same way: thinking would eat the token budget before the answer,
             # and the base prompt makes them answer like the base model.
-            return cls(model=model, processor=processor, device=device, fine_tuned=True)
+            return cls(
+                model=model,
+                processor=processor,
+                device=device,
+                fine_tuned=True,
+                inference_config=inference_config,
+            )
         else:
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
@@ -167,7 +217,12 @@ class Cosmos3EdgeReasoner:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
-        return cls(model=model, processor=processor, device=device)
+        return cls(
+            model=model,
+            processor=processor,
+            device=device,
+            inference_config=inference_config,
+        )
 
     def __init__(
         self,
@@ -175,11 +230,13 @@ class Cosmos3EdgeReasoner:
         processor,
         device: torch.device,
         fine_tuned: bool = False,
+        inference_config: Optional[InferenceConfig] = None,
     ):
         self._model = model
         self._processor = processor
         self._device = device
         self._fine_tuned = fine_tuned
+        self._inference_config = inference_config
         self._enable_thinking = not fine_tuned
         self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
@@ -248,7 +305,18 @@ class Cosmos3EdgeReasoner:
         as_video: bool = False,
         **kwargs,
     ) -> dict:
-        if isinstance(images, np.ndarray):
+        if self._inference_config is not None and not as_video:
+            # The version's preprocessing (photometric steps, any resize it baked)
+            # applied the way the other fine-tuned VLMs do; the result is RGB.
+            images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )[0]
+            images = [frame[0] for frame in torch.split(images, 1, dim=0)]
+        elif isinstance(images, np.ndarray):
             if input_color_format != "rgb":
                 images = images[:, :, ::-1]
             images = images.copy()
@@ -335,6 +403,14 @@ class Cosmos3EdgeReasoner:
         result = []
         for text in decoded:
             text = text.replace("assistant\n", "")
+            if not self._enable_thinking:
+                # Served without a reasoning block (a fine-tune): everything the
+                # model wrote is the answer, and there is no thinking to return.
+                answer = THINK_BLOCK_PATTERN.sub("", text).strip()
+                result.append(
+                    {"thinking": "", "answer": answer} if return_thinking else answer
+                )
+                continue
             # The chat template opens the reasoning block inside the prompt, so
             # decoded output carries a bare closing </think>. Restore the
             # opening tag so thinking and answer parse apart (qwen3_5 pattern).
