@@ -128,6 +128,15 @@ def probe_video(path: str) -> Tuple[float, int]:
         raise InputImageLoadError(message=message, public_message=message)
     if frame_count <= 0 or frame_count > os.path.getsize(path):
         frame_count = _count_frames(path=path)
+    # OpenCV opens a still image as a one-frame video, so a JPEG reaches here
+    # looking like a clip and would be classified as one, with a frame rate
+    # nothing declared. An action is a change, and one frame cannot show one.
+    if frame_count < 2:
+        message = (
+            f"Video holds {frame_count} frame(s). A clip needs at least two frames "
+            "to hold an action. Send a video, not a still image."
+        )
+        raise InputImageLoadError(message=message, public_message=message)
     return source_fps, frame_count
 
 

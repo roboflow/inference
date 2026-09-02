@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
-from inference.core.exceptions import PayloadTooLargeError
+from inference.core.exceptions import InputImageLoadError, PayloadTooLargeError
 from inference.core.utils.video_utils import (
     probe_video,
     read_frame_windows,
@@ -252,3 +252,13 @@ def test_probe_video_counts_when_the_header_declares_nothing(clip, monkeypatch):
     _, frame_count = probe_video(path=clip)
 
     assert frame_count == 30
+
+
+def test_probe_video_rejects_a_still_image(tmp_path):
+    # OpenCV reads a JPEG as a one-frame video. A frame cannot hold an
+    # action, so the probe refuses it rather than inventing a frame rate.
+    still = str(tmp_path / "still.jpg")
+    cv2.imwrite(still, np.zeros((16, 16, 3), dtype=np.uint8))
+
+    with pytest.raises(InputImageLoadError, match="still image"):
+        probe_video(path=still)
