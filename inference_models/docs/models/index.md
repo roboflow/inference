@@ -14,6 +14,7 @@ The `inference-models` library supports a wide range of computer vision models a
 - **Interactive Segmentation**: Interactive and automatic segmentation
 - **Vision-Language Models**: Multi-modal understanding and generation
 - **Depth Estimation**: Predict depth maps from images
+- **Image Generation**: Generate synthetic training images
 - **Specialized**: Gaze detection, face detection, and more
 
 ## Model Catalog
@@ -120,6 +121,12 @@ The `inference-models` library supports a wide range of computer vision models a
 | [YOLO26 Depth](yolo26-depth-estimation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ❌ |
 | [Depth Anything V2](depth-anything-v2.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [Depth Anything V3](depth-anything-v3.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+
+### Image Generation
+
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [Cosmos AnomalyGen](cosmos-anomalygen.md) | `custom` | NVIDIA (review pending) | N/A | ❌ | ✅ |
 
 ### Specialized Models
 
