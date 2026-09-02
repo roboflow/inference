@@ -195,6 +195,7 @@ def test_from_pretrained_loads_a_roboflow_fine_tune_from_its_adapter(
     assert reasoner._model is merged
     # Fine-tunes are trained with the think block empty, so they answer directly.
     assert reasoner._enable_thinking is False
+    assert reasoner.default_system_prompt == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
 
 
 def test_from_pretrained_refuses_a_fine_tune_with_class_tokens(
@@ -237,3 +238,22 @@ def test_pre_process_generation_turns_thinking_off_for_a_fine_tune() -> None:
         reasoner._processor.apply_chat_template.call_args.kwargs["enable_thinking"]
         is False
     )
+
+
+def test_fine_tuned_reasoner_prompts_with_the_training_system_prompt() -> None:
+    model = MagicMock()
+    model.parameters.return_value = iter([torch.tensor(0.0, dtype=torch.bfloat16)])
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "templated"
+    processor.return_value = {"input_ids": torch.tensor([[1, 2, 3]], dtype=torch.int64)}
+    reasoner = Cosmos3EdgeReasoner(
+        model=model, processor=processor, device=torch.device("cpu"), fine_tuned=True
+    )
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    conversation = processor.apply_chat_template.call_args.args[0]
+    assert (
+        conversation[0]["content"][0]["text"] == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
+    )
+    assert reasoner_module.FINE_TUNE_SYSTEM_PROMPT != reasoner_module.BASE_SYSTEM_PROMPT

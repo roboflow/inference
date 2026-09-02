@@ -82,7 +82,7 @@ print(result[0]["answer"])
 
 ### Using Fine-tuned Models
 
-A Roboflow fine-tune is a LoRA adapter over the base checkpoint; the loader applies and merges it for you.
+A Roboflow fine-tune is a LoRA adapter over the base checkpoint; the loader applies and merges it for you, and prompts it the way it was trained: the trainer's system prompt and no reasoning block. A fine-tune answers as trained only under that prompt, so override the system prompt (the `<system_prompt>` sentinel) only if you also did at training time.
 
 ```python
 import cv2

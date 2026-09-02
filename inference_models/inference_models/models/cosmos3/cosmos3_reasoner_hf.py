@@ -26,6 +26,18 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat
 
 DEFAULT_PROMPT = "Describe what's in this image."
+BASE_SYSTEM_PROMPT = (
+    "You are Cosmos, a helpful assistant that understands physical scenes "
+    "and answers questions about images and videos."
+)
+# What roboflow-train puts in the system turn of every training conversation
+# (src/huggingface/cosmos3edge/image.py SYSTEM_MESSAGE). A fine-tune only
+# produces what it was trained to when prompted the same way: with the base
+# prompt it answers like the base model. Keep the two in sync.
+FINE_TUNE_SYSTEM_PROMPT = (
+    "You are Cosmos 3 Edge, a physical AI reasoning model. "
+    "Look at the image carefully and answer with only what is asked."
+)
 # The `cosmos3_edge` model type is what AutoModelForImageTextToText resolves the
 # checkpoint to; older transformers fail on it with an unhelpful config error.
 MIN_TRANSFORMERS_VERSION = "5.15.0"
@@ -135,13 +147,11 @@ class Cosmos3EdgeReasoner:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
-            # Roboflow fine-tunes are trained with the think block left empty, so
-            # they are served the same way: the answer starts right away instead of
-            # behind a reasoning block that also eats the token budget. The base
-            # model keeps its reasoning.
-            return cls(
-                model=model, processor=processor, device=device, enable_thinking=False
-            )
+            # Roboflow fine-tunes are trained with the think block left empty and
+            # the trainer's system prompt, and only answer as trained when served
+            # the same way: thinking would eat the token budget before the answer,
+            # and the base prompt makes them answer like the base model.
+            return cls(model=model, processor=processor, device=device, fine_tuned=True)
         else:
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
@@ -164,16 +174,16 @@ class Cosmos3EdgeReasoner:
         model,
         processor,
         device: torch.device,
-        enable_thinking: bool = True,
+        fine_tuned: bool = False,
     ):
         self._model = model
         self._processor = processor
         self._device = device
-        self._enable_thinking = enable_thinking
+        self._fine_tuned = fine_tuned
+        self._enable_thinking = not fine_tuned
         self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
-            "You are Cosmos, a helpful assistant that understands physical scenes "
-            "and answers questions about images and videos."
+            FINE_TUNE_SYSTEM_PROMPT if fine_tuned else BASE_SYSTEM_PROMPT
         )
         self._lock = Lock()
 
