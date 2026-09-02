@@ -150,20 +150,19 @@ def test_run_maps_reasoning_effort_to_openrouter_config(mock_or):
     assert mock_or.call_args.kwargs["reasoning"] == {"effort": "high"}
 
 
-# Copied from vlm-exam `_PROMPT_TEMPLATE` so an edit to the block constant
-# fails this test.
+# Copied from vlm-exam `_BBOX_2D_NORMALIZED_PROMPT_TEMPLATE` so an edit to
+# the block constant fails this test.
 EXPECTED_FLASH_DETECTION_PROMPT = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
-    "between 0 and 1000, normalized to the image height and width. "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: cat, dog"
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}. '
+    "bbox_2d is [xmin, ymin, xmax, ymax] as integers between 0 and 1000, "
+    "normalized to image width and height. "
+    "Only use these labels: cat, dog. Return a JSON array only."
 )
 
 
-def test_flash_detection_prompt_is_vlm_exam_yxyx_template():
+def test_flash_detection_prompt_is_vlm_exam_bbox_2d_template():
     messages = build_zai_openrouter_prompts(
         images=[np.zeros((8, 8, 3), dtype=np.uint8)],
         task_type="object-detection",
@@ -200,4 +199,4 @@ def test_run_flash_falls_back_to_low_effort_when_reasoning_disabled(mock_or):
     assert mock_or.call_args.kwargs["model"] == "z-ai/glm-5.3-flash"
     assert mock_or.call_args.kwargs["reasoning"] == {"effort": "low"}
     sent_text = mock_or.call_args.kwargs["prompts"][0][0]["content"][1]["text"]
-    assert "[y_min, x_min, y_max, x_max]" in sent_text
+    assert '"bbox_2d"' in sent_text
