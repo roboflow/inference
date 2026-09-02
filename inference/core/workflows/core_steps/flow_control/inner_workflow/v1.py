@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
-    WORKFLOWS_INNER_WORKFLOW_DISPATCH_REQUEST_TIMEOUT,
+    WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
 )
 
 if ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -29,8 +29,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
     INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowRunNotSupportedError,
@@ -60,10 +60,11 @@ Reference fields are expanded at compile time via `workflows_core.inner_workflow
 With `execution_mode="embedded"` (the default), the engine validates composition and
 `parameter_bindings`, then **inlines** the child's steps into the parent workflow graph.
 
-With `execution_mode="dispatch_to_serverless"`, the block is kept as an outputless runtime sink.
+With `execution_mode="remote_dispatch"`, the block is kept as an outputless runtime sink.
 It serializes the bound child inputs and submits the child workflow to the configured inference
-server in a background task. The target defaults to `https://serverless.roboflow.com` and can be
-overridden by the runtime with `WORKFLOWS_INNER_WORKFLOW_DISPATCH_TARGET_URL`.
+server in a background task. Set `remote_target` on the block to point at a dedicated deployment or
+local inference server. When omitted, the target defaults to `https://serverless.roboflow.com` and
+can be changed by the runtime with `WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET`.
 """
 
 
@@ -84,16 +85,27 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/inner_workflow@v1"]
-    execution_mode: Literal["embedded", "dispatch_to_serverless"] = Field(
+    execution_mode: Literal["embedded", "remote_dispatch"] = Field(
         default=INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
         description=(
             "`embedded` preserves the current compile-time inlining behavior. "
-            "`dispatch_to_serverless` serializes the bound inputs and submits the child "
+            "`remote_dispatch` serializes the bound inputs and submits the child "
             "workflow in the background without exposing child outputs."
         ),
         examples=[
             INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
-            INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
+            INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
+        ],
+    )
+    remote_target: Optional[str] = Field(
+        default=None,
+        description=(
+            "Base URL of the inference server that will execute the workflow in "
+            "`remote_dispatch` mode. When omitted, the runtime-configured default is used."
+        ),
+        examples=[
+            "https://serverless.roboflow.com",
+            "http://127.0.0.1:9001",
         ],
     )
     workflow_definition: Optional[Dict[str, Any]] = Field(
@@ -134,6 +146,9 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_workflow_or_reference(self) -> "BlockManifest":
+        if self.remote_target is not None and not self.remote_target.strip():
+            raise ValueError("`remote_target` must be a non-empty URL when provided.")
+
         has_inline = (
             isinstance(self.workflow_definition, dict)
             and len(self.workflow_definition) > 0
@@ -162,7 +177,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="*", kind=[WILDCARD_KIND])]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
-        if self.execution_mode == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS:
+        if self.execution_mode == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH:
             return []
         return self.describe_outputs()
 
@@ -183,13 +198,13 @@ class InnerWorkflowBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
-        inner_workflow_dispatch_target_url: str,
+        inner_workflow_remote_target: str,
         disable_sinks: bool = False,
     ):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
-        self._dispatch_target_url = inner_workflow_dispatch_target_url
+        self._remote_target = inner_workflow_remote_target
         self._disable_sinks = disable_sinks
 
     @classmethod
@@ -198,7 +213,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
             "api_key",
             "background_tasks",
             "thread_pool_executor",
-            "inner_workflow_dispatch_target_url",
+            "inner_workflow_remote_target",
             "disable_sinks",
         ]
 
@@ -209,26 +224,27 @@ class InnerWorkflowBlockV1(WorkflowBlock):
     def run(
         self,
         execution_mode: str,
+        remote_target: Optional[str],
         parameter_bindings: Dict[str, Any],
         workflow_definition: Optional[Dict[str, Any]],
         workflow_workspace_id: Optional[str],
         workflow_id: Optional[str],
         workflow_version_id: Optional[str],
     ) -> BlockResult:
-        if execution_mode != INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS:
+        if execution_mode != INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH:
             raise InnerWorkflowRunNotSupportedError(
                 "Embedded inner_workflow steps must be compiled away before execution."
             )
         if self._disable_sinks:
             return {}
 
-        target_url = self._dispatch_target_url.strip()
+        target_url = (remote_target or self._remote_target).strip()
         if not target_url:
             raise ValueError(
                 "inner_workflow dispatch requires a non-empty dispatch target URL."
             )
         url, payload = prepare_workflow_dispatch_request(
-            dispatch_target_url=target_url,
+            remote_target=target_url,
             api_key=self._api_key,
             parameter_bindings=parameter_bindings,
             workflow_definition=workflow_definition,
@@ -255,7 +271,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
 
 def prepare_workflow_dispatch_request(
     *,
-    dispatch_target_url: str,
+    remote_target: str,
     api_key: Optional[str],
     parameter_bindings: Dict[str, Any],
     workflow_definition: Optional[Dict[str, Any]],
@@ -263,7 +279,7 @@ def prepare_workflow_dispatch_request(
     workflow_id: Optional[str],
     workflow_version_id: Optional[str],
 ) -> Tuple[str, Dict[str, Any]]:
-    base_url = dispatch_target_url.rstrip("/")
+    base_url = remote_target.rstrip("/")
     payload: Dict[str, Any] = {
         "api_key": api_key,
         "inputs": serialize_workflow_dispatch_inputs(parameter_bindings),
@@ -314,7 +330,7 @@ def execute_workflow_dispatch_request(url: str, payload: Dict[str, Any]) -> None
         response = requests.post(
             url,
             json=payload,
-            timeout=WORKFLOWS_INNER_WORKFLOW_DISPATCH_REQUEST_TIMEOUT,
+            timeout=WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
         )
         response.raise_for_status()
     except Exception as error:

@@ -107,7 +107,7 @@ def test_collect_does_not_load_dynamic_blocks_from_dispatched_workflow() -> None
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "dispatch",
-                "execution_mode": "dispatch_to_serverless",
+                "execution_mode": "remote_dispatch",
                 "workflow_definition": {
                     "version": "1.0",
                     "dynamic_blocks_definitions": [child_block],

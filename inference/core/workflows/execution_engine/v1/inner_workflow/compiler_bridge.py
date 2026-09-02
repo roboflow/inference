@@ -26,7 +26,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.composition imp
     validate_inner_workflow_composition,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -108,7 +108,7 @@ def _collect_composition_edges_from_raw_workflow_definition(
                 continue
             if (
                 step.get("execution_mode")
-                == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS
+                == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
             ):
                 continue
 

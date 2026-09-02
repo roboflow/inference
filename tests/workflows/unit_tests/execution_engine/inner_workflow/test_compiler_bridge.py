@@ -32,7 +32,7 @@ def test_dispatched_workflow_is_not_part_of_local_composition() -> None:
             {
                 "name": "dispatch",
                 "type": "roboflow_core/inner_workflow@v1",
-                "execution_mode": "dispatch_to_serverless",
+                "execution_mode": "remote_dispatch",
                 "workflow_workspace_id": "workspace",
                 "workflow_id": "child",
                 "parameter_bindings": {},

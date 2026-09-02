@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 
@@ -85,10 +85,7 @@ def _inner_workflow_step_has_nonempty_workflow_definition(
 
 
 def _inner_workflow_step_is_dispatched(step: Dict[str, Any]) -> bool:
-    return (
-        step.get("execution_mode")
-        == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS
-    )
+    return step.get("execution_mode") == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
 
 
 def workflow_definition_contains_unresolved_inner_workflow_reference(

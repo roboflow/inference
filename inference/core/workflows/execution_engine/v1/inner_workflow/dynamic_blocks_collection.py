@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 
@@ -98,7 +98,7 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
                 continue
             if (
                 step.get("execution_mode")
-                == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS
+                == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
             ):
                 continue
 

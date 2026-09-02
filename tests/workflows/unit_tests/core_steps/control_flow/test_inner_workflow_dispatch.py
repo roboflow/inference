@@ -20,7 +20,8 @@ def test_dispatch_manifest_has_no_outputs() -> None:
         {
             "type": "roboflow_core/inner_workflow@v1",
             "name": "dispatch",
-            "execution_mode": "dispatch_to_serverless",
+            "execution_mode": "remote_dispatch",
+            "remote_target": "https://dedicated.example.com",
             "workflow_workspace_id": "workspace",
             "workflow_id": "slow-workflow",
             "parameter_bindings": {"image": "$inputs.image"},
@@ -58,7 +59,7 @@ def test_prepare_named_workflow_dispatch_serializes_inputs_and_uses_override_url
     )
 
     url, payload = prepare_workflow_dispatch_request(
-        dispatch_target_url="http://127.0.0.1:9001/",
+        remote_target="http://127.0.0.1:9001/",
         api_key="secret",
         parameter_bindings={
             "image": image,
@@ -93,7 +94,7 @@ def test_prepare_inline_workflow_dispatch_uses_specification_endpoint() -> None:
     }
 
     url, payload = prepare_workflow_dispatch_request(
-        dispatch_target_url="https://serverless.roboflow.com",
+        remote_target="https://serverless.roboflow.com",
         api_key=None,
         parameter_bindings={},
         workflow_definition=specification,
@@ -112,11 +113,12 @@ def test_dispatch_is_submitted_to_background_executor() -> None:
         api_key="secret",
         background_tasks=None,
         thread_pool_executor=executor,
-        inner_workflow_dispatch_target_url="https://dedicated.example.com",
+        inner_workflow_remote_target="https://serverless.roboflow.com",
     )
 
     result = block.run(
-        execution_mode="dispatch_to_serverless",
+        execution_mode="remote_dispatch",
+        remote_target="https://dedicated.example.com",
         parameter_bindings={"message": "hello"},
         workflow_definition=None,
         workflow_workspace_id="workspace",

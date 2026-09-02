@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge
     validate_parameter_bindings_against_child,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS,
     INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -348,7 +348,7 @@ def _replace_inner_step_control_and_output_refs_in_object(
         is_dispatched_inner_workflow = (
             obj.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE
             and obj.get("execution_mode")
-            == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS
+            == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
         )
         return {
             k: (
@@ -492,7 +492,7 @@ def _expand_leaf_inner_at_index(
         if (
             cloned.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE
             and cloned.get("execution_mode")
-            == INNER_WORKFLOW_EXECUTION_MODE_DISPATCH_TO_SERVERLESS
+            == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
         ):
             dispatched_workflow_definition = copy.deepcopy(
                 cloned.get("workflow_definition")

@@ -246,7 +246,7 @@ def test_dispatched_reference_is_left_for_target_server_to_resolve() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "dispatch",
-                "execution_mode": "dispatch_to_serverless",
+                "execution_mode": "remote_dispatch",
                 "workflow_workspace_id": "workspace",
                 "workflow_id": "slow-workflow",
                 "parameter_bindings": {"message": "$inputs.message"},

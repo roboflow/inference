@@ -65,7 +65,7 @@ def test_contains_inner_workflow_step_false_for_dispatched_workflow() -> None:
         {
             "name": "dispatch",
             "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
-            "execution_mode": "dispatch_to_serverless",
+            "execution_mode": "remote_dispatch",
         }
     ]
     assert _contains_inner_workflow_step(steps) is False
@@ -76,7 +76,7 @@ def test_contains_inner_workflow_step_false_for_unknown_mode() -> None:
         {
             "name": "typo",
             "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
-            "execution_mode": "dispatch_to_serverles",
+            "execution_mode": "remote_dispatc",
         }
     ]
     assert _contains_inner_workflow_step(steps) is False
@@ -86,7 +86,7 @@ def test_parent_reference_rewrite_treats_dispatched_specification_as_opaque() ->
     dispatched = {
         "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
         "name": "dispatch",
-        "execution_mode": "dispatch_to_serverless",
+        "execution_mode": "remote_dispatch",
         "workflow_definition": {
             "version": "1.0",
             "inputs": [],
