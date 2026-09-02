@@ -98,6 +98,36 @@ def test_collect_from_nested_inner_workflow() -> None:
     assert collected == [child_block]
 
 
+def test_collect_does_not_load_dynamic_blocks_from_dispatched_workflow() -> None:
+    child_block = _dynamic_block_definition("OnlyInstalledOnTarget")
+    workflow = {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [
+            {
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
+                "name": "dispatch",
+                "execution_mode": "dispatch_to_serverless",
+                "workflow_definition": {
+                    "version": "1.0",
+                    "dynamic_blocks_definitions": [child_block],
+                    "inputs": [],
+                    "steps": [],
+                    "outputs": [],
+                },
+                "parameter_bindings": {},
+            }
+        ],
+        "outputs": [],
+    }
+
+    collected = collect_dynamic_blocks_definitions_from_workflow_definition(
+        workflow_definition=workflow,
+    )
+
+    assert collected == []
+
+
 def test_collect_merges_parent_and_child_with_parent_first() -> None:
     parent_block = _dynamic_block_definition("SharedType")
     child_block = _dynamic_block_definition("SharedType")

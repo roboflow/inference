@@ -233,3 +233,33 @@ def test_normalize_returns_same_object_when_no_reference() -> None:
     }
     out = normalize_inner_workflow_references_in_definition(raw, {})
     assert out is raw
+
+
+def test_dispatched_reference_is_left_for_target_server_to_resolve() -> None:
+    def resolver(*args, **kwargs):
+        raise AssertionError("dispatch references must not be resolved by the caller")
+
+    raw = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "message"}],
+        "steps": [
+            {
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
+                "name": "dispatch",
+                "execution_mode": "dispatch_to_serverless",
+                "workflow_workspace_id": "workspace",
+                "workflow_id": "slow-workflow",
+                "parameter_bindings": {"message": "$inputs.message"},
+            },
+        ],
+        "outputs": [],
+    }
+
+    out = normalize_inner_workflow_references_in_definition(
+        raw,
+        {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
+    )
+
+    assert out is raw
+    assert out["steps"][0]["workflow_id"] == "slow-workflow"
+    assert "workflow_definition" not in out["steps"][0]
