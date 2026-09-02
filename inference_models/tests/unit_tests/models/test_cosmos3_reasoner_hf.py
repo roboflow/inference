@@ -193,6 +193,8 @@ def test_from_pretrained_loads_a_roboflow_fine_tune_from_its_adapter(
     assert load_adapter.call_args.args == (base_model, str(tmp_path))
     assert load_processor.call_args.args[0] == str(tmp_path / "base")
     assert reasoner._model is merged
+    # Fine-tunes are trained with the think block empty, so they answer directly.
+    assert reasoner._enable_thinking is False
 
 
 def test_from_pretrained_refuses_a_fine_tune_with_class_tokens(
@@ -212,3 +214,26 @@ def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="transformers>=5.15.0"):
         reasoner_module._require_cosmos3_transformers()
+
+
+def test_pre_process_generation_leaves_thinking_on_for_the_base_model() -> None:
+    reasoner = _model_with_processor()
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        "enable_thinking"
+        not in reasoner._processor.apply_chat_template.call_args.kwargs
+    )
+
+
+def test_pre_process_generation_turns_thinking_off_for_a_fine_tune() -> None:
+    reasoner = _model_with_processor()
+    reasoner._enable_thinking = False
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        reasoner._processor.apply_chat_template.call_args.kwargs["enable_thinking"]
+        is False
+    )

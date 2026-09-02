@@ -135,6 +135,13 @@ class Cosmos3EdgeReasoner:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
+            # Roboflow fine-tunes are trained with the think block left empty, so
+            # they are served the same way: the answer starts right away instead of
+            # behind a reasoning block that also eats the token budget. The base
+            # model keeps its reasoning.
+            return cls(
+                model=model, processor=processor, device=device, enable_thinking=False
+            )
         else:
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
@@ -157,10 +164,12 @@ class Cosmos3EdgeReasoner:
         model,
         processor,
         device: torch.device,
+        enable_thinking: bool = True,
     ):
         self._model = model
         self._processor = processor
         self._device = device
+        self._enable_thinking = enable_thinking
         self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
             "You are Cosmos, a helpful assistant that understands physical scenes "
@@ -257,8 +266,9 @@ class Cosmos3EdgeReasoner:
                 ],
             },
         ]
+        template_kwargs = {} if self._enable_thinking else {"enable_thinking": False}
         text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
+            conversation, tokenize=False, add_generation_prompt=True, **template_kwargs
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
         model_inputs = self._processor(
