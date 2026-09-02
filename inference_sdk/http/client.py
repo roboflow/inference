@@ -1,3 +1,5 @@
+import base64
+import os
 import warnings
 from contextlib import contextmanager
 from typing import (
@@ -25,6 +27,7 @@ from inference_sdk.config import (
     execution_id,
 )
 from inference_sdk.http.entities import (
+    ACTION_RECOGNITION_TASK,
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
@@ -37,12 +40,14 @@ from inference_sdk.http.entities import (
     ModelDescription,
     RegisteredModels,
     ServerInfo,
+    VideoReference,
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
     FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
+    InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
     ModelNotInitializedError,
@@ -74,6 +79,7 @@ from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
+    uri_is_http_link,
 )
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
@@ -124,11 +130,16 @@ def _warn_about_default_api_key_transport_once() -> None:
     )
 
 
+# Routes taking an image
 NEW_INFERENCE_ENDPOINTS = {
     INSTANCE_SEGMENTATION_TASK: "/infer/instance_segmentation",
     OBJECT_DETECTION_TASK: "/infer/object_detection",
     CLASSIFICATION_TASK: "/infer/classification",
     KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
+}
+# Routes taking a video clip
+VIDEO_INFERENCE_ENDPOINTS = {
+    ACTION_RECOGNITION_TASK: "/infer/action_recognition",
 }
 CLIP_ARGUMENT_TYPES = {"image", "text"}
 
@@ -777,10 +788,7 @@ class InferenceHTTPClient:
             model_description=model_description,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
-        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {model_description.task_type} is not supported by API v1 client."
-            )
+        _ensure_task_takes_an_image(task_type=model_description.task_type)
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
             max_height=max_height,
@@ -826,10 +834,9 @@ class InferenceHTTPClient:
             model_description=model_description,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
-        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {model_description.task_type} is not supported by API v1 client."
-            )
+        _ensure_task_takes_an_image(
+            task_type=model_description.task_type, asynchronous=True
+        )
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
             max_height=max_height,
@@ -2583,100 +2590,187 @@ class InferenceHTTPClient:
         return response
 
     @wrap_errors
-    def infer_action_recognition(
+    def infer_on_video(
         self,
-        video: str,
-        model_id: str,
-        video_type: str = "url",
-        class_filter: Optional[List[str]] = None,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
     ) -> dict:
-        """Classify the actions in a video clip.
-
-        The model states how the clip is cut and how its frames are sampled,
-        so this call sends the clip and nothing else. Frame indices in the
-        result count from the first frame of the clip.
-
-        Pass a URL, which is the default. Base64 grows the clip by a third and
-        holds the whole request in memory, so a gateway rejects a large one;
-        it suits a short clip and a quick test.
-
-        The call follows the client mode. ``select_api_v0()`` reaches the
-        legacy route, which is what serverless inference serves today, and
-        ``select_api_v1()`` reaches ``/infer/action_recognition``. Both answer
-        with the same shape.
+        """Run a video model over one clip, sent whole.
 
         Args:
-            video: The clip, as a URL or as base64 content.
-            model_id: The model to classify with.
-            video_type: Whether `video` holds a "url" or "base64" content.
-                Defaults to "url", which is the preferred transport.
-            class_filter: The subset of a fine-tuned model's classes to
-                report. A zero-shot model answers in its own words and ignores
-                this.
+            video_reference (VideoReference): URL or local path of the clip.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
 
         Returns:
-            A dictionary holding `timeline`, `source_fps`, `frame_count` and
-            `windows_classified`. Each timeline entry carries
-            `start_frame_idx`, `end_frame_idx`, `class` and `class_id`.
+            dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
 
         Raises:
+            InvalidInputFormatError: If the reference is neither a URL nor an existing path.
+            ModelTaskTypeNotSupportedError: If the model takes images (API v1 only).
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
         if self.__client_mode is HTTPClientMode.V0:
-            return self.__infer_action_recognition_v0(
-                video=video,
+            return self.infer_on_video_from_api_v0(
+                video_reference=video_reference,
                 model_id=model_id,
-                video_type=video_type,
-                class_filter=class_filter,
             )
-        payload = self.__initialise_payload()
-        payload["model_id"] = model_id
-        payload["video"] = {"type": video_type, "value": video}
-        if class_filter is not None:
-            payload["class_filter"] = class_filter
-        url = self.__wrap_url_with_api_key(f"{self.__api_url}/infer/action_recognition")
+        return self.infer_on_video_from_api_v1(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+
+    @wrap_errors_async
+    async def infer_on_video_async(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        """Run a video model over one clip asynchronously. See ``infer_on_video``.
+
+        Args:
+            video_reference (VideoReference): URL or local path of the clip.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
+
+        Raises:
+            InvalidInputFormatError: If the reference is neither a URL nor an existing path.
+            ModelTaskTypeNotSupportedError: If the model takes images (API v1 only).
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        if self.__client_mode is HTTPClientMode.V0:
+            return await self.infer_on_video_from_api_v0_async(
+                video_reference=video_reference,
+                model_id=model_id,
+            )
+        return await self.infer_on_video_from_api_v1_async(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+
+    def infer_on_video_from_api_v0(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        url, params, data, headers = self.__build_v0_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+        response = requests.post(url, params=params, data=data, headers=headers)
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    async def infer_on_video_from_api_v0_async(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        url, params, data, headers = self.__build_v0_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, params=params, data=data, headers=headers
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    def infer_on_video_from_api_v1(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        model_id = self.__resolve_video_model_id(model_id=model_id)
+        task_type = self.get_model_description(model_id=model_id).task_type
+        url, payload = self.__build_v1_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+            task_type=task_type,
+        )
         response = requests.post(
-            url,
-            json=payload,
-            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
 
-    def __infer_action_recognition_v0(
+    async def infer_on_video_from_api_v1_async(
         self,
-        video: str,
-        model_id: str,
-        video_type: str,
-        class_filter: Optional[List[str]],
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
     ) -> dict:
-        """Reach the same task on the legacy route, which serverless serves.
+        model_id = self.__resolve_video_model_id(model_id=model_id)
+        description = await self.get_model_description_async(model_id=model_id)
+        url, payload = self.__build_v1_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+            task_type=description.task_type,
+            asynchronous=True,
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
 
-        v0 carries options on the query string and the clip in the body, so a
-        URL rides in ``image`` and base64 content rides as the raw body.
-        """
+    def __resolve_video_model_id(self, model_id: Optional[str]) -> str:
+        model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
+        return resolve_roboflow_model_alias(model_id=model_id_to_be_used)
+
+    def __build_v0_video_request(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str],
+    ) -> Tuple[str, dict, Optional[str], dict]:
+        video_type, video = _resolve_video_payload(video_reference=video_reference)
+        model_id = self.__resolve_video_model_id(model_id=model_id)
         model_id_chunks = model_id.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
                 f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
             )
         params = self.__legacy_api_key_payload()
+        class_filter = self.__inference_configuration.class_filter
         if class_filter:
             params["class_filter"] = ",".join(class_filter)
         url = f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}"
-        headers = self.__headers_with_auth(DEFAULT_HEADERS)
+        headers = dict(self.__headers_with_auth(DEFAULT_HEADERS) or {})
         if video_type == "url":
             params["image"] = video
-            response = requests.post(url, params=params, headers=headers)
-        else:
-            body_headers = dict(headers or {})
-            body_headers["Content-Type"] = "application/x-www-form-urlencoded"
-            response = requests.post(
-                url, params=params, data=video, headers=body_headers
+            return url, params, None, headers
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        return url, params, video, headers
+
+    def __build_v1_video_request(
+        self,
+        video_reference: VideoReference,
+        model_id: str,
+        task_type: str,
+        asynchronous: bool = False,
+    ) -> Tuple[str, dict]:
+        if task_type not in VIDEO_INFERENCE_ENDPOINTS:
+            image_door = "infer_async()" if asynchronous else "infer()"
+            raise ModelTaskTypeNotSupportedError(
+                f"Model task {task_type} takes images, not a clip. Use {image_door} "
+                f"for one image or infer_on_stream() to classify a video frame by frame."
             )
-        api_key_safe_raise_for_status(response=response)
-        return response.json()
+        video_type, video = _resolve_video_payload(video_reference=video_reference)
+        payload = self.__initialise_payload()
+        payload["model_id"] = model_id
+        payload["video"] = {"type": video_type, "value": video}
+        class_filter = self.__inference_configuration.class_filter
+        if class_filter is not None:
+            payload["class_filter"] = class_filter
+        url = self.__wrap_url_with_api_key(
+            f"{self.__api_url}{VIDEO_INFERENCE_ENDPOINTS[task_type]}"
+        )
+        return url, payload
 
     @wrap_errors
     def infer_from_yolo_world(
@@ -3255,6 +3349,47 @@ class InferenceHTTPClient:
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
+
+
+def _resolve_video_payload(video_reference: VideoReference) -> Tuple[str, str]:
+    """Turn what the caller handed over into a transport and a value.
+
+    A URL is forwarded for the server to fetch. A local path is read here on
+    purpose, rather than by falling through an image loader that happens to
+    skip decoding. Anything else is an error, not a guess. Encoded bytes are
+    not accepted, because an image reference does not accept them either.
+    """
+    if not isinstance(video_reference, str):
+        raise InvalidInputFormatError(
+            f"Unknown type of video reference ({type(video_reference).__name__}). "
+            "Pass a URL or a local path."
+        )
+    if uri_is_http_link(uri=video_reference):
+        return "url", video_reference
+    if os.path.isfile(video_reference):
+        with open(video_reference, "rb") as clip:
+            return "base64", base64.b64encode(clip.read()).decode("utf-8")
+    raise InvalidInputFormatError(
+        f"Video reference is neither a URL nor an existing file: {video_reference!r}. "
+        "Pass a URL or a local path."
+    )
+
+
+def _ensure_task_takes_an_image(task_type: str, asynchronous: bool = False) -> None:
+    """Refuse a video model at the image door, and say where the clip goes."""
+    if task_type in NEW_INFERENCE_ENDPOINTS:
+        return
+    if task_type in VIDEO_INFERENCE_ENDPOINTS:
+        clip_door = "infer_on_video_async()" if asynchronous else "infer_on_video()"
+        # infer_on_stream has no async twin, so it keeps its name either way.
+        raise ModelTaskTypeNotSupportedError(
+            f"Model task {task_type} takes a clip, not an image. Use {clip_door} "
+            f"to send a clip whole, or infer_on_stream() to classify a video "
+            f"frame by frame with an image model."
+        )
+    raise ModelTaskTypeNotSupportedError(
+        f"Model task {task_type} is not supported by API v1 client."
+    )
 
 
 def _determine_client_downsizing_parameters(
