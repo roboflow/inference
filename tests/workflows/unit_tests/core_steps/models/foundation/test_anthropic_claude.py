@@ -4,6 +4,12 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from pydantic import ValidationError
 
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    EXACT_MODELS_VERSIONS_MAPPING as EXACT_MODEL_VERSIONS_V1,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    BlockManifest as BlockManifestV1,
+)
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     EXACT_MODEL_VERSIONS,
@@ -17,6 +23,29 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     MAX_OUTPUT_TOKENS as MAX_OUTPUT_TOKENS_V3,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+    BlockManifest as BlockManifestV3,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V4,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    MAX_OUTPUT_TOKENS as MAX_OUTPUT_TOKENS_V4,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    BlockManifest as BlockManifestV4,
+)
+
+# Claude 5-generation models that must be selectable in every block version,
+# together with the wire id sent to Anthropic and the max output tokens the
+# block falls back to when `max_tokens` is not set.
+CLAUDE_5_GENERATION_MODELS = {
+    "claude-fable-5-1": ("claude-fable-5-1", 128000),
+    "claude-fable-5": ("claude-fable-5", 128000),
+    "claude-opus-5": ("claude-opus-5", 128000),
+    "claude-sonnet-5": ("claude-sonnet-5", 128000),
+    "claude-opus-4-8": ("claude-opus-4-8", 128000),
+}
 
 
 def test_claude_step_validation_when_input_is_valid() -> None:
@@ -80,7 +109,11 @@ def test_claude_step_validation_when_prompt_is_given_directly() -> None:
 @pytest.mark.parametrize(
     "model_version",
     [
+        "claude-fable-5-1",
         "claude-fable-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
@@ -344,7 +377,11 @@ def test_claude_step_validation_with_structured_answering() -> None:
 
 def test_max_output_tokens_mapping() -> None:
     # then - verify all models have max_output_tokens defined
+    assert MAX_OUTPUT_TOKENS["claude-fable-5-1"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-fable-5"] == 128000
+    assert MAX_OUTPUT_TOKENS["claude-opus-5"] == 128000
+    assert MAX_OUTPUT_TOKENS["claude-sonnet-5"] == 128000
+    assert MAX_OUTPUT_TOKENS["claude-opus-4-8"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
@@ -357,7 +394,11 @@ def test_max_output_tokens_mapping() -> None:
 
 def test_exact_model_versions_mapping() -> None:
     # then - verify all models have exact versions defined
+    assert EXACT_MODEL_VERSIONS["claude-fable-5-1"] == "claude-fable-5-1"
     assert EXACT_MODEL_VERSIONS["claude-fable-5"] == "claude-fable-5"
+    assert EXACT_MODEL_VERSIONS["claude-opus-5"] == "claude-opus-5"
+    assert EXACT_MODEL_VERSIONS["claude-sonnet-5"] == "claude-sonnet-5"
+    assert EXACT_MODEL_VERSIONS["claude-opus-4-8"] == "claude-opus-4-8"
     assert EXACT_MODEL_VERSIONS["claude-opus-4-7"] == "claude-opus-4-7"
     assert EXACT_MODEL_VERSIONS["claude-sonnet-4-5"] == "claude-sonnet-4-5-20250929"
     assert EXACT_MODEL_VERSIONS["claude-haiku-4-5"] == "claude-haiku-4-5-20251001"
@@ -371,6 +412,85 @@ def test_v3_claude_fable_model_metadata() -> None:
     # then
     assert MAX_OUTPUT_TOKENS_V3["claude-fable-5"] == 128000
     assert EXACT_MODEL_VERSIONS_V3["claude-fable-5"] == "claude-fable-5"
+
+
+@pytest.mark.parametrize(
+    "model_version, expected_exact_version, expected_max_output_tokens",
+    [
+        (model_version, exact_version, max_output_tokens)
+        for model_version, (
+            exact_version,
+            max_output_tokens,
+        ) in CLAUDE_5_GENERATION_MODELS.items()
+    ],
+)
+def test_claude_5_generation_models_share_metadata_across_v2_v3_v4(
+    model_version: str,
+    expected_exact_version: str,
+    expected_max_output_tokens: int,
+) -> None:
+    # then - every block version that owns a metadata table must agree on
+    # the wire id and the output budget, so switching block versions never
+    # silently changes which model is called or how much it may generate
+    for exact_versions, max_output_tokens in [
+        (EXACT_MODEL_VERSIONS, MAX_OUTPUT_TOKENS),
+        (EXACT_MODEL_VERSIONS_V3, MAX_OUTPUT_TOKENS_V3),
+        (EXACT_MODEL_VERSIONS_V4, MAX_OUTPUT_TOKENS_V4),
+    ]:
+        assert exact_versions[model_version] == expected_exact_version
+        assert max_output_tokens[model_version] == expected_max_output_tokens
+    assert EXACT_MODEL_VERSIONS_V1[model_version] == expected_exact_version
+
+
+@pytest.mark.parametrize("model_version", list(CLAUDE_5_GENERATION_MODELS.keys()))
+@pytest.mark.parametrize(
+    "block_type, manifest_class",
+    [
+        ("roboflow_core/anthropic_claude@v1", BlockManifestV1),
+        ("roboflow_core/anthropic_claude@v2", BlockManifest),
+        ("roboflow_core/anthropic_claude@v3", BlockManifestV3),
+        ("roboflow_core/anthropic_claude@v4", BlockManifestV4),
+    ],
+)
+def test_claude_5_generation_models_accepted_by_every_block_version(
+    model_version: str,
+    block_type: str,
+    manifest_class: type,
+) -> None:
+    # given
+    specification = {
+        "type": block_type,
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "This is my prompt",
+        "api_key": "$inputs.anthropic_api_key",
+        "model_version": model_version,
+    }
+
+    # when
+    result = manifest_class.model_validate(specification)
+
+    # then
+    assert result.model_version == model_version
+
+
+def test_v1_rejects_unknown_model_version_literal() -> None:
+    # given - v1 pins `model_version` to a Literal, so a typo of the new id
+    # must fail validation instead of being sent to Anthropic verbatim
+    specification = {
+        "type": "roboflow_core/anthropic_claude@v1",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "This is my prompt",
+        "api_key": "$inputs.anthropic_api_key",
+        "model_version": "claude-fable-5.1",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = BlockManifestV1.model_validate(specification)
 
 
 @patch(

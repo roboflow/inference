@@ -65,6 +65,12 @@ from inference.core.workflows.prototypes.block import (
 
 CLAUDE_MODELS = [
     {
+        "id": "claude-fable-5-1",
+        "name": "Claude Fable 5.1",
+        "exact_version": "claude-fable-5-1",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-fable-5",
         "name": "Claude Fable 5",
         "exact_version": "claude-fable-5",
