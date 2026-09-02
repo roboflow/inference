@@ -1,15 +1,20 @@
 from typing import Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.workflows.core_steps.common.openrouter import (
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -33,17 +38,29 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# OpenRouter currently only ships one Llama 3.2 vision variant (the paid 11B).
-# The :free tier and the 90B variant that the v1 block listed have all been
-# removed from OpenRouter's catalog (verified against /api/v1/models on the
-# branch's E2E test). We only ship the variant that actually responds.
 MODEL_VERSION_MAPPING = {
-    "11B - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
+    "Kimi K2.5 - OpenRouter": "moonshotai/kimi-k2.5",
+    "Kimi K2.6 - OpenRouter": "moonshotai/kimi-k2.6",
 }
 
-ModelVersion = Literal["11B - OpenRouter"]
+ModelVersion = Literal[
+    "Kimi K2.5 - OpenRouter",
+    "Kimi K2.6 - OpenRouter",
+]
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
+
+# The object-detection prompt this block sends (the legacy OpenRouter JSON
+# contract in `common.openrouter`) asks for `x_min`/`y_min`/`x_max`/`y_max`
+# floats normalized to 0.0-1.0 - the `named_normalized` box format of the
+# shared decoding package.
+DETECTION_BOX_FORMAT = "named_normalized"
+
+# Detections and classifications are decoded in-block from this version on, so
+# only the structured-answering parser stays relevant.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -51,7 +68,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 )
 
 LONG_DESCRIPTION = f"""
-Ask a question to Llama 3.2 Vision model.
+Ask a question to Moonshot AI Kimi vision-language models served via OpenRouter.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -59,8 +76,8 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ API providers and model variants
 
-Llama 3.2 Vision is exposed via [OpenRouter](https://openrouter.ai/). By default this block
-uses the **Roboflow-managed OpenRouter key** and bills your Roboflow credits — no extra
+Kimi is exposed via [OpenRouter](https://openrouter.ai/). By default this block uses
+the **Roboflow-managed OpenRouter key** and bills your Roboflow credits — no extra
 setup needed. To bypass Roboflow billing, paste your own `sk-or-...` key into the
 `api_key` field.
 
@@ -74,32 +91,51 @@ The `privacy_level` field controls which OpenRouter providers may serve the requ
 
 !!! warning "Model license"
 
-    Check the [Llama 3.2 license](https://www.llama.com/llama3_2/license/) before use.
+    Check the [Moonshot AI Kimi license terms](https://huggingface.co/moonshotai) before use.
+
+## Version Differences
+
+This version (v3) decodes model answers inside the block:
+
+* **`predictions`** - classification and object-detection answers are parsed here,
+  so the deprecated `VLM as Detector` / `VLM as Classifier` blocks are no longer
+  needed. The output kind follows `task_type`: object detection predictions for
+  `object-detection`, classification predictions for `classification` and
+  `multi-label-classification`, and `None` for every other task.
+* **`error_status`** - `True` when the model answer could not be parsed.
+* **`inference_id`** - identifier generated per image and attached to the decoded
+  predictions.
 """
+
+
+def _base_outputs() -> List[OutputDefinition]:
+    """Outputs the block produces regardless of the selected task."""
+    return [
+        OutputDefinition(name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]),
+        OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+    ]
 
 
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Llama 3.2 Vision",
-            "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use Llama 3.2 Vision v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
-            "short_description": "Run Llama 3.2 Vision via OpenRouter.",
+            "name": "MoonshotAI Kimi",
+            "version": "v3",
+            "short_description": "Run Moonshot AI Kimi vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Llama 3.2 Community License",
+            "license": "Moonshot AI Kimi License",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Llama", "Meta", "OpenRouter"],
+            "search_keywords": ["LMM", "VLM", "Kimi", "Moonshot", "OpenRouter"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-meta",
+                "icon": "fal fa-atom",
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/llama_vision@v2"]
+    type: Literal["roboflow_core/kimi_openrouter@v3"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -112,7 +148,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Llama model",
+        description="Text prompt to the Kimi model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -152,9 +188,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
-        default="11B - OpenRouter",
+        default="Kimi K2.6 - OpenRouter",
         description="Model to be used",
-        examples=["11B - OpenRouter", "$inputs.llama_model"],
+        examples=["Kimi K2.6 - OpenRouter", "$inputs.kimi_model"],
     )
 
     @model_validator(mode="after")
@@ -188,12 +224,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
-            ),
-            OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
-        ]
+        return _base_outputs() + describe_vlm_prediction_outputs()
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return _base_outputs() + actual_vlm_prediction_outputs(self.task_type)
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -219,7 +253,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class LlamaVisionBlockV2(OpenRouterWorkflowBlockBase):
+class KimiOpenrouterBlockV3(OpenRouterWorkflowBlockBase):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -260,6 +294,24 @@ class LlamaVisionBlockV2(OpenRouterWorkflowBlockBase):
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
         )
-        return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
-        ]
+        predictions = []
+        for image, raw_output in zip(images, raw_outputs):
+            inference_id = str(uuid4())
+            error_status, decoded_predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=raw_output,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            predictions.append(
+                {
+                    "output": raw_output,
+                    "classes": classes,
+                    "predictions": decoded_predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return predictions

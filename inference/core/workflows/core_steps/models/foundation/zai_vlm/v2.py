@@ -1,15 +1,21 @@
-"""Z.ai GLM vision-language block, v1.
+"""Z.ai GLM vision-language block, v2.
 
-OpenRouter-only. Uses the vlm-exam request contract validated for
-GLM 5V Turbo: image-first user message, no system role, extended
-reasoning disabled by default, and the box_2d / 0-1000 xyxy detection
-prompt. Parse detection output with ``vlm_as_detector@v2`` using
-``model_type="zai"``.
+Same surface as ``zai_vlm@v1``, plus in-block decoding of the model
+answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
+next to the raw ``output`` string, so no separate "VLM as Detector" /
+"VLM as Classifier" step is needed.
+
+OpenRouter-only. Uses the vlm-exam request contract validated for the GLM
+models: image-first user message, no system role, extended reasoning
+disabled by default, and a per-model ``box_2d`` / 0-1000 detection
+contract - ``xyxy_0_1000`` for GLM 5V Turbo and ``yxyx_0_1000`` for
+GLM 5.3 Flash.
 """
 
 import base64
 import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -19,7 +25,6 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -36,6 +41,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -62,53 +73,36 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# Ported verbatim from vlm-exam's `_NORMALIZED_XYXY_PROMPT_TEMPLATE`, the
-# detection coordinate format pinned for GLM 5V Turbo in the benchmark
-# configs (`xyxy_normalized_0_to_1000`).
-ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners as integers between 0 and 1000, "
-    "normalized to the image width (x) and height (y). "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+# Detection and classification answers are decoded in-block now, so only
+# `structured-answering` still points at a downstream parser.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
-# Ported verbatim from vlm-exam's `_PROMPT_TEMPLATE`, the format pinned for
-# GLM 5.3 Flash (`yxyx_normalized_0_to_1000`). The full 250-image benchmark
-# scores it 0.331 dataset mAP@50 vs 0.219 for absolute-pixel bbox_2d
-# prompting, the next best format.
-ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
-    "between 0 and 1000, normalized to the image height and width. "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+# Default detection contract, used when a caller does not pass a per-model
+# override: the vlm-exam `xyxy_normalized_0_to_1000` format pinned for
+# GLM 5V Turbo.
+DEFAULT_DETECTION_BOX_FORMAT = "xyxy_0_1000"
 
 # One row per model; add future Z.ai models here. A row may override
 # `reasoning_levels` if a model diverges from the shared set;
 # `reasoning_required` marks models that reject `reasoning: {enabled:
 # false}` and fall back to low effort when the user disables reasoning.
-# `detection_model_type` is the `vlm_as_detector@v2` model_type that parses
-# the model's detection output; the two GLM models emit the same "box_2d"
-# key with different axis orders, so each needs its own parser entry.
+# `box_format` is the shared coordinate contract used to both prompt for
+# and decode detections; the two GLM models emit the same "box_2d" key with
+# different axis orders, so each pins its own format. GLM 5.3 Flash's
+# `yxyx_0_1000` scores 0.331 dataset mAP@50 on the full 250-image benchmark
+# vs 0.219 for absolute-pixel bbox_2d prompting, the next best format.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "GLM 5V Turbo": {
         "model_id": "z-ai/glm-5v-turbo",
-        "detection_prompt_template": ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE,
-        "detection_model_type": "zai",
+        "box_format": "xyxy_0_1000",
     },
     # GLM 5.3 Flash ran as the OpenRouter stealth model "Ox Alpha"; the
     # retirement notice confirms they are the same model.
     "GLM 5.3 Flash": {
         "model_id": "z-ai/glm-5.3-flash",
-        "detection_prompt_template": ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE,
-        "detection_model_type": "zai-flash",
+        "box_format": "yxyx_0_1000",
         "reasoning_required": True,
     },
 }
@@ -355,9 +349,9 @@ def _prepare_structured_answering_prompt(
 
 
 def _prepare_object_detection_prompt(
-    base64_image: str, classes: List[str], detection_prompt_template: str, **_
+    base64_image: str, classes: List[str], box_format: str, **_
 ) -> List[dict]:
-    text = detection_prompt_template.format(class_list=", ".join(classes))
+    text = build_object_detection_prompt(box_format=box_format, classes=classes)
     return _user_message(base64_image=base64_image, text=text)
 
 
@@ -384,7 +378,7 @@ def build_zai_openrouter_prompts(
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    detection_prompt_template: str = ZAI_OBJECT_DETECTION_PROMPT_TEMPLATE,
+    box_format: str = DEFAULT_DETECTION_BOX_FORMAT,
 ) -> List[List[dict]]:
     """Build one OpenRouter ``messages`` array per input image, GLM-style.
 
@@ -398,8 +392,8 @@ def build_zai_openrouter_prompts(
         prompt: User prompt for unconstrained / VQA tasks.
         output_structure: Output spec for structured-answering.
         classes: Class list for classification / detection tasks.
-        detection_prompt_template: Per-model object-detection template,
-            from ``MODEL_VARIANTS``.
+        box_format: Per-model detection coordinate contract, from
+            ``MODEL_VARIANTS``.
 
     Returns:
         List of ``messages`` arrays, one per image.
@@ -418,7 +412,7 @@ def build_zai_openrouter_prompts(
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
-                detection_prompt_template=detection_prompt_template,
+                box_format=box_format,
             )
         )
     return built
@@ -443,9 +437,26 @@ Object detection uses the per-model format validated in the vlm-exam
 benchmarks. Both models emit `box_2d`/`label` entries normalized to
 0-1000, but with different axis orders: GLM 5V Turbo uses
 `[x_min, y_min, x_max, y_max]` and GLM 5.3 Flash uses
-`[y_min, x_min, y_max, x_max]`. Parse with `VLM as Detector`
-(`vlm_as_detector@v2`) using `model_type="zai"` for GLM 5V Turbo and
-`model_type="zai-flash"` for GLM 5.3 Flash.
+`[y_min, x_min, y_max, x_max]`. The block prompts for and decodes the
+right one for the selected model.
+
+## Version Differences
+
+This version (v2) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 Every request sends the image before the instruction text in a single user
 message. GLM models default to extended reasoning on OpenRouter; the block
@@ -464,9 +475,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Z.ai",
-            "version": "v1",
-            "deprecated": True,
-            "deprecation_message": "Use Z.ai v2, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v2",
             "short_description": "Run Z.ai GLM vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
@@ -490,7 +499,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/zai_vlm@v1"]
+    type: Literal["roboflow_core/zai_vlm@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
@@ -639,6 +648,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -675,7 +697,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class ZaiVlmBlockV1(OpenRouterWorkflowBlockBase):
+class ZaiVlmBlockV2(OpenRouterWorkflowBlockBase):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -716,7 +738,7 @@ class ZaiVlmBlockV1(OpenRouterWorkflowBlockBase):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            detection_prompt_template=variant["detection_prompt_template"],
+            box_format=variant["box_format"],
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
@@ -731,13 +753,27 @@ class ZaiVlmBlockV1(OpenRouterWorkflowBlockBase):
                 reasoning_required=variant.get("reasoning_required", False),
             ),
         )
-        return [
-            {
-                "output": result.content,
-                "classes": classes,
-                "thinking": result.reasoning_trace,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-            }
-            for result in results
-        ]
+        outputs = []
+        for image, result in zip(images, results):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=result.content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=variant["box_format"],
+            )
+            outputs.append(
+                {
+                    "output": result.content,
+                    "classes": classes,
+                    "thinking": result.reasoning_trace,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return outputs

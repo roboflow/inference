@@ -1,7 +1,20 @@
+"""OpenAI workflow block (v7).
+
+Extends v6 by decoding the model answer inside the block: object-detection
+and classification answers are turned into workflow ``predictions`` next to
+the raw ``output`` string, so no separate "VLM as Detector" / "VLM as
+Classifier" formatter step is needed.
+
+The per-model detection prompt styles are unchanged from v6; each style maps
+onto one of the shared box coordinate contracts (see
+``DETECTION_BOX_FORMATS_BY_STYLE``), which is what decoding keys off.
+"""
+
 import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -26,6 +39,12 @@ from inference.core.workflows.core_steps.common.utils import (
     DETECTION_MAX_EDGE_PIXELS,
     run_in_parallel,
     scale_dimensions_to_max_edge,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -199,6 +218,22 @@ MODEL_DETECTION_PROMPT_STYLES = {
 }
 
 
+ABSOLUTE_BOX_FORMAT = "xyxy_absolute"
+NORMALIZED_BOX_FORMAT = "named_normalized"
+
+DETECTION_BOX_FORMATS_BY_STYLE = {
+    STRUCTURED_ABSOLUTE_STYLE: ABSOLUTE_BOX_FORMAT,
+    PLAIN_ABSOLUTE_STYLE: ABSOLUTE_BOX_FORMAT,
+    NORMALIZED_LEGACY_STYLE: NORMALIZED_BOX_FORMAT,
+}
+"""Shared box coordinate contract produced by each prompt style.
+
+Both absolute styles ask for pixel coordinates of the uploaded image and
+differ only in whether structured outputs are enforced, so they decode
+identically; the legacy style asks for 0.0-1.0 named fields.
+"""
+
+
 def get_detection_prompt_style(model_version: str) -> str:
     """Resolve the object-detection prompt style for a model.
 
@@ -215,16 +250,17 @@ def get_detection_prompt_style(model_version: str) -> str:
     return MODEL_DETECTION_PROMPT_STYLES.get(model_version, STRUCTURED_ABSOLUTE_STYLE)
 
 
-OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners in absolute pixel coordinates "
-    "of the {width}x{height} pixel image. "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+def get_detection_box_format(model_version: str) -> str:
+    """Resolve the box coordinate contract a model's detection prompt asks for.
+
+    Args:
+        model_version: OpenAI model identifier, e.g. ``gpt-5.6-sol``.
+
+    Returns:
+        Name of the registered box format used to decode the answer.
+    """
+    return DETECTION_BOX_FORMATS_BY_STYLE[get_detection_prompt_style(model_version)]
+
 
 STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE = (
     "Detect all objects in this image. "
@@ -309,8 +345,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
 The `object-detection` task uses a per-model prompt contract selected from a
-large-scale benchmark - use `roboflow_core/vlm_as_detector@v2` to convert any of
-the outputs into predictions:
+large-scale benchmark; the block decodes every one of them into predictions:
 
 * Most models (GPT-5.2 and newer, plus unknown/future models) return
 `{{"detections": [...]}}` with `box_2d` boxes in `[x_min, y_min, x_max, y_max]`
@@ -321,12 +356,30 @@ enforced via structured outputs.
 * GPT-4.x/GPT-4o and nano-tier models return a plain JSON list of `box_2d`
 entries in absolute pixel coordinates.
 
-The absolute-coordinate formats do not provide confidence scores.
-`roboflow_core/vlm_as_detector@v2` assigns these detections a confidence of
-`1.0`, so downstream confidence filtering is not meaningful for these formats.
+The absolute-coordinate formats do not provide confidence scores, so decoded
+detections are assigned a confidence of `1.0` and downstream confidence
+filtering is not meaningful for these formats.
 
 Images are downscaled so that their longest edge does not exceed
 {DETECTION_MAX_EDGE_PIXELS}px and are sent as lossless PNG for this task.
+
+## Version Differences
+
+This version (v7) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 Provide your OpenAI API key or set the value to ``rf_key:account`` (or
 ``rf_key:user:<id>``) to proxy requests through Roboflow's API.
@@ -354,9 +407,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "OpenAI",
-            "version": "v6",
-            "deprecated": True,
-            "deprecation_message": "Use OpenAI v7, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v7",
             "short_description": "Run OpenAI's GPT models with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -373,7 +424,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/open_ai@v6"]
+    type: Literal["roboflow_core/open_ai@v7"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -382,9 +433,6 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v2",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
-                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -530,6 +578,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -545,7 +606,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [third_party_model(provider="openai", model_id=self.model_version)]
 
 
-class OpenAIBlockV6(WorkflowBlock):
+class OpenAIBlockV7(WorkflowBlock):
 
     def __init__(
         self,
@@ -598,15 +659,61 @@ class OpenAIBlockV6(WorkflowBlock):
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
         )
-        return [
-            {
-                "output": content,
-                "classes": classes,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-            for content, input_tokens, output_tokens in raw_outputs
-        ]
+        box_format = get_detection_box_format(model_version)
+        results = []
+        for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
+            inference_id = str(uuid4())
+            upload_width, upload_height = detection_upload_dimensions(
+                image=image, task_type=task_type, box_format=box_format
+            )
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=box_format,
+                upload_width=upload_width,
+                upload_height=upload_height,
+            )
+            results.append(
+                {
+                    "output": content,
+                    "classes": classes,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return results
+
+
+def detection_upload_dimensions(
+    image: WorkflowImageData,
+    task_type: TaskType,
+    box_format: str,
+) -> Tuple[Optional[int], Optional[int]]:
+    """Resolve the dimensions the detection upload path resized an image to.
+
+    The absolute-pixel contract returns coordinates of the uploaded image, so
+    decoding has to repeat the downscale ``encode_image_for_task`` applied.
+    The normalized contract is resolution independent and needs nothing.
+
+    Args:
+        image: Workflow image passed to the block.
+        task_type: Task the block is configured to run.
+        box_format: Box coordinate contract requested from the model.
+
+    Returns:
+        Tuple of the uploaded ``(width, height)``, or ``(None, None)`` when
+        the format does not need them.
+    """
+    if task_type != "object-detection" or box_format != ABSOLUTE_BOX_FORMAT:
+        return None, None
+    height, width = image.numpy_image.shape[:2]
+    return scale_dimensions_to_max_edge(width, height, DETECTION_MAX_EDGE_PIXELS)
 
 
 def run_openai_prompting(
@@ -1381,14 +1488,18 @@ def prepare_object_detection_prompt(
             ],
         }
     if style == STRUCTURED_ABSOLUTE_STYLE:
-        template = STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE
+        prompt_text = STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
+            width=image_width,
+            height=image_height,
+            class_list=serialised_classes,
+        )
     else:
-        template = OBJECT_DETECTION_PROMPT_TEMPLATE
-    prompt_text = template.format(
-        width=image_width,
-        height=image_height,
-        class_list=serialised_classes,
-    )
+        prompt_text = build_object_detection_prompt(
+            box_format=ABSOLUTE_BOX_FORMAT,
+            classes=classes,
+            upload_width=image_width,
+            upload_height=image_height,
+        )
     prompt: dict = {
         "input": [
             {

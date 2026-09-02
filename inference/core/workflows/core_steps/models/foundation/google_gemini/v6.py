@@ -1,8 +1,21 @@
+"""Google Gemini workflow block (v6).
+
+Extends v5 by decoding the model answer inside the block: object-detection
+and classification answers are turned into workflow ``predictions`` next to
+the raw ``output`` string, so no separate "VLM as Detector" / "VLM as
+Classifier" formatter step is needed.
+
+The object-detection contract is unchanged from v5: Gemini is asked for its
+native ``box_2d`` boxes as ``[y_min, x_min, y_max, x_max]`` integers
+normalized to 0-1000 - the shared ``yxyx_0_1000`` coordinate contract.
+"""
+
 import base64
 import json
 import re
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -22,6 +35,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
     parse_gemini_usage_metadata,
 )
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -147,6 +166,14 @@ MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
 
 THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high"]
 
+DETECTION_BOX_FORMAT = "yxyx_0_1000"
+"""Box coordinate contract requested from Gemini for object detection.
+
+Gemini is trained to localize with ``box_2d`` boxes as [y_min, x_min, y_max,
+x_max] integers normalized to 0-1000; the contract is resolution independent,
+so decoding needs no upload dimensions.
+"""
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -167,8 +194,7 @@ RELEVANT_TASKS_METADATA["object-detection"] = {
     "name": "Object Detection",
     "description": "Model detects bounding boxes for the provided classes, "
     "returning a Gemini-native `box_2d` JSON list (y_min, x_min, y_max, x_max "
-    "integers normalized to 0-1000). Parse the output with "
-    "`roboflow_core/vlm_as_detector@v2`.",
+    "integers normalized to 0-1000), decoded into predictions by the block.",
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -181,6 +207,24 @@ Ask a question to Google's Gemini model with vision capabilities.
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
+
+## Version Differences
+
+This version (v6) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 ### API Key Options
 
@@ -223,9 +267,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Google Gemini",
-            "version": "v5",
-            "deprecated": True,
-            "deprecation_message": "Use Google Gemini v6, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v6",
             "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -242,7 +284,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemini@v5"]
+    type: Literal["roboflow_core/google_gemini@v6"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -251,9 +293,6 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v2",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
-                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -420,6 +459,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -435,7 +487,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [third_party_model(provider="google", model_id=self.model_version)]
 
 
-class GoogleGeminiBlockV5(WorkflowBlock):
+class GoogleGeminiBlockV6(WorkflowBlock):
 
     def __init__(
         self,
@@ -488,15 +540,29 @@ class GoogleGeminiBlockV5(WorkflowBlock):
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
         )
-        return [
-            {
-                "output": content,
-                "classes": classes,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-            for content, input_tokens, output_tokens in raw_outputs
-        ]
+        results = []
+        for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            results.append(
+                {
+                    "output": content,
+                    "classes": classes,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return results
 
 
 def run_gemini_prompting(
@@ -1009,15 +1075,9 @@ def prepare_object_detection_prompt(
     # y_max, x_max] integers normalized to 0-1000. Requesting any other
     # coordinate convention (e.g. 0.0-1.0 floats) measurably degrades box
     # quality and yields mixed pixel/normalized outputs.
-    serialised_classes = ", ".join(classes)
-    prompt_text = (
-        "Detect all objects in this image. "
-        "Output a JSON list where each entry contains the 2D bounding box "
-        'in the key "box_2d" and the text label in the key "label". '
-        'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
-        "between 0 and 1000, normalized to the image height and width. "
-        "Return only the JSON list, with no extra text. "
-        f"Only use these labels: {serialised_classes}"
+    prompt_text = build_object_detection_prompt(
+        box_format=DETECTION_BOX_FORMAT,
+        classes=classes,
     )
     generation_config = prepare_generation_config(
         max_tokens=max_tokens,

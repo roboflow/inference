@@ -482,6 +482,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     AnthropicClaudeBlockV4,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    AnthropicClaudeBlockV5,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
@@ -565,6 +568,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v5 import (
     GoogleGeminiBlockV5,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v6 import (
+    GoogleGeminiBlockV6,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
@@ -573,6 +579,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 impor
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v3 import (
     GoogleGemmaBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v4 import (
+    GoogleGemmaBlockV4,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -590,11 +599,17 @@ from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 im
 from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
     KimiOpenrouterBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v3 import (
+    KimiOpenrouterBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 import (
     LlamaVisionBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.llama_vision.v3 import (
+    LlamaVisionBlockV3,
 )
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
@@ -605,6 +620,9 @@ from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.meta_vlm.v2 import (
     MetaVlmBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v3 import (
+    MetaVlmBlockV3,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -642,6 +660,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v6 import (
     OpenAIBlockV6,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v7 import (
+    OpenAIBlockV7,
+)
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
@@ -651,11 +672,17 @@ from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v2 import (
     OpenRouterBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.openrouter.v3 import (
+    OpenRouterBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
     SpaceXAIBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
     SpaceXAIBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.spacexai.v3 import (
+    SpaceXAIBlockV3,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -721,8 +748,14 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2 import (
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     QwenVlmBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v4 import (
+    QwenVlmBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.zai_vlm.v1 import (
     ZaiVlmBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.zai_vlm.v2 import (
+    ZaiVlmBlockV2,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1764,8 +1797,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
         AnthropicClaudeBlockV4,
+        AnthropicClaudeBlockV5,
         SpaceXAIBlockV1,
         SpaceXAIBlockV2,
+        SpaceXAIBlockV3,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
@@ -1805,6 +1840,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV3,
         GoogleGeminiBlockV4,
         GoogleGeminiBlockV5,
+        GoogleGeminiBlockV6,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -1839,6 +1875,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV4,
         OpenAIBlockV5,
         OpenAIBlockV6,
+        OpenAIBlockV7,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -1925,11 +1962,14 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GazeBlockV1,
         LlamaVisionBlockV1,
         LlamaVisionBlockV2,
+        LlamaVisionBlockV3,
         MetaVlmBlockV1,
         MetaVlmBlockV2,
+        MetaVlmBlockV3,
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
         GoogleGemmaBlockV3,
+        GoogleGemmaBlockV4,
         ImageSlicerBlockV2,
         Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
@@ -1941,12 +1981,16 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QwenVlmBlockV1,
         QwenVlmBlockV2,
         QwenVlmBlockV3,
+        QwenVlmBlockV4,
         ZaiVlmBlockV1,
+        ZaiVlmBlockV2,
         OpenAICompatibleBlockV1,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
+        KimiOpenrouterBlockV3,
         OpenRouterBlockV1,
         OpenRouterBlockV2,
+        OpenRouterBlockV3,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
