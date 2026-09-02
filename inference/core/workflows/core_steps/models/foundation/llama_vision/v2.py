@@ -84,7 +84,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "name": "Llama 3.2 Vision",
             "version": "v2",
             "deprecated": True,
-            "deprecation_message": "Use Llama 3.2 Vision v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "deprecation_message": "OpenRouter no longer serves meta-llama/llama-3.2-11b-vision-instruct, so this block cannot run. Use the OpenRouter block with a current Llama vision model such as meta-llama/llama-4-maverick instead.",
             "short_description": "Run Llama 3.2 Vision via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community License",
