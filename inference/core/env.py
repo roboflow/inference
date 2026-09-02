@@ -547,6 +547,21 @@ if SECURE_GATEWAY:
     # synchronously at import and can stall startup until the TCP timeout.
     DISABLE_VERSION_CHECK = True
 
+# Opt-in `GET /secure-gateway/health` route that probes the configured
+# SECURE_GATEWAY's own /health endpoint (served identically by the legacy
+# license server and the secure gateway). Disabled by default - operators
+# enable it explicitly on deployments that want proxy diagnostics.
+SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED = str2bool(
+    os.getenv("SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", "False")
+)
+
+# Timeout (seconds) for that probe. Deliberately short: the probe exists to
+# fail fast, while ROBOFLOW_API_REQUEST_TIMEOUT (120s) is sized for model
+# downloads through the gateway.
+SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT = float(
+    os.getenv("SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", "5")
+)
+
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
