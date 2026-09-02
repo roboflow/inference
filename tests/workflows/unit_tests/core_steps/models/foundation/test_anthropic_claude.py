@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from anthropic import NOT_GIVEN
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
@@ -9,6 +10,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 i
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     BlockManifest as BlockManifestV1,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    execute_claude_request as execute_claude_request_v1,
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -26,6 +30,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     BlockManifest as BlockManifestV3,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+    execute_claude_request as execute_claude_request_v3,
+)
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V4,
 )
@@ -34,6 +41,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 i
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     BlockManifest as BlockManifestV4,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    execute_claude_request as execute_claude_request_v4,
 )
 
 # Claude 5-generation models that must be selectable in every block version,
@@ -383,6 +393,7 @@ def test_max_output_tokens_mapping() -> None:
     assert MAX_OUTPUT_TOKENS["claude-sonnet-5"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-8"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
+    assert MAX_OUTPUT_TOKENS["claude-sonnet-4-6"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-5"] == 64000
@@ -811,3 +822,351 @@ def test_execute_claude_request_stop_sequence_is_valid(
 
     # then - stop_sequence is a valid stop reason
     assert result == "Response before stop sequence"
+
+
+# --- temperature / thinking handling per model generation -------------------
+#
+# Claude Opus 4.7+, Sonnet 5, Opus 5 and the Fable line reject `temperature`
+# and `thinking.type=enabled`; older models still take both. The request that
+# leaves the block must differ accordingly on every code path (v1 direct, v2
+# direct, v3/v4 direct and v3/v4 Roboflow proxy).
+
+LEGACY_MODEL = "claude-sonnet-4-5"
+NEW_GENERATION_MODEL = "claude-fable-5-1"
+
+
+def _mock_streaming_client(mock_anthropic_class: Mock, text: str = "ok") -> MagicMock:
+    mock_client = MagicMock()
+    mock_anthropic_class.return_value = mock_client
+
+    mock_text_block = Mock()
+    mock_text_block.type = "text"
+    mock_text_block.text = text
+
+    mock_result = Mock()
+    mock_result.stop_reason = "end_turn"
+    mock_result.content = [mock_text_block]
+    mock_result.usage = Mock(input_tokens=11, output_tokens=7)
+
+    mock_stream = MagicMock()
+    mock_stream.__enter__ = Mock(return_value=mock_stream)
+    mock_stream.__exit__ = Mock(return_value=False)
+    mock_stream.get_final_message.return_value = mock_result
+    mock_client.messages.stream.return_value = mock_stream
+    mock_client.messages.create.return_value = mock_result
+    return mock_client
+
+
+def _is_not_given(value: Any) -> bool:
+    return value is NOT_GIVEN
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1.anthropic.Anthropic"
+)
+def test_v1_forwards_temperature_for_legacy_model(mock_anthropic_class: Mock) -> None:
+    # given
+    mock_client = _mock_streaming_client(mock_anthropic_class)
+
+    # when
+    execute_claude_request_v1(
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=LEGACY_MODEL,
+        max_tokens=100,
+        temperature=0.4,
+        api_key="test-key",
+    )
+
+    # then
+    assert mock_client.messages.create.call_args.kwargs["temperature"] == 0.4
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1.anthropic.Anthropic"
+)
+def test_v1_drops_temperature_for_new_generation_model(
+    mock_anthropic_class: Mock,
+) -> None:
+    # given
+    mock_client = _mock_streaming_client(mock_anthropic_class)
+
+    # when
+    execute_claude_request_v1(
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=NEW_GENERATION_MODEL,
+        max_tokens=100,
+        temperature=0.4,
+        api_key="test-key",
+    )
+
+    # then
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert _is_not_given(call_kwargs["temperature"])
+    assert call_kwargs["model"] == "claude-fable-5-1"
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2.anthropic.Anthropic"
+)
+def test_v2_direct_request_drops_temperature_for_new_generation_model(
+    mock_anthropic_class: Mock,
+) -> None:
+    # given
+    mock_client = _mock_streaming_client(mock_anthropic_class)
+
+    # when
+    execute_claude_request(
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=NEW_GENERATION_MODEL,
+        max_tokens=100,
+        temperature=0.4,
+        extended_thinking=None,
+        thinking_budget_tokens=None,
+        api_key="test-key",
+    )
+
+    # then
+    call_kwargs = mock_client.messages.stream.call_args.kwargs
+    assert _is_not_given(call_kwargs["temperature"])
+    assert "thinking" not in call_kwargs
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2.anthropic.Anthropic"
+)
+def test_v2_direct_request_uses_adaptive_thinking_for_new_generation_model(
+    mock_anthropic_class: Mock,
+) -> None:
+    # given
+    mock_client = _mock_streaming_client(mock_anthropic_class)
+
+    # when - a budget is configured but the model cannot take one
+    execute_claude_request(
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Think"}],
+        model_version=NEW_GENERATION_MODEL,
+        max_tokens=None,
+        temperature=None,
+        extended_thinking=True,
+        thinking_budget_tokens=5000,
+        api_key="test-key",
+    )
+
+    # then
+    call_kwargs = mock_client.messages.stream.call_args.kwargs
+    assert call_kwargs["thinking"] == {"type": "adaptive"}
+    assert call_kwargs["max_tokens"] == 128000
+
+
+@pytest.mark.parametrize(
+    "execute_request, module",
+    [
+        (execute_claude_request_v3, "v3"),
+        (execute_claude_request_v4, "v4"),
+    ],
+)
+def test_direct_request_keeps_legacy_controls_for_legacy_model(
+    execute_request: Any, module: str
+) -> None:
+    with patch(
+        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        # given
+        mock_client = _mock_streaming_client(mock_anthropic_class)
+
+        # when - thinking off, temperature on
+        execute_request(
+            roboflow_api_key=None,
+            anthropic_api_key="sk-ant-test",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Hello"}],
+            model_version=LEGACY_MODEL,
+            max_tokens=100,
+            temperature=0.4,
+            extended_thinking=None,
+            thinking_budget_tokens=None,
+        )
+        no_thinking_kwargs = mock_client.messages.stream.call_args.kwargs
+
+        # when - thinking on with an explicit budget
+        execute_request(
+            roboflow_api_key=None,
+            anthropic_api_key="sk-ant-test",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Think"}],
+            model_version=LEGACY_MODEL,
+            max_tokens=10000,
+            temperature=0.4,
+            extended_thinking=True,
+            thinking_budget_tokens=5000,
+        )
+        thinking_kwargs = mock_client.messages.stream.call_args.kwargs
+
+    # then
+    assert no_thinking_kwargs["temperature"] == 0.4
+    assert "thinking" not in no_thinking_kwargs
+    assert _is_not_given(thinking_kwargs["temperature"])
+    assert thinking_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 5000}
+
+
+@pytest.mark.parametrize(
+    "execute_request, module",
+    [
+        (execute_claude_request_v3, "v3"),
+        (execute_claude_request_v4, "v4"),
+    ],
+)
+def test_direct_request_translates_controls_for_new_generation_model(
+    execute_request: Any, module: str
+) -> None:
+    with patch(
+        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.anthropic.Anthropic"
+    ) as mock_anthropic_class:
+        # given
+        mock_client = _mock_streaming_client(mock_anthropic_class)
+
+        # when - temperature configured, thinking off
+        execute_request(
+            roboflow_api_key=None,
+            anthropic_api_key="sk-ant-test",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Hello"}],
+            model_version=NEW_GENERATION_MODEL,
+            max_tokens=100,
+            temperature=0.4,
+            extended_thinking=None,
+            thinking_budget_tokens=None,
+        )
+        no_thinking_kwargs = mock_client.messages.stream.call_args.kwargs
+
+        # when - thinking on with a budget the model cannot take
+        execute_request(
+            roboflow_api_key=None,
+            anthropic_api_key="sk-ant-test",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Think"}],
+            model_version=NEW_GENERATION_MODEL,
+            max_tokens=None,
+            temperature=None,
+            extended_thinking=True,
+            thinking_budget_tokens=5000,
+        )
+        thinking_kwargs = mock_client.messages.stream.call_args.kwargs
+
+    # then
+    assert _is_not_given(no_thinking_kwargs["temperature"])
+    assert "thinking" not in no_thinking_kwargs
+    assert no_thinking_kwargs["model"] == "claude-fable-5-1"
+    assert thinking_kwargs["thinking"] == {"type": "adaptive"}
+    assert thinking_kwargs["max_tokens"] == 128000
+
+
+PROXY_RESPONSE = {
+    "stop_reason": "end_turn",
+    "content": [{"type": "text", "text": "proxied"}],
+    "usage": {"input_tokens": 3, "output_tokens": 2},
+}
+
+
+@pytest.mark.parametrize(
+    "execute_request, module",
+    [
+        (execute_claude_request_v3, "v3"),
+        (execute_claude_request_v4, "v4"),
+    ],
+)
+def test_proxied_request_keeps_legacy_controls_for_legacy_model(
+    execute_request: Any, module: str
+) -> None:
+    with patch(
+        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.post_to_roboflow_api",
+        return_value=PROXY_RESPONSE,
+    ) as post_mock:
+        # when
+        execute_request(
+            roboflow_api_key="rf-key",
+            anthropic_api_key="rf_key:account",
+            system_prompt="sys",
+            messages=[{"role": "user", "content": "Hello"}],
+            model_version=LEGACY_MODEL,
+            max_tokens=100,
+            temperature=0.4,
+            extended_thinking=None,
+            thinking_budget_tokens=None,
+        )
+        plain_payload = post_mock.call_args.kwargs["payload"]
+
+        execute_request(
+            roboflow_api_key="rf-key",
+            anthropic_api_key="rf_key:account",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Think"}],
+            model_version=LEGACY_MODEL,
+            max_tokens=None,
+            temperature=0.4,
+            extended_thinking=True,
+            thinking_budget_tokens=None,
+        )
+        thinking_payload = post_mock.call_args.kwargs["payload"]
+
+    # then
+    assert plain_payload["model"] == LEGACY_MODEL
+    assert plain_payload["temperature"] == 0.4
+    assert plain_payload["system"] == "sys"
+    assert "thinking" not in plain_payload
+    assert "temperature" not in thinking_payload
+    assert thinking_payload["thinking"] == {"type": "enabled", "budget_tokens": 32000}
+    assert thinking_payload["max_tokens"] == 64000
+
+
+@pytest.mark.parametrize(
+    "execute_request, module",
+    [
+        (execute_claude_request_v3, "v3"),
+        (execute_claude_request_v4, "v4"),
+    ],
+)
+def test_proxied_request_translates_controls_for_new_generation_model(
+    execute_request: Any, module: str
+) -> None:
+    with patch(
+        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.post_to_roboflow_api",
+        return_value=PROXY_RESPONSE,
+    ) as post_mock:
+        # when
+        execute_request(
+            roboflow_api_key="rf-key",
+            anthropic_api_key="rf_key:account",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Hello"}],
+            model_version=NEW_GENERATION_MODEL,
+            max_tokens=100,
+            temperature=0.4,
+            extended_thinking=None,
+            thinking_budget_tokens=None,
+        )
+        plain_payload = post_mock.call_args.kwargs["payload"]
+
+        execute_request(
+            roboflow_api_key="rf-key",
+            anthropic_api_key="rf_key:account",
+            system_prompt=None,
+            messages=[{"role": "user", "content": "Think"}],
+            model_version=NEW_GENERATION_MODEL,
+            max_tokens=None,
+            temperature=None,
+            extended_thinking=True,
+            thinking_budget_tokens=5000,
+        )
+        thinking_payload = post_mock.call_args.kwargs["payload"]
+
+    # then - the payload matches what the direct path sends, so the proxy does
+    # not have to repair it
+    assert plain_payload["model"] == NEW_GENERATION_MODEL
+    assert "temperature" not in plain_payload
+    assert "thinking" not in plain_payload
+    assert thinking_payload["thinking"] == {"type": "adaptive"}
+    assert thinking_payload["max_tokens"] == 128000

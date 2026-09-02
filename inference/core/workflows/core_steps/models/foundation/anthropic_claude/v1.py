@@ -14,6 +14,9 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_im
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
+    resolve_temperature,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -201,7 +204,8 @@ class BlockManifest(WorkflowBlockManifest):
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
-        'random / "creative" the generations are.',
+        'random / "creative" the generations are. Ignored (with a warning) for Claude Opus 4.7 and '
+        "newer, Sonnet 5, Opus 5 and Fable models, which no longer accept sampling parameters.",
         ge=0.0,
         le=2.0,
     )
@@ -441,6 +445,7 @@ def execute_claude_request(
     client = anthropic.Anthropic(api_key=api_key)
     if system_prompt is None:
         system_prompt = NOT_GIVEN
+    temperature = resolve_temperature(temperature, model_version=model_version)
     if temperature is None:
         temperature = NOT_GIVEN
     result = client.messages.create(
