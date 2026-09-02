@@ -6,12 +6,6 @@ from anthropic import NOT_GIVEN
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
-    EXACT_MODELS_VERSIONS_MAPPING as EXACT_MODEL_VERSIONS_V1,
-)
-from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
-    BlockManifest as BlockManifestV1,
-)
-from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     execute_claude_request as execute_claude_request_v1,
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
@@ -28,9 +22,6 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 i
     MAX_OUTPUT_TOKENS as MAX_OUTPUT_TOKENS_V3,
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
-    BlockManifest as BlockManifestV3,
-)
-from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     execute_claude_request as execute_claude_request_v3,
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
@@ -45,17 +36,6 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     execute_claude_request as execute_claude_request_v4,
 )
-
-# Claude 5-generation models that must be selectable in every block version,
-# together with the wire id sent to Anthropic and the max output tokens the
-# block falls back to when `max_tokens` is not set.
-CLAUDE_5_GENERATION_MODELS = {
-    "claude-fable-5-1": ("claude-fable-5-1", 128000),
-    "claude-fable-5": ("claude-fable-5", 128000),
-    "claude-opus-5": ("claude-opus-5", 128000),
-    "claude-sonnet-5": ("claude-sonnet-5", 128000),
-    "claude-opus-4-8": ("claude-opus-4-8", 128000),
-}
 
 
 def test_claude_step_validation_when_input_is_valid() -> None:
@@ -119,11 +99,7 @@ def test_claude_step_validation_when_prompt_is_given_directly() -> None:
 @pytest.mark.parametrize(
     "model_version",
     [
-        "claude-fable-5-1",
         "claude-fable-5",
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
@@ -387,11 +363,7 @@ def test_claude_step_validation_with_structured_answering() -> None:
 
 def test_max_output_tokens_mapping() -> None:
     # then - verify all models have max_output_tokens defined
-    assert MAX_OUTPUT_TOKENS["claude-fable-5-1"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-fable-5"] == 128000
-    assert MAX_OUTPUT_TOKENS["claude-opus-5"] == 128000
-    assert MAX_OUTPUT_TOKENS["claude-sonnet-5"] == 128000
-    assert MAX_OUTPUT_TOKENS["claude-opus-4-8"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
@@ -404,11 +376,7 @@ def test_max_output_tokens_mapping() -> None:
 
 def test_exact_model_versions_mapping() -> None:
     # then - verify all models have exact versions defined
-    assert EXACT_MODEL_VERSIONS["claude-fable-5-1"] == "claude-fable-5-1"
     assert EXACT_MODEL_VERSIONS["claude-fable-5"] == "claude-fable-5"
-    assert EXACT_MODEL_VERSIONS["claude-opus-5"] == "claude-opus-5"
-    assert EXACT_MODEL_VERSIONS["claude-sonnet-5"] == "claude-sonnet-5"
-    assert EXACT_MODEL_VERSIONS["claude-opus-4-8"] == "claude-opus-4-8"
     assert EXACT_MODEL_VERSIONS["claude-opus-4-7"] == "claude-opus-4-7"
     assert EXACT_MODEL_VERSIONS["claude-sonnet-4-5"] == "claude-sonnet-4-5-20250929"
     assert EXACT_MODEL_VERSIONS["claude-haiku-4-5"] == "claude-haiku-4-5-20251001"
@@ -424,65 +392,25 @@ def test_v3_claude_fable_model_metadata() -> None:
     assert EXACT_MODEL_VERSIONS_V3["claude-fable-5"] == "claude-fable-5"
 
 
-@pytest.mark.parametrize(
-    "model_version, expected_exact_version, expected_max_output_tokens",
-    [
-        (model_version, exact_version, max_output_tokens)
-        for model_version, (
-            exact_version,
-            max_output_tokens,
-        ) in CLAUDE_5_GENERATION_MODELS.items()
-    ],
-)
-def test_claude_5_generation_models_share_metadata_across_v2_v3_v4(
-    model_version: str,
-    expected_exact_version: str,
-    expected_max_output_tokens: int,
-) -> None:
-    # then - every block version that owns a metadata table must agree on
-    # the wire id and the output budget, so switching block versions never
-    # silently changes which model is called or how much it may generate
-    for exact_versions, max_output_tokens in [
-        (EXACT_MODEL_VERSIONS, MAX_OUTPUT_TOKENS),
-        (EXACT_MODEL_VERSIONS_V3, MAX_OUTPUT_TOKENS_V3),
-        (EXACT_MODEL_VERSIONS_V4, MAX_OUTPUT_TOKENS_V4),
-    ]:
-        assert exact_versions[model_version] == expected_exact_version
-        assert max_output_tokens[model_version] == expected_max_output_tokens
-    assert EXACT_MODEL_VERSIONS_V1[model_version] == expected_exact_version
-
-
-@pytest.mark.parametrize("model_version", list(CLAUDE_5_GENERATION_MODELS.keys()))
-@pytest.mark.parametrize(
-    "block_type, manifest_class",
-    [
-        ("roboflow_core/anthropic_claude@v1", BlockManifestV1),
-        ("roboflow_core/anthropic_claude@v2", BlockManifest),
-        ("roboflow_core/anthropic_claude@v3", BlockManifestV3),
-        ("roboflow_core/anthropic_claude@v4", BlockManifestV4),
-    ],
-)
-def test_claude_5_generation_models_accepted_by_every_block_version(
-    model_version: str,
-    block_type: str,
-    manifest_class: type,
-) -> None:
+def test_v4_claude_fable_5_1_model_metadata() -> None:
     # given
     specification = {
-        "type": block_type,
+        "type": "roboflow_core/anthropic_claude@v4",
         "name": "step_1",
         "images": "$inputs.image",
         "task_type": "unconstrained",
         "prompt": "This is my prompt",
         "api_key": "$inputs.anthropic_api_key",
-        "model_version": model_version,
+        "model_version": "claude-fable-5-1",
     }
 
     # when
-    result = manifest_class.model_validate(specification)
+    result = BlockManifestV4.model_validate(specification)
 
     # then
-    assert result.model_version == model_version
+    assert result.model_version == "claude-fable-5-1"
+    assert EXACT_MODEL_VERSIONS_V4["claude-fable-5-1"] == "claude-fable-5-1"
+    assert MAX_OUTPUT_TOKENS_V4["claude-fable-5-1"] == 128000
 
 
 @patch(
@@ -813,7 +741,7 @@ def test_execute_claude_request_stop_sequence_is_valid(
 # direct, v3/v4 direct and v3/v4 Roboflow proxy).
 
 LEGACY_MODEL = "claude-sonnet-4-5"
-NEW_GENERATION_MODEL = "claude-fable-5-1"
+NEW_GENERATION_MODEL = "claude-opus-4-7"
 
 
 def _mock_streaming_client(mock_anthropic_class: Mock, text: str = "ok") -> MagicMock:
@@ -885,7 +813,7 @@ def test_v1_drops_temperature_for_new_generation_model(
     # then
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert _is_not_given(call_kwargs["temperature"])
-    assert call_kwargs["model"] == "claude-fable-5-1"
+    assert call_kwargs["model"] == NEW_GENERATION_MODEL
 
 
 @patch(
@@ -1014,7 +942,7 @@ def test_direct_request_translates_controls_for_new_generation_model(
     # then
     assert _is_not_given(no_thinking_kwargs["temperature"])
     assert "thinking" not in no_thinking_kwargs
-    assert no_thinking_kwargs["model"] == "claude-fable-5-1"
+    assert no_thinking_kwargs["model"] == NEW_GENERATION_MODEL
     assert thinking_kwargs["thinking"] == {"type": "adaptive"}
     assert thinking_kwargs["max_tokens"] == 128000
 

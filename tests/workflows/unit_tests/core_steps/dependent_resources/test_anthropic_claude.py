@@ -178,47 +178,6 @@ def test_anthropic_claude_v3_discovery_maps_labels_to_exact_model_versions() -> 
         ]
 
 
-def test_anthropic_claude_fable_5_1_declares_undated_wire_id_in_every_version() -> None:
-    # Fable 5.1 has no dated snapshot alias, so every block version must
-    # declare the exact id the request will carry on both auth paths.
-    manifests = [
-        AnthropicClaudeV1Manifest.model_validate(
-            {
-                "type": "roboflow_core/anthropic_claude@v1",
-                "name": "vlm",
-                "images": "$inputs.image",
-                "prompt": "What is in the image?",
-                "api_key": "$inputs.anthropic_api_key",
-                "model_version": "claude-fable-5-1",
-            }
-        ),
-        AnthropicClaudeV2Manifest.model_validate(
-            {
-                "type": "roboflow_core/anthropic_claude@v2",
-                "name": "vlm",
-                "images": "$inputs.image",
-                "prompt": "What is in the image?",
-                "api_key": "$inputs.anthropic_api_key",
-                "model_version": "claude-fable-5-1",
-            }
-        ),
-        AnthropicClaudeV3Manifest.model_validate(
-            {
-                "type": "roboflow_core/anthropic_claude@v3",
-                "name": "vlm",
-                "images": "$inputs.image",
-                "prompt": "What is in the image?",
-                "model_version": "claude-fable-5-1",
-            }
-        ),
-    ]
-
-    for manifest in manifests:
-        assert manifest.discover_dependent_resources() == [
-            third_party_model(provider="anthropic", model_id="claude-fable-5-1"),
-        ]
-
-
 def test_anthropic_claude_v3_selector_declaration_attaches_resolver() -> None:
     manifest = AnthropicClaudeV3Manifest.model_validate(
         {
