@@ -97,8 +97,9 @@ def resolve_temperature(
     if anthropic_model_supports_temperature(model_version):
         return temperature
 
-    if model_version not in _TEMPERATURE_WARNINGS_EMITTED:
-        _TEMPERATURE_WARNINGS_EMITTED.add(model_version)
+    normalized_model = normalize_anthropic_model_id(model_version)
+    if normalized_model not in _TEMPERATURE_WARNINGS_EMITTED:
+        _TEMPERATURE_WARNINGS_EMITTED.add(normalized_model)
         logger.warning(
             "Anthropic model `%s` does not accept the `temperature` parameter "
             "(Claude Opus 4.7 and newer, Sonnet 5, Opus 5 and Fable models reject "
@@ -145,11 +146,12 @@ def build_thinking_config(
         )
         return {"type": "enabled", "budget_tokens": effective_budget}
 
+    normalized_model = normalize_anthropic_model_id(model_version)
     if (
         thinking_budget_tokens is not None
-        and model_version not in _THINKING_BUDGET_WARNINGS_EMITTED
+        and normalized_model not in _THINKING_BUDGET_WARNINGS_EMITTED
     ):
-        _THINKING_BUDGET_WARNINGS_EMITTED.add(model_version)
+        _THINKING_BUDGET_WARNINGS_EMITTED.add(normalized_model)
         logger.warning(
             "Anthropic model `%s` only supports adaptive thinking; ignoring "
             "thinking_budget_tokens=%s and requesting `thinking.type=adaptive`.",

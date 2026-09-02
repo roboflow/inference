@@ -68,6 +68,9 @@ def test_resolve_temperature_drops_value_for_new_generation_and_warns_once(
         assert resolve_temperature(0.3, model_version="claude-sonnet-4-5") == 0.3
         assert resolve_temperature(0.3, model_version="claude-fable-5-1") is None
         assert resolve_temperature(0.9, model_version="claude-fable-5-1") is None
+        assert (
+            resolve_temperature(0.9, model_version="claude-fable-5-1-20260901") is None
+        )
         assert resolve_temperature(0.3, model_version="claude-opus-5") is None
 
     warned_models = [record.args[0] for record in caplog.records]
@@ -88,7 +91,7 @@ def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warn
         second = build_thinking_config(
             extended_thinking=True,
             thinking_budget_tokens=7000,
-            model_version="claude-fable-5-1",
+            model_version="claude-fable-5-1-20260901",
             model_max_output=128000,
         )
 

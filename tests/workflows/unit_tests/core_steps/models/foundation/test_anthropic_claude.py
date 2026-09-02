@@ -1118,8 +1118,7 @@ def test_proxied_request_translates_controls_for_new_generation_model(
         )
         thinking_payload = post_mock.call_args.kwargs["payload"]
 
-    # then - the payload matches what the direct path sends, so the proxy does
-    # not have to repair it
+    # then
     assert plain_payload["model"] == NEW_GENERATION_MODEL
     assert "temperature" not in plain_payload
     assert "thinking" not in plain_payload
