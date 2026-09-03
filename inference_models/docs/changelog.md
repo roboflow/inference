@@ -22,8 +22,9 @@
   PaliGemma, Qwen2.5-VL, Gemma 4, and Florence 2 instead of distorting a tensor batch to its first
   image or failing to concatenate heterogeneous NumPy inputs. Callers that require a dense batch
   still receive one for uniform images and now get a clear `ModelInputError` for heterogeneous
-  sizes. Invalid Cosmos package configurations are no longer silently ignored, and an input-size
-  restriction rejects packages that omit the size needed to enforce it.
+  sizes, while already-dense 4D tensor inputs retain vectorized preprocessing. Invalid Cosmos
+  package configurations are no longer silently ignored, and an input-size restriction rejects
+  packages that omit the size needed to enforce it.
 
 ---
 

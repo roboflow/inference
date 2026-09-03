@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import torch
@@ -6,6 +8,9 @@ from PIL.Image import Image
 from inference_models import PreProcessingOverrides
 from inference_models.entities import ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
+from inference_models.models.common.roboflow import (
+    pre_processing as pre_processing_module,
+)
 from inference_models.models.common.roboflow.model_packages import (
     AnySizePadding,
     ColorMode,
@@ -10222,6 +10227,35 @@ def test_pre_process_network_input_stacks_uniform_any_size_images(images) -> Non
     )
 
     assert dense_batch.shape == (2, 3, 20, 30)
+    assert len(metadata) == 2
+
+
+def test_any_size_image_list_keeps_a_4d_tensor_batch_vectorized(
+    monkeypatch,
+) -> None:
+    images = torch.zeros((2, 3, 20, 30), dtype=torch.uint8)
+    batched_pre_processing = MagicMock(
+        wraps=pre_processing_module.pre_process_images_tensor
+    )
+    monkeypatch.setattr(
+        pre_processing_module,
+        "pre_process_images_tensor",
+        batched_pre_processing,
+    )
+
+    processed_images, metadata = pre_process_network_input_to_image_list(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_any_size_network_input(),
+        target_device=torch.device("cpu"),
+    )
+
+    batched_pre_processing.assert_called_once()
+    assert batched_pre_processing.call_args.kwargs["images"] is images
+    assert [tuple(image.shape) for image in processed_images] == [
+        (3, 20, 30),
+        (3, 20, 30),
+    ]
     assert len(metadata) == 2
 
 

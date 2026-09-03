@@ -164,9 +164,10 @@ def pre_process_network_input_to_image_list(
 ) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
     """Pre-process images for a model that accepts an image tensor list.
 
-    Fixed-size configurations use the established dense preprocessing path. An
-    any-size configuration without a training input size processes every input
-    separately so each image can retain its own post-processing dimensions.
+    Fixed-size configurations and uniform four-dimensional tensor batches use
+    the established dense preprocessing path. Ragged any-size inputs are
+    processed separately so each image can retain its own post-processing
+    dimensions.
 
     Args:
         images: A single image, dense tensor batch, or list of images.
@@ -183,7 +184,8 @@ def pre_process_network_input_to_image_list(
     Raises:
         ModelInputError: If the input is an empty list or has an unsupported type.
     """
-    if network_input.training_input_size is not None:
+    is_dense_tensor_batch = isinstance(images, torch.Tensor) and images.ndim == 4
+    if network_input.training_input_size is not None or is_dense_tensor_batch:
         dense_batch, metadata = pre_process_network_input(
             images=images,
             image_pre_processing=image_pre_processing,
@@ -193,7 +195,7 @@ def pre_process_network_input_to_image_list(
             image_size_wh=image_size_wh,
             pre_processing_overrides=pre_processing_overrides,
         )
-        processed_images = [image for image in dense_batch]
+        processed_images = list(dense_batch.unbind(dim=0))
 
         return processed_images, metadata
 
