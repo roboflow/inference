@@ -62,8 +62,7 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# Spark `none` is HTTP 400 (probed 1.3 on 2026-09-03: same as 1.1/1.2).
-# Glimmer has no `minimal`.
+# Spark `none` is HTTP 400. Glimmer has no `minimal`.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "Muse Spark 1.1": {
         "model_id": "meta/muse-spark-1.1",

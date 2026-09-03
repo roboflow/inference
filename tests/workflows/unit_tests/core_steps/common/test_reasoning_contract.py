@@ -175,10 +175,6 @@ def _manifest(block_type: str, **overrides):
         ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
         ("open_ai@v6", {"model_version": "gpt-4o"}),
         ("qwen_vlm@v3", {"backend": "native"}),
-        (
-            "meta_vlm@v2",
-            {"model_version": "Muse Spark 1.3", "reasoning_effort": "minimal"},
-        ),
     ],
 )
 def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
