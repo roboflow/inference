@@ -3,7 +3,7 @@
 Same surface as ``meta_vlm@v1``, plus ``input_tokens`` / ``output_tokens``
 outputs with per-call token usage.
 
-OpenRouter-only. Three Muse models, using the vlm-exam request contract:
+OpenRouter-only. Four Muse models, using the vlm-exam request contract:
 image-first user message, no system role, reasoning always on, meta-flat
 0-1000 detection prompt. Llama Vision stays on its own block.
 """
@@ -62,7 +62,8 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# Spark `none` is HTTP 400. Glimmer has no `minimal`.
+# Spark `none` is HTTP 400 (probed 1.3 on 2026-09-03: same as 1.1/1.2).
+# Glimmer has no `minimal`.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "Muse Spark 1.1": {
         "model_id": "meta/muse-spark-1.1",
@@ -70,6 +71,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     },
     "Muse Spark 1.2": {
         "model_id": "meta/muse-spark-1.2",
+        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    },
+    "Muse Spark 1.3": {
+        "model_id": "meta/muse-spark-1.3",
         "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
     },
     "Muse Glimmer": {
@@ -90,7 +95,7 @@ MODEL_VERSION_METADATA = attach_reasoning_levels(
 )
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
-DEFAULT_MODEL_VERSION = "Muse Spark 1.2"
+DEFAULT_MODEL_VERSION = "Muse Spark 1.3"
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
@@ -394,7 +399,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Meta Muse vision-language models via [OpenRouter](https://openrouter.ai/).
 
-Supported models: Muse Spark 1.1, Muse Spark 1.2, and Muse Glimmer.
+Supported models: Muse Spark 1.1, Muse Spark 1.2, Muse Spark 1.3, and Muse Glimmer.
 Llama 3.2 Vision stays on its own block.
 
 You can specify arbitrary text prompts or predefined ones. The block supports:
@@ -450,8 +455,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
         description=(
-            "Muse model to run. Spark 1.1, Spark 1.2, and Glimmer are the "
-            "current image-capable Muse chat models on OpenRouter."
+            "Muse model to run. Spark 1.1, Spark 1.2, Spark 1.3, and Glimmer "
+            "are the current image-capable Muse chat models on OpenRouter."
         ),
         examples=[DEFAULT_MODEL_VERSION, "Muse Glimmer"],
         json_schema_extra={

@@ -148,7 +148,7 @@ BF16_NATIVE_FP8_FLOOR = FP8_NATIVE
 # model's native release precision and what OpenRouter providers serve today.
 #
 # Absent models get no filter, because a filter would leave them with zero
-# providers: single-provider hosted SKUs (Muse Spark 1.1/1.2, Qwen
+# providers: single-provider hosted SKUs (Muse Spark 1.1/1.2/1.3, Qwen
 # Flash/Plus/Max, the Qwen 3.7 line, GLM-5V-Turbo, DeepSeek V4 Flash Vision
 # Exp) report `unknown` precision; DeepSeek V4 is natively FP4+FP8; the only
 # endpoints for Qwen3 VL 8B Thinking and 32B Instruct report `unknown`.

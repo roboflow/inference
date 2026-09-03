@@ -95,6 +95,7 @@ def test_get_native_quantizations_returns_none_for_unregistered_model():
     for slug in (
         "meta/muse-spark-1.1",
         "meta/muse-spark-1.2",
+        "meta/muse-spark-1.3",
         "qwen/qwen3.8-max",
         "qwen/qwen3.8-flash",
         "qwen/qwen3.7-plus",
