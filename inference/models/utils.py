@@ -514,9 +514,13 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
-            # Fine-tunes ship under the dash-less trainer slug; the hosted base
-            # keeps the dash and is wrapped for the task on load.
-            ("vlm", "cosmos3-edge"): InferenceModelsActionRecognitionAdapter,
+            # Roboflow fine-tunes carry the platform's model type as their
+            # architecture.
+            ("text-image-pairs", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Action recognition fine-tunes ship under the dash-less trainer
+            # slug; the hosted base keeps the dash and is wrapped for the task
+            # on load.
             (
                 "action-recognition",
                 "cosmos3-edge",

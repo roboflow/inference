@@ -2109,5 +2109,5 @@ def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognition
     from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
     if isinstance(model, Cosmos3EdgeReasoner):
-        return Cosmos3EdgeActionRecognition(reasoner=model)
+        return Cosmos3EdgeActionRecognition.from_reasoner(reasoner=model)
     raise ValueError(f"Model {model_id} does not support action recognition.")

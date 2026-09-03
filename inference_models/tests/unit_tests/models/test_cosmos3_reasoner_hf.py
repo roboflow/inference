@@ -1,11 +1,15 @@
+import json
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 import torch
 
 from inference_models.configuration import (
     INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
 )
+from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.cosmos3 import cosmos3_reasoner_hf as reasoner_module
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
 
@@ -212,3 +216,248 @@ def test_generate_forwards_prefix_allowed_tokens_fn_to_model() -> None:
         reasoner._model.generate.call_args.kwargs["prefix_allowed_tokens_fn"]
         is prefix_allowed_tokens_fn
     )
+
+
+def _fake_loaded_model() -> MagicMock:
+    model = MagicMock()
+    model.to.return_value = model
+    model.eval.return_value = model
+    model.parameters.return_value = iter([torch.tensor(0.0, dtype=torch.bfloat16)])
+    return model
+
+
+def test_from_pretrained_loads_a_roboflow_fine_tune_from_its_adapter(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / "adapter_config.json").write_text(json.dumps({"peft_type": "LORA"}))
+    (tmp_path / "base").mkdir()
+    base_model = MagicMock()
+    merged = _fake_loaded_model()
+    peft_model = MagicMock()
+    peft_model.merge_and_unload.return_value = merged
+    load_base = MagicMock(return_value=base_model)
+    load_adapter = MagicMock(return_value=peft_model)
+    load_processor = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText, "from_pretrained", load_base
+    )
+    monkeypatch.setattr(reasoner_module.PeftModel, "from_pretrained", load_adapter)
+    monkeypatch.setattr(
+        reasoner_module.AutoProcessor, "from_pretrained", load_processor
+    )
+
+    reasoner = Cosmos3EdgeReasoner.from_pretrained(
+        str(tmp_path), device=torch.device("cpu")
+    )
+
+    # The base checkpoint comes from base/, the adapter from the package root, and
+    # the merged model is what serves.
+    assert load_base.call_args.args[0] == str(tmp_path / "base")
+    assert load_adapter.call_args.args == (base_model, str(tmp_path))
+    assert load_processor.call_args.args[0] == str(tmp_path / "base")
+    assert reasoner._model is merged
+    # Fine-tunes are trained with the think block empty, so they answer directly.
+    assert reasoner._enable_thinking is False
+    assert reasoner.default_system_prompt == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
+
+
+def test_from_pretrained_resizes_embeddings_before_attaching_a_class_token_adapter(
+    tmp_path, monkeypatch
+) -> None:
+    # A video fine-tune adds class tokens. Their tokenizer sits at the package
+    # root, and the base needs rows for them before the adapter attaches.
+    (tmp_path / "adapter_config.json").write_text(
+        json.dumps(
+            {"peft_type": "LORA", "trainable_token_indices": {"embed_tokens": [131072]}}
+        )
+    )
+    (tmp_path / "base").mkdir()
+    (tmp_path / "chat_template.jinja").write_text("{{ messages }}")
+    order = []
+    base_model = MagicMock()
+    base_model.get_input_embeddings.return_value.weight.shape = (131072, 8)
+    base_model.resize_token_embeddings.side_effect = lambda n: order.append(
+        ("resize", n)
+    )
+    tokenizer = MagicMock()
+    tokenizer.__len__ = lambda self: 131077
+    processor = MagicMock()
+    peft_model = MagicMock()
+    peft_model.merge_and_unload.return_value = _fake_loaded_model()
+    load_adapter = MagicMock(
+        side_effect=lambda *a, **k: order.append("attach") or peft_model
+    )
+    monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText,
+        "from_pretrained",
+        MagicMock(return_value=base_model),
+    )
+    monkeypatch.setattr(reasoner_module.PeftModel, "from_pretrained", load_adapter)
+    monkeypatch.setattr(
+        reasoner_module.AutoProcessor,
+        "from_pretrained",
+        MagicMock(return_value=processor),
+    )
+    load_tokenizer = MagicMock(return_value=tokenizer)
+    monkeypatch.setattr(
+        reasoner_module.AutoTokenizer, "from_pretrained", load_tokenizer
+    )
+
+    reasoner = Cosmos3EdgeReasoner.from_pretrained(
+        str(tmp_path), device=torch.device("cpu")
+    )
+
+    assert load_tokenizer.call_args.args[0] == str(tmp_path)
+    assert processor.tokenizer is tokenizer
+    assert processor.chat_template == "{{ messages }}"
+    assert order == [("resize", 131077), "attach"]
+    assert reasoner.package_dir == str(tmp_path)
+    assert reasoner._enable_thinking is False
+
+
+def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
+    monkeypatch.setattr(reasoner_module.transformers, "__version__", "5.5.0")
+
+    with pytest.raises(RuntimeError, match="transformers>=5.15.0"):
+        reasoner_module._require_cosmos3_transformers()
+
+
+def test_post_process_generation_returns_the_answer_as_answer_when_thinking_is_off() -> (
+    None
+):
+    reasoner = _model_with_processor()
+    reasoner._enable_thinking = False
+    reasoner._processor.batch_decode.return_value = ["Beer cans on production line"]
+
+    with_thinking = reasoner.post_process_generation(
+        torch.tensor([[1]]), return_thinking=True
+    )
+    plain = reasoner.post_process_generation(torch.tensor([[1]]))
+
+    assert with_thinking == [{"thinking": "", "answer": "Beer cans on production line"}]
+    assert plain == ["Beer cans on production line"]
+
+
+def test_pre_process_generation_leaves_thinking_on_for_the_base_model() -> None:
+    reasoner = _model_with_processor()
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        "enable_thinking"
+        not in reasoner._processor.apply_chat_template.call_args.kwargs
+    )
+
+
+def test_pre_process_generation_turns_thinking_off_for_a_fine_tune() -> None:
+    reasoner = _model_with_processor()
+    reasoner._enable_thinking = False
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        reasoner._processor.apply_chat_template.call_args.kwargs["enable_thinking"]
+        is False
+    )
+
+
+def test_fine_tuned_reasoner_prompts_with_the_training_system_prompt() -> None:
+    model = MagicMock()
+    model.parameters.return_value = iter([torch.tensor(0.0, dtype=torch.bfloat16)])
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = "templated"
+    processor.return_value = {"input_ids": torch.tensor([[1, 2, 3]], dtype=torch.int64)}
+    reasoner = Cosmos3EdgeReasoner(
+        model=model, processor=processor, device=torch.device("cpu"), fine_tuned=True
+    )
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    conversation = processor.apply_chat_template.call_args.args[0]
+    assert (
+        conversation[0]["content"][0]["text"] == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
+    )
+    assert reasoner_module.FINE_TUNE_SYSTEM_PROMPT != reasoner_module.BASE_SYSTEM_PROMPT
+
+
+VALID_INFERENCE_CONFIG = {
+    "image_pre_processing": {"grayscale": {"enabled": True}},
+    "network_input": {
+        "training_input_size": {"height": 64, "width": 64},
+        "dynamic_spatial_size_supported": True,
+        "dynamic_spatial_size_mode": {"type": "any-size"},
+        "color_mode": "rgb",
+        "resize_mode": "stretch",
+        "input_channels": 3,
+    },
+}
+# What roboflow-train writes for a version without a resize: no training size, any-size model.
+TRAINER_NULL_INFERENCE_CONFIG = {
+    "image_pre_processing": None,
+    "network_input": {
+        "training_input_size": None,
+        "dynamic_spatial_size_supported": True,
+        "dynamic_spatial_size_mode": {"type": "any-size"},
+        "color_mode": "rgb",
+        "resize_mode": "stretch",
+        "padding_value": None,
+        "input_channels": 3,
+        "scaling_factor": None,
+        "normalization": None,
+    },
+}
+
+
+def test_load_inference_config_parses_a_valid_file(tmp_path) -> None:
+    (tmp_path / "inference_config.json").write_text(json.dumps(VALID_INFERENCE_CONFIG))
+
+    config = reasoner_module._load_inference_config(str(tmp_path))
+
+    assert config is not None
+    assert config.network_input.training_input_size.height == 64
+
+
+def test_load_inference_config_parses_the_trainers_any_size_config(tmp_path) -> None:
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(TRAINER_NULL_INFERENCE_CONFIG)
+    )
+
+    config = reasoner_module._load_inference_config(str(tmp_path))
+
+    assert config is not None
+    assert config.network_input.training_input_size is None
+    assert reasoner_module._load_inference_config(str(tmp_path / "missing")) is None
+
+
+def test_load_inference_config_rejects_a_config_the_schema_rejects(tmp_path) -> None:
+    broken = json.loads(json.dumps(TRAINER_NULL_INFERENCE_CONFIG))
+    broken["network_input"]["dynamic_spatial_size_supported"] = False
+    (tmp_path / "inference_config.json").write_text(json.dumps(broken))
+
+    with pytest.raises(CorruptedModelPackageError):
+        reasoner_module._load_inference_config(str(tmp_path))
+
+
+def test_pre_process_generation_applies_the_packages_preprocessing(monkeypatch) -> None:
+    reasoner = _model_with_processor()
+    reasoner._inference_config = reasoner_module.InferenceConfig.model_validate(
+        VALID_INFERENCE_CONFIG
+    )
+    prepared = [torch.zeros((3, 8, 8))]
+    pre_process = MagicMock(return_value=(prepared, [MagicMock()]))
+    monkeypatch.setattr(
+        reasoner_module,
+        "pre_process_network_input_to_image_list",
+        pre_process,
+    )
+
+    reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert (
+        pre_process.call_args.kwargs["network_input"]
+        is reasoner._inference_config.network_input
+    )
+    images_given = reasoner._processor.call_args.kwargs["images"]
+    assert len(images_given) == 1 and images_given[0].shape == (3, 8, 8)

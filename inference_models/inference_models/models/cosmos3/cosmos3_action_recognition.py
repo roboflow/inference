@@ -345,8 +345,23 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         cls, model_name_or_path: str, **kwargs
     ) -> "Cosmos3EdgeActionRecognition":
         reasoner = Cosmos3EdgeReasoner.from_pretrained(model_name_or_path, **kwargs)
+        return cls.from_reasoner(reasoner=reasoner, package_dir=model_name_or_path)
+
+    @classmethod
+    def from_reasoner(
+        cls, reasoner: Cosmos3EdgeReasoner, package_dir: Optional[str] = None
+    ) -> "Cosmos3EdgeActionRecognition":
+        """Serve the task over a reasoner that is already loaded.
+
+        The registry hands a fine-tune over as a plain reasoner, so the class
+        list and the sampling contract are read from the package it came
+        from. A hosted base has no package and serves zero-shot.
+        """
+        model_name_or_path = package_dir or reasoner.package_dir
         tokenizer = getattr(reasoner._processor, "tokenizer", None)
         carries_class_tokens = _has_class_tokens(tokenizer)
+        if model_name_or_path is None:
+            return cls(reasoner=reasoner)
         class_names = _read_class_names_file(model_name_or_path)
         if class_names is None and carries_class_tokens:
             # Falling through would serve a fine-tune as a zero-shot model.
