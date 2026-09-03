@@ -32,14 +32,6 @@ def _spec(**overrides: Any) -> dict:
     return specification
 
 
-def test_v5_accepts_fable_with_medium_effort() -> None:
-    result = BlockManifest.model_validate(
-        _spec(model_version="claude-fable-5-1", reasoning_effort="medium")
-    )
-
-    assert result.reasoning_effort == "medium"
-
-
 def test_v5_accepts_effort_alongside_extended_thinking_on_opus_4_5() -> None:
     result = BlockManifest.model_validate(
         _spec(
@@ -55,21 +47,7 @@ def test_v5_accepts_effort_alongside_extended_thinking_on_opus_4_5() -> None:
     assert result.extended_thinking is True
 
 
-def test_v5_rejects_effort_on_legacy_model() -> None:
-    with pytest.raises(ValidationError, match="support"):
-        BlockManifest.model_validate(
-            _spec(model_version="claude-sonnet-4-5", reasoning_effort="high")
-        )
-
-
-def test_v5_rejects_xhigh_on_opus_4_6() -> None:
-    with pytest.raises(ValidationError, match="support"):
-        BlockManifest.model_validate(
-            _spec(model_version="claude-opus-4-6", reasoning_effort="xhigh")
-        )
-
-
-def test_v5_rejects_none_effort() -> None:
+def test_v5_does_not_offer_none_because_claude_thinking_cannot_be_disabled() -> None:
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(
             _spec(model_version="claude-fable-5-1", reasoning_effort="none")

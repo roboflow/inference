@@ -8,7 +8,6 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude impo
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
     anthropic_model_supports_manual_thinking,
     anthropic_model_supports_temperature,
-    build_output_config,
     build_thinking_config,
     normalize_anthropic_model_id,
     resolve_temperature,
@@ -87,13 +86,13 @@ def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warn
             extended_thinking=True,
             thinking_budget_tokens=5000,
             model_version="claude-fable-5-1",
-            model_max_output=128000,
+            max_tokens=128000,
         )
         second = build_thinking_config(
             extended_thinking=True,
             thinking_budget_tokens=7000,
             model_version="claude-fable-5-1-20260901",
-            model_max_output=128000,
+            max_tokens=128000,
         )
 
     assert first == {"type": "adaptive"}
@@ -102,10 +101,22 @@ def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warn
     assert "thinking_budget_tokens=5000" in caplog.records[0].getMessage()
 
 
-def test_build_output_config_omits_when_effort_unset() -> None:
-    assert build_output_config(None) is None
+@pytest.mark.parametrize(
+    "max_tokens, expected_budget",
+    [
+        (64000, 32000),
+        (6000, 3000),
+        (1500, 1024),
+    ],
+)
+def test_build_thinking_config_derives_default_budget_below_request_max_tokens(
+    max_tokens: int, expected_budget: int
+) -> None:
+    result = build_thinking_config(
+        extended_thinking=True,
+        thinking_budget_tokens=None,
+        model_version="claude-opus-4-6",
+        max_tokens=max_tokens,
+    )
 
-
-def test_build_output_config_passes_through_effort() -> None:
-    assert build_output_config("medium") == {"effort": "medium"}
-    assert build_output_config("xhigh") == {"effort": "xhigh"}
+    assert result == {"type": "enabled", "budget_tokens": expected_budget}

@@ -40,7 +40,6 @@ from inference.core.workflows.core_steps.common.utils import (
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
     anthropic_model_supports_manual_thinking,
-    build_output_config,
     build_thinking_config,
     resolve_temperature,
 )
@@ -846,14 +845,13 @@ def _execute_proxied_claude_request(
         extended_thinking=extended_thinking,
         thinking_budget_tokens=thinking_budget_tokens,
         model_version=model_version,
-        model_max_output=model_max_output,
+        max_tokens=effective_max_tokens,
     )
     if thinking is not None:
         payload["thinking"] = thinking
 
-    output_config = build_output_config(reasoning_effort)
-    if output_config is not None:
-        payload["output_config"] = output_config
+    if reasoning_effort is not None:
+        payload["output_config"] = {"effort": reasoning_effort}
 
     endpoint = "apiproxy/anthropic"
 
@@ -920,14 +918,13 @@ def _execute_direct_claude_request(
         extended_thinking=extended_thinking,
         thinking_budget_tokens=thinking_budget_tokens,
         model_version=model_version,
-        model_max_output=model_max_output,
+        max_tokens=effective_max_tokens,
     )
     if thinking is not None:
         request_params["thinking"] = thinking
 
-    output_config = build_output_config(reasoning_effort)
-    if output_config is not None:
-        request_params["extra_body"] = {"output_config": output_config}
+    if reasoning_effort is not None:
+        request_params["extra_body"] = {"output_config": {"effort": reasoning_effort}}
 
     # Stream response to avoid max_tokens limitation
     with client.messages.stream(**request_params) as stream:

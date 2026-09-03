@@ -757,7 +757,7 @@ def _execute_proxied_claude_request(
         extended_thinking=extended_thinking,
         thinking_budget_tokens=thinking_budget_tokens,
         model_version=model_version,
-        model_max_output=model_max_output,
+        max_tokens=effective_max_tokens,
     )
     if thinking is not None:
         payload["thinking"] = thinking
@@ -822,7 +822,7 @@ def _execute_direct_claude_request(
         extended_thinking=extended_thinking,
         thinking_budget_tokens=thinking_budget_tokens,
         model_version=model_version,
-        model_max_output=model_max_output,
+        max_tokens=effective_max_tokens,
     )
     if thinking is not None:
         request_params["thinking"] = thinking
