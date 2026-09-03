@@ -54,11 +54,12 @@ from inference.core.env import (
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     GCP_SERVERLESS,
+    MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PostProcessingError
+from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
 from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.semantic_segmentation_utils import (
@@ -2005,6 +2006,9 @@ class InferenceModelsActionRecognitionAdapter(Model):
             video_type=request.video.type, value=request.video.value
         ) as path:
             source_fps, frame_count = probe_video(path=path)
+            _ensure_clip_fits_the_duration_cap(
+                frame_count=frame_count, source_fps=source_fps
+            )
             windows = plan_windows(
                 frame_count=frame_count,
                 source_fps=source_fps,
@@ -2059,6 +2063,27 @@ class InferenceModelsActionRecognitionAdapter(Model):
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         pass
+
+
+def _ensure_clip_fits_the_duration_cap(frame_count: int, source_fps: float) -> None:
+    """Refuse a clip longer than the deployment serves in one request.
+
+    Each window is a model call, so a request's running time grows with the
+    clip. The size cap bounds bytes, not time: a low-bitrate file well under
+    it can run for an hour. The duration is the quantity a caller can see
+    and cut to, so that is what the limit names.
+    """
+    if MAX_VIDEO_DURATION_SECONDS < 0:
+        return
+    duration_seconds = frame_count / source_fps
+    if duration_seconds <= MAX_VIDEO_DURATION_SECONDS:
+        return
+    message = (
+        f"Video runs {duration_seconds:.1f} s. This server classifies at most "
+        f"{MAX_VIDEO_DURATION_SECONDS:.0f} s in one request. Send a shorter "
+        f"clip, or raise MAX_VIDEO_DURATION_SECONDS on the server."
+    )
+    raise PayloadTooLargeError(message=message, public_message=message)
 
 
 def _weights_id(model_id: str) -> str:

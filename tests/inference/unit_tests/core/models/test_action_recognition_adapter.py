@@ -222,3 +222,42 @@ def test_a_request_filter_does_not_become_a_class_vocabulary() -> None:
 
     assert [entry.class_name for entry in response.timeline] == ["running"]
     assert [entry.class_id for entry in response.timeline] == [-1]
+
+
+def test_a_clip_over_the_duration_cap_is_refused_before_any_window_runs(monkeypatch):
+    import inference.core.models.inference_models_adapters as adapters
+    from inference.core.exceptions import PayloadTooLargeError
+
+    monkeypatch.setattr(adapters, "MAX_VIDEO_DURATION_SECONDS", 60.0)
+    model = _FakeModel(responses=[[]], class_names=["walk"])
+
+    # 61 s at 10 fps, one second past the cap.
+    with _clip(frame_count=610, source_fps=10.0):
+        with pytest.raises(PayloadTooLargeError, match="at most 60 s"):
+            _adapter(model).infer_from_request(_request())
+
+    assert model.calls == []
+
+
+def test_a_clip_exactly_at_the_duration_cap_is_served(monkeypatch):
+    import inference.core.models.inference_models_adapters as adapters
+
+    monkeypatch.setattr(adapters, "MAX_VIDEO_DURATION_SECONDS", 60.0)
+    model = _FakeModel(responses=[[]], class_names=["walk"])
+
+    with _clip(frame_count=600, source_fps=10.0):
+        response = _adapter(model).infer_from_request(_request())
+
+    assert response.frame_count == 600
+
+
+def test_a_negative_duration_cap_removes_the_limit(monkeypatch):
+    import inference.core.models.inference_models_adapters as adapters
+
+    monkeypatch.setattr(adapters, "MAX_VIDEO_DURATION_SECONDS", -1)
+    model = _FakeModel(responses=[[]], class_names=["walk"])
+
+    with _clip(frame_count=36000, source_fps=10.0):
+        response = _adapter(model).infer_from_request(_request())
+
+    assert response.frame_count == 36000

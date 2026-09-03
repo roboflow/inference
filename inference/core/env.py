@@ -319,6 +319,10 @@ MAX_VIDEO_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_VIDEO_DOWNLOAD_SIZE_MB", "512"))
 VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
     os.getenv("VIDEO_DOWNLOAD_TIMEOUT_SECONDS", "60")
 )
+# Longest clip one action recognition request will classify. Every window of
+# a clip is a model call, so this bounds the time one request can hold the
+# server, which the size cap alone does not. -1 removes the limit.
+MAX_VIDEO_DURATION_SECONDS = float(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
 
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
