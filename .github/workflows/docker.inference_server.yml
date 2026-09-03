@@ -1,4 +1,5 @@
 name: Build inference_server images
+run-name: Build inference_server images (${{ (!inputs.cpu && !inputs.gpu && !inputs.jetson_5_1_1 && !inputs.jetson_6_0_0 && !inputs.jetson_6_2_0) && 'all' || '' }}${{ inputs.cpu && 'cpu' || '' }}${{ inputs.gpu && format('{0}gpu', inputs.cpu && ', ' || '') || '' }}${{ inputs.jetson_5_1_1 && format('{0}jetson-5.1.1', (inputs.cpu || inputs.gpu) && ', ' || '') || '' }}${{ inputs.jetson_6_0_0 && format('{0}jetson-6.0.0', (inputs.cpu || inputs.gpu || inputs.jetson_5_1_1) && ', ' || '') || '' }}${{ inputs.jetson_6_2_0 && format('{0}jetson-6.2.0', (inputs.cpu || inputs.gpu || inputs.jetson_5_1_1 || inputs.jetson_6_0_0) && ', ' || '') || '' }})
 
 # Manual only. When you click "Run workflow", pick your branch as the ref —
 # it builds that ref's code (never main on its own). Tick the targets you want;
