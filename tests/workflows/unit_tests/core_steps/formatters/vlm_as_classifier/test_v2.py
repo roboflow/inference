@@ -375,3 +375,23 @@ def test_run_when_json_wrapped_in_prose_given() -> None:
     # then
     assert result["error_status"] is False
     assert result["predictions"]["top"] == "cat"
+
+
+def test_run_when_json_list_given() -> None:
+    # given - a list is never a valid classification payload
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='[{"class_name": "cat", "confidence": 0.9}]',
+        classes=["car", "cat"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None

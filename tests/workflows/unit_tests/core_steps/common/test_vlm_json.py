@@ -185,7 +185,7 @@ def test_extract_json_payload_when_nothing_recoverable(raw: str) -> None:
 
 def test_extract_json_payload_when_non_string_given() -> None:
     # when
-    error_status, payload = extract_json_payload(None)  # type: ignore[arg-type]
+    error_status, payload = extract_json_payload(None)
 
     # then
     assert error_status is True

@@ -230,7 +230,10 @@ class VLMAsClassifierBlockV1(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, dict]:
-    return extract_json_payload(raw_json)
+    error_status, payload = extract_json_payload(raw_json)
+    if error_status or not isinstance(payload, dict):
+        return True, {}
+    return False, payload
 
 
 def parse_multi_class_classification_results(

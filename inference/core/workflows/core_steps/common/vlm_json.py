@@ -10,7 +10,7 @@ OBJECT_SEQUENCE_SEPARATOR_PATTERN = re.compile(r"^[\s,]*$")
 JsonPayload = Union[dict, list]
 
 
-def extract_json_payload(raw: str) -> Tuple[bool, JsonPayload]:
+def extract_json_payload(raw: Optional[str]) -> Tuple[bool, JsonPayload]:
     """Lenient JSON extraction from VLM output, returning (error_status, payload).
 
     Tries, in order: the first ```json block, the first fenced block with any
