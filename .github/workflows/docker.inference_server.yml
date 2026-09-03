@@ -16,7 +16,7 @@ on:
         default: false
       cpu:
         type: boolean
-        description: "Build CPU (amd64)"
+        description: "Build CPU (amd64 + arm64/Apple Silicon)"
         default: false
       jetson_5_1_1:
         type: boolean
@@ -77,7 +77,7 @@ jobs:
           all_json=$(cat <<EOF
           [
             {"name":"gpu","dockerfile":"inference_server/docker/Dockerfile.gpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$GPU"},
-            {"name":"cpu","dockerfile":"inference_server/docker/Dockerfile.cpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$CPU"},
+            {"name":"cpu","dockerfile":"inference_server/docker/Dockerfile.cpu","platform":"linux/amd64,linux/arm64","depot_project":"grl7ffzxd7","sel":"$CPU"},
             {"name":"jetson-5.1.1","dockerfile":"inference_server/docker/Dockerfile.jetson.5.1.1","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J511"},
             {"name":"jetson-6.0.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.0.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J600"},
             {"name":"jetson-6.2.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.2.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J620"}
