@@ -3,12 +3,17 @@ This is inference-models wrapper for the reasoner tower of NVIDIA Cosmos 3 Edge,
 originally published in https://huggingface.co/nvidia/Cosmos3-Edge
 """
 
+import json
+import os
 import re
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import transformers
+from packaging.version import Version
+from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from transformers.utils import is_flash_attn_2_available
 
@@ -19,8 +24,31 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    ResizeMode,
+    parse_inference_config,
+)
+from inference_models.models.common.roboflow.pre_processing import (
+    pre_process_network_input_to_image_list,
+)
 
 DEFAULT_PROMPT = "Describe what's in this image."
+BASE_SYSTEM_PROMPT = (
+    "You are Cosmos, a helpful assistant that understands physical scenes "
+    "and answers questions about images and videos."
+)
+# What roboflow-train puts in the system turn of every training conversation
+# (src/huggingface/cosmos3edge/image.py SYSTEM_MESSAGE). A fine-tune only
+# produces what it was trained to when prompted the same way: with the base
+# prompt it answers like the base model. Keep the two in sync.
+FINE_TUNE_SYSTEM_PROMPT = (
+    "You are Cosmos 3 Edge, a physical AI reasoning model. "
+    "Look at the image carefully and answer with only what is asked."
+)
+# The `cosmos3_edge` model type is what AutoModelForImageTextToText resolves the
+# checkpoint to; older transformers fail on it with an unhelpful config error.
+MIN_TRANSFORMERS_VERSION = "5.15.0"
 SYSTEM_PROMPT_SENTINEL = "<system_prompt>"
 THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL)
 THINK_EXTRACT_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
@@ -51,6 +79,40 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
+def _require_cosmos3_transformers() -> None:
+    if Version(transformers.__version__) < Version(MIN_TRANSFORMERS_VERSION):
+        raise RuntimeError(
+            f"Cosmos 3 Edge needs transformers>={MIN_TRANSFORMERS_VERSION} (the "
+            f"cosmos3_edge model type); found {transformers.__version__}."
+        )
+
+
+def _load_inference_config(package_dir: str) -> Optional[InferenceConfig]:
+    """Return the package's inference configuration when it is present."""
+    config_path = os.path.join(package_dir, "inference_config.json")
+    if not os.path.exists(config_path):
+        return None
+
+    inference_config = parse_inference_config(
+        config_path=config_path,
+        allowed_resize_modes={
+            ResizeMode.STRETCH_TO,
+            ResizeMode.LETTERBOX,
+            ResizeMode.CENTER_CROP,
+            ResizeMode.LETTERBOX_REFLECT_EDGES,
+            ResizeMode.FIT_LONGER_EDGE,
+        },
+    )
+
+    return inference_config
+
+
+def _adapter_trains_new_tokens(adapter_config_path: str) -> bool:
+    with open(adapter_config_path) as f:
+        adapter_config = json.load(f)
+    return bool(adapter_config.get("trainable_token_indices"))
+
+
 def _resolve_default_dtype(device: torch.device) -> torch.dtype:
     if device.type == "cuda":
         if torch.cuda.is_bf16_supported():
@@ -79,37 +141,92 @@ class Cosmos3EdgeReasoner:
         quantization_config: Any = None,
         **kwargs,
     ) -> "Cosmos3EdgeReasoner":
+        _require_cosmos3_transformers()
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_cosmos3_attn_implementation(device)
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
-            device_map=device,
-            dtype=dtype,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_files_only,
-            quantization_config=quantization_config,
-            attn_implementation=attn_implementation,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=trust_remote_code,
-            local_files_only=local_files_only,
+        inference_config = _load_inference_config(model_name_or_path)
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            # A Roboflow fine-tune: the LoRA adapter sits at the package root and the
+            # base checkpoint (weights, tokenizer, chat template, processor configs)
+            # under base/, the same layout as the other fine-tuned VLMs. A video
+            # fine-tune adds one class token per class to the vocabulary, rows the
+            # base has no room for until it is resized; refuse it readably instead
+            # of failing on a shape mismatch inside PEFT.
+            if _adapter_trains_new_tokens(adapter_config_path):
+                raise NotImplementedError(
+                    "This Cosmos 3 Edge fine-tune adds class tokens to the vocabulary "
+                    "(a video fine-tune); only image fine-tunes can be served for now."
+                )
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = AutoModelForImageTextToText.from_pretrained(
+                base_model_path,
+                device_map=device,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            if quantization_config is None:
+                model = model.merge_and_unload()
+            model = model.eval()
+            processor = AutoProcessor.from_pretrained(
+                base_model_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
+            # Roboflow fine-tunes are trained with the think block left empty and
+            # the trainer's system prompt, and only answer as trained when served
+            # the same way: thinking would eat the token budget before the answer,
+            # and the base prompt makes them answer like the base model.
+            return cls(
+                model=model,
+                processor=processor,
+                device=device,
+                fine_tuned=True,
+                inference_config=inference_config,
+            )
+        else:
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_name_or_path,
+                device_map=device,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            ).eval()
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
+        return cls(
+            model=model,
+            processor=processor,
+            device=device,
+            inference_config=inference_config,
         )
-        return cls(model=model, processor=processor, device=device)
 
     def __init__(
         self,
         model,
         processor,
         device: torch.device,
+        fine_tuned: bool = False,
+        inference_config: Optional[InferenceConfig] = None,
     ):
         self._model = model
         self._processor = processor
         self._device = device
+        self._fine_tuned = fine_tuned
+        self._inference_config = inference_config
+        self._enable_thinking = not fine_tuned
         self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
-            "You are Cosmos, a helpful assistant that understands physical scenes "
-            "and answers questions about images and videos."
+            FINE_TUNE_SYSTEM_PROMPT if fine_tuned else BASE_SYSTEM_PROMPT
         )
         self._lock = Lock()
 
@@ -174,7 +291,17 @@ class Cosmos3EdgeReasoner:
         as_video: bool = False,
         **kwargs,
     ) -> dict:
-        if isinstance(images, np.ndarray):
+        if self._inference_config is not None and not as_video:
+            # The version's preprocessing (photometric steps, any resize it baked)
+            # applied the way the other fine-tuned VLMs do; the result is RGB.
+            images, _ = pre_process_network_input_to_image_list(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )
+        elif isinstance(images, np.ndarray):
             if input_color_format != "rgb":
                 images = images[:, :, ::-1]
             images = images.copy()
@@ -202,8 +329,9 @@ class Cosmos3EdgeReasoner:
                 ],
             },
         ]
+        template_kwargs = {} if self._enable_thinking else {"enable_thinking": False}
         text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
+            conversation, tokenize=False, add_generation_prompt=True, **template_kwargs
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
         model_inputs = self._processor(
@@ -260,6 +388,14 @@ class Cosmos3EdgeReasoner:
         result = []
         for text in decoded:
             text = text.replace("assistant\n", "")
+            if not self._enable_thinking:
+                # Served without a reasoning block (a fine-tune): everything the
+                # model wrote is the answer, and there is no thinking to return.
+                answer = THINK_BLOCK_PATTERN.sub("", text).strip()
+                result.append(
+                    {"thinking": "", "answer": answer} if return_thinking else answer
+                )
+                continue
             # The chat template opens the reasoning block inside the prompt, so
             # decoded output carries a bare closing </think>. Restore the
             # opening tag so thinking and answer parse apart (qwen3_5 pattern).
