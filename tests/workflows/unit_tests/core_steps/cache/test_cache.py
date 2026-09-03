@@ -5,13 +5,18 @@ import numpy as np
 
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.cache.common import (
+    IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION,
+)
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import Runtime, Severity
 
 
 def _image_for(video_id: str) -> WorkflowImageData:
@@ -48,8 +53,8 @@ def test_cache_on_video() -> None:
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
         video_metadata=metadata,
     )
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image, key="foo")
@@ -73,8 +78,8 @@ def test_cache_with_no_metadata() -> None:
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
     )
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image, key="foo")
@@ -120,8 +125,8 @@ def test_cache_on_multiple_videos() -> None:
         video_metadata=metadata_2,
     )
 
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image_1, key="foo")
@@ -148,8 +153,8 @@ def test_cache_on_multiple_videos() -> None:
 def test_shared_namespace_survives_first_instance_close() -> None:
     # given - Cache Set and Cache Get share namespace vid_1 (the product)
     _reset_memory_cache()
-    cache_set = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_get = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set = CacheSetBlockV1()
+    cache_get = CacheGetBlockV1()
     image = _image_for("vid_1")  # shared video id is the product contract
 
     cache_set.run(image=image, key="from_a", value="a")
@@ -172,8 +177,8 @@ def test_shared_namespace_survives_first_instance_close() -> None:
 def test_close_releases_only_namespaces_this_instance_retained() -> None:
     # given - one instance touches vid_1 then vid_2; another holds only vid_2
     _reset_memory_cache()
-    owner = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    other = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    owner = CacheSetBlockV1()
+    other = CacheSetBlockV1()
 
     owner.run(image=_image_for("vid_1"), key="foo", value="bar")
     owner.run(image=_image_for("vid_2"), key="foo", value="baz")
@@ -196,8 +201,8 @@ def test_close_releases_only_namespaces_this_instance_retained() -> None:
 
 def test_cache_block_close_is_safe_before_first_run() -> None:
     # given - blocks that never ran
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheSetBlockV1()
+    cache_get_block = CacheGetBlockV1()
 
     # when / then - cleanup raises nothing and touches no namespace
     cache_set_block.close()
@@ -284,7 +289,7 @@ def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
     ):
         _reset_memory_cache()
         errors.clear()
-        block = block_cls(step_execution_mode=StepExecutionMode.LOCAL)
+        block = block_cls()
         threads = [threading.Thread(target=worker) for _ in range(n_threads)]
         for t in threads:
             t.start()
@@ -292,3 +297,81 @@ def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
             t.join()
         assert not errors, f"{block_cls.__name__} raised: {errors[:3]}"
         block.close()
+
+
+def test_cache_blocks_declare_runtime_only_soft_restriction() -> None:
+    # Cache blocks have no remote path: they always run in-process, so where
+    # model steps execute must not gate them. The caveat is keyed on the
+    # runtime alone - a still image degrades the same way a video frame does,
+    # and the default LOCAL step mode on hosted runtimes is exactly where the
+    # cache breaks - so it must not be narrowed by step mode or input mode.
+    for block_cls in (CacheGetBlockV1, CacheSetBlockV1):
+        restrictions = block_cls.get_manifest().get_restrictions()
+
+        assert restrictions == [IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION]
+        assert restrictions[0].severity is Severity.SOFT
+        assert restrictions[0].applies_to_runtimes == [
+            Runtime.HOSTED_SERVERLESS,
+            Runtime.DEDICATED_DEPLOYMENT,
+        ]
+        assert restrictions[0].applies_to_step_execution_modes is None
+        assert restrictions[0].applies_to_input_modes is None
+        assert "step_execution_mode" not in block_cls.get_init_parameters()
+
+
+# Cache Set's `value` is selector-only, so it has to come from a step output:
+# stringify whatever Cache Get returned and store that. Run 1 sees a miss
+# (False) and stores "False"; run 2 sees the stored "False" and stores it
+# again. A miss on run 2 would surface as `before is False`, not "False".
+CACHE_ROUND_TRIP_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/cache_get@v1",
+            "name": "before",
+            "image": "$inputs.image",
+            "key": "k",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "as_text",
+            "data": "$steps.before.output",
+            "operations": [{"type": "ToString"}],
+        },
+        {
+            "type": "roboflow_core/cache_set@v1",
+            "name": "store",
+            "image": "$inputs.image",
+            "key": "k",
+            "value": "$steps.as_text.output",
+        },
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "before", "selector": "$steps.before.output"},
+        {"type": "JsonField", "name": "stored", "selector": "$steps.store.output"},
+    ],
+}
+
+
+def test_cache_blocks_run_under_remote_step_execution_mode() -> None:
+    # given - the engine is told model steps execute remotely; cache blocks
+    # used to raise NotImplementedError here although they never leave the
+    # process. Both runs share a namespace (synthesised from the input name).
+    _reset_memory_cache()
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CACHE_ROUND_TRIP_WORKFLOW,
+        init_parameters={
+            "workflows_core.step_execution_mode": StepExecutionMode.REMOTE,
+        },
+        max_concurrent_steps=1,
+    )
+    image = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    # when
+    first = execution_engine.run(runtime_parameters={"image": image})
+    second = execution_engine.run(runtime_parameters={"image": image})
+
+    # then
+    assert first[0] == {"before": False, "stored": "False"}
+    assert second[0] == {"before": "False", "stored": "False"}
