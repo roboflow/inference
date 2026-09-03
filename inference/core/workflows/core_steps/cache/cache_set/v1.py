@@ -4,7 +4,6 @@ from typing import Any, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -18,9 +17,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
     RuntimeRestriction,
-    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -72,7 +71,7 @@ This block stores values in cache and passes through the stored value:
 
 ## Requirements
 
-This block requires an input image (used to determine the cache namespace via video identifier), a cache key (string) to identify the cache entry, and a value (any data type) to store. The block only works in LOCAL execution mode - it will raise a NotImplementedError if used in other execution modes. Values stored in the cache can be retrieved later using the Cache Get block with the same key and namespace (same video identifier). The cache lives in process-wide memory and is not cleared merely because a workflow run finishes; each block instance releases the namespaces it retained when it is closed or garbage-collected. The cache is namespaced by video identifier, so different videos have separate cache storage. If a key already exists in the cache, storing a new value with the same key will overwrite the previous value. The stored value can be any data type (strings, numbers, lists, detections, images, etc.).
+This block requires an input image (used to determine the cache namespace via video identifier), a cache key (string) to identify the cache entry, and a value (any data type) to store. The cache is held in process memory, so it is only reliable when one long-lived process (an InferencePipeline or a stateful video worker) handles every frame of a video; on stateless multi-replica HTTP deployments entries may not survive between requests. Values stored in the cache can be retrieved later using the Cache Get block with the same key and namespace (same video identifier). The cache lives in process-wide memory and is not cleared merely because a workflow run finishes; each block instance releases the namespaces it retained when it is closed or garbage-collected. The cache is namespaced by video identifier, so different videos have separate cache storage. If a key already exists in the cache, storing a new value with the same key will overwrite the previous value. The stored value can be any data type (strings, numbers, lists, detections, images, etc.).
 """
 
 SHORT_DESCRIPTION = "Stores a value in a cache entry for later retrieval."
@@ -132,16 +131,12 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        return [
-            RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "Cache blocks only support LOCAL workflow step execution; "
-                    "remote step execution raises NotImplementedError."
-                ),
-                applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
-            ),
-        ]
+        # The cache lives in this process, keyed by video_identifier, so it is
+        # only meaningful when one engine instance sees every frame of a video.
+        # That is exactly the caveat the shared stateful-video preset states.
+        # Where model steps execute is irrelevant: this block has no remote
+        # path and always runs in-process.
+        return [STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION]
 
 
 class CacheSetBlockV1(WorkflowBlock):
@@ -149,11 +144,7 @@ class CacheSetBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def __init__(
-        self,
-        step_execution_mode: StepExecutionMode,
-    ):
-        self._step_execution_mode = step_execution_mode
+    def __init__(self):
         # Namespaces this instance has retained. close() releases each once;
         # __del__ calls close() as a GC fallback, not as "workflow complete".
         self._namespaces: set = set()
@@ -161,10 +152,6 @@ class CacheSetBlockV1(WorkflowBlock):
         # the same block instance can be called concurrently. The lock makes
         # the check→retain→get_dict sequence atomic and protects cleanup.
         self._lock = Lock()
-
-    @classmethod
-    def get_init_parameters(cls) -> List[str]:
-        return ["step_execution_mode"]
 
     def close(self) -> None:
         with self._lock:
@@ -182,11 +169,6 @@ class CacheSetBlockV1(WorkflowBlock):
             pass
 
     def run(self, image: WorkflowImageData, key: str, value: Any) -> BlockResult:
-        if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "Cache blocks require running locally or on a dedicated deployment."
-            )
-
         metadata = image.video_metadata
         namespace = metadata.video_identifier or "default"
         # Per-instance lock prevents a race where Thread A adds the namespace

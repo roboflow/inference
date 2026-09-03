@@ -6,7 +6,6 @@ import numpy as np
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
@@ -48,8 +47,8 @@ def test_cache_on_video() -> None:
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
         video_metadata=metadata,
     )
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image, key="foo")
@@ -73,8 +72,8 @@ def test_cache_with_no_metadata() -> None:
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
     )
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image, key="foo")
@@ -120,8 +119,8 @@ def test_cache_on_multiple_videos() -> None:
         video_metadata=metadata_2,
     )
 
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1()
+    cache_set_block = CacheSetBlockV1()
 
     # empty result
     get_empty = cache_get_block.run(image=image_1, key="foo")
@@ -148,8 +147,8 @@ def test_cache_on_multiple_videos() -> None:
 def test_shared_namespace_survives_first_instance_close() -> None:
     # given - Cache Set and Cache Get share namespace vid_1 (the product)
     _reset_memory_cache()
-    cache_set = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_get = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set = CacheSetBlockV1()
+    cache_get = CacheGetBlockV1()
     image = _image_for("vid_1")  # shared video id is the product contract
 
     cache_set.run(image=image, key="from_a", value="a")
@@ -172,8 +171,8 @@ def test_shared_namespace_survives_first_instance_close() -> None:
 def test_close_releases_only_namespaces_this_instance_retained() -> None:
     # given - one instance touches vid_1 then vid_2; another holds only vid_2
     _reset_memory_cache()
-    owner = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    other = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    owner = CacheSetBlockV1()
+    other = CacheSetBlockV1()
 
     owner.run(image=_image_for("vid_1"), key="foo", value="bar")
     owner.run(image=_image_for("vid_2"), key="foo", value="baz")
@@ -196,8 +195,8 @@ def test_close_releases_only_namespaces_this_instance_retained() -> None:
 
 def test_cache_block_close_is_safe_before_first_run() -> None:
     # given - blocks that never ran
-    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheSetBlockV1()
+    cache_get_block = CacheGetBlockV1()
 
     # when / then - cleanup raises nothing and touches no namespace
     cache_set_block.close()
@@ -284,7 +283,7 @@ def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
     ):
         _reset_memory_cache()
         errors.clear()
-        block = block_cls(step_execution_mode=StepExecutionMode.LOCAL)
+        block = block_cls()
         threads = [threading.Thread(target=worker) for _ in range(n_threads)]
         for t in threads:
             t.start()
@@ -292,3 +291,30 @@ def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
             t.join()
         assert not errors, f"{block_cls.__name__} raised: {errors[:3]}"
         block.close()
+
+
+def test_cache_blocks_declare_only_the_stateful_video_soft_restriction() -> None:
+    # Cache blocks have no remote path: they always run in-process, so where
+    # model steps execute must not gate them. Only the shared stateful-video
+    # caveat applies.
+    from inference.core.workflows.prototypes.block import (
+        STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    )
+
+    for block_cls in (CacheGetBlockV1, CacheSetBlockV1):
+        manifest = block_cls.get_manifest()
+        assert manifest.get_restrictions() == [STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION]
+        assert block_cls.get_init_parameters() == []
+
+
+def test_cache_blocks_run_without_step_execution_mode() -> None:
+    _reset_memory_cache()
+    image = _image_for("vid")
+    cache_set = CacheSetBlockV1()
+    cache_get = CacheGetBlockV1()
+    try:
+        assert cache_set.run(image=image, key="k", value=1) == {"output": 1}
+        assert cache_get.run(image=image, key="k") == {"output": 1}
+    finally:
+        cache_set.close()
+        cache_get.close()
