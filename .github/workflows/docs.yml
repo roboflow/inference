@@ -63,6 +63,50 @@ jobs:
           # The site is now a landing page plus redirects, so the build no
           # longer imports the inference package.
           pip install -r requirements/requirements.docs.txt
+
+          # Install remaining dependencies
+          pip install -r requirements/_requirements.txt \
+                      -r requirements/requirements.cpu.txt \
+                      -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.test.unit.txt \
+                      -r requirements/requirements.test.integration.txt \
+                      -r requirements/requirements.http.txt \
+                      -r requirements/requirements.cli.txt
+
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu './inference_models[torch-cpu,onnx-cpu]'
+          pip install -e .
+        working-directory: ./inference_repo
+
+      - name: Install enterprise blocks
+        run: pip install .
+        working-directory: ./roboflow_enterprise_blocks
+
+      - name: Generate API reference pages
+        run: python docs/scripts/gen_ref_pages.py
+        working-directory: ./inference_repo
+
+      - name: Build block docs
+        env:
+          LOAD_ENTERPRISE_BLOCKS: "TRUE"
+        run: python -m development.docs.build_block_docs
+        working-directory: ./inference_repo
+
+      - name: Build workflows gallery
+        env:
+          WORKFLOWS_GALLERY_API_KEY: ${{ secrets.WORKFLOWS_GALLERY_API_KEY }}
+        run: python -m development.docs.workflows_gallery_builder
+        working-directory: ./inference_repo
+
+      - name: Write CLI docs
+        run: python -m development.docs.write_cli_docs
+        working-directory: ./inference_repo
+
+      - name: Write OpenAPI spec
+        run: python -m development.docs.write_openapi_spec
+        working-directory: ./inference_repo
+
+      - name: Expand literate-nav SUMMARY.md into mkdocs.yml
+        run: python docs/scripts/expand_literate_nav.py
         working-directory: ./inference_repo
 
       - name: Replace template variables (VERSION, etc.)

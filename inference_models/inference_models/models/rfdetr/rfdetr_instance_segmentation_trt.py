@@ -15,6 +15,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
     INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+    RFDETR_MAX_INPUT_RESOLUTION,
     get_rfdetr_pipeline_depth,
 )
 from inference_models.entities import ColorFormat, Confidence
@@ -70,7 +71,10 @@ from inference_models.models.rfdetr.triton_preprocess_runtime import (
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "
@@ -119,6 +123,8 @@ class RFDetrForInstanceSegmentationTRT(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTRT":
+        if rf_detr_max_input_resolution is None:
+            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",

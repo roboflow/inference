@@ -179,6 +179,10 @@ class InvalidParameterError(BaseInferenceModelsError):
     pass
 
 
+class PreloadedDependencyMismatchError(InvalidParameterError):
+    pass
+
+
 class DependencyModelParametersValidationError(ModelLoadingError):
     pass
 

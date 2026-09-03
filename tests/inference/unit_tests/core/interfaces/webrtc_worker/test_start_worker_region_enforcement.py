@@ -42,13 +42,7 @@ def _build_request(
 
 def _install_modal_stubs(monkeypatch, spawn_mock):
     """Stub the modules lazily imported inside the Modal branch of start_worker."""
-    modal_stub = types.ModuleType("inference.core.interfaces.webrtc_worker.modal")
-    modal_stub.spawn_rtc_peer_connection_modal = spawn_mock
-    monkeypatch.setitem(
-        sys.modules,
-        "inference.core.interfaces.webrtc_worker.modal",
-        modal_stub,
-    )
+    monkeypatch.setattr(webrtc_worker, "_resolve_modal_spawner", lambda: spawn_mock)
 
     utils_stub = types.ModuleType("inference.core.interfaces.webrtc_worker.utils")
     utils_stub.get_total_concurrent_sessions = MagicMock(return_value=0)

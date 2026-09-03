@@ -48,6 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.easyocr.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🔤 Cache Workflows font assets
         uses: actions/cache@v5
         with:

@@ -122,7 +122,7 @@ class GlmOcrHF:
     ) -> List[str]:
         return self.prompt(
             images=images,
-            prompt=FORMULA_RECOGNITION_PROMPT,
+            prompt=TABLE_RECOGNITION_PROMPT,
             input_color_format=input_color_format,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,

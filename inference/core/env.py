@@ -326,6 +326,31 @@ ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
 CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
     os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
+# Route legacy model requests to the new ModelManagerProcess via
+# ModelManagerAdapter, default is False
+LEGACY_MMP_ADAPTER_ENABLED = str2bool(os.getenv("LEGACY_MMP_ADAPTER_ENABLED", False))
+
+# Blocking budgets for the MMP adapter bridge; legacy clients expect the
+# request to block until the model is loaded, default is 600
+LEGACY_MMP_LOAD_WAIT_S = float(os.getenv("LEGACY_MMP_LOAD_WAIT_S", "600"))
+
+# Inference wait budget for the MMP adapter bridge, default is 300
+LEGACY_MMP_INFER_TIMEOUT_S = float(os.getenv("LEGACY_MMP_INFER_TIMEOUT_S", "300"))
+
+# Transport behind the adapter: `mmp` talks ZMQ/SHM to a separate
+# ModelManagerProcess; `bundled` runs an in-process ModelManager with
+# subprocess model workers (no MMP process), default is mmp.
+# Bundled deltas vs mmp: no idle eviction or VRAM-admission orchestration
+# (explicit unloads only), and owlv2/instant heads load as plain models
+# (no shared-base worker reuse).
+LEGACY_MMP_ADAPTER_MODE = os.getenv("LEGACY_MMP_ADAPTER_MODE", "mmp")
+
+# Model backend for bundled mode: `subprocess` isolates each model in a
+# worker process; `direct` runs models in the main process (snapshottable,
+# no crash isolation), default is subprocess
+LEGACY_MMP_ADAPTER_BUNDLED_BACKEND = os.getenv(
+    "LEGACY_MMP_ADAPTER_BUNDLED_BACKEND", "subprocess"
+)
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
@@ -811,6 +836,21 @@ DEBUG_AIORTC_QUEUES = str2bool(os.getenv("DEBUG_AIORTC_QUEUES", "False"))
 DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
     os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
 )
+MMP_PERFORMANCE_PROFILING_ENABLED = str2bool(
+    os.getenv("MMP_PERFORMANCE_PROFILING_ENABLED", "False")
+)
+MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N = int(
+    os.getenv("MMP_PERFORMANCE_PROFILING_SAMPLE_EVERY_N", "1")
+)
+MMP_PERFORMANCE_PROFILING_WARMUP_CALLS = int(
+    os.getenv("MMP_PERFORMANCE_PROFILING_WARMUP_CALLS", "30")
+)
+MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S = float(
+    os.getenv("MMP_PERFORMANCE_PROFILING_LOG_INTERVAL_S", "10")
+)
+MMP_PERFORMANCE_PROFILING_MAX_SAMPLES = int(
+    os.getenv("MMP_PERFORMANCE_PROFILING_MAX_SAMPLES", "1000")
+)
 WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
@@ -1162,7 +1202,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1440 -> ~5G
 # 1600 -> ~10G
 # 2048 -> ~22G
-RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+# 0 (or negative) disables the cap — mirrored by inference_models'
+# RFDETR_MAX_INPUT_RESOLUTION default so both load paths agree.
+_RFDETR_ONNX_MAX_RESOLUTION_RAW = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+RFDETR_ONNX_MAX_RESOLUTION = (
+    _RFDETR_ONNX_MAX_RESOLUTION_RAW if _RFDETR_ONNX_MAX_RESOLUTION_RAW > 0 else None
+)
 
 # Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
 # pipeline futures on the main execution path.
