@@ -2,34 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- Zero-shot action recognition reads frames at 1080p at most: a model that declared no frame
-  side caps the longest side at 1920, so a 4K clip no longer reaches the model whole.
-  Fine-tunes keep the side they trained on.
-- `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA adapter at the package
-  root over the base checkpoint under `base/`, the layout the other fine-tuned VLMs use. A video
-  fine-tune's class tokens are loaded too: the tokenizer and chat template at the package root
-  are read, and the embedding table grows before the adapter attaches. The
-  registry also resolves the architecture under the platform's model type, `cosmos3-edge`, and
-  the loader names the `transformers>=5.15` floor the `cosmos3_edge` model type needs.
-- `InferenceConfig` accepts a package with no `network_input.training_input_size` when the model
-  accepts any input size (`dynamic_spatial_size_supported` with an any-size mode): what
-  roboflow-train ships for a VLM fine-tuned on a version without a resize. Such packages, which
-  failed to load with `CorruptedModelPackageError`, now load, and the shared preprocessing keeps
-  each image at its own size (or the size requested) while still applying the version's
-  photometric steps.
-
-### Fixed
-
-- Any-size VLM preprocessing now returns independently sized images to Cosmos 3, SmolVLM,
-  PaliGemma, Qwen2.5-VL, Gemma 4, and Florence 2 instead of distorting a tensor batch to its first
-  image or failing to concatenate heterogeneous NumPy inputs. Callers that require a dense batch
-  still receive one for uniform images and now get a clear `ModelInputError` for heterogeneous
-  sizes, while already-dense 4D tensor inputs retain vectorized preprocessing. Invalid Cosmos
-  package configurations are no longer silently ignored, and an input-size restriction rejects
-  packages that omit the size needed to enforce it.
-
 ---
 
 ## `0.37.0`
@@ -41,12 +13,13 @@
   `VideoSampling` contract that travels with the model, so a caller never
   states how to cut a video. `plan_windows` and `merge_segment` apply it.
 
-- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, tasks `vlm` and
-  `action-recognition`, backend `hugging-face`). A package whose class list
-  resolves to `<|cls:...|>` tokens is a fine-tune, and answers in the training
-  span format under a decoding constraint. Anything else runs zero-shot, in
-  its own words, over windows of 76 frames. A malformed package raises
-  `CorruptedModelPackageError` rather than loading as zero-shot.
+- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, task
+  `action-recognition`, backend `hugging-face`). A fine-tune registered under
+  that task carries a class list that resolves to `<|cls:...|>` tokens, and
+  answers in the training span format under a decoding constraint. The hosted
+  base runs zero-shot, in its own words, over windows of 76 frames. A
+  malformed package raises `CorruptedModelPackageError` rather than loading
+  as zero-shot.
 
 - Zero-shot reads a clip in windows rather than whole. Nothing bounded an
   untrained sample before, so a long clip held every sampled frame at once.
@@ -55,9 +28,42 @@
   them on longer clips, where reading whole returned one coarse segment. A
   trained model is unaffected, since its own budget already bounds its sample.
 
-- `Cosmos3EdgeReasoner` gained LoRA package loading, `enable_thinking`, and
-  constrained decoding on the video path. It now passes real `VideoMetadata`,
-  so the model's frame timestamps match the clip.
+- Zero-shot reads frames at 1080p at most. A model that declared no frame
+  side caps the longest side at 1920, so a 4K clip no longer reaches the
+  model whole. A fine-tune keeps the side it trained on.
+
+- `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA
+  adapter at the package root over the base checkpoint under `base/`, the
+  layout the other fine-tuned VLMs use. A video fine-tune adds one class
+  token per class; its tokenizer and chat template are read from the package
+  root, and the embedding table grows before the adapter attaches. The
+  registry resolves the architecture under the platform's model type,
+  `cosmos3-edge`, and the loader names the `transformers>=5.15` floor the
+  `cosmos3_edge` model type needs.
+
+- `Cosmos3EdgeReasoner` gained `enable_thinking`, which a fine-tune turns
+  off, and constrained decoding on the video path. It passes real
+  `VideoMetadata`, so the model's frame timestamps match the clip.
+
+- `InferenceConfig` accepts a package with no
+  `network_input.training_input_size` when the model accepts any input size
+  (`dynamic_spatial_size_supported` with an any-size mode), which is what
+  roboflow-train ships for a VLM fine-tuned on a version without a resize.
+  Such packages failed to load with `CorruptedModelPackageError`. They load
+  now, and the shared preprocessing keeps each image at its own size, or the
+  size requested, while still applying the version's photometric steps.
+
+### Fixed
+
+- Any-size VLM preprocessing returns independently sized images to Cosmos 3,
+  SmolVLM, PaliGemma, Qwen2.5-VL, Gemma 4, and Florence 2. Before, it
+  distorted a tensor batch to its first image, or failed to concatenate
+  NumPy inputs of different sizes. A caller that needs a dense batch still
+  gets one for uniform images, and gets a clear `ModelInputError` for mixed
+  sizes. A dense 4D tensor input keeps its vectorized preprocessing. An
+  invalid Cosmos package configuration is no longer ignored, and an
+  input-size restriction rejects a package that omits the size needed to
+  enforce it.
 
 ---
 
