@@ -7,15 +7,16 @@ import json
 import os
 import re
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import transformers
 from packaging.version import Version
 from peft import PeftModel
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
 from transformers.utils import is_flash_attn_2_available
+from transformers.video_utils import VideoMetadata
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -24,6 +25,7 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -149,15 +151,7 @@ class Cosmos3EdgeReasoner:
         if os.path.exists(adapter_config_path):
             # A Roboflow fine-tune: the LoRA adapter sits at the package root and the
             # base checkpoint (weights, tokenizer, chat template, processor configs)
-            # under base/, the same layout as the other fine-tuned VLMs. A video
-            # fine-tune adds one class token per class to the vocabulary, rows the
-            # base has no room for until it is resized; refuse it readably instead
-            # of failing on a shape mismatch inside PEFT.
-            if _adapter_trains_new_tokens(adapter_config_path):
-                raise NotImplementedError(
-                    "This Cosmos 3 Edge fine-tune adds class tokens to the vocabulary "
-                    "(a video fine-tune); only image fine-tunes can be served for now."
-                )
+            # under base/, the same layout as the other fine-tuned VLMs.
             base_model_path = os.path.join(model_name_or_path, "base")
             model = AutoModelForImageTextToText.from_pretrained(
                 base_model_path,
@@ -168,15 +162,33 @@ class Cosmos3EdgeReasoner:
                 quantization_config=quantization_config,
                 attn_implementation=attn_implementation,
             )
-            model = PeftModel.from_pretrained(model, model_name_or_path)
-            if quantization_config is None:
-                model = model.merge_and_unload()
-            model = model.eval()
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
+            if _adapter_trains_new_tokens(adapter_config_path):
+                # A video fine-tune adds one class token per class. The tokenizer
+                # and chat template that know those tokens sit at the package
+                # root, and the shipped base has no embedding rows for them until
+                # it is resized. That has to happen before the adapter attaches,
+                # because its trainable-token rows index the new ids.
+                processor.tokenizer = AutoTokenizer.from_pretrained(
+                    model_name_or_path,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                )
+                template_path = os.path.join(model_name_or_path, "chat_template.jinja")
+                if os.path.exists(template_path):
+                    with open(template_path) as template_file:
+                        processor.chat_template = template_file.read()
+                embedding_rows = model.get_input_embeddings().weight.shape[0]
+                if embedding_rows < len(processor.tokenizer):
+                    model.resize_token_embeddings(len(processor.tokenizer))
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            if quantization_config is None:
+                model = model.merge_and_unload()
+            model = model.eval()
             # Roboflow fine-tunes are trained with the think block left empty and
             # the trainer's system prompt, and only answer as trained when served
             # the same way: thinking would eat the token budget before the answer,
@@ -187,6 +199,7 @@ class Cosmos3EdgeReasoner:
                 device=device,
                 fine_tuned=True,
                 inference_config=inference_config,
+                package_dir=model_name_or_path,
             )
         else:
             model = AutoModelForImageTextToText.from_pretrained(
@@ -208,6 +221,7 @@ class Cosmos3EdgeReasoner:
             processor=processor,
             device=device,
             inference_config=inference_config,
+            package_dir=model_name_or_path,
         )
 
     def __init__(
@@ -217,12 +231,14 @@ class Cosmos3EdgeReasoner:
         device: torch.device,
         fine_tuned: bool = False,
         inference_config: Optional[InferenceConfig] = None,
+        package_dir: Optional[str] = None,
     ):
         self._model = model
         self._processor = processor
         self._device = device
         self._fine_tuned = fine_tuned
         self._inference_config = inference_config
+        self.package_dir = package_dir
         self._enable_thinking = not fine_tuned
         self._torch_dtype = next(model.parameters()).dtype
         self.default_system_prompt = (
@@ -264,6 +280,11 @@ class Cosmos3EdgeReasoner:
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         return_thinking: bool = False,
+        video_fps: Optional[float] = None,
+        enable_thinking: Optional[bool] = None,
+        prefix_allowed_tokens_fn: Optional[
+            Callable[[int, torch.Tensor], List[int]]
+        ] = None,
         **kwargs,
     ) -> Union[str, Dict[str, str]]:
         inputs = self.pre_process_generation(
@@ -271,11 +292,20 @@ class Cosmos3EdgeReasoner:
             prompt=prompt,
             input_color_format=input_color_format,
             as_video=True,
+            video_fps=video_fps,
+            enable_thinking=enable_thinking,
         )
+        set_input_length = getattr(prefix_allowed_tokens_fn, "set_input_length", None)
+        if callable(set_input_length):
+            # Generated-answer grammars do not need to parse the video/chat
+            # prompt. Generic Transformers callbacks continue to receive the
+            # full sequence because they do not expose this opt-in hook.
+            set_input_length(inputs["input_ids"].shape[-1])
         generated_ids = self.generate(
             inputs=inputs,
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
+            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
         )
         return self.post_process_generation(
             generated_ids=generated_ids,
@@ -289,6 +319,8 @@ class Cosmos3EdgeReasoner:
         prompt: str = None,
         input_color_format: ColorFormat = None,
         as_video: bool = False,
+        video_fps: Optional[float] = None,
+        enable_thinking: Optional[bool] = None,
         **kwargs,
     ) -> dict:
         if self._inference_config is not None and not as_video:
@@ -329,11 +361,30 @@ class Cosmos3EdgeReasoner:
                 ],
             },
         ]
-        template_kwargs = {} if self._enable_thinking else {"enable_thinking": False}
+        thinking = self._enable_thinking if enable_thinking is None else enable_thinking
+        template_kwargs = {} if thinking else {"enable_thinking": False}
         text_input = self._processor.apply_chat_template(
             conversation, tokenize=False, add_generation_prompt=True, **template_kwargs
         )
         processor_kwargs = {"videos": [images]} if as_video else {"images": images}
+        if as_video and video_fps is not None:
+            # num_frames == len(images) makes the processor's sampler an
+            # identity pass that keeps the indices its per-frame timestamps
+            # need; do_sample_frames=False crashes the timestamp step.
+            processor_kwargs.update(
+                video_metadata=[
+                    VideoMetadata(
+                        fps=video_fps,
+                        total_num_frames=len(images),
+                        duration=len(images) / video_fps,
+                    )
+                ],
+                num_frames=len(images),
+                # An explicit None displaces the checkpoint's default
+                # fps=2, which collides with num_frames.
+                fps=None,
+            )
+        LOGGER.debug("Cosmos3 text input:\n%r", text_input)
         model_inputs = self._processor(
             text=text_input,
             return_tensors="pt",
@@ -355,6 +406,9 @@ class Cosmos3EdgeReasoner:
         inputs: dict,
         max_new_tokens: Optional[int] = INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE,
+        prefix_allowed_tokens_fn: Optional[
+            Callable[[int, torch.Tensor], List[int]]
+        ] = None,
         **kwargs,
     ) -> torch.Tensor:
         if max_new_tokens is None:
@@ -371,6 +425,7 @@ class Cosmos3EdgeReasoner:
                 do_sample=do_sample,
                 pad_token_id=pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
+                prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
             )
         return generation[:, input_len:]
 
