@@ -8,6 +8,7 @@ import torch
 from inference_models.configuration import (
     INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS,
 )
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.cosmos3 import cosmos3_reasoner_hf as reasoner_module
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
@@ -324,12 +325,13 @@ def test_load_inference_config_parses_the_trainers_any_size_config(tmp_path) -> 
     assert reasoner_module._load_inference_config(str(tmp_path / "missing")) is None
 
 
-def test_load_inference_config_skips_a_config_the_schema_rejects(tmp_path) -> None:
+def test_load_inference_config_rejects_a_config_the_schema_rejects(tmp_path) -> None:
     broken = json.loads(json.dumps(TRAINER_NULL_INFERENCE_CONFIG))
     broken["network_input"]["dynamic_spatial_size_supported"] = False
     (tmp_path / "inference_config.json").write_text(json.dumps(broken))
 
-    assert reasoner_module._load_inference_config(str(tmp_path)) is None
+    with pytest.raises(CorruptedModelPackageError):
+        reasoner_module._load_inference_config(str(tmp_path))
 
 
 def test_pre_process_generation_applies_the_packages_preprocessing(monkeypatch) -> None:
@@ -337,9 +339,13 @@ def test_pre_process_generation_applies_the_packages_preprocessing(monkeypatch) 
     reasoner._inference_config = reasoner_module.InferenceConfig.model_validate(
         VALID_INFERENCE_CONFIG
     )
-    prepared = torch.zeros((1, 3, 8, 8))
+    prepared = [torch.zeros((3, 8, 8))]
     pre_process = MagicMock(return_value=(prepared, [MagicMock()]))
-    monkeypatch.setattr(reasoner_module, "pre_process_network_input", pre_process)
+    monkeypatch.setattr(
+        reasoner_module,
+        "pre_process_network_input_to_image_list",
+        pre_process,
+    )
 
     reasoner.pre_process_generation(images=np.zeros((8, 8, 3), dtype=np.uint8))
 

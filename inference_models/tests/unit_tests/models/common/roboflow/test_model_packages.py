@@ -569,3 +569,20 @@ def test_parse_inference_config_rejects_no_training_input_size_for_fixed_size_mo
         parse_inference_config(
             config_path=str(config_path), allowed_resize_modes={ResizeMode.STRETCH_TO}
         )
+
+
+def test_parse_inference_config_rejects_unbounded_input_when_size_limit_is_set(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(json.dumps(_any_size_config(None)))
+
+    with pytest.raises(
+        ModelPackageRestrictedError,
+        match="does not declare a training input size",
+    ):
+        parse_inference_config(
+            config_path=str(config_path),
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+            max_allowed_input_size=1024,
+        )
