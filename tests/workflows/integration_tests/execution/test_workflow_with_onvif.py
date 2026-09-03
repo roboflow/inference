@@ -995,6 +995,20 @@ def get_capabilities() -> str:
     return "{}"
 
 
+def wait_for_camera_configuration(camera: CameraWrapper, timeout: float) -> None:
+    # get_camera() only schedules connect_camera_async() on the camera event loop
+    # and returns immediately, while the fake SOAP server exits about a second
+    # after quit_flag is set. Tear the server down only once the camera has
+    # finished (or failed) its GetCapabilities / GetProfiles /
+    # GetConfigurationOptions / GetPresets exchange, otherwise _presets is still
+    # None on a slow runner.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if camera._presets is not None or camera._has_config_error:
+            return
+        time.sleep(0.05)
+
+
 # equivalent to Range returned by ONVIF
 class RangeTest:
     Min: float
@@ -1049,11 +1063,13 @@ def test_workflow_with_onvif(
     sink_block = ONVIFSinkBlockV1()
     event_loop = CameraWrapper.create_event_loop()
     camera = sink_block.get_camera(HOST, PORT, "", "", 1, False, event_loop)
+    assert camera is not None
+    wait_for_camera_configuration(camera, timeout=20)
 
     quit_flag = True
     server_thread.join()
 
-    assert camera is not None
+    assert not camera._has_config_error
     assert list(camera._presets.keys()) == ["1"]
 
     # check config
