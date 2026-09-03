@@ -316,6 +316,14 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         )
 
         if conf_array is not None:
-            result["confidence_mask"] = conf_array
+            # sv.Detections data fields must have one entry per detection:
+            # filtering indexes every field with a length-N boolean mask, and a
+            # bare (H, W) map here fails with "boolean index did not match
+            # indexed array along axis 0". Share the single map across an
+            # object array of length N instead of copying it per class.
+            confidence_maps = np.empty(len(class_id_list), dtype=object)
+            for idx in range(len(class_id_list)):
+                confidence_maps[idx] = conf_array
+            result["confidence_mask"] = confidence_maps
 
         return result

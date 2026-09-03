@@ -156,7 +156,10 @@ def test_convert_to_sv_detections_derives_confidence_from_mask() -> None:
     )
 
     assert "confidence_mask" in result.data
-    assert result.data["confidence_mask"].shape == (50, 50)
+    # One entry per detection so boolean filtering keeps working; each entry
+    # is the shared full-frame confidence map.
+    assert result.data["confidence_mask"].shape == (len(result),)
+    assert result.data["confidence_mask"][0].shape == (50, 50)
     assert result.confidence is not None
     assert abs(float(result.confidence[0]) - 200 / 255.0) < 0.01
 
@@ -334,8 +337,11 @@ def test_convert_to_sv_detections_numpy_masks_match_base64_path() -> None:
     assert [r["counts"] for r in via_numpy.data["rle_mask"]] == [
         r["counts"] for r in via_b64.data["rle_mask"]
     ]
+    assert len(via_numpy.data["confidence_mask"]) == len(
+        via_b64.data["confidence_mask"]
+    )
     assert np.array_equal(
-        via_numpy.data["confidence_mask"], via_b64.data["confidence_mask"]
+        via_numpy.data["confidence_mask"][0], via_b64.data["confidence_mask"][0]
     )
 
 
@@ -360,7 +366,9 @@ _TENSOR_ONLY = pytest.mark.skipif(
 
 
 @_TENSOR_ONLY
-def test_tensor_native_response_conversion_carries_confidence_mask_on_image_metadata() -> None:
+def test_tensor_native_response_conversion_carries_confidence_mask_on_image_metadata() -> (
+    None
+):
     # numpy `v1.py` attaches the decoded confidence map under
     # `result["confidence_mask"]`; the tensor sibling carries the same map on
     # `InstanceDetections.image_metadata` (the serialiser emits neither).
@@ -434,3 +442,30 @@ def test_tensor_native_response_conversion_empty_mask_has_no_confidence_mask() -
 
     assert len(result) == 0
     assert CONFIDENCE_MASK_KEY not in result.image_metadata
+
+
+def test_convert_to_sv_detections_output_survives_boolean_filtering() -> None:
+    # Regression: the confidence map used to be stored as a bare (H, W) array
+    # in `data`, so filtering the detections (which indexes every data field
+    # with a length-N boolean mask) failed with "boolean index did not match
+    # indexed array along axis 0".
+    seg = np.zeros((50, 50), dtype=np.uint8)
+    seg[5:20, 5:20] = 1
+    seg[30:45, 30:45] = 2
+    conf = np.full((50, 50), 200, dtype=np.uint8)
+
+    result = BLOCK_CLS._convert_to_sv_detections(
+        {
+            "segmentation_mask": _encode_mask_as_base64_png(seg),
+            "confidence_mask": _encode_mask_as_base64_png(conf),
+            "class_map": {"1": "cat", "2": "dog"},
+        }
+    )
+    assert len(result) == 2
+
+    filtered = result[np.array([False, True])]
+
+    assert len(filtered) == 1
+    assert filtered.data["class_name"].tolist() == ["dog"]
+    assert filtered.data["confidence_mask"][0].shape == (50, 50)
+    assert filtered.data["confidence_mask"][0] is result.data["confidence_mask"][1]

@@ -74,8 +74,8 @@ else:
 from datetime import datetime
 
 from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_detections_kind,
     deserialize_image_kind,
+    deserialize_rle_detections_kind,
     deserialize_video_metadata_kind,
 )
 
@@ -414,7 +414,7 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
         import supervision as sv
 
         from inference.core.workflows.core_steps.common.serializers import (
-            serialise_sv_detections,
+            serialise_sv_detections_for_transport,
             serialize_video_metadata_kind,
         )
         from inference.core.workflows.execution_engine.entities.base import (
@@ -424,7 +424,7 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
         )
 
         if isinstance(value, sv.Detections):
-            serialized = serialise_sv_detections(detections=value)
+            serialized = serialise_sv_detections_for_transport(detections=value)
             serialized["_type"] = "sv_detections"
         elif isinstance(value, Batch):
             # Batch is not a list/dict subclass, so without an explicit case it
@@ -487,7 +487,7 @@ def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
                     decoded_obj = {
                         k: decode_inputs(v) for k, v in obj.items() if k != "_type"
                     }
-                    return deserialize_detections_kind("input", decoded_obj)
+                    return deserialize_rle_detections_kind("input", decoded_obj)
                 elif obj["_type"] == "video_metadata":
                     # First decode any nested special types
                     decoded_obj = {
@@ -903,7 +903,7 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
     import supervision as sv
 
     from inference.core.workflows.core_steps.common.serializers import (
-        serialise_sv_detections,
+        serialise_sv_detections_for_transport,
         serialize_video_metadata_kind,
     )
     from inference.core.workflows.execution_engine.entities.base import (
@@ -914,7 +914,7 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
 
     def _pack(value: Any) -> Any:
         if isinstance(value, sv.Detections):
-            d = serialise_sv_detections(detections=value)
+            d = serialise_sv_detections_for_transport(detections=value)
             d["_type"] = "sv_detections"
             return {k: _pack(v) for k, v in d.items()}
         if isinstance(value, Batch):
@@ -963,8 +963,8 @@ def _deserialize_msgpack_result(result: Any) -> Any:
     workflow_image, and video_metadata to mirror the HTTP path.
     """
     from inference.core.workflows.core_steps.common.deserializers import (
-        deserialize_detections_kind,
         deserialize_image_kind,
+        deserialize_rle_detections_kind,
         deserialize_video_metadata_kind,
     )
 
@@ -982,7 +982,7 @@ def _deserialize_msgpack_result(result: Any) -> Any:
                 for k, v in result.items()
                 if k != "_type"
             }
-            return deserialize_detections_kind("result", decoded)
+            return deserialize_rle_detections_kind("result", decoded)
         if _type == "workflow_image":
             decoded = {
                 k: _deserialize_msgpack_result(v)
