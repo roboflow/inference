@@ -25,6 +25,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     images_to_pillow,
     make_the_value_divisible,
     pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 
@@ -10141,3 +10142,180 @@ def test_pre_process_network_input_keeps_the_image_size_when_the_model_has_no_tr
     assert result_image.shape == (1, 3, 192, 168)
     assert requested_image.shape == (1, 3, 64, 96)
     assert batched_image.shape == (1, 3, 192, 168)
+
+
+def _any_size_network_input() -> NetworkInputDefinition:
+    return NetworkInputDefinition(
+        training_input_size=None,
+        dynamic_spatial_size_supported=True,
+        dynamic_spatial_size_mode=AnySizePadding(type="any-size"),
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [
+            np.zeros((20, 30, 3), dtype=np.uint8),
+            np.zeros((40, 50, 3), dtype=np.uint8),
+        ],
+        [torch.zeros((3, 20, 30)), torch.zeros((3, 40, 50))],
+    ],
+)
+def test_pre_process_network_input_to_image_list_preserves_heterogeneous_sizes(
+    images,
+) -> None:
+    processed_images, metadata = pre_process_network_input_to_image_list(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_any_size_network_input(),
+        target_device=torch.device("cpu"),
+    )
+
+    assert [tuple(image.shape) for image in processed_images] == [
+        (3, 20, 30),
+        (3, 40, 50),
+    ]
+    assert [item.inference_size for item in metadata] == [
+        ImageDimensions(height=20, width=30),
+        ImageDimensions(height=40, width=50),
+    ]
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [
+            np.zeros((20, 30, 3), dtype=np.uint8),
+            np.zeros((40, 50, 3), dtype=np.uint8),
+        ],
+        [torch.zeros((3, 20, 30)), torch.zeros((3, 40, 50))],
+    ],
+)
+def test_pre_process_network_input_rejects_heterogeneous_dense_batch(images) -> None:
+    with pytest.raises(ModelInputError, match="different spatial dimensions"):
+        pre_process_network_input(
+            images=images,
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_any_size_network_input(),
+            target_device=torch.device("cpu"),
+        )
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [np.zeros((20, 30, 3), dtype=np.uint8) for _ in range(2)],
+        [torch.zeros((3, 20, 30)) for _ in range(2)],
+    ],
+)
+def test_pre_process_network_input_stacks_uniform_any_size_images(images) -> None:
+
+    dense_batch, metadata = pre_process_network_input(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_any_size_network_input(),
+        target_device=torch.device("cpu"),
+    )
+
+    assert dense_batch.shape == (2, 3, 20, 30)
+    assert len(metadata) == 2
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        np.zeros((20, 30, 3), dtype=np.uint8),
+        torch.zeros((3, 20, 30)),
+    ],
+)
+def test_any_size_preprocessing_preserves_dimensions_after_static_crop(image) -> None:
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True,
+                x_min=0,
+                x_max=50,
+                y_min=0,
+                y_max=100,
+            )
+        }
+    )
+
+    processed_images, metadata = pre_process_network_input_to_image_list(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=_any_size_network_input(),
+        target_device=torch.device("cpu"),
+    )
+
+    assert processed_images[0].shape == (3, 20, 15)
+    assert metadata[0].inference_size == ImageDimensions(height=20, width=15)
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [
+            np.zeros((20, 30, 3), dtype=np.uint8),
+            np.zeros((40, 50, 3), dtype=np.uint8),
+        ],
+        [torch.zeros((3, 20, 30)), torch.zeros((3, 40, 50))],
+    ],
+)
+def test_any_size_image_list_applies_explicit_requested_size(images) -> None:
+
+    processed_images, _ = pre_process_network_input_to_image_list(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_any_size_network_input(),
+        target_device=torch.device("cpu"),
+        image_size_wh=(16, 12),
+    )
+
+    assert [tuple(image.shape) for image in processed_images] == [
+        (3, 12, 16),
+        (3, 12, 16),
+    ]
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        [
+            np.zeros((20, 30, 3), dtype=np.uint8),
+            np.zeros((40, 50, 3), dtype=np.uint8),
+        ],
+        [torch.zeros((3, 20, 30)), torch.zeros((3, 40, 50))],
+    ],
+)
+def test_fixed_size_image_list_keeps_dense_preprocessing_behavior(images) -> None:
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    dense_batch, dense_metadata = pre_process_network_input(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+    processed_images, list_metadata = pre_process_network_input_to_image_list(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+
+    assert [tuple(image.shape) for image in processed_images] == [
+        (3, 64, 64),
+        (3, 64, 64),
+    ]
+    assert torch.equal(torch.stack(processed_images), dense_batch)
+    assert list_metadata == dense_metadata

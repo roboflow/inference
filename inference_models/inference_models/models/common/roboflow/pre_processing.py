@@ -36,6 +36,26 @@ def pre_process_network_input(
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    """Pre-process model images into a dense tensor batch.
+
+    Args:
+        images: A single image, dense tensor batch, or list of images.
+        image_pre_processing: Roboflow preprocessing operations to apply.
+        network_input: Model input sizing and color configuration.
+        target_device: Device on which the processed tensor should reside.
+        input_color_format: Color format of the supplied images, when known.
+        image_size_wh: Optional requested output size as width and height.
+        pre_processing_overrides: Per-request preprocessing overrides.
+
+    Returns:
+        A dense ``B x C x H x W`` tensor and matching preprocessing metadata.
+
+    Raises:
+        ModelInputError: If the input is unsupported, empty, or produces images
+            with dimensions that cannot be represented in a dense tensor.
+        ModelRuntimeError: If the model's preprocessing configuration is not
+            supported.
+    """
     if network_input.input_channels != 3:
         raise ModelRuntimeError(
             message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
@@ -83,6 +103,29 @@ def pre_process_network_input(
             "all input batch elements arbitrarily - this type of model does not support input batches.",
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
+    if network_input.training_input_size is None:
+        processed_images, metadata = pre_process_network_input_to_image_list(
+            images=images,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        image_shapes = {tuple(image.shape) for image in processed_images}
+        if len(image_shapes) != 1:
+            raise ModelInputError(
+                message="Pre-processing produced images with different spatial "
+                "dimensions, which cannot be represented as a dense tensor batch. "
+                "Use `pre_process_network_input_to_image_list` for models that "
+                "accept variable-size image lists.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+
+        dense_batch = torch.stack(processed_images, dim=0).contiguous()
+
+        return dense_batch, metadata
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
@@ -109,19 +152,106 @@ def pre_process_network_input(
     )
 
 
+def pre_process_network_input_to_image_list(
+    images: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
+    *,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_format: Optional[ColorFormat] = None,
+    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
+    """Pre-process images for a model that accepts an image tensor list.
+
+    Fixed-size configurations use the established dense preprocessing path. An
+    any-size configuration without a training input size processes every input
+    separately so each image can retain its own post-processing dimensions.
+
+    Args:
+        images: A single image, dense tensor batch, or list of images.
+        image_pre_processing: Roboflow preprocessing operations to apply.
+        network_input: Model input sizing and color configuration.
+        target_device: Device on which the processed tensors should reside.
+        input_color_format: Color format of the supplied images, when known.
+        image_size_wh: Optional requested output size as width and height.
+        pre_processing_overrides: Per-request preprocessing overrides.
+
+    Returns:
+        Processed ``C x H x W`` tensors and matching preprocessing metadata.
+
+    Raises:
+        ModelInputError: If the input is an empty list or has an unsupported type.
+    """
+    if network_input.training_input_size is not None:
+        dense_batch, metadata = pre_process_network_input(
+            images=images,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        processed_images = [image for image in dense_batch]
+
+        return processed_images, metadata
+
+    if isinstance(images, torch.Tensor) and images.ndim == 4:
+        individual_images = [image for image in images]
+    elif isinstance(images, list):
+        individual_images = images
+    else:
+        individual_images = [images]
+
+    if not individual_images:
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
+
+    processed_images, result_metadata = [], []
+    for image in individual_images:
+        dense_image, metadata = pre_process_network_input(
+            images=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        processed_images.append(dense_image[0])
+        result_metadata.extend(metadata)
+
+    return processed_images, result_metadata
+
+
 def resolve_target_dimensions(
     network_input: NetworkInputDefinition,
     image_size_wh: Optional[Tuple[int, int]],
-    original_size_wh: Tuple[int, int],
+    fallback_size_wh: Tuple[int, int],
 ) -> Tuple[int, int]:
-    """The (width, height) the input is prepared at.
+    """Resolve the width and height at which an input is prepared.
 
     A model that accepts any input size may ship no training_input_size (a VLM
     fine-tuned on a version without a resize); its images keep their own size
     unless one is requested.
+
+    Args:
+        network_input: Model input sizing configuration.
+        image_size_wh: Explicitly requested width and height, when supplied.
+        fallback_size_wh: Post-preprocessing width and height to preserve for an
+            any-size model when no explicit size is requested.
+
+    Returns:
+        The target width and height for geometric input preparation.
+
+    Raises:
+        ModelRuntimeError: If a requested dynamic-size mode is unsupported.
     """
     if network_input.training_input_size is None:
-        return image_size_wh if image_size_wh is not None else original_size_wh
+        return image_size_wh if image_size_wh is not None else fallback_size_wh
     target_dimensions = (
         network_input.training_input_size.width,
         network_input.training_input_size.height,
@@ -180,14 +310,16 @@ def pre_process_images_tensor(
     ):
         images = images.permute(0, 3, 1, 2)
     original_size = ImageDimensions(width=images.shape[3], height=images.shape[2])
-    target_dimensions = resolve_target_dimensions(
-        network_input, image_size_wh, (original_size.width, original_size.height)
-    )
     image, static_crop_offset = apply_pre_processing_to_torch_image(
         image=images,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
         pre_processing_overrides=pre_processing_overrides,
+    )
+    target_dimensions = resolve_target_dimensions(
+        network_input,
+        image_size_wh,
+        (image.shape[3], image.shape[2]),
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -878,9 +1010,6 @@ def pre_process_numpy_image(
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
-    target_dimensions = resolve_target_dimensions(
-        network_input, image_size_wh, (image.shape[1], image.shape[0])
-    )
     original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
         image=image,
@@ -888,6 +1017,11 @@ def pre_process_numpy_image(
         network_input_channels=network_input.input_channels,
         input_color_mode=input_color_mode,
         pre_processing_overrides=pre_processing_overrides,
+    )
+    target_dimensions = resolve_target_dimensions(
+        network_input,
+        image_size_wh,
+        (image.shape[1], image.shape[0]),
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(

@@ -24,15 +24,13 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
-from inference_models.errors import CorruptedModelPackageError
-from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 DEFAULT_PROMPT = "Describe what's in this image."
@@ -90,35 +88,23 @@ def _require_cosmos3_transformers() -> None:
 
 
 def _load_inference_config(package_dir: str) -> Optional[InferenceConfig]:
-    """The package's inference_config.json when it has one that parses.
-
-    The Cosmos processor sizes images itself, so the config only carries the
-    version's photometric steps (auto-orient, grayscale, contrast, static crop).
-    roboflow-train currently writes it with training_input_size: null for
-    versions without a resize, which the shared schema rejects; that config
-    could not drive preprocessing anyway, so it is skipped with a warning
-    rather than failing the load.
-    """
+    """Return the package's inference configuration when it is present."""
     config_path = os.path.join(package_dir, "inference_config.json")
     if not os.path.exists(config_path):
         return None
-    try:
-        return parse_inference_config(
-            config_path=config_path,
-            allowed_resize_modes={
-                ResizeMode.STRETCH_TO,
-                ResizeMode.LETTERBOX,
-                ResizeMode.CENTER_CROP,
-                ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
-            },
-        )
-    except CorruptedModelPackageError as error:
-        LOGGER.warning(
-            f"Ignoring {config_path}: {error.__cause__ or error}. Images reach the "
-            "Cosmos 3 Edge processor as-is."
-        )
-        return None
+
+    inference_config = parse_inference_config(
+        config_path=config_path,
+        allowed_resize_modes={
+            ResizeMode.STRETCH_TO,
+            ResizeMode.LETTERBOX,
+            ResizeMode.CENTER_CROP,
+            ResizeMode.LETTERBOX_REFLECT_EDGES,
+            ResizeMode.FIT_LONGER_EDGE,
+        },
+    )
+
+    return inference_config
 
 
 def _adapter_trains_new_tokens(adapter_config_path: str) -> bool:
@@ -308,14 +294,13 @@ class Cosmos3EdgeReasoner:
         if self._inference_config is not None and not as_video:
             # The version's preprocessing (photometric steps, any resize it baked)
             # applied the way the other fine-tuned VLMs do; the result is RGB.
-            images = pre_process_network_input(
+            images, _ = pre_process_network_input_to_image_list(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
-            )[0]
-            images = [frame[0] for frame in torch.split(images, 1, dim=0)]
+            )
         elif isinstance(images, np.ndarray):
             if input_color_format != "rgb":
                 images = images[:, :, ::-1]

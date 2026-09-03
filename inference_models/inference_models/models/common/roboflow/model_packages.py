@@ -3,13 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    Field,
-    ValidationError,
-    model_validator,
-)
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError, model_validator
 
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -377,6 +371,25 @@ def parse_inference_config(
     ] = None,
     max_allowed_input_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> InferenceConfig:
+    """Load and validate a Roboflow model package inference configuration.
+
+    Args:
+        config_path: Path to the package's inference configuration JSON file.
+        allowed_resize_modes: Resize modes supported by the model implementation.
+        implicit_resize_mode_substitutions: Optional mapping from package resize
+            modes to supported substitutes, padding values, and warning messages.
+        max_allowed_input_size: Optional environment limit for training input
+            height and width, or a single limit for both dimensions.
+
+    Returns:
+        The validated inference configuration.
+
+    Raises:
+        CorruptedModelPackageError: If the file cannot be read, is malformed, or
+            declares an unsupported resize mode.
+        ModelPackageRestrictedError: If the package's declared input size cannot
+            be safely checked against the configured environment limit.
+    """
     try:
         decoded_config = read_json(path=config_path)
         if not isinstance(decoded_config, dict):
@@ -421,6 +434,15 @@ def parse_inference_config(
         if isinstance(max_allowed_input_size, int):
             max_allowed_input_size = (max_allowed_input_size, max_allowed_input_size)
         training_input_size = parsed_config.network_input.training_input_size
+        if training_input_size is None:
+            raise ModelPackageRestrictedError(
+                message="Configuration of runtime environment limits model input "
+                f"size to {max_allowed_input_size}, but the model package does not "
+                "declare a training input size that can be validated against that "
+                "limit.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+            )
+
         if (
             training_input_size.height > max_allowed_input_size[0]
             or training_input_size.width > max_allowed_input_size[1]
