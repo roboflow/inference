@@ -286,7 +286,7 @@ VALID_INFERENCE_CONFIG = {
         "input_channels": 3,
     },
 }
-# What roboflow-train writes for a version without a resize: rejected by the shared schema.
+# What roboflow-train writes for a version without a resize: no training size, any-size model.
 TRAINER_NULL_INFERENCE_CONFIG = {
     "image_pre_processing": None,
     "network_input": {
@@ -312,13 +312,24 @@ def test_load_inference_config_parses_a_valid_file(tmp_path) -> None:
     assert config.network_input.training_input_size.height == 64
 
 
-def test_load_inference_config_skips_the_trainers_null_config(tmp_path) -> None:
+def test_load_inference_config_parses_the_trainers_any_size_config(tmp_path) -> None:
     (tmp_path / "inference_config.json").write_text(
         json.dumps(TRAINER_NULL_INFERENCE_CONFIG)
     )
 
-    assert reasoner_module._load_inference_config(str(tmp_path)) is None
+    config = reasoner_module._load_inference_config(str(tmp_path))
+
+    assert config is not None
+    assert config.network_input.training_input_size is None
     assert reasoner_module._load_inference_config(str(tmp_path / "missing")) is None
+
+
+def test_load_inference_config_skips_a_config_the_schema_rejects(tmp_path) -> None:
+    broken = json.loads(json.dumps(TRAINER_NULL_INFERENCE_CONFIG))
+    broken["network_input"]["dynamic_spatial_size_supported"] = False
+    (tmp_path / "inference_config.json").write_text(json.dumps(broken))
+
+    assert reasoner_module._load_inference_config(str(tmp_path)) is None
 
 
 def test_pre_process_generation_applies_the_packages_preprocessing(monkeypatch) -> None:

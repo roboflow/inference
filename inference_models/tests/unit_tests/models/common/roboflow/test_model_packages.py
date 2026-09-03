@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from inference_models.errors import (
@@ -524,4 +526,46 @@ def test_parse_inference_config_when_resize_mode_is_invalid(
         _ = parse_inference_config(
             config_path=inference_config_valid_config,
             allowed_resize_modes={ResizeMode.LETTERBOX},
+        )
+
+
+def _any_size_config(training_input_size, dynamic_spatial_size_supported: bool = True):
+    return {
+        "image_pre_processing": None,
+        "network_input": {
+            "training_input_size": training_input_size,
+            "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+            "dynamic_spatial_size_mode": {"type": "any-size"},
+            "color_mode": "rgb",
+            "resize_mode": "stretch",
+            "input_channels": 3,
+        },
+    }
+
+
+def test_parse_inference_config_accepts_no_training_input_size_for_any_size_model(
+    tmp_path,
+) -> None:
+    # what roboflow-train ships for a VLM fine-tuned on a version without a resize
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(json.dumps(_any_size_config(None)))
+
+    result = parse_inference_config(
+        config_path=str(config_path), allowed_resize_modes={ResizeMode.STRETCH_TO}
+    )
+
+    assert result.network_input.training_input_size is None
+
+
+def test_parse_inference_config_rejects_no_training_input_size_for_fixed_size_model(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "inference_config.json"
+    config_path.write_text(
+        json.dumps(_any_size_config(None, dynamic_spatial_size_supported=False))
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        parse_inference_config(
+            config_path=str(config_path), allowed_resize_modes={ResizeMode.STRETCH_TO}
         )

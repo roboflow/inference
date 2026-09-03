@@ -3,7 +3,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, BeforeValidator, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -279,7 +285,9 @@ Number = Union[int, float]
 
 
 class NetworkInputDefinition(BaseModel):
-    training_input_size: TrainingInputSize
+    # A model that accepts any input size (a VLM whose processor sizes images itself) has
+    # no training size to declare; the trainers ship none for versions without a resize.
+    training_input_size: Optional[TrainingInputSize] = Field(default=None)
     dataset_version_resize_dimensions: Optional[TrainingInputSize] = Field(default=None)
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
@@ -291,6 +299,19 @@ class NetworkInputDefinition(BaseModel):
     input_channels: int
     scaling_factor: Optional[Number] = Field(default=None)
     normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def _training_input_size_may_only_be_omitted_for_any_size_models(self):
+        accepts_any_size = self.dynamic_spatial_size_supported and isinstance(
+            self.dynamic_spatial_size_mode, AnySizePadding
+        )
+        if self.training_input_size is None and not accepts_any_size:
+            raise ValueError(
+                "network_input.training_input_size may only be omitted for models that "
+                "accept any input size (dynamic_spatial_size_supported with an any-size "
+                "dynamic_spatial_size_mode)"
+            )
+        return self
 
 
 class ForwardPassConfiguration(BaseModel):

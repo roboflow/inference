@@ -109,18 +109,19 @@ def pre_process_network_input(
     )
 
 
-@torch.inference_mode()
-def pre_process_images_tensor(
-    images: torch.Tensor,
-    image_pre_processing: ImagePreProcessing,
+def resolve_target_dimensions(
     network_input: NetworkInputDefinition,
-    target_device: torch.device,
-    input_color_mode: Optional[ColorMode] = None,
-    image_size_wh: Optional[Tuple[int, int]] = None,
-    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
-) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if input_color_mode is None:
-        input_color_mode = ColorMode.RGB
+    image_size_wh: Optional[Tuple[int, int]],
+    original_size_wh: Tuple[int, int],
+) -> Tuple[int, int]:
+    """The (width, height) the input is prepared at.
+
+    A model that accepts any input size may ship no training_input_size (a VLM
+    fine-tuned on a version without a resize); its images keep their own size
+    unless one is requested.
+    """
+    if network_input.training_input_size is None:
+        return image_size_wh if image_size_wh is not None else original_size_wh
     target_dimensions = (
         network_input.training_input_size.width,
         network_input.training_input_size.height,
@@ -148,6 +149,27 @@ def pre_process_images_tensor(
                 f"is not implemented.",
                 help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
+    return target_dimensions
+
+
+def _tensor_size_wh(image: torch.Tensor) -> Tuple[int, int]:
+    if image.shape[0] != 3 and image.shape[-1] == 3:
+        return image.shape[1], image.shape[0]
+    return image.shape[2], image.shape[1]
+
+
+@torch.inference_mode()
+def pre_process_images_tensor(
+    images: torch.Tensor,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
     if images.device != target_device:
         images = images.to(target_device)
     if len(images.shape) == 3:
@@ -158,6 +180,9 @@ def pre_process_images_tensor(
     ):
         images = images.permute(0, 3, 1, 2)
     original_size = ImageDimensions(width=images.shape[3], height=images.shape[2])
+    target_dimensions = resolve_target_dimensions(
+        network_input, image_size_wh, (original_size.width, original_size.height)
+    )
     image, static_crop_offset = apply_pre_processing_to_torch_image(
         image=images,
         image_pre_processing=image_pre_processing,
@@ -586,33 +611,9 @@ def pre_process_images_tensor_list(
         )
     if input_color_mode is None:
         input_color_mode = ColorMode.RGB
-    target_dimensions = (
-        network_input.training_input_size.width,
-        network_input.training_input_size.height,
+    target_dimensions = resolve_target_dimensions(
+        network_input, image_size_wh, _tensor_size_wh(images[0])
     )
-    if image_size_wh is not None and image_size_wh != target_dimensions:
-        if not network_input.dynamic_spatial_size_supported:
-            LOGGER.warning(
-                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
-                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
-            target_dimensions = (
-                make_the_value_divisible(
-                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
-                ),
-                make_the_value_divisible(
-                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
-                ),
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
-            target_dimensions = image_size_wh
-        else:
-            raise ModelRuntimeError(
-                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
-                f"is not implemented.",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-            )
     images, static_crop_offsets, original_sizes = (
         apply_pre_processing_to_list_of_torch_image(
             images=images,
@@ -877,33 +878,9 @@ def pre_process_numpy_image(
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
-    target_dimensions = (
-        network_input.training_input_size.width,
-        network_input.training_input_size.height,
+    target_dimensions = resolve_target_dimensions(
+        network_input, image_size_wh, (image.shape[1], image.shape[0])
     )
-    if image_size_wh is not None and image_size_wh != target_dimensions:
-        if not network_input.dynamic_spatial_size_supported:
-            LOGGER.warning(
-                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
-                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
-            target_dimensions = (
-                make_the_value_divisible(
-                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
-                ),
-                make_the_value_divisible(
-                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
-                ),
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
-            target_dimensions = image_size_wh
-        else:
-            raise ModelRuntimeError(
-                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
-                f"is not implemented.",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-            )
     original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
         image=image,

@@ -7,6 +7,7 @@ from inference_models import PreProcessingOverrides
 from inference_models.entities import ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
+    AnySizePadding,
     ColorMode,
     Contrast,
     ContrastType,
@@ -10099,3 +10100,44 @@ def test_make_the_value_divisible_when_value_not_divisible() -> None:
 
     # then
     assert result == 14
+
+
+def test_pre_process_network_input_keeps_the_image_size_when_the_model_has_no_training_size() -> (
+    None
+):
+    # given: a VLM fine-tuned on a version without a resize ships no training_input_size
+    network_input = NetworkInputDefinition(
+        training_input_size=None,
+        dynamic_spatial_size_supported=True,
+        dynamic_spatial_size_mode=AnySizePadding(type="any-size"),
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+    requested_image, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        image_size_wh=(96, 64),
+    )
+    batched_image, _ = pre_process_network_input(
+        images=torch.from_numpy(image).permute(2, 0, 1),
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+
+    # then
+    assert result_image.shape == (1, 3, 192, 168)
+    assert requested_image.shape == (1, 3, 64, 96)
+    assert batched_image.shape == (1, 3, 192, 168)
