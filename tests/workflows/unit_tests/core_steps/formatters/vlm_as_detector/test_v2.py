@@ -892,3 +892,97 @@ def test_formatter_for_florence2_ocr() -> None:
     assert "root_parent_dimensions" in result["predictions"].data
     assert "parent_id" in result["predictions"].data
     assert "root_parent_id" in result["predictions"].data
+
+
+def test_run_method_for_qwen_output_with_only_closing_fence() -> None:
+    # given - Qwen 3.8 Max regularly returns a bare list followed by a lone
+    # closing fence and no opening one (~30% of production detection runs)
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        "[\n"
+        '\t{"bbox_2d": [46, 571, 997, 931], "label": "trailer"},\n'
+        '\t{"bbox_2d": [100, 200, 300, 400], "label": "bombcart"}\n'
+        "]\n"
+        "```"
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["trailer", "bombcart"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == [
+        "trailer",
+        "bombcart",
+    ]
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[46, 571, 997, 931], [100, 200, 300, 400]]),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_zai_flash_json_lines_output() -> None:
+    # given - GLM 5.3 Flash sometimes emits one object per line with no
+    # enclosing array
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        '{"bbox_2d": [618, 129, 644, 176], "label": "car"}\n'
+        '{"bbox_2d": [656, 223, 679, 276], "label": "car"}\n'
+        '{"bbox_2d": [641, 330, 682, 371], "label": "bus"}'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["car", "bus", "truck"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["car", "car", "bus"]
+    assert result["predictions"].class_id.tolist() == [0, 0, 1]
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[618, 129, 644, 176], [656, 223, 679, 276], [641, 330, 682, 371]]),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_truncated_output_sets_error_status() -> None:
+    # given - output cut at max_tokens stays a hard failure
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='```json\n[\n  {"box_2d": [1, 2, 3',
+        classes=["cat"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None

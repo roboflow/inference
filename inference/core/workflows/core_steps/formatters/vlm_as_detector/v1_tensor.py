@@ -1,7 +1,5 @@
 import hashlib
-import json
 import logging
-import re
 from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -12,6 +10,7 @@ import torch
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     convert_gemini_detection_to_pixel_xyxy,
@@ -55,8 +54,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_models.models.base.object_detection import Detections
-
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
@@ -308,29 +305,11 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, Union[dict, list]]:
-    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
-    if len(json_blocks_found) == 0:
-        return try_parse_json(raw_json)
-    first_block = json_blocks_found[0]
-    return try_parse_json(first_block)
-
-
-def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, (dict, list)):
-            return False, parsed
-        logging.warning(
-            "Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
-            f"Unexpected JSON root type: {type(parsed).__name__}."
-        )
-        return True, {}
-    except Exception as error:
-        logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
-            f"Error type: {error.__class__.__name__}. Details: {error}"
-        )
-        return True, {}
+    # Lenient, model-agnostic extraction shared by every vlm_as_* block:
+    # fenced blocks (any tag, unbalanced fences), JSON Lines / bracket-less
+    # object sequences and prose-wrapped payloads are all recovered before
+    # the model-specific parser runs. See common/vlm_json.py.
+    return extract_json_payload(raw_json)
 
 
 def build_image_metadata(

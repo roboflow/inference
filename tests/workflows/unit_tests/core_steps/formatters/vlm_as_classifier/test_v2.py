@@ -340,3 +340,38 @@ def test_run_when_multiple_jsons_in_markdown_block_given() -> None:
     assert result["predictions"]["parent_id"] == "parent"
     assert len(result["inference_id"]) > 0
     assert result["inference_id"] == result["predictions"]["inference_id"]
+
+
+def test_run_when_json_followed_by_stray_closing_fence_given() -> None:
+    # given - a model that closes a markdown fence it never opened
+    raw_json = '{"class_name": "cat", "confidence": 0.9}\n```'
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(image=image, vlm_output=raw_json, classes=["car", "cat"])
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"]["top"] == "cat"
+    assert result["predictions"]["confidence"] == 0.9
+
+
+def test_run_when_json_wrapped_in_prose_given() -> None:
+    # given
+    raw_json = 'Sure! Here is the answer: {"class_name": "cat", "confidence": 0.8} Hope it helps.'
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(image=image, vlm_output=raw_json, classes=["car", "cat"])
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"]["top"] == "cat"
