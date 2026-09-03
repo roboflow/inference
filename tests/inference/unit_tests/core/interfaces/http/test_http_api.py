@@ -2109,3 +2109,174 @@ def test_describe_workflow_interface_still_requires_api_key(monkeypatch) -> None
 
     assert response.status_code == 400
     assert "API key is missing" in response.json()["message"]
+
+
+# --- GET /secure-gateway/health -------------------------------------------
+# Opt-in route (SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED, default False) that
+# probes the configured proxy. The probe itself is unit-tested in
+# handlers/test_secure_gateway.py; here we pin registration, gating, the
+# relay of (status_code, payload) and the auth exemption.
+
+SECURE_GATEWAY_HEALTH_PATH = "/secure-gateway/health"
+
+
+def _build_interface_for_secure_gateway_health(
+    monkeypatch,
+    *,
+    endpoint_enabled: bool,
+    lambda_flag: bool = False,
+    gcp_serverless: bool = False,
+):
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", gcp_serverless)
+    monkeypatch.setattr(http_api, "LAMBDA", lambda_flag)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
+    monkeypatch.setattr(
+        http_api, "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", endpoint_enabled
+    )
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    return http_api.HttpInterface(model_manager=model_manager)
+
+
+def _secure_gateway_payload(**kwargs):
+    from inference.core.entities.responses.secure_gateway import (
+        SecureGatewayHealthResponse,
+    )
+
+    return SecureGatewayHealthResponse(**kwargs)
+
+
+def test_secure_gateway_health_route_is_absent_when_not_opted_in(monkeypatch) -> None:
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=False
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH not in _route_paths(interface)
+
+
+def test_secure_gateway_health_route_is_registered_when_opted_in(monkeypatch) -> None:
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH in _route_paths(interface)
+
+
+@pytest.mark.parametrize(
+    "serverless_flags", [{"lambda_flag": True}, {"gcp_serverless": True}]
+)
+def test_secure_gateway_health_route_is_absent_on_serverless(
+    monkeypatch, serverless_flags
+) -> None:
+    """Serverless has no SECURE_GATEWAY and the Lambda authorizer cannot carry
+    the route - it must not exist there even when the flag is on."""
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True, **serverless_flags
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH not in _route_paths(interface)
+
+
+@pytest.mark.parametrize(
+    "probe_status_code, probe_payload_kwargs",
+    [
+        (200, {"status": "healthy", "gateway_status_code": 200, "latency_ms": 3.2}),
+        (404, {"status": "not_configured"}),
+        (
+            502,
+            {
+                "status": "unhealthy",
+                "reason": "gateway_error",
+                "gateway_status_code": 503,
+            },
+        ),
+        (503, {"status": "unhealthy", "reason": "connection_error"}),
+        (504, {"status": "unhealthy", "reason": "timeout"}),
+    ],
+)
+def test_secure_gateway_health_route_relays_probe_outcome(
+    monkeypatch, probe_status_code, probe_payload_kwargs
+) -> None:
+    probe_mock = MagicMock(
+        return_value=(
+            probe_status_code,
+            _secure_gateway_payload(**probe_payload_kwargs),
+        )
+    )
+    monkeypatch.setattr(http_api, "probe_secure_gateway_health", probe_mock)
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == probe_status_code
+    body = response.json()
+    assert body["status"] == probe_payload_kwargs["status"]
+    assert body["reason"] == probe_payload_kwargs.get("reason")
+    # every key is present so clients can rely on the shape; nothing that
+    # identifies the gateway is part of it
+    assert set(body.keys()) == {"status", "reason", "gateway_status_code", "latency_ms"}
+    probe_mock.assert_called_once()
+
+
+def test_secure_gateway_health_route_passes_configuration_to_probe(monkeypatch) -> None:
+    from inference.core.utils import url_utils
+
+    monkeypatch.setattr(url_utils, "SECURE_GATEWAY", "gateway.local:8080")
+    monkeypatch.setattr(http_api, "SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", 7.5)
+    monkeypatch.setattr(http_api, "ROBOFLOW_API_VERIFY_SSL", False)
+    probe_mock = MagicMock(
+        return_value=(200, _secure_gateway_payload(status="healthy"))
+    )
+    monkeypatch.setattr(http_api, "probe_secure_gateway_health", probe_mock)
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == 200
+    probe_mock.assert_called_once_with(
+        gateway_base_url="http://gateway.local:8080",
+        timeout=7.5,
+        verify_ssl=False,
+    )
+
+
+def test_local_whitelist_middleware_skips_check_for_secure_gateway_health(
+    monkeypatch,
+) -> None:
+    """The proxy probe is liveness-class: reachable without an api_key even
+    when the local-deployment allowlist is enforcing auth (decision D2)."""
+    monkeypatch.setattr(http_api, "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", True)
+    monkeypatch.setattr(
+        http_api,
+        "probe_secure_gateway_health",
+        MagicMock(return_value=(200, _secure_gateway_payload(status="healthy"))),
+    )
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_secure_gateway_health_is_a_health_check_log_path() -> None:
+    assert SECURE_GATEWAY_HEALTH_PATH in http_api.HEALTH_CHECK_LOG_PATHS

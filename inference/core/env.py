@@ -279,6 +279,7 @@ QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
 
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
+ACTION_RECOGNITION_ENABLED = str2bool(os.getenv("ACTION_RECOGNITION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
@@ -310,6 +311,19 @@ ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
 ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
+# Largest clip this deployment will pull from a URL. -1 removes the cap.
+MAX_VIDEO_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_VIDEO_DOWNLOAD_SIZE_MB", "512"))
+# Seconds to wait for the connection, and then for each chunk, when a clip is
+# pulled from a URL. The body streams to disk in chunks, so this bounds each
+# wait rather than the whole download, which the size cap bounds. -1 removes it.
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
+    os.getenv("VIDEO_DOWNLOAD_TIMEOUT_SECONDS", "60")
+)
+# Longest clip one action recognition request will classify. Every window of
+# a clip is a model call, so this bounds the time one request can hold the
+# server, which the size cap alone does not. -1 removes the limit.
+MAX_VIDEO_DURATION_SECONDS = float(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
+
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
 )
@@ -542,6 +556,21 @@ if SECURE_GATEWAY:
     # secure gateway - with the default VERSION_CHECK_MODE=once it runs
     # synchronously at import and can stall startup until the TCP timeout.
     DISABLE_VERSION_CHECK = True
+
+# Opt-in `GET /secure-gateway/health` route that probes the configured
+# SECURE_GATEWAY's own /health endpoint (served identically by the legacy
+# license server and the secure gateway). Disabled by default - operators
+# enable it explicitly on deployments that want proxy diagnostics.
+SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED = str2bool(
+    os.getenv("SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", "False")
+)
+
+# Timeout (seconds) for that probe. Deliberately short: the probe exists to
+# fail fast, while ROBOFLOW_API_REQUEST_TIMEOUT (120s) is sized for model
+# downloads through the gateway.
+SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT = float(
+    os.getenv("SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", "5")
+)
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")

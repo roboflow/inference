@@ -147,7 +147,11 @@ class BlockManifest(WorkflowBlockManifest):
             "name": "Llama 3.2 Vision",
             "version": "v1",
             "deprecated": True,
-            "deprecation_message": "Use the Llama 3.2 Vision v2 block, which adds a Roboflow-managed API key option and user-selectable privacy controls.",
+            "deprecation_message": (
+                "OpenRouter no longer hosts Llama 3.2 Vision. Use the Meta "
+                "block (`roboflow_core/meta_vlm@v2`) for Muse Spark and Muse "
+                "Glimmer."
+            ),
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community",
