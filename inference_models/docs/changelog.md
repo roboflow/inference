@@ -8,8 +8,9 @@
   side caps the longest side at 1920, so a 4K clip no longer reaches the model whole.
   Fine-tunes keep the side they trained on.
 - `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA adapter at the package
-  root over the base checkpoint under `base/`, the layout the other fine-tuned VLMs use. Image
-  fine-tunes only for now; a video fine-tune's class tokens are refused with a clear error. The
+  root over the base checkpoint under `base/`, the layout the other fine-tuned VLMs use. A video
+  fine-tune's class tokens are loaded too: the tokenizer and chat template at the package root
+  are read, and the embedding table grows before the adapter attaches. The
   registry also resolves the architecture under the platform's model type, `cosmos3-edge`, and
   the loader names the `transformers>=5.15` floor the `cosmos3_edge` model type needs.
 - `InferenceConfig` accepts a package with no `network_input.training_input_size` when the model
