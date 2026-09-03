@@ -13,25 +13,6 @@
   `VideoSampling` contract that travels with the model, so a caller never
   states how to cut a video. `plan_windows` and `merge_segment` apply it.
 
-- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, task
-  `action-recognition`, backend `hugging-face`). A fine-tune registered under
-  that task carries a class list that resolves to `<|cls:...|>` tokens, and
-  answers in the training span format under a decoding constraint. The hosted
-  base runs zero-shot, in its own words, over windows of 76 frames. A
-  malformed package raises `CorruptedModelPackageError` rather than loading
-  as zero-shot.
-
-- Zero-shot reads a clip in windows rather than whole. Nothing bounded an
-  untrained sample before, so a long clip held every sampled frame at once.
-  The 76-frame window is empirical: it is the only size at which
-  finer-grained answers have been observed, and windowing there also recovers
-  them on longer clips, where reading whole returned one coarse segment. A
-  trained model is unaffected, since its own budget already bounds its sample.
-
-- Zero-shot reads frames at 1080p at most. A model that declared no frame
-  side caps the longest side at 1920, so a 4K clip no longer reaches the
-  model whole. A fine-tune keeps the side it trained on.
-
 - `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA
   adapter at the package root over the base checkpoint under `base/`, the
   layout the other fine-tuned VLMs use. A video fine-tune adds one class
@@ -44,6 +25,12 @@
 - `Cosmos3EdgeReasoner` gained `enable_thinking`, which a fine-tune turns
   off, and constrained decoding on the video path. It passes real
   `VideoMetadata`, so the model's frame timestamps match the clip.
+
+- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, task
+  `action-recognition`, backend `hugging-face`). A fine-tune registered under
+  that task carries a class list that resolves to `<|cls:...|>` tokens, and
+  answers in the training span format under a decoding constraint. The hosted
+  base runs zero-shot, in its own words.
 
 - `InferenceConfig` accepts a package with no
   `network_input.training_input_size` when the model accepts any input size
