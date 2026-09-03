@@ -9,7 +9,11 @@ import cv2
 import numpy as np
 from requests import RequestException
 
-from inference.core.env import MAX_VIDEO_DOWNLOAD_SIZE_MB, OFFLINE_MODE
+from inference.core.env import (
+    MAX_VIDEO_DOWNLOAD_SIZE_MB,
+    OFFLINE_MODE,
+    VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+)
 from inference.core.exceptions import (
     InputImageLoadError,
     InvalidImageTypeDeclared,
@@ -75,6 +79,7 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
                         prepared_url=prepared_url,
                         sink=file.write,
                         max_bytes=_max_download_bytes(),
+                        request_timeout=_download_timeout(),
                     )
                 except URLAddressNotAllowedError as error:
                     message = "URL points to a network destination that is not allowed."
@@ -92,6 +97,12 @@ def video_source_path(video_type: str, value: str) -> Iterator[str]:
     finally:
         with contextlib.suppress(OSError):
             os.remove(path)
+
+
+def _download_timeout() -> Optional[float]:
+    if VIDEO_DOWNLOAD_TIMEOUT_SECONDS < 0:
+        return None
+    return VIDEO_DOWNLOAD_TIMEOUT_SECONDS
 
 
 def _max_download_bytes() -> Optional[int]:

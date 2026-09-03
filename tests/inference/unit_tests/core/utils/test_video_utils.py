@@ -262,3 +262,44 @@ def test_probe_video_rejects_a_still_image(tmp_path):
 
     with pytest.raises(InputImageLoadError, match="still image"):
         probe_video(path=still)
+
+
+def _url_fetch_capturing(monkeypatch):
+    """Let a URL clip through the address checks and capture the fetch call."""
+    from inference.core.utils import video_utils
+
+    captured = {}
+
+    def fake_fetch(prepared_url, sink=None, max_bytes=None, request_timeout=None):
+        captured["request_timeout"] = request_timeout
+        sink(b"not really a clip")
+        return None
+
+    monkeypatch.setattr(video_utils, "_ensure_url_input_allowed", lambda: None)
+    monkeypatch.setattr(video_utils, "_validate_url_destination", lambda value: value)
+    monkeypatch.setattr(video_utils, "_fetch_image_bytes_from_url", fake_fetch)
+    return captured
+
+
+def test_a_url_clip_is_fetched_with_the_configured_timeout(monkeypatch):
+    from inference.core.utils import video_utils
+
+    monkeypatch.setattr(video_utils, "VIDEO_DOWNLOAD_TIMEOUT_SECONDS", 12.5)
+    captured = _url_fetch_capturing(monkeypatch)
+
+    with video_utils.video_source_path("url", "https://example.com/clip.mp4"):
+        pass
+
+    assert captured["request_timeout"] == 12.5
+
+
+def test_a_negative_timeout_setting_removes_the_timeout(monkeypatch):
+    from inference.core.utils import video_utils
+
+    monkeypatch.setattr(video_utils, "VIDEO_DOWNLOAD_TIMEOUT_SECONDS", -1)
+    captured = _url_fetch_capturing(monkeypatch)
+
+    with video_utils.video_source_path("url", "https://example.com/clip.mp4"):
+        pass
+
+    assert captured["request_timeout"] is None

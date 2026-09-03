@@ -472,6 +472,7 @@ def _fetch_image_bytes_from_url(
     prepared_url: str,
     sink: Optional[Callable[[bytes], Any]] = None,
     max_bytes: Optional[int] = None,
+    request_timeout: Optional[float] = None,
 ) -> Optional[bytes]:
     """Dispatch URL fetching to the hardened per-hop validator or the legacy
     (redirect-following) path, based on VALIDATE_IMAGE_URL_REDIRECTS. Non-global
@@ -489,6 +490,7 @@ def _fetch_image_bytes_from_url(
             validate_redirect=_validate_url_destination,
             sink=sink,
             max_bytes=max_bytes,
+            request_timeout=request_timeout,
         )
     return fetch_url_content_legacy(
         url=prepared_url,
@@ -496,6 +498,7 @@ def _fetch_image_bytes_from_url(
         max_redirects=MAX_IMAGE_URL_REDIRECTS,
         sink=sink,
         max_bytes=max_bytes,
+        request_timeout=request_timeout,
     )
 
 

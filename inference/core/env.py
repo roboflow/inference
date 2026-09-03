@@ -313,6 +313,12 @@ ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
 )
 # Largest clip this deployment will pull from a URL. -1 removes the cap.
 MAX_VIDEO_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_VIDEO_DOWNLOAD_SIZE_MB", "512"))
+# Seconds to wait for the connection, and then for each chunk, when a clip is
+# pulled from a URL. The body streams to disk in chunks, so this bounds each
+# wait rather than the whole download, which the size cap bounds. -1 removes it.
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
+    os.getenv("VIDEO_DOWNLOAD_TIMEOUT_SECONDS", "60")
+)
 
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
