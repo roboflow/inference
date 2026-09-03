@@ -1,5 +1,8 @@
 """Integration tests for Cosmos 3 Edge (reasoner + world model) on real weights.
 
+Action recognition has its own suite in
+``test_cosmos3_action_recognition_predictions.py``.
+
 Both tests load from local package directories (the layouts produced by
 `development/cosmos3/pull_weights.py`) pointed to by env vars, so they can run
 before the packages are published to the weights provider:

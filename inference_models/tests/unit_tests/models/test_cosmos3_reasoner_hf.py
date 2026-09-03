@@ -69,8 +69,29 @@ def test_pre_process_generation_video_path_passes_frames_as_video() -> None:
 
     conversation = reasoner._processor.apply_chat_template.call_args.args[0]
     assert conversation[1]["content"][0]["type"] == "video"
-    assert "videos" in reasoner._processor.call_args.kwargs
-    assert len(reasoner._processor.call_args.kwargs["videos"][0]) == 4
+    processor_kwargs = reasoner._processor.call_args.kwargs
+    assert "videos" in processor_kwargs
+    assert len(processor_kwargs["videos"][0]) == 4
+    assert "video_metadata" not in processor_kwargs
+    assert "num_frames" not in processor_kwargs
+
+
+def test_pre_process_generation_video_path_passes_fps_metadata() -> None:
+    reasoner = _model_with_processor()
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(4)]
+
+    reasoner.pre_process_generation(
+        images=frames,
+        as_video=True,
+        video_fps=5.0,
+    )
+
+    processor_kwargs = reasoner._processor.call_args.kwargs
+    metadata = processor_kwargs["video_metadata"][0]
+    assert metadata.fps == 5.0
+    assert metadata.total_num_frames == 4
+    assert metadata.duration == 0.8
+    assert processor_kwargs["num_frames"] == 4
 
 
 def test_pre_process_generation_casts_floating_point_inputs_to_model_dtype() -> None:
@@ -150,9 +171,51 @@ def test_prompt_video_returns_single_string() -> None:
     result = reasoner.prompt_video(
         frames=[np.zeros((8, 8, 3), dtype=np.uint8)] * 2,
         prompt="What will happen next?",
+        video_fps=5.0,
     )
 
     assert result == "a robot arm"
+    metadata = reasoner._processor.call_args.kwargs["video_metadata"][0]
+    assert metadata.fps == 5.0
+    assert metadata.total_num_frames == 2
+    assert metadata.duration == 0.4
+    assert reasoner._processor.call_args.kwargs["num_frames"] == 2
+
+
+def test_prompt_video_forwards_prefix_allowed_tokens_fn() -> None:
+    reasoner = _model_with_processor()
+    reasoner.generate = MagicMock(return_value=torch.tensor([[9]]))
+    reasoner._processor.batch_decode.return_value = ["answer"]
+    prefix_allowed_tokens_fn = MagicMock()
+    prefix_allowed_tokens_fn.set_input_length = MagicMock()
+
+    reasoner.prompt_video(
+        frames=[np.zeros((8, 8, 3), dtype=np.uint8)],
+        prompt="Classify this.",
+        prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+    )
+
+    prefix_allowed_tokens_fn.set_input_length.assert_called_once_with(3)
+    assert (
+        reasoner.generate.call_args.kwargs["prefix_allowed_tokens_fn"]
+        is prefix_allowed_tokens_fn
+    )
+
+
+def test_generate_forwards_prefix_allowed_tokens_fn_to_model() -> None:
+    reasoner = _model_with_processor()
+    reasoner._model.generate.return_value = torch.tensor([[1, 2, 9]])
+    prefix_allowed_tokens_fn = MagicMock()
+
+    reasoner.generate(
+        inputs={"input_ids": torch.tensor([[1, 2]])},
+        prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+    )
+
+    assert (
+        reasoner._model.generate.call_args.kwargs["prefix_allowed_tokens_fn"]
+        is prefix_allowed_tokens_fn
+    )
 
 
 def _fake_loaded_model() -> MagicMock:
@@ -199,16 +262,59 @@ def test_from_pretrained_loads_a_roboflow_fine_tune_from_its_adapter(
     assert reasoner.default_system_prompt == reasoner_module.FINE_TUNE_SYSTEM_PROMPT
 
 
-def test_from_pretrained_refuses_a_fine_tune_with_class_tokens(
+def test_from_pretrained_resizes_embeddings_before_attaching_a_class_token_adapter(
     tmp_path, monkeypatch
 ) -> None:
+    # A video fine-tune adds class tokens. Their tokenizer sits at the package
+    # root, and the base needs rows for them before the adapter attaches.
     (tmp_path / "adapter_config.json").write_text(
-        json.dumps({"trainable_token_indices": {"embed_tokens": [151669]}})
+        json.dumps(
+            {"peft_type": "LORA", "trainable_token_indices": {"embed_tokens": [131072]}}
+        )
+    )
+    (tmp_path / "base").mkdir()
+    (tmp_path / "chat_template.jinja").write_text("{{ messages }}")
+    order = []
+    base_model = MagicMock()
+    base_model.get_input_embeddings.return_value.weight.shape = (131072, 8)
+    base_model.resize_token_embeddings.side_effect = lambda n: order.append(
+        ("resize", n)
+    )
+    tokenizer = MagicMock()
+    tokenizer.__len__ = lambda self: 131077
+    processor = MagicMock()
+    peft_model = MagicMock()
+    peft_model.merge_and_unload.return_value = _fake_loaded_model()
+    load_adapter = MagicMock(
+        side_effect=lambda *a, **k: order.append("attach") or peft_model
     )
     monkeypatch.setattr(reasoner_module, "_require_cosmos3_transformers", lambda: None)
+    monkeypatch.setattr(
+        reasoner_module.AutoModelForImageTextToText,
+        "from_pretrained",
+        MagicMock(return_value=base_model),
+    )
+    monkeypatch.setattr(reasoner_module.PeftModel, "from_pretrained", load_adapter)
+    monkeypatch.setattr(
+        reasoner_module.AutoProcessor,
+        "from_pretrained",
+        MagicMock(return_value=processor),
+    )
+    load_tokenizer = MagicMock(return_value=tokenizer)
+    monkeypatch.setattr(
+        reasoner_module.AutoTokenizer, "from_pretrained", load_tokenizer
+    )
 
-    with pytest.raises(NotImplementedError, match="video fine-tune"):
-        Cosmos3EdgeReasoner.from_pretrained(str(tmp_path), device=torch.device("cpu"))
+    reasoner = Cosmos3EdgeReasoner.from_pretrained(
+        str(tmp_path), device=torch.device("cpu")
+    )
+
+    assert load_tokenizer.call_args.args[0] == str(tmp_path)
+    assert processor.tokenizer is tokenizer
+    assert processor.chat_template == "{{ messages }}"
+    assert order == [("resize", 131077), "attach"]
+    assert reasoner.package_dir == str(tmp_path)
+    assert reasoner._enable_thinking is False
 
 
 def test_require_cosmos3_transformers_names_the_floor(monkeypatch) -> None:
