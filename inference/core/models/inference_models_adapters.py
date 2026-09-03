@@ -104,6 +104,7 @@ from inference_models.configuration import (
 )
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
+    effective_max_frame_side,
     plan_windows,
 )
 from inference_models.models.base.async_handoff import (
@@ -2019,7 +2020,7 @@ class InferenceModelsActionRecognitionAdapter(Model):
             window_frames = read_frame_windows(
                 path=path,
                 windows=[window.frame_indices for window in windows],
-                max_frame_side=sampling.max_frame_side,
+                max_frame_side=effective_max_frame_side(sampling),
             )
             for window, frames in zip(windows, window_frames):
                 if len(frames) < max(1, sampling.min_frames):

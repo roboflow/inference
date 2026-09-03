@@ -29,6 +29,14 @@ _MICROSECONDS = 1_000_000
 # clips returned coarse answers, and no mechanism explains why. Treat it as
 # the best available guess, not a threshold.
 UNTRAINED_MAX_FRAMES = 76
+# The longest frame side an untrained model reads, which is 1080p for a
+# landscape clip: a 3840x2160 frame lands at 1920x1080 and a portrait
+# 1080x1920 frame is untouched. Nothing else shrinks a large frame on that
+# path. The checkpoint's own video processor bounds a frame by pixel count at
+# 6144x4096, so a 4K frame reaches the model whole, and its visual tokens grow
+# with the pixels: four times the tokens of 1080p, over every sampled frame.
+# NVIDIA's demo clips are 720p and 1080p and are unchanged by this.
+UNTRAINED_MAX_FRAME_SIDE = 1920
 
 
 @dataclass(frozen=True)
@@ -200,6 +208,21 @@ def plan_windows(
         if not windows or len(set(remainder.frame_indices)) > 1:
             windows.append(remainder)
     return windows
+
+
+def effective_max_frame_side(sampling: VideoSampling) -> Optional[int]:
+    """The longest side frames are read at, or ``None`` to read them whole.
+
+    A declared side is training's and wins. A model that recorded no frame
+    budget recorded nothing about size either, and is read at
+    ``UNTRAINED_MAX_FRAME_SIDE``. A trained model that declared no side keeps
+    its frames whole: absent means absent for a contract training wrote.
+    """
+    if sampling.max_frame_side is not None:
+        return sampling.max_frame_side
+    if sampling.max_frames is None:
+        return UNTRAINED_MAX_FRAME_SIDE
+    return None
 
 
 def _window_span_us(sampling: VideoSampling) -> Optional[int]:

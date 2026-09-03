@@ -629,3 +629,23 @@ def test_a_mixed_batch_converts_only_the_tensors() -> None:
 
     assert result[1] is numpy_frame
     assert result[0].shape == (6, 8, 3)
+
+
+def test_zero_shot_caps_a_4k_frame_at_1080p() -> None:
+    reasoner = _FakeReasoner(response="[]")
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)  # untrained: zero-shot
+
+    frames = [np.zeros((2160, 3840, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=frames, fps=4.0)
+
+    assert all(f.shape == (1080, 1920, 3) for f in reasoner.calls[0]["frames"])
+
+
+def test_zero_shot_leaves_a_1080p_frame_alone() -> None:
+    reasoner = _FakeReasoner(response="[]")
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    frames = [np.zeros((1080, 1920, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=frames, fps=4.0)
+
+    assert all(f.shape == (1080, 1920, 3) for f in reasoner.calls[0]["frames"])

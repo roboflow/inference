@@ -17,6 +17,7 @@ from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
+    effective_max_frame_side,
 )
 from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
@@ -435,7 +436,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
     ) -> List[ActionRecognitionPrediction]:
         assert self.class_names is not None
         frames = _cap_frame_side(
-            frames=frames, max_side=self._video_sampling.max_frame_side
+            frames=frames, max_side=effective_max_frame_side(self._video_sampling)
         )
         if class_filter is None:
             classes = list(self.class_names)
@@ -505,6 +506,9 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
                 "the model to classify into a fixed vocabulary.",
                 len(class_names),
             )
+        frames = _cap_frame_side(
+            frames=frames, max_side=effective_max_frame_side(self._video_sampling)
+        )
         generation_kwargs = dict(kwargs)
         generation_kwargs.setdefault("max_new_tokens", ZERO_SHOT_MAX_NEW_TOKENS)
         generation_kwargs.update(

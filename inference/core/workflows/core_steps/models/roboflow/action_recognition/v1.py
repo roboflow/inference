@@ -48,7 +48,10 @@ from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
-from inference_models.models.base.action_recognition import VideoSampling
+from inference_models.models.base.action_recognition import (
+    VideoSampling,
+    effective_max_frame_side,
+)
 
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
@@ -378,7 +381,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if frame_number >= bookkeeping.next_sample_frame_number:
             frame = self._cap_frame_side(
                 frame=self._extract_frame(image=image),
-                max_side=video_sampling.max_frame_side,
+                max_side=effective_max_frame_side(video_sampling),
             )
             # Frames can arrive with gaps. A timestamp stranded in a gap has
             # no frame of its own, and copying this one under each would

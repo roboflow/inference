@@ -261,3 +261,25 @@ def test_a_negative_duration_cap_removes_the_limit(monkeypatch):
         response = _adapter(model).infer_from_request(_request())
 
     assert response.frame_count == 36000
+
+
+def _side_handed_to_the_reader(model) -> object:
+    with patch(f"{MODULE}.video_source_path") as source_path, patch(
+        f"{MODULE}.probe_video", return_value=(10.0, 100)
+    ), patch(f"{MODULE}.read_frame_windows", return_value=iter([])) as reader:
+        source_path.return_value.__enter__ = MagicMock(return_value="/tmp/clip")
+        source_path.return_value.__exit__ = MagicMock(return_value=False)
+        _adapter(model).infer_from_request(_request())
+    return reader.call_args.kwargs["max_frame_side"]
+
+
+def test_an_untrained_model_is_read_at_the_1080p_ceiling() -> None:
+    model = _FakeModel(responses=[], sampling=VideoSampling())
+
+    assert _side_handed_to_the_reader(model) == 1920
+
+
+def test_a_trained_model_without_a_declared_side_is_read_whole() -> None:
+    model = _FakeModel(responses=[], sampling=VideoSampling(max_frames=64))
+
+    assert _side_handed_to_the_reader(model) is None

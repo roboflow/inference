@@ -4,6 +4,9 @@
 
 ### Added
 
+- Zero-shot action recognition reads frames at 1080p at most: a model that declared no frame
+  side caps the longest side at 1920, so a 4K clip no longer reaches the model whole.
+  Fine-tunes keep the side they trained on.
 - `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA adapter at the package
   root over the base checkpoint under `base/`, the layout the other fine-tuned VLMs use. Image
   fine-tunes only for now; a video fine-tune's class tokens are refused with a clear error. The

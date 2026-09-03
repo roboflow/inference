@@ -3,9 +3,11 @@ from dataclasses import dataclass
 import pytest
 
 from inference_models.models.base.action_recognition import (
+    UNTRAINED_MAX_FRAME_SIDE,
     WHOLE_VIDEO_MODE,
     ActionRecognitionPrediction,
     VideoSampling,
+    effective_max_frame_side,
     merge_segment,
     plan_windows,
 )
@@ -419,3 +421,20 @@ def test_a_clip_shorter_than_one_window_keeps_its_only_window() -> None:
 
     assert len(windows) == 1
     assert set(windows[0].frame_indices) == {0}
+
+
+def test_a_declared_frame_side_is_read_as_declared() -> None:
+    assert (
+        effective_max_frame_side(VideoSampling(max_frame_side=360, max_frames=64))
+        == 360
+    )
+    assert effective_max_frame_side(VideoSampling(max_frame_side=360)) == 360
+
+
+def test_an_untrained_model_reads_at_the_1080p_ceiling() -> None:
+    assert effective_max_frame_side(VideoSampling()) == UNTRAINED_MAX_FRAME_SIDE == 1920
+
+
+def test_a_trained_model_that_declared_no_side_reads_frames_whole() -> None:
+    # Absent means absent for a contract training wrote.
+    assert effective_max_frame_side(VideoSampling(max_frames=64)) is None
