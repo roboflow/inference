@@ -52,7 +52,7 @@ def test_extract_json_payload_when_fence_has_no_language_tag() -> None:
 
 
 def test_extract_json_payload_when_only_closing_fence_present() -> None:
-    # given - verbatim shape of Qwen 3.8 Max object-detection failures
+    # given - Qwen 3.8 Max shape
     raw = (
         "[\n"
         '\t{"bbox_2d": [46, 571, 997, 931], "label": "trailer"},\n'
@@ -82,7 +82,7 @@ def test_extract_json_payload_when_only_opening_fence_present() -> None:
 
 
 def test_extract_json_payload_when_json_lines_given() -> None:
-    # given - verbatim shape of GLM 5.3 Flash object-detection failures
+    # given - GLM 5.3 Flash shape
     raw = (
         '{"bbox_2d": [618, 129, 644, 176], "label": "car"}\n'
         '{"bbox_2d": [656, 223, 679, 276], "label": "car"}\n'
@@ -152,7 +152,7 @@ def test_extract_json_payload_when_object_wrapped_in_prose_given() -> None:
 def test_extract_json_payload_when_object_sequence_has_garbage_between_entries() -> (
     None
 ):
-    # given - unrelated text between objects must not be silently dropped
+    # given
     raw = '{"a": 1} some explanation {"a": 2}'
 
     # when

@@ -1,61 +1,22 @@
-"""Lenient JSON extraction for VLM / LLM text output.
-
-Every ``vlm_as_*`` formatter block needs to turn a model's free-text answer
-into a JSON payload before its model-specific parser runs. Models drift
-from the prompted format in a handful of recurring, model-agnostic ways,
-and each of them used to be handled by a one-off hook keyed on
-``model_type`` (or not at all). Observed in production:
-
-* a bare JSON array followed by a lone closing fence and no opening one
-  (Qwen 3.8 Max object detection, ~30% of responses);
-* one JSON object per line with no enclosing array (GLM 5.3 Flash);
-* ``{...}, {...}`` objects without the surrounding array (Muse Glimmer);
-* a JSON array wrapped in prose (Z.ai GLM models);
-* a fenced block tagged something other than ``json`` or not tagged at all.
-
-:func:`extract_json_payload` tries a fixed chain of strategies, strictest
-first, and returns the first JSON payload it can decode. The chain is
-deliberately conservative: a recovery step only succeeds when the *whole*
-candidate text is accounted for, so unrelated fragments in garbage output
-do not turn a parse failure into an empty success.
-"""
-
 import json
 import re
 from typing import List, Optional, Tuple, Union
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 ANY_MARKDOWN_BLOCK_PATTERN = re.compile(r"```[a-zA-Z0-9_+-]*[ \t]*\r?\n?([\s\S]*?)```")
-# A line holding nothing but a fence marker (``` or ```json), which is what a
-# model leaves behind when it opens or closes a block it never balanced.
 FENCE_LINE_PATTERN = re.compile(r"^[ \t]*```[a-zA-Z0-9_+-]*[ \t]*$", flags=re.MULTILINE)
-# Separators tolerated between top-level objects in a sequence (JSON Lines,
-# or comma-separated objects with the array brackets missing).
 OBJECT_SEQUENCE_SEPARATOR_PATTERN = re.compile(r"^[\s,]*$")
 
 JsonPayload = Union[dict, list]
 
 
 def extract_json_payload(raw: str) -> Tuple[bool, JsonPayload]:
-    """Decode a JSON ``dict`` or ``list`` from raw VLM text output.
+    """Lenient JSON extraction from VLM output, returning (error_status, payload).
 
-    Strategies, in order; the first one that decodes wins:
-
-    1. The first ```` ```json ```` fenced block.
-    2. The first fenced block with any (or no) language tag.
-    3. The whole text with stray fence lines removed.
-    4. A sequence of top-level JSON objects (JSON Lines, or ``{...}, {...}``
-       without array brackets), returned as a list. The whole text must be
-       consumed by objects and separators.
-    5. The outermost ``[...]`` or ``{...}`` substring, for JSON wrapped in prose.
-
-    Args:
-        raw: Raw text returned by the model.
-
-    Returns:
-        ``(error_status, payload)`` — ``error_status`` is ``True`` and the
-        payload an empty dict when nothing decodable was found, matching the
-        contract of the formatter blocks' previous ``string2json`` helpers.
+    Tries, in order: the first ```json block, the first fenced block with any
+    tag, the text with stray fence lines removed, a sequence of top-level
+    objects (JSON Lines / `{...}, {...}`), and the outermost [...] or {...}
+    substring.
     """
     if not isinstance(raw, str):
         return True, {}
@@ -84,15 +45,7 @@ def _candidate_texts(raw: str) -> List[str]:
         candidates.append(any_blocks[0])
     candidates.append(raw)
     candidates.append(FENCE_LINE_PATTERN.sub("", raw))
-    # Preserve order, drop exact duplicates so each text is decoded once.
-    seen = set()
-    unique: List[str] = []
-    for candidate in candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        unique.append(candidate)
-    return unique
+    return list(dict.fromkeys(candidates))
 
 
 def _try_parse_json(content: str) -> Optional[JsonPayload]:
@@ -106,16 +59,12 @@ def _try_parse_json(content: str) -> Optional[JsonPayload]:
 
 
 def _parse_object_sequence(content: str) -> Optional[list]:
-    """Decode ``{...}\\n{...}`` or ``{...}, {...}`` into a list of dicts.
-
-    Succeeds only when at least one object is found and every character
-    outside the objects is whitespace or a comma.
-    """
+    # Only succeeds when the whole text is objects separated by whitespace or
+    # commas, so garbage around fragments never becomes an empty success.
     decoder = json.JSONDecoder()
     entries: List[dict] = []
     index = 0
-    length = len(content)
-    while index < length:
+    while index < len(content):
         start = content.find("{", index)
         if start == -1:
             break
@@ -129,9 +78,7 @@ def _parse_object_sequence(content: str) -> Optional[list]:
             return None
         entries.append(entry)
         index = end
-    if not entries:
-        return None
-    if not OBJECT_SEQUENCE_SEPARATOR_PATTERN.match(content[index:]):
+    if not entries or not OBJECT_SEQUENCE_SEPARATOR_PATTERN.match(content[index:]):
         return None
     return entries
 

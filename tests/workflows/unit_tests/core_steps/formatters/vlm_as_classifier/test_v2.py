@@ -343,7 +343,7 @@ def test_run_when_multiple_jsons_in_markdown_block_given() -> None:
 
 
 def test_run_when_json_followed_by_stray_closing_fence_given() -> None:
-    # given - a model that closes a markdown fence it never opened
+    # given
     raw_json = '{"class_name": "cat", "confidence": 0.9}\n```'
     image = WorkflowImageData(
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),

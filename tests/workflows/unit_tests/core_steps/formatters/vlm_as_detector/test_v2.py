@@ -895,8 +895,7 @@ def test_formatter_for_florence2_ocr() -> None:
 
 
 def test_run_method_for_qwen_output_with_only_closing_fence() -> None:
-    # given - Qwen 3.8 Max regularly returns a bare list followed by a lone
-    # closing fence and no opening one (~30% of production detection runs)
+    # given - Qwen 3.8 Max: bare list + lone closing fence
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
@@ -933,8 +932,7 @@ def test_run_method_for_qwen_output_with_only_closing_fence() -> None:
 
 
 def test_run_method_for_zai_flash_json_lines_output() -> None:
-    # given - GLM 5.3 Flash sometimes emits one object per line with no
-    # enclosing array
+    # given - GLM 5.3 Flash: JSON Lines, no enclosing array
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
@@ -967,7 +965,7 @@ def test_run_method_for_zai_flash_json_lines_output() -> None:
 
 
 def test_run_method_for_truncated_output_sets_error_status() -> None:
-    # given - output cut at max_tokens stays a hard failure
+    # given - output cut at max_tokens
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
         numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),

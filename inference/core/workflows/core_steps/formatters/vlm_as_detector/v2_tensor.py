@@ -372,10 +372,6 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, Union[dict, list]]:
-    # Lenient, model-agnostic extraction shared by every vlm_as_* block:
-    # fenced blocks (any tag, unbalanced fences), JSON Lines / bracket-less
-    # object sequences and prose-wrapped payloads are all recovered before
-    # the model-specific parser runs. See common/vlm_json.py.
     return extract_json_payload(raw_json)
 
 
