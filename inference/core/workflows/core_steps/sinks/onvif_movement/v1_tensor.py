@@ -20,6 +20,9 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
     take_prediction_by_mask,
 )
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+    NO_LAN_FROM_HOSTED_RESTRICTION,
+)
 from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_DIMENSIONS_KEY,
     TRACKER_ID_KEY,
@@ -42,7 +45,6 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
-    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -256,21 +258,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        # ONVIF commands are issued from this process regardless of where
-        # model steps execute; only network reachability of the camera
-        # restricts the block.
-        no_lan_from_hosted = RuntimeRestriction(
-            severity=Severity.HARD,
-            note=(
-                "Block requires LAN access to a PTZ camera. Hosted Serverless "
-                "and Roboflow Dedicated Deployments cannot reach customer LANs."
-            ),
-            applies_to_runtimes=[
-                Runtime.HOSTED_SERVERLESS,
-                Runtime.DEDICATED_DEPLOYMENT,
-            ],
-        )
-        return [no_lan_from_hosted]
+        return [NO_LAN_FROM_HOSTED_RESTRICTION]
 
 
 # primarily used for rate limiting

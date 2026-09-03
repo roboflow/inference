@@ -3,6 +3,9 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.cache.common import (
+    IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION,
+)
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -17,7 +20,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
     RuntimeRestriction,
     WorkflowBlock,
@@ -131,12 +133,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        # The cache lives in this process, keyed by video_identifier, so it is
-        # only meaningful when one engine instance sees every frame of a video.
-        # That is exactly the caveat the shared stateful-video preset states.
-        # Where model steps execute is irrelevant: this block has no remote
-        # path and always runs in-process.
-        return [STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION]
+        return [IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION]
 
 
 class CacheSetBlockV1(WorkflowBlock):

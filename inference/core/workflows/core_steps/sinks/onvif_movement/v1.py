@@ -113,6 +113,22 @@ This block requires an ONVIF-compatible PTZ camera with network access. The came
 """
 
 
+# ONVIF commands are issued from this process regardless of where model steps
+# execute (step_execution_mode), so only network reachability of the camera
+# restricts the block. Shared with v1_tensor so the two cannot drift.
+NO_LAN_FROM_HOSTED_RESTRICTION = RuntimeRestriction(
+    severity=Severity.HARD,
+    note=(
+        "Block requires LAN access to a PTZ camera. Hosted Serverless "
+        "and Roboflow Dedicated Deployments cannot reach customer LANs."
+    ),
+    applies_to_runtimes=[
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    ],
+)
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -241,21 +257,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        # ONVIF commands are issued from this process regardless of where
-        # model steps execute; only network reachability of the camera
-        # restricts the block.
-        no_lan_from_hosted = RuntimeRestriction(
-            severity=Severity.HARD,
-            note=(
-                "Block requires LAN access to a PTZ camera. Hosted Serverless "
-                "and Roboflow Dedicated Deployments cannot reach customer LANs."
-            ),
-            applies_to_runtimes=[
-                Runtime.HOSTED_SERVERLESS,
-                Runtime.DEDICATED_DEPLOYMENT,
-            ],
-        )
-        return [no_lan_from_hosted]
+        return [NO_LAN_FROM_HOSTED_RESTRICTION]
 
 
 # primarily used for rate limiting

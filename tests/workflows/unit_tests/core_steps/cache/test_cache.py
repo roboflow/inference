@@ -5,12 +5,18 @@ import numpy as np
 
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.cache.common import (
+    IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION,
+)
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import Runtime, Severity
 
 
 def _image_for(video_id: str) -> WorkflowImageData:
@@ -293,28 +299,79 @@ def test_concurrent_run_on_same_block_does_not_race_on_first_retain() -> None:
         block.close()
 
 
-def test_cache_blocks_declare_only_the_stateful_video_soft_restriction() -> None:
+def test_cache_blocks_declare_runtime_only_soft_restriction() -> None:
     # Cache blocks have no remote path: they always run in-process, so where
-    # model steps execute must not gate them. Only the shared stateful-video
-    # caveat applies.
-    from inference.core.workflows.prototypes.block import (
-        STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    )
-
+    # model steps execute must not gate them. The caveat is keyed on the
+    # runtime alone - a still image degrades the same way a video frame does,
+    # and the default LOCAL step mode on hosted runtimes is exactly where the
+    # cache breaks - so it must not be narrowed by step mode or input mode.
     for block_cls in (CacheGetBlockV1, CacheSetBlockV1):
-        manifest = block_cls.get_manifest()
-        assert manifest.get_restrictions() == [STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION]
-        assert block_cls.get_init_parameters() == []
+        restrictions = block_cls.get_manifest().get_restrictions()
+
+        assert restrictions == [IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION]
+        assert restrictions[0].severity is Severity.SOFT
+        assert restrictions[0].applies_to_runtimes == [
+            Runtime.HOSTED_SERVERLESS,
+            Runtime.DEDICATED_DEPLOYMENT,
+        ]
+        assert restrictions[0].applies_to_step_execution_modes is None
+        assert restrictions[0].applies_to_input_modes is None
+        assert "step_execution_mode" not in block_cls.get_init_parameters()
 
 
-def test_cache_blocks_run_without_step_execution_mode() -> None:
+# Cache Set's `value` is selector-only, so it has to come from a step output:
+# stringify whatever Cache Get returned and store that. Run 1 sees a miss
+# (False) and stores "False"; run 2 sees the stored "False" and stores it
+# again. A miss on run 2 would surface as `before is False`, not "False".
+CACHE_ROUND_TRIP_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/cache_get@v1",
+            "name": "before",
+            "image": "$inputs.image",
+            "key": "k",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "as_text",
+            "data": "$steps.before.output",
+            "operations": [{"type": "ToString"}],
+        },
+        {
+            "type": "roboflow_core/cache_set@v1",
+            "name": "store",
+            "image": "$inputs.image",
+            "key": "k",
+            "value": "$steps.as_text.output",
+        },
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "before", "selector": "$steps.before.output"},
+        {"type": "JsonField", "name": "stored", "selector": "$steps.store.output"},
+    ],
+}
+
+
+def test_cache_blocks_run_under_remote_step_execution_mode() -> None:
+    # given - the engine is told model steps execute remotely; cache blocks
+    # used to raise NotImplementedError here although they never leave the
+    # process. Both runs share a namespace (synthesised from the input name).
     _reset_memory_cache()
-    image = _image_for("vid")
-    cache_set = CacheSetBlockV1()
-    cache_get = CacheGetBlockV1()
-    try:
-        assert cache_set.run(image=image, key="k", value=1) == {"output": 1}
-        assert cache_get.run(image=image, key="k") == {"output": 1}
-    finally:
-        cache_set.close()
-        cache_get.close()
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CACHE_ROUND_TRIP_WORKFLOW,
+        init_parameters={
+            "workflows_core.step_execution_mode": StepExecutionMode.REMOTE,
+        },
+        max_concurrent_steps=1,
+    )
+    image = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    # when
+    first = execution_engine.run(runtime_parameters={"image": image})
+    second = execution_engine.run(runtime_parameters={"image": image})
+
+    # then
+    assert first[0] == {"before": False, "stored": "False"}
+    assert second[0] == {"before": "False", "stored": "False"}

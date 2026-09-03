@@ -1046,7 +1046,7 @@ def test_workflow_with_onvif(
     output = result[0].get("output")
 
     # get dummy camera
-    sink_block = ONVIFSinkBlockV1(StepExecutionMode.LOCAL)
+    sink_block = ONVIFSinkBlockV1()
     event_loop = CameraWrapper.create_event_loop()
     camera = sink_block.get_camera(HOST, PORT, "", "", 1, False, event_loop)
 
