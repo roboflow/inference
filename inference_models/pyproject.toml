@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.36.0"
+version = "0.36.1"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -57,6 +57,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+model-blob-cache = [
+  "boto3>=1.40.0,<=1.41.5",
+  "botocore>=1.40.0,<=1.41.5",
+]
 torch-cpu = [
   "torch>=2.0.0,<3.0.0",
   "torchvision"
@@ -167,6 +171,7 @@ torch = [
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 torchvision = [
@@ -174,6 +179,7 @@ torchvision = [
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 

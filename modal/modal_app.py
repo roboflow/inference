@@ -8,17 +8,17 @@ as a dependency for the main inference package.
 
 import asyncio
 import base64
-from contextlib import contextmanager
 import gzip
 import hashlib
 import inspect
-from io import StringIO
 import json
 import os
 import sys
 import threading
 import time
 import traceback
+from contextlib import contextmanager
+from io import StringIO
 from typing import Any, Dict, Generator, Optional, Tuple
 
 from starlette.requests import Request
@@ -923,6 +923,11 @@ from datetime import datetime
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
+            # Measured around the user function only: the client bills this
+            # instead of its own wall clock, which also covers serialization
+            # and the network round trip.
+            execution_time_seconds = None
+            started_at = time.perf_counter()
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # If function expects 'self' as first param, create a simple object to pass
@@ -936,6 +941,7 @@ from datetime import datetime
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
+                    execution_time_seconds = time.perf_counter() - started_at
 
                 json_result = serialize_for_modal_remote_execution(result)
 
@@ -944,8 +950,15 @@ from datetime import datetime
                     "result": json_result,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
+                    "execution_time_seconds": execution_time_seconds,
                 }
             except Exception as e:
+                # Taken before anything else in this handler, and only when the
+                # user function did not already report: serializing its result
+                # can fail after it ran fine, and re-timing here would bill the
+                # failed serialization plus the work of building this response.
+                if execution_time_seconds is None:
+                    execution_time_seconds = time.perf_counter() - started_at
                 # On error, capture stdout/stderr and return error details
                 result = {
                     "success": False,
@@ -953,6 +966,7 @@ from datetime import datetime
                     "error_type": type(e).__name__,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
+                    "execution_time_seconds": execution_time_seconds,
                 }
 
                 # Get the line number and function name from evaluated code
@@ -966,11 +980,21 @@ from datetime import datetime
 
         except Exception as e:
             # Outer exception handler for non-execution errors (deserialization, etc.)
-            return {
+            resp: Dict[str, Any] = {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
             }
+            # Reachable after the user function ran - an exception whose own
+            # __str__ raises escapes the inner handler - so report the runtime
+            # when there is one rather than leaving the client to fall back to
+            # its wall clock.
+            measured = locals().get("execution_time_seconds")
+            if measured is None and locals().get("started_at") is not None:
+                measured = time.perf_counter() - started_at
+            if measured is not None:
+                resp["execution_time_seconds"] = measured
+            return resp
 
     # ------------------------------------------------------------------
     # Transport 2: WebSocket + msgpack binary frames (opt-in)
@@ -1040,6 +1064,11 @@ from datetime import datetime
 
         _workflow_context = workflow_context or {}
 
+        # Measured around the user function only: the client bills this instead
+        # of its own wall clock, which also covers serialization and the
+        # network round trip.
+        execution_time_seconds = None
+        started_at = time.perf_counter()
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
@@ -1052,20 +1081,27 @@ from datetime import datetime
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
+                execution_time_seconds = time.perf_counter() - started_at
 
             return {
                 "success": True,
                 "result": result,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
+                "execution_time_seconds": execution_time_seconds,
             }
         except Exception as e:
+            # See the HTTP path: taken first, and only when the user function
+            # did not already report, so both branches measure the same span.
+            if execution_time_seconds is None:
+                execution_time_seconds = time.perf_counter() - started_at
             resp: Dict[str, Any] = {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
+                "execution_time_seconds": execution_time_seconds,
             }
             tb = traceback.extract_tb(e.__traceback__)
             if tb:

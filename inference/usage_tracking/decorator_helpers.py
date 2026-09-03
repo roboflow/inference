@@ -8,6 +8,11 @@ from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
+from inference.usage_tracking.block_execution import (
+    BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
+    EXECUTION_MODE_BY_DURATION_SOURCE,
+    consume_measured_block_execution,
+)
 from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
     clear_measured_model_input,
@@ -45,6 +50,21 @@ EXTERNAL_SOURCE_SENTINEL = "external"
 # default is never mutated, only replaced by `set()`.
 usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
     "usage_source_tags", default={}
+)
+
+# Whether the current workflow run is a builder/editor preview. Bound by the
+# `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,
+# and inherited by nested `workflow_block` rows the same way billing
+# suppression is. Preview is independent of `billable`: a preview run is
+# still counted unless the caller also opted out.
+#
+# In-process only, unlike suppression: billing intent crosses into the SDK via
+# `inference_sdk.config.outbound_service_secret`, which
+# `InferenceConfiguration.to_billing_query_parameters()` reads at send time.
+# There is no `is_preview` anywhere in `inference_sdk`, so rows a *remote*
+# server records during a preview run do not carry the flag.
+usage_workflow_is_preview: ContextVar[bool] = ContextVar(
+    "usage_workflow_is_preview", default=False
 )
 
 
@@ -235,6 +255,27 @@ def bind_billing_suppression(
         return None
 
     return usage_billing_suppressed.set(True)
+
+
+def bind_workflow_preview(usage_workflow_preview: bool) -> Optional[Token[bool]]:
+    """Publish preview for nested usage rows, unless it already is published.
+
+    Once a parent marked the run as preview, a nested decorator cannot clear
+    it. A call that is not itself a preview leaves an inherited flag alone.
+
+    Args:
+        usage_workflow_preview: The decorator argument the call was made with.
+
+    Returns:
+        The token to reset once the call is recorded, or None when this call
+        bound nothing.
+    """
+    if usage_workflow_is_preview.get():
+        return None
+    if not usage_workflow_preview:
+        return None
+
+    return usage_workflow_is_preview.set(True)
 
 
 def _non_empty_model_id(value: Any) -> Optional[str]:
@@ -548,6 +589,135 @@ def get_workflow_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[st
         return None
 
     return workflow.init_parameters.get("workflows_core.api_key")
+
+
+def get_workflow_block_resource_id_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[str]:
+    """Billing identity the block published for itself when it was assembled.
+
+    Blocks own this because only they know what makes two invocations the same
+    resource - a custom Python block keys on its code, not on the step or the
+    author-chosen block type.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return None
+    resource_id = getattr(block, "_usage_resource_id", None)
+    if not resource_id:
+        return None
+    return str(resource_id)
+
+
+def get_workflow_block_api_key_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[str]:
+    """API key the block was constructed with.
+
+    Blocks receive the workflow's key as an init parameter, so there is no
+    per-call key that could be more current than it.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return None
+    api_key = getattr(block, "_api_key", None)
+    if not api_key:
+        return None
+    return str(api_key)
+
+
+def get_workflow_block_resource_details_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Describe the block behind a ``workflow_block`` row.
+
+    ``step_name`` and ``block_type`` are metadata, not part of the identity:
+    rows aggregate by resource id, so for a snippet used by several steps only
+    the most recently recorded pair is kept.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return {}
+
+    resource_details = {}
+    block_kind = getattr(block, "_usage_block_kind", None)
+    if block_kind:
+        resource_details["block_kind"] = str(block_kind)
+    block_type = getattr(block, "_workflow_step_type", None) or getattr(
+        block, "_usage_block_type", None
+    )
+    if block_type:
+        resource_details["block_type"] = str(block_type)
+    step_name = getattr(block, "_workflow_step_name", None)
+    if step_name:
+        resource_details["step_name"] = str(step_name)
+
+    return resource_details
+
+
+def _count_batch_elements(value: Any) -> int:
+    """Leaf elements of a possibly nested ``Batch``.
+
+    A block running at dimensionality >= 2 (say, downstream of a crop) receives
+    a ``Batch`` of ``Batch``, so the outer length is the number of parent
+    elements, not the number of items the block was handed.
+    """
+    if not isinstance(value, Batch):
+        return 1
+    return sum(_count_batch_elements(element) for element in value)
+
+
+def get_workflow_block_frames_from_kwargs(func_kwargs: Dict[str, Any]) -> int:
+    """Batch elements handed to one ``run()`` call.
+
+    Batch-oriented blocks are given the whole batch in a single call, so
+    counting invocations would under-report them against blocks the engine
+    calls once per element.
+    """
+    block_kwargs = func_kwargs.get("block_kwargs")
+    if not isinstance(block_kwargs, dict):
+        return 1
+
+    batch_sizes = [
+        _count_batch_elements(value)
+        for value in block_kwargs.values()
+        if isinstance(value, Batch)
+    ]
+    if not batch_sizes:
+        return 1
+
+    return max(max(batch_sizes), 1)
+
+
+def resolve_workflow_block_execution(
+    execution_duration: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """Prefer the duration the block measured over the decorator's wall clock.
+
+    A block executed in a remote sandbox spends part of the decorated call on
+    input serialization and the network round trip, which is not time the block
+    itself ran. Where the number came from is reported alongside it so the
+    usage API can tell a measured runtime from a fallback estimate.
+
+    Args:
+        execution_duration: Wall clock measured by the usage decorator.
+
+    Returns:
+        Duration to bill, and resource details describing its origin.
+    """
+    measured_execution = consume_measured_block_execution()
+    if measured_execution is None:
+        fallback_details = {
+            "duration_source": BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
+        }
+        return execution_duration, fallback_details
+
+    execution_details = {"duration_source": measured_execution.source}
+    execution_mode = EXECUTION_MODE_BY_DURATION_SOURCE.get(measured_execution.source)
+    if execution_mode:
+        execution_details["execution_mode"] = execution_mode
+
+    return measured_execution.duration, execution_details
 
 
 def get_request_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:

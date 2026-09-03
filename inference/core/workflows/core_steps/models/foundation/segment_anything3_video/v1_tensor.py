@@ -405,6 +405,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.

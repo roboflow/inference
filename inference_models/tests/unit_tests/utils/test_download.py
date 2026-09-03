@@ -6,6 +6,31 @@ import pytest
 from inference_models.utils import download
 
 
+def test_download_files_to_directory_forwards_artifact_cache(tmp_path: Path) -> None:
+    artifact_cache = mock.MagicMock()
+    files_specs = [
+        (
+            "model.bin",
+            "https://example.test/model.bin",
+            "c770e3485f6f6cd5bf2f78504bd56c50",
+        )
+    ]
+
+    with mock.patch.object(download, "OFFLINE_MODE", False), mock.patch.object(
+        download, "safe_download_file"
+    ) as safe_download_file:
+        download.download_files_to_directory(
+            target_dir=str(tmp_path),
+            files_specs=files_specs,
+            content_addressed_artifact_cache=artifact_cache,
+        )
+
+    assert (
+        safe_download_file.call_args.kwargs["content_addressed_artifact_cache"]
+        is artifact_cache
+    )
+
+
 def test_download_files_to_directory_returns_cached_file_in_offline_mode(
     tmp_path: Path,
 ) -> None:

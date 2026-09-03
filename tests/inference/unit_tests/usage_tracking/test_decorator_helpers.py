@@ -8,6 +8,7 @@ from inference.core.env import SAM2_VERSION_ID, SAM3_EXEC_MODE
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.usage_tracking import decorator_helpers
 from inference.usage_tracking.decorator_helpers import (
+    bind_workflow_preview,
     call_carries_authenticated_non_billable_intent,
     get_model_api_key_from_kwargs,
     get_model_descriptor_from_kwargs,
@@ -19,6 +20,7 @@ from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
     read_source_tags_bound_to_call,
     record_fixed_model_input_for_request,
+    usage_workflow_is_preview,
 )
 from inference.usage_tracking.megapixel_buckets import (
     clear_measured_model_input,
@@ -121,6 +123,22 @@ def test_bound_call_swallows_binding_failures():
         result = call_carries_authenticated_non_billable_intent(handler, (), {})
 
     assert result is False
+
+
+def test_bind_workflow_preview_publishes_true_and_leaves_false_alone():
+    assert usage_workflow_is_preview.get() is False
+    assert bind_workflow_preview(False) is None
+    assert usage_workflow_is_preview.get() is False
+
+    token = bind_workflow_preview(True)
+    try:
+        assert usage_workflow_is_preview.get() is True
+        assert bind_workflow_preview(False) is None
+        assert usage_workflow_is_preview.get() is True
+    finally:
+        usage_workflow_is_preview.reset(token)
+
+    assert usage_workflow_is_preview.get() is False
 
 
 def test_get_request_resource_details_tags_sam3_execution_mode(monkeypatch):

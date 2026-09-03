@@ -2,7 +2,7 @@ from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 from inference.core.utils import url_utils
-from inference.core.utils.url_utils import wrap_url
+from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
 
 
 @mock.patch.object(url_utils, "SECURE_GATEWAY", "gateway.local")
@@ -90,3 +90,57 @@ def test_wrap_url_when_bare_host_secure_gateway_has_trailing_slash() -> None:
     assert result.startswith("http://gateway.local:8080/proxy?url=")
     assert "//proxy" not in result
     assert wrap_url(url=result) == result
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", None)
+def test_get_secure_gateway_base_url_when_not_configured() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then
+    assert result is None
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "")
+def test_get_secure_gateway_base_url_when_configured_empty() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then
+    assert result is None
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "gateway.local")
+def test_get_secure_gateway_base_url_when_bare_host_is_provided() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then - legacy license servers speak plain http
+    assert result == "http://gateway.local"
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "10.9.50.228:8080")
+def test_get_secure_gateway_base_url_when_bare_host_with_port_is_provided() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then
+    assert result == "http://10.9.50.228:8080"
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "https://gateway.local")
+def test_get_secure_gateway_base_url_when_scheme_qualified() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then
+    assert result == "https://gateway.local"
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "https://gateway.local/")
+def test_get_secure_gateway_base_url_strips_trailing_slash() -> None:
+    # when
+    result = get_secure_gateway_base_url()
+
+    # then
+    assert result == "https://gateway.local"
