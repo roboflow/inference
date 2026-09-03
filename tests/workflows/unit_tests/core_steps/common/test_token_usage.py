@@ -20,6 +20,7 @@ NEW_BLOCK_MODULES = [
     f"{_FOUNDATION}.meta_vlm.v2",
     f"{_FOUNDATION}.qwen_vlm.v3",
     f"{_FOUNDATION}.anthropic_claude.v4",
+    f"{_FOUNDATION}.anthropic_claude.v5",
     f"{_FOUNDATION}.google_gemini.v5",
     f"{_FOUNDATION}.openai.v6",
     f"{_FOUNDATION}.spacexai.v2",

@@ -160,3 +160,24 @@ def build_thinking_config(
         )
 
     return {"type": "adaptive"}
+
+
+def build_output_config(
+    reasoning_effort: Optional[str],
+) -> Optional[Dict[str, object]]:
+    """Build the Anthropic ``output_config`` block for a selected effort.
+
+    Unset effort omits the field so the API keeps its default (``high`` on
+    models that support effort).
+
+    Args:
+        reasoning_effort: One of ``low``, ``medium``, ``high``, ``xhigh``,
+            ``max``, or ``None`` when the block left the control unset.
+
+    Returns:
+        ``{"effort": level}``, or ``None`` when effort was not requested.
+    """
+    if reasoning_effort is None:
+        return None
+
+    return {"effort": reasoning_effort}
