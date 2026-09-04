@@ -14,7 +14,10 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections as _serialise_legacy_sv_detections,
 )
-from inference.core.workflows.core_steps.common.serializers import serialize_timestamp
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_action_recognition_prediction_kind,
+    serialize_timestamp,
+)
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
@@ -77,7 +80,10 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
+    WorkflowImageData,
+)
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -805,6 +811,10 @@ def serialize_wildcard_kind(value: Any) -> Any:
         return type(value)(converted)
     if isinstance(value, sv.Detections):
         return _serialise_legacy_sv_detections(detections=value)
+    if isinstance(value, ActionRecognitionPrediction):
+        # Without this the model reaches clients by field name, so the
+        # timeline arrives as "class_name" where the kind declares "class".
+        return serialize_action_recognition_prediction_kind(value=[value])[0]
     if isinstance(value, datetime):
         return serialize_timestamp(timestamp=value)
     return value

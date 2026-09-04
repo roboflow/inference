@@ -24,6 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
+ACTION_RECOGNITION_TASK = "action-recognition"
 
 
 @dataclass(frozen=True)
@@ -316,6 +317,15 @@ REGISTERED_MODELS: Dict[
     ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
+    ),
+    # An action recognition fine-tune registered under its own task.
+    (
+        "cosmos3-edge",
+        ACTION_RECOGNITION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name=("inference_models.models.cosmos3.cosmos3_action_recognition"),
+        class_name="Cosmos3EdgeActionRecognition",
     ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",
