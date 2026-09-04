@@ -984,3 +984,76 @@ def test_run_method_for_truncated_output_sets_error_status() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+def test_run_method_for_zai_flash_single_detection_object() -> None:
+    # given - GLM 5.3 Flash: one detection emitted without the enclosing list
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='{"bbox_2d": [147, 0, 432, 690], "label": "gun"}',
+        classes=["gun"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["gun"]
+    assert np.allclose(
+        result["predictions"].xyxy, np.array([[147, 0, 432, 690]]), atol=1.0
+    )
+
+
+def test_run_method_for_zai_flash_list_missing_opening_bracket() -> None:
+    # given - GLM 5.3 Flash: `{...}, {...}]` with the opening bracket dropped
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        '{"bbox_2d": [419, 587, 459, 856], "label": "blue player"}, '
+        '{"bbox_2d": [607, 104, 681, 326], "label": "basket"}]'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["blue player", "basket"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].class_id.tolist() == [0, 1]
+
+
+def test_run_method_for_zai_flash_repeated_empty_arrays() -> None:
+    # given - GLM 5.3 Flash: "[]\n[]" for an image with no matches
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output="[]\n[]",
+        classes=["car"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert len(result["predictions"]) == 0

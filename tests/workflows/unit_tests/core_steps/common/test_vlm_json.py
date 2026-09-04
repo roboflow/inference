@@ -1,6 +1,9 @@
 import pytest
 
-from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
+from inference.core.workflows.core_steps.common.vlm_json import (
+    coerce_classification_payload,
+    extract_json_payload,
+)
 
 
 def test_extract_json_payload_when_plain_json_object_given() -> None:
@@ -190,3 +193,74 @@ def test_extract_json_payload_when_non_string_given() -> None:
     # then
     assert error_status is True
     assert payload == {}
+
+
+def test_extract_json_payload_when_sequence_of_arrays_given() -> None:
+    # when
+    error_status, payload = extract_json_payload('[{"a": 1}]\n[]\n[{"a": 2}]')
+
+    # then
+    assert error_status is False
+    assert payload == [{"a": 1}, {"a": 2}]
+
+
+def test_extract_json_payload_when_only_empty_arrays_given() -> None:
+    # when
+    error_status, payload = extract_json_payload("[]\n[]")
+
+    # then
+    assert error_status is False
+    assert payload == []
+
+
+def test_extract_json_payload_when_objects_end_with_stray_closing_bracket() -> None:
+    # given - list body emitted without its opening bracket
+    raw = '{"a": 1}, {"a": 2}]'
+
+    # when
+    error_status, payload = extract_json_payload(raw)
+
+    # then
+    assert error_status is False
+    assert payload == [{"a": 1}, {"a": 2}]
+
+
+def test_coerce_classification_payload_when_dict_given() -> None:
+    # when
+    result = coerce_classification_payload({"class_name": "cat", "confidence": 0.9})
+
+    # then
+    assert result == {"class_name": "cat", "confidence": 0.9}
+
+
+def test_coerce_classification_payload_when_bare_class_list_given() -> None:
+    # when
+    result = coerce_classification_payload(
+        [
+            {"class": "cat", "confidence": 0.9},
+            {"class_name": "dog"},
+            {"label": "cow", "confidence": 0.2},
+        ]
+    )
+
+    # then
+    assert result == {
+        "predicted_classes": [
+            {"class": "cat", "confidence": 0.9},
+            {"class": "dog", "confidence": 1.0},
+            {"class": "cow", "confidence": 0.2},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    "payload", [[], [{"confidence": 0.9}], ["cat"], [{"class": "cat"}, 3]]
+)
+def test_coerce_classification_payload_when_list_is_not_class_entries(
+    payload: list,
+) -> None:
+    # when
+    result = coerce_classification_payload(payload)
+
+    # then
+    assert result is None
