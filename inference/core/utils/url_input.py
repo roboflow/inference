@@ -25,6 +25,7 @@ from requests.adapters import HTTPAdapter
 from requests.utils import select_proxy
 from urllib3.connectionpool import HTTPConnectionPool
 
+from inference.core.exceptions import PayloadTooLargeError
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.warnings import InferenceDeprecationWarning
 
@@ -268,12 +269,65 @@ def _build_ssrf_protected_session(allow_non_global_addresses: bool) -> requests.
     return session
 
 
+DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+def _drain_response(
+    response: requests.Response,
+    sink: Optional[Callable[[bytes], Any]],
+    max_bytes: Optional[int],
+) -> Optional[bytes]:
+    """Read a response body, optionally into ``sink`` and under a size cap.
+
+    Without a ``sink`` the body comes back as bytes, which is what image
+    loading wants. With one, the body never accumulates here, which is what
+    lets a large clip reach disk without a copy in memory.
+
+    The cap counts decoded bytes. ``iter_content`` decompresses as it reads,
+    so a small compressed body that expands past the cap is stopped at the
+    size that actually costs memory rather than the size on the wire.
+    """
+    if max_bytes is not None:
+        declared = response.headers.get("Content-Length")
+        # A cheap rejection before reading. The header is caller-controlled,
+        # so the running total below is what actually enforces the cap.
+        if declared and declared.isdigit() and int(declared) > max_bytes:
+            raise PayloadTooLargeError(
+                message=(
+                    f"URL declares {declared} bytes, over the "
+                    f"{max_bytes} byte limit this deployment accepts."
+                ),
+                public_message="Content is larger than this server accepts.",
+            )
+    collected = None if sink is not None else bytearray()
+    total = 0
+    for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_BYTES):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            raise PayloadTooLargeError(
+                message=(
+                    f"URL content passed the {max_bytes} byte limit this "
+                    f"deployment accepts."
+                ),
+                public_message="Content is larger than this server accepts.",
+            )
+        if sink is not None:
+            sink(chunk)
+        else:
+            collected.extend(chunk)
+    return None if sink is not None else bytes(collected)
+
+
 def fetch_url_content_legacy(
     url: str,
     allow_non_global_addresses: bool,
     max_redirects: int,
     request_timeout: Optional[float] = None,
-) -> bytes:
+    sink: Optional[Callable[[bytes], Any]] = None,
+    max_bytes: Optional[int] = None,
+) -> Optional[bytes]:
     """Legacy fetch: ``requests`` follows redirects itself (capped at
     ``max_redirects``). Behaviour matches the pre-hardening implementation; the
     only additions are the explicit redirect cap and — when non-global is
@@ -287,7 +341,7 @@ def fetch_url_content_legacy(
             url, stream=True, allow_redirects=True, timeout=request_timeout
         )
         api_key_safe_raise_for_status(response=response)
-        return response.content
+        return _drain_response(response=response, sink=sink, max_bytes=max_bytes)
     finally:
         session.close()
 
@@ -298,7 +352,9 @@ def fetch_url_content_validating_redirects(
     max_redirects: int,
     validate_redirect: Callable[[str], str],
     request_timeout: Optional[float] = None,
-) -> bytes:
+    sink: Optional[Callable[[bytes], Any]] = None,
+    max_bytes: Optional[int] = None,
+) -> Optional[bytes]:
     """Hardened fetch: follow redirects one hop at a time, re-running the full
     URL-string policy (via ``validate_redirect``) on every hop before the next
     request is issued. IP validation/pinning is applied on every hop by the
@@ -326,7 +382,7 @@ def fetch_url_content_validating_redirects(
                 current_url = validate_redirect(next_url)
                 continue
             api_key_safe_raise_for_status(response=response)
-            return response.content
+            return _drain_response(response=response, sink=sink, max_bytes=max_bytes)
         raise requests.exceptions.TooManyRedirects(
             f"Exceeded maximum of {max_redirects} redirects."
         )

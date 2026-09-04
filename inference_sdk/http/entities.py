@@ -18,6 +18,7 @@ from inference_sdk.http.errors import (
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
+VideoReference = str
 Confidence = Union[float, Literal["best", "default"]]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
@@ -27,6 +28,7 @@ CLASSIFICATION_TASK = "classification"
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
+ACTION_RECOGNITION_TASK = "action-recognition"
 DEFAULT_MAX_INPUT_SIZE = 1024
 
 
