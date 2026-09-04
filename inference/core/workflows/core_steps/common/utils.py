@@ -241,11 +241,15 @@ def empty_detections_with_image_metadata(
     ``metadata`` is a free-form dict on ``sv.Detections`` that survives zero
     rows and is read by the serialiser as a fallback when no per-row
     ``IMAGE_DIMENSIONS_KEY`` is found.
+
+    Built on ``sv.Detections.empty()`` so the returned object keeps the empty
+    ``confidence`` / ``class_id`` arrays downstream consumers rely on (a bare
+    ``sv.Detections(xyxy=...)`` leaves them ``None``, which breaks e.g.
+    ``DetectionsPropertyExtract``).
     """
-    return sv.Detections(
-        xyxy=np.empty((0, 4), dtype=np.float32),
-        metadata={IMAGE_DIMENSIONS_KEY: [image_height, image_width]},
-    )
+    detections = sv.Detections.empty()
+    detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
+    return detections
 
 
 def attach_parents_coordinates_to_sv_detections(
