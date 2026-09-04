@@ -24,17 +24,7 @@ import base64
 import json
 from dataclasses import dataclass
 from functools import partial
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from openai import APIStatusError, OpenAI
 from pydantic import ConfigDict, Field
