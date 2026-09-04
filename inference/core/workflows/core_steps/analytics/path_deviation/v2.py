@@ -30,6 +30,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "path_deviation_detections"
+MAX_TRACK_HISTORY: int = 1000
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from the reference path."
 LONG_DESCRIPTION = """
 Measure how closely tracked objects follow a reference path by calculating the Fréchet distance between the object's actual trajectory and the expected reference path, enabling path compliance monitoring, route deviation detection, quality control in automated systems, and behavioral analysis workflows.
@@ -206,6 +207,9 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
             if tracker_id not in self._object_paths[video_id]:
                 self._object_paths[video_id][tracker_id] = []
             self._object_paths[video_id][tracker_id].append(anchor_point)
+            self._object_paths[video_id][tracker_id] = self._bound_path_length(
+                self._object_paths[video_id][tracker_id]
+            )
 
             object_path = np.array(self._object_paths[video_id][tracker_id])
             ref_path = np.array(reference_path)
@@ -218,48 +222,38 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
 
         return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
 
+    def _bound_path_length(
+        self, path: List[Tuple[float, float]]
+    ) -> List[Tuple[float, float]]:
+        if len(path) <= MAX_TRACK_HISTORY:
+            return path
+        indices = np.linspace(0, len(path) - 1, num=MAX_TRACK_HISTORY).astype(int)
+        return [path[index] for index in indices]
+
     def _calculate_frechet_distance(
         self, path1: np.ndarray, path2: np.ndarray
     ) -> float:
-        dist_matrix = np.ones((len(path1), len(path2))) * -1
-        return self._compute_distance(
-            dist_matrix, len(path1) - 1, len(path2) - 1, path1, path2
-        )
-
-    def _compute_distance(
-        self,
-        dist_matrix: np.ndarray,
-        i: int,
-        j: int,
-        path1: np.ndarray,
-        path2: np.ndarray,
-    ) -> float:
-        if dist_matrix[i, j] > -1:
-            return dist_matrix[i, j]
-        elif i == 0 and j == 0:
-            dist_matrix[i, j] = self._euclidean_distance(path1[0], path2[0])
-        elif i > 0 and j == 0:
-            dist_matrix[i, j] = max(
-                self._compute_distance(dist_matrix, i - 1, 0, path1, path2),
-                self._euclidean_distance(path1[i], path2[0]),
-            )
-        elif i == 0 and j > 0:
-            dist_matrix[i, j] = max(
-                self._compute_distance(dist_matrix, 0, j - 1, path1, path2),
-                self._euclidean_distance(path1[0], path2[j]),
-            )
-        elif i > 0 and j > 0:
-            dist_matrix[i, j] = max(
-                min(
-                    self._compute_distance(dist_matrix, i - 1, j, path1, path2),
-                    self._compute_distance(dist_matrix, i - 1, j - 1, path1, path2),
-                    self._compute_distance(dist_matrix, i, j - 1, path1, path2),
-                ),
-                self._euclidean_distance(path1[i], path2[j]),
-            )
-        else:
-            dist_matrix[i, j] = float("inf")
-        return dist_matrix[i, j]
+        n, m = len(path1), len(path2)
+        dist_matrix = np.zeros((n, m))
+        for i in range(n):
+            for j in range(m):
+                euclidean = self._euclidean_distance(path1[i], path2[j])
+                if i == 0 and j == 0:
+                    dist_matrix[i, j] = euclidean
+                elif i > 0 and j == 0:
+                    dist_matrix[i, j] = max(dist_matrix[i - 1, 0], euclidean)
+                elif i == 0 and j > 0:
+                    dist_matrix[i, j] = max(dist_matrix[0, j - 1], euclidean)
+                else:
+                    dist_matrix[i, j] = max(
+                        min(
+                            dist_matrix[i - 1, j],
+                            dist_matrix[i - 1, j - 1],
+                            dist_matrix[i, j - 1],
+                        ),
+                        euclidean,
+                    )
+        return dist_matrix[n - 1, m - 1]
 
     def _euclidean_distance(self, point1: np.ndarray, point2: np.ndarray) -> float:
         return np.sqrt(np.sum((point1 - point2) ** 2))
