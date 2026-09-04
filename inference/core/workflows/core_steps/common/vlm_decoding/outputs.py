@@ -143,8 +143,19 @@ def decode_vlm_output(
         return False, None
     if predictions is None:
         return error_status, None
-    return error_status, to_tensor_native_predictions(
-        predictions=predictions,
-        image=image,
-        classes=classes,
-    )
+    try:
+        return error_status, to_tensor_native_predictions(
+            predictions=predictions,
+            image=image,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    except Exception as error:
+        logger.warning(
+            "Could not convert decoded VLM %s output to the tensor-native "
+            "representation. Error type: %s. Details: %s",
+            task_type,
+            error.__class__.__name__,
+            error,
+        )
+        return True, None

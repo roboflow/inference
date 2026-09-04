@@ -141,7 +141,10 @@ def build_detections(
                 entry,
             )
             continue
-        xyxy.append(box)
+        # Models occasionally swap corners; keep min/max ordering so the box
+        # has non-negative width and height downstream.
+        x_0, y_0, x_1, y_1 = box
+        xyxy.append([min(x_0, x_1), min(y_0, y_1), max(x_0, x_1), max(y_0, y_1)])
         label = get_detection_class_name(entry)
         class_id.append(class_name2id.get(label, -1))
         class_name.append(label)

@@ -285,3 +285,23 @@ def test_run_reports_error_status_for_unparsable_detection_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+def test_manifest_accepts_gemini_3_8_flash() -> None:
+    # given - v5 gained this model after v6 was cut; migrating workflows must
+    # not lose it
+    raw_manifest = {
+        "type": "roboflow_core/google_gemini@v6",
+        "name": "gemini",
+        "images": "$inputs.image",
+        "task_type": "object-detection",
+        "classes": ["cat", "dog"],
+        "api_key": "$inputs.api_key",
+        "model_version": "gemini-3.8-flash",
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.model_version == "gemini-3.8-flash"

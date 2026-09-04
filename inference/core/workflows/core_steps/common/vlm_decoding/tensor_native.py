@@ -90,6 +90,7 @@ def to_tensor_native_predictions(
     predictions: Any,
     image: WorkflowImageData,
     classes: Optional[List[str]],
+    inference_id: Optional[str] = None,
 ) -> Any:
     """Convert a decoded prediction into its tensor-native carrier.
 
@@ -103,6 +104,8 @@ def to_tensor_native_predictions(
         image: Workflow image the prediction refers to.
         classes: Class names the block asked the model for; used to populate
             the ``class_id -> name`` map of an empty detection prediction.
+        inference_id: Identifier the block attached to this decode; used for
+            an empty detection prediction, which carries no per-box copy.
 
     Returns:
         The native ``Detections`` / ``ClassificationPrediction`` /
@@ -115,6 +118,7 @@ def to_tensor_native_predictions(
             detections=predictions,
             image=image,
             classes=classes,
+            inference_id=inference_id,
         )
     if isinstance(predictions, dict):
         return native_classification_from_prediction(prediction=predictions)
@@ -125,6 +129,7 @@ def native_detections_from_sv_detections(
     detections: sv.Detections,
     image: WorkflowImageData,
     classes: Optional[List[str]],
+    inference_id: Optional[str] = None,
 ) -> "Detections":
     """Rebuild ``sv.Detections`` decoded from a VLM answer as native detections.
 
@@ -155,7 +160,10 @@ def native_detections_from_sv_detections(
         detections.confidence if detections.confidence is not None else np.empty(0)
     )
     inference_ids = detections.data.get(INFERENCE_ID_KEY, [])
-    inference_id = str(inference_ids[0]) if len(inference_ids) > 0 else ""
+    if len(inference_ids) > 0:
+        inference_id = str(inference_ids[0])
+    elif inference_id is None:
+        inference_id = ""
     if len(detections) == 0:
         # Matches `empty_native_detections`: with no box to resolve, the map is
         # seeded from the requested class list rather than left empty.

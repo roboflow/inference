@@ -169,7 +169,7 @@ def _convert_xyxy_absolute(
     _require_upload_dimensions(upload_width, upload_height)
     box = _read_box_2d(entry)
     if box is None:
-        return None
+        return _named_normalized_fallback(entry, image_width, image_height)
     scale_x = image_width / upload_width
     scale_y = image_height / upload_height
     x_min, y_min, x_max, y_max = box
@@ -207,7 +207,7 @@ def _convert_yxyx_0_1000(
 ) -> Optional[List[float]]:
     box = _read_box_2d(entry)
     if box is None:
-        return None
+        return _named_normalized_fallback(entry, image_width, image_height)
     y_min, x_min, y_max, x_max = (
         _clamp(value, NORMALIZED_0_1000_SCALE) for value in box
     )
@@ -230,6 +230,24 @@ def _convert_xyxy_percent(
     scale_x = image_width / PERCENT_SCALE
     scale_y = image_height / PERCENT_SCALE
     return [x_min * scale_x, y_min * scale_y, x_max * scale_x, y_max * scale_y]
+
+
+def _named_normalized_fallback(
+    entry: dict, image_width: int, image_height: int
+) -> Optional[List[float]]:
+    """Accept a legacy ``x_min``.. entry normalized to 0-1 for a ``box_2d`` format.
+
+    The deprecated Gemini, OpenAI and Claude parsers took this shape whenever
+    ``box_2d`` was missing (older block versions prompted for it), so the
+    formats those blocks moved to keep the same tolerance.
+    """
+    return _convert_named_normalized(
+        entry,
+        image_width=image_width,
+        image_height=image_height,
+        upload_width=None,
+        upload_height=None,
+    )
 
 
 def _convert_named_0_1000(
@@ -516,6 +534,6 @@ def get_detection_confidence(entry: dict) -> float:
         Confidence clamped into ``[0.0, 1.0]``.
     """
     value = _read_number(entry.get("confidence"))
-    if value is None:
+    if value is None or not math.isfinite(value):
         return 1.0
     return scale_confidence(value)

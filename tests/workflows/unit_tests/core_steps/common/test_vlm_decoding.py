@@ -407,9 +407,9 @@ def test_decode_object_detections_skips_malformed_entries() -> None:
 
 def test_decode_object_detections_reports_error_when_no_entry_matches_format() -> None:
     # The model answered in the OpenRouter normalized-named contract while the
-    # block asked for absolute `box_2d` pixels. Every entry is unusable, and
-    # reporting that as zero detections would be indistinguishable from
-    # "nothing detected".
+    # block asked for 0-1000 `box_2d` boxes (a format without the legacy
+    # named fallback). Every entry is unusable, and reporting that as zero
+    # detections would be indistinguishable from "nothing detected".
     image = _build_image()
 
     error_status, detections = decode_object_detections(
@@ -427,7 +427,7 @@ def test_decode_object_detections_reports_error_when_no_entry_matches_format() -
                 ]
             }
         ),
-        box_format="xyxy_absolute",
+        box_format="xyxy_0_1000",
         image=image,
         classes=["cat"],
         inference_id="inference-id",
@@ -890,3 +890,85 @@ def test_decode_vlm_output_passes_through_non_decoding_task() -> None:
 
     assert error_status is False
     assert predictions is None
+
+
+def test_yxyx_format_accepts_legacy_named_normalized_entries() -> None:
+    # given - the deprecated Gemini parser accepted x_min.. entries normalized
+    # to 0-1 whenever box_2d was absent; the yxyx format keeps that tolerance
+    raw_output = (
+        '[{"x_min": 0.1, "y_min": 0.2, "x_max": 0.5, "y_max": 0.6, "label": "cat"}]'
+    )
+
+    # when
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="yxyx_0_1000",
+        image=_build_image(width=100, height=200),
+        classes=["cat"],
+        inference_id="iid",
+    )
+
+    # then
+    assert error_status is False
+    assert detections.xyxy.tolist() == [[10.0, 40.0, 50.0, 120.0]]
+
+
+def test_absolute_format_accepts_legacy_named_normalized_entries() -> None:
+    # given - the deprecated OpenAI / Claude parsers fell back to the
+    # normalized x_min.. contract of older block versions
+    raw_output = (
+        '{"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.5, "y_max": 0.6, '
+        '"class_name": "cat"}]}'
+    )
+
+    # when
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="xyxy_absolute",
+        image=_build_image(width=100, height=200),
+        classes=["cat"],
+        inference_id="iid",
+        upload_width=50,
+        upload_height=100,
+    )
+
+    # then
+    assert error_status is False
+    assert detections.xyxy.tolist() == [[10.0, 40.0, 50.0, 120.0]]
+
+
+def test_decode_object_detections_treats_non_finite_confidence_as_missing() -> None:
+    # given - json.loads accepts NaN, which would otherwise leak into the
+    # confidence vector
+    raw_output = '[{"box_2d": [100, 200, 500, 600], "label": "cat", "confidence": NaN}]'
+
+    # when
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["cat"],
+        inference_id="iid",
+    )
+
+    # then
+    assert error_status is False
+    assert detections.confidence.tolist() == [1.0]
+
+
+def test_decode_object_detections_normalises_swapped_corners() -> None:
+    # given
+    raw_output = '[{"box_2d": [900, 600, 100, 200], "label": "cat"}]'
+
+    # when
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["cat"],
+        inference_id="iid",
+    )
+
+    # then
+    assert error_status is False
+    assert detections.xyxy.tolist() == [[100.0, 200.0, 900.0, 600.0]]

@@ -288,3 +288,32 @@ def test_serialized_classification_is_identical_to_the_tensor_formatter() -> Non
     assert list(serialized_decoded) == ["image", "predictions", "top", "confidence"] + [
         PARENT_ID_KEY
     ]
+
+
+def test_empty_object_detection_carries_the_block_inference_id() -> None:
+    error_status, predictions = decode_vlm_output(
+        task_type="object-detection",
+        raw_output="[]",
+        image=_build_image(),
+        classes=CLASSES,
+        inference_id="inference-id",
+        box_format="named_normalized",
+    )
+
+    assert error_status is False
+    assert predictions.image_metadata[INFERENCE_ID_KEY] == "inference-id"
+
+
+def test_duplicate_classes_report_error_status_instead_of_raising() -> None:
+    # given - duplicate class names collapse to fewer dense ids than the
+    # confidence vector expects; the native carrier cannot be built
+    error_status, predictions = decode_vlm_output(
+        task_type="classification",
+        raw_output='{"class_name": "cat", "confidence": 0.9}',
+        image=_build_image(),
+        classes=["cat", "cat", "dog"],
+        inference_id="inference-id",
+    )
+
+    assert error_status is True
+    assert predictions is None
