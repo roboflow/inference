@@ -72,7 +72,7 @@ from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDe
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
 )
-from inference.usage_tracking.model_types import bind_usage_model_identity
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
@@ -501,6 +501,9 @@ try:
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
         from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
             InferenceModelsCosmos3ReasonerAdapter,
         )
@@ -511,6 +514,21 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Roboflow fine-tunes carry the platform's model type as their
+            # architecture.
+            ("text-image-pairs", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Action recognition fine-tunes ship under the dash-less trainer
+            # slug; the hosted base keeps the dash and is wrapped for the task
+            # on load.
+            (
+                "action-recognition",
+                "cosmos3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
+            (
+                "action-recognition",
+                "cosmos-3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:
@@ -766,7 +784,7 @@ except:
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)
     instance = ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
-    bind_usage_model_identity(instance, model_id)
+    bind_usage_model_descriptor(instance, model_id)
     return instance
 
 

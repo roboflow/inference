@@ -76,6 +76,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 TrackingMode = Literal["concept", "visual"]
@@ -364,6 +365,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
@@ -386,8 +390,35 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
+        # The usage decorator reads `model_id` off the tracked call, so the
+        # dispatch happens out here where the mode-dependent model is picked.
         selected_model_id = model_id if tracking_mode == "concept" else visual_model_id
-        model = self._get_model(model_id=selected_model_id)
+        return self._tracked_run(
+            images=images,
+            class_names=class_names,
+            model_id=selected_model_id,
+            threshold=threshold,
+            tracking_mode=tracking_mode,
+            points=points,
+            boxes=boxes,
+            prompt_mode=prompt_mode,
+            prompt_interval=prompt_interval,
+        )
+
+    @usage_collector("model")
+    def _tracked_run(
+        self,
+        images: Batch[WorkflowImageData],
+        class_names: Optional[Union[List[str], str]],
+        model_id: str,
+        threshold: float,
+        tracking_mode: TrackingMode,
+        points: Optional[List[Any]],
+        boxes: Optional[Batch[sv.Detections]],
+        prompt_mode: PromptMode,
+        prompt_interval: int,
+    ) -> BlockResult:
+        model = self._get_model(model_id=model_id)
         if tracking_mode == "visual":
             return self._run_visual(
                 model=model,

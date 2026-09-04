@@ -19,6 +19,13 @@ from inference.core.entities.requests import (
     ClassificationInferenceRequest,
     InferenceRequest,
 )
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+)
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionInferenceResponse,
+    ActionRecognitionPrediction,
+)
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
@@ -47,11 +54,13 @@ from inference.core.env import (
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     GCP_SERVERLESS,
+    MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PostProcessingError
+from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
+from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.semantic_segmentation_utils import (
     present_class_ids_from_label_map,
@@ -61,6 +70,11 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
+from inference.core.utils.video_utils import (
+    probe_video,
+    read_frame_windows,
+    video_source_path,
+)
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -87,6 +101,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
+)
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionModel,
+    effective_max_frame_side,
+    plan_windows,
 )
 from inference_models.models.base.async_handoff import (
     STREAM_PIPELINE_CONTEXT_ID_KWARG,
@@ -207,6 +226,35 @@ def _supports_independent_stage_execution(pre_process) -> bool:
     }
 
 
+def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
+    """Return a fixed canvas from an inference-models backend, if it has one.
+
+    Package backends (YOLO26 TRT and friends) keep the network size on
+    ``_inference_config.network_input``. Packages that accept a per-call
+    spatial size return ``None``.
+    """
+    network_input = getattr(
+        getattr(backend, "_inference_config", None),
+        "network_input",
+        None,
+    )
+    if network_input is None:
+        return None
+    if getattr(network_input, "dynamic_spatial_size_supported", False):
+        return None
+
+    training_input_size = getattr(network_input, "training_input_size", None)
+    try:
+        height = int(getattr(training_input_size, "height", None))
+        width = int(getattr(training_input_size, "width", None))
+    except (TypeError, ValueError):
+        return None
+    if height <= 0 or width <= 0:
+        return None
+
+    return height, width
+
+
 class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -233,6 +281,9 @@ class InferenceModelsObjectDetectionAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self._preprocess_supports_independent_stage_execution = (
             _supports_independent_stage_execution(self._model.pre_process)
         )
@@ -396,6 +447,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
         # Stream pipelining: depth=1 means original synchronous behavior
         # (preprocess→forward→postprocess on each frame, in order). depth=2
@@ -1105,6 +1159,9 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
         self.key_points_classes = list(self._model.key_points_classes)
 
@@ -1324,6 +1381,9 @@ class InferenceModelsClassificationAdapter(Model):
                 **kwargs,
             )
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     def run_tensor_native_inference(
@@ -1660,6 +1720,9 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     @property
@@ -1824,6 +1887,9 @@ class InferenceModelsDepthEstimationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
 
     def run_tensor_native_inference(
         self,
@@ -1908,3 +1974,166 @@ class InferenceModelsDepthEstimationAdapter(Model):
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         pass
+
+
+class InferenceModelsActionRecognitionAdapter(Model):
+    """Serves a clip to an action recognition model, one window at a time.
+
+    The model declares how a clip is cut and sampled, so a caller never states
+    a window length or a frame rate. Windows tile from the start of the clip
+    and the trailing remainder is dropped, which is how training validates.
+    """
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+        self.api_key = api_key if api_key else API_KEY
+        self.task_type = "action-recognition"
+        self._model: ActionRecognitionModel = load_action_recognition_model(
+            model_id=model_id, api_key=self.api_key, **kwargs
+        )
+
+    def infer_from_request(
+        self, request: ActionRecognitionInferenceRequest
+    ) -> ActionRecognitionInferenceResponse:
+        sampling = self._model.video_sampling
+        class_filter = request.class_filter or None
+        # Only a model that carries its own class list has ids to report. A
+        # request filter is not a vocabulary: a zero-shot model ignores it and
+        # answers in its own words, so a caption that happens to match one of
+        # the requested names would otherwise be given that name's index.
+        id_vocabulary = self._model.class_names or None
+        with video_source_path(
+            video_type=request.video.type, value=request.video.value
+        ) as path:
+            source_fps, frame_count = probe_video(path=path)
+            _ensure_clip_fits_the_duration_cap(
+                frame_count=frame_count, source_fps=source_fps
+            )
+            windows = plan_windows(
+                frame_count=frame_count,
+                source_fps=source_fps,
+                sampling=sampling,
+            )
+            timeline: List[ActionRecognitionPrediction] = []
+            windows_classified = 0
+            window_frames = read_frame_windows(
+                path=path,
+                windows=[window.frame_indices for window in windows],
+                max_frame_side=effective_max_frame_side(sampling),
+            )
+            for window, frames in zip(windows, window_frames):
+                if len(frames) < max(1, sampling.min_frames):
+                    continue
+                windows_classified += 1
+                # A window's segments index its own frames; the timeline
+                # counts the clip's.
+                merge_window_segments(
+                    timeline=timeline,
+                    frame_numbers=window.frame_indices[: len(frames)],
+                    segments=self._model.infer(
+                        frames=frames,
+                        class_names=class_filter,
+                        fps=window.sample_fps,
+                    ),
+                    id_vocabulary=id_vocabulary,
+                    stride=max(1.0, source_fps / window.sample_fps),
+                )
+        timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
+        return ActionRecognitionInferenceResponse(
+            timeline=timeline,
+            source_fps=source_fps,
+            frame_count=frame_count,
+            windows_classified=windows_classified,
+        )
+
+    def preprocess(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def predict(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def postprocess(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        pass
+
+
+def _ensure_clip_fits_the_duration_cap(frame_count: int, source_fps: float) -> None:
+    """Refuse a clip longer than the deployment serves in one request.
+
+    Each window is a model call, so a request's running time grows with the
+    clip. The size cap bounds bytes, not time: a low-bitrate file well under
+    it can run for an hour. The duration is the quantity a caller can see
+    and cut to, so that is what the limit names.
+    """
+    if MAX_VIDEO_DURATION_SECONDS < 0:
+        return
+    duration_seconds = frame_count / source_fps
+    if duration_seconds <= MAX_VIDEO_DURATION_SECONDS:
+        return
+    message = (
+        f"Video runs {duration_seconds:.1f} s. This server classifies at most "
+        f"{MAX_VIDEO_DURATION_SECONDS:.0f} s in one request. Send a shorter "
+        f"clip, or raise MAX_VIDEO_DURATION_SECONDS on the server."
+    )
+    raise PayloadTooLargeError(message=message, public_message=message)
+
+
+def _weights_id(model_id: str) -> str:
+    """Strip the task suffix a hosted base carries under this task.
+
+    The hosted reasoner serves more than one task, so it is addressed here as
+    "cosmos-3-edge/action_recognition" while its weights answer to
+    "cosmos-3-edge".
+    """
+    task_suffix = "/action_recognition"
+    if model_id.endswith(task_suffix):
+        return model_id[: -len(task_suffix)]
+    return model_id
+
+
+def load_action_recognition_model(
+    model_id: str, api_key: Optional[str] = None, **kwargs
+) -> ActionRecognitionModel:
+    """Load a model for this task the way every entry point loads it.
+
+    The HTTP adapter and the workflow block both come through here, so one
+    model id cannot resolve to different weights, or load under different
+    trust settings, depending on which surface asked for it.
+    """
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
+    loaded_model = AutoModel.from_pretrained(
+        model_id_or_path=_weights_id(model_id=model_id),
+        api_key=api_key,
+        allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+        allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+        weights_provider_extra_headers=get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        ),
+        backend=_get_enabled_inference_models_backends(),
+        **kwargs,
+    )
+    return _as_action_recognition_model(model=loaded_model, model_id=model_id)
+
+
+def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognitionModel:
+    """Accept a model that already serves the task, or wrap a bare reasoner."""
+    if isinstance(model, ActionRecognitionModel):
+        return model
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        Cosmos3EdgeActionRecognition,
+    )
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
+
+    if isinstance(model, Cosmos3EdgeReasoner):
+        return Cosmos3EdgeActionRecognition.from_reasoner(reasoner=model)
+    raise ValueError(f"Model {model_id} does not support action recognition.")

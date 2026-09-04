@@ -17,7 +17,9 @@ The tensor-native surface is the IMAGE (CHW RGB tensor), the INPUT boxes
 mask carriage (an execution-level choice driven by the
 WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION env variable — NOT a manifest field,
 so the manifest stays identical to the numpy sibling; GCP_SERVERLESS forces
-"rle"). The layout-agnostic session/state helpers
+"rle"). This sibling does not decorate ``run()`` with
+``@usage_collector("model")``, so flag-on deployments emit no model-category
+usage row for SAM2 video. The layout-agnostic session/state helpers
 (VideoSessionBookkeeping, decide_prompt_vs_track, build_obj_id_metadata_from_boxes,
 BoxPromptMetadata) are shared with the NumPy sibling. Tensor-native prompt
 extraction and prediction assembly live in
@@ -256,11 +258,16 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             self._sessions.clear()
         return self._model
 
+    # No @usage_collector("model") here: the numpy sibling decorates run(),
+    # but this tensor-native path is left without a model-category usage row.
     def run(
         self,
         images: Batch[WorkflowImageData],

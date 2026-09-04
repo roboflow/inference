@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from fastapi import BackgroundTasks
 
@@ -13,6 +13,11 @@ from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
 
+if TYPE_CHECKING:
+    from inference_models.utils.content_addressed_artifact_cache import (
+        ContentAddressedArtifactCache,
+    )
+
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"
 BACKGROUND_TASKS_PARAM = "background_tasks"
@@ -24,8 +29,14 @@ class ActiveLearningManager(ModelManager):
         model_registry: ModelRegistry,
         cache: BaseCache,
         middlewares: Optional[Dict[str, ActiveLearningMiddleware]] = None,
+        content_addressed_artifact_cache: Optional[
+            "ContentAddressedArtifactCache"
+        ] = None,
     ):
-        super().__init__(model_registry=model_registry)
+        super().__init__(
+            model_registry=model_registry,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
+        )
         self._cache = cache
         self._middlewares = middlewares if middlewares is not None else {}
 

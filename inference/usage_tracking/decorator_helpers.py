@@ -4,18 +4,28 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from inference.core.env import SAM3_EXEC_MODE
 from inference.core.logger import logger
 from inference.core.roboflow_api import service_secret_is_valid
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
+)
+from inference.usage_tracking.block_execution import (
+    BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
+    EXECUTION_MODE_BY_DURATION_SOURCE,
+    consume_measured_block_execution,
 )
 from inference.usage_tracking.megapixel_buckets import (
     build_megapixel_buckets,
     clear_measured_model_input,
     consume_measured_model_input,
     count_inference_images,
+    get_fixed_model_input_hw,
     record_measured_model_hw,
     resolve_model_input_hw,
 )
-from inference.usage_tracking.model_types import get_recorded_model_type
+from inference.usage_tracking.model_types import (
+    ModelDescriptor,
+    get_recorded_model_descriptor,
+)
 from inference.usage_tracking.utils import (
     coerce_optional_bool,
     collect_func_params,
@@ -40,6 +50,21 @@ EXTERNAL_SOURCE_SENTINEL = "external"
 # default is never mutated, only replaced by `set()`.
 usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
     "usage_source_tags", default={}
+)
+
+# Whether the current workflow run is a builder/editor preview. Bound by the
+# `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,
+# and inherited by nested `workflow_block` rows the same way billing
+# suppression is. Preview is independent of `billable`: a preview run is
+# still counted unless the caller also opted out.
+#
+# In-process only, unlike suppression: billing intent crosses into the SDK via
+# `inference_sdk.config.outbound_service_secret`, which
+# `InferenceConfiguration.to_billing_query_parameters()` reads at send time.
+# There is no `is_preview` anywhere in `inference_sdk`, so rows a *remote*
+# server records during a preview run do not carry the flag.
+usage_workflow_is_preview: ContextVar[bool] = ContextVar(
+    "usage_workflow_is_preview", default=False
 )
 
 
@@ -232,6 +257,27 @@ def bind_billing_suppression(
     return usage_billing_suppressed.set(True)
 
 
+def bind_workflow_preview(usage_workflow_preview: bool) -> Optional[Token[bool]]:
+    """Publish preview for nested usage rows, unless it already is published.
+
+    Once a parent marked the run as preview, a nested decorator cannot clear
+    it. A call that is not itself a preview leaves an inherited flag alone.
+
+    Args:
+        usage_workflow_preview: The decorator argument the call was made with.
+
+    Returns:
+        The token to reset once the call is recorded, or None when this call
+        bound nothing.
+    """
+    if usage_workflow_is_preview.get():
+        return None
+    if not usage_workflow_preview:
+        return None
+
+    return usage_workflow_is_preview.set(True)
+
+
 def _non_empty_model_id(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -287,24 +333,37 @@ def get_model_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
         api_key = getattr(request, "api_key", None)
         if api_key:
             return api_key
+    if "self" in func_kwargs:
+        _self = func_kwargs["self"]
+        api_key = getattr(_self, "api_key", None) or getattr(_self, "_api_key", None)
+        if api_key:
+            return api_key
     return None
 
 
-def get_model_type_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
-    """Resolve Roboflow model type (variant when known, else architecture).
+def get_model_descriptor_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[ModelDescriptor]:
+    """Resolve the Roboflow architecture / variant / task behind a model call.
 
-    Prefer ``self.model_type`` (bound at load to the platform variant when
-    known, otherwise the architecture). Fall back to the process-local map
-    keyed by model id. Asking the model registry would be a network call on
-    the inference hot path. A model whose type was never recorded is reported
-    without one.
+    Prefer the labels bound onto the instance at load time. Fall back to the
+    process-local map keyed by model id. Asking the model registry would be a
+    network call on the inference hot path. A model whose descriptor was never
+    recorded is reported without one.
     """
     model = func_kwargs.get("self")
     if model is not None:
-        model_type = getattr(model, "model_type", None)
-        if model_type:
-            return str(model_type)
-    return get_recorded_model_type(get_model_id_from_kwargs(func_kwargs))
+        architecture = getattr(model, "model_architecture", None)
+        if architecture:
+            variant = getattr(model, "model_variant", None)
+            task_type = getattr(model, "task_type", None)
+            return ModelDescriptor(
+                architecture=str(architecture),
+                variant=str(variant) if variant else None,
+                task_type=str(task_type) if task_type else None,
+            )
+
+    return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
 
 
 def get_model_resource_details_from_kwargs(
@@ -320,27 +379,81 @@ def get_model_resource_details_from_kwargs(
     )
     if source is not None:
         resource_details["source"] = source
-    if "self" in func_kwargs:
-        _self = func_kwargs["self"]
-        if hasattr(_self, "task_type"):
-            resource_details["task_type"] = _self.task_type
-    model_type = get_model_type_from_kwargs(func_kwargs)
-    if model_type:
-        resource_details["model_type"] = model_type
+    model = func_kwargs.get("self")
+    task_type = getattr(model, "task_type", None) if model is not None else None
+    model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
+    if model_descriptor:
+        resource_details["model_architecture"] = model_descriptor.architecture
+        if model_descriptor.variant:
+            resource_details["model_variant"] = model_descriptor.variant
+        if not task_type:
+            task_type = model_descriptor.task_type
+
+    if task_type:
+        resource_details["task_type"] = str(task_type)
+    # Only the configured canvas, never the observed one. Rows aggregate over
+    # calls that may each see a different upload, and resource details merge
+    # last-write-wins, so a size that varies per call would be attributed to
+    # every frame in the row. Per-call size is reported as megapixel buckets.
+    fixed_input_hw = get_fixed_model_input_hw(func_kwargs.get("self"))
+    if fixed_input_hw:
+        resource_details["model_input_height"] = fixed_input_hw[0]
+        resource_details["model_input_width"] = fixed_input_hw[1]
     return resource_details
+
+
+def _as_image_sequence(value: Any) -> Any:
+    """Normalize a workflow Batch of images to a list for frame counting.
+
+    ``Batch`` is sized and iterable but is not a list/tuple, so
+    ``count_inference_images`` would otherwise treat a multi-image batch as
+    a single frame.
+    """
+    if isinstance(value, Batch):
+        return list(value)
+    return value
+
+
+def _compare_request_images(request: Any) -> Optional[List[Any]]:
+    """Imagery carried by a CLIP/PE compare request, which has no ``image``.
+
+    Compare requests hold their images under ``subject`` / ``prompt``; each
+    side participates only when its ``*_type`` says it is an image.
+    """
+    images = []
+    if getattr(request, "subject_type", None) == "image":
+        subject = getattr(request, "subject", None)
+        if subject is not None:
+            images.append(subject)
+    if getattr(request, "prompt_type", None) == "image":
+        prompt = getattr(request, "prompt", None)
+        if isinstance(prompt, dict):
+            images.extend(prompt.values())
+        elif isinstance(prompt, (list, tuple)):
+            images.extend(prompt)
+        elif prompt is not None:
+            images.append(prompt)
+    return images or None
 
 
 def get_model_image_from_kwargs(func_kwargs: Dict[str, Any]) -> Any:
     if "image" in func_kwargs:
-        return func_kwargs["image"]
+        return _as_image_sequence(func_kwargs["image"])
+    if "images" in func_kwargs:
+        return _as_image_sequence(func_kwargs["images"])
     nested_kwargs = func_kwargs.get("kwargs")
     if isinstance(nested_kwargs, dict) and "image" in nested_kwargs:
-        return nested_kwargs["image"]
+        return _as_image_sequence(nested_kwargs["image"])
+    if isinstance(nested_kwargs, dict) and "images" in nested_kwargs:
+        return _as_image_sequence(nested_kwargs["images"])
     for request_key in ("inference_request", "request"):
         request = func_kwargs.get(request_key)
         image = getattr(request, "image", None)
         if image is not None:
             return image
+        compare_images = _compare_request_images(request)
+        if compare_images is not None:
+            return compare_images
     return None
 
 
@@ -363,7 +476,15 @@ def get_model_frames_and_input_hw(
     if frames <= 0 and measured_frames:
         frames = measured_frames
     if frames <= 0:
-        frames = 1
+        # No imagery anywhere in the call (text-only embeds). One frame is
+        # still billed, but crediting the model's visual canvas to it would
+        # fabricate image-resolution telemetry — leave the bucket unknown
+        # unless the call explicitly published a size (SAM2/SAM3 cache-hit
+        # embed_image with image=None).
+        if measured_hw is None:
+            return 1, None
+
+        return 1, resolve_model_input_hw(model, measured_hw=measured_hw)
 
     return frames, resolve_model_input_hw(model, measured_hw=measured_hw)
 
@@ -468,6 +589,135 @@ def get_workflow_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[st
         return None
 
     return workflow.init_parameters.get("workflows_core.api_key")
+
+
+def get_workflow_block_resource_id_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[str]:
+    """Billing identity the block published for itself when it was assembled.
+
+    Blocks own this because only they know what makes two invocations the same
+    resource - a custom Python block keys on its code, not on the step or the
+    author-chosen block type.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return None
+    resource_id = getattr(block, "_usage_resource_id", None)
+    if not resource_id:
+        return None
+    return str(resource_id)
+
+
+def get_workflow_block_api_key_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Optional[str]:
+    """API key the block was constructed with.
+
+    Blocks receive the workflow's key as an init parameter, so there is no
+    per-call key that could be more current than it.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return None
+    api_key = getattr(block, "_api_key", None)
+    if not api_key:
+        return None
+    return str(api_key)
+
+
+def get_workflow_block_resource_details_from_kwargs(
+    func_kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Describe the block behind a ``workflow_block`` row.
+
+    ``step_name`` and ``block_type`` are metadata, not part of the identity:
+    rows aggregate by resource id, so for a snippet used by several steps only
+    the most recently recorded pair is kept.
+    """
+    block = func_kwargs.get("self")
+    if block is None:
+        return {}
+
+    resource_details = {}
+    block_kind = getattr(block, "_usage_block_kind", None)
+    if block_kind:
+        resource_details["block_kind"] = str(block_kind)
+    block_type = getattr(block, "_workflow_step_type", None) or getattr(
+        block, "_usage_block_type", None
+    )
+    if block_type:
+        resource_details["block_type"] = str(block_type)
+    step_name = getattr(block, "_workflow_step_name", None)
+    if step_name:
+        resource_details["step_name"] = str(step_name)
+
+    return resource_details
+
+
+def _count_batch_elements(value: Any) -> int:
+    """Leaf elements of a possibly nested ``Batch``.
+
+    A block running at dimensionality >= 2 (say, downstream of a crop) receives
+    a ``Batch`` of ``Batch``, so the outer length is the number of parent
+    elements, not the number of items the block was handed.
+    """
+    if not isinstance(value, Batch):
+        return 1
+    return sum(_count_batch_elements(element) for element in value)
+
+
+def get_workflow_block_frames_from_kwargs(func_kwargs: Dict[str, Any]) -> int:
+    """Batch elements handed to one ``run()`` call.
+
+    Batch-oriented blocks are given the whole batch in a single call, so
+    counting invocations would under-report them against blocks the engine
+    calls once per element.
+    """
+    block_kwargs = func_kwargs.get("block_kwargs")
+    if not isinstance(block_kwargs, dict):
+        return 1
+
+    batch_sizes = [
+        _count_batch_elements(value)
+        for value in block_kwargs.values()
+        if isinstance(value, Batch)
+    ]
+    if not batch_sizes:
+        return 1
+
+    return max(max(batch_sizes), 1)
+
+
+def resolve_workflow_block_execution(
+    execution_duration: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """Prefer the duration the block measured over the decorator's wall clock.
+
+    A block executed in a remote sandbox spends part of the decorated call on
+    input serialization and the network round trip, which is not time the block
+    itself ran. Where the number came from is reported alongside it so the
+    usage API can tell a measured runtime from a fallback estimate.
+
+    Args:
+        execution_duration: Wall clock measured by the usage decorator.
+
+    Returns:
+        Duration to bill, and resource details describing its origin.
+    """
+    measured_execution = consume_measured_block_execution()
+    if measured_execution is None:
+        fallback_details = {
+            "duration_source": BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
+        }
+        return execution_duration, fallback_details
+
+    execution_details = {"duration_source": measured_execution.source}
+    execution_mode = EXECUTION_MODE_BY_DURATION_SOURCE.get(measured_execution.source)
+    if execution_mode:
+        execution_details["execution_mode"] = execution_mode
+
+    return measured_execution.duration, execution_details
 
 
 def get_request_api_key_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:

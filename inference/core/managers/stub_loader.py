@@ -1,11 +1,27 @@
 from typing import Optional
 
 from inference.core.managers.base import ModelManager
+from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import ModelEndpointType
-from inference.usage_tracking.model_types import bind_usage_model_identity
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 
 class StubLoaderManager(ModelManager):
+    def __init__(
+        self,
+        model_registry: ModelRegistry,
+        models: Optional[dict] = None,
+    ) -> None:
+        from inference_models.utils.content_addressed_artifact_cache import (
+            NullContentAddressedArtifactCache,
+        )
+
+        super().__init__(
+            model_registry=model_registry,
+            models=models,
+            content_addressed_artifact_cache=NullContentAddressedArtifactCache(),
+        )
+
     def add_model(
         self,
         model_id: str,
@@ -28,7 +44,7 @@ class StubLoaderManager(ModelManager):
             model_id_alias if model_id_alias is not None else model_id, api_key
         )
         model = model_class(model_id=model_id, api_key=api_key, load_weights=False)
-        bind_usage_model_identity(
+        bind_usage_model_descriptor(
             model, model_id, model_id_alias if model_id_alias is not None else None
         )
         self._models[model_id] = model

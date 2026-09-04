@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, BeforeValidator, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError, model_validator
 
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -279,7 +279,9 @@ Number = Union[int, float]
 
 
 class NetworkInputDefinition(BaseModel):
-    training_input_size: TrainingInputSize
+    # A model that accepts any input size (a VLM whose processor sizes images itself) has
+    # no training size to declare; the trainers ship none for versions without a resize.
+    training_input_size: Optional[TrainingInputSize] = Field(default=None)
     dataset_version_resize_dimensions: Optional[TrainingInputSize] = Field(default=None)
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
@@ -291,6 +293,19 @@ class NetworkInputDefinition(BaseModel):
     input_channels: int
     scaling_factor: Optional[Number] = Field(default=None)
     normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def _training_input_size_may_only_be_omitted_for_any_size_models(self):
+        accepts_any_size = self.dynamic_spatial_size_supported and isinstance(
+            self.dynamic_spatial_size_mode, AnySizePadding
+        )
+        if self.training_input_size is None and not accepts_any_size:
+            raise ValueError(
+                "network_input.training_input_size may only be omitted for models that "
+                "accept any input size (dynamic_spatial_size_supported with an any-size "
+                "dynamic_spatial_size_mode)"
+            )
+        return self
 
 
 class ForwardPassConfiguration(BaseModel):
@@ -356,6 +371,25 @@ def parse_inference_config(
     ] = None,
     max_allowed_input_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> InferenceConfig:
+    """Load and validate a Roboflow model package inference configuration.
+
+    Args:
+        config_path: Path to the package's inference configuration JSON file.
+        allowed_resize_modes: Resize modes supported by the model implementation.
+        implicit_resize_mode_substitutions: Optional mapping from package resize
+            modes to supported substitutes, padding values, and warning messages.
+        max_allowed_input_size: Optional environment limit for training input
+            height and width, or a single limit for both dimensions.
+
+    Returns:
+        The validated inference configuration.
+
+    Raises:
+        CorruptedModelPackageError: If the file cannot be read, is malformed, or
+            declares an unsupported resize mode.
+        ModelPackageRestrictedError: If the package's declared input size cannot
+            be safely checked against the configured environment limit.
+    """
     try:
         decoded_config = read_json(path=config_path)
         if not isinstance(decoded_config, dict):
@@ -400,6 +434,15 @@ def parse_inference_config(
         if isinstance(max_allowed_input_size, int):
             max_allowed_input_size = (max_allowed_input_size, max_allowed_input_size)
         training_input_size = parsed_config.network_input.training_input_size
+        if training_input_size is None:
+            raise ModelPackageRestrictedError(
+                message="Configuration of runtime environment limits model input "
+                f"size to {max_allowed_input_size}, but the model package does not "
+                "declare a training input size that can be validated against that "
+                "limit.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+            )
+
         if (
             training_input_size.height > max_allowed_input_size[0]
             or training_input_size.width > max_allowed_input_size[1]

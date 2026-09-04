@@ -45,6 +45,10 @@ from inference.core.constants import (
     WORKSPACE_ID_HEADER,
 )
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+    InferenceRequestVideo,
+)
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
     ClipImageEmbeddingRequest,
@@ -96,6 +100,9 @@ from inference.core.entities.requests.workflows import (
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionInferenceResponse,
+)
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
@@ -130,6 +137,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3EmbeddingResponse,
     Sam3SegmentationResponse,
 )
+from inference.core.entities.responses.secure_gateway import SecureGatewayHealthResponse
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -143,6 +151,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_ENABLED,
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
@@ -195,12 +204,15 @@ from inference.core.env import (
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
+    ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
+    SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED,
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
@@ -237,6 +249,9 @@ from inference.core.interfaces.http.dependencies import (
 from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
+)
+from inference.core.interfaces.http.handlers.secure_gateway import (
+    probe_secure_gateway_health,
 )
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
@@ -328,7 +343,7 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
-from inference.core.utils.url_utils import wrap_url
+from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
 from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -394,6 +409,19 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+# Probe/health endpoints whose access-log lines are demoted to DEBUG.
+HEALTH_CHECK_LOG_PATHS = frozenset(
+    {
+        "/",
+        "/info",
+        "/healthz",
+        "/ready",
+        "/readiness",
+        "/live",
+        "/liveness",
+        "/secure-gateway/health",
+    }
+)
 
 
 if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
@@ -551,7 +579,17 @@ def _log_serverless_request_received(
     }
     if execution_id_value is not None:
         log_fields["execution_id"] = execution_id_value
-    logger.info(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+    # Debug: one INFO line per request doubles serverless log volume; the
+    # structured access log already records every request with the same ids.
+    logger.debug(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    """Read the comma separated class list the legacy route carries."""
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 class HttpInterface(BaseInterface):
@@ -765,6 +803,45 @@ class HttpInterface(BaseInterface):
                     docker_socket_path=DOCKER_SOCKET_PATH
                 )
                 return JSONResponse(status_code=200, content=container_stats)
+
+            if SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED:
+
+                @app.get(
+                    "/secure-gateway/health",
+                    response_model=SecureGatewayHealthResponse,
+                    responses={
+                        404: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "SECURE_GATEWAY is not configured on this server.",
+                        },
+                        502: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway answered, but not with 2xx (includes redirects).",
+                        },
+                        503: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway unreachable or TLS handshake failed.",
+                        },
+                        504: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway did not answer within SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT.",
+                        },
+                    },
+                    summary="Secure gateway health",
+                    description="Probe the /health route of the configured SECURE_GATEWAY "
+                    "(legacy LICENSE_SERVER) and report whether the proxy is reachable "
+                    "from this server. Opt-in via SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED.",
+                )
+                @with_route_exceptions
+                def secure_gateway_health():
+                    status_code, payload = probe_secure_gateway_health(
+                        gateway_base_url=get_secure_gateway_base_url(),
+                        timeout=SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
+                        verify_ssl=ROBOFLOW_API_VERIFY_SSL,
+                    )
+                    return JSONResponse(
+                        status_code=status_code, content=payload.model_dump()
+                    )
 
         cached_api_keys: Dict[AuthorizationCacheKey, AuthorizationCacheEntry] = {}
 
@@ -1199,6 +1276,7 @@ class HttpInterface(BaseInterface):
                         "/info",
                         "/healthz",  # health check endpoint for liveness probe
                         "/readiness",
+                        "/secure-gateway/health",  # opt-in proxy probe, liveness-class
                         "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
@@ -1383,7 +1461,17 @@ class HttpInterface(BaseInterface):
                     if len(parts) >= 3:
                         log_fields["trace_id"] = parts[1]
 
-                logger.info(
+                # Health/probe endpoints log at DEBUG: kube-probe and LB
+                # health traffic otherwise dominates access-log volume.
+                # Real request paths MUST stay at INFO — the dedicated
+                # deployment auto-pause daemon reads these lines as its
+                # activity signal (see GEV-28).
+                access_log = (
+                    logger.debug
+                    if request.url.path in HEALTH_CHECK_LOG_PATHS
+                    else logger.info
+                )
+                access_log(
                     f"{request.method} {request.url.path} {response.status_code}",
                     **log_fields,
                 )
@@ -4194,6 +4282,74 @@ class HttpInterface(BaseInterface):
                         model_id=model_id,
                     )
 
+            if ACTION_RECOGNITION_ENABLED:
+
+                @app.post(
+                    "/infer/action_recognition",
+                    response_model=ActionRecognitionInferenceResponse,
+                    summary="Action Recognition",
+                    description=(
+                        "Classify the actions in a video clip. The model states "
+                        "how the clip is cut and how its frames are sampled, so a "
+                        "caller sends the clip and nothing else. Frame indices in "
+                        "the response count from the first frame of the clip, and "
+                        "windows_classified reports how many calls the clip was "
+                        "cut into. A fine-tuned model reports its own classes. A "
+                        "zero-shot model names the events it finds in its own "
+                        "words. Frames are chosen by the clip's nominal frame "
+                        "rate, so a variable-frame-rate source is sampled at "
+                        "different instants than the model trained on. Send the "
+                        "clip as a URL. Base64 grows it by a third and holds the "
+                        "whole request in memory, so it suits short clips only."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def infer_action_recognition(
+                    inference_request: ActionRecognitionInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Classify the actions in a video clip.
+
+                    Args:
+                        inference_request (ActionRecognitionInferenceRequest): The
+                            clip to classify and the model to classify it with.
+                        api_key (Optional[str], default None): Roboflow API Key
+                            passed to the model during initialization for artifact
+                            retrieval.
+                        request (Request): The HTTP request.
+
+                    Returns:
+                        ActionRecognitionInferenceResponse: The classified ranges
+                        covering the clip.
+                    """
+                    logger.debug("Reached /infer/action_recognition")
+                    api_key = api_key_fallback(api_key)
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        model_id,
+                        inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(model_id, actor)
+                    return response
+
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
@@ -4432,6 +4588,14 @@ class HttpInterface(BaseInterface):
                     "base64",
                     description="One of base64 or numpy. Note, numpy input is not supported for Roboflow Hosted Inference.",
                 ),
+                class_filter: Optional[str] = Query(
+                    None,
+                    description=(
+                        "Action recognition only: comma separated classes. The "
+                        "subset of a fine-tuned model's classes to report. A "
+                        "zero-shot model answers in its own words and ignores it."
+                    ),
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4598,6 +4762,31 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
+                if task_type == "action-recognition":
+                    # The payload is a clip, so none of the image-shaped
+                    # arguments below apply to it. The `image` query parameter
+                    # carries a URL here, which is the transport to prefer: a
+                    # base64 body grows the clip by a third and is held whole
+                    # in memory.
+                    inference_response = self.model_manager.infer_from_request_sync(
+                        # add_model above registers under the alias, which is
+                        # model_id, so the lookup asks for that. Under Lambda
+                        # request_model_id is the authorizer's endpoint and
+                        # names nothing the manager holds.
+                        model_id,
+                        ActionRecognitionInferenceRequest(
+                            api_key=api_key,
+                            model_id=model_id,
+                            video=InferenceRequestVideo(
+                                type=request_image.type, value=request_image.value
+                            ),
+                            class_filter=_parse_legacy_class_filter(
+                                class_filter=class_filter
+                            ),
+                        ),
+                    )
+                    logger.debug("Response ready.")
+                    return orjson_response(inference_response)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":

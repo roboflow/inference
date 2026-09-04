@@ -74,7 +74,11 @@ def test_workflow_with_sahi(
     # then
     assert len(result) == 1, "1 image submitted, expected one output"
     confidences = [p["confidence"] for p in result[0]["predictions"]["predictions"]]
-    if platform_environment == PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS:
+    if platform_environment in {
+        PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS,
+    }:
         np.allclose(
             confidences,
             [
