@@ -1,19 +1,45 @@
+"""Anthropic Claude workflow block (v5).
+
+Extends v4 with a ``reasoning_effort`` control that maps to Anthropic
+``output_config.effort`` (``low`` / ``medium`` / ``high`` / ``xhigh`` /
+``max``) on models that support it. Unset effort keeps the API default
+(``high``). Manual ``extended_thinking`` remains for models that still
+accept ``thinking.type=enabled``.
+"""
+
 import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import anthropic
+import cv2
+import numpy as np
+import requests
 from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
-from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.reasoning import (
+    attach_reasoning_levels,
+    models_supporting_reasoning,
+    validate_reasoning_level,
+)
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+    parse_responses_api_usage,
+)
+from inference.core.workflows.core_steps.common.utils import (
+    compute_anthropic_upload_dimensions,
+    run_in_parallel,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
+    anthropic_model_supports_manual_thinking,
     build_thinking_config,
     resolve_temperature,
 )
@@ -28,6 +54,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    ROBOFLOW_MANAGED_KEY,
     SECRET_KIND,
     STRING_KIND,
     ImageInputField,
@@ -43,78 +70,155 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
+REASONING_EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"]
+EFFORT_WITHOUT_XHIGH = ["low", "medium", "high", "max"]
+EFFORT_LOW_MEDIUM_HIGH = ["low", "medium", "high"]
+
 CLAUDE_MODELS = [
+    {
+        "id": "claude-fable-5-1",
+        "name": "Claude Fable 5.1",
+        "exact_version": "claude-fable-5-1",
+        "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
+    },
     {
         "id": "claude-fable-5",
         "name": "Claude Fable 5",
         "exact_version": "claude-fable-5",
         "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
+    },
+    {
+        "id": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "exact_version": "claude-opus-5",
+        "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
+    },
+    {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "exact_version": "claude-sonnet-5",
+        "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
+    },
+    {
+        "id": "claude-opus-4-8",
+        "name": "Claude Opus 4.8",
+        "exact_version": "claude-opus-4-8",
+        "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
     },
     {
         "id": "claude-opus-4-7",
         "name": "Claude Opus 4.7",
         "exact_version": "claude-opus-4-7",
         "max_output_tokens": 128000,
+        "reasoning_effort_values": REASONING_EFFORT_VALUES,
     },
     {
         "id": "claude-opus-4-6",
         "name": "Claude Opus 4.6",
         "exact_version": "claude-opus-4-6",
         "max_output_tokens": 128000,
+        "reasoning_effort_values": EFFORT_WITHOUT_XHIGH,
     },
     {
         "id": "claude-sonnet-4-6",
         "name": "Claude Sonnet 4.6",
         "exact_version": "claude-sonnet-4-6",
         "max_output_tokens": 64000,
+        "reasoning_effort_values": EFFORT_WITHOUT_XHIGH,
     },
     {
         "id": "claude-sonnet-4-5",
         "name": "Claude Sonnet 4.5",
         "exact_version": "claude-sonnet-4-5-20250929",
         "max_output_tokens": 64000,
+        "reasoning_effort_values": [],
     },
     {
         "id": "claude-haiku-4-5",
         "name": "Claude Haiku 4.5",
         "exact_version": "claude-haiku-4-5-20251001",
         "max_output_tokens": 64000,
+        "reasoning_effort_values": [],
     },
     {
         "id": "claude-opus-4-5",
         "name": "Claude Opus 4.5",
         "exact_version": "claude-opus-4-5-20251101",
         "max_output_tokens": 64000,
+        "reasoning_effort_values": EFFORT_LOW_MEDIUM_HIGH,
     },
     {
         "id": "claude-sonnet-4",
         "name": "Claude Sonnet 4",
         "exact_version": "claude-sonnet-4-20250514",
         "max_output_tokens": 64000,
+        "reasoning_effort_values": [],
     },
     {
         "id": "claude-opus-4-1",
         "name": "Claude Opus 4.1",
         "exact_version": "claude-opus-4-1-20250805",
         "max_output_tokens": 32000,
+        "reasoning_effort_values": [],
     },
     {
         "id": "claude-opus-4",
         "name": "Claude Opus 4",
         "exact_version": "claude-opus-4-20250514",
         "max_output_tokens": 32000,
+        "reasoning_effort_values": [],
     },
 ]
 
 MODEL_VERSION_IDS = [model["id"] for model in CLAUDE_MODELS]
 EXACT_MODEL_VERSIONS = {model["id"]: model["exact_version"] for model in CLAUDE_MODELS}
 
-MODEL_VERSION_METADATA = {
-    model["id"]: {"name": model["name"]} for model in CLAUDE_MODELS
+MODEL_REASONING_EFFORT_VALUES = {
+    model["id"]: model["reasoning_effort_values"] for model in CLAUDE_MODELS
 }
+MODELS_SUPPORTING_REASONING_EFFORT = models_supporting_reasoning(
+    MODEL_REASONING_EFFORT_VALUES
+)
+MODELS_SUPPORTING_MANUAL_THINKING = [
+    model["id"]
+    for model in CLAUDE_MODELS
+    if anthropic_model_supports_manual_thinking(model["id"])
+]
+
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {model["id"]: {"name": model["name"]} for model in CLAUDE_MODELS},
+    MODEL_REASONING_EFFORT_VALUES,
+)
 
 MAX_OUTPUT_TOKENS = {model["id"]: model["max_output_tokens"] for model in CLAUDE_MODELS}
 DEFAULT_MAX_OUTPUT_TOKENS = 64000
+
+DETECTION_MAX_PNG_PAYLOAD_BYTES = 2_500_000
+"""Largest PNG payload sent for object detection, before base64 growth.
+
+Lossless PNG of a large photographic upload can exceed the request body
+limits of the Roboflow proxy and Anthropic's per-image maximum. Above this
+size the block re-encodes the image as JPEG (quality 95) at the same
+resolution, which keeps the coordinate contract intact.
+"""
+
+DETECTION_JPEG_FALLBACK_QUALITY = 95
+
+OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image. "
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
+    "top-left and bottom-right corners in absolute pixel coordinates "
+    "of the {width}x{height} pixel image. "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: {class_list}"
+)
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -142,7 +246,28 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Anthropic API key to use the Claude model.
+The `object-detection` task asks Claude for a JSON list of
+`{{"box_2d": [x_min, y_min, x_max, y_max], "label": ...}}` entries where
+coordinates are absolute pixels of the uploaded image. The image is
+pre-resized to the exact dimensions Claude's internal resize would produce
+and sent as lossless PNG, matching the vlm-exam benchmark setup for Claude
+models; the `max_image_size` parameter is not applied to this task. Use
+`roboflow_core/vlm_as_detector@v2` with `model_type="anthropic-claude"` to
+convert the output into predictions. Confidence scores are not requested;
+the parser assigns `1.0`.
+
+### API Key Options
+
+This block supports two API key modes:
+
+1. **Roboflow Managed API Key (Default)** - Use `rf_key:account` to proxy requests through Roboflow's API:
+   * **Simplified setup** - no Anthropic API key required
+   * **Secure** - your workflow API key is used for authentication
+   * **Usage-based billing** - charged per token based on the model used
+
+2. **Custom Anthropic API Key** - Provide your own Anthropic API key:
+   * Full control over API usage
+   * You pay Anthropic directly
 """
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
@@ -167,7 +292,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Anthropic Claude",
-            "version": "v2",
+            "version": "v5",
             "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -183,7 +308,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/anthropic_claude@v2"]
+    type: Literal["roboflow_core/anthropic_claude@v5"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -236,9 +361,12 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your Anthropic API key",
-        examples=["xxx-xxx", "$inputs.anthropic_api_key"],
+    api_key: Union[
+        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
+    ] = Field(
+        default="rf_key:account",
+        description="Your Anthropic API key or 'rf_key:account' to use Roboflow's managed API key",
+        examples=["rf_key:account", "xxx-xxx", "$inputs.anthropic_api_key"],
         private=True,
     )
     model_version: Union[
@@ -257,6 +385,36 @@ class BlockManifest(WorkflowBlockManifest):
         description="Enable extended thinking for deeper reasoning on complex tasks. "
         "Note: temperature cannot be used when extended thinking is enabled. Models that "
         "only support adaptive thinking (Claude Opus 4.7 and newer) ignore `thinking_budget_tokens`.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_MANUAL_THINKING,
+                    "required": False,
+                },
+            },
+        },
+    )
+    reasoning_effort: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal[tuple(REASONING_EFFORT_VALUES)],
+        ]
+    ] = Field(
+        default=None,
+        description="Controls how much work Claude puts into the response, including "
+        "thinking depth on models with adaptive thinking. Maps to Anthropic "
+        "`output_config.effort`. Supported values differ per model and are listed "
+        "next to each entry of the model dropdown. When unset, the Anthropic "
+        "default (high) is used.",
+        examples=["low", "$inputs.reasoning_effort"],
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_REASONING_EFFORT,
+                    "required": False,
+                },
+            },
+        },
     )
     thinking_budget_tokens: Optional[int] = Field(
         default=None,
@@ -287,7 +445,8 @@ class BlockManifest(WorkflowBlockManifest):
         le=1.0,
     )
     max_image_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio",
+        description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio. "
+        "Not applied to the `object-detection` task, which pre-resizes images to Claude's native resolution instead.",
         default=1024,
     )
     max_concurrent_requests: Optional[int] = Field(
@@ -325,6 +484,11 @@ class BlockManifest(WorkflowBlockManifest):
                 raise ValueError(
                     f"`thinking_budget_tokens` ({budget_tokens}) must be less than `max_tokens` ({max_tokens})"
                 )
+        validate_reasoning_level(
+            model=self.model_version,
+            level=self.reasoning_effort,
+            levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+        )
         return self
 
     @classmethod
@@ -342,6 +506,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+            *TOKEN_OUTPUT_DEFINITIONS,
         ]
 
     @classmethod
@@ -350,9 +515,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         if is_workflow_selector(self.model_version):
-            # Friendly-label selector returned verbatim; the attached resolver
-            # performs the EXACT_MODEL_VERSIONS lookup once the input value is
-            # substituted.
+            # Selector returned verbatim; the attached resolver performs the
+            # EXACT_MODEL_VERSIONS lookup once the input value is substituted.
             return [
                 third_party_model(
                     provider="anthropic",
@@ -372,7 +536,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class AnthropicClaudeBlockV2(WorkflowBlock):
+class AnthropicClaudeBlockV5(WorkflowBlock):
 
     def __init__(
         self,
@@ -392,7 +556,7 @@ class AnthropicClaudeBlockV2(WorkflowBlock):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
     def run(
         self,
@@ -401,94 +565,178 @@ class AnthropicClaudeBlockV2(WorkflowBlock):
         prompt: Optional[str],
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
-        api_key: str,
         model_version: str,
         max_tokens: Optional[int],
         temperature: Optional[float],
         extended_thinking: Optional[bool],
         thinking_budget_tokens: Optional[int],
+        reasoning_effort: Optional[str],
         max_image_size: int,
         max_concurrent_requests: Optional[int],
+        api_key: str = "rf_key:account",
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_claude_prompting(
+            roboflow_api_key=self._api_key,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            api_key=api_key,
+            anthropic_api_key=api_key,
             model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
             extended_thinking=extended_thinking,
             thinking_budget_tokens=thinking_budget_tokens,
+            reasoning_effort=reasoning_effort,
             max_image_size=max_image_size,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
+            {
+                "output": content,
+                "classes": classes,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+            for content, input_tokens, output_tokens in raw_outputs
         ]
 
 
 def run_claude_prompting(
+    roboflow_api_key: Optional[str],
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    api_key: str,
+    anthropic_api_key: str,
     model_version: str,
     max_tokens: Optional[int],
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
+    reasoning_effort: Optional[str],
     max_image_size: int,
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
-        loaded_image = downscale_image_keeping_aspect_ratio(
-            image=loaded_image, desired_size=(max_image_size, max_image_size)
+        base64_image, media_type, image_width, image_height = encode_image_for_task(
+            loaded_image, task_type=task_type, max_image_size=max_image_size
         )
-        base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(loaded_image)
-        ).decode("ascii")
         generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            image_width=image_width,
+            image_height=image_height,
+            media_type=media_type,
         )
         prompts.append(generated_prompt)
     return execute_claude_requests(
-        api_key=api_key,
+        roboflow_api_key=roboflow_api_key,
+        anthropic_api_key=anthropic_api_key,
         prompts=prompts,
         model_version=model_version,
         max_tokens=max_tokens,
         temperature=temperature,
         extended_thinking=extended_thinking,
         thinking_budget_tokens=thinking_budget_tokens,
+        reasoning_effort=reasoning_effort,
         max_concurrent_requests=max_concurrent_requests,
     )
 
 
+def encode_image_for_task(
+    image: np.ndarray, *, task_type: TaskType, max_image_size: int
+) -> Tuple[str, int, int]:
+    """Encode an image as base64 using task-appropriate preprocessing.
+
+    The ``object-detection`` task pre-resizes the image to the exact
+    dimensions Claude's internal resize would produce (high-resolution tier)
+    and encodes it as lossless PNG, so pixel coordinates returned by the
+    model map one-to-one onto the uploaded image - matching the vlm-exam
+    benchmark setup the absolute-pixel contract was validated with. All other
+    tasks downscale to ``max_image_size`` and send JPEG, as previous block
+    versions did.
+
+    Args:
+        image: BGR image to be encoded.
+        task_type: Task type determining the preprocessing applied.
+        max_image_size: Maximum longest edge applied to non-detection tasks.
+
+    Returns:
+        Tuple of the base64-encoded image payload (without a data URL prefix),
+        its media type, and the ``(width, height)`` of the encoded image.
+    """
+    if task_type == "object-detection":
+        encoded_image = _resize_image_to_anthropic_upload_dimensions(image)
+        image_bytes = _encode_image_to_png_bytes(encoded_image)
+        media_type = "image/png"
+        if len(image_bytes) > DETECTION_MAX_PNG_PAYLOAD_BYTES:
+            image_bytes = _encode_image_to_jpeg_bytes_with_quality(
+                encoded_image, quality=DETECTION_JPEG_FALLBACK_QUALITY
+            )
+            media_type = "image/jpeg"
+    else:
+        encoded_image = downscale_image_keeping_aspect_ratio(
+            image=image, desired_size=(max_image_size, max_image_size)
+        )
+        image_bytes = encode_image_to_jpeg_bytes(encoded_image)
+        media_type = "image/jpeg"
+
+    base64_image = base64.b64encode(image_bytes).decode("ascii")
+    encoded_height, encoded_width = encoded_image.shape[:2]
+
+    return base64_image, media_type, encoded_width, encoded_height
+
+
+def _resize_image_to_anthropic_upload_dimensions(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    target_width, target_height = compute_anthropic_upload_dimensions(width, height)
+    if (target_width, target_height) == (width, height):
+        return image
+
+    return cv2.resize(
+        image, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4
+    )
+
+
+def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
+    _, encoded_image = cv2.imencode(".png", image)
+    return encoded_image.tobytes()
+
+
+def _encode_image_to_jpeg_bytes_with_quality(
+    image: np.ndarray, *, quality: int
+) -> bytes:
+    _, encoded_image = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return encoded_image.tobytes()
+
+
 def execute_claude_requests(
-    api_key: str,
+    roboflow_api_key: Optional[str],
+    anthropic_api_key: str,
     prompts: List[Tuple[Optional[str], List[dict]]],
     model_version: str,
     max_tokens: Optional[int],
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
+    reasoning_effort: Optional[str],
     max_concurrent_requests: Optional[int],
-) -> List[str]:
+) -> List[Tuple[str, Optional[int], Optional[int]]]:
     tasks = [
         partial(
             execute_claude_request,
+            roboflow_api_key=roboflow_api_key,
+            anthropic_api_key=anthropic_api_key,
             system_prompt=prompt[0],
             messages=prompt[1],
             model_version=model_version,
@@ -496,7 +744,7 @@ def execute_claude_requests(
             temperature=temperature,
             extended_thinking=extended_thinking,
             thinking_budget_tokens=thinking_budget_tokens,
-            api_key=api_key,
+            reasoning_effort=reasoning_effort,
         )
         for prompt in prompts
     ]
@@ -511,6 +759,8 @@ def execute_claude_requests(
 
 
 def execute_claude_request(
+    roboflow_api_key: Optional[str],
+    anthropic_api_key: str,
     system_prompt: Optional[str],
     messages: List[dict],
     model_version: str,
@@ -518,9 +768,129 @@ def execute_claude_request(
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
-    api_key: str,
-) -> str:
-    client = anthropic.Anthropic(api_key=api_key)
+    reasoning_effort: Optional[str] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Route to proxied or direct execution based on API key format.
+
+    ``reasoning_effort`` is re-validated here because manifest validation
+    cannot see values that arrive through selectors at runtime.
+    """
+    validate_reasoning_level(
+        model=model_version,
+        level=reasoning_effort,
+        levels_by_model=MODEL_REASONING_EFFORT_VALUES,
+    )
+    if anthropic_api_key.startswith(("rf_key:account", "rf_key:user:")):
+        return _execute_proxied_claude_request(
+            roboflow_api_key=roboflow_api_key,
+            anthropic_api_key=anthropic_api_key,
+            system_prompt=system_prompt,
+            messages=messages,
+            model_version=model_version,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extended_thinking=extended_thinking,
+            thinking_budget_tokens=thinking_budget_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+    else:
+        return _execute_direct_claude_request(
+            anthropic_api_key=anthropic_api_key,
+            system_prompt=system_prompt,
+            messages=messages,
+            model_version=model_version,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extended_thinking=extended_thinking,
+            thinking_budget_tokens=thinking_budget_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+
+
+def _execute_proxied_claude_request(
+    roboflow_api_key: str,
+    anthropic_api_key: str,
+    system_prompt: Optional[str],
+    messages: List[dict],
+    model_version: str,
+    max_tokens: Optional[int],
+    temperature: Optional[float],
+    extended_thinking: Optional[bool],
+    thinking_budget_tokens: Optional[int],
+    reasoning_effort: Optional[str] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Execute Claude request via Roboflow proxy."""
+    model_max_output = MAX_OUTPUT_TOKENS.get(model_version, DEFAULT_MAX_OUTPUT_TOKENS)
+    effective_max_tokens = max_tokens if max_tokens is not None else model_max_output
+
+    payload = {
+        "model": model_version,
+        "anthropic_api_key": anthropic_api_key,
+        "messages": messages,
+        "max_tokens": effective_max_tokens,
+    }
+
+    if system_prompt is not None:
+        payload["system"] = system_prompt
+
+    temperature = resolve_temperature(
+        temperature,
+        model_version=model_version,
+        extended_thinking=extended_thinking,
+    )
+    if temperature is not None:
+        payload["temperature"] = temperature
+
+    thinking = build_thinking_config(
+        extended_thinking=extended_thinking,
+        thinking_budget_tokens=thinking_budget_tokens,
+        model_version=model_version,
+        max_tokens=effective_max_tokens,
+    )
+    if thinking is not None:
+        payload["thinking"] = thinking
+
+    if reasoning_effort is not None:
+        payload["output_config"] = {"effort": reasoning_effort}
+
+    endpoint = "apiproxy/anthropic"
+
+    try:
+        response_data = post_to_roboflow_api(
+            endpoint=endpoint,
+            api_key=roboflow_api_key,
+            payload=payload,
+        )
+        text = _extract_claude_response_text(response_data)
+        input_tokens, output_tokens = parse_responses_api_usage(
+            response_data.get("usage")
+        )
+        return text, input_tokens, output_tokens
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(
+            f"Invalid response structure from Roboflow proxy: {e}"
+        ) from e
+
+
+def _execute_direct_claude_request(
+    anthropic_api_key: str,
+    system_prompt: Optional[str],
+    messages: List[dict],
+    model_version: str,
+    max_tokens: Optional[int],
+    temperature: Optional[float],
+    extended_thinking: Optional[bool],
+    thinking_budget_tokens: Optional[int],
+    reasoning_effort: Optional[str] = None,
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Execute Claude request directly to Anthropic API.
+
+    ``output_config`` is sent through ``extra_body`` because the pinned
+    ``anthropic~=0.49.0`` SDK predates it as a first-class kwarg.
+    """
+    client = anthropic.Anthropic(api_key=anthropic_api_key)
 
     if system_prompt is None:
         system_prompt = NOT_GIVEN
@@ -553,11 +923,22 @@ def execute_claude_request(
     if thinking is not None:
         request_params["thinking"] = thinking
 
+    if reasoning_effort is not None:
+        request_params["extra_body"] = {"output_config": {"effort": reasoning_effort}}
+
     # Stream response to avoid max_tokens limitation
     with client.messages.stream(**request_params) as stream:
         result = stream.get_final_message()
 
-    # Handle stop reason
+    text = _validate_and_extract_direct_response(result)
+    input_tokens, output_tokens = parse_responses_api_usage(
+        getattr(result, "usage", None)
+    )
+    return text, input_tokens, output_tokens
+
+
+def _validate_and_extract_direct_response(result) -> str:
+    """Validate and extract text from direct Anthropic API response."""
     stop_reason = result.stop_reason
 
     if stop_reason == "max_tokens":
@@ -575,6 +956,33 @@ def execute_claude_request(
     for block in result.content:
         if block.type == "text":
             return block.text
+
+    raise ValueError("Claude API returned no text content in response.")
+
+
+def _extract_claude_response_text(response_data: dict) -> str:
+    """Extract text content from Claude API response (proxied)."""
+    stop_reason = response_data.get("stop_reason")
+
+    if stop_reason == "max_tokens":
+        raise ValueError(
+            "Claude API stopped generation because the max_tokens limit was reached. "
+            "Please increase the max_tokens parameter to allow for a complete response."
+        )
+
+    if stop_reason not in ["end_turn", "stop_sequence", None]:
+        raise ValueError(
+            f"Claude API stopped generation with unexpected stop reason: {stop_reason}."
+        )
+
+    content = response_data.get("content", [])
+    if not content:
+        raise ValueError("Claude API returned no content in response.")
+
+    # Ignore thinking blocks and return text content
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return block.get("text", "")
 
     raise ValueError("Claude API returned no text content in response.")
 
@@ -805,16 +1213,35 @@ def prepare_structured_answering_prompt(
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
+    image_width: int,
+    image_height: int,
+    media_type: str = "image/png",
     **kwargs,
 ) -> Tuple[Optional[str], List[dict]]:
-    serialised_classes = ", ".join(classes)
-    system_prompt = (
-        "You act as object-detection model. You must provide reasonable predictions. "
-        "You are only allowed to produce JSON document. "
-        'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]} '
-        "- remember to close top-level dictionary at the end. "
-        "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-        "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user."
+    """Build the absolute-pixel detection request used by Claude models.
+
+    Matches the vlm-exam benchmark setup: the image placed before the text
+    prompt, no system prompt, and coordinates requested as absolute pixels of
+    the uploaded ``image_width`` x ``image_height`` image. The image is
+    lossless PNG unless its payload exceeded the size limit, in which case
+    it is JPEG at the same resolution.
+
+    Args:
+        base64_image: Base64-encoded image.
+        classes: Class names the model may predict.
+        image_width: Width of the uploaded image in pixels.
+        image_height: Height of the uploaded image in pixels.
+        media_type: Media type of the encoded image.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Tuple of the system prompt (``None``) and the request messages.
+    """
+    class_list = ", ".join(classes)
+    prompt_text = OBJECT_DETECTION_PROMPT_TEMPLATE.format(
+        width=image_width,
+        height=image_height,
+        class_list=class_list,
     )
     messages = [
         {
@@ -824,18 +1251,18 @@ def prepare_object_detection_prompt(
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/jpeg",
+                        "media_type": media_type,
                         "data": base64_image,
                     },
                 },
                 {
                     "type": "text",
-                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                    "text": prompt_text,
                 },
             ],
         }
     ]
-    return system_prompt, messages
+    return None, messages
 
 
 PROMPT_BUILDERS = {

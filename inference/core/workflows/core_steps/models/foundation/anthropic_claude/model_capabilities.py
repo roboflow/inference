@@ -38,6 +38,8 @@ _MODELS_WITH_LEGACY_CONTROLS: FrozenSet[str] = frozenset(
 TEMPERATURE_SUPPORTED_MODELS: FrozenSet[str] = _MODELS_WITH_LEGACY_CONTROLS
 """Models that still accept a non-default ``temperature``."""
 
+MIN_THINKING_BUDGET_TOKENS = 1024
+
 MANUAL_THINKING_SUPPORTED_MODELS: FrozenSet[str] = _MODELS_WITH_LEGACY_CONTROLS
 """Models that still accept ``thinking.type = "enabled"`` with a token budget."""
 
@@ -116,21 +118,23 @@ def build_thinking_config(
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
     model_version: str,
-    model_max_output: int,
+    max_tokens: int,
 ) -> Optional[Dict[str, object]]:
     """Build the ``thinking`` request block appropriate for a Claude model.
 
     Models that still support manual extended thinking receive
     ``{"type": "enabled", "budget_tokens": N}`` where ``N`` defaults to half
-    of the model's output ceiling. Models whose thinking is adaptive only
-    receive ``{"type": "adaptive"}``; a configured budget is ignored there and
-    a warning is logged once per model per process.
+    of the request's ``max_tokens`` (Anthropic requires
+    ``1024 <= budget_tokens < max_tokens``), mirroring the Roboflow proxy.
+    Models whose thinking is adaptive only receive ``{"type": "adaptive"}``;
+    a configured budget is ignored there and a warning is logged once per
+    model per process.
 
     Args:
         extended_thinking: Whether the block requested thinking.
         thinking_budget_tokens: Budget configured on the block, or ``None``.
         model_version: Model label or wire id as configured on the block.
-        model_max_output: Output-token ceiling used to derive a default budget.
+        max_tokens: Output-token limit that will be sent on the request.
 
     Returns:
         The ``thinking`` payload, or ``None`` when thinking was not requested.
@@ -142,7 +146,7 @@ def build_thinking_config(
         effective_budget = (
             thinking_budget_tokens
             if thinking_budget_tokens is not None
-            else model_max_output // 2
+            else max(MIN_THINKING_BUDGET_TOKENS, max_tokens // 2)
         )
         return {"type": "enabled", "budget_tokens": effective_budget}
 

@@ -36,6 +36,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     execute_claude_request as execute_claude_request_v4,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    execute_claude_request as execute_claude_request_v5,
+)
 
 
 def test_claude_step_validation_when_input_is_valid() -> None:
@@ -849,6 +852,7 @@ def test_v2_direct_request_translates_controls_for_new_generation_model(
     [
         (execute_claude_request_v3, "v3"),
         (execute_claude_request_v4, "v4"),
+        (execute_claude_request_v5, "v5"),
     ],
 )
 def test_direct_request_keeps_legacy_controls_for_legacy_model(
@@ -900,6 +904,7 @@ def test_direct_request_keeps_legacy_controls_for_legacy_model(
     [
         (execute_claude_request_v3, "v3"),
         (execute_claude_request_v4, "v4"),
+        (execute_claude_request_v5, "v5"),
     ],
 )
 def test_direct_request_translates_controls_for_new_generation_model(
@@ -959,6 +964,7 @@ PROXY_RESPONSE = {
     [
         (execute_claude_request_v3, "v3"),
         (execute_claude_request_v4, "v4"),
+        (execute_claude_request_v5, "v5"),
     ],
 )
 def test_proxied_request_keeps_legacy_controls_for_legacy_model(
@@ -1010,6 +1016,7 @@ def test_proxied_request_keeps_legacy_controls_for_legacy_model(
     [
         (execute_claude_request_v3, "v3"),
         (execute_claude_request_v4, "v4"),
+        (execute_claude_request_v5, "v5"),
     ],
 )
 def test_proxied_request_translates_controls_for_new_generation_model(

@@ -86,16 +86,37 @@ def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warn
             extended_thinking=True,
             thinking_budget_tokens=5000,
             model_version="claude-fable-5-1",
-            model_max_output=128000,
+            max_tokens=128000,
         )
         second = build_thinking_config(
             extended_thinking=True,
             thinking_budget_tokens=7000,
             model_version="claude-fable-5-1-20260901",
-            model_max_output=128000,
+            max_tokens=128000,
         )
 
     assert first == {"type": "adaptive"}
     assert second == {"type": "adaptive"}
     assert len(caplog.records) == 1
     assert "thinking_budget_tokens=5000" in caplog.records[0].getMessage()
+
+
+@pytest.mark.parametrize(
+    "max_tokens, expected_budget",
+    [
+        (64000, 32000),
+        (6000, 3000),
+        (1500, 1024),
+    ],
+)
+def test_build_thinking_config_derives_default_budget_below_request_max_tokens(
+    max_tokens: int, expected_budget: int
+) -> None:
+    result = build_thinking_config(
+        extended_thinking=True,
+        thinking_budget_tokens=None,
+        model_version="claude-opus-4-6",
+        max_tokens=max_tokens,
+    )
+
+    assert result == {"type": "enabled", "budget_tokens": expected_budget}

@@ -7,6 +7,9 @@ from inference.core.workflows.core_steps.common.reasoning import (
     REASONING_EFFORT_OPTIONS,
     validate_reasoning_level,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude import (
+    v5 as anthropic_v5,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemini import (
     v5 as gemini_v5,
 )
@@ -98,6 +101,12 @@ BLOCK_CONTRACTS = {
         zai_vlm_v1.MODEL_VERSION_METADATA,
         zai_vlm_v1.DEFAULT_REASONING_EFFORT,
     ),
+    "anthropic_claude@v5": (
+        anthropic_v5.MODEL_REASONING_EFFORT_VALUES,
+        anthropic_v5.REASONING_EFFORT_VALUES,
+        anthropic_v5.MODEL_VERSION_METADATA,
+        None,
+    ),
 }
 
 
@@ -152,6 +161,7 @@ _MANIFESTS = {
     "spacexai@v2": spacexai_v2.BlockManifest,
     "meta_vlm@v2": meta_vlm_v2.BlockManifest,
     "qwen_vlm@v3": qwen_vlm_v3.BlockManifest,
+    "anthropic_claude@v5": anthropic_v5.BlockManifest,
 }
 
 
@@ -175,6 +185,14 @@ def _manifest(block_type: str, **overrides):
         ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
         ("open_ai@v6", {"model_version": "gpt-4o"}),
         ("qwen_vlm@v3", {"backend": "native"}),
+        (
+            "anthropic_claude@v5",
+            {"model_version": "claude-fable-5-1", "reasoning_effort": "medium"},
+        ),
+        (
+            "anthropic_claude@v5",
+            {"model_version": "$inputs.model", "reasoning_effort": "xhigh"},
+        ),
     ],
 )
 def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
@@ -206,6 +224,14 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
         (
             "meta_vlm@v2",
             {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
+        ),
+        (
+            "anthropic_claude@v5",
+            {"model_version": "claude-sonnet-4-5", "reasoning_effort": "high"},
+        ),
+        (
+            "anthropic_claude@v5",
+            {"model_version": "claude-opus-4-6", "reasoning_effort": "xhigh"},
         ),
     ],
 )
