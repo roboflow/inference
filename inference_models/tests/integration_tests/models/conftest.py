@@ -443,10 +443,15 @@ def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
 
 @pytest.fixture(scope="module")
 def rfdetr_kp_preview_trt_package() -> str:
-    return download_model_package(
-        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
-        package_name="rfdetr-kp-preview-onnx-glue-sticks",
-    )
+    package_path = os.getenv(RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV)
+    if not package_path or not os.path.isdir(package_path):
+        pytest.skip(
+            "RF-DETR keypoint TRT package is not published yet. Set "
+            f"{RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV} to a local flat package directory "
+            "(class_names.txt, inference_config.json, trt_config.json, engine.plan, "
+            "keypoints_metadata.json) or wait for Core-team Surface 2 upload."
+        )
+    return package_path
 
 
 @pytest.fixture(scope="module")
