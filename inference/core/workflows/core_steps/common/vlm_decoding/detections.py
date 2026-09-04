@@ -63,7 +63,9 @@ def decode_object_detections(
         Tuple of ``(error_status, detections)``; ``detections`` is ``None``
         when ``error_status`` is ``True``.
     """
-    error_status, parsed_data = extract_json(raw_output)
+    error_status, parsed_data = extract_json(
+        raw_output, salvage_truncated_detections=True
+    )
     if error_status:
         return True, None
     try:
@@ -148,7 +150,11 @@ def build_detections(
         label = get_detection_class_name(entry)
         class_id.append(class_name2id.get(label, -1))
         class_name.append(label)
-        confidence.append(get_detection_confidence(entry))
+        confidence.append(
+            get_detection_confidence(entry)
+            if detection_format.reads_confidence
+            else 1.0
+        )
 
     if entries and not xyxy:
         # Every entry was skipped: the model answered in a coordinate contract

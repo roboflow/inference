@@ -365,13 +365,15 @@ def test_decode_object_detections_keeps_unknown_label_with_negative_class_id() -
 
 
 def test_decode_object_detections_reads_confidence_when_present() -> None:
+    # Quoted numbers are accepted too; the per-vendor parsers this module
+    # replaced used a bare float(). The Gemini contract honours confidence.
     image = _build_image()
 
     error_status, detections = decode_object_detections(
         raw_output=(
-            '[{"box_2d": [100, 250, 500, 750], "label": "cat", "confidence": 0.4}]'
+            '[{"box_2d": [250, 100, 750, 500], "label": "cat", "confidence": "0.4"}]'
         ),
-        box_format="xyxy_0_1000",
+        box_format="yxyx_0_1000",
         image=image,
         classes=["cat"],
         inference_id="inference-id",
@@ -457,7 +459,8 @@ def test_decode_object_detections_accepts_numeric_strings() -> None:
 
     assert error_status is False
     assert detections.xyxy.tolist() == [EXPECTED_XYXY]
-    assert detections.confidence.tolist() == [0.5]
+    # the Qwen contract ignores unsolicited confidences, like its legacy parser
+    assert detections.confidence.tolist() == [1.0]
 
 
 def test_decode_object_detections_skips_non_numeric_string_boxes() -> None:
@@ -1088,3 +1091,75 @@ def test_decode_object_detections_salvages_complete_entries_of_truncated_answer(
         [249.0, 198.0, 312.0, 252.0],
         [443.0, 181.0, 504.0, 246.0],
     ]
+
+
+def test_extract_json_reports_error_for_non_string_output() -> None:
+    assert extract_json(None) == (True, {})
+
+
+@pytest.mark.parametrize(
+    "box_format, raw_output, expected_confidence",
+    [
+        # Qwen / Z.ai and Muse contracts: the deprecated parsers forced 1.0
+        (
+            "xyxy_0_1000",
+            '[{"box_2d": [100, 200, 500, 600], "label": "cat", "confidence": 0.05}]',
+            1.0,
+        ),
+        (
+            "named_0_1000",
+            '[{"x_min": 100, "y_min": 200, "x_max": 500, "y_max": 600, "label": "cat", "confidence": 0.05}]',
+            1.0,
+        ),
+        # OpenAI-style contracts honoured a provided confidence
+        (
+            "named_normalized",
+            '[{"x_min": 0.1, "y_min": 0.2, "x_max": 0.5, "y_max": 0.6, "class_name": "cat", "confidence": 0.05}]',
+            0.05,
+        ),
+    ],
+)
+def test_unsolicited_confidence_is_honoured_per_format_like_legacy_parsers(
+    box_format: str, raw_output: str, expected_confidence: float
+) -> None:
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format=box_format,
+        image=_build_image(width=1000, height=1000),
+        classes=["cat"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert detections.confidence.tolist() == pytest.approx([expected_confidence])
+
+
+def test_decode_classification_reports_error_for_non_finite_confidence() -> None:
+    error_status, prediction = decode_classification(
+        raw_output='{"class_name": "cat", "confidence": NaN}',
+        image=_build_image(width=100, height=100),
+        classes=["cat", "dog"],
+        inference_id="iid",
+    )
+
+    assert error_status is True
+    assert prediction is None
+
+
+def test_decode_classification_does_not_salvage_truncated_detection_lists() -> None:
+    # given - the detection-only truncation salvage must not turn a box list
+    # into a multi-label classification
+    raw_output = (
+        '[{"label":"cat","x_min":1,"y_min":2,"x_max":3,"y_max":4},'
+        '{"label":"dog","x_min":1,"y_min":2,"x_max":3,"y_max":4},{"label":"'
+    )
+
+    error_status, prediction = decode_classification(
+        raw_output=raw_output,
+        image=_build_image(width=100, height=100),
+        classes=["cat", "dog"],
+        inference_id="iid",
+    )
+
+    assert error_status is True
+    assert prediction is None

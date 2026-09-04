@@ -306,12 +306,18 @@ class DetectionBoxFormat:
         requires_upload_dimensions: Whether decoding needs the dimensions
             of the image as uploaded (true for absolute-pixel contracts).
         converter: Callable implementing the coordinate conversion.
+        reads_confidence: Whether a ``confidence`` field in an entry is
+            honoured. No prompt asks for one; the contracts whose deprecated
+            parsers forced ``1.0`` (Qwen / Z.ai ``xyxy_0_1000``, Muse
+            ``named_0_1000``) keep doing so, since an unsolicited value would
+            only feed downstream confidence filters uncalibrated numbers.
     """
 
     name: str
     prompt_template: Optional[str]
     requires_upload_dimensions: bool
     converter: BoxConverter
+    reads_confidence: bool = True
 
     def to_pixel_xyxy(
         self,
@@ -359,6 +365,7 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
         prompt_template=XYXY_0_1000_PROMPT_TEMPLATE,
         requires_upload_dimensions=False,
         converter=_convert_xyxy_0_1000,
+        reads_confidence=False,
     ),
     "yxyx_0_1000": DetectionBoxFormat(
         name="yxyx_0_1000",
@@ -377,6 +384,7 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
         prompt_template=NAMED_0_1000_PROMPT_TEMPLATE,
         requires_upload_dimensions=False,
         converter=_convert_named_0_1000,
+        reads_confidence=False,
     ),
     "named_normalized": DetectionBoxFormat(
         name="named_normalized",

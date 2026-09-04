@@ -35,11 +35,8 @@ from inference.core.workflows.core_steps.common.vlm_decoding.detections import (
     decode_object_detections,
 )
 from inference.core.workflows.core_steps.common.vlm_decoding.json_extraction import (
-    JSON_MARKDOWN_BLOCK_PATTERN,
     extract_flat_object_entries,
     extract_json,
-    extract_zai_json_array,
-    try_parse_json,
 )
 from inference.core.workflows.core_steps.common.vlm_decoding.outputs import (
     CLASSIFICATION_TASKS,
@@ -62,7 +59,6 @@ __all__ = [
     "CLASSIFICATION_TASKS",
     "DETECTION_BOX_FORMATS",
     "DETECTION_TASKS",
-    "JSON_MARKDOWN_BLOCK_PATTERN",
     "LABEL_KEYS",
     "NAMED_0_1000_PROMPT_TEMPLATE",
     "NAMED_BOX_FIELDS",
@@ -83,7 +79,6 @@ __all__ = [
     "extract_detection_entries",
     "extract_flat_object_entries",
     "extract_json",
-    "extract_zai_json_array",
     "get_detection_box_format",
     "get_detection_class_name",
     "get_detection_confidence",
@@ -92,5 +87,4 @@ __all__ = [
     "scale_confidence",
     "tensor_native_carriers_enabled",
     "to_tensor_native_predictions",
-    "try_parse_json",
 ]

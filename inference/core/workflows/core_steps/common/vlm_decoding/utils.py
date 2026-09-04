@@ -1,5 +1,6 @@
 """Small shared helpers used across the VLM decoding modules."""
 
+import math
 from typing import Dict, List
 
 
@@ -23,5 +24,12 @@ def scale_confidence(value: float) -> float:
 
     Returns:
         The value clamped into ``[0.0, 1.0]``.
+
+    Raises:
+        ValueError: If the value is not a finite number (``json.loads``
+            accepts ``NaN`` / ``Infinity``).
     """
-    return min(max(float(value), 0.0), 1.0)
+    confidence = float(value)
+    if not math.isfinite(confidence):
+        raise ValueError(f"confidence is not a finite number: {value!r}")
+    return min(max(confidence, 0.0), 1.0)
