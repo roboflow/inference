@@ -443,7 +443,10 @@ def extract_detection_entries(parsed: Any) -> List[dict]:
     """Pull the list of detection entries out of a parsed JSON payload.
 
     Accepts a bare list of entries, a ``{"detections": [...]}`` wrapper, or
-    a single bare entry object. Non-dict members are skipped.
+    a single bare entry object. Non-dict members are skipped, but a
+    non-empty list holding no entry objects at all (for example a bare
+    coordinate list lifted out of the model's reasoning text) is rejected,
+    so it surfaces as ``error_status`` instead of "no objects found".
 
     Args:
         parsed: JSON payload extracted from the VLM output.
@@ -455,14 +458,23 @@ def extract_detection_entries(parsed: Any) -> List[dict]:
         ValueError: If the payload matches none of the accepted shapes.
     """
     if isinstance(parsed, list):
-        return [entry for entry in parsed if isinstance(entry, dict)]
+        return _entries_from_list(parsed)
     if isinstance(parsed, dict):
         detections = parsed.get(DETECTIONS_WRAPPER_KEY)
         if isinstance(detections, list):
-            return [entry for entry in detections if isinstance(entry, dict)]
+            return _entries_from_list(detections)
         if _looks_like_detection_entry(parsed):
             return [parsed]
     raise ValueError("Unexpected object detection response format")
+
+
+def _entries_from_list(items: list) -> List[dict]:
+    entries = [entry for entry in items if isinstance(entry, dict)]
+    if items and not entries:
+        raise ValueError(
+            "Object detection response is a list without any detection entries"
+        )
+    return entries
 
 
 def _looks_like_detection_entry(entry: dict) -> bool:

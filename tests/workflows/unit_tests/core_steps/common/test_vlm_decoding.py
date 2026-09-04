@@ -519,6 +519,28 @@ def test_decode_object_detections_returns_empty_detections_for_empty_list() -> N
     assert PARENT_ID_KEY in detections.data
 
 
+def test_decode_object_detections_reports_error_for_list_without_entries() -> None:
+    # given - a bare coordinate list lifted out of leaked reasoning text; the
+    # legacy VLM as Detector block flags this as an error rather than "no objects"
+    raw_output = (
+        "Let me identify the most obvious ones: the first crack is at "
+        "approximately [0.404, 0.515, 0.458, 0.612] and another near"
+    )
+
+    # when
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="named_normalized",
+        image=_build_image(width=100, height=100),
+        classes=["crack"],
+        inference_id="iid",
+    )
+
+    # then
+    assert error_status is True
+    assert detections is None
+
+
 def test_decode_object_detections_reports_error_for_unparsable_output() -> None:
     error_status, detections = decode_object_detections(
         raw_output="I could not find anything",
