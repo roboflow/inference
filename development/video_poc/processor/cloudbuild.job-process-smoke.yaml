@@ -1,0 +1,85 @@
+# Credential-free, non-GPU inspection for an already-built staging experiment
+# image. Submit with --no-source and an immutable staging Artifact Registry
+# digest as _IMAGE. This imports worker modules but never starts the processor
+# entrypoint or contacts the job API.
+steps:
+  - name: python:3.12-slim
+    id: validate-staging-digest
+    entrypoint: python
+    args:
+      - -c
+      - |
+        import re
+        import sys
+
+        reference = sys.argv[1]
+        pattern = (
+            r"us-central1-docker[.]pkg[.]dev/roboflow-staging/"
+            r"video-proc/[a-z0-9-]+@sha256:[0-9a-f]{64}"
+        )
+        if re.fullmatch(pattern, reference) is None:
+            raise SystemExit(
+                "_IMAGE must be an immutable roboflow-staging/video-proc digest"
+            )
+      - ${_IMAGE}
+  - name: gcr.io/cloud-builders/docker
+    id: pull-image
+    args:
+      - pull
+      - ${_IMAGE}
+  - name: gcr.io/cloud-builders/docker
+    id: inspect-image-config
+    args:
+      - image
+      - inspect
+      - --format={{json .Config}}
+      - ${_IMAGE}
+  - name: gcr.io/cloud-builders/docker
+    id: verify-job-process-runtime
+    args:
+      - run
+      - --rm
+      - --entrypoint=python
+      - ${_IMAGE}
+      - -c
+      - |
+        import inspect
+        import os
+        import job_process
+        import processor
+        from inference.core import env as inference_env
+
+        assert job_process.PROTOCOL_VERSION == 1
+        assert job_process.resolve_job_execution_mode("thread") == "thread"
+        assert job_process.resolve_job_execution_mode("process") == "process"
+        assert os.path.isfile("/app/processor.py")
+        assert os.path.isfile("/app/job_process.py")
+        assert os.path.isfile("/app/inference_runtime_compat.py")
+        runtime_supports_freshest = (
+            "video_processing_mode"
+            in inspect.signature(
+                processor.InferencePipeline.init_with_workflow
+            ).parameters
+        )
+        assert (
+            processor.INFERENCE_PIPELINE_SUPPORTS_FRESHEST_MODE
+            is runtime_supports_freshest
+        )
+        if not hasattr(
+            inference_env, "ENABLE_TENSOR_DATA_REPRESENTATION"
+        ):
+            assert processor.ENABLE_TENSOR_DATA_REPRESENTATION is False
+        event = job_process.bounded_child_event(
+            {
+                "version": 1,
+                "type": "status",
+                "state": "running",
+                "stats": {"frames": 1},
+                "runtime": {"processId": 2},
+            }
+        )
+        assert event["runtime"]["processId"] == 2
+        print("job-process image smoke passed")
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 600s

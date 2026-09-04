@@ -54,3 +54,6 @@ jobs:
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
+      - name: 🧪 Video Processor Security Tests
+        timeout-minutes: 1
+        run: python -m pytest tests/development/video_poc

@@ -1,0 +1,30 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build-gpu-overlay
+    args:
+      - build
+      - --platform=linux/amd64
+      - --file=Dockerfile.overlay
+      - --build-arg=BASE_PROCESSOR_IMAGE=${_GPU_BASE}
+      - --build-arg=VIDEO_PROC_GIT_SHA=${_GIT_SHA}
+      - --build-arg=VIDEO_PROC_RUNTIME_VARIANT=telemetry-overlay
+      - --tag=${_GPU_OUTPUT}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    id: build-cpu-overlay
+    args:
+      - build
+      - --platform=linux/amd64
+      - --file=Dockerfile.overlay
+      - --build-arg=BASE_PROCESSOR_IMAGE=${_CPU_BASE}
+      - --build-arg=VIDEO_PROC_GIT_SHA=${_GIT_SHA}
+      - --build-arg=VIDEO_PROC_RUNTIME_VARIANT=telemetry-overlay
+      - --tag=${_CPU_OUTPUT}
+      - .
+images:
+  - ${_GPU_OUTPUT}
+  - ${_CPU_OUTPUT}
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+timeout: 1800s

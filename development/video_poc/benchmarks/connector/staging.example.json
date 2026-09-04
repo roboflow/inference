@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "clusterIdentity": {
+    "context": "ck8s-stg",
+    "cluster": "ck8s-stg",
+    "server": "https://ck8s-stg-83c07ac7.us-east1-a.cmk.crusoecloudcompute.com"
+  },
+  "namespace": "video-proc-bench-connector",
+  "serviceAccountName": "video-connector-benchmark",
+  "connectorId": "bench-fixture-connector",
+  "connectorName": "Staging fixture connector",
+  "connectorImage": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/rf-video-connector@sha256:5a81d357bab2490db782a409203da70dd89d0df642ad142780d86b05b50911c4",
+  "fixtureInitImage": "docker.io/curlimages/curl@sha256:5a91ea0c9c3ee27b4abe657b68cf6bf0676afa13b236b3bda34283cb3924d4f6",
+  "apiBase": "https://api.roboflow.one",
+  "apiKeySecretRef": {
+    "name": "video-connector-benchmark-api-key",
+    "key": "api-key"
+  },
+  "fixtureHostAllowlist": [
+    "media.roboflow.com"
+  ],
+  "fixtures": [
+    {
+      "url": "https://media.roboflow.com/supervision/video-examples/vehicles.mp4",
+      "filename": "vehicles.mp4",
+      "sha256": "ac81100d9310bd4e9c02bc0b13b6492781d009742ced347766b2601be3c44ad4"
+    }
+  ],
+  "resources": {
+    "requests": {
+      "cpu": "250m",
+      "memory": "256Mi"
+    },
+    "limits": {
+      "cpu": "2",
+      "memory": "1Gi"
+    }
+  },
+  "nodePlacement": {
+    "nodeSelector": {
+      "kubernetes.io/os": "linux",
+      "kubernetes.io/arch": "amd64"
+    },
+    "tolerations": []
+  }
+}

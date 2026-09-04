@@ -1,0 +1,69 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "video-processor-pool-cpu",
+    "namespace": "video-proc"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "video-poc.roboflow.com/cpu-benchmark-variant": "cpu-4-thread"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "VIDEO_PROC_IMAGE",
+                "value": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-cpu-telemetry@sha256:106cf74b916f55d1cfc4322d9b361fb1fbed86889dd8d8eb435904c950801d6a"
+              },
+              {
+                "name": "VIDEO_PROC_RUNTIME_VARIANT",
+                "value": "cpu-4-thread"
+              },
+              {
+                "name": "VIDEO_PROC_GIT_SHA",
+                "value": "c63f9720c25a27e7aa290cea601b09590a6de9f2"
+              },
+              {
+                "name": "MAX_CONCURRENT_JOBS",
+                "value": "2"
+              },
+              {
+                "name": "ONNX_INTRA_OP_THREADS",
+                "value": "2"
+              },
+              {
+                "name": "OMP_NUM_THREADS",
+                "value": "2"
+              },
+              {
+                "name": "PROCESSOR_JOB_EXECUTION_MODE",
+                "value": "thread"
+              },
+              {
+                "name": "PROCESSOR_EXECUTION_DOMAIN_MODE",
+                "value": "in_process"
+              }
+            ],
+            "image": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-cpu-telemetry@sha256:106cf74b916f55d1cfc4322d9b361fb1fbed86889dd8d8eb435904c950801d6a",
+            "name": "processor",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "8Gi"
+              },
+              "requests": {
+                "cpu": "4",
+                "memory": "8Gi"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

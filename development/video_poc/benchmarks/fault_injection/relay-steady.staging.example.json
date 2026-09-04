@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "name": "relay-steady-loss",
+  "clusterContext": "ck8s-stg",
+  "namespace": "video-proc",
+  "benchmark": {
+    "runId": "replace-relay-run-id",
+    "checkpoint": "../results/api-corpus-replace-relay-run-id.json",
+    "apiHost": "us-central1-roboflow-staging.cloudfunctions.net"
+  },
+  "fault": {
+    "name": "delete-running-relay",
+    "type": "relay-pod-loss",
+    "phase": "steady-state",
+    "selector": {
+      "app.kubernetes.io/name": "mediamtx",
+      "app.kubernetes.io/instance": "video-proc"
+    },
+    "gracePeriodSeconds": 0
+  },
+  "deadlines": {
+    "triggerSeconds": 180,
+    "recoverySeconds": 180,
+    "pollSeconds": 2
+  }
+}

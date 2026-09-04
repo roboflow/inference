@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {
+      "type": "WorkflowImage",
+      "name": "image"
+    }
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/image_blur@v1",
+      "name": "blur",
+      "image": "$inputs.image",
+      "blur_type": "gaussian",
+      "kernel_size": 21
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "visualization",
+      "coordinates_system": "own",
+      "selector": "$steps.blur.image"
+    }
+  ]
+}

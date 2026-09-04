@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "clusterContext": "ck8s-stg",
+  "namespace": "video-proc",
+  "deployment": "video-processor-pool-cpu",
+  "container": "processor",
+  "nodeSelector": {
+    "pool": "default"
+  },
+  "observedBaseline": {
+    "observedAt": "2026-08-13T23:04:00Z",
+    "deploymentUid": "cdf161b8-2b7d-43d5-ae09-c5c52ed14d21",
+    "generation": 7,
+    "revision": "7",
+    "image": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-cpu-telemetry@sha256:106cf74b916f55d1cfc4322d9b361fb1fbed86889dd8d8eb435904c950801d6a",
+    "sourceRevision": "c63f9720c25a27e7aa290cea601b09590a6de9f2",
+    "runtimeVariant": "thread",
+    "jobExecutionMode": "thread",
+    "requests": {
+      "cpu": "4",
+      "memory": "8Gi"
+    },
+    "limits": {
+      "cpu": "8",
+      "memory": "16Gi"
+    },
+    "maxJobs": 4,
+    "intraOpThreads": 2,
+    "qosClass": "Burstable",
+    "nodeInstanceType": "c1a.16x",
+    "nodeAllocatableCpu": "16",
+    "nodeAllocatableMemory": "65735036Ki"
+  },
+  "imagePolicy": {
+    "repository": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/video-processor-cpu-telemetry",
+    "requireDigest": true,
+    "processMinimumSourceRevision": "008d5e64b27d19c7c5da6334ec9497ba756827ad"
+  },
+  "topologies": {
+    "thread": {
+      "jobExecutionMode": "thread",
+      "executionDomainMode": "in_process",
+      "defaultImageFromObservedBaseline": true
+    },
+    "process": {
+      "jobExecutionMode": "process",
+      "executionDomainMode": "in_process",
+      "defaultImageFromObservedBaseline": false
+    }
+  },
+  "sizeClasses": {
+    "cpu-2": {
+      "cpu": "2",
+      "memory": "4Gi",
+      "maxJobs": 1,
+      "intraOpThreads": 2
+    },
+    "cpu-4": {
+      "cpu": "4",
+      "memory": "8Gi",
+      "maxJobs": 2,
+      "intraOpThreads": 2
+    },
+    "cpu-8": {
+      "cpu": "8",
+      "memory": "16Gi",
+      "maxJobs": 4,
+      "intraOpThreads": 2
+    }
+  }
+}

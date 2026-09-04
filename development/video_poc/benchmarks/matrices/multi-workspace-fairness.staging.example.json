@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://api.roboflow.one",
+    "durationSeconds": 600,
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 90,
+    "pollIntervalSeconds": 2,
+    "cooldownSeconds": 30,
+    "maxPlannedJobs": 16
+  },
+  "scenarios": [
+    {
+      "name": "fair-balanced-4x4",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "Two workspaces start equal same-model loads at the same time.",
+      "workloads": [
+        {"profile": "single-detection", "count": 4, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10},
+        {"profile": "single-detection", "count": 4, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 10}
+      ]
+    },
+    {
+      "name": "fair-incumbent-then-peer",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "Tenant B arrives after a two-minute tenant A baseline.",
+      "workloads": [
+        {"profile": "single-detection", "count": 4, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10},
+        {"profile": "single-detection", "count": 4, "startAfterSeconds": 120, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 10}
+      ]
+    },
+    {
+      "name": "noisy-tracking-arrival",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "A stateful tracking workflow arrives after the light tenant stabilizes.",
+      "workloads": [
+        {"profile": "single-detection", "count": 6, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10},
+        {"profile": "detection-tracking", "count": 1, "startAfterSeconds": 120, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 10}
+      ]
+    },
+    {
+      "name": "noisy-segmentation-arrival",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "A segmentation workflow arrives after the light tenant stabilizes.",
+      "workloads": [
+        {"profile": "single-detection", "count": 6, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10},
+        {"profile": "instance-segmentation", "count": 1, "startAfterSeconds": 120, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 5}
+      ]
+    },
+    {
+      "name": "noisy-heavy-incumbent",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "Reverse arrival order to detect incumbent bias.",
+      "workloads": [
+        {"profile": "instance-segmentation", "count": 1, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 5},
+        {"profile": "single-detection", "count": 6, "startAfterSeconds": 120, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10}
+      ]
+    },
+    {
+      "name": "noisy-output-arrival",
+      "repetitions": 2,
+      "requireSingleProcessor": true,
+      "notes": "Tenant B adds watched-output publishing after the light baseline.",
+      "workloads": [
+        {"profile": "single-detection", "count": 6, "workspaceLabel": "tenant-a", "workspace": "thomas-workspace", "sourceId": "9g7UzPcDyVBFBJ0dLei6", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_A", "tier": "gpu", "maxFps": 10},
+        {"profile": "single-detection", "count": 2, "startAfterSeconds": 120, "workspaceLabel": "tenant-b", "workspace": "rf-inference-benchmark", "sourceId": "d5XmPQAZssPpE3clCmcY", "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY_B", "tier": "gpu", "maxFps": 10, "publishOutput": true}
+      ]
+    }
+  ]
+}

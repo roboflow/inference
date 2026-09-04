@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "cpu-blur",
+      "provisionalClass": "light",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "cpu-blur.json",
+      "models": [],
+      "purpose": "Establish decode, workflow-engine, and visualization overhead without model inference."
+    },
+    {
+      "id": "single-detection",
+      "provisionalClass": "light",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "single-detection.json",
+      "models": [
+        "microsoft-coco-obj-det/8"
+      ],
+      "purpose": "Baseline one small detector plus bounding-box visualization; repeat it to test shared-model packing."
+    },
+    {
+      "id": "single-detection-cpu",
+      "provisionalClass": "light",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "single-detection.json",
+      "models": [
+        "microsoft-coco-obj-det/8"
+      ],
+      "purpose": "Run the exact single-detection workflow on CPU for model-for-model GPU economics and pod-sizing comparisons."
+    },
+    {
+      "id": "detection-tracking",
+      "provisionalClass": "medium",
+      "tier": "gpu",
+      "stateful": true,
+      "imageOutput": "visualization",
+      "spec": "detection-tracking.json",
+      "models": [
+        "microsoft-coco-obj-det/8"
+      ],
+      "purpose": "Measure a stateful detector, ByteTrack, and trace-visualization pipeline with additional CPU work."
+    },
+    {
+      "id": "detection-tracking-cpu",
+      "provisionalClass": "medium",
+      "tier": "cpu",
+      "stateful": true,
+      "imageOutput": "visualization",
+      "spec": "detection-tracking.json",
+      "models": [
+        "microsoft-coco-obj-det/8"
+      ],
+      "purpose": "Run the exact stateful detection and tracking workflow on CPU to size CPU-heavy post-processing and stateful jobs."
+    },
+    {
+      "id": "dual-detection",
+      "provisionalClass": "heavy",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "dual-detection.json",
+      "models": [
+        "microsoft-coco-obj-det/8",
+        "microsoft-coco-instance-segmentation/1"
+      ],
+      "purpose": "Exercise detection and instance-segmentation sessions together, model memory pressure, and comparison visualization."
+    },
+    {
+      "id": "dual-detection-cpu",
+      "provisionalClass": "heavy",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "dual-detection.json",
+      "models": [
+        "microsoft-coco-obj-det/8",
+        "microsoft-coco-instance-segmentation/1"
+      ],
+      "purpose": "Gate whether the two-model workflow is viable on CPU and measure its memory and latency envelope before admitting it to a CPU size class."
+    },
+    {
+      "id": "instance-segmentation",
+      "provisionalClass": "exclusive",
+      "tier": "gpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "instance-segmentation.json",
+      "models": [
+        "microsoft-coco-instance-segmentation/1"
+      ],
+      "purpose": "Initial instance-segmentation and mask-visualization case; exclusive is a conservative hypothesis until measured."
+    },
+    {
+      "id": "instance-segmentation-cpu",
+      "provisionalClass": "exclusive",
+      "tier": "cpu",
+      "stateful": false,
+      "imageOutput": "visualization",
+      "spec": "instance-segmentation.json",
+      "models": [
+        "microsoft-coco-instance-segmentation/1"
+      ],
+      "purpose": "Gate CPU viability and establish a dedicated-pod envelope for segmentation rather than assuming the detector-derived size is safe."
+    }
+  ]
+}

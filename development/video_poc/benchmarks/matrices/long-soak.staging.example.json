@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaults": {
+    "apiBase": "https://api.roboflow.one",
+    "apiKeyEnv": "VIDEO_BENCHMARK_API_KEY",
+    "workspace": "rf-inference-benchmark",
+    "sourceId": "d5XmPQAZssPpE3clCmcY",
+    "startupTimeoutSeconds": 300,
+    "cleanupTimeoutSeconds": 120,
+    "pollIntervalSeconds": 5,
+    "cooldownSeconds": 60,
+    "maxPlannedJobs": 4
+  },
+  "soakPolicy": {
+    "schemaVersion": 1,
+    "requiredSequence": ["15m", "01h", "04h", "12h"],
+    "minimumMeasurementCoverageRatio": 0.98,
+    "minimumTelemetryCoverageRatio": 0.90,
+    "corpusManifestPath": "../workflows/manifest.json",
+    "corpusBundleSha256": "f383aee0ad9f82292381f63cdec8e697edf973a58a4e2d37c0a6b6a89ec77f34",
+    "maximumWatchRenewalGapSeconds": 30,
+    "maxConsecutiveNonadvancingOutputIntervals": 1,
+    "maxFrameLatencyP95Ms": 50,
+    "maxFrameLatencyP99Ms": 150,
+    "requiredCounters": ["captured", "decoded", "inferred", "rendered", "published"],
+    "stages": {
+      "15m": {
+        "durationSeconds": 900,
+        "maxProcessorMemoryGrowthMiB": 512,
+        "maxRelayMemoryGrowthMiB": 256,
+        "maxProcessorMemorySlopeMiBPerHour": 512,
+        "maxRelayMemorySlopeMiBPerHour": 256,
+        "maxGpuFramebufferGrowthMiB": 1024,
+        "maxGpuFramebufferSlopeMiBPerHour": 1024
+      },
+      "01h": {
+        "durationSeconds": 3600,
+        "maxProcessorMemoryGrowthMiB": 512,
+        "maxRelayMemoryGrowthMiB": 256,
+        "maxProcessorMemorySlopeMiBPerHour": 256,
+        "maxRelayMemorySlopeMiBPerHour": 128,
+        "maxGpuFramebufferGrowthMiB": 1024,
+        "maxGpuFramebufferSlopeMiBPerHour": 512
+      },
+      "04h": {
+        "durationSeconds": 14400,
+        "maxProcessorMemoryGrowthMiB": 768,
+        "maxRelayMemoryGrowthMiB": 384,
+        "maxProcessorMemorySlopeMiBPerHour": 128,
+        "maxRelayMemorySlopeMiBPerHour": 64,
+        "maxGpuFramebufferGrowthMiB": 1024,
+        "maxGpuFramebufferSlopeMiBPerHour": 256
+      },
+      "12h": {
+        "durationSeconds": 43200,
+        "maxProcessorMemoryGrowthMiB": 1024,
+        "maxRelayMemoryGrowthMiB": 512,
+        "maxProcessorMemorySlopeMiBPerHour": 64,
+        "maxRelayMemorySlopeMiBPerHour": 32,
+        "maxGpuFramebufferGrowthMiB": 1024,
+        "maxGpuFramebufferSlopeMiBPerHour": 128
+      }
+    }
+  },
+  "scenarios": [
+    {"name": "gpu-soak-15m", "soakFamily": "gpu", "soakStage": "15m", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 900, "publishOutput": true, "notes": "Gate the one-hour GPU soak."},
+    {"name": "gpu-soak-01h", "soakFamily": "gpu", "soakStage": "01h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 3600, "publishOutput": true, "notes": "Gate the four-hour GPU soak."},
+    {"name": "gpu-soak-04h", "soakFamily": "gpu", "soakStage": "04h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 14400, "publishOutput": true, "notes": "Gate the twelve-hour GPU soak."},
+    {"name": "gpu-soak-12h", "soakFamily": "gpu", "soakStage": "12h", "workloads": ["single-detection=4"], "maxFps": 15, "durationSeconds": 43200, "publishOutput": true, "notes": "Final GPU stability and leak observation window."},
+    {"name": "cpu-soak-15m", "soakFamily": "cpu", "soakStage": "15m", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 900, "publishOutput": true, "notes": "Gate the one-hour CPU soak."},
+    {"name": "cpu-soak-01h", "soakFamily": "cpu", "soakStage": "01h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 3600, "publishOutput": true, "notes": "Gate the four-hour CPU soak."},
+    {"name": "cpu-soak-04h", "soakFamily": "cpu", "soakStage": "04h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 14400, "publishOutput": true, "notes": "Gate the twelve-hour CPU soak."},
+    {"name": "cpu-soak-12h", "soakFamily": "cpu", "soakStage": "12h", "workloads": ["single-detection-cpu=2"], "maxFps": 8, "durationSeconds": 43200, "publishOutput": true, "notes": "Final CPU stability and leak observation window."}
+  ]
+}

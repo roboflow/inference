@@ -1,0 +1,598 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-08-13",
+  "environment": "staging",
+  "purpose": "Bind video architecture and product recommendations to explicit evidence and certification gates.",
+  "evidence": [
+    {
+      "id": "abc-native-capacity",
+      "status": "verified_observation",
+      "strength": "committed_summary",
+      "source": "development/video_poc/benchmarks/L40S_RUNTIME_CAPACITY_CAMPAIGN.md",
+      "scope": "One staging L40S; H.264 1280x720 at native 60 FPS; YOLOv8 Nano; output disabled; one worker; threaded A/B/C runtimes.",
+      "facts": {
+        "strictMaxConcurrencyByVariant": {
+          "a-legacy-pyav-thread": 2,
+          "b-v14-pyav-thread": 2,
+          "c-v14-nvdec-thread": 2
+        },
+        "firstRepeatedFailingConcurrency": 4,
+        "cAggregateFpsByConcurrency": {
+          "1": [57.397, 58.245],
+          "2": [106.034, 105.44],
+          "4": [142.179, 141.554],
+          "8": [108.914, 102.056]
+        },
+        "interpretation": "C improved aggregate throughput above the strict knee without increasing the strict low-latency concurrency boundary. The first C failure was not whole-pod, relay, GPU, VRAM, or decoder saturation."
+      }
+    },
+    {
+      "id": "maxfps-ingest-gate",
+      "status": "verified_observation",
+      "strength": "committed_summary",
+      "source": "development/video_poc/benchmarks/STAGING_EXPERIMENT_LEDGER.md",
+      "scope": "A c1 source-rate-limiter validity gate, not a packing curve.",
+      "facts": {
+        "requestedFps": 5,
+        "uploadedReplayDeliveredFps": [4.913, 4.84],
+        "connectorReplayDeliveredFps": 4.999,
+        "interpretation": "The maxFps path can attain its c1 target after the limiter flag change; controlled multi-stream capacity remains unmeasured."
+      }
+    },
+    {
+      "id": "def-image-and-process-smokes",
+      "status": "verified_observation",
+      "strength": "committed_summary",
+      "source": "development/video_poc/experiments/process_isolation/JOB_PROCESS_MATRIX.md",
+      "scope": "Credential-free image/import/spawn smokes for D/E/F only.",
+      "facts": {
+        "dSmokePassed": true,
+        "eSmokePassed": true,
+        "fSmokePassed": true,
+        "capacityMeasured": false,
+        "lifecycleFaultsMeasured": false
+      }
+    },
+    {
+      "id": "def-process-capacity-and-containment",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/experiments/process_isolation/JOB_PROCESS_MATRIX.md",
+      "scope": "D/E/F c1/c2 topology, selective cancellation, child crash, cleanup, then repeated capacity curves."
+    },
+    {
+      "id": "cpu-legacy-preliminary-curve",
+      "status": "preliminary_observation",
+      "strength": "committed_summary_without_raw_reports",
+      "source": "development/video_poc/benchmarks/cpu_sizing/README.md",
+      "scope": "Historical Burstable CPU worker; YOLOv8 Nano; output disabled; mutable image evidence.",
+      "facts": {
+        "strictPassingConcurrency": 2,
+        "nearMissConcurrency": 3,
+        "clearFailureConcurrency": 4,
+        "certificationAllowed": false
+      }
+    },
+    {
+      "id": "cpu-size-topology-and-workload-campaign",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/cpu_sizing/README.md",
+      "scope": "Guaranteed cpu-2/cpu-4/cpu-8 classes; thread/process; 5/8/10/15 FPS; light/heavy mixes; matched telemetry."
+    },
+    {
+      "id": "output-and-workload-mix",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/STAGING_CAMPAIGN.md",
+      "scope": "Matched output off/on plus detection, tracking, dual-model, and segmentation arrivals."
+    },
+    {
+      "id": "cross-workspace-fairness",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/MULTI_WORKSPACE_FAIRNESS.md",
+      "scope": "Balanced, delayed-arrival, heavy-neighbor, reverse-order, and output-noise runs across two staging workspaces."
+    },
+    {
+      "id": "mmp-single-workspace-controls",
+      "status": "preliminary_observation",
+      "strength": "committed_summary_without_campaign_reports",
+      "source": "development/video_poc/HANDOFF.md",
+      "scope": "Single-workspace MMP smoke and legacy/direct/subprocess controls at 4K and 640p.",
+      "facts": {
+        "crossWorkspaceMeasured": false,
+        "authorizationBoundaryCertified": false,
+        "mpsMeasured": false,
+        "interpretation": "The 4K subprocess regression disappeared in the 640p control, implicating ndarray shared-memory transport rather than proving a production manager topology."
+      }
+    },
+    {
+      "id": "mmp-cross-workspace-security-and-fairness",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/experiments/process_isolation/README.md",
+      "scope": "Per-job authorization, warm-model denial, result/slot separation, fair queues, backend failure, and tenant accounting."
+    },
+    {
+      "id": "mps-capacity-fairness-and-faults",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/STAGING_CAMPAIGN.md",
+      "scope": "Exclusive L40S MMP comparison with MPS off/on and optional thread caps; throughput, latency, fairness, and faults."
+    },
+    {
+      "id": "processor-and-relay-recovery",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/fault_injection/README.md",
+      "scope": "Startup loss, steady processor loss, relay replacement, exact pod identity, and verified post-replacement frame progress."
+    },
+    {
+      "id": "selected-point-soaks",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/STAGING_CAMPAIGN.md",
+      "scope": "15-minute, 1-hour, 4-hour, and 12-hour staged stability gates."
+    },
+    {
+      "id": "cell-placement-rfc",
+      "status": "design_only",
+      "strength": "reviewable_design",
+      "source": "development/video_poc/MULTI_CELL_SCALING_RFC.md",
+      "scope": "Sticky source home cell, cell-scoped job claims, explicit remote execution, relay shards, and dedicated placement policies."
+    },
+    {
+      "id": "distributed-relay-and-wan-capacity",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/networking/STAGING_NETWORK_BENCHMARK_PLAN.md",
+      "scope": "Isolated LB, relay, CNI, node, cross-cell, cloud, and on-prem edges with source/fan-out curves."
+    },
+    {
+      "id": "environment-cost-and-metering",
+      "status": "pending",
+      "strength": "none",
+      "source": "development/video_poc/benchmarks/analysis/recommendations.py",
+      "scope": "Worker, relay, bandwidth, control-plane, and failure-overhead cost inputs joined to successful service units."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "worker-topology",
+      "certificationStatus": "provisional",
+      "currentRecommendation": {
+        "action": "Use one OS process per job as the leading isolation and scaling candidate, but do not select it for deployment until D/E/F lifecycle and capacity gates pass.",
+        "scope": "GPU stream jobs; decoder, workflow, model, CUDA context, and publisher stay in the child; frames and tensors do not cross supervisor IPC.",
+        "doNotClaim": "The image smokes do not prove selective cancellation, crash containment, capacity, security isolation, or a production worker class."
+      },
+      "evidenceIds": [
+        "abc-native-capacity",
+        "def-image-and-process-smokes",
+        "def-process-capacity-and-containment",
+        "selected-point-soaks"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "distinct-job-processes",
+          "status": "pending",
+          "evidenceIds": ["def-process-capacity-and-containment"],
+          "requirement": "At c2, the supervisor and both jobs have distinct PIDs and the runtime identity matches the exact D/E/F digest."
+        },
+        {
+          "id": "selective-cancel-and-crash",
+          "status": "pending",
+          "evidenceIds": ["def-process-capacity-and-containment"],
+          "requirement": "Cancel or kill one child without interrupting sibling frame progress; sanitize the failure and return activeJobs to zero."
+        },
+        {
+          "id": "topology-capacity-comparison",
+          "status": "pending",
+          "evidenceIds": ["def-process-capacity-and-containment"],
+          "requirement": "Run repeated, identical D/E/F curves through the first repeated failure and compare strict capacity, latency, resources, startup, and cleanup with A/B/C."
+        },
+        {
+          "id": "topology-soak",
+          "status": "pending",
+          "evidenceIds": ["selected-point-soaks"],
+          "requirement": "The selected topology passes the staged soak progression without process, memory, CUDA, counter, or publisher drift."
+        }
+      ],
+      "unknowns": [
+        "Whether per-job processes move the c2 strict native-rate knee.",
+        "The independent-CUDA-context cost before MPS or a shared model manager.",
+        "Whether process cleanup remains bounded during model load and output publication."
+      ]
+    },
+    {
+      "id": "gpu-stream-capacity-and-slo",
+      "certificationStatus": "provisional",
+      "currentRecommendation": {
+        "action": "Treat c2 as the strict maximum only for the measured native-rate 720p YOLO output-off A/B/C profiles; keep the product packing limit unknown.",
+        "scope": "One L40S, one worker, native 60 FPS connector stream, strict p95 50 ms and p99 150 ms gates.",
+        "doNotClaim": "Do not generalize c2 to 5/10/15 FPS service tiers, other resolutions, output publishing, heavy workflows, MMP, or long-lived operation."
+      },
+      "evidenceIds": [
+        "abc-native-capacity",
+        "maxfps-ingest-gate",
+        "def-process-capacity-and-containment",
+        "output-and-workload-mix",
+        "processor-and-relay-recovery",
+        "selected-point-soaks"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "capacity-repetitions-and-boundary",
+          "status": "satisfied",
+          "evidenceIds": ["abc-native-capacity"],
+          "requirement": "For the exact native-rate A/B/C profile, two repetitions pass at the selected point and two higher points show the repeated SLO boundary."
+        },
+        {
+          "id": "controlled-service-tier-curves",
+          "status": "pending",
+          "evidenceIds": ["maxfps-ingest-gate", "def-process-capacity-and-containment"],
+          "requirement": "Run separately labeled 5/10/15 FPS curves with c1 target attainment, two repetitions, histogram latency, resource coverage, and an observed failing boundary."
+        },
+        {
+          "id": "output-and-heavy-multipliers",
+          "status": "pending",
+          "evidenceIds": ["output-and-workload-mix"],
+          "requirement": "Measure matched output off/on and light, tracking, dual-model, and segmentation profiles before assigning resource units."
+        },
+        {
+          "id": "capacity-stability",
+          "status": "pending",
+          "evidenceIds": ["selected-point-soaks", "processor-and-relay-recovery"],
+          "requirement": "The proposed operating point passes soak and recovery gates with explicit headroom below the observed knee."
+        }
+      ],
+      "unknowns": [
+        "Maximum strict streams at each controlled FPS and resolution.",
+        "Safe operating headroom after long soaks.",
+        "Output publishing and heavy-workflow capacity multipliers.",
+        "An independently re-runnable sanitized evidence bundle for the committed A/B/C summary."
+      ]
+    },
+    {
+      "id": "cpu-vs-gpu-routing",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Keep routing experimental. Compare Guaranteed CPU classes with the matching GPU workload before selecting CPU, GPU, or multiple CPU shapes.",
+        "scope": "Routing by workflow fingerprint, model, resolution, target FPS, output mode, SLO, and measured cost—not by model family name alone.",
+        "doNotClaim": "The historical CPU curve cannot certify current sizing, and faster GPU inference alone does not prove lower service cost."
+      },
+      "evidenceIds": [
+        "cpu-legacy-preliminary-curve",
+        "cpu-size-topology-and-workload-campaign",
+        "def-process-capacity-and-containment",
+        "output-and-workload-mix",
+        "environment-cost-and-metering"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "cpu-class-curves",
+          "status": "pending",
+          "evidenceIds": ["cpu-size-topology-and-workload-campaign"],
+          "requirement": "Each candidate CPU class/topology has immutable-image repeated curves, Guaranteed QoS, CFS/resource evidence, PID identity, cleanup, and a failing boundary."
+        },
+        {
+          "id": "matched-workload-gpu-control",
+          "status": "pending",
+          "evidenceIds": ["def-process-capacity-and-containment", "output-and-workload-mix"],
+          "requirement": "The exact workflow, model, source, FPS, output mode, SLO, and duration are measured on the candidate GPU topology."
+        },
+        {
+          "id": "routing-economics",
+          "status": "pending",
+          "evidenceIds": ["environment-cost-and-metering"],
+          "requirement": "Compare successful stream-hours and successful frames per worker-hour, plus relay/bandwidth and idle/headroom costs."
+        }
+      ],
+      "unknowns": [
+        "Whether one, several, or no general CPU classes are economical.",
+        "CPU viability for tracking, dual-model, and segmentation workflows.",
+        "The utilization and queue thresholds for switching tiers."
+      ]
+    },
+    {
+      "id": "trusted-shared-model-manager",
+      "certificationStatus": "design_candidate",
+      "currentRecommendation": {
+        "action": "A pod-global trusted model service may share model backends across jobs and workspaces; preserve per-job authorization, identity, accounting, and result routing instead of creating a manager merely because a workspace differs.",
+        "scope": "Trusted service boundary inside one GPU-owning worker pod; one OS process per video job remains the pipeline isolation target.",
+        "doNotClaim": "Trusted does not mean authorization-free, fair, memory-isolated, or fault-isolated; current single-workspace controls do not certify cross-workspace sharing."
+      },
+      "evidenceIds": [
+        "mmp-single-workspace-controls",
+        "mmp-cross-workspace-security-and-fairness",
+        "mps-capacity-fairness-and-faults"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "per-job-model-authorization",
+          "status": "pending",
+          "evidenceIds": ["mmp-cross-workspace-security-and-fairness"],
+          "requirement": "Every job is authorized before route/cache reuse; an unauthorized tenant cannot invoke a model warmed by another tenant."
+        },
+        {
+          "id": "client-result-separation",
+          "status": "pending",
+          "evidenceIds": ["mmp-cross-workspace-security-and-fairness"],
+          "requirement": "Watermarked cross-workspace traffic proves SHM slots, responses, cancellation, errors, and output paths never cross client identities."
+        },
+        {
+          "id": "manager-fairness-and-accounting",
+          "status": "pending",
+          "evidenceIds": ["mmp-cross-workspace-security-and-fairness"],
+          "requirement": "Bounded per-client inflight work or fair queuing prevents a high-rate producer from dominating, with per-job/workspace usage attribution."
+        },
+        {
+          "id": "manager-capacity-and-failure",
+          "status": "pending",
+          "evidenceIds": ["mmp-cross-workspace-security-and-fairness", "mps-capacity-fairness-and-faults"],
+          "requirement": "Same-model batching, different-model backends, backend death/reload, cancellation, SHM pressure, and long-lived churn pass the selected SLO."
+        }
+      ],
+      "unknowns": [
+        "The winning transport and tensor descriptor between job processes and the manager.",
+        "Whether shared same-model auto-batching improves low-latency stream capacity at bounded batch wait.",
+        "The right queue isolation granularity: job, priority class, workspace policy, or a combination."
+      ]
+    },
+    {
+      "id": "fairness-and-admission",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Make the job the execution and runtime-fairness unit. Use workspace identity only for authorization, quota, reserved/dedicated capacity, admission ordering, accounting, and reporting policy.",
+        "scope": "Resource-aware worker fit plus optional weighted workspace admission; oldest eligible job selection within a workspace.",
+        "doNotClaim": "Workspace fairness does not require a workspace process or model manager, and admission fairness does not guarantee GPU time isolation after colocation."
+      },
+      "evidenceIds": ["cross-workspace-fairness", "output-and-workload-mix"],
+      "certificationRequirements": [
+        {
+          "id": "per-job-slo-first",
+          "status": "pending",
+          "evidenceIds": ["cross-workspace-fairness"],
+          "requirement": "Every planned job is stable, reaches at least 90% of target, has histogram p95 at most 50 ms, has no counter reset/migration, and retains exact identity."
+        },
+        {
+          "id": "cross-workspace-balance",
+          "status": "pending",
+          "evidenceIds": ["cross-workspace-fairness"],
+          "requirement": "Balanced and reverse-order runs keep tenant target-attainment spread at most 10% and delayed incumbents retain at least 90%."
+        },
+        {
+          "id": "heavy-neighbor-protection",
+          "status": "pending",
+          "evidenceIds": ["cross-workspace-fairness", "output-and-workload-mix"],
+          "requirement": "Tracking, segmentation, dual-model, and output arrivals do not breach incumbent SLO; otherwise admission prevents the unsafe fit."
+        },
+        {
+          "id": "workspace-policy-simulation",
+          "status": "pending",
+          "evidenceIds": ["cross-workspace-fairness"],
+          "requirement": "Replay bursty multi-workspace arrivals against proposed quotas, priorities, reservations, and queue ordering without starvation or reserved-capacity spill."
+        }
+      ],
+      "unknowns": [
+        "Resource-unit weights for each workflow profile.",
+        "Whether runtime interference needs manager-level per-client scheduling beyond admission control.",
+        "Product quota, priority, and reservation values."
+      ]
+    },
+    {
+      "id": "dedicated-and-multi-cell-placement",
+      "certificationStatus": "design_candidate",
+      "currentRecommendation": {
+        "action": "Use lazy, sticky source home-cell placement and colocate ordinary live processing; let workspace/connector policy constrain or prefer cells, including strict dedicated cells with no silent shared fallback.",
+        "scope": "Design direction for a second non-production cell; remote execution must be explicit and encoded-media based.",
+        "doNotClaim": "The RFC is not runtime proof. A second cell is unsafe until source placement, URL resolution, Pub/Sub filters, and transactional claims agree on cell identity."
+      },
+      "evidenceIds": [
+        "cell-placement-rfc",
+        "distributed-relay-and-wan-capacity",
+        "environment-cost-and-metering"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "single-cell-contract-migration",
+          "status": "pending",
+          "evidenceIds": ["cell-placement-rfc"],
+          "requirement": "With one registered cell, placement is persisted, URLs are placement-derived, claims filter by verified cell, and a synthetic other-cell worker cannot claim East work."
+        },
+        {
+          "id": "two-cell-placement-correctness",
+          "status": "pending",
+          "evidenceIds": ["distributed-relay-and-wan-capacity"],
+          "requirement": "Two staging cells prove deterministic first activation, sticky reuse, strict workspace pinning, draining, idle reassignment, and no cross-cell misclaims."
+        },
+        {
+          "id": "remote-path-envelope",
+          "status": "pending",
+          "evidenceIds": ["distributed-relay-and-wan-capacity"],
+          "requirement": "Colocated, direct remote, and one-copy-plus-local-fanout paths have measured latency, loss, recovery, capacity, egress cost, and security envelopes."
+        },
+        {
+          "id": "dedicated-capacity-policy",
+          "status": "pending",
+          "evidenceIds": ["cell-placement-rfc", "environment-cost-and-metering"],
+          "requirement": "Dedicated relay/compute modes specify reservation, upgrade, draining, secret rotation, support, billing, and explicit fallback semantics."
+        }
+      ],
+      "unknowns": [
+        "The first second-cell location and secure WAN transport.",
+        "Relay shard size and cell ingress/egress admission thresholds.",
+        "Which dedicated placement modes become product commitments."
+      ]
+    },
+    {
+      "id": "mps",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Test raw MPS only as an optional throughput/fairness scheduler inside one exclusive L40S pod; keep it off by default until it wins repeated capacity and fault gates.",
+        "scope": "MPS off versus on, same-model versus different-model processes, and optional 50%/25% active-thread caps.",
+        "doNotClaim": "MPS is not an authorization, memory-isolation, workspace-isolation, or fault-isolation boundary. L40S does not offer MIG for this campaign."
+      },
+      "evidenceIds": [
+        "mps-capacity-fairness-and-faults",
+        "selected-point-soaks"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "mps-apples-to-apples-capacity",
+          "status": "pending",
+          "evidenceIds": ["mps-capacity-fairness-and-faults"],
+          "requirement": "Warm/cold/cache order, workload, process topology, target FPS, and manager settings are identical with MPS off/on through repeated failing boundaries."
+        },
+        {
+          "id": "mps-low-latency-gate",
+          "status": "pending",
+          "evidenceIds": ["mps-capacity-fairness-and-faults"],
+          "requirement": "Any throughput gain preserves per-job target attainment, p95/p99 latency, bounded batch wait, startup, and incumbent fairness."
+        },
+        {
+          "id": "mps-fault-envelope",
+          "status": "pending",
+          "evidenceIds": ["mps-capacity-fairness-and-faults"],
+          "requirement": "Client termination, backend failure, GPU fault, MPS server fault, cleanup, and restart produce a documented blast radius and bounded recovery."
+        },
+        {
+          "id": "mps-soak",
+          "status": "pending",
+          "evidenceIds": ["mps-capacity-fairness-and-faults", "selected-point-soaks"],
+          "requirement": "The winning MPS and non-MPS configurations pass at least a 15-minute comparison and the selected configuration passes the full soak progression."
+        }
+      ],
+      "unknowns": [
+        "Whether MPS improves low-latency throughput for the actual kernel mix.",
+        "Whether active-thread caps help fairness or merely reduce utilization.",
+        "The operational impact of a fatal client or MPS server fault."
+      ]
+    },
+    {
+      "id": "failure-recovery-and-soak",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Keep zero recovery tolerance in capacity certification and measure faults in separate suites; advance soaks only after each shorter gate passes.",
+        "scope": "Per-job child, worker pod, relay, model backend, MPS server, and long-lived resource/counter stability.",
+        "doNotClaim": "A requeued job or replacement relay alone does not prove media continuity, state continuity, or bounded end-to-end downtime."
+      },
+      "evidenceIds": [
+        "processor-and-relay-recovery",
+        "selected-point-soaks",
+        "distributed-relay-and-wan-capacity"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "processor-frame-recovery-bound",
+          "status": "pending",
+          "evidenceIds": ["processor-and-relay-recovery"],
+          "requirement": "Exact old/new processor pod identities join fault time to verified post-replacement frame progress for startup and steady faults."
+        },
+        {
+          "id": "relay-continuity-bound",
+          "status": "pending",
+          "evidenceIds": ["processor-and-relay-recovery", "distributed-relay-and-wan-capacity"],
+          "requirement": "Frame identity, stalls, reconnects, and output continuity—not relay liveness alone—bound relay replacement impact."
+        },
+        {
+          "id": "progressive-soak",
+          "status": "pending",
+          "evidenceIds": ["selected-point-soaks"],
+          "requirement": "15-minute, 1-hour, 4-hour, and 12-hour gates pass sequentially with resource series, latency tails, reconnects, restarts, reloads, and counter continuity."
+        }
+      ],
+      "unknowns": [
+        "Exact frame-recovery and media-continuity bounds.",
+        "Whether stateful workflows can resume without semantic state loss.",
+        "Memory, VRAM, SHM, descriptor, and model-cache drift over 12 hours."
+      ]
+    },
+    {
+      "id": "relay-and-network-capacity",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Characterize each network edge independently, then the combined cell; shard MediaMTX origins by source only after the measured relay/node/LB knee requires it.",
+        "scope": "Publish, read, fan-out, output, preview, LB, CNI, node NIC, WAN, and one-copy remote fan-out paths.",
+        "doNotClaim": "Do not call the first plateau a MediaMTX limit unless generators, node VPC entitlement, LB, CNI, CPU, and readers are all shown to have headroom."
+      },
+      "evidenceIds": [
+        "distributed-relay-and-wan-capacity",
+        "output-and-workload-mix"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "edge-isolation",
+          "status": "pending",
+          "evidenceIds": ["distributed-relay-and-wan-capacity"],
+          "requirement": "Publish-copy, read-copy, and decode-validation isolate LB, same-node, CNI cross-node, relay-node, and processor-node edges with byte conservation."
+        },
+        {
+          "id": "relay-fanout-boundary",
+          "status": "pending",
+          "evidenceIds": ["distributed-relay-and-wan-capacity"],
+          "requirement": "Source and readers-per-source ramps identify the first saturated resource, a failing boundary, and a lower operating point for each fixture."
+        },
+        {
+          "id": "whole-cell-envelope",
+          "status": "pending",
+          "evidenceIds": ["distributed-relay-and-wan-capacity", "output-and-workload-mix"],
+          "requirement": "Combined processor, relay, output, and viewer runs produce the cell envelope; isolated maxima are not multiplied."
+        }
+      ],
+      "unknowns": [
+        "MediaMTX process, relay-node, CNI, and Crusoe LB knees.",
+        "Safe relay shard size and reconnection rate.",
+        "Cross-cell direct-read versus one-copy local fan-out tradeoff."
+      ]
+    },
+    {
+      "id": "pricing-capacity-and-metering",
+      "certificationStatus": "insufficient_evidence",
+      "currentRecommendation": {
+        "action": "Separate capacity allocation from customer pricing. Evaluate a managed per-stream quote pinned to workflow version and declared service envelope against an explicitly named worker-class launch step; keep worker selection platform-recommended in either case.",
+        "scope": "Worker, relay, bandwidth, idle/ready headroom, retry/failure overhead, output, and dedicated reservations.",
+        "doNotClaim": "Throughput, admission ceiling, GPU utilization, or the product-discussion c15 break-even hypothesis is not a price and must not weaken the SLO."
+      },
+      "evidenceIds": [
+        "abc-native-capacity",
+        "cpu-size-topology-and-workload-campaign",
+        "output-and-workload-mix",
+        "distributed-relay-and-wan-capacity",
+        "environment-cost-and-metering"
+      ],
+      "certificationRequirements": [
+        {
+          "id": "successful-service-denominator",
+          "status": "pending",
+          "evidenceIds": ["environment-cost-and-metering"],
+          "requirement": "Define successful stream-hours and successful processed frames using target attainment, latency, availability, and error gates; exclude failed/requeued time from delivered service."
+        },
+        {
+          "id": "full-environment-cost",
+          "status": "pending",
+          "evidenceIds": ["environment-cost-and-metering", "distributed-relay-and-wan-capacity"],
+          "requirement": "Supply worker-hour, relay, bandwidth/egress, control-plane, ready-capacity, and dedicated-reservation costs for the measured environment."
+        },
+        {
+          "id": "profile-unit-economics",
+          "status": "pending",
+          "evidenceIds": ["cpu-size-topology-and-workload-campaign", "output-and-workload-mix", "environment-cost-and-metering"],
+          "requirement": "Compute cost per successful stream-hour and successful frame by versioned workload profile at the certified operating point and headroom."
+        },
+        {
+          "id": "pricing-policy-review",
+          "status": "pending",
+          "evidenceIds": ["environment-cost-and-metering"],
+          "requirement": "Product review selects managed per-stream versus worker-class packaging, workflow-edit repricing, under-provision behavior, margins, quotas, reservations, and overages independently from the measured capacity calculation."
+        }
+      ],
+      "unknowns": [
+        "Actual environment and egress costs.",
+        "The customer-facing billing unit and included FPS/resolution/output envelope.",
+        "Whether worker classes are only an internal allocator, a launch-step customer contract, or both.",
+        "Margins and reserved/dedicated capacity commitments."
+      ]
+    }
+  ]
+}

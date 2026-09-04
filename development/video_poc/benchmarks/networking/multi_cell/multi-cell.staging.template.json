@@ -1,0 +1,424 @@
+{
+  "schemaVersion": 1,
+  "name": "stg-two-cell-baseline",
+  "environment": "staging",
+  "identitySnapshot": {
+    "status": "template",
+    "capturedAtUnixSeconds": 0,
+    "expiresAtUnixSeconds": 0,
+    "sourceSha256": "1010101010101010101010101010101010101010101010101010101010101010",
+    "capturedBy": {
+      "uid": "staging-identity-collector-service-account",
+      "revision": "collector-build-revision",
+      "sha256": "1110111011101110111011101110111011101110111011101110111011101110"
+    }
+  },
+  "namespace": "video-proc-bench",
+  "serviceAccountName": "video-multi-cell-benchmark",
+  "maxRenderedJobs": 40,
+  "repetitions": 3,
+  "agentImage": "us-central1-docker.pkg.dev/roboflow-staging/video-proc/multi-cell-probe@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "agentCommand": [
+    "python",
+    "/opt/roboflow/multi_cell_probe.py"
+  ],
+  "cells": {
+    "east": {
+      "id": "crusoe-use1-benchmark",
+      "exclusiveBenchmarkCell": true,
+      "provider": "crusoe",
+      "region": "us-east1",
+      "clusterContext": "ck8s-stg-east",
+      "clusterIdentity": {
+        "uid": "stg-east-cluster-uid-snapshot-20260813",
+        "revision": "kubernetes-v1-33-cilium-v1-17-16",
+        "sha256": "1212121212121212121212121212121212121212121212121212121212121212"
+      },
+      "namespace": "video-proc-bench",
+      "relay": {
+        "shard": "east-bench-shard-0",
+        "location": "east-relay",
+        "workloadIdentity": {
+          "uid": "stg-east-mediamtx-pod-uid-snapshot-20260813",
+          "revision": "deployment-generation-1-revision-1",
+          "sha256": "1313131313131313131313131313131313131313131313131313131313131313"
+        },
+        "configSha256": "1414141414141414141414141414141414141414141414141414141414141414",
+        "image": "ghcr.io/bluenviron/mediamtx@sha256:1515151515151515151515151515151515151515151515151515151515151515",
+        "loadBalancer": {
+          "id": "stg-east-video-bench-lb-snapshot-20260813",
+          "configSha256": "1616161616161616161616161616161616161616161616161616161616161616",
+          "bandwidthCeilingBps": 10000000000,
+          "limitSource": "staging-measured-ceiling-phase0-v1"
+        },
+        "publishUrl": {
+          "name": "video-multi-cell-east-media",
+          "key": "publish-url-template"
+        },
+        "internalReadUrl": {
+          "name": "video-multi-cell-east-media",
+          "key": "internal-read-url-template"
+        },
+        "externalReadUrl": {
+          "name": "video-multi-cell-east-media",
+          "key": "external-read-url-template"
+        }
+      }
+    },
+    "south": {
+      "id": "crusoe-ussc1-benchmark",
+      "exclusiveBenchmarkCell": true,
+      "provider": "crusoe",
+      "region": "us-southcentral1",
+      "clusterContext": "ck8s-stg-south",
+      "clusterIdentity": {
+        "uid": "stg-south-cluster-uid-snapshot-20260813",
+        "revision": "kubernetes-v1-33-cilium-v1-19-1",
+        "sha256": "2121212121212121212121212121212121212121212121212121212121212121"
+      },
+      "namespace": "video-proc-bench",
+      "relay": {
+        "shard": "south-bench-shard-0",
+        "location": "south-relay",
+        "workloadIdentity": {
+          "uid": "stg-south-mediamtx-pod-uid-snapshot-20260813",
+          "revision": "deployment-generation-1-revision-1",
+          "sha256": "2323232323232323232323232323232323232323232323232323232323232323"
+        },
+        "configSha256": "2424242424242424242424242424242424242424242424242424242424242424",
+        "image": "ghcr.io/bluenviron/mediamtx@sha256:2525252525252525252525252525252525252525252525252525252525252525",
+        "loadBalancer": {
+          "id": "stg-south-video-bench-lb-snapshot-20260813",
+          "configSha256": "2626262626262626262626262626262626262626262626262626262626262626",
+          "bandwidthCeilingBps": 10000000000,
+          "limitSource": "staging-measured-ceiling-phase0-v1"
+        },
+        "publishUrl": {
+          "name": "video-multi-cell-south-media",
+          "key": "publish-url-template"
+        },
+        "internalReadUrl": {
+          "name": "video-multi-cell-south-media",
+          "key": "internal-read-url-template"
+        },
+        "externalReadUrl": {
+          "name": "video-multi-cell-south-media",
+          "key": "external-read-url-template"
+        }
+      }
+    }
+  },
+  "locations": {
+    "east-relay": {
+      "cell": "east",
+      "nodeName": "stg-east-relay-snapshot-20260813",
+      "nodeUid": "stg-east-relay-node-uid-snapshot-20260813",
+      "instanceType": "c1a.16x",
+      "documentedVpcBandwidthBps": 10000000000,
+      "networkIdentity": {
+        "uid": "stg-east-relay-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-17-16-vxlan-mtu-8900",
+        "sha256": "3030303030303030303030303030303030303030303030303030303030303030"
+      },
+      "tolerations": []
+    },
+    "east-connector": {
+      "cell": "east",
+      "nodeName": "stg-east-video-generator-snapshot-20260813",
+      "nodeUid": "stg-east-video-generator-node-uid-snapshot-20260813",
+      "instanceType": "c1a.16x",
+      "documentedVpcBandwidthBps": 10000000000,
+      "networkIdentity": {
+        "uid": "stg-east-generator-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-17-16-vxlan-mtu-8900",
+        "sha256": "3131313131313131313131313131313131313131313131313131313131313131"
+      },
+      "tolerations": []
+    },
+    "east-processor": {
+      "cell": "east",
+      "nodeName": "stg-east-l40s-snapshot-20260813",
+      "nodeUid": "stg-east-l40s-node-uid-snapshot-20260813",
+      "instanceType": "l40s-48gb.10x",
+      "documentedVpcBandwidthBps": 175000000000,
+      "networkIdentity": {
+        "uid": "stg-east-l40s-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-17-16-vxlan-mtu-8900",
+        "sha256": "3232323232323232323232323232323232323232323232323232323232323232"
+      },
+      "tolerations": []
+    },
+    "south-processor": {
+      "cell": "south",
+      "nodeName": "stg-south-l40s-snapshot-20260813",
+      "nodeUid": "stg-south-l40s-node-uid-snapshot-20260813",
+      "instanceType": "l40s-48gb.1x",
+      "documentedVpcBandwidthBps": 17500000000,
+      "networkIdentity": {
+        "uid": "stg-south-l40s-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-19-1-vxlan-mtu-8900",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "tolerations": []
+    },
+    "south-relay": {
+      "cell": "south",
+      "nodeName": "stg-south-relay-snapshot-20260813",
+      "nodeUid": "stg-south-relay-node-uid-snapshot-20260813",
+      "instanceType": "c1a.16x",
+      "documentedVpcBandwidthBps": 10000000000,
+      "networkIdentity": {
+        "uid": "stg-south-relay-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-19-1-vxlan-mtu-8900",
+        "sha256": "3434343434343434343434343434343434343434343434343434343434343434"
+      },
+      "tolerations": []
+    },
+    "south-connector": {
+      "cell": "south",
+      "nodeName": "stg-south-video-generator-snapshot-20260813",
+      "nodeUid": "stg-south-video-generator-node-uid-snapshot-20260813",
+      "instanceType": "c1a.16x",
+      "documentedVpcBandwidthBps": 10000000000,
+      "networkIdentity": {
+        "uid": "stg-south-generator-nic-uid-snapshot-20260813",
+        "revision": "cilium-v1-19-1-vxlan-mtu-8900",
+        "sha256": "3535353535353535353535353535353535353535353535353535353535353535"
+      },
+      "tolerations": []
+    }
+  },
+  "fixture": {
+    "id": "pixel-clock-h264-1080p15-5mbps-v1",
+    "sha256": "4141414141414141414141414141414141414141414141414141414141414141",
+    "codec": "h264",
+    "width": 1920,
+    "height": 1080,
+    "fps": 15,
+    "bitrateBps": 5000000,
+    "clockEncoding": "pixel-clock-v1",
+    "source": {
+      "secretKeyRef": {
+        "name": "video-multi-cell-fixture",
+        "key": "fixture-path"
+      }
+    }
+  },
+  "processorWorkflow": {
+    "id": "single-detection-network-control-v1",
+    "specificationSha256": "4242424242424242424242424242424242424242424242424242424242424242",
+    "runtimeInputsSha256": "4343434343434343434343434343434343434343434343434343434343434343",
+    "tier": "gpu",
+    "targetFps": 15,
+    "outputPublishing": false
+  },
+  "workspacePolicies": {
+    "shared-two-cell": {
+      "mode": "shared",
+      "allowedCells": ["east", "south"],
+      "preferredCells": ["east"],
+      "allowRemoteExecution": true,
+      "allowSharedFallback": true,
+      "revision": "shared-two-cell-policy-revision-1",
+      "sha256": "5151515151515151515151515151515151515151515151515151515151515151"
+    },
+    "dedicated-south": {
+      "mode": "dedicated",
+      "allowedCells": ["south"],
+      "preferredCells": ["south"],
+      "allowRemoteExecution": false,
+      "allowSharedFallback": false,
+      "revision": "dedicated-south-policy-revision-1",
+      "sha256": "5252525252525252525252525252525252525252525252525252525252525252"
+    }
+  },
+  "sourcePlacements": {
+    "shared-source": {
+      "sourceIdentitySha256": "6161616161616161616161616161616161616161616161616161616161616161",
+      "workspacePolicy": "shared-two-cell",
+      "homeCell": "east",
+      "relayShard": "east-bench-shard-0",
+      "placementGeneration": 7,
+      "recordRevision": "shared-source-firestore-update-time-snapshot-7",
+      "connectorIdentity": {
+        "uid": "shared-source-connector-session-snapshot-20260813",
+        "revision": "rf-video-connector-v1-immutable-build",
+        "sha256": "6262626262626262626262626262626262626262626262626262626262626262"
+      }
+    },
+    "dedicated-source": {
+      "sourceIdentitySha256": "6363636363636363636363636363636363636363636363636363636363636363",
+      "workspacePolicy": "dedicated-south",
+      "homeCell": "south",
+      "relayShard": "south-bench-shard-0",
+      "placementGeneration": 3,
+      "recordRevision": "dedicated-source-firestore-update-time-snapshot-3",
+      "connectorIdentity": {
+        "uid": "dedicated-source-connector-session-snapshot-20260813",
+        "revision": "rf-video-connector-v1-immutable-build",
+        "sha256": "6464646464646464646464646464646464646464646464646464646464646464"
+      }
+    }
+  },
+  "placementCases": [
+    {
+      "id": "shared-sticky-and-remote",
+      "source": "shared-source",
+      "actions": [
+        {
+          "action": "activate-preview",
+          "expectedOutcome": "assigned",
+          "expectedExecutionCell": "east"
+        },
+        {
+          "action": "reactivate-after-idle",
+          "expectedOutcome": "reused",
+          "expectedExecutionCell": "east"
+        },
+        {
+          "action": "request-remote-job",
+          "requestedExecutionCell": "south",
+          "expectedOutcome": "assigned",
+          "expectedExecutionCell": "south"
+        }
+      ]
+    },
+    {
+      "id": "dedicated-fail-closed",
+      "source": "dedicated-source",
+      "actions": [
+        {
+          "action": "activate-job",
+          "expectedOutcome": "assigned",
+          "expectedExecutionCell": "south"
+        },
+        {
+          "action": "request-remote-job",
+          "requestedExecutionCell": "east",
+          "expectedOutcome": "rejected",
+          "expectedReasonCode": "CELL_NOT_ALLOWED"
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "id": "east-vs-south-direct",
+      "source": "shared-source",
+      "arms": {
+        "control": {
+          "topology": "same-cell",
+          "publisherLocation": "east-connector",
+          "readerLocation": "east-processor",
+          "relayCell": "east",
+          "executionCell": "east",
+          "processorRuntimeIdentity": {
+            "uid": "stg-east-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7171717171717171717171717171717171717171717171717171717171717171"
+          }
+        },
+        "variant": {
+          "topology": "cross-cell-direct",
+          "publisherLocation": "east-connector",
+          "readerLocation": "south-processor",
+          "relayCell": "east",
+          "executionCell": "south",
+          "processorRuntimeIdentity": {
+            "uid": "stg-south-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7272727272727272727272727272727272727272727272727272727272727272"
+          }
+        }
+      }
+    },
+    {
+      "id": "east-vs-south-replica",
+      "source": "shared-source",
+      "arms": {
+        "control": {
+          "topology": "same-cell",
+          "publisherLocation": "east-connector",
+          "readerLocation": "east-processor",
+          "relayCell": "east",
+          "executionCell": "east",
+          "processorRuntimeIdentity": {
+            "uid": "stg-east-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7171717171717171717171717171717171717171717171717171717171717171"
+          }
+        },
+        "variant": {
+          "topology": "cross-cell-replica",
+          "publisherLocation": "east-connector",
+          "readerLocation": "south-processor",
+          "relayCell": "east",
+          "executionCell": "south",
+          "replicaIdentity": {
+            "uid": "stg-south-read-replica-pod-uid-snapshot-20260813",
+            "revision": "mediamtx-read-replica-revision-1",
+            "sha256": "7373737373737373737373737373737373737373737373737373737373737373"
+          },
+          "replicaReadUrl": {
+            "name": "video-multi-cell-south-replica",
+            "key": "internal-read-url-template"
+          },
+          "processorRuntimeIdentity": {
+            "uid": "stg-south-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7272727272727272727272727272727272727272727272727272727272727272"
+          }
+        }
+      }
+    },
+    {
+      "id": "east-vs-south-ingest",
+      "source": "shared-source",
+      "arms": {
+        "control": {
+          "topology": "same-cell",
+          "publisherLocation": "east-connector",
+          "readerLocation": "east-processor",
+          "relayCell": "east",
+          "executionCell": "east",
+          "processorRuntimeIdentity": {
+            "uid": "stg-east-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7171717171717171717171717171717171717171717171717171717171717171"
+          }
+        },
+        "variant": {
+          "topology": "cross-cell-ingest",
+          "publisherLocation": "south-connector",
+          "readerLocation": "east-processor",
+          "relayCell": "east",
+          "executionCell": "east",
+          "processorRuntimeIdentity": {
+            "uid": "stg-east-worker-pod-uid-snapshot-20260813",
+            "revision": "video-worker-process-nvdec-revision-1",
+            "sha256": "7171717171717171717171717171717171717171717171717171717171717171"
+          }
+        }
+      }
+    }
+  ],
+  "timing": {
+    "warmupSeconds": 60,
+    "measureSeconds": 600,
+    "startupGraceSeconds": 60,
+    "shutdownMarginSeconds": 30,
+    "ttlSecondsAfterFinished": 3600
+  },
+  "thresholds": {
+    "maxTtffMs": 2000,
+    "maxStallMs": 250,
+    "maxStalls": 0,
+    "minDeliveredFpsRatio": 0.95,
+    "maxPacketLossRatio": 0,
+    "maxLatencyP95Ms": 500,
+    "maxClockUncertaintyMs": 5,
+    "maxVpcUtilizationRatio": 0.7,
+    "maxLbUtilizationRatio": 0.7,
+    "maxPairedLatencyRegressionRatio": 0.5
+  }
+}
