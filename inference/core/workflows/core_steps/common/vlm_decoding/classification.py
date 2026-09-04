@@ -16,6 +16,9 @@ from inference.core.workflows.core_steps.common.vlm_decoding.utils import (
     create_classes_index,
     scale_confidence,
 )
+from inference.core.workflows.core_steps.common.vlm_json import (
+    coerce_classification_payload,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
@@ -29,7 +32,9 @@ def decode_classification(
 
     Single-class and multi-label answers are told apart by their keys:
     ``class_name`` + ``confidence`` for single-class, ``predicted_classes``
-    for multi-label. Never raises.
+    for multi-label. A bare list of class entries (the multi-label array
+    emitted without its wrapper) is accepted as multi-label output, matching
+    the deprecated ``vlm_as_classifier`` block. Never raises.
 
     Args:
         raw_output: Raw string produced by the model.
@@ -44,11 +49,11 @@ def decode_classification(
     error_status, parsed_data = extract_json(raw_output)
     if error_status:
         return True, None
-    if not isinstance(parsed_data, dict):
+    parsed_data = coerce_classification_payload(parsed_data)
+    if parsed_data is None:
         logger.warning(
-            "Could not decode VLM classification output - unexpected JSON root "
-            "type: %s.",
-            type(parsed_data).__name__,
+            "Could not decode VLM classification output - the JSON payload is "
+            "neither a classification object nor a list of class entries."
         )
         return True, None
     if "class_name" in parsed_data and "confidence" in parsed_data:

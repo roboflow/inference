@@ -340,3 +340,84 @@ def test_run_when_multiple_jsons_in_markdown_block_given() -> None:
     assert result["predictions"]["parent_id"] == "parent"
     assert len(result["inference_id"]) > 0
     assert result["inference_id"] == result["predictions"]["inference_id"]
+
+
+def test_run_when_json_followed_by_stray_closing_fence_given() -> None:
+    # given
+    raw_json = '{"class_name": "cat", "confidence": 0.9}\n```'
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(image=image, vlm_output=raw_json, classes=["car", "cat"])
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"]["top"] == "cat"
+    assert result["predictions"]["confidence"] == 0.9
+
+
+def test_run_when_json_wrapped_in_prose_given() -> None:
+    # given
+    raw_json = 'Sure! Here is the answer: {"class_name": "cat", "confidence": 0.8} Hope it helps.'
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(image=image, vlm_output=raw_json, classes=["car", "cat"])
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"]["top"] == "cat"
+
+
+def test_run_when_bare_class_list_given() -> None:
+    # given - Qwen3.6: the multi-label `predicted_classes` array without its wrapper
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+    vlm_output = (
+        '```json\n[\n  {"class": "Vehicle", "confidence": 0.95},\n'
+        '  {"class": "fire", "confidence": 0.8}\n]\n```'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["Vehicle", "tank", "fire"],
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"]["predicted_classes"] == ["Vehicle", "fire"]
+    assert result["predictions"]["predictions"]["Vehicle"]["confidence"] == 0.95
+    assert result["predictions"]["predictions"]["tank"]["confidence"] == 0.0
+
+
+def test_run_when_json_list_of_non_class_entries_given() -> None:
+    # given - a list that is not class entries is not a classification payload
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    block = VLMAsClassifierBlockV2()
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='[{"box_2d": [1, 2, 3, 4]}]',
+        classes=["car", "cat"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None

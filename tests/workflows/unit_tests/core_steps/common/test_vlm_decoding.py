@@ -972,3 +972,93 @@ def test_decode_object_detections_normalises_swapped_corners() -> None:
     # then
     assert error_status is False
     assert detections.xyxy.tolist() == [[100.0, 200.0, 900.0, 600.0]]
+
+
+# ---------------------------------------------------------------------------
+# Malformed container shapes recovered by the shared extractor (samples from
+# roboflow/inference#2930, captured from GLM 5.3 Flash and Qwen3.6 35B)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_object_detections_accepts_single_detection_object() -> None:
+    # given - one detection emitted without the enclosing list
+    error_status, detections = decode_object_detections(
+        raw_output='{"bbox_2d": [147, 0, 432, 690], "label": "gun"}',
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["gun"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert detections.data["class_name"].tolist() == ["gun"]
+    assert detections.xyxy.tolist() == [[147.0, 0.0, 432.0, 690.0]]
+
+
+def test_decode_object_detections_accepts_list_missing_opening_bracket() -> None:
+    # given - `{...}, {...}]` with the opening bracket dropped
+    raw_output = (
+        '{"bbox_2d": [419, 587, 459, 856], "label": "blue player"}, '
+        '{"bbox_2d": [607, 104, 681, 326], "label": "basket"}]'
+    )
+
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["blue player", "basket"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert detections.class_id.tolist() == [0, 1]
+
+
+def test_decode_object_detections_accepts_repeated_empty_arrays() -> None:
+    # given - "[]\n[]" for an image with no matches
+    error_status, detections = decode_object_detections(
+        raw_output="[]\n[]",
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["car"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert len(detections) == 0
+
+
+def test_decode_object_detections_accepts_json_lines() -> None:
+    # given - one object per line, no array
+    raw_output = (
+        '{"box_2d": [10, 20, 30, 40], "label": "cat"}\n'
+        '{"box_2d": [50, 60, 70, 80], "label": "dog"}'
+    )
+
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="xyxy_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["cat", "dog"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert detections.class_id.tolist() == [0, 1]
+
+
+def test_decode_classification_accepts_bare_predicted_classes_array() -> None:
+    # given - the multi-label `predicted_classes` array without its wrapper
+    raw_output = '[{"class": "Vehicle", "confidence": 0.95}, {"class": "fire", "confidence": 0.8}]'
+
+    error_status, prediction = decode_classification(
+        raw_output=raw_output,
+        image=_build_image(width=100, height=100),
+        classes=["Vehicle", "fire", "smoke"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert prediction["predicted_classes"] == ["Vehicle", "fire"]
+    assert prediction["predictions"]["Vehicle"]["confidence"] == pytest.approx(0.95)
+    assert prediction["predictions"]["smoke"]["confidence"] == 0.0

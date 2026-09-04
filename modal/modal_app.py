@@ -663,8 +663,8 @@ from datetime import datetime
         import numpy as np
 
         from inference.core.workflows.core_steps.common.deserializers import (
-            deserialize_detections_kind,
             deserialize_image_kind,
+            deserialize_rle_detections_kind,
             deserialize_video_metadata_kind,
         )
 
@@ -727,8 +727,8 @@ from datetime import datetime
             from datetime import datetime
 
             from inference.core.workflows.core_steps.common.deserializers import (
-                deserialize_detections_kind,
                 deserialize_image_kind,
+                deserialize_rle_detections_kind,
                 deserialize_video_metadata_kind,
             )
             from inference.core.workflows.execution_engine.entities.base import Batch
@@ -770,7 +770,7 @@ from datetime import datetime
 
                     from inference.core.workflows.core_steps.common.serializers import (
                         serialise_image,
-                        serialise_sv_detections,
+                        serialise_sv_detections_for_transport,
                         serialize_video_metadata_kind,
                     )
                     from inference.core.workflows.execution_engine.entities.base import (
@@ -780,7 +780,9 @@ from datetime import datetime
 
                     # Apply standard serialization and add type markers based on original type
                     if isinstance(value, sv.Detections):
-                        serialized = serialise_sv_detections(detections=value)
+                        serialized = serialise_sv_detections_for_transport(
+                            detections=value
+                        )
                         serialized["_type"] = "sv_detections"
                     elif isinstance(value, WorkflowImageData):
                         serialized = serialise_image(image=value)
@@ -861,7 +863,9 @@ from datetime import datetime
                                     for k, v in obj.items()
                                     if k != "_type"
                                 }
-                                return deserialize_detections_kind("input", decoded_obj)
+                                return deserialize_rle_detections_kind(
+                                    "input", decoded_obj
+                                )
                             elif obj["_type"] == "video_metadata":
                                 # First decode any nested special types
                                 decoded_obj = {
@@ -1117,8 +1121,8 @@ from datetime import datetime
         import numpy as np
 
         from inference.core.workflows.core_steps.common.deserializers import (
-            deserialize_detections_kind,
             deserialize_image_kind,
+            deserialize_rle_detections_kind,
             deserialize_video_metadata_kind,
         )
         from inference.core.workflows.execution_engine.entities.base import Batch
@@ -1182,7 +1186,7 @@ from datetime import datetime
 
                 if _type == "sv_detections":
                     decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
-                    return deserialize_detections_kind("input", decoded)
+                    return deserialize_rle_detections_kind("input", decoded)
                 if _type == "video_metadata":
                     decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
                     return deserialize_video_metadata_kind("input", decoded)
@@ -1234,7 +1238,7 @@ from datetime import datetime
 
         from inference.core.workflows.core_steps.common.serializers import (
             serialise_image,
-            serialise_sv_detections,
+            serialise_sv_detections_for_transport,
             serialize_video_metadata_kind,
         )
         from inference.core.workflows.execution_engine.entities.base import (
@@ -1248,7 +1252,7 @@ from datetime import datetime
             if isinstance(obj, datetime):
                 return {"_type": "datetime", "value": obj.isoformat()}
             if isinstance(obj, sv.Detections):
-                serialized = serialise_sv_detections(detections=obj)
+                serialized = serialise_sv_detections_for_transport(detections=obj)
                 serialized["_type"] = "sv_detections"
                 return _encode(serialized)
             if isinstance(obj, WorkflowImageData):

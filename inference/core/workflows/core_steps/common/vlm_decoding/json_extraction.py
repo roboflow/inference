@@ -2,9 +2,11 @@
 
 VLMs answer with JSON, but not reliably: the payload may be wrapped in a
 Markdown ```json fence, surrounded by prose, or (for some models) emitted as
-a bare sequence of objects without the enclosing array brackets. This module
-concentrates the extraction and the recovery strategies so no VLM block has
-to repeat them.
+a bare sequence of objects without the enclosing array brackets.
+:func:`extract_json` delegates to ``common/vlm_json.extract_json_payload``,
+the lenient extractor the deprecated ``vlm_as_*`` formatter blocks use, so
+both paths recover exactly the same malformed shapes. The older recovery
+helpers below are kept for the formatter blocks that still import them.
 """
 
 import json
@@ -12,6 +14,7 @@ import re
 from typing import Any, List, Optional, Tuple
 
 from inference.core.logger import logger
+from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
@@ -21,12 +24,11 @@ _NAMED_BOX_FIELDS = ("x_min", "y_min", "x_max", "y_max")
 def extract_json(raw: str) -> Tuple[bool, Any]:
     """Extract the JSON payload out of a raw VLM answer.
 
-    The first ```json fenced block wins; when no fence is present the whole
-    string is parsed. When that fails, two format-agnostic recovery
-    strategies are attempted in order: ``extract_zai_json_array`` (prose
-    wrapped around a JSON array) and ``extract_flat_object_entries`` (a bare
-    ``{...}, {...}`` sequence). Both are harmless for outputs that do not
-    need them.
+    Tries, in order: the first ```json block, the first fenced block with
+    any tag, the text with stray fence lines removed, a sequence of
+    top-level values (JSON Lines, ``{...}, {...}``, ``[...]\n[...]``,
+    tolerating one stray trailing ``]``), and the outermost ``[...]`` or
+    ``{...}`` substring. Truncated output still fails.
 
     Args:
         raw: Raw string produced by the model.
@@ -35,16 +37,10 @@ def extract_json(raw: str) -> Tuple[bool, Any]:
         Tuple of ``(error_status, parsed)``. ``error_status`` is ``True``
         when nothing could be parsed, in which case ``parsed`` is ``{}``.
     """
-    error_status, parsed = _string2json(raw_json=raw)
-    if not error_status:
-        return False, parsed
-    recovered_array = extract_zai_json_array(raw)
-    if recovered_array is not None:
-        return False, recovered_array
-    loose_entries = extract_flat_object_entries(raw)
-    if loose_entries:
-        return False, loose_entries
-    return True, {}
+    error_status, parsed = extract_json_payload(raw)
+    if error_status:
+        logger.warning("Could not parse JSON while decoding VLM output.")
+    return error_status, parsed
 
 
 def _string2json(raw_json: str) -> Tuple[bool, Any]:

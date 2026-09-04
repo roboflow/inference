@@ -1,7 +1,5 @@
 import hashlib
-import json
 import logging
-import re
 from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -13,6 +11,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.logger import logger
+from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     convert_gemini_detection_to_pixel_xyxy,
@@ -39,9 +38,6 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detecti
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing import (
     convert_spacexai_detection_to_pixel_xyxy,
     extract_spacexai_detection_entries,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.zai_detection_parsing import (
-    extract_zai_json_array,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -78,8 +74,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_models.models.base.object_detection import Detections
-
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
@@ -346,10 +340,6 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
             loose_entries = extract_flat_object_entries(vlm_output)
             if loose_entries:
                 error_status, parsed_data = False, loose_entries
-        if error_status and model_type in ("zai", "zai-flash"):
-            recovered_entries = extract_zai_json_array(vlm_output)
-            if recovered_entries is not None:
-                error_status, parsed_data = False, recovered_entries
         if error_status:
             return {
                 "error_status": True,
@@ -384,29 +374,7 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, Union[dict, list]]:
-    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
-    if len(json_blocks_found) == 0:
-        return try_parse_json(raw_json)
-    first_block = json_blocks_found[0]
-    return try_parse_json(first_block)
-
-
-def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, (dict, list)):
-            return False, parsed
-        logging.warning(
-            "Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v2` block. "
-            f"Unexpected JSON root type: {type(parsed).__name__}."
-        )
-        return True, {}
-    except Exception as error:
-        logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v2` block. "
-            f"Error type: {error.__class__.__name__}. Details: {error}"
-        )
-        return True, {}
+    return extract_json_payload(raw_json)
 
 
 def build_image_metadata(
