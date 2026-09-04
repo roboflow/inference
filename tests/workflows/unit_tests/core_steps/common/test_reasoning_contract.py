@@ -196,6 +196,10 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
         ),
         (
             "google_gemini@v5",
+            {"model_version": "gemini-3.8-flash", "thinking_level": "minimal"},
+        ),
+        (
+            "google_gemini@v5",
             {"model_version": "gemini-2.5-pro", "thinking_level": "low"},
         ),
         ("spacexai@v2", {"model_version": "grok-4.5", "reasoning_effort": "xhigh"}),
