@@ -28,7 +28,10 @@ def extract_json(raw: str) -> Tuple[bool, Any]:
     any tag, the text with stray fence lines removed, a sequence of
     top-level values (JSON Lines, ``{...}, {...}``, ``[...]\n[...]``,
     tolerating one stray trailing ``]``), and the outermost ``[...]`` or
-    ``{...}`` substring. Truncated output still fails.
+    ``{...}`` substring. When all of that fails, the complete
+    ``{"label", "x_min", ...}`` objects of an answer truncated at
+    ``max_tokens`` are salvaged (``extract_flat_object_entries``), matching
+    the Muse fallback of the deprecated ``vlm_as_detector`` block.
 
     Args:
         raw: Raw string produced by the model.
@@ -38,9 +41,13 @@ def extract_json(raw: str) -> Tuple[bool, Any]:
         when nothing could be parsed, in which case ``parsed`` is ``{}``.
     """
     error_status, parsed = extract_json_payload(raw)
-    if error_status:
-        logger.warning("Could not parse JSON while decoding VLM output.")
-    return error_status, parsed
+    if not error_status:
+        return False, parsed
+    loose_entries = extract_flat_object_entries(raw)
+    if loose_entries:
+        return False, loose_entries
+    logger.warning("Could not parse JSON while decoding VLM output.")
+    return True, {}
 
 
 def _string2json(raw_json: str) -> Tuple[bool, Any]:

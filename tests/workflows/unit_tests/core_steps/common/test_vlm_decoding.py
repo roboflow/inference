@@ -1062,3 +1062,29 @@ def test_decode_classification_accepts_bare_predicted_classes_array() -> None:
     assert prediction["predicted_classes"] == ["Vehicle", "fire"]
     assert prediction["predictions"]["Vehicle"]["confidence"] == pytest.approx(0.95)
     assert prediction["predictions"]["smoke"]["confidence"] == 0.0
+
+
+def test_decode_object_detections_salvages_complete_entries_of_truncated_answer() -> (
+    None
+):
+    # given - a Muse answer cut at max_tokens mid-entry; the deprecated
+    # formatter keeps the complete entries, so the shared decoder must too
+    raw_output = (
+        '[{"label":"pill","x_min":249,"y_min":198,"x_max":312,"y_max":252},'
+        '{"label":"pill","x_min":443,"y_min":181,"x_max":504,"y_max":246},'
+        '{"label":"pill","x_min":611,"y_min":'
+    )
+
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="named_0_1000",
+        image=_build_image(width=1000, height=1000),
+        classes=["pill"],
+        inference_id="iid",
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [
+        [249.0, 198.0, 312.0, 252.0],
+        [443.0, 181.0, 504.0, 246.0],
+    ]
