@@ -403,6 +403,31 @@ def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
 
 
+def serialise_sv_detections_for_transport(detections: sv.Detections) -> dict:
+    """Serialise detections for the custom-Python-block remote executor.
+
+    Semantic segmentation blocks emit ``sv.Detections`` with ``mask=None``, the
+    class masks stored as COCO RLE in ``data["rle_mask"]`` and no
+    ``image_dimensions``. The plain serialiser drops the RLE and emits
+    ``image: {width: None, height: None}``, which makes
+    ``sv.Detections.from_inference`` raise on the receiving side. Keep the RLE
+    and fill the image size from it so the payload deserialises everywhere.
+    """
+    if detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS) is not None:
+        serialised = serialise_rle_sv_detections(detections=detections)
+    else:
+        serialised = serialise_sv_detections(detections=detections)
+    image = serialised.get("image") or {}
+    if image.get("width") is None or image.get("height") is None:
+        for prediction in serialised.get("predictions", []):
+            rle = prediction.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+            size = rle.get("size") if isinstance(rle, dict) else None
+            if size is not None and len(size) == 2:
+                serialised["image"] = {"width": int(size[1]), "height": int(size[0])}
+                break
+    return serialised
+
+
 def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
     rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
     if rle_masks is None:
