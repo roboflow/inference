@@ -12,7 +12,6 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 from timm.layers import DropPath
-from torch import nn
 from torch.nn import functional as F
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.parameter import Parameter
