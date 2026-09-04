@@ -48,6 +48,10 @@ from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
+from inference_models.models.optimization.runtime_metadata import (
+    OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
+    SelectionSnapshot,
+)
 from inference_models.models.optimization.runtime_components import (
     get_runtime_components,
 )
@@ -113,8 +117,6 @@ except ImportError as import_error:
 _MODEL_RUNTIME_ERROR_HELP_URL = (
     "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror"
 )
-
-
 def _as_model_runtime_error(
     error: RecoverableStageExecutionError,
 ) -> ModelRuntimeError:
@@ -133,6 +135,27 @@ class RFDetrForObjectDetectionTRT(
 ):
     """Run RF-DETR object detection through TensorRT with selectable path stages."""
 
+    @staticmethod
+    def _resolve_requested_execution_plan(
+        *,
+        execution_plan: Optional[
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
+        ],
+    ) -> RFDetrExecutionPlan:
+        """Normalize loader input into a typed RF-DETR execution plan."""
+        if execution_plan is None:
+            resolved_plan = RFDetrExecutionPlan.resolve()
+
+            return resolved_plan
+
+        if isinstance(execution_plan, RFDetrExecutionPlan):
+            return execution_plan
+
+        parsed_plan = RFDetrExecutionPlan.from_dict(execution_plan)
+        resolved_plan = cast(RFDetrExecutionPlan, parsed_plan)
+
+        return resolved_plan
+
     @classmethod
     def from_pretrained(
         cls,
@@ -143,7 +166,9 @@ class RFDetrForObjectDetectionTRT(
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        execution_plan: Optional[
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
+        ] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
@@ -158,8 +183,8 @@ class RFDetrForObjectDetectionTRT(
             rf_detr_max_input_resolution: Optional maximum accepted input resolution.
             rfdetr_preprocessor_max_workers: Explicit threaded preprocessing worker
                 limit. When omitted, the corresponding environment value is used.
-            rfdetr_execution_plan: Explicit composed execution plan. When omitted,
-                RF-DETR implementation environment variables are used.
+            execution_plan: Explicit RF-DETR execution plan or its canonical mapping.
+                When omitted, RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
             **kwargs: Additional loader arguments accepted for API compatibility.
 
@@ -167,6 +192,7 @@ class RFDetrForObjectDetectionTRT(
             Loaded RF-DETR TensorRT model.
 
         Raises:
+            ValueError: If a serialized execution plan is invalid.
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
@@ -246,7 +272,7 @@ class RFDetrForObjectDetectionTRT(
             default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
             cuda_graph_cache=trt_cuda_graph_cache,
         )
-        return cls(
+        model = cls(
             engine=engine,
             input_name=inputs[0],
             output_names=["dets", "labels"],
@@ -259,9 +285,11 @@ class RFDetrForObjectDetectionTRT(
             trt_execution_context=trt_execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
-            rfdetr_execution_plan=rfdetr_execution_plan,
+            execution_plan=execution_plan,
             recommended_parameters=recommended_parameters,
         )
+
+        return model
 
     def __init__(
         self,
@@ -277,7 +305,9 @@ class RFDetrForObjectDetectionTRT(
         trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        execution_plan: Optional[
+            Union[RFDetrExecutionPlan, Mapping[str, Any]]
+        ] = None,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -294,8 +324,8 @@ class RFDetrForObjectDetectionTRT(
         self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
             max_workers=rfdetr_preprocessor_max_workers
         )
-        requested_plan = RFDetrExecutionPlan.resolve(
-            execution_plan=rfdetr_execution_plan,
+        requested_plan = self._resolve_requested_execution_plan(
+            execution_plan=execution_plan,
         )
         self._implementation_registry = build_rfdetr_implementation_registry(
             device=self._device,
@@ -370,7 +400,12 @@ class RFDetrForObjectDetectionTRT(
             "engine_plugin": engine_plugin_selection,
         }
         self._model_selections = {
-            stage: selection.to_dict() for stage, selection in model_selections.items()
+            stage: SelectionSnapshot(
+                requested_id=selection.requested_id,
+                effective_id=selection.effective_id,
+                fallback_reason=selection.fallback_reason,
+            )
+            for stage, selection in model_selections.items()
         }
         for stage, selection in model_selections.items():
             if selection.used_fallback:
@@ -457,15 +492,22 @@ class RFDetrForObjectDetectionTRT(
     @property
     def optimization_runtime_metadata(self) -> Dict[str, Any]:
         """Return machine-readable selected implementation metadata."""
-        metadata = {
-            "execution_plan": self.rfdetr_execution_plan.to_dict(),
+        implementation_metadata = {
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
-            "buffer_strategy": (self.buffer_strategy_implementation_metadata.to_dict()),
+            "buffer_strategy": (
+                self.buffer_strategy_implementation_metadata.to_dict()
+            ),
             "scheduler": self.scheduler_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
             "engine_plugin": self.engine_plugin_implementation_metadata.to_dict(),
+        }
+        plan = self.rfdetr_execution_plan
+        metadata = {
+            "schema_version": OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
+            "execution_plan": plan.to_dict(),
+            "implementation_metadata": implementation_metadata,
             "model_selection": {
-                stage: dict(selection)
+                stage: selection.to_dict()
                 for stage, selection in self._model_selections.items()
             },
         }
@@ -483,7 +525,7 @@ class RFDetrForObjectDetectionTRT(
                 None,
             )
             if selection is not None:
-                last_execution[stage] = dict(selection)
+                last_execution[stage] = selection.to_dict()
         if last_execution:
             metadata["last_execution"] = last_execution
 
@@ -568,9 +610,11 @@ class RFDetrForObjectDetectionTRT(
                 context=context,
                 allow_fallback=allow_runtime_failure_fallback,
             )
-            self._record_last_execution(
+            self._record_runtime_selection(
                 stage="preprocessor",
-                selection=selection.to_dict(),
+                requested_id=selection.requested_id,
+                effective_id=selection.effective_id,
+                fallback_reason=selection.fallback_reason,
             )
             try:
                 result = selection.implementation.preprocess(
@@ -590,9 +634,11 @@ class RFDetrForObjectDetectionTRT(
                 if fallback_selection.implementation is selection.implementation:
                     raise
                 selection = fallback_selection
-                self._record_last_execution(
+                self._record_runtime_selection(
                     stage="preprocessor",
-                    selection=selection.to_dict(),
+                    requested_id=selection.requested_id,
+                    effective_id=selection.effective_id,
+                    fallback_reason=selection.fallback_reason,
                 )
                 result = selection.implementation.preprocess(
                     request=request,
@@ -740,9 +786,11 @@ class RFDetrForObjectDetectionTRT(
                     context=context,
                     allow_fallback=allow_runtime_failure_fallback,
                 )
-                self._record_last_execution(
+                self._record_runtime_selection(
                     stage="postprocessor",
-                    selection=selection.to_dict(),
+                    requested_id=selection.requested_id,
+                    effective_id=selection.effective_id,
+                    fallback_reason=selection.fallback_reason,
                 )
                 try:
                     results = selection.implementation.postprocess(
@@ -762,9 +810,11 @@ class RFDetrForObjectDetectionTRT(
                     if fallback_selection.implementation is selection.implementation:
                         raise
                     selection = fallback_selection
-                    self._record_last_execution(
+                    self._record_runtime_selection(
                         stage="postprocessor",
-                        selection=selection.to_dict(),
+                        requested_id=selection.requested_id,
+                        effective_id=selection.effective_id,
+                        fallback_reason=selection.fallback_reason,
                     )
                     results = selection.implementation.postprocess(
                         request=request,
@@ -814,19 +864,34 @@ class RFDetrForObjectDetectionTRT(
         return context
 
     def _record_static_stage_execution(self, *, stage: str) -> None:
-        self._record_last_execution(
-            stage=stage,
-            selection=self._model_selections[stage],
-        )
+        selection = self._model_selections[stage]
+        attribute = f"last_{stage}_selection"
+        if getattr(self._thread_local_storage, attribute, None) == selection:
+            return
 
-    def _record_last_execution(
+        setattr(self._thread_local_storage, attribute, selection)
+
+    def _record_runtime_selection(
         self,
         *,
         stage: str,
-        selection: Mapping[str, Optional[str]],
+        requested_id: str,
+        effective_id: str,
+        fallback_reason: Optional[str],
     ) -> None:
-        setattr(
-            self._thread_local_storage,
-            f"last_{stage}_selection",
-            dict(selection),
+        attribute = f"last_{stage}_selection"
+        previous = getattr(self._thread_local_storage, attribute, None)
+        if (
+            previous is not None
+            and previous.requested_id == requested_id
+            and previous.effective_id == effective_id
+            and previous.fallback_reason == fallback_reason
+        ):
+            return
+
+        selection = SelectionSnapshot(
+            requested_id=requested_id,
+            effective_id=effective_id,
+            fallback_reason=fallback_reason,
         )
+        setattr(self._thread_local_storage, attribute, selection)

@@ -35,7 +35,6 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
 
         Returns:
             Immutable requested execution plan.
-
         """
         if execution_plan is not None:
             plan = execution_plan
