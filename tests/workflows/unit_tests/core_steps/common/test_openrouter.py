@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
 )
 from inference.core.workflows.core_steps.common.openrouter import (
+    MODEL_NATIVE_QUANTIZATIONS,
     OpenRouterResult,
     OpenRouterWorkflowBlockBase,
     _execute_direct_openrouter_request,
@@ -19,6 +20,7 @@ from inference.core.workflows.core_steps.common.openrouter import (
     _is_unsupported_reasoning_error,
     build_prompts_from_images,
     build_provider_routing,
+    get_native_quantizations,
     validate_task_type_required_fields,
 )
 
@@ -70,6 +72,44 @@ def test_build_provider_routing_zdr_returns_zdr_and_deny():
 def test_build_provider_routing_unknown_raises():
     with pytest.raises(ValueError, match="unknown privacy_level"):
         build_provider_routing("nope")
+
+
+def test_build_provider_routing_merges_quantizations_with_privacy_filter():
+    assert build_provider_routing("allow", quantizations=["bf16", "fp32"]) == {
+        "quantizations": ["bf16", "fp32"]
+    }
+    assert build_provider_routing("deny", quantizations=["fp8", "bf16", "fp32"]) == {
+        "data_collection": "deny",
+        "quantizations": ["fp8", "bf16", "fp32"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# get_native_quantizations
+# ---------------------------------------------------------------------------
+
+
+def test_get_native_quantizations_returns_none_for_unregistered_model():
+    # Deliberate: registering these `unknown`-precision SKUs would make them
+    # unroutable.
+    for slug in (
+        "meta/muse-spark-1.1",
+        "meta/muse-spark-1.2",
+        "qwen/qwen3.8-max",
+        "qwen/qwen3.8-flash",
+        "qwen/qwen3.7-plus",
+        "qwen/qwen3.5-flash-02-23",
+        "z-ai/glm-5v-turbo",
+        "deepseek/deepseek-v4-flash-vision-exp",
+        "moonshotai/kimi-k2.6",
+    ):
+        assert get_native_quantizations(model=slug) is None, slug
+
+
+def test_native_quantization_registry_never_allows_below_fp8():
+    # Sub-FP8 labels would break the registry's native-or-higher guarantee.
+    for slug, allowlist in MODEL_NATIVE_QUANTIZATIONS.items():
+        assert not {"int4", "int8", "fp4", "fp6", "unknown"} & set(allowlist), slug
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +228,42 @@ def test_execute_openrouter_batch_routes_to_direct_for_user_key(
     kwargs = mock_direct.call_args.kwargs
     assert kwargs["api_key"] == "sk-or-v1-abcdef"
     assert kwargs["privacy_level"] == "zdr"
+
+
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_proxied_openrouter_request"
+)
+@patch(
+    "inference.core.workflows.core_steps.common.openrouter._execute_direct_openrouter_request"
+)
+def test_execute_openrouter_batch_attaches_native_quantizations(
+    mock_direct, mock_proxied
+):
+    """Registered models get the central allowlist on both routing paths."""
+    mock_direct.side_effect = [OpenRouterResult(content="d")]
+    mock_proxied.side_effect = [OpenRouterResult(content="p")]
+    block = _FakeBlock(model_manager=MagicMock(), api_key="ws-key")
+    common = dict(
+        prompts=[[{"role": "user", "content": "hi"}]],
+        max_tokens=50,
+        temperature=0.1,
+        privacy_level="deny",
+        max_concurrent_requests=1,
+    )
+
+    block.execute_openrouter_batch(
+        openrouter_api_key="sk-or-v1-abcdef",
+        model="google/gemma-4-31b-it",
+        **common,
+    )
+    block.execute_openrouter_batch(
+        openrouter_api_key="rf_key:account",
+        model="z-ai/glm-5.3-flash",
+        **common,
+    )
+
+    assert mock_direct.call_args.kwargs["quantizations"] == ("bf16", "fp32")
+    assert mock_proxied.call_args.kwargs["quantizations"] == ("fp8", "bf16", "fp32")
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +496,74 @@ def test_direct_request_omits_provider_when_allow(mock_openai_cls):
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_injects_quantizations_into_provider(mock_openai_cls):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_openai_response("ok")
+    mock_openai_cls.return_value = client
+
+    _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="google/gemma-4-31b-it",
+        messages=[],
+        max_tokens=1,
+        temperature=0.0,
+        privacy_level="deny",
+        quantizations=["bf16", "fp32"],
+    )
+
+    create_kwargs = client.chat.completions.create.call_args.kwargs
+    assert create_kwargs["extra_body"] == {
+        "provider": {
+            "data_collection": "deny",
+            "quantizations": ["bf16", "fp32"],
+        },
+    }
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_sends_quantizations_even_when_privacy_allows(mock_openai_cls):
+    """`allow` normally omits the provider object entirely; the quantization
+    allowlist must still be delivered."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_openai_response("ok")
+    mock_openai_cls.return_value = client
+
+    _execute_direct_openrouter_request(
+        api_key="sk-or-v1-test",
+        model="google/gemma-4-31b-it",
+        messages=[],
+        max_tokens=1,
+        temperature=0.0,
+        privacy_level="allow",
+        quantizations=["bf16", "fp32"],
+    )
+
+    create_kwargs = client.chat.completions.create.call_args.kwargs
+    assert create_kwargs["extra_body"] == {
+        "provider": {"quantizations": ["bf16", "fp32"]},
+    }
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_request_forwards_quantizations_in_payload(mock_post):
+    mock_post.return_value = {"choices": [{"message": {"content": "ok"}}]}
+
+    _execute_proxied_openrouter_request(
+        roboflow_api_key="ws-key",
+        openrouter_api_key="rf_key:account",
+        model="z-ai/glm-5.3-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        temperature=0.1,
+        privacy_level="deny",
+        quantizations=["fp8", "bf16", "fp32"],
+    )
+
+    payload = mock_post.call_args.kwargs["payload"]
+    assert payload["quantizations"] == ["fp8", "bf16", "fp32"]
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
 def test_direct_request_raises_when_choices_none(mock_openai_cls):
     response = MagicMock()
     response.choices = None
@@ -582,6 +726,32 @@ def test_proxied_request_retries_without_reasoning_on_rejection(mock_post, mock_
     assert "reasoning" in mock_post.call_args_list[0].kwargs["payload"]
     assert "reasoning" not in mock_post.call_args_list[1].kwargs["payload"]
     assert mock_logger.warning.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.logger")
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_proxied_retry_without_reasoning_keeps_quantizations(mock_post, mock_logger):
+    """Dropping a rejected reasoning config must not drop the precision filter."""
+    mock_post.side_effect = [
+        _proxy_error(MANDATORY_REASONING_ERROR, status_code=400),
+        {"choices": [{"message": {"content": "ok"}}]},
+    ]
+
+    _execute_proxied_openrouter_request(
+        roboflow_api_key="ws-key",
+        openrouter_api_key="rf_key:account",
+        model="z-ai/glm-5.3-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=100,
+        temperature=None,
+        privacy_level="deny",
+        reasoning={"enabled": False},
+        quantizations=["fp8", "bf16", "fp32"],
+    )
+
+    retry_payload = mock_post.call_args_list[1].kwargs["payload"]
+    assert "reasoning" not in retry_payload
+    assert retry_payload["quantizations"] == ["fp8", "bf16", "fp32"]
 
 
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")

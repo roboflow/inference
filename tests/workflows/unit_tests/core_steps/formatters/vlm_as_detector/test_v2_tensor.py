@@ -330,10 +330,10 @@ def test_run_method_for_zai_box_2d_output_tensor_native() -> None:
     )
 
 
-def test_run_method_for_zai_flash_yxyx_box_2d_output_tensor_native() -> None:
-    # given - the GLM 5.3 Flash prompt pins box_2d entries as
-    # [y_min, x_min, y_max, x_max] integers normalized to 0-1000
-    # (the Gemini contract)
+def test_run_method_for_zai_flash_xyxy_bbox_2d_output_tensor_native() -> None:
+    # given - the GLM 5.3 Flash prompt pins bbox_2d entries as
+    # [x_min, y_min, x_max, y_max] integers normalized to 0-1000
+    # (the Qwen contract)
     block = VLMAsDetectorBlockV2()
     image = WorkflowImageData(
         numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
@@ -341,8 +341,8 @@ def test_run_method_for_zai_flash_yxyx_box_2d_output_tensor_native() -> None:
     )
     vlm_output = """
 [
-  {"box_2d": [100, 200, 500, 1000], "label": "cat"},
-  {"box_2d": [0, 0, 500, 500], "label": "unicorn"}
+  {"bbox_2d": [200, 100, 1000, 500], "label": "cat"},
+  {"bbox_2d": [0, 0, 500, 500], "label": "unicorn"}
 ]
     """
 

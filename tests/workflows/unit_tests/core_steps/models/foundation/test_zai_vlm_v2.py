@@ -37,7 +37,7 @@ OPENROUTER_SEAM = (
 # maps onto pixels [20, 20, 100, 60].
 TURBO_DETECTION_OUTPUT = '[{"box_2d": [100, 200, 500, 600], "label": "cat"}]'
 # Flash sends the same box with the axes swapped.
-FLASH_DETECTION_OUTPUT = '[{"box_2d": [200, 100, 600, 500], "label": "cat"}]'
+FLASH_DETECTION_OUTPUT = '[{"bbox_2d": [100, 200, 500, 600], "label": "cat"}]'
 EXPECTED_XYXY = [[20.0, 20.0, 100.0, 60.0]]
 
 CLASSIFICATION_OUTPUT = '{"class_name": "cat", "confidence": 0.9}'
@@ -154,7 +154,7 @@ def test_run_decodes_turbo_xyxy_detections(mock_or):
 
 
 @patch(OPENROUTER_SEAM)
-def test_run_decodes_flash_yxyx_detections(mock_or):
+def test_run_decodes_flash_bbox_2d_detections(mock_or):
     mock_or.return_value = [
         OpenRouterResult(
             content=FLASH_DETECTION_OUTPUT,
@@ -237,3 +237,64 @@ def test_run_reports_error_status_for_undecodable_detection_output(mock_or):
 
     assert result[0]["predictions"] is None
     assert result[0]["error_status"] is True
+
+
+# Copied from vlm-exam `_BBOX_2D_NORMALIZED_PROMPT_TEMPLATE` so an edit to
+# the block constant fails this test.
+EXPECTED_FLASH_DETECTION_PROMPT = (
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}. '
+    "bbox_2d is [xmin, ymin, xmax, ymax] as integers between 0 and 1000, "
+    "normalized to image width and height. "
+    "Only use these labels: cat, dog. Return a JSON array only."
+)
+
+
+@patch(OPENROUTER_SEAM)
+def test_run_flash_uses_vlm_exam_bbox_2d_prompt(mock_or):
+    mock_or.return_value = [
+        OpenRouterResult(
+            content=FLASH_DETECTION_OUTPUT,
+            reasoning_trace="",
+            input_tokens=20,
+            output_tokens=8,
+        )
+    ]
+    block = ZaiVlmBlockV2(model_manager=MagicMock(), api_key="rf_key")
+
+    block.run(
+        **_base_run_kwargs(
+            task_type="object-detection",
+            classes=["cat", "dog"],
+            model_version="GLM 5.3 Flash",
+        )
+    )
+
+    sent_text = mock_or.call_args.kwargs["prompts"][0][0]["content"][1]["text"]
+    assert sent_text == EXPECTED_FLASH_DETECTION_PROMPT
+
+
+@patch(OPENROUTER_SEAM)
+def test_run_turbo_uses_shared_box_2d_prompt(mock_or):
+    mock_or.return_value = [
+        OpenRouterResult(
+            content=TURBO_DETECTION_OUTPUT,
+            reasoning_trace="",
+            input_tokens=20,
+            output_tokens=8,
+        )
+    ]
+    block = ZaiVlmBlockV2(model_manager=MagicMock(), api_key="rf_key")
+
+    block.run(
+        **_base_run_kwargs(
+            task_type="object-detection",
+            classes=["cat", "dog"],
+            model_version="GLM 5V Turbo",
+        )
+    )
+
+    sent_text = mock_or.call_args.kwargs["prompts"][0][0]["content"][1]["text"]
+    assert '"box_2d"' in sent_text
+    assert "[x_min, y_min, x_max, y_max]" in sent_text

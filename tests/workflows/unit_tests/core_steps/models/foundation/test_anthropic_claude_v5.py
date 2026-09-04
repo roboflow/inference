@@ -328,3 +328,116 @@ def test_run_reports_error_status_for_unparsable_detection_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+# ---------------------------------------------------------------------------
+# Model capabilities (mirrors the v4 coverage in test_anthropic_claude.py)
+# ---------------------------------------------------------------------------
+
+from typing import Any  # noqa: E402
+from unittest.mock import MagicMock, Mock  # noqa: E402
+
+from anthropic import NOT_GIVEN  # noqa: E402
+
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (  # noqa: E402
+    EXACT_MODEL_VERSIONS,
+    MAX_OUTPUT_TOKENS,
+    execute_claude_request,
+)
+
+LEGACY_MODEL = "claude-sonnet-4-5"
+NEW_GENERATION_MODEL = "claude-opus-4-7"
+ANTHROPIC_CLIENT_SEAM = (
+    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5"
+    ".anthropic.Anthropic"
+)
+
+
+def test_v5_claude_fable_5_1_model_metadata() -> None:
+    specification = {
+        "type": "roboflow_core/anthropic_claude@v5",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "This is my prompt",
+        "api_key": "$inputs.anthropic_api_key",
+        "model_version": "claude-fable-5-1",
+    }
+
+    result = BlockManifest.model_validate(specification)
+
+    assert result.model_version == "claude-fable-5-1"
+    assert EXACT_MODEL_VERSIONS["claude-fable-5-1"] == "claude-fable-5-1"
+    assert MAX_OUTPUT_TOKENS["claude-fable-5-1"] == 128000
+
+
+def _mock_streaming_client(mock_anthropic_class: Mock, text: str = "ok") -> MagicMock:
+    mock_client = MagicMock()
+    mock_anthropic_class.return_value = mock_client
+
+    mock_text_block = Mock()
+    mock_text_block.type = "text"
+    mock_text_block.text = text
+
+    mock_result = Mock()
+    mock_result.stop_reason = "end_turn"
+    mock_result.content = [mock_text_block]
+    mock_result.usage = Mock(input_tokens=11, output_tokens=7)
+
+    mock_stream = MagicMock()
+    mock_stream.__enter__ = Mock(return_value=mock_stream)
+    mock_stream.__exit__ = Mock(return_value=False)
+    mock_stream.get_final_message.return_value = mock_result
+    mock_client.messages.stream.return_value = mock_stream
+    return mock_client
+
+
+def _direct_request(model_version: str, **overrides: Any) -> dict:
+    kwargs = dict(
+        roboflow_api_key=None,
+        anthropic_api_key="sk-ant-test",
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=model_version,
+        max_tokens=100,
+        temperature=0.4,
+        extended_thinking=None,
+        thinking_budget_tokens=None,
+    )
+    kwargs.update(overrides)
+    with patch(ANTHROPIC_CLIENT_SEAM) as mock_anthropic_class:
+        mock_client = _mock_streaming_client(mock_anthropic_class)
+        execute_claude_request(**kwargs)
+        return mock_client.messages.stream.call_args.kwargs
+
+
+def test_direct_request_keeps_legacy_controls_for_legacy_model() -> None:
+    no_thinking_kwargs = _direct_request(LEGACY_MODEL)
+    thinking_kwargs = _direct_request(
+        LEGACY_MODEL,
+        max_tokens=None,
+        temperature=None,
+        extended_thinking=True,
+        thinking_budget_tokens=5000,
+    )
+
+    assert no_thinking_kwargs["temperature"] == 0.4
+    assert "thinking" not in no_thinking_kwargs
+    assert thinking_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 5000}
+
+
+def test_direct_request_translates_controls_for_new_generation_model() -> None:
+    no_thinking_kwargs = _direct_request(NEW_GENERATION_MODEL)
+    thinking_kwargs = _direct_request(
+        NEW_GENERATION_MODEL,
+        max_tokens=None,
+        temperature=None,
+        extended_thinking=True,
+        thinking_budget_tokens=5000,
+    )
+
+    assert no_thinking_kwargs["temperature"] is NOT_GIVEN
+    assert "thinking" not in no_thinking_kwargs
+    assert no_thinking_kwargs["model"] == NEW_GENERATION_MODEL
+    assert thinking_kwargs["thinking"] == {"type": "adaptive"}
+    assert thinking_kwargs["max_tokens"] == MAX_OUTPUT_TOKENS[NEW_GENERATION_MODEL]

@@ -242,6 +242,7 @@ else:
     )
 
 from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_action_recognition_prediction_kind,
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
@@ -263,6 +264,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
+    serialize_action_recognition_prediction_kind,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
@@ -424,6 +426,7 @@ else:
     from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
         DetectionsDifferenceBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -966,6 +969,14 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
         RoboflowMultiLabelClassificationModelBlockV3,
     )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
+        ActionRecognitionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+        ActionRecognitionModelBlockV1,
+    )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
         RoboflowObjectDetectionModelBlockV1,
@@ -1110,6 +1121,7 @@ else:
     from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1,
     )
+
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1555,6 +1567,7 @@ else:
     )
 
 from inference.core.workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -1618,6 +1631,7 @@ REGISTERED_INITIALIZERS = {
 KINDS_SERIALIZERS = {
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: serialize_action_recognition_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
@@ -1665,6 +1679,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: deserialize_action_recognition_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
@@ -1949,6 +1964,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
+        ActionRecognitionModelBlockV1,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
@@ -2023,6 +2039,7 @@ def load_kinds() -> List[Kind]:
         WILDCARD_KIND,
         IMAGE_KIND,
         VIDEO_METADATA_KIND,
+        ACTION_RECOGNITION_PREDICTION_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
         ROBOFLOW_SOLUTION_KIND,

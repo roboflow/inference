@@ -7,9 +7,9 @@ next to the raw ``output`` string, so no separate "VLM as Detector" /
 
 OpenRouter-only. Uses the vlm-exam request contract validated for the GLM
 models: image-first user message, no system role, extended reasoning
-disabled by default, and a per-model ``box_2d`` / 0-1000 detection
-contract - ``xyxy_0_1000`` for GLM 5V Turbo and ``yxyx_0_1000`` for
-GLM 5.3 Flash.
+disabled by default, and per-model xyxy / 0-1000 detection prompts
+(``box_2d`` key for GLM 5V Turbo, ``bbox_2d`` for GLM 5.3 Flash). Both
+decode with the shared ``xyxy_0_1000`` format, which accepts either key.
 """
 
 import base64
@@ -84,15 +84,32 @@ RECOMMENDED_PARSERS = {
 # GLM 5V Turbo.
 DEFAULT_DETECTION_BOX_FORMAT = "xyxy_0_1000"
 
+# Ported verbatim from vlm-exam's `_BBOX_2D_NORMALIZED_PROMPT_TEMPLATE`,
+# the format pinned for GLM 5.3 Flash
+# (`xyxy_normalized_0_to_1000_bbox_2d`). Re-selected during the fp8-pinned
+# re-evaluation (the earlier yxyx box_2d pick came from runs that hit
+# quantized OpenRouter providers) and confirmed by a prompt-format sweep:
+# alternative containers and key names (bullets, "box", absolute pixels)
+# all score 36-70% below this Qwen-style template on the 250-image
+# benchmark.
+ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}}. '
+    "bbox_2d is [xmin, ymin, xmax, ymax] as integers between 0 and 1000, "
+    "normalized to image width and height. "
+    "Only use these labels: {class_list}. Return a JSON array only."
+)
+
 # One row per model; add future Z.ai models here. A row may override
 # `reasoning_levels` if a model diverges from the shared set;
 # `reasoning_required` marks models that reject `reasoning: {enabled:
 # false}` and fall back to low effort when the user disables reasoning.
-# `box_format` is the shared coordinate contract used to both prompt for
-# and decode detections; the two GLM models emit the same "box_2d" key with
-# different axis orders, so each pins its own format. GLM 5.3 Flash's
-# `yxyx_0_1000` scores 0.331 dataset mAP@50 on the full 250-image benchmark
-# vs 0.219 for absolute-pixel bbox_2d prompting, the next best format.
+# `box_format` is the shared coordinate contract used to decode detections;
+# both GLM models emit xyxy 0-1000 boxes, but GLM 5.3 Flash scores best
+# with its own Qwen-style `bbox_2d` prompt, so a row may also pin a
+# `prompt_template` (formatted with `{class_list}`) that overrides the
+# shared prompt for that format.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "GLM 5V Turbo": {
         "model_id": "z-ai/glm-5v-turbo",
@@ -102,7 +119,8 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     # retirement notice confirms they are the same model.
     "GLM 5.3 Flash": {
         "model_id": "z-ai/glm-5.3-flash",
-        "box_format": "yxyx_0_1000",
+        "box_format": "xyxy_0_1000",
+        "prompt_template": ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE,
         "reasoning_required": True,
     },
 }
@@ -349,9 +367,16 @@ def _prepare_structured_answering_prompt(
 
 
 def _prepare_object_detection_prompt(
-    base64_image: str, classes: List[str], box_format: str, **_
+    base64_image: str,
+    classes: List[str],
+    box_format: str,
+    prompt_template: Optional[str] = None,
+    **_,
 ) -> List[dict]:
-    text = build_object_detection_prompt(box_format=box_format, classes=classes)
+    if prompt_template is not None:
+        text = prompt_template.format(class_list=", ".join(classes))
+    else:
+        text = build_object_detection_prompt(box_format=box_format, classes=classes)
     return _user_message(base64_image=base64_image, text=text)
 
 
@@ -379,6 +404,7 @@ def build_zai_openrouter_prompts(
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
     box_format: str = DEFAULT_DETECTION_BOX_FORMAT,
+    prompt_template: Optional[str] = None,
 ) -> List[List[dict]]:
     """Build one OpenRouter ``messages`` array per input image, GLM-style.
 
@@ -394,6 +420,9 @@ def build_zai_openrouter_prompts(
         classes: Class list for classification / detection tasks.
         box_format: Per-model detection coordinate contract, from
             ``MODEL_VARIANTS``.
+        prompt_template: Optional per-model detection prompt overriding the
+            shared template for ``box_format``; formatted with
+            ``{class_list}``.
 
     Returns:
         List of ``messages`` arrays, one per image.
@@ -413,6 +442,7 @@ def build_zai_openrouter_prompts(
                 output_structure=output_structure,
                 classes=classes,
                 box_format=box_format,
+                prompt_template=prompt_template,
             )
         )
     return built
@@ -434,11 +464,10 @@ You can specify arbitrary text prompts or predefined ones. The block supports:
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
 Object detection uses the per-model format validated in the vlm-exam
-benchmarks. Both models emit `box_2d`/`label` entries normalized to
-0-1000, but with different axis orders: GLM 5V Turbo uses
-`[x_min, y_min, x_max, y_max]` and GLM 5.3 Flash uses
-`[y_min, x_min, y_max, x_max]`. The block prompts for and decodes the
-right one for the selected model.
+benchmarks. Both models emit `[x_min, y_min, x_max, y_max]` boxes as
+integers normalized to 0-1000, but with different key names: GLM 5V
+Turbo uses `box_2d` and GLM 5.3 Flash uses `bbox_2d`. The block prompts
+for and decodes the right one for the selected model.
 
 ## Version Differences
 
@@ -739,6 +768,7 @@ class ZaiVlmBlockV2(OpenRouterWorkflowBlockBase):
             output_structure=output_structure,
             classes=classes,
             box_format=variant["box_format"],
+            prompt_template=variant.get("prompt_template"),
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,

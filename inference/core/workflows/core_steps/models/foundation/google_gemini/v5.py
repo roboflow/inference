@@ -59,9 +59,16 @@ MODEL_ALIASES = {
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
 }
 
-# 3.7-flash probed 2026-08-25: API rejects `minimal`. 2.5 pages contradict
-# (`thinking_level` vs `thinking_budget` only); we keep 2.5 unsupported.
+# 3.7-flash probed 2026-08-25 and 3.8-flash probed 2026-09-02: API rejects
+# `minimal`. 2.5 pages contradict (`thinking_level` vs `thinking_budget` only);
+# we keep 2.5 unsupported.
 GEMINI_MODELS = [
+    {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "thinking_levels": ["low", "medium", "high"],
+        "supports_native_code_execution": True,
+    },
     {
         "id": "gemini-3.7-flash",
         "name": "Gemini 3.7 Flash",
@@ -324,8 +331,8 @@ class BlockManifest(WorkflowBlockManifest):
         description="Controls the depth of internal reasoning for Gemini 3+ models. "
         "'minimal' matches no-thinking for most queries, 'low' minimizes latency and cost, "
         "'medium' balances both, 'high' maximizes reasoning depth. Supported values differ "
-        "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7 Flash have no "
-        "'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
+        "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7/3.8 Flash have "
+        "no 'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
         "API default for the selected model is used (e.g. 'high' for Gemini 3.1 Pro, "
         "'medium' for Gemini 3.5/3.6 Flash). "
         "Not supported by the Gemini 2.5 series.",
