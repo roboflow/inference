@@ -16,11 +16,8 @@ Two key paths are supported per call:
        proxy in the loop.
 
 Both paths honor a user-selected ``privacy_level`` of ``allow``, ``deny``, or
-``zdr`` (zero data retention). Both also attach a per-model provider
-``quantizations`` allowlist (:data:`MODEL_NATIVE_QUANTIZATIONS`) so OpenRouter
-only routes to providers serving the model at native precision or higher.
-Full task-type prompt builders shared across the VLM blocks live here too so
-the per-block files stay small.
+``zdr`` (zero data retention). Full task-type prompt builders shared across
+the VLM blocks live here too so the per-block files stay small.
 """
 
 import base64

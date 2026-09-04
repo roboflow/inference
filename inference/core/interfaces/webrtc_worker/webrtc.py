@@ -1390,4 +1390,5 @@ async def init_rtc_peer_connection_with_loop(
 def default_encoder(obj: Any) -> Any:
     if isinstance(obj, bytes):
         return base64.b64encode(obj).decode("ascii")
-    return obj
+    # Returning the object unchanged makes orjson call this hook forever.
+    raise TypeError(f"Cannot serialize {type(obj).__name__} for WebRTC output")

@@ -65,6 +65,7 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
     ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
@@ -349,6 +350,12 @@ def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
     return video_metadata.dict()
 
 
+def serialize_action_recognition_prediction_kind(
+    value: List[ActionRecognitionPrediction],
+) -> List[dict]:
+    return [entry.model_dump(by_alias=True) for entry in value]
+
+
 def serialize_wildcard_kind(value: Any) -> Any:
     if isinstance(value, WorkflowImageData):
         value = serialise_image(image=value)
@@ -358,6 +365,10 @@ def serialize_wildcard_kind(value: Any) -> Any:
         value = serialize_list(elements=value)
     elif isinstance(value, sv.Detections):
         value = serialise_sv_detections(detections=value)
+    elif isinstance(value, ActionRecognitionPrediction):
+        # Without this the model reaches clients by field name, so the
+        # timeline arrives as "class_name" where the kind declares "class".
+        value = serialize_action_recognition_prediction_kind(value=[value])[0]
     elif isinstance(value, datetime):
         value = serialize_timestamp(timestamp=value)
     return value
@@ -390,6 +401,31 @@ def serialize_secret(secret: str) -> str:
 
 def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
+
+
+def serialise_sv_detections_for_transport(detections: sv.Detections) -> dict:
+    """Serialise detections for the custom-Python-block remote executor.
+
+    Semantic segmentation blocks emit ``sv.Detections`` with ``mask=None``, the
+    class masks stored as COCO RLE in ``data["rle_mask"]`` and no
+    ``image_dimensions``. The plain serialiser drops the RLE and emits
+    ``image: {width: None, height: None}``, which makes
+    ``sv.Detections.from_inference`` raise on the receiving side. Keep the RLE
+    and fill the image size from it so the payload deserialises everywhere.
+    """
+    if detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS) is not None:
+        serialised = serialise_rle_sv_detections(detections=detections)
+    else:
+        serialised = serialise_sv_detections(detections=detections)
+    image = serialised.get("image") or {}
+    if image.get("width") is None or image.get("height") is None:
+        for prediction in serialised.get("predictions", []):
+            rle = prediction.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+            size = rle.get("size") if isinstance(rle, dict) else None
+            if size is not None and len(size) == 2:
+                serialised["image"] = {"width": int(size[1]), "height": int(size[0])}
+                break
+    return serialised
 
 
 def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
