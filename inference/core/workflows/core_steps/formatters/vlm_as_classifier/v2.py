@@ -4,7 +4,10 @@ from uuid import uuid4
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
+from inference.core.workflows.core_steps.common.vlm_json import (
+    coerce_classification_payload,
+    extract_json_payload,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -217,9 +220,12 @@ def string2json(
     raw_json: str,
 ) -> Tuple[bool, dict]:
     error_status, payload = extract_json_payload(raw_json)
-    if error_status or not isinstance(payload, dict):
+    if error_status:
         return True, {}
-    return False, payload
+    coerced = coerce_classification_payload(payload)
+    if coerced is None:
+        return True, {}
+    return False, coerced
 
 
 def parse_multi_class_classification_results(
