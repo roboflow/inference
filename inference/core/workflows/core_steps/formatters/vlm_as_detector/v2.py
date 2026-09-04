@@ -286,6 +286,15 @@ class BlockManifest(WorkflowBlockManifest):
                 "Must pass list of classes to this block for every model type "
                 "except florence-2"
             )
+        if (
+            self.model_type == "florence-2"
+            and self.task_type == "open-vocabulary-object-detection"
+            and self.classes is None
+        ):
+            raise ValueError(
+                "Must pass list of classes to this block when using florence-2 "
+                "with open-vocabulary-object-detection task"
+            )
 
         return self
 
