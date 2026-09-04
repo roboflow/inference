@@ -1,8 +1,9 @@
 """
-Collect ``dynamic_blocks_definitions`` from a workflow and nested inner workflows.
+Collect ``dynamic_blocks_definitions`` from a workflow and embedded inner workflows.
 
-Inner workflows may declare custom Python blocks on their own definition object. The
+Embedded workflows may declare custom Python blocks on their own definition object. The
 compiler must discover all of them before ``compile_dynamic_blocks`` and inlining.
+Dispatched workflow definitions remain opaque because their target server compiles them.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 
@@ -33,11 +35,11 @@ def _dynamic_block_type(definition: Dict[str, Any]) -> Optional[str]:
 def collect_dynamic_blocks_definitions_from_workflow_definition(
     workflow_definition: Dict[str, Any],
 ) -> List[Any]:
-    """Collect dynamic block definitions from a workflow and nested inner workflows.
+    """Collect dynamic block definitions from a workflow and embedded inner workflows.
 
     Walks ``workflow_definition`` depth-first. For each level, appends entries from
-    ``dynamic_blocks_definitions``; then recurses into ``inner_workflow`` steps via
-    ``workflow_definition``.
+    ``dynamic_blocks_definitions``; then recurses into embedded ``inner_workflow``
+    steps via ``workflow_definition``. Dispatched steps are skipped.
 
     When the same ``manifest.block_type`` appears more than once, the first occurrence
     is kept (parent definitions win over nested children) and a warning is logged for
@@ -93,6 +95,11 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
                 continue
 
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+                continue
+            if (
+                step.get("execution_mode")
+                == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
+            ):
                 continue
 
             child = step.get("workflow_definition")

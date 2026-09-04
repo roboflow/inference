@@ -1,7 +1,8 @@
 """
-Compile-time helpers for nested workflows (composition validation and parameter bindings).
+Compile-time helpers for embedded workflows (composition validation and bindings).
 
-``inner_workflow`` steps are expanded into ordinary steps before parsing; see ``inline.py``.
+Embedded ``inner_workflow`` steps are expanded before parsing; dispatched steps remain
+as outputless runtime sinks. See ``inline.py``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.composition imp
     validate_inner_workflow_composition,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -103,6 +105,11 @@ def _collect_composition_edges_from_raw_workflow_definition(
                 )
 
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+                continue
+            if (
+                step.get("execution_mode")
+                == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
+            ):
                 continue
 
             inner_workflow_definition = step.get("workflow_definition")
