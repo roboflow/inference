@@ -92,3 +92,12 @@ def test_yolov12_object_detection_trt_resolution() -> None:
         task_type="object-detection",
         backend=BackendType.TRT,
     )
+
+
+@pytest.mark.trt_extras
+def test_rfdetr_keypoint_detection_trt_resolution() -> None:
+    _ = resolve_model_class(
+        model_architecture="rfdetr",
+        task_type="keypoint-detection",
+        backend=BackendType.TRT,
+    )

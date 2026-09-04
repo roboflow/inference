@@ -36,6 +36,7 @@ RF-DETR Keypoint Detection preview model is trained on the COCO keypoints datase
 | Backend | Extras Required |
 |---------|----------------|
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
+| `trt` | `trt10` |
 
 ## Roboflow Platform Compatibility
 
@@ -53,6 +54,7 @@ RF-DETR Keypoint Detection preview model is trained on the COCO keypoints datase
 Install with one of the following extras depending on your backend:
 
 - **ONNX**: `onnx-cpu`, `onnx-cu12`
+- **TensorRT**: `trt10`
 
 ## Usage Example
 
