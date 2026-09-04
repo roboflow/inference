@@ -1,11 +1,13 @@
-import json
 import logging
-import re
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.vlm_json import (
+    coerce_classification_payload,
+    extract_json_payload,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -24,8 +26,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized classification prediction format by extracting class predictions, mapping class names to class IDs, handling both single-class and multi-label formats, and converting VLM/LLM text outputs into workflow-compatible classification results for VLM-based classification, LLM classification parsing, and text-to-classification conversion workflows.
@@ -213,22 +213,13 @@ class VLMAsClassifierBlockV1(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, dict]:
-    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
-    if len(json_blocks_found) == 0:
-        return try_parse_json(raw_json)
-    first_block = json_blocks_found[0]
-    return try_parse_json(first_block)
-
-
-def try_parse_json(content: str) -> Tuple[bool, dict]:
-    try:
-        return False, json.loads(content)
-    except Exception as error:
-        logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_classifier@v1` block. "
-            f"Error type: {error.__class__.__name__}. Details: {error}"
-        )
+    error_status, payload = extract_json_payload(raw_json)
+    if error_status:
         return True, {}
+    coerced = coerce_classification_payload(payload)
+    if coerced is None:
+        return True, {}
+    return False, coerced
 
 
 def parse_multi_class_classification_results(

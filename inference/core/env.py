@@ -974,15 +974,52 @@ WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
 WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
 )
-# Set slightly above the server's 700s execution budget (modal_app.py Executor
-# timeout) so that when a block hits the server limit, the server's error frame
-# arrives before the client read times out. Equal values race and surface an
-# ambiguous "connection lost after send" instead of the real server error.
+# Set above the Modal ``timeout`` (700s) that bounds a single input in
+# modal_app.py. NOTE: there is no server-side per-execution timeout that sends
+# an error frame at 700s — when Modal kills the input the connection simply
+# dies, so this value only decides how long the client waits before reporting
+# that death. Keeping it above 700s avoids racing the (much more common) case
+# of a block that finishes just under the Modal budget.
 WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
 )
 
+# When a reconnect lands on a container that does not know this executor's
+# custom-Python session, runtime state built by earlier frames is gone.
+# With this ENABLED the executor fails loudly instead of silently continuing
+# with reset globals.
+#
+# Defaults to False, deliberately. The check cannot tell a stateful block from
+# a stateless one: it arms on ANY successful execution, on an executor cached
+# per workspace. Container-local Python state also cannot survive a long run by
+# construction — a websocket connection is one Modal input capped at 700s, the
+# server closes at WEBEXEC_WS_MAX_CONNECTION_SECONDS, namespaces are keyed by
+# code hash, and reconnects have no container affinity. So enabling it by
+# default imposes a scheduled hard failure on the stateless majority to detect
+# a condition the platform guarantees for the stateful minority. Set it True to
+# opt into the loud diagnostic where blocks genuinely rely on cross-frame
+# globals and a failed run is preferable to a silently reset one.
+# str2bool, like every other boolean in this file: it raises on a value that
+# is neither "true" nor "false", so a typo ("1", "yes", "True ") fails at boot
+# instead of silently resolving to False and disabling this safety net.
+WEBEXEC_WS_FAIL_ON_SESSION_LOSS = str2bool(
+    os.getenv("WEBEXEC_WS_FAIL_ON_SESSION_LOSS", False)
+)
+
 WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+# How long an idle websocket connection keeps heartbeating before the client
+# deliberately releases it (closing the socket lets the Modal container scale
+# down instead of staying warm — and billed — for the whole connection cap).
+# Releasing also discards the custom-Python session: runtime state mutated by
+# earlier frames is gone after this much inactivity.
+# Set to 0 (or any non-positive value) to disable idle release entirely, matching
+# the convention of WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS below.
+# Must stay well BELOW the server's WEBEXEC_WS_MAX_CONNECTION_SECONDS (600):
+# connection age is >= client idle time by construction, so a value at or above
+# the cap can never fire and the release path is dead code.
+WEBEXEC_WS_IDLE_RELEASE_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_RELEASE_SECONDS", "120")
+)
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )

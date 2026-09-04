@@ -58,8 +58,10 @@ RUN python -m pip install \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "torch==2.4.1" \
-    "torchvision==0.19.1" \
-    "transformers<=5.7.0"
+    "torchvision==0.19.1"
+
+# force-downgrade transformers to make the build work
+RUN python -m pip install "transformers==5.7.0"
 
 # Build Triton from source. Torch 2.4.1 on JP5.1 pairs with Triton ${TRITON_VERSION}.
 # Single-stage image: clone + wheel build share one RUN (cache-mounted src is not

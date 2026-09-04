@@ -40,6 +40,8 @@
   now, and the shared preprocessing keeps each image at its own size, or the
   size requested, while still applying the version's photometric steps.
 
+- RF-DETR keypoint TensorRT backend (`RFDetrForKeyPointsTRT`).
+
 ### Fixed
 
 - Any-size VLM preprocessing returns independently sized images to Cosmos 3,
@@ -51,6 +53,7 @@
   invalid Cosmos package configuration is no longer ignored, and an
   input-size restriction rejects a package that omits the size needed to
   enforce it.
+- Bumped required dependencies versions for security reasons. 
 
 ---
 
