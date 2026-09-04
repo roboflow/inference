@@ -417,3 +417,22 @@ def test_convert_to_sv_detections_output_survives_boolean_filtering() -> None:
     assert filtered.data["class_name"].tolist() == ["dog"]
     assert filtered.data["confidence_mask"][0].shape == (50, 50)
     assert filtered.data["confidence_mask"][0] is result.data["confidence_mask"][1]
+
+
+def test_convert_to_sv_detections_attaches_image_dimensions() -> None:
+    # Consumers such as the custom Python block transport and the detections
+    # serialisers read `image_dimensions` per detection, like every other
+    # model block provides it.
+    seg = np.zeros((40, 60), dtype=np.uint8)
+    seg[5:20, 5:20] = 1
+    seg[25:35, 30:55] = 2
+
+    result = BLOCK_CLS._convert_to_sv_detections(
+        {
+            "segmentation_mask": _encode_mask_as_base64_png(seg),
+            "class_map": {"1": "cat", "2": "dog"},
+        }
+    )
+
+    assert len(result) == 2
+    assert result.data["image_dimensions"].tolist() == [[40, 60], [40, 60]]

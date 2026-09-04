@@ -23,6 +23,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
@@ -311,6 +312,9 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
             data={
                 "class_name": np.array(class_name_list),
                 DETECTION_ID_KEY: detection_ids,
+                IMAGE_DIMENSIONS_KEY: np.array(
+                    [list(mask_array.shape[:2])] * len(class_id_list)
+                ),
                 RLE_MASK_KEY_IN_SV_DETECTIONS: np.array(rle_list, dtype=object),
             },
         )
