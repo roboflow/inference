@@ -1,10 +1,24 @@
-from typing import List, Literal, Optional, Tuple, Type
+from dataclasses import dataclass
+from typing import Callable, List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
 import supervision as sv
+import torch
+import torch.nn.functional as F
 from pydantic import AliasChoices, ConfigDict, Field
 
+from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor import (
+    _BY15,
+    _GRAY_ROUND,
+    _GRAY_SHIFT,
+    _GY15,
+    _RY15,
+)
+from inference.core.workflows.core_steps.common.tensor_native import (
+    TensorNativeDetections,
+    read_host_mirror,
+)
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
@@ -25,6 +39,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+_HUD_FOCUS_LABEL = "TFM Focus"
+_HUD_EXPOSURE_LABEL = "Exposure"
+# Per-channel histogram colours, indexed by BGR channel order.
+_HUD_CHANNEL_COLORS = ((255, 0, 0), (0, 255, 0), (0, 0, 255))
 
 SHORT_DESCRIPTION: str = "Calculate a score to indicate how well-focused a camera is."
 LONG_DESCRIPTION = """
@@ -222,12 +241,25 @@ class CameraFocusBlockV2(WorkflowBlock):
         show_hud: bool,
         show_focus_peaking: bool,
         show_center_marker: bool,
-        detections: Optional[sv.Detections],
+        detections: Optional[Union[sv.Detections, TensorNativeDetections]],
         *args,
         **kwargs,
     ) -> BlockResult:
         underexposed_threshold = int(underexposed_threshold_percent * 255 / 100)
         overexposed_threshold = int(overexposed_threshold_percent * 255 / 100)
+        detections = _host_detections(detections)
+        if _device_path_available(image):
+            return _run_on_device(
+                image=image,
+                underexposed_threshold=underexposed_threshold,
+                overexposed_threshold=overexposed_threshold,
+                show_zebra_warnings=show_zebra_warnings,
+                grid_overlay=grid_overlay,
+                show_hud=show_hud,
+                show_focus_peaking=show_focus_peaking,
+                show_center_marker=show_center_marker,
+                detections=detections,
+            )
         result_image, focus_value, bbox_focus_values = visualize_tenengrad_measure(
             image.numpy_image,
             underexposed_threshold=underexposed_threshold,
@@ -306,21 +338,31 @@ def _apply_focus_peaking(
     return output
 
 
+def _overlay_scale(height: int, width: int) -> float:
+    reference_size = 720
+    scale = min(height, width) / reference_size
+    return max(0.4, min(scale, 2.5))
+
+
+def _center_marker_geometry(height: int, width: int) -> Tuple[int, int, int, int]:
+    scale = _overlay_scale(height, width)
+    return width // 2, height // 2, int(20 * scale), max(1, int(1.6 * scale))
+
+
 def _draw_center_marker(
     image: np.ndarray,
     color: Tuple[int, int, int] = (255, 255, 255),
+    frame_shape: Optional[Tuple[int, int]] = None,
+    origin_xy: Tuple[int, int] = (0, 0),
 ) -> np.ndarray:
-    """Draw crosshair at frame center."""
-    height, width = image.shape[:2]
+    """Draw crosshair at frame center.
 
-    reference_size = 720
-    scale = min(height, width) / reference_size
-    scale = max(0.4, min(scale, 2.5))
-
-    size = int(20 * scale)
-    thickness = max(1, int(1.6 * scale))
-
-    cx, cy = width // 2, height // 2
+    ``frame_shape`` / ``origin_xy`` let the device path draw into a crop of the
+    frame rather than the whole frame; they default to drawing into ``image``.
+    """
+    height, width = frame_shape if frame_shape is not None else image.shape[:2]
+    cx, cy, size, thickness = _center_marker_geometry(height, width)
+    cx, cy = cx - origin_xy[0], cy - origin_xy[1]
     cv2.line(image, (cx - size, cy), (cx + size, cy), color, thickness)
     cv2.line(image, (cx, cy - size), (cx, cy + size), color, thickness)
     return image
@@ -356,19 +398,9 @@ def _draw_text_with_outline(
     cv2.putText(image, text, (x, y), font, font_scale, color, thickness)
 
 
-def _draw_hud_overlay(
-    image: np.ndarray,
-    focus_value: float,
-    gray: np.ndarray,
-    original_image: np.ndarray,
-) -> np.ndarray:
-    """Draw focus value and histogram overlay."""
-    output = image.copy()
-    height, width = image.shape[:2]
-
-    reference_size = 720
-    scale = min(height, width) / reference_size
-    scale = max(0.4, min(scale, 2.5))
+def _hud_geometry(height: int, width: int, focus_value: float) -> tuple:
+    """Panel layout for a frame; also sizes the crop the device path draws into."""
+    scale = _overlay_scale(height, width)
 
     padding = int(14 * scale)
     hist_width = int(180 * scale)
@@ -380,13 +412,13 @@ def _draw_hud_overlay(
     line_spacing = int(6 * scale)
     margin = int(12 * scale)
 
-    focus_label = "TFM Focus"
     focus_value_text = f"{focus_value:.1f}"
-    exposure_label = "Exposure"
 
-    focus_label_size = cv2.getTextSize(focus_label, font, font_scale, thickness)[0]
+    focus_label_size = cv2.getTextSize(_HUD_FOCUS_LABEL, font, font_scale, thickness)[0]
     focus_value_size = cv2.getTextSize(focus_value_text, font, font_scale, thickness)[0]
-    label_size = cv2.getTextSize(exposure_label, font, font_scale_small, thickness)[0]
+    label_size = cv2.getTextSize(
+        _HUD_EXPOSURE_LABEL, font, font_scale_small, thickness
+    )[0]
     section_spacing = int(12 * scale)
 
     content_width = max(
@@ -401,10 +433,64 @@ def _draw_hud_overlay(
         + line_spacing
         + hist_height
     )
+    return (
+        margin,
+        margin,
+        content_width + padding * 2,
+        content_height + padding * 2,
+        padding,
+        hist_width,
+        hist_height,
+        font_scale,
+        font_scale_small,
+        thickness,
+        line_spacing,
+        section_spacing,
+        focus_label_size,
+        focus_value_size,
+        label_size,
+    )
 
-    hud_width = content_width + padding * 2
-    hud_height = content_height + padding * 2
-    hud_x, hud_y = margin, margin
+
+def _draw_hud_overlay(
+    image: np.ndarray,
+    focus_value: float,
+    gray: np.ndarray,
+    original_image: np.ndarray,
+    frame_shape: Optional[Tuple[int, int]] = None,
+    origin_xy: Tuple[int, int] = (0, 0),
+    histograms: Optional[Tuple[Optional[List[np.ndarray]], np.ndarray]] = None,
+) -> np.ndarray:
+    """Draw focus value and histogram overlay.
+
+    ``frame_shape`` / ``origin_xy`` let the device path draw into a crop of the
+    frame; ``histograms`` lets it supply counts it already has on the device,
+    as ``(per-BGR-channel or None, grayscale)``.
+    """
+    output = image.copy()
+    height, width = frame_shape if frame_shape is not None else image.shape[:2]
+    (
+        hud_x,
+        hud_y,
+        hud_width,
+        hud_height,
+        padding,
+        hist_width,
+        hist_height,
+        font_scale,
+        font_scale_small,
+        thickness,
+        line_spacing,
+        section_spacing,
+        focus_label_size,
+        focus_value_size,
+        label_size,
+    ) = _hud_geometry(height, width, focus_value)
+    hud_x, hud_y = hud_x - origin_xy[0], hud_y - origin_xy[1]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    focus_label = _HUD_FOCUS_LABEL
+    focus_value_text = f"{focus_value:.1f}"
+    exposure_label = _HUD_EXPOSURE_LABEL
 
     overlay = output.copy()
     cv2.rectangle(
@@ -481,30 +567,29 @@ def _draw_hud_overlay(
     x_coords = np.linspace(hist_x, hist_x + hist_width - 1, 256).astype(np.int32)
     line_thickness = max(1, thickness)
 
-    if len(original_image.shape) == 3:
-        channel_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
-        for ch, color in enumerate(channel_colors):
-            hist = cv2.calcHist([original_image], [ch], None, [256], [0, 256])
-            hist_max = hist.max()
-            if hist_max > 0:
-                hist_normalized = (
-                    (hist / hist_max * hist_height).astype(np.int32).flatten()
-                )
-                pts = np.column_stack([x_coords, hist_bottom - hist_normalized]).astype(
-                    np.int32
-                )
-                cv2.polylines(output, [pts], False, color, line_thickness)
+    if histograms is None:
+        channel_hists = (
+            [
+                cv2.calcHist([original_image], [ch], None, [256], [0, 256])
+                for ch in range(3)
+            ]
+            if len(original_image.shape) == 3
+            else None
+        )
+        gray_hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    else:
+        channel_hists, gray_hist = histograms
 
-    gray_hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    gray_hist_max = gray_hist.max()
-    if gray_hist_max > 0:
-        gray_hist_normalized = (
-            (gray_hist / gray_hist_max * hist_height).astype(np.int32).flatten()
-        )
-        pts = np.column_stack([x_coords, hist_bottom - gray_hist_normalized]).astype(
-            np.int32
-        )
-        cv2.polylines(output, [pts], False, (255, 255, 255), line_thickness)
+    for hist, color in list(zip(channel_hists or [], _HUD_CHANNEL_COLORS)) + [
+        (gray_hist, (255, 255, 255))
+    ]:
+        hist_max = hist.max()
+        if hist_max > 0:
+            hist_normalized = (hist / hist_max * hist_height).astype(np.int32).flatten()
+            pts = np.column_stack([x_coords, hist_bottom - hist_normalized]).astype(
+                np.int32
+            )
+            cv2.polylines(output, [pts], False, color, line_thickness)
 
     return output
 
@@ -614,3 +699,353 @@ def visualize_tenengrad_measure(
         output = _draw_hud_overlay(output, focus_value, gray, input_image)
 
     return output, focus_value, bbox_focus_measures
+
+
+# --- device path -------------------------------------------------------------
+# Used automatically whenever the image already has a materialised tensor, which
+# keeps the frame on the device instead of paying a full-frame device->host
+# materialisation (plus several more full-frame host copies through the overlay
+# chain) on every call. The numbers cost one sync: the overall focus value and
+# every per-box mean ride a single stacked `.cpu()`.
+#
+# Parity with the numpy path above is bit-exact, not approximate:
+#   * grayscale reuses `convert_grayscale/v1_tensor`'s int32 fixed-point mirror
+#     of cv2 4.x's uint8 BGR2GRAY;
+#   * `cv2.Sobel(ksize=3)` over uint8 into CV_32F is an integral kernel over
+#     exactly-representable inputs (|g| <= 4*255), so an `F.conv2d` over a
+#     `reflect`-padded frame (BORDER_REFLECT_101) matches, as does gx^2 + gy^2
+#     (max ~2.08e6, still exact in float32);
+#   * the zebra and peaking blends go through 256-entry lookup tables built with
+#     the numpy expression above;
+#   * thickness-1 grid lines cover exactly one row/column each, so they are
+#     slice writes;
+#   * the crosshair and HUD are drawn by the cv2 helpers above on a cropped
+#     patch. Clipping the patch to the frame makes cv2 clip strokes where it
+#     would have on the full frame, and the HUD's `addWeighted` is a no-op
+#     outside its panel rect (v*0.7 + v*0.3 rounds back to v).
+#
+# The one legitimate divergence is the HUD's own `%.1f` readout: the device mean
+# is accumulated more widely than numpy's float32 `.mean()`, so a value on a
+# rounding boundary renders a different string, which - since the value text
+# feeds the panel width - can also re-lay the panel out. Every pixel outside that
+# panel stays bit-exact.
+#
+# Frames with a spatial dim below 2 fall back to numpy: `F.pad(mode="reflect")`
+# refuses a pad of 1 there, while BORDER_REFLECT_101 still produces a result.
+
+_ZEBRA_SPACING = 8
+_ZEBRA_OPACITY = 0.5
+_UNDEREXPOSED_COLOR_RGB = (0, 0, 255)
+_OVEREXPOSED_COLOR_RGB = (255, 0, 0)
+_PEAKING_COLOR_RGB = (0, 255, 0)
+_PEAKING_OPACITY = 0.6
+_PEAKING_THRESHOLD_PERCENT = 30.0
+_GRID_LEVEL = 128
+_PATCH_MARGIN = 4
+_SOBEL_KERNELS = torch.tensor(
+    [
+        [[[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]]],
+        [[[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]]],
+    ],
+    dtype=torch.float32,
+)
+_BLEND_LUT_CACHE = {}
+_SOBEL_KERNEL_CACHE = {}
+
+
+@dataclass(frozen=True)
+class _HostDetections:
+    """Host-side ``xyxy`` carrier, so neither path walks a device tensor box by
+    box (four syncs per box on a native prediction)."""
+
+    xyxy: np.ndarray
+
+    def __len__(self) -> int:
+        return int(self.xyxy.shape[0])
+
+
+def _device_path_available(image: WorkflowImageData) -> bool:
+    if not image.is_tensor_materialised():
+        return False
+    channels, height, width = image.tensor_image.shape
+    return channels in (1, 3) and min(height, width) >= 2
+
+
+def _host_detections(
+    detections: Optional[Union[sv.Detections, TensorNativeDetections]],
+) -> Optional[_HostDetections]:
+    """Get ``xyxy`` onto the host once, whether it arrived as sv or native.
+
+    A native prediction usually already carries a per-box host mirror of its
+    coordinates; preferring that avoids a transfer that would stall behind
+    queued GPU work. The mirror's dtype matches the tensor read exactly.
+    """
+    if detections is None or len(detections) == 0:
+        return None
+    mirrored = read_host_mirror(
+        bboxes_metadata=getattr(detections, "bboxes_metadata", None),
+        expected_rows=len(detections),
+    )
+    if mirrored is not None:
+        return _HostDetections(xyxy=mirrored[0])
+    xyxy = detections.xyxy
+    if isinstance(xyxy, torch.Tensor):
+        xyxy = xyxy.detach().cpu().numpy()
+    return _HostDetections(xyxy=np.asarray(xyxy).reshape(-1, 4))
+
+
+def _run_on_device(
+    image: WorkflowImageData,
+    underexposed_threshold: int,
+    overexposed_threshold: int,
+    show_zebra_warnings: bool,
+    grid_overlay: str,
+    show_hud: bool,
+    show_focus_peaking: bool,
+    show_center_marker: bool,
+    detections: Optional[_HostDetections],
+) -> BlockResult:
+    chw = image.tensor_image.detach()
+    _, height, width = chw.shape
+    gray = _to_gray(chw)
+    focus_measure = _tenengrad(gray)
+    focus_value, bbox_focus_measures = _reduce_focus(
+        focus_measure=focus_measure, detections=detections, height=height, width=width
+    )
+    grid_divisions = GRID_DIVISIONS.get(grid_overlay, 0)
+    if not (
+        show_zebra_warnings
+        or show_hud
+        or show_focus_peaking
+        or show_center_marker
+        or grid_divisions > 0
+    ):
+        return {
+            OUTPUT_IMAGE_KEY: image,
+            "focus_measure": focus_value,
+            "bbox_focus_measures": bbox_focus_measures,
+        }
+
+    # Numpy parity: `cv2.cvtColor(..., COLOR_GRAY2BGR)` replicates the plane.
+    result = (chw.expand(3, height, width) if chw.shape[0] == 1 else chw).clone()
+    if show_zebra_warnings:
+        _device_zebra_warnings(
+            result, gray, underexposed_threshold, overexposed_threshold
+        )
+    if show_focus_peaking:
+        _device_focus_peaking(result, focus_measure)
+    if show_center_marker:
+        _device_center_marker(result)
+    if grid_divisions > 0:
+        for index in range(1, grid_divisions):
+            result[:, :, width * index // grid_divisions] = _GRID_LEVEL
+            result[:, height * index // grid_divisions, :] = _GRID_LEVEL
+    if show_hud:
+        _device_hud(result, chw, gray, focus_value)
+    return {
+        OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+            origin_image_data=image, tensor_image=result
+        ),
+        "focus_measure": focus_value,
+        "bbox_focus_measures": bbox_focus_measures,
+    }
+
+
+def _to_gray(chw: torch.Tensor) -> torch.Tensor:
+    """``(H, W)`` uint8 grayscale, bit-exact with cv2's uint8 BGR2GRAY."""
+    if chw.shape[0] == 1:
+        return chw[0]
+    values = chw.to(torch.int32)
+    return (
+        (values[0] * _RY15 + values[1] * _GY15 + values[2] * _BY15 + _GRAY_ROUND)
+        >> _GRAY_SHIFT
+    ).to(torch.uint8)
+
+
+def _tenengrad(gray: torch.Tensor) -> torch.Tensor:
+    """``gx^2 + gy^2`` from 3x3 Sobel gradients, bit-exact with the cv2 pair."""
+    padded = F.pad(gray.to(torch.float32)[None, None], (1, 1, 1, 1), mode="reflect")
+    kernels = _SOBEL_KERNEL_CACHE.get(gray.device)
+    if kernels is None:
+        kernels = _SOBEL_KERNELS.to(device=gray.device)
+        _SOBEL_KERNEL_CACHE[gray.device] = kernels
+    gradients = F.conv2d(padded, kernels)[0]
+    return gradients[0] * gradients[0] + gradients[1] * gradients[1]
+
+
+def _mean(values: torch.Tensor) -> torch.Tensor:
+    # MPS has no float64, but its float32 reduction is tree-based and lands
+    # within ~1e-8 relative - the same order as numpy's pairwise `.mean()`.
+    if values.device.type == "mps":
+        return values.mean()
+    return values.sum(dtype=torch.float64) / values.numel()
+
+
+def _reduce_focus(
+    focus_measure: torch.Tensor,
+    detections: Optional[_HostDetections],
+    height: int,
+    width: int,
+) -> Tuple[float, List[Optional[float]]]:
+    """Overall and per-box means, taken to the host in a single sync."""
+    means = [_mean(focus_measure)]
+    bbox_focus_measures: List[Optional[float]] = []
+    measured_slots: List[int] = []
+    if detections is not None:
+        for xyxy in detections.xyxy:
+            x1, y1, x2, y2 = map(int, xyxy)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(width, x2), min(height, y2)
+            if x2 > x1 and y2 > y1:
+                measured_slots.append(len(bbox_focus_measures))
+                means.append(_mean(focus_measure[y1:y2, x1:x2]))
+            bbox_focus_measures.append(None)
+    host_means = torch.stack(means).cpu().tolist()
+    for slot, mean in zip(measured_slots, host_means[1:]):
+        bbox_focus_measures[slot] = mean
+    return host_means[0], bbox_focus_measures
+
+
+def _blend(
+    result: torch.Tensor,
+    mask: torch.Tensor,
+    color_rgb: Tuple[int, int, int],
+    opacity: float,
+) -> None:
+    """In-place ``result[mask] = result[mask] * (1 - opacity) + color * opacity``.
+
+    Routed through a lookup table built with that exact numpy float64
+    expression, so the blended pixels match the numpy path bit-for-bit.
+    """
+    key = (color_rgb, opacity, result.device)
+    lut = _BLEND_LUT_CACHE.get(key)
+    if lut is None:
+        values = np.arange(256, dtype=np.uint8)
+        lut = torch.from_numpy(
+            np.stack(
+                [
+                    (values * (1 - opacity) + np.uint8(channel) * opacity).astype(
+                        np.uint8
+                    )
+                    for channel in color_rgb
+                ]
+            )
+        ).to(result.device)
+        _BLEND_LUT_CACHE[key] = lut
+    for channel in range(result.shape[0]):
+        plane = result[channel]
+        blended = (
+            lut[channel]
+            .index_select(0, plane.reshape(-1).to(torch.int32))
+            .reshape(plane.shape)
+        )
+        plane.copy_(torch.where(mask, blended, plane))
+
+
+def _device_zebra_warnings(
+    result: torch.Tensor,
+    gray: torch.Tensor,
+    under_threshold: int,
+    over_threshold: int,
+) -> None:
+    height, width = gray.shape
+    rows = torch.arange(height, device=gray.device).view(height, 1)
+    columns = torch.arange(width, device=gray.device).view(1, width)
+    zebra = ((rows + columns).div(_ZEBRA_SPACING, rounding_mode="floor") % 2) == 0
+    _blend(
+        result,
+        (gray < under_threshold) & zebra,
+        _UNDEREXPOSED_COLOR_RGB,
+        _ZEBRA_OPACITY,
+    )
+    _blend(
+        result, (gray > over_threshold) & zebra, _OVEREXPOSED_COLOR_RGB, _ZEBRA_OPACITY
+    )
+
+
+def _device_focus_peaking(result: torch.Tensor, focus_measure: torch.Tensor) -> None:
+    # `clamp(min=1)` stands in for the numpy `max_val == 0` early return: focus
+    # values are sums of squared integers, so a non-zero max is >= 1 and the
+    # clamp is inert, while an all-zero frame normalises to 0 and clears the mask.
+    normalized = (focus_measure / focus_measure.max().clamp(min=1) * 255).to(
+        torch.uint8
+    )
+    threshold = int(_PEAKING_THRESHOLD_PERCENT * 255 / 100)
+    _blend(result, normalized > threshold, _PEAKING_COLOR_RGB, _PEAKING_OPACITY)
+
+
+def _device_center_marker(result: torch.Tensor) -> None:
+    _, height, width = result.shape
+    center_x, center_y, size, thickness = _center_marker_geometry(height, width)
+    reach = size + thickness + _PATCH_MARGIN
+    _edit_patch_with_cv2(
+        result,
+        (center_x - reach, center_y - reach, center_x + reach, center_y + reach),
+        lambda patch, origin: _draw_center_marker(
+            patch, frame_shape=(height, width), origin_xy=origin
+        ),
+    )
+
+
+def _device_hud(
+    result: torch.Tensor,
+    source: torch.Tensor,
+    gray: torch.Tensor,
+    focus_value: float,
+) -> None:
+    _, height, width = result.shape
+    hud_x, hud_y, hud_width, hud_height = _hud_geometry(height, width, focus_value)[:4]
+    # The HUD colours its histograms by BGR channel index; the tensor is RGB, so
+    # reverse them. All of them ride one transfer - a `.cpu()` per channel would
+    # serialise four syncs into every frame.
+    planes = [source[channel] for channel in (2, 1, 0)] if source.shape[0] == 3 else []
+    counts = torch.stack(
+        [torch.bincount(plane.reshape(-1), minlength=256) for plane in planes + [gray]]
+    )
+    host = counts.to(torch.float32).cpu().numpy()
+    histograms = (
+        [row.reshape(256, 1) for row in host[:-1]] or None,
+        host[-1].reshape(256, 1),
+    )
+    _edit_patch_with_cv2(
+        result,
+        (
+            hud_x - _PATCH_MARGIN,
+            hud_y - _PATCH_MARGIN,
+            hud_x + hud_width + _PATCH_MARGIN + 1,
+            hud_y + hud_height + _PATCH_MARGIN + 1,
+        ),
+        lambda patch, origin: _draw_hud_overlay(
+            patch,
+            focus_value,
+            gray=None,
+            original_image=None,
+            frame_shape=(height, width),
+            origin_xy=origin,
+            histograms=histograms,
+        ),
+    )
+
+
+def _edit_patch_with_cv2(
+    chw_rgb: torch.Tensor,
+    rect: Tuple[int, int, int, int],
+    draw: Callable[[np.ndarray, Tuple[int, int]], np.ndarray],
+) -> None:
+    """Run a cv2 drawing callback over the frame region ``rect`` only.
+
+    The rect is clipped to the frame before the crop, so a stroke running past a
+    frame edge is clipped against the patch border exactly where the full-frame
+    call would have clipped it. ``draw`` gets a BGR HWC patch plus the patch
+    origin in frame coordinates, and returns the drawn patch.
+    """
+    _, height, width = chw_rgb.shape
+    x1, y1 = max(0, rect[0]), max(0, rect[1])
+    x2, y2 = min(width, rect[2]), min(height, rect[3])
+    if x2 <= x1 or y2 <= y1:
+        return
+    patch = chw_rgb[:, y1:y2, x1:x2]
+    drawn = draw(
+        np.ascontiguousarray(patch.flip(0).permute(1, 2, 0).cpu().numpy()), (x1, y1)
+    )
+    patch.copy_(torch.from_numpy(drawn).to(chw_rgb.device).permute(2, 0, 1).flip(0))
