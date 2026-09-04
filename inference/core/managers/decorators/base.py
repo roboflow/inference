@@ -1,4 +1,5 @@
-from typing import Any, List, Optional, Tuple
+from contextlib import contextmanager
+from typing import Any, Generator, List, Optional, Tuple
 
 import numpy as np
 
@@ -6,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
+from inference.core.exceptions import ModelManagerLockAcquisitionError
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.models.types import PreprocessReturnMetadata
@@ -71,16 +73,25 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if model_id in self:
-            self.model_manager.record_request_metadata(
-                model_id=model_id,
-                original_model_id=model_id,
-                model_id_alias=model_id_alias,
-            )
-            ids_collector = request_model_ids.get(None)
-            if ids_collector is not None:
-                ids_collector.add(model_id)
-            return
+        resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        # Treat the unlocked lookup only as a hint. A warm-model return must be
+        # revalidated under the resolved identifier's lifecycle lock.
+        if resolved_identifier in self:
+            with self._acquire_model_lock(model_id=resolved_identifier) as acquired:
+                if not acquired:
+                    raise ModelManagerLockAcquisitionError(
+                        f"Could not acquire lock for model with id={resolved_identifier}."
+                    )
+                if resolved_identifier in self:
+                    self.model_manager.record_request_metadata(
+                        model_id=resolved_identifier,
+                        original_model_id=model_id,
+                        model_id_alias=model_id_alias,
+                    )
+                    ids_collector = request_model_ids.get(None)
+                    if ids_collector is not None:
+                        ids_collector.add(resolved_identifier)
+                    return
         self.model_manager.add_model(
             model_id,
             api_key,
@@ -89,6 +100,12 @@ class ModelManagerDecorator(ModelManager):
             countinference=countinference,
             service_secret=service_secret,
         )
+
+    @contextmanager
+    def _acquire_model_lock(self, model_id: str) -> Generator[bool, None, None]:
+        """Use the decorated manager's lifecycle entry for mutation decisions."""
+        with self.model_manager._acquire_model_lock(model_id=model_id) as acquired:
+            yield acquired
 
     def record_request_metadata(
         self,
@@ -244,7 +261,7 @@ class ModelManagerDecorator(ModelManager):
         predictions: Tuple[np.ndarray, ...],
         preprocess_return_metadata: PreprocessReturnMetadata,
         *args,
-        **kwargs
+        **kwargs,
     ) -> List[List[float]]:
         return self.model_manager.postprocess(
             model_id, predictions, preprocess_return_metadata, *args, **kwargs
