@@ -611,9 +611,6 @@ from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 impor
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 import (
     LlamaVisionBlockV2,
 )
-from inference.core.workflows.core_steps.models.foundation.llama_vision.v3 import (
-    LlamaVisionBlockV3,
-)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -1978,7 +1975,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GazeBlockV1,
         LlamaVisionBlockV1,
         LlamaVisionBlockV2,
-        LlamaVisionBlockV3,
         MetaVlmBlockV1,
         MetaVlmBlockV2,
         MetaVlmBlockV3,
