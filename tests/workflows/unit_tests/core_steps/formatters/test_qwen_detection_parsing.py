@@ -7,6 +7,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detecti
     get_qwen_detection_class_name,
     parse_qwen_object_detection_response,
 )
+from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -145,6 +146,12 @@ def test_parse_response_for_empty_list() -> None:
     )
 
     assert len(result) == 0
+    # Empty detections must still carry image dimensions in metadata so the
+    # numpy serialiser emits real width/height (matching the tensor-native path).
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    serialized = serialise_sv_detections(result)
+    assert serialized["image"] == {"width": 640, "height": 480}
+    assert serialized["predictions"] == []
 
 
 def test_parse_response_for_detections_wrapper() -> None:

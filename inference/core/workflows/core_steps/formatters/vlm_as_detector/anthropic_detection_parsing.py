@@ -8,6 +8,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
     compute_anthropic_upload_dimensions,
+    empty_detections_with_image_metadata,
 )
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     create_classes_index,
@@ -88,7 +89,11 @@ def parse_anthropic_object_detection_response(
     if not isinstance(parsed_data, list):
         raise ValueError("Unexpected Anthropic Claude object detection response format")
     if len(parsed_data) == 0:
-        return sv.Detections.empty()
+        image_height, image_width = image.numpy_image.shape[:2]
+        return empty_detections_with_image_metadata(
+            image_height=image_height,
+            image_width=image_width,
+        )
 
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]

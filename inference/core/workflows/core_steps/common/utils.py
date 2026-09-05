@@ -228,6 +228,30 @@ def attach_parents_coordinates_to_batch_of_sv_detections(
     return result
 
 
+def empty_detections_with_image_metadata(
+    image_height: int,
+    image_width: int,
+) -> sv.Detections:
+    """Create a zero-row ``sv.Detections`` that carries image dimensions in
+    ``metadata`` so the numpy serialiser can emit real ``image.width`` /
+    ``image.height`` for empty VLM results — matching the tensor-native path.
+
+    ``sv.Detections.data`` is per-row, so zero rows means the serialiser's
+    per-row loop never executes and any keys stored there are invisible.
+    ``metadata`` is a free-form dict on ``sv.Detections`` that survives zero
+    rows and is read by the serialiser as a fallback when no per-row
+    ``IMAGE_DIMENSIONS_KEY`` is found.
+
+    Built on ``sv.Detections.empty()`` so the returned object keeps the empty
+    ``confidence`` / ``class_id`` arrays downstream consumers rely on (a bare
+    ``sv.Detections(xyxy=...)`` leaves them ``None``, which breaks e.g.
+    ``DetectionsPropertyExtract``).
+    """
+    detections = sv.Detections.empty()
+    detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
+    return detections
+
+
 def attach_parents_coordinates_to_sv_detections(
     detections: sv.Detections,
     image: WorkflowImageData,

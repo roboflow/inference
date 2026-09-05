@@ -11,6 +11,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -366,7 +367,10 @@ def parse_llm_object_detection_response(
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
     if len(parsed_data["detections"]) == 0:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(
+            image_height=image_height,
+            image_width=image_width,
+        )
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in parsed_data["detections"]:
         xyxy.append(
