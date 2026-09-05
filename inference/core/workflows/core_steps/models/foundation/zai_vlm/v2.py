@@ -1,16 +1,21 @@
-"""Meta Muse vision-language block, v2.
+"""Z.ai GLM vision-language block, v2.
 
-Same surface as ``meta_vlm@v1``, plus ``input_tokens`` / ``output_tokens``
-outputs with per-call token usage.
+Same surface as ``zai_vlm@v1``, plus in-block decoding of the model
+answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
+next to the raw ``output`` string, so no separate "VLM as Detector" /
+"VLM as Classifier" step is needed.
 
-OpenRouter-only. Four Muse models, using the vlm-exam request contract:
-image-first user message, no system role, reasoning always on, meta-flat
-0-1000 detection prompt. Llama Vision stays on its own block.
+OpenRouter-only. Uses the vlm-exam request contract validated for the GLM
+models: image-first user message, no system role, extended reasoning
+disabled by default, and per-model xyxy / 0-1000 detection prompts
+(``box_2d`` key for GLM 5V Turbo, ``bbox_2d`` for GLM 5.3 Flash). Both
+decode with the shared ``xyxy_0_1000`` format, which accepts either key.
 """
 
 import base64
 import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -20,7 +25,6 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -29,6 +33,7 @@ from inference.core.workflows.core_steps.common.openrouter import (
 )
 from inference.core.workflows.core_steps.common.reasoning import (
     attach_reasoning_levels,
+    build_openrouter_reasoning_config,
     validate_reasoning_level,
 )
 from inference.core.workflows.core_steps.common.token_usage import (
@@ -36,6 +41,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -62,60 +73,84 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 
-# Spark `none` is HTTP 400. Glimmer has no `minimal`.
+# Detection and classification answers are decoded in-block now, so only
+# `structured-answering` still points at a downstream parser.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
+
+# Default detection contract, used when a caller does not pass a per-model
+# override: the vlm-exam `xyxy_normalized_0_to_1000` format pinned for
+# GLM 5V Turbo.
+DEFAULT_DETECTION_BOX_FORMAT = "xyxy_0_1000"
+
+# Ported verbatim from vlm-exam's `_BBOX_2D_NORMALIZED_PROMPT_TEMPLATE`,
+# the format pinned for GLM 5.3 Flash
+# (`xyxy_normalized_0_to_1000_bbox_2d`). Re-selected during the fp8-pinned
+# re-evaluation (the earlier yxyx box_2d pick came from runs that hit
+# quantized OpenRouter providers) and confirmed by a prompt-format sweep:
+# alternative containers and key names (bullets, "box", absolute pixels)
+# all score 36-70% below this Qwen-style template on the 250-image
+# benchmark.
+ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE = (
+    "Detect all objects in this image and return their locations in the "
+    "form of coordinates. The format of output should be like "
+    '{{"bbox_2d": [x1, y1, x2, y2], "label": "<name>"}}. '
+    "bbox_2d is [xmin, ymin, xmax, ymax] as integers between 0 and 1000, "
+    "normalized to image width and height. "
+    "Only use these labels: {class_list}. Return a JSON array only."
+)
+
+# One row per model; add future Z.ai models here. A row may override
+# `reasoning_levels` if a model diverges from the shared set;
+# `reasoning_required` marks models that reject `reasoning: {enabled:
+# false}` and fall back to low effort when the user disables reasoning.
+# `box_format` is the shared coordinate contract used to decode detections;
+# both GLM models emit xyxy 0-1000 boxes, but GLM 5.3 Flash scores best
+# with its own Qwen-style `bbox_2d` prompt, so a row may also pin a
+# `prompt_template` (formatted with `{class_list}`) that overrides the
+# shared prompt for that format.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
-    "Muse Spark 1.1": {
-        "model_id": "meta/muse-spark-1.1",
-        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    "GLM 5V Turbo": {
+        "model_id": "z-ai/glm-5v-turbo",
+        "box_format": "xyxy_0_1000",
     },
-    "Muse Spark 1.2": {
-        "model_id": "meta/muse-spark-1.2",
-        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
-    },
-    "Muse Spark 1.3": {
-        "model_id": "meta/muse-spark-1.3",
-        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
-    },
-    "Muse Glimmer": {
-        "model_id": "meta/muse-glimmer-30b",
-        "reasoning_levels": ["low", "medium", "high", "xhigh"],
+    # GLM 5.3 Flash ran as the OpenRouter stealth model "Ox Alpha"; the
+    # retirement notice confirms they are the same model.
+    "GLM 5.3 Flash": {
+        "model_id": "z-ai/glm-5.3-flash",
+        "box_format": "xyxy_0_1000",
+        "prompt_template": ZAI_FLASH_OBJECT_DETECTION_PROMPT_TEMPLATE,
+        "reasoning_required": True,
     },
 }
 
 MODEL_IDS = {label: variant["model_id"] for label, variant in MODEL_VARIANTS.items()}
 
-MODEL_REASONING_LEVELS = {
-    label: variant["reasoning_levels"] for label, variant in MODEL_VARIANTS.items()
-}
-
-MODEL_VERSION_METADATA = attach_reasoning_levels(
-    {label: {"name": label} for label in MODEL_VARIANTS},
-    MODEL_REASONING_LEVELS,
-)
-
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
-DEFAULT_MODEL_VERSION = "Muse Spark 1.3"
+DEFAULT_MODEL_VERSION = "GLM 5V Turbo"
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
-REASONING_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"]
+REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"]
 ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
-DEFAULT_REASONING_EFFORT = "low"
+DEFAULT_REASONING_EFFORT = "none"
 
 REASONING_EFFORT_METADATA = {
-    "minimal": {
-        "name": "Minimal",
+    "none": {
+        "name": "Disabled (recommended)",
         "description": (
-            "Shortest reasoning pass. Supported by Muse Spark models only — "
-            "Muse Glimmer starts at low."
+            "Turns extended reasoning off. GLM models default to extended "
+            "reasoning on OpenRouter, which bloats latency and can consume "
+            "the whole token budget before a visible answer is produced. "
+            "This is the configuration validated in the vlm-exam benchmarks. "
+            "GLM 5.3 Flash requires reasoning and falls back to low effort "
+            "instead."
         ),
     },
     "low": {
-        "name": "Low (recommended)",
-        "description": (
-            "Small reasoning budget. Muse models require reasoning; this is "
-            "the lowest effort every variant accepts."
-        ),
+        "name": "Low",
+        "description": "Small reasoning budget before answering.",
     },
     "medium": {
         "name": "Medium",
@@ -124,33 +159,54 @@ REASONING_EFFORT_METADATA = {
     "high": {
         "name": "High",
         "description": (
-            "Large reasoning budget. Slow and expensive; consider raising "
-            "`max_tokens` so reasoning does not crowd out the answer."
-        ),
-    },
-    "xhigh": {
-        "name": "Extra high",
-        "description": (
-            "Maximum reasoning depth. Slowest and most expensive; raise "
-            "`max_tokens` accordingly."
+            "Large reasoning budget. Slowest and most expensive; consider "
+            "raising `max_tokens` so reasoning does not crowd out the answer."
         ),
     },
 }
 
+MODEL_REASONING_LEVELS = {
+    label: variant.get("reasoning_levels", REASONING_EFFORT_OPTIONS)
+    for label, variant in MODEL_VARIANTS.items()
+}
+
+MODEL_VERSION_METADATA = attach_reasoning_levels(
+    {label: {"name": label} for label in MODEL_VARIANTS},
+    MODEL_REASONING_LEVELS,
+)
+
+# Fallback effort applied when reasoning is disabled by the user but the
+# selected model rejects `reasoning: {"enabled": false}`.
+REASONING_REQUIRED_FALLBACK_EFFORT = "low"
+
+
+def build_zai_reasoning_config(
+    reasoning_effort: str,
+    *,
+    reasoning_required: bool,
+) -> Optional[dict]:
+    """Translate the block's reasoning effort into OpenRouter's config.
+
+    Mirrors the vlm-exam benchmark behavior: reasoning is explicitly
+    disabled unless an effort is requested, except for models that require
+    reasoning and reject ``enabled: false``; those always receive an
+    effort (falling back to low when the user disabled reasoning).
+
+    Args:
+        reasoning_effort: One of ``REASONING_EFFORT_OPTIONS``.
+        reasoning_required: Whether the model rejects disabled reasoning.
+
+    Returns:
+        OpenRouter ``reasoning`` payload object.
+    """
+    if reasoning_required and reasoning_effort == "none":
+        return {"effort": REASONING_REQUIRED_FALLBACK_EFFORT}
+    return build_openrouter_reasoning_config(reasoning_effort)
+
+
 DEFAULT_MAX_TOKENS = 2048
 OPENROUTER_MAX_BASE64_BYTES = 9_500_000
 OPENROUTER_JPEG_QUALITY = 90
-
-# Ported verbatim from vlm-exam's `_META_FLAT_NORMALIZED_PROMPT_TEMPLATE`.
-MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "You are an object grounding expert. Detect all objects in this image "
-    "matching these labels: {class_list}. Ensure the objects accurately "
-    "match the request and do not miss any objects. For each object, answer "
-    'in the format {{"label": "<name>", "x_min": <int>, "y_min": <int>, '
-    '"x_max": <int>, "y_max": <int>}}. The coordinates should be in the '
-    "0-1000 range. Return a JSON array of results. If you cannot find an "
-    "object, omit it from the results."
-)
 
 _TASK_CLASSIFICATION = (
     "You act as single-class classification model. You must provide reasonable "
@@ -197,7 +253,7 @@ _TASK_STRUCTURED = (
 )
 
 
-def encode_image_for_muse_openrouter(numpy_image: np.ndarray) -> str:
+def encode_image_for_zai_openrouter(numpy_image: np.ndarray) -> str:
     """Encode a BGR image as base64 JPEG under the OpenRouter payload cap.
 
     Encodes at fixed JPEG quality and, when the base64 payload exceeds
@@ -311,9 +367,16 @@ def _prepare_structured_answering_prompt(
 
 
 def _prepare_object_detection_prompt(
-    base64_image: str, classes: List[str], **_
+    base64_image: str,
+    classes: List[str],
+    box_format: str,
+    prompt_template: Optional[str] = None,
+    **_,
 ) -> List[dict]:
-    text = MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=", ".join(classes))
+    if prompt_template is not None:
+        text = prompt_template.format(class_list=", ".join(classes))
+    else:
+        text = build_object_detection_prompt(box_format=box_format, classes=classes)
     return _user_message(base64_image=base64_image, text=text)
 
 
@@ -334,18 +397,20 @@ PROMPT_BUILDERS = {
 }
 
 
-def build_muse_openrouter_prompts(
+def build_zai_openrouter_prompts(
     images: List[np.ndarray],
     task_type: str,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
+    box_format: str = DEFAULT_DETECTION_BOX_FORMAT,
+    prompt_template: Optional[str] = None,
 ) -> List[List[dict]]:
-    """Build one OpenRouter ``messages`` array per input image, Muse-style.
+    """Build one OpenRouter ``messages`` array per input image, GLM-style.
 
     Every task sends a single user message with the image part first and
     the instruction text second, with no system role, matching the
-    vlm-exam Muse request contract.
+    vlm-exam GLM request contract.
 
     Args:
         images: BGR numpy images.
@@ -353,6 +418,11 @@ def build_muse_openrouter_prompts(
         prompt: User prompt for unconstrained / VQA tasks.
         output_structure: Output spec for structured-answering.
         classes: Class list for classification / detection tasks.
+        box_format: Per-model detection coordinate contract, from
+            ``MODEL_VARIANTS``.
+        prompt_template: Optional per-model detection prompt overriding the
+            shared template for ``box_format``; formatted with
+            ``{class_list}``.
 
     Returns:
         List of ``messages`` arrays, one per image.
@@ -367,27 +437,15 @@ def build_muse_openrouter_prompts(
     for image in images:
         built.append(
             builder(
-                base64_image=encode_image_for_muse_openrouter(numpy_image=image),
+                base64_image=encode_image_for_zai_openrouter(numpy_image=image),
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
+                box_format=box_format,
+                prompt_template=prompt_template,
             )
         )
     return built
-
-
-def build_reasoning_config(reasoning_effort: str) -> Dict[str, Any]:
-    """Build the OpenRouter ``reasoning`` config for Muse models.
-
-    Muse models reject disabled reasoning, so an ``effort`` is always sent.
-
-    Args:
-        reasoning_effort: One of ``REASONING_EFFORT_OPTIONS``.
-
-    Returns:
-        Reasoning config to attach to the OpenRouter request.
-    """
-    return {"effort": reasoning_effort}
 
 
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
@@ -396,24 +454,45 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 )
 
 LONG_DESCRIPTION = f"""
-Run Meta Muse vision-language models via [OpenRouter](https://openrouter.ai/).
+Run Z.ai GLM vision-language models via [OpenRouter](https://openrouter.ai/).
 
-Supported models: Muse Spark 1.1, Muse Spark 1.2, Muse Spark 1.3, and Muse Glimmer.
-Llama 3.2 Vision stays on its own block.
+Supported models: GLM 5V Turbo and GLM 5.3 Flash (previously served as the
+OpenRouter stealth model "Ox Alpha").
 
 You can specify arbitrary text prompts or predefined ones. The block supports:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-Object detection uses Muse's native grounding format: a JSON array of
-`label` / `x_min` / `y_min` / `x_max` / `y_max` fields with coordinates
-normalized to 0-1000. Parse the output with `VLM as Detector`
-(`vlm_as_detector@v2`) using `model_type="muse"`.
+Object detection uses the per-model format validated in the vlm-exam
+benchmarks. Both models emit `[x_min, y_min, x_max, y_max]` boxes as
+integers normalized to 0-1000, but with different key names: GLM 5V
+Turbo uses `box_2d` and GLM 5.3 Flash uses `bbox_2d`. The block prompts
+for and decodes the right one for the selected model.
+
+## Version Differences
+
+This version (v2) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 Every request sends the image before the instruction text in a single user
-message. Reasoning stays on; the `reasoning_effort` knob defaults to low.
-`max_tokens` defaults to 2048; raise it (e.g. 8192) when you need a longer
-answer.
+message. GLM models default to extended reasoning on OpenRouter; the block
+disables it by default (the benchmarked configuration) and exposes a
+`reasoning_effort` knob to turn it back on. GLM 5.3 Flash requires
+reasoning and falls back to low effort when disabled. `max_tokens`
+defaults to 2048; raise it (e.g. 8192) when you need a longer answer.
 
 By default the block uses the Roboflow-managed OpenRouter key and bills
 your Roboflow credits. Paste your own `sk-or-...` key to call OpenRouter
@@ -424,42 +503,37 @@ directly.
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Meta",
+            "name": "Z.ai",
             "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use Meta v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
-            "short_description": "Run Meta Muse vision models via OpenRouter.",
+            "short_description": "Run Z.ai GLM vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "MIT",
             "block_type": "model",
             "search_keywords": [
                 "LMM",
                 "VLM",
-                "Meta",
-                "Muse",
-                "Spark",
-                "Glimmer",
+                "GLM",
+                "GLM-5V",
+                "Z.ai",
+                "Zhipu",
                 "OpenRouter",
             ],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-meta",
-                "blockPriority": 5.55,
+                "icon": "fal fa-atom",
+                "blockPriority": 5.56,
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/meta_vlm@v2"]
+    type: Literal["roboflow_core/zai_vlm@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
-        description=(
-            "Muse model to run. Spark 1.1, Spark 1.2, Spark 1.3, and Glimmer "
-            "are the current image-capable Muse chat models on OpenRouter."
-        ),
-        examples=[DEFAULT_MODEL_VERSION, "Muse Glimmer"],
+        description="Z.ai GLM model to run.",
+        examples=[DEFAULT_MODEL_VERSION, "GLM 5.3 Flash"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -520,10 +594,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     reasoning_effort: ReasoningEffort = Field(
         default=DEFAULT_REASONING_EFFORT,
         description=(
-            "Reasoning budget. Muse models reject disabled reasoning, so this "
-            "is always sent as an effort. Low is the default used in the "
-            "vlm-exam benches. Supported values differ per model (see the "
-            "model dropdown): 'minimal' is Spark-only."
+            "Extended-reasoning budget. GLM models default to extended "
+            "reasoning on OpenRouter; `none` (the default) disables it, "
+            "matching the configuration validated in the vlm-exam benches."
         ),
         json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )
@@ -604,6 +677,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -640,7 +726,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
+class ZaiVlmBlockV2(OpenRouterWorkflowBlockBase):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -664,10 +750,10 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
-        model_id = MODEL_IDS.get(model_version)
-        if model_id is None:
+        variant = MODEL_VARIANTS.get(model_version)
+        if variant is None:
             raise ValueError(
-                f"Unknown Muse variant '{model_version}'. "
+                f"Unknown Z.ai model '{model_version}'. "
                 f"Pick one of: {list(MODEL_VARIANTS)}"
             )
         validate_reasoning_level(
@@ -675,30 +761,49 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
             level=reasoning_effort,
             levels_by_model=MODEL_REASONING_LEVELS,
         )
-        prompts = build_muse_openrouter_prompts(
+        prompts = build_zai_openrouter_prompts(
             images=[image.numpy_image for image in images],
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            box_format=variant["box_format"],
+            prompt_template=variant.get("prompt_template"),
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
-            model=model_id,
+            model=variant["model_id"],
             prompts=prompts,
             max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
-            reasoning=build_reasoning_config(reasoning_effort),
+            reasoning=build_zai_reasoning_config(
+                reasoning_effort,
+                reasoning_required=variant.get("reasoning_required", False),
+            ),
         )
-        return [
-            {
-                "output": result.content,
-                "classes": classes,
-                "thinking": result.reasoning_trace,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-            }
-            for result in results
-        ]
+        outputs = []
+        for image, result in zip(images, results):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=result.content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=variant["box_format"],
+            )
+            outputs.append(
+                {
+                    "output": result.content,
+                    "classes": classes,
+                    "thinking": result.reasoning_trace,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return outputs

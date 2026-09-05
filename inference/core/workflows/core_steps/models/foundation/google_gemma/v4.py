@@ -1,15 +1,28 @@
 from typing import Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.workflows.core_steps.common.openrouter import (
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.core_steps.common.reasoning import (
+    REASONING_EFFORT_METADATA,
+    REASONING_EFFORT_OPTIONS,
+    build_openrouter_reasoning_config,
+)
+from inference.core.workflows.core_steps.common.token_usage import (
+    TOKEN_OUTPUT_DEFINITIONS,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -34,16 +47,28 @@ from inference.core.workflows.prototypes.block import (
 )
 
 MODEL_VERSION_MAPPING = {
-    "Kimi K2.5 - OpenRouter": "moonshotai/kimi-k2.5",
-    "Kimi K2.6 - OpenRouter": "moonshotai/kimi-k2.6",
+    "Gemma 4 31B - OpenRouter": "google/gemma-4-31b-it",
+    "Gemma 4 26B A4B - OpenRouter": "google/gemma-4-26b-a4b-it",
 }
 
 ModelVersion = Literal[
-    "Kimi K2.5 - OpenRouter",
-    "Kimi K2.6 - OpenRouter",
+    "Gemma 4 31B - OpenRouter",
+    "Gemma 4 26B A4B - OpenRouter",
 ]
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
+
+# The object-detection prompt this block sends (the legacy OpenRouter JSON
+# contract in `common.openrouter`) asks for `x_min`/`y_min`/`x_max`/`y_max`
+# floats normalized to 0.0-1.0 - the `named_normalized` box format of the
+# shared decoding package.
+DETECTION_BOX_FORMAT = "named_normalized"
+
+# Detections and classifications are decoded in-block from this version on, so
+# only the structured-answering parser stays relevant.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -51,7 +76,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 )
 
 LONG_DESCRIPTION = f"""
-Ask a question to Moonshot AI Kimi vision-language models served via OpenRouter.
+Ask a question to Google's Gemma model with vision capabilities.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -59,7 +84,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ API providers and model variants
 
-Kimi is exposed via [OpenRouter](https://openrouter.ai/). By default this block uses
+Gemma is exposed via [OpenRouter](https://openrouter.ai/). By default this block uses
 the **Roboflow-managed OpenRouter key** and bills your Roboflow credits — no extra
 setup needed. To bypass Roboflow billing, paste your own `sk-or-...` key into the
 `api_key` field.
@@ -67,39 +92,59 @@ setup needed. To bypass Roboflow billing, paste your own `sk-or-...` key into th
 The `privacy_level` field controls which OpenRouter providers may serve the request:
 
 * **No data collection** *(default)* – providers may not train on your inputs.
-* **Allow data collection** – broader provider pool.
+* **Allow data collection** – broader provider pool, including providers that train on inputs.
 * **Zero data retention** – strictest, restricts to providers that retain nothing.
 
 #### 💡 Further reading and Acceptable Use Policy
 
 !!! warning "Model license"
 
-    Check the [Moonshot AI Kimi license terms](https://huggingface.co/moonshotai) before use.
+    Check the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) before use.
+
+## Version Differences
+
+This version (v4) decodes model answers inside the block:
+
+* **`predictions`** - classification and object-detection answers are parsed here,
+  so the deprecated `VLM as Detector` / `VLM as Classifier` blocks are no longer
+  needed. The output kind follows `task_type`: object detection predictions for
+  `object-detection`, classification predictions for `classification` and
+  `multi-label-classification`, and `None` for every other task.
+* **`error_status`** - `True` when the model answer could not be parsed.
+* **`inference_id`** - identifier generated per image and attached to the decoded
+  predictions.
 """
+
+
+def _base_outputs() -> List[OutputDefinition]:
+    """Outputs the block produces regardless of the selected task."""
+    return [
+        OutputDefinition(name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]),
+        OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+        *TOKEN_OUTPUT_DEFINITIONS,
+    ]
 
 
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "MoonshotAI Kimi",
-            "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use MoonshotAI Kimi v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
-            "short_description": "Run Moonshot AI Kimi vision-language models via OpenRouter.",
+            "name": "Google Gemma",
+            "version": "v4",
+            "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Moonshot AI Kimi License",
+            "license": "Gemma Terms of Use",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Kimi", "Moonshot", "OpenRouter"],
+            "search_keywords": ["LMM", "VLM", "Gemma", "Google", "OpenRouter"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fal fa-atom",
+                "icon": "fa-brands fa-google",
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/kimi_openrouter@v2"]
+    type: Literal["roboflow_core/google_gemma@v4"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -112,7 +157,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Kimi model",
+        description="Text prompt to the Gemma model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -152,9 +197,39 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
-        default="Kimi K2.6 - OpenRouter",
+        default="Gemma 4 31B - OpenRouter",
         description="Model to be used",
-        examples=["Kimi K2.6 - OpenRouter", "$inputs.kimi_model"],
+        examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
+    )
+
+    # Overrides the mixin default of 500, which reasoning models can burn
+    # entirely on internal thinking and fail with missing content.
+    max_tokens: int = Field(
+        default=2048,
+        description=(
+            "Maximum number of tokens the model can generate in its response. "
+            "Defaults to 2048. Raise it explicitly (e.g. 8192) when a task "
+            "needs a longer answer. Billing is based on tokens actually "
+            "generated, not on this limit."
+        ),
+        gt=1,
+    )
+
+    reasoning_effort: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal[tuple(REASONING_EFFORT_OPTIONS)],
+        ]
+    ] = Field(
+        default=None,
+        description=(
+            "Extended-reasoning budget forwarded to OpenRouter as "
+            '`reasoning: {"effort": ...}`. Unset keeps the model\'s '
+            "provider-default behavior; `none` explicitly disables reasoning. "
+            "Models that reject the config are retried without it."
+        ),
+        examples=["low", "$inputs.reasoning_effort"],
+        json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )
 
     @model_validator(mode="after")
@@ -188,12 +263,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
-            ),
-            OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
-        ]
+        return _base_outputs() + describe_vlm_prediction_outputs()
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return _base_outputs() + actual_vlm_prediction_outputs(self.task_type)
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -219,7 +292,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class KimiOpenrouterBlockV2(OpenRouterWorkflowBlockBase):
+class GoogleGemmaBlockV4(OpenRouterWorkflowBlockBase):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -241,6 +314,7 @@ class KimiOpenrouterBlockV2(OpenRouterWorkflowBlockBase):
         model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: Optional[str],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -251,7 +325,7 @@ class KimiOpenrouterBlockV2(OpenRouterWorkflowBlockBase):
             output_structure=output_structure,
             classes=classes,
         )
-        raw_outputs = self.execute_openrouter_batch(
+        results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
             model=MODEL_VERSION_MAPPING[model_version],
             prompts=prompts,
@@ -259,7 +333,28 @@ class KimiOpenrouterBlockV2(OpenRouterWorkflowBlockBase):
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
+            reasoning=build_openrouter_reasoning_config(reasoning_effort),
         )
-        return [
-            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
-        ]
+        predictions = []
+        for image, result in zip(images, results):
+            inference_id = str(uuid4())
+            error_status, decoded_predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=result.content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            predictions.append(
+                {
+                    "output": result.content,
+                    "classes": classes,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "predictions": decoded_predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return predictions

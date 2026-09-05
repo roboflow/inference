@@ -82,9 +82,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "version": "v2",
             "deprecated": True,
             "deprecation_message": (
-                "OpenRouter no longer hosts Llama 3.2 Vision; the last 11B "
-                "endpoint has no live providers. Use the Meta block "
-                "(`roboflow_core/meta_vlm@v2`) for Muse Spark and Muse Glimmer."
+                "OpenRouter no longer hosts Llama 3.2 Vision. Use the Meta block "
+                "(`roboflow_core/meta_vlm@v3`) for Muse Spark and Muse Glimmer; it "
+                "decodes detection and classification predictions in-block."
             ),
             "short_description": "Run Llama 3.2 Vision via OpenRouter.",
             "long_description": LONG_DESCRIPTION,

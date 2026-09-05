@@ -1,16 +1,21 @@
-"""Meta Muse vision-language block, v2.
+"""Meta Muse vision-language block, v3.
 
-Same surface as ``meta_vlm@v1``, plus ``input_tokens`` / ``output_tokens``
-outputs with per-call token usage.
+Same surface as ``meta_vlm@v2``, plus in-block decoding of the model
+answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
+next to the raw ``output`` string, so no separate "VLM as Detector" /
+"VLM as Classifier" step is needed.
 
 OpenRouter-only. Four Muse models, using the vlm-exam request contract:
-image-first user message, no system role, reasoning always on, meta-flat
-0-1000 detection prompt. Llama Vision stays on its own block.
+image-first user message, no system role, reasoning always on, and the
+shared ``named_0_1000`` detection contract (flat ``x_min`` / ``y_min`` /
+``x_max`` / ``y_max`` integers normalized to 0-1000). Llama Vision stays
+on its own block.
 """
 
 import base64
 import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -20,7 +25,6 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -36,6 +40,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -141,16 +151,17 @@ DEFAULT_MAX_TOKENS = 2048
 OPENROUTER_MAX_BASE64_BYTES = 9_500_000
 OPENROUTER_JPEG_QUALITY = 90
 
-# Ported verbatim from vlm-exam's `_META_FLAT_NORMALIZED_PROMPT_TEMPLATE`.
-MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "You are an object grounding expert. Detect all objects in this image "
-    "matching these labels: {class_list}. Ensure the objects accurately "
-    "match the request and do not miss any objects. For each object, answer "
-    'in the format {{"label": "<name>", "x_min": <int>, "y_min": <int>, '
-    '"x_max": <int>, "y_max": <int>}}. The coordinates should be in the '
-    "0-1000 range. Return a JSON array of results. If you cannot find an "
-    "object, omit it from the results."
-)
+# Muse grounds objects with flat `x_min`/`y_min`/`x_max`/`y_max` integers
+# normalized to 0-1000 - the shared `named_0_1000` contract, whose prompt
+# wording is the vlm-exam `_META_FLAT_NORMALIZED_PROMPT_TEMPLATE` this block
+# was benchmarked with.
+DETECTION_BOX_FORMAT = "named_0_1000"
+
+# Detection and classification answers are decoded in-block now, so only
+# `structured-answering` still points at a downstream parser.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
 _TASK_CLASSIFICATION = (
     "You act as single-class classification model. You must provide reasonable "
@@ -313,7 +324,10 @@ def _prepare_structured_answering_prompt(
 def _prepare_object_detection_prompt(
     base64_image: str, classes: List[str], **_
 ) -> List[dict]:
-    text = MUSE_OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=", ".join(classes))
+    text = build_object_detection_prompt(
+        box_format=DETECTION_BOX_FORMAT,
+        classes=classes,
+    )
     return _user_message(base64_image=base64_image, text=text)
 
 
@@ -407,8 +421,25 @@ You can specify arbitrary text prompts or predefined ones. The block supports:
 
 Object detection uses Muse's native grounding format: a JSON array of
 `label` / `x_min` / `y_min` / `x_max` / `y_max` fields with coordinates
-normalized to 0-1000. Parse the output with `VLM as Detector`
-(`vlm_as_detector@v2`) using `model_type="muse"`.
+normalized to 0-1000.
+
+## Version Differences
+
+This version (v3) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 Every request sends the image before the instruction text in a single user
 message. Reasoning stays on; the `reasoning_effort` knob defaults to low.
@@ -425,9 +456,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Meta",
-            "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use Meta v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v3",
             "short_description": "Run Meta Muse vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -451,7 +480,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/meta_vlm@v2"]
+    type: Literal["roboflow_core/meta_vlm@v3"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
@@ -604,6 +633,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -640,7 +682,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         ]
 
 
-class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
+class MetaVlmBlockV3(OpenRouterWorkflowBlockBase):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -692,13 +734,27 @@ class MetaVlmBlockV2(OpenRouterWorkflowBlockBase):
             max_concurrent_requests=max_concurrent_requests,
             reasoning=build_reasoning_config(reasoning_effort),
         )
-        return [
-            {
-                "output": result.content,
-                "classes": classes,
-                "thinking": result.reasoning_trace,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-            }
-            for result in results
-        ]
+        outputs = []
+        for image, result in zip(images, results):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=result.content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            outputs.append(
+                {
+                    "output": result.content,
+                    "classes": classes,
+                    "thinking": result.reasoning_trace,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return outputs

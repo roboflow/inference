@@ -59,6 +59,8 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
+**Deprecated.** VLM blocks now decode detections in-block: use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead of routing their raw text through this block.
+
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and available confidence scores, converting coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
 
 ## How This Block Works
@@ -178,6 +180,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Detector",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

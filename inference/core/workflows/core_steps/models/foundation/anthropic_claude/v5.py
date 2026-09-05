@@ -1,19 +1,25 @@
-"""Anthropic Claude workflow block (v4).
+"""Anthropic Claude workflow block (v5).
 
-Extends v3 with token-usage outputs and an object-detection path aligned with
-the vlm-exam benchmark contract for Claude models: images for that task are
-pre-resized to the exact dimensions Claude's internal resize would produce
-(high-resolution tier) and sent as lossless PNG, and the prompt asks for a
-JSON list of ``box_2d``/``label`` entries with ``[x_min, y_min, x_max, y_max]``
-in absolute pixel coordinates of the uploaded image, with the image placed
-before the text and no system prompt. Use ``roboflow_core/vlm_as_detector@v2``
-with ``model_type="anthropic-claude"`` to parse the output.
+Extends v4 by decoding the model answer inside the block: object-detection
+and classification answers are turned into workflow ``predictions`` next to
+the raw ``output`` string, so no separate "VLM as Detector" / "VLM as
+Classifier" formatter step is needed.
+
+The object-detection path is unchanged from v4 and follows the vlm-exam
+benchmark contract for Claude models: images for that task are pre-resized to
+the exact dimensions Claude's internal resize would produce (high-resolution
+tier) and sent as lossless PNG, and the prompt asks for a JSON list of
+``box_2d``/``label`` entries with ``[x_min, y_min, x_max, y_max]`` in absolute
+pixel coordinates of the uploaded image - the shared ``xyxy_absolute``
+coordinate contract - with the image placed before the text and no system
+prompt.
 """
 
 import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import anthropic
 import cv2
@@ -34,6 +40,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
 from inference.core.workflows.core_steps.common.utils import (
     compute_anthropic_upload_dimensions,
     run_in_parallel,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
@@ -175,16 +187,13 @@ resolution, which keeps the coordinate contract intact.
 
 DETECTION_JPEG_FALLBACK_QUALITY = 95
 
-OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners in absolute pixel coordinates "
-    "of the {width}x{height} pixel image. "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+DETECTION_BOX_FORMAT = "xyxy_absolute"
+"""Box coordinate contract requested from Claude for object detection.
+
+Claude returns pixel coordinates of the image as uploaded, so both the prompt
+and the decoder need the dimensions the upload path resized the image to (see
+``compute_anthropic_upload_dimensions``).
+"""
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -217,10 +226,26 @@ The `object-detection` task asks Claude for a JSON list of
 coordinates are absolute pixels of the uploaded image. The image is
 pre-resized to the exact dimensions Claude's internal resize would produce
 and sent as lossless PNG, matching the vlm-exam benchmark setup for Claude
-models; the `max_image_size` parameter is not applied to this task. Use
-`roboflow_core/vlm_as_detector@v2` with `model_type="anthropic-claude"` to
-convert the output into predictions. Confidence scores are not requested;
-the parser assigns `1.0`.
+models; the `max_image_size` parameter is not applied to this task.
+Confidence scores are not requested, so decoded detections are assigned `1.0`.
+
+## Version Differences
+
+This version (v5) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 ### API Key Options
 
@@ -258,9 +283,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Anthropic Claude",
-            "version": "v4",
-            "deprecated": True,
-            "deprecation_message": "Use Anthropic Claude v5, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v5",
             "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -276,7 +299,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/anthropic_claude@v4"]
+    type: Literal["roboflow_core/anthropic_claude@v5"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -285,9 +308,6 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v2",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
-                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -435,6 +455,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -469,7 +502,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class AnthropicClaudeBlockV4(WorkflowBlock):
+class AnthropicClaudeBlockV5(WorkflowBlock):
 
     def __init__(
         self,
@@ -524,15 +557,59 @@ class AnthropicClaudeBlockV4(WorkflowBlock):
             max_image_size=max_image_size,
             max_concurrent_requests=max_concurrent_requests,
         )
-        return [
-            {
-                "output": content,
-                "classes": classes,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-            for content, input_tokens, output_tokens in raw_outputs
-        ]
+        results = []
+        for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
+            inference_id = str(uuid4())
+            upload_width, upload_height = detection_upload_dimensions(
+                image=image, task_type=task_type
+            )
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+                upload_width=upload_width,
+                upload_height=upload_height,
+            )
+            results.append(
+                {
+                    "output": content,
+                    "classes": classes,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return results
+
+
+def detection_upload_dimensions(
+    image: WorkflowImageData,
+    task_type: TaskType,
+) -> Tuple[Optional[int], Optional[int]]:
+    """Resolve the dimensions the detection upload path resized an image to.
+
+    The ``xyxy_absolute`` contract returns coordinates in pixels of the
+    uploaded image, so decoding has to repeat the resize arithmetic
+    ``encode_image_for_task`` applied. Tasks other than object detection do
+    not decode boxes and need no dimensions.
+
+    Args:
+        image: Workflow image passed to the block.
+        task_type: Task the block is configured to run.
+
+    Returns:
+        Tuple of the uploaded ``(width, height)``, or ``(None, None)`` for
+        tasks that do not decode boxes.
+    """
+    if task_type != "object-detection":
+        return None, None
+    height, width = image.numpy_image.shape[:2]
+    return compute_anthropic_upload_dimensions(width, height)
 
 
 def run_claude_prompting(
@@ -1140,11 +1217,11 @@ def prepare_object_detection_prompt(
     Returns:
         Tuple of the system prompt (``None``) and the request messages.
     """
-    class_list = ", ".join(classes)
-    prompt_text = OBJECT_DETECTION_PROMPT_TEMPLATE.format(
-        width=image_width,
-        height=image_height,
-        class_list=class_list,
+    prompt_text = build_object_detection_prompt(
+        box_format=DETECTION_BOX_FORMAT,
+        classes=classes,
+        upload_width=image_width,
+        upload_height=image_height,
     )
     messages = [
         {
