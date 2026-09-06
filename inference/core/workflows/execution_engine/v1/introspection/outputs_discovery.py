@@ -1,7 +1,12 @@
 from typing import Dict, List, Tuple, Union
 
+from pydantic import TypeAdapter
+
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.base import (
+    InputType,
+    OutputDefinition,
+)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
@@ -11,6 +16,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
+    is_input_selector,
     is_step_output_selector,
 )
 from inference.core.workflows.execution_engine.v1.core import (
@@ -41,6 +47,7 @@ def describe_workflow_outputs(
         )
         return determine_workflow_outputs_kinds(
             outputs_definitions=definition["outputs"],
+            inputs_definitions=definition["inputs"],
             step_name_to_block_type=step_name_to_block_type,
             block_output_map=block_output_map,
         )
@@ -100,13 +107,34 @@ def get_output_property_kinds(
 
 def determine_workflow_outputs_kinds(
     outputs_definitions: List[dict],
+    inputs_definitions: List[dict],
     step_name_to_block_type: Dict[str, str],
     block_output_map: Dict[str, Dict[str, List[str]]],
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
+    input_kinds = {}
+    if any(
+        is_input_selector(selector_or_value=output["selector"])
+        for output in outputs_definitions
+    ):
+        for input_definition in inputs_definitions:
+            input_manifest = TypeAdapter(InputType).validate_python(input_definition)
+            input_kinds[input_manifest.name] = [
+                kind.name if hasattr(kind, "name") else kind
+                for kind in input_manifest.kind
+            ]
     workflow_response_definition = {}
     for output in outputs_definitions:
         output_name = output["name"]
         selector = output["selector"]
+        if is_input_selector(selector_or_value=selector):
+            input_name = get_last_chunk_of_selector(selector=selector)
+            if input_name not in input_kinds:
+                raise WorkflowDefinitionError(
+                    public_message=f"Could not find input referred in outputs (`{input_name}`) within Workflow inputs.",
+                    context="describing_workflow_outputs",
+                )
+            workflow_response_definition[output_name] = input_kinds[input_name]
+            continue
         step_name, selected_property = extract_step_name_and_selected_property(
             selector=selector,
         )
