@@ -75,6 +75,8 @@ class ModelManager:
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
+        # Track ongoing mutations to prevent decorator bypass and ensure lock generation stability
+        self._models_lifecycle_locks: Dict[str, Lock] = {}
         # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
         # registry; loaders acquire this so concurrent loads cannot corrupt it.
         self.torchscript_state_global_lock = Lock()
@@ -601,6 +603,7 @@ class ModelManager:
         try:
             logger.debug(f"Removing model {model_id} from base model manager")
             model_lock = self._get_lock_for_a_model(model_id=model_id)
+            removal_succeeded = False
             with acquire_with_timeout(lock=model_lock) as acquired:
                 if not acquired:
                     raise ModelManagerLockAcquisitionError(
@@ -623,8 +626,11 @@ class ModelManager:
                 record_model_unloaded(model_id)
                 self._model_request_aliases.pop(model_id, None)
                 self._model_request_paths.pop(model_id, None)
-                self._dispose_model_lock(model_id=model_id)
+                removal_succeeded = True
                 try_releasing_cuda_memory()
+            # Dispose lock AFTER releasing it to prevent lock generation splitting
+            if removal_succeeded:
+                self._dispose_model_lock(model_id=model_id)
         except InferenceModelNotFound:
             logger.warning(
                 f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
@@ -707,25 +713,59 @@ class ModelManager:
             for model_id, model in self._models.items()
         ]
 
+    def _get_lifecycle_lock(self, model_id: str) -> Optional[Lock]:
+        """Get the lifecycle lock for a model if it exists.
+
+        The lifecycle lock exists from the start of add_model/remove until
+        the lock is disposed, preventing decorator bypass.
+
+        Returns:
+            Lock if a mutation is ongoing, None otherwise
+        """
+        with acquire_with_timeout(lock=self._state_lock) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to retrieve lifecycle lock."
+                )
+            return self._models_lifecycle_locks.get(model_id)
+
     def _get_lock_for_a_model(self, model_id: str) -> Lock:
+        """Retrieve or create a per-model lock for the given model_id.
+
+        The lock generation is stable across all callers until disposal completes.
+        Uses a lifecycle lock to prevent decorator bypass during ongoing mutations.
+        """
         with acquire_with_timeout(lock=self._state_lock) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to retrieve model lock."
                 )
+            # Create lifecycle lock if this is a new mutation
+            if model_id not in self._models_lifecycle_locks:
+                self._models_lifecycle_locks[model_id] = Lock()
+
+            # Create or reuse per-model state lock
             if model_id not in self._models_state_locks:
                 self._models_state_locks[model_id] = Lock()
             return self._models_state_locks[model_id]
 
     def _dispose_model_lock(self, model_id: str) -> None:
+        """Remove per-model locks after all mutation holders have released them.
+
+        This must be called AFTER the per-model lock is released to ensure
+        no new lock generation is created while the previous one is still held.
+        """
         with acquire_with_timeout(lock=self._state_lock) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to dispose model lock."
                 )
-            if model_id not in self._models_state_locks:
-                return None
-            del self._models_state_locks[model_id]
+            # Remove state lock (should already be released by caller)
+            if model_id in self._models_state_locks:
+                del self._models_state_locks[model_id]
+            # Remove lifecycle lock
+            if model_id in self._models_lifecycle_locks:
+                del self._models_lifecycle_locks[model_id]
 
 
 @contextmanager
