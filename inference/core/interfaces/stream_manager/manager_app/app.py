@@ -18,6 +18,7 @@ import psutil
 
 from inference.core import logger
 from inference.core.env import (
+    STREAM_MANAGER_MAX_ACTIVE_PIPELINES,
     STREAM_MANAGER_MAX_RAM_MB,
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
 )
@@ -449,6 +450,13 @@ def get_or_spawn_pipeline_process(
             chosen_pipeline = processes_table[idle_pipelines[0]]
             chosen_pipeline.is_idle = False
             return chosen_pipeline
+
+        if len(processes_table) >= STREAM_MANAGER_MAX_ACTIVE_PIPELINES:
+            raise Exception(
+                "Cannot spawn new pipeline due to active pipelines limit,"
+                f" current number of pipelines: {len(processes_table)},"
+                f" max: {STREAM_MANAGER_MAX_ACTIVE_PIPELINES}"
+            )
 
         current_ram_usage = (
             sum(
