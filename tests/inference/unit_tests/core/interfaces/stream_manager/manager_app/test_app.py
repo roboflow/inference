@@ -1,3 +1,4 @@
+from typing import List, Optional
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -10,7 +11,11 @@ from inference.core.interfaces.stream_manager.manager_app.app import (
 )
 
 
-def _managed_pipeline(pipeline_id: str, is_idle: bool) -> ManagedInferencePipeline:
+def _managed_pipeline(
+    pipeline_id: str,
+    is_idle: bool,
+    ram_usage_samples: Optional[List[int]] = None,
+) -> ManagedInferencePipeline:
     managed_pipeline = ManagedInferencePipeline(
         pipeline_id=pipeline_id,
         pipeline_manager=MagicMock(),
@@ -19,9 +24,7 @@ def _managed_pipeline(pipeline_id: str, is_idle: bool) -> ManagedInferencePipeli
         operation_lock=MagicMock(),
         is_idle=is_idle,
     )
-    # the RAM guard in get_or_spawn_pipeline_process cannot handle pipelines whose usage
-    # has not been sampled yet, so keep the queue populated here
-    managed_pipeline.ram_usage_queue.append(1)
+    managed_pipeline.ram_usage_queue.extend(ram_usage_samples or [])
     return managed_pipeline
 
 
@@ -82,4 +85,49 @@ def test_get_or_spawn_pipeline_process_reuses_idle_pipeline_at_limit(
     # then
     assert result.pipeline_id == "idle"
     assert result.is_idle is False
+    spawn_managed_pipeline_process_mock.assert_not_called()
+
+
+@mock.patch.object(app, "STREAM_MANAGER_MAX_ACTIVE_PIPELINES", 8)
+@mock.patch.object(app, "STREAM_MANAGER_MAX_RAM_MB", None)
+@mock.patch.object(app, "spawn_managed_pipeline_process")
+def test_get_or_spawn_pipeline_process_when_ram_usage_not_sampled_yet(
+    spawn_managed_pipeline_process_mock: MagicMock,
+) -> None:
+    # given - a pipeline spawned before check_process_health sampled its RAM usage
+    processes_table = {
+        "sampled": _managed_pipeline("sampled", is_idle=False, ram_usage_samples=[10]),
+        "not_sampled": _managed_pipeline("not_sampled", is_idle=False),
+    }
+
+    def _spawn(processes_table, mark_as_idle):
+        processes_table["new"] = _managed_pipeline("new", is_idle=mark_as_idle)
+        return "new"
+
+    spawn_managed_pipeline_process_mock.side_effect = _spawn
+
+    # when
+    result = get_or_spawn_pipeline_process(processes_table=processes_table)
+
+    # then
+    assert result.pipeline_id == "new"
+
+
+@mock.patch.object(app, "STREAM_MANAGER_MAX_ACTIVE_PIPELINES", 8)
+@mock.patch.object(app, "STREAM_MANAGER_MAX_RAM_MB", 100)
+@mock.patch.object(app, "_get_current_process_ram_usage_mb", MagicMock(return_value=10))
+@mock.patch.object(app, "spawn_managed_pipeline_process")
+def test_get_or_spawn_pipeline_process_refuses_to_spawn_above_ram_limit(
+    spawn_managed_pipeline_process_mock: MagicMock,
+) -> None:
+    # given - 10MB manager + 60MB last sample, peak 80MB predicted for the new pipeline
+    processes_table = {
+        "busy": _managed_pipeline("busy", is_idle=False, ram_usage_samples=[80, 60]),
+    }
+
+    # when
+    with pytest.raises(Exception):
+        _ = get_or_spawn_pipeline_process(processes_table=processes_table)
+
+    # then
     spawn_managed_pipeline_process_mock.assert_not_called()
