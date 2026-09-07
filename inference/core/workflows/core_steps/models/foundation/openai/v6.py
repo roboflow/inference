@@ -404,6 +404,17 @@ class BlockManifest(WorkflowBlockManifest):
             "multiline": True,
         },
     )
+    detection_instructions: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
+        description="Optional detection criteria, separate from the exact output class names.",
+        examples=["Only people wearing a helmet", "$inputs.detection_instructions"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": ["object-detection"], "required": False}
+            },
+            "multiline": True,
+        },
+    )
     output_structure: Optional[Dict[str, str]] = Field(
         default=None,
         description="Dictionary with structure of expected JSON response",
@@ -585,6 +596,7 @@ class OpenAIBlockV6(WorkflowBlock):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        detection_instructions: Optional[str] = None,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
@@ -601,6 +613,7 @@ class OpenAIBlockV6(WorkflowBlock):
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
+            detection_instructions=detection_instructions,
         )
         return [
             {
@@ -627,6 +640,7 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    detection_instructions: Optional[str] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -643,6 +657,7 @@ def run_openai_prompting(
         prompt: Free-form text prompt for tasks that accept one.
         output_structure: Field descriptions for structured answering.
         classes: Class names for classification and detection tasks.
+        detection_instructions: Optional detection criteria, separate from class names.
         openai_api_key: OpenAI API key or Roboflow-proxied ``rf_key:`` key.
         model_version: OpenAI model identifier.
         reasoning_effort: Reasoning effort for models that support it.
@@ -676,6 +691,19 @@ def run_openai_prompting(
             image_height=image_height,
             model_version=model_version,
         )
+        if task_type == "object-detection" and detection_instructions:
+            generated_prompt["input"][0]["content"].append(
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Apply these additional detection criteria. They describe which "
+                        "objects to include; they are not class names. Keep the exact "
+                        "allowed labels and coordinate/output format specified above. "
+                        "Return an empty detections list when no objects satisfy the criteria.\n"
+                        + detection_instructions
+                    ),
+                }
+            )
         openai_prompts.append(generated_prompt)
     return execute_openai_requests(
         roboflow_api_key=roboflow_api_key,
