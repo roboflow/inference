@@ -12,6 +12,7 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
     convert_color_to_bgr_tuple,
     crop_image,
 )
+from inference.core.workflows.execution_engine.constants import PARENT_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
@@ -516,3 +517,60 @@ def test_crop_image_translates_oriented_bounding_box_corners(
     translated_corners = translated.data[ORIENTED_BOX_COORDINATES][0]
     assert translated_corners.min() >= 0.0
     assert translated_corners.max() <= side
+
+
+def test_crop_image_raises_when_predictions_parent_id_does_not_match_image() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 20, 20]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one"]),
+            PARENT_ID_KEY: np.array(["different_image"]),
+        },
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="do not match the image parent_id"):
+        crop_image(
+            image=image,
+            detections=detections,
+            mask_opacity=0.0,
+            background_color=(0, 0, 0),
+        )
+
+
+def test_crop_image_accepts_predictions_whose_parent_id_matches_image() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    np_image[0:20, 0:20] = 39
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 20, 20]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one"]),
+            PARENT_ID_KEY: np.array(["origin_image"]),
+        },
+    )
+
+    # when
+    result = crop_image(
+        image=image, detections=detections, mask_opacity=0.0, background_color=(0, 0, 0)
+    )
+
+    # then
+    assert len(result) == 1
+    assert (
+        result[0]["crops"].numpy_image == (np.ones((20, 20, 3), dtype=np.uint8) * 39)
+    ).all()

@@ -10,6 +10,7 @@ from supervision.config import ORIENTED_BOX_COORDINATES
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    PARENT_ID_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -209,6 +210,16 @@ def crop_image(
             f"sv.Detections object passed to crop step do not fulfill contract - lack of {detection_id_key} key "
             f"in data dictionary."
         )
+    if PARENT_ID_KEY in detections.data:
+        detection_parent_ids = set(detections[PARENT_ID_KEY].tolist())
+        image_parent_id = image.parent_metadata.parent_id
+        if detection_parent_ids != {image_parent_id}:
+            raise ValueError(
+                f"sv.Detections object passed to crop step do not fulfill contract - predictions "
+                f"parent_id(s) {sorted(detection_parent_ids)} do not match the image parent_id "
+                f"'{image_parent_id}'. Images and predictions are misaligned; this usually happens "
+                f"when they are produced by independent workflow branches."
+            )
     crops = []
     for idx, ((x_min, y_min, x_max, y_max), detection_id) in enumerate(
         zip(detections.xyxy.round().astype(dtype=int), detections[detection_id_key])
