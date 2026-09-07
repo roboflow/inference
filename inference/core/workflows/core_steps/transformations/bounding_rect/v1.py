@@ -112,8 +112,10 @@ class BoundingRectManifest(WorkflowBlockManifest):
 
 def calculate_minimum_bounding_rectangle(
     mask: np.ndarray,
-) -> Tuple[np.array, float, float, float]:
+) -> Optional[Tuple[np.array, float, float, float]]:
     contours = sv.mask_to_polygons(mask)
+    if not contours:
+        return None
     largest_contour = max(contours, key=len)
 
     rect = cv.minAreaRect(largest_contour)
@@ -143,9 +145,12 @@ class BoundingRectBlockV1(WorkflowBlock):
             # copy
             det = predictions[i]
 
-            rect, width, height, angle = calculate_minimum_bounding_rectangle(
-                det.mask[0]
-            )
+            bounding_rectangle = calculate_minimum_bounding_rectangle(det.mask[0])
+            if bounding_rectangle is None:
+                # Mask has no extractable contour (e.g. empty or degenerate
+                # mask); skip this detection instead of aborting the batch.
+                continue
+            rect, width, height, angle = bounding_rectangle
 
             det.mask = np.array(
                 [
