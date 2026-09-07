@@ -1,11 +1,22 @@
 """
-Benchmark demonstrating thread pool starvation fix (Issue #2448).
+Benchmark demonstrating dedicated model loader benefits (Issue #2448).
 
 This script simulates the production scenario where multiple workflow executions
-need to load models, demonstrating how async loading prevents thread pool starvation.
+need to load models, demonstrating how a dedicated loader executor helps.
 
-Before fix: All 16 workers block on model loads → 10x latency increase
-After fix: Model loads happen in dedicated executor → minimal latency impact
+BEFORE fix:
+- Model loads (3s each) run in the shared 16-worker workflow pool
+- Each load blocks a workflow worker
+- Load coalescing already works (same manager)
+
+AFTER fix with dedicated loader:
+- Model loads run in separate 4-worker loader pool
+- Workflow workers still block on future.result() but load I/O is elsewhere
+- Load coalescing works across same manager
+- Different managers can load same model in parallel (no cross-manager coalescing)
+
+NOTE: This is Phase 1. Workers are NOT fully freed - they still block on
+future.result(). True non-blocking requires returning Futures to workflow engine.
 """
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -59,14 +70,18 @@ def simulate_workflow_execution_sync(manager, model_id: str, workflow_id: int):
 
 def simulate_workflow_execution_async(loader, manager, model_id: str, workflow_id: int):
     """Simulate a workflow execution using async model loading (AFTER fix)."""
-    from inference.core.workflows.execution_engine.v1.executor.models import (
-        ensure_model_loaded,
-    )
-
     start = time.time()
 
-    # This doesn't block the worker - load happens in dedicated executor
-    ensure_model_loaded(manager, model_id, "key", timeout=10.0)
+    # Submit to dedicated loader pool (NOTE: still blocks this thread via future.result())
+    future = loader.add_model_async(
+        model_manager=manager,
+        model_id=model_id,
+        api_key="key",
+    )
+
+    if future is not None:
+        # Wait for load to complete
+        future.result(timeout=10.0)
 
     # Simulate quick inference
     time.sleep(0.1)
@@ -116,8 +131,8 @@ def run_benchmark_sync():
     print(f"  p50 workflow time: {sorted(times)[len(times)//2]:.2f}s")
     print(f"  p90 workflow time: {sorted(times)[int(len(times)*0.9)]:.2f}s")
     print(f"  Max workflow time: {max(times):.2f}s")
-    print(f"\nProblem: Workflows blocked waiting for model loads!")
-    print(f"Even though only 2 models need loading, all 8 workflows are delayed.")
+    print(f"\nNote: MockModelManager already deduplicates same-model loads.")
+    print(f"The synchronous approach blocks {len(workflows)} workflow workers during loads.")
 
     return {
         "total_time": total_time,
@@ -175,9 +190,10 @@ def run_benchmark_async():
     print(f"  p50 workflow time: {sorted(times)[len(times)//2]:.2f}s")
     print(f"  p90 workflow time: {sorted(times)[int(len(times)*0.9)]:.2f}s")
     print(f"  Max workflow time: {max(times):.2f}s")
-    print(f"\nImprovement: Models load in background, workflows proceed!")
-    print(f"Load coalescing: 4 requests for model-a → 1 actual load")
-    print(f"Load coalescing: 4 requests for model-b → 1 actual load")
+    print(f"\nNote: Dedicated loader pool isolates model loading from workflow execution.")
+    print(f"Load coalescing: 4 requests for model-a → 1 actual load (same manager)")
+    print(f"Load coalescing: 4 requests for model-b → 1 actual load (same manager)")
+    print(f"Workers still block on future.result() - Phase 2 needed for true async.")
 
     return {
         "total_time": total_time,
@@ -189,10 +205,10 @@ def run_benchmark_async():
 
 if __name__ == "__main__":
     print("\n" + "=" * 80)
-    print("THREAD POOL STARVATION BENCHMARK (Issue #2448)")
+    print("DEDICATED MODEL LOADER BENCHMARK (Issue #2448 Phase 1)")
     print("=" * 80)
     print("\nScenario: 8 concurrent workflows, 2 distinct models (3s load each)")
-    print("Expected: With async loading, workflows should complete ~3x faster\n")
+    print("Demonstrates: Isolation of model loading to dedicated executor\n")
 
     before = run_benchmark_sync()
     after = run_benchmark_async()
@@ -200,12 +216,15 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("COMPARISON")
     print("=" * 80)
-    print(f"Total time improvement: {before['total_time']:.2f}s → {after['total_time']:.2f}s "
-          f"({before['total_time']/after['total_time']:.1f}x faster)")
-    print(f"p50 improvement: {before['p50']:.2f}s → {after['p50']:.2f}s "
-          f"({before['p50']/after['p50']:.1f}x faster)")
-    print(f"p90 improvement: {before['p90']:.2f}s → {after['p90']:.2f}s "
-          f"({before['p90']/after['p90']:.1f}x faster)")
-    print("\n✅ Fix prevents thread pool starvation!")
-    print("✅ Workflows no longer blocked by model loads!")
+    print(f"Total time: {before['total_time']:.2f}s → {after['total_time']:.2f}s")
+    print(f"p50 latency: {before['p50']:.2f}s → {after['p50']:.2f}s")
+    print(f"p90 latency: {before['p90']:.2f}s → {after['p90']:.2f}s")
+    print("\nKey improvements:")
+    print("✅ Model loading isolated to dedicated executor (4 workers)")
+    print("✅ Load coalescing prevents duplicate loads per manager")
+    print("✅ Foundation for Phase 2: true async workflow re-scheduling")
+    print("\nLimitations (addressed in Phase 2):")
+    print("⚠️  Workflow workers still block on future.result()")
+    print("⚠️  No cross-manager load coalescing (by design)")
+    print("⚠️  No admission control or queue limiting yet")
     print("=" * 80)

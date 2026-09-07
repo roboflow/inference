@@ -33,7 +33,7 @@ class AsyncModelLoader:
 
     Attributes:
         _executor: Dedicated ThreadPoolExecutor for model loading
-        _pending_loads: Map of model_id -> (Future, request_count) for coalescing
+        _pending_loads: Map of (manager_id, model_id) -> (Future, request_count) for coalescing
         _lock: Lock protecting _pending_loads dictionary
     """
 
@@ -52,7 +52,7 @@ class AsyncModelLoader:
             max_workers=max_workers,
             thread_name_prefix="model_loader",
         )
-        self._pending_loads: Dict[str, Tuple[Future, int]] = {}
+        self._pending_loads: Dict[Tuple[int, str], Tuple[Future, int]] = {}
         self._lock = threading.Lock()
         self._max_workers = max_workers
         self._queue_size = queue_size
@@ -77,8 +77,11 @@ class AsyncModelLoader:
         immediately. If not, it either returns an existing Future for an
         in-progress load, or submits a new load operation.
 
-        Multiple concurrent requests for the same model are coalesced to wait
-        on a single load Future, preventing duplicate loads.
+        Multiple concurrent requests for the SAME model in the SAME manager
+        are coalesced to wait on a single load Future, preventing duplicate loads.
+
+        NOTE: Different managers requesting the same model_id will NOT be coalesced,
+        as each manager needs the model registered in its own instance.
 
         Args:
             model_manager: The ModelManager to load the model into
@@ -90,8 +93,8 @@ class AsyncModelLoader:
             service_secret: Optional service secret
 
         Returns:
-            None if model is already loaded, otherwise a Future that will
-            complete when the model is loaded. The Future's result is None
+            None if model is already loaded in this manager, otherwise a Future
+            that will complete when the model is loaded. The Future's result is None
             on success, or raises an exception on failure.
 
         Example:
@@ -113,24 +116,28 @@ class AsyncModelLoader:
             logger.debug(f"Model {resolved_id} already loaded (fast path)")
             return None
 
+        # Use (manager_id, resolved_id) as coalescing key to prevent cross-manager issues
+        # where only the first manager gets the model registered
+        manager_key = (id(model_manager), resolved_id)
+
         with self._lock:
             # Double-check under lock (TOCTOU protection)
             if resolved_id in model_manager:
                 logger.debug(f"Model {resolved_id} already loaded (locked path)")
                 return None
 
-            # Check if there's already a pending load for this model
-            if resolved_id in self._pending_loads:
-                existing_future, count = self._pending_loads[resolved_id]
-                self._pending_loads[resolved_id] = (existing_future, count + 1)
+            # Check if there's already a pending load for this model in THIS manager
+            if manager_key in self._pending_loads:
+                existing_future, count = self._pending_loads[manager_key]
+                self._pending_loads[manager_key] = (existing_future, count + 1)
                 logger.debug(
-                    f"Coalescing load request for {resolved_id} "
+                    f"Coalescing load request for {resolved_id} in manager {id(model_manager)} "
                     f"(total waiters: {count + 1})"
                 )
                 return existing_future
 
             # Submit new load operation
-            logger.info(f"Submitting async load for model {resolved_id}")
+            logger.info(f"Submitting async load for model {resolved_id} in manager {id(model_manager)}")
             future = self._executor.submit(
                 self._load_model_with_cleanup,
                 model_manager=model_manager,
@@ -141,8 +148,9 @@ class AsyncModelLoader:
                 countinference=countinference,
                 service_secret=service_secret,
                 resolved_id=resolved_id,
+                manager_key=manager_key,
             )
-            self._pending_loads[resolved_id] = (future, 1)
+            self._pending_loads[manager_key] = (future, 1)
             return future
 
     def _load_model_with_cleanup(
@@ -155,6 +163,7 @@ class AsyncModelLoader:
         countinference: Optional[bool],
         service_secret: Optional[str],
         resolved_id: str,
+        manager_key: tuple,
     ) -> None:
         """Internal method that performs the actual load and cleans up tracking.
 
@@ -171,12 +180,13 @@ class AsyncModelLoader:
             countinference: Whether to count inference
             service_secret: Optional service secret
             resolved_id: Resolved model identifier (model_id or alias)
+            manager_key: Tuple of (manager_id, resolved_id) for tracking
 
         Raises:
             Any exception raised by model_manager.add_model()
         """
         try:
-            logger.debug(f"Starting load for model {resolved_id} in loader thread")
+            logger.debug(f"Starting load for model {resolved_id} in loader thread (manager {manager_key[0]})")
             model_manager.add_model(
                 model_id=model_id,
                 api_key=api_key,
@@ -185,20 +195,20 @@ class AsyncModelLoader:
                 countinference=countinference,
                 service_secret=service_secret,
             )
-            logger.info(f"Successfully loaded model {resolved_id}")
+            logger.info(f"Successfully loaded model {resolved_id} in manager {manager_key[0]}")
         except Exception as e:
-            logger.error(f"Failed to load model {resolved_id}: {e}", exc_info=True)
+            logger.error(f"Failed to load model {resolved_id} in manager {manager_key[0]}: {e}", exc_info=True)
             raise
         finally:
             # Clean up pending load tracking
             with self._lock:
-                if resolved_id in self._pending_loads:
-                    _, count = self._pending_loads[resolved_id]
+                if manager_key in self._pending_loads:
+                    _, count = self._pending_loads[manager_key]
                     logger.debug(
-                        f"Cleaning up load tracking for {resolved_id} "
+                        f"Cleaning up load tracking for {resolved_id} in manager {manager_key[0]} "
                         f"({count} waiters)"
                     )
-                    del self._pending_loads[resolved_id]
+                    del self._pending_loads[manager_key]
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
         """Shutdown the loader executor.

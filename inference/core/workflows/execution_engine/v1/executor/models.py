@@ -24,15 +24,24 @@ def ensure_model_loaded(
     service_secret: Optional[str] = None,
     timeout: float = MODEL_LOAD_TIMEOUT,
 ) -> None:
-    """Ensure a model is loaded, using async loading if necessary.
+    """Ensure a model is loaded, using a dedicated loader executor.
 
-    This is a drop-in replacement for model_manager.add_model() that prevents
-    thread pool starvation by using a dedicated model loader thread pool for
-    cold (not-yet-loaded) models.
+    This is a drop-in replacement for model_manager.add_model() that moves
+    blocking model loads (3-19s) from the shared workflow thread pool to a
+    dedicated loader executor.
 
-    If the model is already loaded, this returns immediately. If not, it submits
-    the load to a dedicated loader executor and waits for completion, freeing
-    the workflow step executor for other work while the model loads.
+    IMPORTANT: This function still blocks the calling thread via future.result().
+    The workflow worker remains occupied during the load. However, the actual
+    blocking I/O happens in the dedicated loader pool, which:
+    1. Prevents loader pool exhaustion from degrading unrelated workflows
+    2. Enables load coalescing (multiple requests → single load)
+    3. Provides a foundation for future async/await integration
+
+    For truly non-blocking behavior, this would need to return the Future to
+    the workflow execution engine for async handling.
+
+    If the model is already loaded, this returns immediately (fast path).
+    If not, it submits the load to the dedicated executor and waits synchronously.
 
     Args:
         model_manager: The ModelManager to load into
