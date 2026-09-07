@@ -272,8 +272,8 @@ def stitch_ocr_detections(
     )
 
     # Build final text
-    ordered_class_names = []
-    for i, key in enumerate(lines):
+    line_strings = []
+    for key in lines:
         line_data = boxes_by_line[key]
         line_xyxy = np.array(line_data["xyxy"])
         line_idx = np.array(line_data["idx"])
@@ -281,14 +281,11 @@ def stitch_ocr_detections(
         # Sort detections within line
         sort_idx = sort_line_detections(line_xyxy, reading_direction)
 
-        # Add sorted class names for this line
-        ordered_class_names.extend(class_names[line_idx[sort_idx]])
+        # Join sorted class names within this line using the delimiter
+        line_strings.append(delimiter.join(class_names[line_idx[sort_idx]]))
 
-        # Add line separator if not last line
-        if i < len(lines) - 1:
-            ordered_class_names.append(get_line_separator(reading_direction))
-
-    return {"ocr_text": delimiter.join(ordered_class_names)}
+    # Join lines with the reading-direction line separator
+    return {"ocr_text": get_line_separator(reading_direction).join(line_strings)}
 
 
 def prepare_coordinates(
