@@ -1208,6 +1208,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
     os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
 )
 
+# Dedicated model loader thread pool configuration
+# Prevents synchronous model loads from blocking workflow step execution
+MODEL_LOADER_MAX_WORKERS = int(os.getenv("MODEL_LOADER_MAX_WORKERS", "4"))
+MODEL_LOADER_QUEUE_SIZE = int(os.getenv("MODEL_LOADER_QUEUE_SIZE", "32"))
+MODEL_LOAD_TIMEOUT = float(os.getenv("MODEL_LOAD_TIMEOUT", "120.0"))
+
 # RFDETR input resolution limit for models loaded through onnx runtime
 # 1280 -> ~3.5G
 # 1440 -> ~5G
