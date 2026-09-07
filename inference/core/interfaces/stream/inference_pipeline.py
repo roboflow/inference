@@ -1071,6 +1071,43 @@ class InferencePipeline:
         if self._on_pipeline_end is not None:
             self._on_pipeline_end()
 
+    def __enter__(self) -> "InferencePipeline":
+        """Enter the context manager.
+
+        Returns:
+            InferencePipeline: The pipeline instance for use in the with statement.
+
+        Example:
+            ```python
+            with InferencePipeline.init(
+                model_id="my-model/3",
+                video_reference="./video.mp4",
+                on_prediction=my_sink,
+            ) as pipeline:
+                pipeline.start()
+            # terminate() and join() are called automatically on context exit
+            ```
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit the context manager, ensuring proper cleanup.
+
+        This method guarantees that terminate() and join() are called even
+        when exceptions occur, preventing resource leaks (orphaned threads,
+        thread pool workers, and unsaved profiling data).
+
+        Args:
+            exc_type: Exception type if an exception occurred, None otherwise.
+            exc_val: Exception value if an exception occurred, None otherwise.
+            exc_tb: Exception traceback if an exception occurred, None otherwise.
+
+        Note:
+            The exception (if any) is automatically re-raised after cleanup.
+        """
+        self.terminate()
+        self.join()
+
     def _execute_inference(self) -> None:
         stream_session_id.set(self._stream_session_id)
         send_inference_pipeline_status_update(
