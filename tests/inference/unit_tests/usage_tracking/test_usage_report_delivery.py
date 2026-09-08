@@ -379,3 +379,104 @@ def test_sqlite_failed_prepare_rolls_back_raw_deletion(tmp_path):
         )
     assert queue.peek_payloads() == [payload]
     assert queue.read_report_delivery() == {}
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+@pytest.mark.parametrize("keep_original", [False, True])
+def test_supplied_rotated_credential_replays_original_workspace_report(
+    usage_collector_with_mocked_threads,
+    monkeypatch,
+    tmp_path,
+    persistent,
+    keep_original,
+):
+    from inference.usage_tracking.sqlite_queue import SQLiteQueue
+
+    collector = usage_collector_with_mocked_threads
+    queue = (
+        SQLiteQueue(db_file_path=str(tmp_path / "rotation.db")) if persistent else None
+    )
+    module = configure_collector(collector, monkeypatch, queue)
+    sent = []
+    monkeypatch.setattr(
+        helpers.requests,
+        "post",
+        lambda *a, json, **kw: sent.append(deepcopy(json))
+        or SimpleNamespace(status_code=503),
+    )
+    collector._enqueue_payload({"hash": raw_usage(7)})
+    collector._flush_queue()
+    original = deepcopy(sent[0][0])
+    if not keep_original:
+        collector._hashed_api_keys.clear()
+    collector._hashed_api_keys.update(
+        {"replacement-key": "replacement-hash", "unrelated-key": "unrelated-hash"}
+    )
+    monkeypatch.setattr(
+        module,
+        "get_usage_report_capability",
+        lambda key, *a, **kw: dict(
+            CAPABILITY,
+            workspace_id="other" if key == "unrelated-key" else "workspace",
+            ownership_fingerprint="b" * 64,
+        ),
+    )
+    accepted = {}
+
+    def send(*a, json, **kw):
+        assert kw["headers"]["Authorization"] == "Bearer replacement-key"
+        for report in json:
+            accepted[report["report_id"]] = deepcopy(report)
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "usage_report_results": [
+                    {"report_id": report["report_id"], "status": "accepted"}
+                    for report in json
+                ]
+            },
+        )
+
+    monkeypatch.setattr(helpers.requests, "post", send)
+    collector._enqueue_payload({"replacement-hash": raw_usage(3)})
+    collector._flush_queue()
+    replay = accepted[original["report_id"]]
+    assert replay == dict(original, api_key="replacement-key")
+    assert sum(report["processed_frames"] for report in accepted.values()) == 10
+    assert (
+        queue.read_report_delivery() if persistent else collector._report_delivery
+    ) == {}
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_unrelated_replacement_credential_cannot_send_retained_report(
+    usage_collector_with_mocked_threads, monkeypatch, tmp_path, persistent
+):
+    from inference.usage_tracking.sqlite_queue import SQLiteQueue
+
+    collector = usage_collector_with_mocked_threads
+    queue = (
+        SQLiteQueue(db_file_path=str(tmp_path / "unrelated.db")) if persistent else None
+    )
+    module = configure_collector(collector, monkeypatch, queue)
+    monkeypatch.setattr(
+        helpers.requests, "post", lambda *a, **kw: SimpleNamespace(status_code=503)
+    )
+    collector._enqueue_payload({"hash": raw_usage(7)})
+    collector._flush_queue()
+    before = deepcopy(
+        queue.read_report_delivery() if persistent else collector._report_delivery
+    )
+    collector._hashed_api_keys = {"unrelated-key": "unrelated-hash"}
+    monkeypatch.setattr(
+        module,
+        "get_usage_report_capability",
+        lambda *a, **kw: dict(CAPABILITY, workspace_id="other"),
+    )
+    sent = []
+    monkeypatch.setattr(helpers.requests, "post", lambda *a, **kw: sent.append(kw))
+    collector._flush_queue()
+    assert not sent
+    assert (
+        queue.read_report_delivery() if persistent else collector._report_delivery
+    ) == before

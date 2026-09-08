@@ -793,12 +793,42 @@ class UsageCollector:
             self._send_prepared_reports(delivery, persistent)
 
     def _send_prepared_reports(self, delivery, persistent):
-        keys = dict(a[::-1] for a in self._hashed_api_keys.items())
-        acknowledged = set()
+        supplied_keys = dict(self._hashed_api_keys)
+        keys = {key_hash: api_key for api_key, key_hash in supplied_keys.items()}
+        replacement_workspaces = {}
+        transports = {}
         for key, reports in delivery.items():
-            api_key = keys.get(key)
-            if not api_key:
-                continue
+            original_key = keys.get(key)
+            for report_id, report in reports.items():
+                api_key = original_key
+                for candidate in reversed(supplied_keys):
+                    if candidate == original_key:
+                        break
+                    if candidate not in replacement_workspaces:
+                        try:
+                            capability = get_usage_report_capability(
+                                candidate,
+                                self._settings.api_plan_endpoint_url,
+                                ssl_verify=ssl_verify_for_endpoint(
+                                    self._settings.api_plan_endpoint_url
+                                ),
+                                extra_headers=build_roboflow_api_headers(),
+                            )
+                            replacement_workspaces[candidate] = (
+                                capability["workspace_id"] if capability else None
+                            )
+                        except Exception:
+                            replacement_workspaces[candidate] = None
+                    if (
+                        replacement_workspaces[candidate]
+                        == report["report_workspace_id"]
+                    ):
+                        api_key = candidate
+                        break
+                if api_key:
+                    transports.setdefault(api_key, {})[report_id] = report
+        acknowledged = set()
+        for api_key, reports in transports.items():
             outcomes = send_usage_reports(
                 reports,
                 api_key,
