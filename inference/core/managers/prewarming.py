@@ -135,7 +135,10 @@ class ModelPrewarmingManager:
         Pins successfully loaded models to prevent eviction.
 
         Args:
-            timeout: Maximum time to wait for all loads (seconds)
+            timeout: Maximum time to wait for all loads (seconds). If timeout is
+                reached, the warmup call returns immediately without waiting for
+                running loads to complete. Running loads will continue in background
+                but will not block readiness.
 
         Returns:
             True if all required models loaded successfully
@@ -155,49 +158,52 @@ class ModelPrewarmingManager:
         )
         start_time = time.time()
 
+        # Create executor outside try block so we can control shutdown behavior
+        executor = ThreadPoolExecutor(max_workers=self._max_parallel_loads)
+        timed_out = False
+
         try:
-            # Use ThreadPoolExecutor for parallel loads
-            with ThreadPoolExecutor(max_workers=self._max_parallel_loads) as executor:
-                futures = {
-                    executor.submit(self._load_with_retry, cfg): cfg
-                    for cfg in self._models_to_prewarm
-                }
+            futures = {
+                executor.submit(self._load_with_retry, cfg): cfg
+                for cfg in self._models_to_prewarm
+            }
 
-                completed = 0
-                for future in as_completed(futures, timeout=timeout):
-                    cfg = futures[future]
-                    try:
-                        result = future.result()
-                        self._results[result.model_id] = result
-                        completed += 1
+            completed = 0
+            for future in as_completed(futures, timeout=timeout):
+                cfg = futures[future]
+                try:
+                    result = future.result()
+                    self._results[result.model_id] = result
+                    completed += 1
 
-                        status_emoji = "✅" if result.success else "❌"
-                        logger.info(
-                            f"{status_emoji} [{completed}/{len(self._models_to_prewarm)}] "
-                            f"model_id={result.model_id}, "
-                            f"load_time={result.load_time_seconds:.2f}s, "
-                            f"pinned={result.pinned}, "
-                            f"success={result.success}"
-                        )
+                    status_emoji = "✅" if result.success else "❌"
+                    logger.info(
+                        f"{status_emoji} [{completed}/{len(self._models_to_prewarm)}] "
+                        f"model_id={result.model_id}, "
+                        f"load_time={result.load_time_seconds:.2f}s, "
+                        f"pinned={result.pinned}, "
+                        f"success={result.success}"
+                    )
 
-                        if not result.success and result.error:
-                            logger.error(
-                                f"Failed to pre-warm {result.model_id}: {result.error}",
-                                exc_info=result.error,
-                            )
-                    except Exception as e:
+                    if not result.success and result.error:
                         logger.error(
-                            f"Unexpected error processing pre-warm result for {cfg.model_id}: {e}",
-                            exc_info=True,
+                            f"Failed to pre-warm {result.model_id}: {result.error}",
+                            exc_info=result.error,
                         )
-                        self._results[cfg.model_id] = PrewarmResult(
-                            model_id=cfg.model_id,
-                            success=False,
-                            load_time_seconds=0.0,
-                            error=e,
-                        )
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error processing pre-warm result for {cfg.model_id}: {e}",
+                        exc_info=True,
+                    )
+                    self._results[cfg.model_id] = PrewarmResult(
+                        model_id=cfg.model_id,
+                        success=False,
+                        load_time_seconds=0.0,
+                        error=e,
+                    )
 
         except TimeoutError:
+            timed_out = True
             logger.error(
                 f"Pre-warming timed out after {timeout}s - "
                 f"{completed}/{len(self._models_to_prewarm)} completed"
@@ -207,6 +213,19 @@ class ModelPrewarmingManager:
             logger.error(f"Pre-warming failed with unexpected error: {e}", exc_info=True)
 
         finally:
+            # Shutdown executor - don't wait if we timed out
+            # This ensures timeout actually bounds the warmup() call duration
+            if timed_out:
+                logger.warning(
+                    "Shutting down executor without waiting for running loads. "
+                    "Loads will continue in background but won't block readiness."
+                )
+                executor.shutdown(wait=False)
+            else:
+                # Normal case: wait for remaining tasks
+                executor.shutdown(wait=True)
+
+            # Compute final status and metrics
             elapsed = time.time() - start_time
             success_count = sum(1 for r in self._results.values() if r.success)
             failure_count = len(self._results) - success_count

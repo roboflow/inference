@@ -8,6 +8,26 @@ Extends WithFixedSizeCache to add:
 
 This solves the production issue from #2448 where models in active rotation
 get evicted under memory pressure, creating a costly reload cycle.
+
+ADMISSION POLICY:
+When the working set cannot fit within max_size (e.g., all models are pinned
+or protected), the cache will ALLOW OVERFLOW rather than reject new loads.
+This is a conscious trade-off:
+- Better: Temporarily exceed max_size to serve the request
+- Worse: Hard-fail and return 5xx to the user
+
+The base WithFixedSizeCache already permits overflow for pinned models; this
+extends that policy to usage-protected models. When memory pressure occurs,
+the cache will attempt to evict up to 3 models, but if all are protected,
+it proceeds with the load anyway.
+
+PROTECTION-OVERRIDE:
+In extreme cases (e.g., max_size=1 with high-frequency traffic), the cache
+may grow beyond limits. This is intentional - we prioritize availability over
+strict capacity enforcement. Operators should:
+1. Monitor cache_size via get_eviction_metrics()
+2. Increase max_size if persistent overflow is observed
+3. Use memory pressure detection (MEMORY_FREE_THRESHOLD) as the true limit
 """
 import gc
 import logging
@@ -243,9 +263,11 @@ class WithEvictionProtectedCache(WithFixedSizeCache):
         if evicted_count == 0:
             if skipped_protected or skipped_pinned:
                 logger.warning(
-                    f"Cannot evict: all models protected "
+                    f"ADMISSION POLICY: Cannot evict, all models protected "
                     f"(pinned={len(skipped_pinned)}, active={len(skipped_protected)}). "
-                    f"Proceeding with cache exceeding limits."
+                    f"Allowing cache overflow to serve request for {evicting_for}. "
+                    f"This prioritizes availability over strict capacity limits. "
+                    f"Current cache_size={len(self)}, max_size={self.max_size}"
                 )
             else:
                 logger.warning("Cannot evict: queue is empty!")

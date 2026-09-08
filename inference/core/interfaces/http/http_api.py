@@ -2953,14 +2953,40 @@ class HttpInterface(BaseInterface):
         def readiness(
             state: ModelInitState = Depends(lambda: model_init_state),
         ):
-            """Readiness endpoint for Kubernetes readiness probe."""
+            """Readiness endpoint for Kubernetes readiness probe.
+
+            Checks both model initialization and pre-warming status (if enabled).
+            """
             with state.lock:
-                if state.is_ready:
-                    return {"status": "ready"}
-                else:
-                    return JSONResponse(
-                        content={"status": "not ready"}, status_code=503
-                    )
+                base_ready = state.is_ready
+
+            # Also check pre-warming status if configured
+            prewarm_ready = True
+            prewarm_info = {}
+            if hasattr(app.state, 'prewarm_manager') and app.state.prewarm_manager:
+                prewarm_ready = app.state.prewarm_manager.is_ready()
+                prewarm_info = app.state.prewarm_manager.get_metrics()
+
+            if base_ready and prewarm_ready:
+                response_data = {"status": "ready"}
+                if prewarm_info:
+                    response_data["prewarm"] = prewarm_info
+                return response_data
+            else:
+                reasons = []
+                if not base_ready:
+                    reasons.append("model_init_not_ready")
+                if not prewarm_ready:
+                    reasons.append("prewarm_not_ready")
+
+                return JSONResponse(
+                    content={
+                        "status": "not ready",
+                        "reasons": reasons,
+                        "prewarm": prewarm_info if prewarm_info else None,
+                    },
+                    status_code=503
+                )
 
         @app.get("/healthz", status_code=200)
         def healthz():
