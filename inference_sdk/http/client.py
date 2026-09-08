@@ -260,22 +260,25 @@ class InferenceHTTPClient:
         cls,
         api_url: str,
         api_key: Optional[str] = None,
+        stream_api_key: Optional[str] = None,
     ) -> "InferenceHTTPClient":
         """Initialize a new InferenceHTTPClient instance.
 
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
+            stream_api_key: Dedicated local stream administrator token.
 
         Returns:
             InferenceHTTPClient: A new instance of the InferenceHTTPClient.
         """
-        return cls(api_url=api_url, api_key=api_key)
+        return cls(api_url=api_url, api_key=api_key, stream_api_key=stream_api_key)
 
     def __init__(
         self,
         api_url: str,
         api_key: Optional[str] = None,
+        stream_api_key: Optional[str] = None,
     ):
         """Initialize a new InferenceHTTPClient instance.
 
@@ -287,9 +290,13 @@ class InferenceHTTPClient:
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
+            stream_api_key: Dedicated local stream admin token, sent only to pipeline
+                management endpoints on this API URL. Separate from the Roboflow API key.
         """
         self.__api_url = api_url
         self.__api_key = api_key
+        self.__stream_api_key = stream_api_key
+        self.__stream_api_url = api_url.rstrip("/")
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
@@ -2981,9 +2988,10 @@ class InferenceHTTPClient:
             },
         }
         response = requests.post(
-            f"{self.__api_url}/inference_pipelines/initialise",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/initialise",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         response.raise_for_status()
         return response.json()
@@ -3008,9 +3016,10 @@ class InferenceHTTPClient:
         """
         payload = self.__legacy_api_key_payload()
         response = requests.get(
-            f"{self.__api_url}/inference_pipelines/list",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/list",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3036,9 +3045,10 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = self.__legacy_api_key_payload()
         response = requests.get(
-            f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/{pipeline_id}/status",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3067,9 +3077,10 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = self.__legacy_api_key_payload()
         response = requests.post(
-            f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/{pipeline_id}/pause",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3098,9 +3109,10 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = self.__legacy_api_key_payload()
         response = requests.post(
-            f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/{pipeline_id}/resume",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3129,9 +3141,10 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = self.__legacy_api_key_payload()
         response = requests.post(
-            f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/{pipeline_id}/terminate",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3168,9 +3181,10 @@ class InferenceHTTPClient:
             "excluded_fields": excluded_fields,
         }
         response = requests.get(
-            f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
+            f"{self.__api_url.rstrip('/')}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
-            headers=self.__headers_with_auth(None),
+            headers=self.__stream_headers(None),
+            allow_redirects=False,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3296,6 +3310,18 @@ class InferenceHTTPClient:
         ):
             return {}
         return {"Authorization": f"Bearer {self.__api_key}"}
+
+    def __stream_headers(
+        self, headers: Optional[Dict[str, str]]
+    ) -> Optional[Dict[str, str]]:
+        headers = self.__headers_with_auth(headers)
+        if self.__stream_api_key is None:
+            return headers
+        if self.__api_url.rstrip("/") != self.__stream_api_url:
+            raise ValueError(
+                "Stream admin token is bound to the original API URL; create a new client"
+            )
+        return {**(headers or {}), "X-Stream-API-Key": self.__stream_api_key}
 
     def __headers_with_auth(
         self, headers: Optional[Dict[str, str]]

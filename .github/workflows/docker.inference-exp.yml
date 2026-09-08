@@ -45,16 +45,16 @@ jobs:
 
       - name: generate tags
         id: tags
+        env:
+          CUSTOM_TAG: ${{ github.event.inputs.custom_tag }}
         run: |
-          BASE_TAG="${{ env.VERSION }}"
-          
-          # Use custom tag if provided
-          if [ -n "${{ github.event.inputs.custom_tag }}" ]; then
-            BASE_TAG="${{ github.event.inputs.custom_tag }}"
+          set -euo pipefail
+          BASE_TAG="${CUSTOM_TAG:-$VERSION}"
+          if [[ ! "$BASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid image tag." >&2
+            exit 1
           fi
-          
-          echo "base-tag=${BASE_TAG}"
-          echo "base-tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+          printf 'base-tag=%s\n' "$BASE_TAG" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.dockerfile }}:${{ matrix.platform }}
@@ -92,16 +92,21 @@ jobs:
     steps:
       - name: Check if should build
         id: should-build
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IMAGE_VARIANT: ${{ github.event.inputs.image_variant }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]] || \
-             [[ "${{ github.event.inputs.image_variant }}" == "all" ]] || \
-             [[ -z "${{ github.event.inputs.image_variant }}" ]] || \
-             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]] || \
-             [[ "${{ github.event.inputs.image_variant }}" == "cpu" && "${{ matrix.platform }}" == "linux/amd64" ]]; then
-            echo "should-build=true" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          if [[ -n "$IMAGE_VARIANT" && ! "$IMAGE_VARIANT" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,127}$ ]]; then
+            echo "Invalid image variant." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "release" || "$IMAGE_VARIANT" == "all" || -z "$IMAGE_VARIANT" || "$IMAGE_VARIANT" == "$PLATFORM" || ( "$IMAGE_VARIANT" == "cpu" && "$PLATFORM" == "linux/amd64" ) ]]; then
+            printf 'should-build=true\n' >> "$GITHUB_OUTPUT"
           else
-            echo "should-build=false" >> $GITHUB_OUTPUT
-            echo "Skipping build for ${{ matrix.platform }} (selected: ${{ github.event.inputs.image_variant }})"
+            printf 'should-build=false\n' >> "$GITHUB_OUTPUT"
+            printf 'Skipping build for %s (selected: %s)\n' "$PLATFORM" "$IMAGE_VARIANT"
           fi
 
       - name: Checkout code
@@ -111,26 +116,42 @@ jobs:
       - name: Determine image tags
         if: steps.should-build.outputs.should-build == 'true'
         id: image-tags
+        env:
+          BASE_TAG: ${{ needs.determine-tags.outputs.base-tag }}
+          PLATFORM: ${{ matrix.platform }}
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
-          BASE_TAG="${{ needs.determine-tags.outputs.base-tag }}"
-          PLATFORM="${{ matrix.platform }}"
-          if [ "${{ matrix.platform }}" == "linux/amd64" ]; then
+          set -euo pipefail
+          if [ "$PLATFORM" == "linux/amd64" ]; then
             PLATFORM="cpu"
           fi
-          
-          if [ "${{ github.event_name }}" = "release" ]; then
-            # For releases, use version tag and latest
+          for value in "$BASE_TAG" "$PLATFORM"; do
+            if [[ ! "$value" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid image tag component." >&2
+              exit 1
+            fi
+          done
+          if [ "$EVENT_NAME" = "release" ]; then
             TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG},roboflow/inference-exp:${PLATFORM}-latest"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            # For main branch, use test tag
+          elif [ "$GIT_REF" = "refs/heads/main" ]; then
             TAGS="roboflow/inference-exp:${PLATFORM}-test"
           else
-            # For other cases, use custom tag or version
             TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG}"
           fi
-          
-          echo "tags=${TAGS}"
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          IFS=',' read -r -a tags <<< "$TAGS"
+          for image_tag in "${tags[@]}"; do
+            if [[ "$image_tag" != "roboflow/inference-exp:"* ]]; then
+              echo "Invalid image repository." >&2
+              exit 1
+            fi
+            tag="${image_tag#roboflow/inference-exp:}"
+            if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid generated image tag." >&2
+              exit 1
+            fi
+          done
+          printf 'tags=%s\n' "$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Login to Docker Hub
         uses: docker/login-action@v4

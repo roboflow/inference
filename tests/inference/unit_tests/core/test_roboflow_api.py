@@ -5499,7 +5499,7 @@ def test_get_workflow_specification_returns_when_ephemeral_cache_set_fails(
 # when LICENSE_SERVER is configured (air-gapped deployment support).
 
 SECURE_GATEWAY_HOST = "gateway.local"
-PROXY_PREFIX = f"http://{SECURE_GATEWAY_HOST}/proxy?url="
+PROXY_PREFIX = f"https://{SECURE_GATEWAY_HOST}/proxy?url="
 
 
 @mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)

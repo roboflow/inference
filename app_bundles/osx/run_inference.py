@@ -114,7 +114,7 @@ os.environ.setdefault("WORKFLOWS_MAX_CONCURRENT_STEPS", "4")
 os.environ.setdefault("API_LOGGING_ENABLED", "True")
 os.environ.setdefault("CORE_MODEL_SAM2_ENABLED", "True")
 os.environ.setdefault("CORE_MODEL_OWLV2_ENABLED", "True")
-os.environ.setdefault("ENABLE_STREAM_API", "True")
+os.environ.setdefault("ENABLE_STREAM_API", "False")
 os.environ.setdefault("ENABLE_WORKFLOWS_PROFILING", "False")
 os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
@@ -157,9 +157,10 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 if __name__ == "__main__":
     logger.info("Starting server")
     # Import the FastAPI app
-    from cpu_http import app
-    import uvicorn
     import asyncio
+
+    import uvicorn
+    from cpu_http import app
 
     class FilteredAccessLogConfig(logging.Filter):
         """Filter out static file requests from access logs"""
@@ -168,7 +169,11 @@ if __name__ == "__main__":
             # Get the log message
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
-            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+            if (
+                "/static" in message
+                or "/_next/static" in message
+                or " / HTTP" in message
+            ):
                 return False
             return True
 
@@ -202,7 +207,14 @@ if __name__ == "__main__":
                 if isinstance(handler, logging.StreamHandler):
                     lg.removeHandler(handler)
 
-        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+        for name in (
+            "",
+            "uvicorn",
+            "uvicorn.error",
+            "uvicorn.access",
+            "inference",
+            "inference.app",
+        ):
             _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"

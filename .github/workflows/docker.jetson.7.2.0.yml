@@ -58,7 +58,14 @@ jobs:
         uses: depot/setup-action@v1
       - name: Validate media rebuild tag
         if: ${{ inputs.rebuild_media }}
-        run: test -n "${{ inputs.custom_tag }}"
+        env:
+          CUSTOM_TAG: ${{ inputs.custom_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$CUSTOM_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,121}$ ]]; then
+            echo "A valid custom tag is required for media rebuilds (122 characters maximum before -media)." >&2
+            exit 1
+          fi
       - name: Build media image from current ref
         if: ${{ inputs.rebuild_media }}
         id: media
@@ -72,7 +79,16 @@ jobs:
           tags: ${{ env.MEDIA_BASE_IMAGE }}:${{ inputs.custom_tag }}-media
       - name: Use current-ref media image
         if: ${{ inputs.rebuild_media }}
-        run: echo "JETSON_MEDIA_IMAGE=${{ env.MEDIA_BASE_IMAGE }}:${{ inputs.custom_tag }}-media@${{ steps.media.outputs.digest }}" >> "$GITHUB_ENV"
+        env:
+          CUSTOM_TAG: ${{ inputs.custom_tag }}
+          MEDIA_DIGEST: ${{ steps.media.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$CUSTOM_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,121}$ || ! "$MEDIA_DIGEST" =~ ^sha256:[a-f0-9]{64}$ || ! "$MEDIA_BASE_IMAGE" =~ ^[a-z0-9][a-z0-9._:/-]*$ ]]; then
+            echo "Invalid media image reference." >&2
+            exit 1
+          fi
+          printf 'JETSON_MEDIA_IMAGE=%s:%s-media@%s\n' "$MEDIA_BASE_IMAGE" "$CUSTOM_TAG" "$MEDIA_DIGEST" >> "$GITHUB_ENV"
       - name: Build image
         uses: depot/bake-action@v1
         env:

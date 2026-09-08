@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 import urllib.parse
@@ -276,8 +277,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-id", required=True, type=str)
     parser.add_argument("--inference-server-url", required=True, type=str)
     parser.add_argument("--api-key", required=True, type=str)
+    parser.add_argument(
+        "--stream-api-key",
+        default=os.getenv("STREAM_API_KEY"),
+        help="Dedicated stream administrator token (or STREAM_API_KEY env)",
+    )
     parser.add_argument("--show-camera-preview", required=False, action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.stream_api_key:
+        parser.error(
+            "--stream-api-key or STREAM_API_KEY is required for pipeline administration"
+        )
+    return args
 
 
 def main():
@@ -359,6 +370,8 @@ def main():
             args.inference_server_url, "inference_pipelines/initialise_webrtc"
         ),
         json=request.model_dump(),
+        headers={"X-Stream-API-Key": args.stream_api_key or ""},
+        allow_redirects=False,
     )
     webrtc_answer = response.json()
     if response.status_code != 200:
