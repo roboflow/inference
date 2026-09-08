@@ -515,6 +515,16 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
+    # The new model manager stack. --no-deps throughout: every dependency but
+    # these three already lands in /opt/python-runtime above.
+    python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
+        /build/inference/inference_models \
+        /build/inference/inference_model_manager \
+        /build/inference/inference_server \
+        "pillow-heif>=0.18.0" \
+        imagecodecs \
+        "filetype>=1.2.0" && \
+    PYTHONPATH=/opt/python-runtime python3 -c 'import importlib.metadata as m; print(" ".join(f"{p}=={m.version(p)}" for p in ("inference-models", "inference-model-manager", "inference-server")))' && \
     # OpenCV comes from the validated media runtime. Remove Python wheel copies
     # so every process resolves the same CUDA-enabled implementation.
     find /opt/python-runtime -type d \
