@@ -1085,7 +1085,7 @@ def test_package_with_static_crop_letterbox_against_torch_batch_input(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_package_with_static_crop_letterbox_against_numpy_input(
+def test_package_with_static_crop_center_crop_against_numpy_input(
     snake_image_numpy: np.ndarray,
     snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package: str,
 ) -> None:
@@ -1118,7 +1118,7 @@ def test_package_with_static_crop_letterbox_against_numpy_input(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_package_with_static_crop_letterbox_against_numpy_list_input(
+def test_package_with_static_crop_center_crop_against_numpy_list_input(
     snake_image_numpy: np.ndarray,
     snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package: str,
 ) -> None:
@@ -1161,7 +1161,7 @@ def test_package_with_static_crop_letterbox_against_numpy_list_input(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_package_with_static_crop_letterbox_against_torch_input(
+def test_package_with_static_crop_center_crop_against_torch_input(
     snake_image_torch: torch.Tensor,
     snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package: str,
 ) -> None:
@@ -1194,7 +1194,7 @@ def test_package_with_static_crop_letterbox_against_torch_input(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_package_with_static_crop_letterbox_against_torch_list_input(
+def test_package_with_static_crop_center_crop_against_torch_list_input(
     snake_image_torch: torch.Tensor,
     snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package: str,
 ) -> None:
@@ -1237,7 +1237,7 @@ def test_package_with_static_crop_letterbox_against_torch_list_input(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_package_with_static_crop_letterbox_against_torch_batch_input(
+def test_package_with_static_crop_center_crop_against_torch_batch_input(
     snake_image_torch: torch.Tensor,
     snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package: str,
 ) -> None:
