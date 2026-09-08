@@ -1,3 +1,4 @@
+import logging
 from collections import deque
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -5,7 +6,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
     take_prediction_by_indices,
@@ -36,6 +36,8 @@ from inference.core.workflows.prototypes.block import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_KEY: str = "tracked_detections"
 _INPUT_INDEX_KEY: str = "__byte_tracker_input_index__"

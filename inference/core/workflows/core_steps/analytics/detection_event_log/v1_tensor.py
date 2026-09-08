@@ -1,11 +1,11 @@
 import heapq
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -34,6 +34,8 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_KEY = "event_log"
 DETECTIONS_OUTPUT_KEY = "detections"

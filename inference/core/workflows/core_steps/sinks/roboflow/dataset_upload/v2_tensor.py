@@ -2,11 +2,9 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from fastapi import BackgroundTasks
 from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
-from inference.core.cache.base import BaseCache
 from inference.core.workflows.core_steps.common.tensor_native import KeyPointPrediction
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
@@ -32,6 +30,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -40,6 +39,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -286,9 +286,9 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
+        cache: WorkflowsCache,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):
@@ -405,8 +405,8 @@ def maybe_register_datapoint_at_roboflow(
     fire_and_forget: bool,
     labeling_batch_prefix: str,
     new_labeling_batch_frequency: BatchCreationFrequency,
-    cache: BaseCache,
-    background_tasks: Optional[BackgroundTasks],
+    cache: WorkflowsCache,
+    background_tasks: Optional[BackgroundTaskScheduler],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
     image_name: Optional[str] = None,

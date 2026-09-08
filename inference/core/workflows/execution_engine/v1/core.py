@@ -1,3 +1,4 @@
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Set, Union
@@ -5,7 +6,6 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 from packaging.version import Version
 
 from inference.core.env import WORKFLOWS_STEP_EXECUTION_MODE
-from inference.core.logger import logger
 from inference.core.workflows.errors import (
     RuntimeInputError,
     WorkflowEnvironmentConfigurationError,
@@ -37,7 +37,6 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_validat
     validate_runtime_input,
 )
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
-    extended_roboflow_errors_handler,
     legacy_step_error_handler,
 )
 from inference.core.workflows.prototypes.block import (
@@ -48,16 +47,18 @@ from inference.core.workflows.prototypes.block import (
     StepExecutionMode,
     is_workflow_selector,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+
+logger = logging.getLogger(__name__)
 
 EXECUTION_ENGINE_V1_VERSION = Version("1.15.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
-    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
+    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "legacy"
 )
 
 REGISTERED_STEP_ERROR_HANDLERS = {
     "legacy": legacy_step_error_handler,
-    "extended_roboflow_errors": extended_roboflow_errors_handler,
 }
 
 PRE_INIT_SUPPORTED_DEPENDENCIES = {DependentResourceType.ROBOFLOW_PLATFORM_MODEL}
@@ -138,7 +139,7 @@ def _is_locally_executed_platform_model(
 
 
 def _verify_pre_loaded_models_presence(
-    model_manager: Any, expected_model_ids: Set[str]
+    model_manager: ModelsProvider, expected_model_ids: Set[str]
 ) -> None:
     # Registration happens sequentially without capacity reservation — a
     # size/memory-bounded model manager may evict earlier entries while
@@ -162,7 +163,7 @@ def _verify_pre_loaded_models_presence(
 
 def _pre_load_roboflow_platform_models(
     dependencies: List[DependentResource],
-    model_manager: Any,
+    model_manager: ModelsProvider,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
 ) -> List[DependentResource]:
@@ -203,7 +204,7 @@ def _pre_load_roboflow_platform_models(
 def _resolve_and_pre_load_runtime_dependencies(
     pending_dependencies: List[DependentResource],
     runtime_parameters: Dict[str, Any],
-    model_manager: Any,
+    model_manager: ModelsProvider,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
 ) -> None:

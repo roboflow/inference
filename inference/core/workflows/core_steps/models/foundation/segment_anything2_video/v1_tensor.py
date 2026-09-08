@@ -32,7 +32,6 @@ import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference.core.env import GCP_SERVERLESS, WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
@@ -72,6 +71,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 
@@ -230,7 +230,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

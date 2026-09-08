@@ -1584,6 +1584,7 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
+    # Keep bound to the server cache until Phase 9 injects it at the composition roots - see DECONTAMINATION.PLAN.MD, Phase 4 preamble.
     "cache": cache,
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,

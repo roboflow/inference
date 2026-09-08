@@ -19,6 +19,7 @@ import base64
 import gzip
 import hashlib
 import json
+import logging
 import os
 import sys
 import threading
@@ -44,8 +45,12 @@ from inference.core.env import (
     WEBEXEC_WS_IDLE_RELEASE_SECONDS,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
-from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_image_kind,
+    deserialize_rle_detections_kind,
+    deserialize_video_metadata_kind,
+)
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_video_metadata_kind,
 )
@@ -64,6 +69,8 @@ from inference.usage_tracking.block_execution import (
     record_measured_block_execution,
 )
 
+logger = logging.getLogger(__name__)
+
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
     MODAL_AVAILABLE = True
@@ -71,13 +78,6 @@ else:
     MODAL_AVAILABLE = False
     logger.info("Modal credentials not configured")
 
-from datetime import datetime
-
-from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
-    deserialize_rle_detections_kind,
-    deserialize_video_metadata_kind,
-)
 
 _WEBEXEC_EXECUTOR_CLASS_LABEL = "executor"
 _WEBEXEC_HTTP_METHOD_LABEL = "execute-block"

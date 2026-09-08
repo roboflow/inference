@@ -1,3 +1,4 @@
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -7,11 +8,9 @@ from uuid import uuid4
 
 import numpy as np
 import requests
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
 
 from inference.core.env import API_BASE_URL
-from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
@@ -48,6 +47,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
@@ -61,6 +61,8 @@ from inference_models.models.base.classification import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 # Tensor-native prediction union the block accepts. Detection predictions arrive
 # as `inference_models` dataclasses (or the keypoint `(KeyPoints, Detections)`
@@ -465,7 +467,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):

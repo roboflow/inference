@@ -4,10 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
 
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
 from inference.core.workflows.core_steps.common.tensor_native import (
     KeyPointPrediction,
@@ -27,12 +25,14 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -192,9 +192,9 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
+        cache: WorkflowsCache,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):
@@ -300,7 +300,7 @@ def _extract_inference_ids(
 
 def get_workspace_name(
     api_key: str,
-    cache: BaseCache,
+    cache: WorkflowsCache,
 ) -> str:
     # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
@@ -316,7 +316,7 @@ def get_workspace_name(
 
 
 def add_custom_metadata_request(
-    cache: BaseCache,
+    cache: WorkflowsCache,
     api_key: str,
     inference_ids: List[str],
     field_name: str,

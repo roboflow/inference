@@ -1158,6 +1158,26 @@ PINNED_MODELS = (
 )
 
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
+
+# Enterprise blocks load through the generic Workflows plugin mechanism. The
+# flag is kept for compatibility and expanded here into WORKFLOWS_PLUGINS, which
+# blocks_loader.get_plugin_modules() reads from the process environment. This
+# module is imported by inference/core/__init__.py before any workflows module
+# can load, so the expansion always precedes the first block load.
+# The plugin is PREPENDED, not appended: enterprise blocks used to be merged
+# into the core list, so `load_workflow_blocks()` yielded core -> enterprise ->
+# custom plugins. Appending would reorder that to core -> custom -> enterprise
+# for anyone who also sets WORKFLOWS_PLUGINS.
+ENTERPRISE_BLOCKS_PLUGIN = "inference.enterprise.workflows.enterprise_blocks.loader"
+if LOAD_ENTERPRISE_BLOCKS:
+    _workflows_plugins = [
+        plugin for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",") if plugin
+    ]
+    if ENTERPRISE_BLOCKS_PLUGIN not in _workflows_plugins:
+        os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+            [ENTERPRISE_BLOCKS_PLUGIN] + _workflows_plugins
+        )
+
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
     for e in os.getenv("TRANSIENT_ROBOFLOW_API_ERRORS", "").split(",")

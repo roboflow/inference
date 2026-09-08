@@ -39,7 +39,6 @@ from inference.core.env import (
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
@@ -81,6 +80,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     third_party_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
@@ -1167,7 +1167,7 @@ class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

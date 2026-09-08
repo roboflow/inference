@@ -1,3 +1,4 @@
+import logging
 import math
 import statistics
 from collections import Counter
@@ -23,7 +24,6 @@ import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     take_prediction_by_indices,
@@ -67,6 +67,8 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 # Tensor-native detections handled by this block. The consensus pipeline only
 # ever needs the bounding-box component, so keypoint predictions (which arrive

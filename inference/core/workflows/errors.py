@@ -269,3 +269,13 @@ class RuntimeInputError(WorkflowExecutionEngineError):
 
 class WorkflowExecutionEngineVersionError(WorkflowError):
     pass
+
+
+class WorkflowsInvalidEnvironmentValueError(ValueError):
+    """Raised when an environment value cannot be interpreted by workflows helpers.
+
+    Deliberately NOT a `WorkflowError` subclass: `WorkflowError.__init__` requires
+    `public_message` and `context`, while this error is raised with a single message.
+    """
+
+    pass

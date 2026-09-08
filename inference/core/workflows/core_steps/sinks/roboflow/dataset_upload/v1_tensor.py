@@ -29,7 +29,6 @@ import cv2
 import numpy as np
 import supervision as sv
 import torch
-from fastapi import BackgroundTasks
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.active_learning.cache_operations import (
@@ -44,7 +43,6 @@ from inference.core.active_learning.entities import (
     StrategyLimit,
     StrategyLimitType,
 )
-from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import (
     annotate_image_at_roboflow,
     get_roboflow_workspace,
@@ -91,6 +89,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -99,6 +98,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -319,9 +319,9 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
+        cache: WorkflowsCache,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):
@@ -433,8 +433,8 @@ def register_datapoint_at_roboflow(
     fire_and_forget: bool,
     labeling_batch_prefix: str,
     new_labeling_batch_frequency: BatchCreationFrequency,
-    cache: BaseCache,
-    background_tasks: Optional[BackgroundTasks],
+    cache: WorkflowsCache,
+    background_tasks: Optional[BackgroundTaskScheduler],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
     image_name: Optional[str] = None,
@@ -483,7 +483,7 @@ def execute_registration(
     registration_tags: List[str],
     labeling_batch_prefix: str,
     new_labeling_batch_frequency: BatchCreationFrequency,
-    cache: BaseCache,
+    cache: WorkflowsCache,
     api_key: str,
     image_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
@@ -569,7 +569,7 @@ def execute_registration(
 
 def get_workspace_name(
     api_key: str,
-    cache: BaseCache,
+    cache: WorkflowsCache,
 ) -> str:
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"

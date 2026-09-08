@@ -26,7 +26,6 @@ from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
@@ -70,12 +69,13 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     wrap_with_context_snapshot,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 
 T = TypeVar("T")
 
 
 def load_core_model(
-    model_manager: ModelManager,
+    model_manager: ModelsProvider,
     inference_request: Union[
         DoctrOCRInferenceRequest,
         EasyOCRInferenceRequest,

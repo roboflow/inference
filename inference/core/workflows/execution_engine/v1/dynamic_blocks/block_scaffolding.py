@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import sys
 import threading
 import time
@@ -16,7 +17,6 @@ from inference.core.env import (
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
-from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
@@ -55,6 +55,8 @@ from inference.usage_tracking.block_execution import (
     record_measured_block_execution,
 )
 from inference.usage_tracking.collector import usage_collector
+
+logger = logging.getLogger(__name__)
 
 try:
     from inference_sdk.config import execution_id as _execution_id_ctxvar

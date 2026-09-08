@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional, Protocol, Typ
 
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import (
     batch_update_image_metadata_at_roboflow,
     get_roboflow_workspace,
@@ -28,6 +27,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 
 SHORT_DESCRIPTION = "Update attributes and tags for Asset Library images."
 
@@ -179,7 +179,7 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
-        cache: BaseCache,
+        cache: WorkflowsCache,
         update_attributes_offloader: Optional[
             UpdateAssetLibraryAttributesOffloader
         ] = None,
@@ -263,7 +263,7 @@ class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
         return effective.results
 
 
-def get_workspace_name(api_key: str, cache: BaseCache) -> str:
+def get_workspace_name(api_key: str, cache: WorkflowsCache) -> str:
     api_key_hash = hashlib.md5(
         api_key.encode("utf-8"), usedforsecurity=False
     ).hexdigest()

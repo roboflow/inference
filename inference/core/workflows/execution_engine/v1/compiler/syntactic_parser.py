@@ -130,12 +130,12 @@ def build_workflow_definition_entity(
 
 @lru_cache(maxsize=8)
 def _cached_workflow_schema(
-    env_state: Tuple[Tuple[str, ...], bool] = None,
+    env_state: Tuple[Tuple[str, ...]] = None,
 ) -> dict:
     """Cached schema generation - called only when blocks don't change.
 
     Args:
-        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+        env_state: Tuple of (plugins,) for cache invalidation
     """
     available_blocks = load_workflow_blocks()
     workflow_definition_class = build_workflow_definition_entity(

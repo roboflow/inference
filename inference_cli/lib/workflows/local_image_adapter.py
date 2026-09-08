@@ -9,6 +9,9 @@ from rich.progress import Progress, TaskID
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -456,6 +459,7 @@ def _run_workflow_for_single_image_with_inference(
         max_concurrent_steps=max_concurrent_workflows_steps,
         workflow_id=workflow_id,
         executor=thread_pool_executor,
+        step_error_handler=resolve_step_error_handler(),
     )
     runtime_parameters = workflow_parameters or {}
     runtime_parameters[image_input_name] = cv2.imread(image_path)

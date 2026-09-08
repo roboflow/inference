@@ -7,7 +7,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
@@ -23,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.utils.lru_cache import LRUCache
 
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over a polygon zone in an image."

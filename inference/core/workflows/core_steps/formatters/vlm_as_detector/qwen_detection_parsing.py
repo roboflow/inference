@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional, Union
 from uuid import uuid4
 
@@ -5,7 +6,6 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -19,6 +19,8 @@ from inference.core.workflows.execution_engine.constants import (
     PREDICTION_TYPE_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logger = logging.getLogger(__name__)
 
 QWEN_BOX_COORDINATE_SCALE = 1000.0
 

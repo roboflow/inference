@@ -22,6 +22,7 @@ the VLM blocks live here too so the per-block files stay small.
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
@@ -34,8 +35,6 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPIUnsuccessfulRequestError,
 )
-from inference.core.logger import logger
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.token_usage import (
@@ -54,6 +53,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Privacy level
@@ -255,7 +257,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
     ):
         self._model_manager = model_manager

@@ -24,7 +24,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
@@ -76,6 +75,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
@@ -336,7 +336,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

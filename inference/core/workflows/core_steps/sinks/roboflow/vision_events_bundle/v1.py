@@ -1,6 +1,7 @@
 import errno
 import io
 import json
+import logging
 import os
 import re
 import tarfile
@@ -12,7 +13,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import supervision as sv
-from fastapi import BackgroundTasks
 from pydantic import (
     ConfigDict,
     Field,
@@ -22,7 +22,6 @@ from pydantic import (
 )
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
-from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.sinks.local_file.v1 import (
     path_is_within_specified_directory,
@@ -55,6 +54,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
@@ -65,6 +65,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     is_workflow_selector,
 )
+
+logger = logging.getLogger(__name__)
 
 BUNDLE_FORMAT_VERSION = 1
 
@@ -529,7 +531,7 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         allow_access_to_file_system: bool,
         allowed_write_directory: Optional[str],

@@ -298,6 +298,9 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
 from inference.core.managers.inference_models_cache_watchdog import (
@@ -1599,6 +1602,7 @@ class HttpInterface(BaseInterface):
                     profiler=profiler,
                     executor=self.shared_thread_pool_executor,
                     workflow_id=workflow_request.workflow_id,
+                    step_error_handler=resolve_step_error_handler(),
                 )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
@@ -2544,6 +2548,7 @@ class HttpInterface(BaseInterface):
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
+                    step_error_handler=resolve_step_error_handler(),
                 )
                 return WorkflowValidationStatus(status="ok")
 
