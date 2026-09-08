@@ -45,13 +45,25 @@ def extract_json(
     """
     if not isinstance(raw, str):
         return True, {}
-    error_status, parsed = extract_json_payload(raw)
-    if not error_status:
-        return False, parsed
-    if salvage_truncated_detections:
-        loose_entries = extract_flat_object_entries(raw)
-        if loose_entries:
-            return False, loose_entries
+    try:
+        error_status, parsed = extract_json_payload(raw)
+        if not error_status:
+            return False, parsed
+        if salvage_truncated_detections:
+            loose_entries = extract_flat_object_entries(raw)
+            if loose_entries:
+                return False, loose_entries
+    except Exception as error:
+        # ``json.loads`` is not total: a deeply nested answer raises
+        # ``RecursionError`` and an absurdly long integer raises ``ValueError``
+        # (the int-to-str digit limit). Neither may escape a block's ``run()``.
+        logger.warning(
+            "Could not parse JSON while decoding VLM output. Error type: %s. "
+            "Details: %s",
+            error.__class__.__name__,
+            error,
+        )
+        return True, {}
     logger.warning("Could not parse JSON while decoding VLM output.")
     return True, {}
 

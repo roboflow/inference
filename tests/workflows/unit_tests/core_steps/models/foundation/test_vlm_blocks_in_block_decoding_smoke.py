@@ -182,3 +182,51 @@ def test_non_decoding_task_returns_no_predictions() -> None:
     # then
     assert result["predictions"] is None
     assert result["error_status"] is False
+
+
+def _run_workflow_batch(definition: Dict[str, Any], raw_outputs: list) -> list:
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={
+            "workflows_core.model_manager": MagicMock(),
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    images = [
+        np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8) for _ in raw_outputs
+    ]
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(raw, 11, 3) for raw in raw_outputs]
+        return execution_engine.run(
+            runtime_parameters={"image": images, "api_key": "sk-ant-test"}
+        )
+
+
+@pytest.mark.parametrize(
+    "malformed_output",
+    [
+        pytest.param("[" * 1100 + "]" * 1100, id="deeply-nested-arrays"),
+        pytest.param('[{"x_min": ' + "9" * 4400 + "}]", id="huge-integer"),
+    ],
+)
+def test_one_unparseable_answer_does_not_discard_the_rest_of_the_batch(
+    malformed_output: str,
+) -> None:
+    # given - a batch where the stdlib JSON parser raises on one answer
+    definition = _workflow_definition(
+        task_type="object-detection", with_visualization=False
+    )
+
+    # when
+    results = _run_workflow_batch(
+        definition, [DETECTION_OUTPUT, malformed_output, DETECTION_OUTPUT]
+    )
+
+    # then - the malformed answer reports an error, its neighbours decode
+    assert [r["error_status"] for r in results] == [False, True, False]
+    assert results[1]["predictions"] is None
+    for result in (results[0], results[2]):
+        assert is_detection_prediction(result["predictions"])
+        assert detection_boxes(result["predictions"]) == [EXPECTED_XYXY]

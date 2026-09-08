@@ -1163,3 +1163,53 @@ def test_decode_classification_does_not_salvage_truncated_detection_lists() -> N
 
     assert error_status is True
     assert prediction is None
+
+
+# ``json.loads`` is not total: these two answers make the stdlib parser raise
+# instead of returning a decode error, and neither may escape a block's
+# ``run()`` (Codex review, pass three).
+PATHOLOGICAL_JSON_ANSWERS = [
+    pytest.param("[" * 1100 + "]" * 1100, id="deeply-nested-arrays"),
+    pytest.param('[{"x_min": ' + "9" * 4400 + "}]", id="huge-integer"),
+]
+
+
+@pytest.mark.parametrize("raw_output", PATHOLOGICAL_JSON_ANSWERS)
+def test_extract_json_reports_error_when_stdlib_parser_raises(
+    raw_output: str,
+) -> None:
+    assert extract_json(raw_output, salvage_truncated_detections=True) == (
+        True,
+        {},
+    )
+
+
+@pytest.mark.parametrize("raw_output", PATHOLOGICAL_JSON_ANSWERS)
+def test_decode_object_detections_reports_error_when_parser_raises(
+    raw_output: str,
+) -> None:
+    error_status, detections = decode_object_detections(
+        raw_output=raw_output,
+        box_format="named_normalized",
+        image=_build_image(width=100, height=100),
+        classes=["cat"],
+        inference_id="iid",
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
+@pytest.mark.parametrize("raw_output", PATHOLOGICAL_JSON_ANSWERS)
+def test_decode_classification_reports_error_when_parser_raises(
+    raw_output: str,
+) -> None:
+    error_status, prediction = decode_classification(
+        raw_output=raw_output,
+        image=_build_image(width=100, height=100),
+        classes=["cat", "dog"],
+        inference_id="iid",
+    )
+
+    assert error_status is True
+    assert prediction is None

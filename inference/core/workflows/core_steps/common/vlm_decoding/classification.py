@@ -49,26 +49,34 @@ def decode_classification(
     error_status, parsed_data = extract_json(raw_output)
     if error_status:
         return True, None
-    parsed_data = coerce_classification_payload(parsed_data)
-    if parsed_data is None:
+    try:
+        parsed_data = coerce_classification_payload(parsed_data)
+        if parsed_data is None:
+            logger.warning(
+                "Could not decode VLM classification output - the JSON payload "
+                "is neither a classification object nor a list of class entries."
+            )
+            return True, None
+        if "class_name" in parsed_data and "confidence" in parsed_data:
+            return parse_multi_class_classification_results(
+                image=image,
+                results=parsed_data,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        if "predicted_classes" in parsed_data:
+            return parse_multi_label_classification_results(
+                image=image,
+                results=parsed_data,
+                classes=classes,
+                inference_id=inference_id,
+            )
+    except Exception as error:
         logger.warning(
-            "Could not decode VLM classification output - the JSON payload is "
-            "neither a classification object nor a list of class entries."
-        )
-        return True, None
-    if "class_name" in parsed_data and "confidence" in parsed_data:
-        return parse_multi_class_classification_results(
-            image=image,
-            results=parsed_data,
-            classes=classes,
-            inference_id=inference_id,
-        )
-    if "predicted_classes" in parsed_data:
-        return parse_multi_label_classification_results(
-            image=image,
-            results=parsed_data,
-            classes=classes,
-            inference_id=inference_id,
+            "Could not decode VLM classification output. Error type: %s. "
+            "Details: %s",
+            error.__class__.__name__,
+            error,
         )
     return True, None
 
