@@ -1,7 +1,9 @@
 import hashlib
 import os
 import sys
+from copy import deepcopy
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
+from uuid import uuid4
 
 import requests
 
@@ -74,6 +76,10 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
         "execution_duration", 0
     )
+    if "_usage_report_candidate" in d1 or "_usage_report_candidate" in d2:
+        merged["_usage_report_candidate"] = (
+            not d1 or d1.get("_usage_report_candidate") is True
+        ) and (not d2 or d2.get("_usage_report_candidate") is True)
     return {**d1, **d2, **merged}
 
 
@@ -209,10 +215,12 @@ def send_usage_payload(
             api_keys_hashes_failed.add(api_key_hash)
             continue
         complete_workflow_payloads = [
-            w for w in workflow_payloads.values() if "processed_frames" in w
+            dict(w) for w in workflow_payloads.values() if "processed_frames" in w
         ]
         try:
             for workflow_payload in complete_workflow_payloads:
+                workflow_payload.pop("_legacy_delivery", None)
+                workflow_payload.pop("_usage_report_candidate", None)
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
                 stream_session_id = workflow_payload.pop("stream_session_id", None)
@@ -240,3 +248,120 @@ def send_usage_payload(
 def sha256_hash(payload: str, length=5):
     payload_hash = hashlib.sha256(payload.encode())
     return payload_hash.hexdigest()[:length]
+
+
+def get_usage_report_capability(
+    api_key: str,
+    api_plan_endpoint_url: str,
+    ssl_verify: bool = True,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """A failed lookup is unknown, never permission to downgrade a report."""
+    if OFFLINE_MODE:
+        raise ConnectionError("Offline usage capability lookup")
+    response = requests.get(
+        api_plan_endpoint_url,
+        headers={"Authorization": f"Bearer {api_key}", **(extra_headers or {})},
+        verify=ssl_verify,
+        timeout=1,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("Invalid usage capability response")
+    capability = body.get("usage_report_protocol")
+    if capability is None:
+        return None
+    if (
+        not isinstance(capability, dict)
+        or type(capability.get("version")) is not int
+        or capability.get("version") != 1
+        or not isinstance(capability.get("workspace_id"), str)
+        or not capability["workspace_id"]
+        or not isinstance(capability.get("ownership_fingerprint"), str)
+        or len(capability["ownership_fingerprint"]) != 64
+        or any(c not in "0123456789abcdef" for c in capability["ownership_fingerprint"])
+    ):
+        raise ValueError("Invalid usage report capability")
+    return capability
+
+
+def prepare_usage_reports(
+    resource_payloads: ResourceUsage, capability: Dict[str, Any]
+) -> ResourceUsage:
+    reports = {}
+    for payload in resource_payloads.values():
+        if "processed_frames" not in payload:
+            continue
+        report = deepcopy(payload)
+        report.pop("api_key_hash", None)
+        report.pop("api_key", None)
+        report.pop("_usage_report_candidate", None)
+        report.pop("_legacy_delivery", None)
+        stream_session = report.pop("stream_session_id", None)
+        if stream_session:
+            report["exec_session_id"] = stream_session
+        report_id = str(uuid4())
+        report.update(
+            report_version=1,
+            report_id=report_id,
+            report_workspace_id=capability["workspace_id"],
+            report_ownership_fingerprint=capability["ownership_fingerprint"],
+        )
+        reports[report_id] = report
+    return reports
+
+
+def send_usage_reports(
+    reports: ResourceUsage,
+    api_key: str,
+    api_usage_endpoint_url: str,
+    ssl_verify: bool = True,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    if OFFLINE_MODE or not reports:
+        return {}
+    body = [dict(deepcopy(report), api_key=api_key) for report in reports.values()]
+    try:
+        response = requests.post(
+            api_usage_endpoint_url,
+            json=body,
+            verify=ssl_verify,
+            headers={"Authorization": f"Bearer {api_key}", **(extra_headers or {})},
+            timeout=1,
+        )
+        if response.status_code != 200:
+            return {}
+        return usage_report_outcomes(response.json(), set(reports))
+    except Exception:
+        return {}
+
+
+def usage_report_outcomes(body: Any, sent_ids: Set[str]) -> Dict[str, str]:
+    """Only explicit terminal outcomes retire a prepared report."""
+    if not isinstance(body, dict) or not isinstance(
+        body.get("usage_report_results"), list
+    ):
+        return {}
+    outcomes = {}
+    seen = set()
+    for result in body["usage_report_results"]:
+        if not isinstance(result, dict):
+            return {}
+        report_id = result.get("report_id")
+        if (
+            not isinstance(report_id, str)
+            or report_id not in sent_ids
+            or report_id in seen
+        ):
+            return {}
+        seen.add(report_id)
+        if result.get("status") == "accepted":
+            outcomes[report_id] = "accepted"
+        elif (
+            result.get("status") == "rejected"
+            and isinstance(result.get("reason"), str)
+            and result["reason"]
+        ):
+            outcomes[report_id] = result["reason"]
+    return outcomes

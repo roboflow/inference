@@ -63,6 +63,7 @@ def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
                     "hostname": "",
                     "ip_address_hash": "",
                     "processed_frames": 0,
+                    "_usage_report_candidate": True,
                     "fps": 0,
                     "source_duration": 0,
                     "category": "",

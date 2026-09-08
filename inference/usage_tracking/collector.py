@@ -8,6 +8,7 @@ import socket
 import sys
 import time
 from collections import defaultdict
+from copy import deepcopy
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
@@ -67,7 +68,10 @@ from .payload_helpers import (
     ResourceID,
     SystemDetails,
     UsagePayload,
+    get_usage_report_capability,
+    prepare_usage_reports,
     send_usage_payload,
+    send_usage_reports,
     sha256_hash,
     zip_usage_payloads,
 )
@@ -157,6 +161,7 @@ class UsageCollector:
             except Exception as exc:
                 logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
         self._queue_lock = Lock()
+        self._delivery_lock = Lock()
 
         self._system_info_lock = Lock()
         self._system_info: Dict[str, Any] = {}
@@ -195,6 +200,7 @@ class UsageCollector:
             "hostname": "",
             "ip_address_hash": "",
             "processed_frames": 0,
+            "_usage_report_candidate": True,
             "fps": 0,
             "source_duration": 0,
             "category": "",
@@ -687,16 +693,137 @@ class UsageCollector:
 
     def _flush_queue(self):
         if OFFLINE_MODE:
-            # Leave any usage persisted by an earlier online run untouched.
-            # Draining before the sender-level guard would silently discard it.
             return
-        usage_payloads = self._dump_usage_queue_with_lock()
-        if not usage_payloads:
+        if not self._delivery_lock.acquire(blocking=False):
             return
-        merged_payloads: APIKeyUsage = zip_usage_payloads(
-            usage_payloads=usage_payloads,
+        try:
+            self._flush_report_delivery()
+        except Exception as exc:
+            logger.warning("Usage delivery remains pending: %s", exc)
+        finally:
+            self._delivery_lock.release()
+
+    def _flush_report_delivery(self):
+        persistent = isinstance(self._queue, SQLiteQueue)
+        delivery = (
+            self._queue.read_report_delivery()
+            if persistent
+            else getattr(self, "_report_delivery", {})
         )
-        self._offload_to_api(payloads=merged_payloads)
+        if delivery:
+            self._send_prepared_reports(delivery, persistent)
+        raw = (
+            self._queue.peek_payloads()
+            if persistent
+            else self._dump_usage_queue_with_lock()
+        )
+        if not raw:
+            return
+        keys = dict(a[::-1] for a in self._hashed_api_keys.items())
+        capabilities = {}
+        enterprises = {}
+        for key in {key for payload in raw for key in payload if key}:
+            api_key = keys.get(key)
+            if not api_key:
+                continue
+            try:
+                capabilities[key] = get_usage_report_capability(
+                    api_key,
+                    self._settings.api_plan_endpoint_url,
+                    ssl_verify=ssl_verify_for_endpoint(
+                        self._settings.api_plan_endpoint_url
+                    ),
+                    extra_headers=build_roboflow_api_headers(),
+                )
+                if capabilities[key] is not None:
+                    plan = self._plan_details.get_api_key_plan(api_key=api_key)
+                    enterprises[key] = plan[self._plan_details._is_enterprise_col_name]
+            except Exception as exc:
+                capabilities.pop(key, None)
+                logger.debug("Usage capability remains unknown: %s", exc)
+
+        def partition(payloads, retained):
+            prepared, legacy, deferred = {}, [], []
+            for payload in zip_usage_payloads(payloads):
+                for key, resources in payload.items():
+                    if any(
+                        resource.get("_legacy_delivery")
+                        or resource.get("_usage_report_candidate") is not True
+                        for resource in resources.values()
+                    ):
+                        legacy.append({key: resources})
+                    elif key not in capabilities:
+                        deferred.append({key: resources})
+                    elif capabilities[key] is None:
+                        legacy.append({key: resources})
+                    elif any(
+                        report["report_ownership_fingerprint"]
+                        == capabilities[key]["ownership_fingerprint"]
+                        for report in retained.get(key, {}).values()
+                    ):
+                        deferred.append({key: resources})
+                    else:
+                        resources = deepcopy(resources)
+                        for resource in resources.values():
+                            resource["enterprise"] = enterprises[key]
+                        prepared.setdefault(key, {}).update(
+                            prepare_usage_reports(resources, capabilities[key])
+                        )
+            return prepared, legacy, deferred
+
+        if persistent:
+            delivery, legacy = self._queue.prepare_report_delivery(partition)
+        else:
+            try:
+                delivery, legacy, deferred = partition(
+                    raw, getattr(self, "_report_delivery", {})
+                )
+            except Exception:
+                for payload in raw:
+                    self._enqueue_payload(payload)
+                raise
+            retained = getattr(self, "_report_delivery", {})
+            for key, reports in delivery.items():
+                retained.setdefault(key, {}).update(reports)
+            self._report_delivery = retained
+            for payload in deferred:
+                self._enqueue_payload(payload)
+        self._offload_to_api(legacy)
+        if delivery:
+            self._send_prepared_reports(delivery, persistent)
+
+    def _send_prepared_reports(self, delivery, persistent):
+        keys = dict(a[::-1] for a in self._hashed_api_keys.items())
+        acknowledged = set()
+        for key, reports in delivery.items():
+            api_key = keys.get(key)
+            if not api_key:
+                continue
+            outcomes = send_usage_reports(
+                reports,
+                api_key,
+                self._settings.api_usage_endpoint_url,
+                ssl_verify=ssl_verify_for_endpoint(
+                    self._settings.api_usage_endpoint_url
+                ),
+                extra_headers=build_roboflow_api_headers(),
+            )
+            for report_id, outcome in outcomes.items():
+                if outcome != "accepted":
+                    logger.warning("Usage report %s rejected: %s", report_id, outcome)
+            acknowledged.update(outcomes)
+        if persistent:
+            self._queue.acknowledge_reports(acknowledged)
+        else:
+            self._report_delivery = {
+                key: {
+                    report_id: report
+                    for report_id, report in reports.items()
+                    if report_id not in acknowledged
+                }
+                for key, reports in getattr(self, "_report_delivery", {}).items()
+                if any(report_id not in acknowledged for report_id in reports)
+            }
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
         if OFFLINE_MODE:
@@ -738,6 +865,9 @@ class UsageCollector:
                 if api_key_hash not in api_keys_hashes_failed:
                     del payload[api_key_hash]
             if payload:
+                for resources in payload.values():
+                    for resource in resources.values():
+                        resource["_legacy_delivery"] = True
                 logger.debug("Enqueuing back unsent payload")
                 self._enqueue_payload(payload=payload)
 
