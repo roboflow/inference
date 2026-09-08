@@ -164,7 +164,6 @@ def _make_block(
         TensorActionRecognitionModelBlockV1 if tensor else ActionRecognitionModelBlockV1
     )
     block = block_type(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -222,7 +221,6 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     load_model = MagicMock(return_value=reasoner)
     monkeypatch.setattr(AutoModel, "from_pretrained", load_model)
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -242,7 +240,6 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
         MagicMock(return_value=object()),
     )
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -995,7 +992,6 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
 
 def test_remote_mode_raises():
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.REMOTE,
     )

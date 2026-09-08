@@ -13,13 +13,13 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPIUsagePausedError,
 )
+from inference.core.interfaces.workflows_step_error_handlers import (
+    extended_roboflow_errors_handler,
+    legacy_step_error_handler,
+)
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
-)
-from inference.core.workflows.execution_engine.v1.step_error_handlers import (
-    extended_roboflow_errors_handler,
-    legacy_step_error_handler,
 )
 from inference_models.errors import (
     ModelPackageAlternativesExhaustedError,

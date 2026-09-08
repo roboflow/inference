@@ -697,6 +697,9 @@ class InferencePipeline:
                 WorkflowRunner,
                 wrap_workflow_runner_for_stream_pipeline,
             )
+            from inference.core.interfaces.workflows_step_error_handlers import (
+                resolve_step_error_handler,
+            )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -752,6 +755,7 @@ class InferencePipeline:
                 profiler=profiler,
                 executor=execution_engine_thread_pool_executor,
                 dependencies_pre_init=workflows_dependencies_pre_init,
+                step_error_handler=resolve_step_error_handler(),
             )
             workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,

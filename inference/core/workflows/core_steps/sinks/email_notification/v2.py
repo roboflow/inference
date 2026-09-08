@@ -6,7 +6,6 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.roboflow_api import post_to_roboflow_api
@@ -36,6 +35,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
@@ -437,7 +437,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         api_key: Optional[str],
         disable_sinks: bool = False,

@@ -16,7 +16,6 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -141,17 +140,15 @@ class SegPreviewBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

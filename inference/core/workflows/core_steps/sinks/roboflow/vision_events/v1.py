@@ -1,3 +1,4 @@
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -8,11 +9,9 @@ from uuid import uuid4
 import numpy as np
 import requests
 import supervision as sv
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
 
 from inference.core.env import API_BASE_URL
-from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.requests import api_key_safe_raise_for_status
@@ -44,6 +43,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
@@ -51,6 +51,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+logger = logging.getLogger(__name__)
 
 VALID_EVENT_TYPES = [
     "quality_check",
@@ -460,7 +462,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):

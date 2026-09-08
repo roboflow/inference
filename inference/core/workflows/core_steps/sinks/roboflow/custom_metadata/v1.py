@@ -6,10 +6,8 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
@@ -23,12 +21,14 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 
 SHORT_DESCRIPTION = "Add custom metadata to the Roboflow Model Monitoring dashboard."
 
@@ -182,9 +182,9 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
+        cache: WorkflowsCache,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):
@@ -261,7 +261,7 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
 
 def get_workspace_name(
     api_key: str,
-    cache: BaseCache,
+    cache: WorkflowsCache,
 ) -> str:
     # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
@@ -277,7 +277,7 @@ def get_workspace_name(
 
 
 def add_custom_metadata_request(
-    cache: BaseCache,
+    cache: WorkflowsCache,
     api_key: str,
     inference_ids: List[str],
     field_name: str,

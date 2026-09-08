@@ -7,10 +7,8 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
-from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from inference.core.cache.base import BaseCache
 from inference.core.env import DEVICE_ID
 from inference.core.managers.metrics import get_system_info
 from inference.core.roboflow_api import (
@@ -36,6 +34,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
@@ -50,6 +49,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
@@ -311,9 +311,9 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
+        cache: WorkflowsCache,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):
@@ -401,7 +401,7 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
 # TODO: maybe make this a helper or decorator, it's used in multiple places
 def get_workspace_name(
     api_key: str,
-    cache: BaseCache,
+    cache: WorkflowsCache,
 ) -> str:
     # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
@@ -415,7 +415,7 @@ def get_workspace_name(
 
 
 def send_to_model_monitoring_request(
-    cache: BaseCache,
+    cache: WorkflowsCache,
     last_report_time_cache_key: str,
     api_key: str,
     predictions: List[ParsedPrediction],

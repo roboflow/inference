@@ -13,7 +13,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
@@ -52,6 +51,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -222,7 +222,7 @@ class RoboflowKeypointDetectionModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

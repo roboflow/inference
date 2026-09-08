@@ -1,3 +1,4 @@
+import logging
 from copy import copy
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -10,7 +11,6 @@ from pydantic import ConfigDict, Field
 from supervision import OverlapFilter
 from supervision.config import ORIENTED_BOX_COORDINATES
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     embed_rle_masks_in_larger_canvas,
     strip_host_mirror_metadata,
@@ -56,6 +56,8 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
+
+logger = logging.getLogger(__name__)
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 

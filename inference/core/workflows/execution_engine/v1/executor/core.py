@@ -1,3 +1,4 @@
+import logging
 import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +21,6 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
-from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.telemetry import (
     attach_context,
@@ -67,6 +67,8 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.stream_session import stream_session_id
+
+logger = logging.getLogger(__name__)
 
 
 def _store_crash_info(

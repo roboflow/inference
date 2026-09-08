@@ -6,7 +6,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits native
 ``TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND`` instead of the legacy
 classification response dict.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns ONE batched
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns ONE batched
   ``ClassificationPrediction`` (``class_id`` shape ``(bs,)``, ``confidence`` shape
   ``(bs, num_classes)`` full softmax). The consumer indexes per-image, so the
   block fans the batched object out into ``bs`` single-row predictions, each
@@ -34,7 +34,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -75,6 +74,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.classification import ClassificationPrediction
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -232,7 +232,7 @@ class RoboflowClassificationModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

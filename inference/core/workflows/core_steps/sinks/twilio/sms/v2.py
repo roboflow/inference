@@ -9,7 +9,6 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 from twilio.rest import Client
 
@@ -39,6 +38,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
@@ -337,7 +337,7 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         api_key: Optional[str],
         disable_sinks: bool = False,

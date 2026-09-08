@@ -1,8 +1,8 @@
+import logging
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from networkx import DiGraph
 
-from inference.core import logger
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
@@ -41,6 +41,8 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
     iterate_over_simd_step_input,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionDataManager:

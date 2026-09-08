@@ -3,7 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
@@ -14,7 +13,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
@@ -36,6 +34,8 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.utils.lru_cache import LRUCache
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -147,7 +147,7 @@ class ClipModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

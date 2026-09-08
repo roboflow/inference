@@ -1,5 +1,6 @@
 """Stateful action recognition workflow block."""
 
+import logging
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -9,8 +10,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core import logger
-from inference.core.managers.base import ModelManager
 from inference.core.models.action_recognition import merge_window_segments
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
@@ -52,6 +51,8 @@ from inference_models.models.base.action_recognition import (
     VideoSampling,
     effective_max_frame_side,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
@@ -227,11 +228,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
         self._model = None
@@ -243,7 +242,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
