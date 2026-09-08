@@ -64,7 +64,7 @@ interpretation and its plugin capabilities for authenticated stream administrato
 This is not a general restriction on camera network destinations. Direct local
 Python media use is unchanged. Actual plugin capabilities vary by target image.
 
-## Model packages and GroundingDINO configuration
+## Model package trust
 
 Benchmarking with `inference-models` now defaults to
 `allow_untrusted_packages=False` at the CLI, adapter and implementation layers.
@@ -72,18 +72,6 @@ The Jetson images set `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=False`. Adminis
 trust an executable package can still explicitly use the CLI's
 `--allow-untrusted-packages` flag or the corresponding Python/deployment setting.
 Only enable it when the package and its origin are trusted.
-
-GroundingDINO `config.py` files are read as literal configuration data and passed
-to the dependency as temporary JSON. Named literal assignments, lists, dictionaries,
-booleans, strings, numbers and module docstrings are supported. Imports, calls,
-attribute access, comprehensions, computed values, private names and `_base_`
-inheritance are rejected, including attempts to load another Python config. The
-input is limited to 1,000,000 bytes. The pip dependency's SwinT and SwinB configurations are
-covered by required compatibility tests. Configurations from actual Roboflow-published
-GroundingDINO model packages are not present locally and remain unvalidated; this
-is a rollout blocker for those packages, not evidence that all published variants work. Convert custom configs to self-contained literal
-assignments; executable configs are not restored by the unsafe package opt-in.
-Model weights and inference results still require normal target-model validation.
 
 The current source no longer contains a Jetson 6.0 Dockerfile. Inventory and retire
 or rebuild previously published 6.0 images separately; changing these source files
