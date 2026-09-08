@@ -803,7 +803,7 @@ class UsageCollector:
                 api_key = original_key
                 for candidate in reversed(supplied_keys):
                     if candidate == original_key:
-                        break
+                        continue
                     if candidate not in replacement_workspaces:
                         try:
                             capability = get_usage_report_capability(

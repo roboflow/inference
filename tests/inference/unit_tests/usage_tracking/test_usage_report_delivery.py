@@ -412,15 +412,17 @@ def test_supplied_rotated_credential_replays_original_workspace_report(
     collector._hashed_api_keys.update(
         {"replacement-key": "replacement-hash", "unrelated-key": "unrelated-hash"}
     )
-    monkeypatch.setattr(
-        module,
-        "get_usage_report_capability",
-        lambda key, *a, **kw: dict(
+
+    def capability_for_key(key, *a, **kw):
+        if key == "api-key":
+            raise ConnectionError("revoked original credential")
+        return dict(
             CAPABILITY,
             workspace_id="other" if key == "unrelated-key" else "workspace",
             ownership_fingerprint="b" * 64,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(module, "get_usage_report_capability", capability_for_key)
     accepted = {}
 
     def send(*a, json, **kw):
@@ -480,3 +482,73 @@ def test_unrelated_replacement_credential_cannot_send_retained_report(
     assert (
         queue.read_report_delivery() if persistent else collector._report_delivery
     ) == before
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_known_earlier_credential_can_replay_after_original_is_revoked(
+    usage_collector_with_mocked_threads, monkeypatch, tmp_path, persistent
+):
+    from inference.usage_tracking.sqlite_queue import SQLiteQueue
+
+    collector = usage_collector_with_mocked_threads
+    queue = (
+        SQLiteQueue(db_file_path=str(tmp_path / "earlier-key.db"))
+        if persistent
+        else None
+    )
+    module = configure_collector(collector, monkeypatch, queue)
+    collector._hashed_api_keys = {
+        "replacement-key": "replacement-hash",
+        "api-key": "hash",
+    }
+
+    def initial_capability(key, *a, **kw):
+        if key == "replacement-key":
+            raise ConnectionError("replacement temporarily unavailable")
+        return CAPABILITY
+
+    monkeypatch.setattr(module, "get_usage_report_capability", initial_capability)
+    sent = []
+    monkeypatch.setattr(
+        helpers.requests,
+        "post",
+        lambda *a, json, **kw: sent.append(deepcopy(json))
+        or SimpleNamespace(status_code=503),
+    )
+    collector._enqueue_payload({"hash": raw_usage(7)})
+    collector._flush_queue()
+    original = deepcopy(sent[0][0])
+
+    def rotated_capability(key, *a, **kw):
+        if key == "api-key":
+            raise ConnectionError("original revoked")
+        return dict(CAPABILITY, ownership_fingerprint="b" * 64)
+
+    monkeypatch.setattr(module, "get_usage_report_capability", rotated_capability)
+    collector._hashed_api_keys["replacement-key"] = "replacement-hash"
+    assert list(collector._hashed_api_keys) == ["replacement-key", "api-key"]
+    accepted = {}
+
+    def send(*a, json, **kw):
+        if kw["headers"]["Authorization"] != "Bearer replacement-key":
+            return SimpleNamespace(status_code=401)
+        for report in json:
+            accepted[report["report_id"]] = deepcopy(report)
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "usage_report_results": [
+                    {"report_id": report["report_id"], "status": "accepted"}
+                    for report in json
+                ]
+            },
+        )
+
+    monkeypatch.setattr(helpers.requests, "post", send)
+    collector._enqueue_payload({"replacement-hash": raw_usage(3)})
+    collector._flush_queue()
+    assert accepted[original["report_id"]] == dict(original, api_key="replacement-key")
+    assert sum(report["processed_frames"] for report in accepted.values()) == 10
+    assert (
+        queue.read_report_delivery() if persistent else collector._report_delivery
+    ) == {}
