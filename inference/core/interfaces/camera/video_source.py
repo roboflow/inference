@@ -81,10 +81,13 @@ PAUSE_ELIGIBLE_STATES = {StreamState.RUNNING}
 MUTE_ELIGIBLE_STATES = {StreamState.RUNNING}
 RESUME_ELIGIBLE_STATES = {StreamState.PAUSED, StreamState.MUTED}
 TERMINATE_ELIGIBLE_STATES = {
+    StreamState.NOT_STARTED,
+    StreamState.INITIALISING,
     StreamState.MUTED,
     StreamState.RUNNING,
     StreamState.PAUSED,
     StreamState.RESTARTING,
+    StreamState.TERMINATING,
     StreamState.ENDED,
     StreamState.ERROR,
 }
