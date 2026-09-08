@@ -11,6 +11,8 @@ from inference.core.utils.regions import (
     get_roboflow_region,
     resolve_roboflow_service_url,
 )
+from inference.core.utils.secure_gateway import normalize_secure_gateway_configuration
+from inference.core.utils.stream_api import validate_stream_api_key
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
@@ -540,10 +542,12 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # Secure gateway address for air-gapped deployments.
 # Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
-# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# May be a bare host[:port] (HTTPS with a migration warning) or
 # scheme-qualified, e.g. https://gateway.local, for TLS gateways.
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
@@ -947,17 +951,17 @@ ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
 )
 
 # Modal configuration for Custom Python Blocks
-WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
-    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
-).lower()  # "local" or "modal"
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = (
+    os.getenv("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local").strip().lower()
+)  # "local" or "modal"
+if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE not in {"local", "modal"}:
+    raise ValueError("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE must be local or modal")
 if OFFLINE_MODE and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-    warnings.warn(
-        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal is not available while "
-        "OFFLINE_MODE is enabled. Forcing local custom Python execution.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
+    raise RuntimeError(
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal cannot run in OFFLINE_MODE. "
+        "Disable offline mode to retain sandbox isolation, or explicitly configure "
+        "local execution only for trusted custom Python workflows."
     )
-    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = "local"
 
 # JPEG quality used when serializing images for the webexec round-trip.
 # Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
@@ -1069,6 +1073,12 @@ if OFFLINE_MODE and (
         "to workspaces without API connectivity."
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+STREAM_API_KEY = os.getenv("STREAM_API_KEY", "")
+if ENABLE_STREAM_API:
+    validate_stream_api_key(STREAM_API_KEY)
+ALLOW_UNSAFE_GSTREAMER_PIPELINES = str2bool(
+    os.getenv("ALLOW_UNSAFE_GSTREAMER_PIPELINES", "False")
+)
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
 RUNS_ON_JETSON = str2bool(

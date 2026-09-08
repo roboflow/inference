@@ -2248,7 +2248,7 @@ def test_secure_gateway_health_route_passes_configuration_to_probe(monkeypatch) 
 
     assert response.status_code == 200
     probe_mock.assert_called_once_with(
-        gateway_base_url="http://gateway.local:8080",
+        gateway_base_url="https://gateway.local:8080",
         timeout=7.5,
         verify_ssl=False,
     )

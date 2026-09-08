@@ -24,7 +24,7 @@ def run_inference_models_benchmark(
     model_configuration: Optional[str] = None,
     model_package_id: Optional[str] = None,
     turn_images_to_tensors: bool = True,
-    allow_untrusted_packages: bool = True,
+    allow_untrusted_packages: bool = False,
 ) -> None:
     inference_configuration = {}
     if model_configuration is not None:

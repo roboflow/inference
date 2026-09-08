@@ -1,5 +1,6 @@
 import os
 
+import pytest
 import requests
 
 from tests.inference.integration_tests.conftest import (
@@ -10,7 +11,12 @@ from tests.inference.integration_tests.conftest import (
 API_KEY = os.environ.get("API_KEY")
 
 
+@pytest.mark.skipif(
+    not os.getenv("STREAM_API_KEY"),
+    reason="Requires an explicitly enabled server and STREAM_API_KEY",
+)
 def test_list_pipeline_endpoint_being_enabled(server_url: str, auth_mode: str) -> None:
+    stream_api_key = os.environ["STREAM_API_KEY"]
     # when
     response = requests.get(
         f"{server_url}/inference_pipelines/list",
@@ -20,7 +26,11 @@ def test_list_pipeline_endpoint_being_enabled(server_url: str, auth_mode: str) -
                 "api_key": API_KEY,
             },
         ),
-        headers=api_key_auth_headers(auth_mode, API_KEY),
+        headers={
+            **api_key_auth_headers(auth_mode, API_KEY),
+            "X-Stream-API-Key": stream_api_key,
+        },
+        allow_redirects=False,
     )
 
     # then

@@ -1,9 +1,9 @@
-
 # Divert the program flow in worker sub-process as soon as possible,
 # before importing heavy-weight modules.
 import multiprocessing
+
 if __name__ == "__main__":
-    multiprocessing.freeze_support()    
+    multiprocessing.freeze_support()
 
 
 import logging
@@ -58,27 +58,27 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
     logger.info(f" - HF_HOME: {os.environ['HF_HOME']}")
     logger.info(f" - MODEL_CACHE_DIR: {os.environ['MODEL_CACHE_DIR']}")
 
-    return {
-        "cache_dir": cache_dir,
-        "data_dir": data_dir
-    }
+    return {"cache_dir": cache_dir, "data_dir": data_dir}
 
 
 # Determine app_dir
-if getattr(sys, 'frozen', False):
+if getattr(sys, "frozen", False):
     logger.info("Launching Roboflow Inference (bundle)")
 
     app_dir = os.path.dirname(sys.executable)
 
-    bundled_site_packages = os.path.join(os.path.dirname(sys.executable), 'site-packages')
+    bundled_site_packages = os.path.join(
+        os.path.dirname(sys.executable), "site-packages"
+    )
     sys.path.insert(0, bundled_site_packages)
 
     # Set GDAL_DATA environment variable
     import rasterio
-    gdal_data = os.path.join(os.path.dirname(rasterio.__file__), 'gdal_data')
-    os.environ['GDAL_DATA'] = gdal_data
 
-    #setup global cache env needed for tldexract and other packages
+    gdal_data = os.path.join(os.path.dirname(rasterio.__file__), "gdal_data")
+    os.environ["GDAL_DATA"] = gdal_data
+
+    # setup global cache env needed for tldexract and other packages
     setup_runtime_cache_env()
 
 else:
@@ -105,7 +105,7 @@ os.environ.setdefault("WORKFLOWS_MAX_CONCURRENT_STEPS", "4")
 os.environ.setdefault("API_LOGGING_ENABLED", "True")
 os.environ.setdefault("CORE_MODEL_SAM2_ENABLED", "True")
 os.environ.setdefault("CORE_MODEL_OWLV2_ENABLED", "True")
-os.environ.setdefault("ENABLE_STREAM_API", "True")
+os.environ.setdefault("ENABLE_STREAM_API", "False")
 os.environ.setdefault("ENABLE_WORKFLOWS_PROFILING", "False")
 os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
@@ -145,31 +145,36 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 # import inference.models.rfdetr as _rfdetr
 
 
-
 if __name__ == "__main__":
     logger.info("Starting server")
     # Import the FastAPI app
-    from cpu_http import app
-    import uvicorn
     import asyncio
+
+    import uvicorn
+    from cpu_http import app
 
     class FilteredAccessLogConfig(logging.Filter):
         """Filter out static file requests from access logs"""
+
         def filter(self, record):
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
-            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+            if (
+                "/static" in message
+                or "/_next/static" in message
+                or " / HTTP" in message
+            ):
                 return False
             return True
 
     async def _serve_with_banner():
         port = int(os.environ.get("PORT", "9001"))
         url = f"http://127.0.0.1:{port}/"
-        
+
         # Configure access log filtering
         access_logger = logging.getLogger("uvicorn.access")
         access_logger.addFilter(FilteredAccessLogConfig())
-        
+
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
@@ -192,7 +197,14 @@ if __name__ == "__main__":
                 if isinstance(handler, logging.StreamHandler):
                     lg.removeHandler(handler)
 
-        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+        for name in (
+            "",
+            "uvicorn",
+            "uvicorn.error",
+            "uvicorn.access",
+            "inference",
+            "inference.app",
+        ):
             _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"

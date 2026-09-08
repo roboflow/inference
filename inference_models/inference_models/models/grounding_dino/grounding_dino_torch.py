@@ -66,6 +66,7 @@ from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.grounding_dino.config import data_only_config
 
 
 class GroundingDinoForObjectDetectionTorch(
@@ -90,11 +91,12 @@ class GroundingDinoForObjectDetectionTorch(
         loader_kwargs = {}
         if os.path.isdir(text_encoder_dir):
             loader_kwargs["text_encoder_type"] = text_encoder_dir
-        model = load_model(
-            model_config_path=model_package_content["config.py"],
-            model_checkpoint_path=model_package_content["weights.pth"],
-            **loader_kwargs,
-        ).to(device)
+        with data_only_config(model_package_content["config.py"]) as config_path:
+            model = load_model(
+                model_config_path=config_path,
+                model_checkpoint_path=model_package_content["weights.pth"],
+                **loader_kwargs,
+            ).to(device)
         return cls(model=model, device=device)
 
     def __init__(

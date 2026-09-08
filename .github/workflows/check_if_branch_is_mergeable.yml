@@ -19,8 +19,12 @@ jobs:
         id: mergeable_check
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+          TARGET_REPO: ${{ github.repository }}
+          SOURCE_OWNER: ${{ github.event.pull_request.head.user.login || github.repository_owner }}
         run: |
-          if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
+          set -euo pipefail
+          if [ "main" = "$SOURCE_BRANCH" ]; then
             echo "ℹ️ Branch is main, proceeding"
             exit 0
           fi
@@ -32,12 +36,12 @@ jobs:
           }
 
           # Extract and sanitize repository information
-          target_repo="${{ github.repository }}"
-          source_owner=$(sanitize "${{ github.event.pull_request.head.user.login || github.repository_owner }}")
+          target_repo="$TARGET_REPO"
+          source_owner=$(sanitize "$SOURCE_OWNER")
           target_repo_name=$(echo "$target_repo" | cut -d'/' -f2)
           target_repo_name=$(sanitize "$target_repo_name")
           target_branch=$(sanitize "main")
-          source_branch=$(sanitize "${{ github.head_ref || github.ref_name }}")
+          source_branch=$(sanitize "$SOURCE_BRANCH")
 
           # Construct and execute API request
           api_url="/repos/$target_repo/compare/$target_branch...$source_owner:$target_repo_name:$source_branch"
