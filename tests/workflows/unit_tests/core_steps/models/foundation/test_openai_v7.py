@@ -199,6 +199,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
 @pytest.mark.parametrize(
     "model_version, expected_format",
     [
+        ("gpt-6-astra", "xyxy_absolute"),
         ("gpt-5.6-sol", "xyxy_absolute"),
         ("gpt-4o", "xyxy_absolute"),
         ("gpt-5.1", "named_normalized"),
