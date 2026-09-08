@@ -57,4 +57,4 @@ jobs:
         run: python build_scripts/download_fonts.py
       - name: 🧪 Unit Tests of Workflows
         timeout-minutes: 30
-        run: python -m pytest tests/workflows/unit_tests
+        run: python -m pytest tests/workflows/unit_tests tests/workflows/isolation
