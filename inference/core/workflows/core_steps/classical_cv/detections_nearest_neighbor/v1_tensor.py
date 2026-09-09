@@ -33,6 +33,7 @@ from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbo
     KEYPOINT_POINT_OPTION,
     MAX_DETECTIONS_PER_SET,
     MAX_MATCHED_PAIRS,
+    MAX_MATCHED_PAIRS_WITH_MASKS,
     OUTPUT_KEY_MATCHED_QUERY_DETECTIONS,
     OUTPUT_KEY_MATCHED_TARGET_DETECTIONS,
     OUTPUT_KEY_QUERY_PREDICTIONS,
@@ -334,15 +335,29 @@ def match_query_to_targets(
     # to num_query * num_target), and those pairs get sliced out of the input
     # predictions (masks included) via `take_prediction_by_indices` in `run()`.
     num_matched_pairs = int(tie_mask.sum().item())
-    if num_matched_pairs > MAX_MATCHED_PAIRS:
+    # A matched instance segmentation row carries a full-resolution mask, far
+    # larger than a plain bbox/keypoint row, so a masked match is held to a
+    # much smaller pair budget than the general case.
+    has_masks = (
+        getattr(query_detections, "mask", None) is not None
+        or getattr(target_detections, "mask", None) is not None
+    )
+    matched_pairs_limit = MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    if num_matched_pairs > matched_pairs_limit:
+        mask_note = (
+            " (a stricter limit applies because query and/or target "
+            "predictions carry instance segmentation masks)"
+            if has_masks
+            else ""
+        )
         raise ValueError(
             f"`roboflow_core/detections_nearest_neighbor@v1` would produce "
             f"{num_matched_pairs} matched query-target pairs, exceeding the "
-            f"{MAX_MATCHED_PAIRS} limit. This usually means many query/target "
-            "detections share the same (or a near-identical) anchor point, "
-            "producing widespread ties. Reduce the number of detections or "
-            "increase separation between anchor points before using this "
-            "block."
+            f"{matched_pairs_limit} limit{mask_note}. This usually means many "
+            "query/target detections share the same (or a near-identical) "
+            "anchor point, producing widespread ties. Reduce the number of "
+            "detections or increase separation between anchor points before "
+            "using this block."
         )
 
     # The only device->host hops: the batched minima and the tie indices.
