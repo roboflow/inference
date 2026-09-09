@@ -3,9 +3,11 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
-from openai import OpenAI
+from httpx import URL
+from openai import DefaultHttpxClient, OpenAI
 from pydantic import ConfigDict, Field
 
+from inference.core.env import OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -39,6 +41,19 @@ PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 LONG_DESCRIPTION = """
 Send a prompt to any OpenAI-compatible API endpoint (e.g. local Qwen, vLLM, Ollama,
 LM Studio, or any service that implements the OpenAI chat completions API).
+
+## Server configuration
+
+The server operator must set `OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` to a
+comma-separated list of trusted base URLs, for example:
+`http://localhost:8000/v1,https://llm.example.com/v1`.
+The default is empty, so requests are blocked until an endpoint is approved.
+Matching is exact (including scheme, port, and path), ignoring trailing slashes.
+Use HTTP(S) URLs without credentials, query strings, or fragments. Local/private
+servers and plain HTTP require explicit inclusion in this list. Only approve
+hosts whose DNS and service are trusted to receive workflow data and API keys.
+Redirects are not followed; configure the final API URL. Restart the server after
+changing this setting. Workflow inputs and selectors cannot modify the allowlist.
 
 ## How this block works
 
@@ -91,7 +106,8 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/openai_compatible@v1"]
     base_url: Union[Selector(kind=[STRING_KIND]), str] = Field(
         title="Base URL",
-        description="URL of the OpenAI-compatible server, including /v1.",
+        description="URL of the OpenAI-compatible server, including /v1. Must be listed "
+        "in the server's OPENAI_COMPATIBLE_ALLOWED_BASE_URLS setting.",
         examples=["http://localhost:8000/v1", "$inputs.base_url"],
     )
     model_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
@@ -234,10 +250,33 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
         return ">=1.4.0,<2.0.0"
 
     def _get_client(self, base_url: str, api_key: str) -> OpenAI:
+        base_url = base_url.rstrip("/")
+        if base_url not in OPENAI_COMPATIBLE_ALLOWED_BASE_URLS:
+            raise ValueError(
+                "OpenAI-compatible endpoint is not approved by the server. Configure "
+                "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS to allow this base URL."
+            )
+        url = URL(base_url)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.host
+            or url.userinfo
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError(
+                "OpenAI-compatible base URL must be an HTTP(S) URL without "
+                "credentials, query strings, or fragments."
+            )
         cache_key = (base_url, api_key)
         client = self._client_cache.get(cache_key)
         if client is None:
-            client = OpenAI(base_url=base_url, api_key=api_key, timeout=120.0)
+            client = OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                timeout=120.0,
+                http_client=DefaultHttpxClient(follow_redirects=False),
+            )
             self._client_cache[cache_key] = client
         return client
 

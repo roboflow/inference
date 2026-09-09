@@ -1407,6 +1407,15 @@ if HTTP_API_THREADPOOL_WORKERS:
 else:
     HTTP_API_THREADPOOL_WORKERS = None
 
+# Exact operator-approved OpenAI-compatible base URLs, ignoring trailing slashes.
+# Empty by default: workflows cannot select arbitrary outbound destinations.
+OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = {
+    url.rstrip("/")
+    for url in safe_split_value(
+        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", ""), strip=True
+    )
+}
+
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
 WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
