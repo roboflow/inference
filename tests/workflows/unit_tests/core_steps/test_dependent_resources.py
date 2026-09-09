@@ -327,7 +327,7 @@ def test_clip_v1_synthesizes_core_model_id_from_version() -> None:
     # Core models must register in the model manager the same way
     # load_core_model() does.
     assert resources[0].metadata.model_registration_kwargs == {
-        "endpoint_type": ModelEndpointType.CORE_MODEL
+        "endpoint_type": "core_model"
     }
 
 

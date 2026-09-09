@@ -594,6 +594,10 @@ def get_roboflow_model_data(
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> dict:
+    # Workflow blocks pass the plain string `core_model` so they do not have to
+    # import this enum (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE).
+    # `ModelEndpointType(member)` is the identity for real members.
+    endpoint_type = ModelEndpointType(endpoint_type)
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
     if not MODELS_CACHE_AUTH_ENABLED:

@@ -13,7 +13,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
@@ -53,7 +52,10 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
-from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
@@ -198,16 +200,14 @@ class BlockManifest(WorkflowBlockManifest):
                     model_id=self.version,
                     model_id_resolver=lambda version: f"sam2/{version}",
                     model_registration_kwargs={
-                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
                     },
                 )
             ]
         return [
             roboflow_platform_model(
                 model_id=f"sam2/{self.version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -276,7 +276,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     ) -> BlockResult:
         sam_model_id = f"sam2/{version}"
         self._model_manager.add_model(
-            sam_model_id, self._api_key, endpoint_type=ModelEndpointType.CORE_MODEL
+            sam_model_id, self._api_key, endpoint_type=CORE_MODEL_ENDPOINT_TYPE
         )
 
         boxes_iter = boxes if boxes is not None else [None] * len(images)

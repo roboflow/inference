@@ -353,6 +353,8 @@ def _check_if_api_key_has_access_to_model(
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> bool:
+    # Same reason as in roboflow_api.get_roboflow_model_data.
+    endpoint_type = ModelEndpointType(endpoint_type)
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
     if pipeline_definition is not None:
