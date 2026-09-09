@@ -502,13 +502,14 @@ def test_cached_client_still_requires_approved_endpoint(monkeypatch) -> None:
             block._get_client(base_url, "test-key")
 
 
+@pytest.mark.parametrize("allowed_url", ["*", "http://localhost:8000/v1"])
 @pytest.mark.parametrize("status_code", [200, 301, 302, 303, 307, 308])
 def test_approved_endpoint_uses_real_sdk_without_following_redirects(
-    monkeypatch, status_code
+    monkeypatch, status_code, allowed_url
 ) -> None:
     base_url = "http://localhost:8000/v1"
     monkeypatch.setattr(
-        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {base_url}
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {allowed_url}
     )
     requests = []
 
@@ -549,3 +550,15 @@ def test_approved_endpoint_uses_real_sdk_without_following_redirects(
     else:
         assert result["output"] == ""
         assert result["error_status"]
+
+
+@pytest.mark.parametrize("allowed", [{"*"}, {"*", "https://approved.example/v1"}])
+@pytest.mark.parametrize(
+    "base_url", ["http://127.0.0.1/v1", "https://other.example/v1"]
+)
+def test_wildcard_allows_any_destination(monkeypatch, allowed, base_url) -> None:
+    monkeypatch.setattr(
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", allowed
+    )
+    with OpenAICompatibleBlockV1()._get_client(base_url, "test-key") as client:
+        assert str(client.base_url) == base_url + "/"

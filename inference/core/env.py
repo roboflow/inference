@@ -1408,11 +1408,11 @@ else:
     HTTP_API_THREADPOOL_WORKERS = None
 
 # Exact operator-approved OpenAI-compatible base URLs, ignoring trailing slashes.
-# Empty by default: workflows cannot select arbitrary outbound destinations.
+# "*" allows any destination by default for compatibility; empty blocks all.
 OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = {
     url.rstrip("/")
     for url in safe_split_value(
-        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", ""), strip=True
+        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", "*"), strip=True
     )
 }
 

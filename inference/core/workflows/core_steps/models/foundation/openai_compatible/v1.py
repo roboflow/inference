@@ -44,14 +44,16 @@ LM Studio, or any service that implements the OpenAI chat completions API).
 
 ## Server configuration
 
-The server operator must set `OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` to a
-comma-separated list of trusted base URLs, for example:
+`OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` defaults to `*`, allowing any destination
+for compatibility. Set it to an empty value to block all requests, or a
+comma-separated list of trusted base URLs to restrict destinations, for example:
 `http://localhost:8000/v1,https://llm.example.com/v1`.
-The default is empty, so requests are blocked until an endpoint is approved.
-Matching is exact (including scheme, port, and path), ignoring trailing slashes.
-Use HTTP(S) URLs without credentials, query strings, or fragments. Local/private
-servers and plain HTTP require explicit inclusion in this list. Only approve
-hosts whose DNS and service are trusted to receive workflow data and API keys.
+A `*` entry allows any destination even when other entries are present.
+Otherwise, matching is exact (including scheme, port, and path), ignoring
+trailing slashes. Use HTTP(S) URLs without credentials, query strings, or
+fragments. Local/private servers and plain HTTP are supported. When restricting
+destinations, only approve hosts whose DNS and service are trusted to receive
+workflow data and API keys.
 Redirects are not followed; configure the final API URL. Restart the server after
 changing this setting. Workflow inputs and selectors cannot modify the allowlist.
 
@@ -107,7 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
     base_url: Union[Selector(kind=[STRING_KIND]), str] = Field(
         title="Base URL",
         description="URL of the OpenAI-compatible server, including /v1. Must be listed "
-        "in the server's OPENAI_COMPATIBLE_ALLOWED_BASE_URLS setting.",
+        "in the server's OPENAI_COMPATIBLE_ALLOWED_BASE_URLS setting unless it contains *.",
         examples=["http://localhost:8000/v1", "$inputs.base_url"],
     )
     model_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
@@ -251,7 +253,10 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
 
     def _get_client(self, base_url: str, api_key: str) -> OpenAI:
         base_url = base_url.rstrip("/")
-        if base_url not in OPENAI_COMPATIBLE_ALLOWED_BASE_URLS:
+        if (
+            "*" not in OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
+            and base_url not in OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
+        ):
             raise ValueError(
                 "OpenAI-compatible endpoint is not approved by the server. Configure "
                 "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS to allow this base URL."

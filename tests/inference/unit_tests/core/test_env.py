@@ -1,6 +1,8 @@
 import importlib
 import os
 
+import pytest
+
 from inference.core import env as env_module
 
 
@@ -116,3 +118,31 @@ def test_workflows_remote_api_key_transport_rejects_invalid_value() -> None:
     # then
     assert result.returncode != 0
     assert "Invalid WORKFLOWS_REMOTE_API_KEY_TRANSPORT" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, {"*"}),
+        (" * ", {"*"}),
+        ("", set()),
+        (" , ", set()),
+        (
+            " https://approved.example/v1/, http://localhost:8000/v1/ ",
+            {"https://approved.example/v1", "http://localhost:8000/v1"},
+        ),
+    ],
+)
+def test_openai_compatible_allowed_base_urls_configuration(
+    monkeypatch, value, expected
+) -> None:
+    try:
+        with monkeypatch.context() as env_context:
+            if value is None:
+                env_context.delenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", raising=False)
+            else:
+                env_context.setenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", value)
+            importlib.reload(env_module)
+            assert env_module.OPENAI_COMPATIBLE_ALLOWED_BASE_URLS == expected
+    finally:
+        importlib.reload(env_module)
