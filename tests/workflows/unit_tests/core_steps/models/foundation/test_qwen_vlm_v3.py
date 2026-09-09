@@ -8,6 +8,7 @@ OpenRouter backend, and ``None`` token counts on the native backend.
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import OpenRouterResult
@@ -16,6 +17,16 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
     QwenVlmBlockV3,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def _stub_image() -> WorkflowImageData:
@@ -61,6 +72,7 @@ def test_run_openrouter_surfaces_token_usage(mock_or):
         model_manager=MagicMock(),
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
 
     result = block.run(**_base_run_kwargs(backend="openrouter"))
@@ -86,6 +98,7 @@ def test_run_native_reports_none_token_usage():
         model_manager=model_manager,
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
 
     result = block.run(**_base_run_kwargs())

@@ -18,7 +18,6 @@ from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -45,6 +44,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     third_party_model,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 
 XAI_BASE_URL = "https://api.x.ai/v1"
@@ -329,12 +332,14 @@ class SpaceXAIBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -361,6 +366,7 @@ class SpaceXAIBlockV1(WorkflowBlock):
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_spacexai_prompting(
             roboflow_api_key=self._api_key,
+            platform_client=self._platform_client,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -380,6 +386,7 @@ class SpaceXAIBlockV1(WorkflowBlock):
 
 def run_spacexai_prompting(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -433,6 +440,7 @@ def run_spacexai_prompting(
         spacexai_prompts.append(generated_prompt)
     return execute_spacexai_requests(
         roboflow_api_key=roboflow_api_key,
+        platform_client=platform_client,
         xai_api_key=xai_api_key,
         spacexai_prompts=spacexai_prompts,
         model_version=model_version,
@@ -479,6 +487,7 @@ def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
 
 def execute_spacexai_requests(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     xai_api_key: str,
     spacexai_prompts: List[dict],
     model_version: str,
@@ -507,6 +516,7 @@ def execute_spacexai_requests(
         partial(
             execute_spacexai_request,
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             xai_api_key=xai_api_key,
             instructions=prompt.get("instructions"),
             input_content=prompt["input"],
@@ -529,6 +539,7 @@ def execute_spacexai_requests(
 
 def execute_spacexai_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     xai_api_key: str,
     instructions: Optional[str],
     input_content: List[dict],
@@ -560,6 +571,7 @@ def execute_spacexai_request(
 
         return _execute_proxied_spacexai_request(
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             xai_api_key=xai_api_key,
             instructions=instructions,
             input_content=input_content,
@@ -582,6 +594,7 @@ def execute_spacexai_request(
 
 def _execute_proxied_spacexai_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     xai_api_key: str,
     instructions: Optional[str],
     input_content: List[dict],
@@ -611,7 +624,7 @@ def _execute_proxied_spacexai_request(
         payload["reasoning"] = {"effort": reasoning_effort}
 
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint="apiproxy/xai",
             api_key=roboflow_api_key,
             payload=payload,

@@ -9,7 +9,6 @@ from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -36,6 +35,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     third_party_model,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -265,12 +268,14 @@ class OpenAIBlockV3(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -297,6 +302,7 @@ class OpenAIBlockV3(WorkflowBlock):
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gpt_4v_llm_prompting(
             roboflow_api_key=self._api_key,
+            platform_client=self._platform_client,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -321,6 +327,7 @@ def run_gpt_4v_llm_prompting(
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     openai_api_key: Optional[str],
     gpt_model_version: str,
     gpt_image_detail: Literal["auto", "high", "low"],
@@ -346,6 +353,7 @@ def run_gpt_4v_llm_prompting(
         gpt4_prompts.append(generated_prompt)
     return execute_gpt_4v_requests(
         roboflow_api_key=roboflow_api_key,
+        platform_client=platform_client,
         openai_api_key=openai_api_key,
         gpt4_prompts=gpt4_prompts,
         gpt_model_version=gpt_model_version,
@@ -357,6 +365,7 @@ def run_gpt_4v_llm_prompting(
 
 def execute_gpt_4v_requests(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     gpt4_prompts: List[List[dict]],
     gpt_model_version: str,
@@ -368,6 +377,7 @@ def execute_gpt_4v_requests(
         partial(
             execute_gpt_4v_request,
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             openai_api_key=openai_api_key,
             prompt=prompt,
             gpt_model_version=gpt_model_version,
@@ -388,6 +398,7 @@ def execute_gpt_4v_requests(
 
 def _execute_proxied_openai_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     prompt: List[dict],
     gpt_model_version: str,
@@ -409,7 +420,7 @@ def _execute_proxied_openai_request(
 
     try:
         # Use the Roboflow API post function (this enures proper auth headers used based on invocation context)
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,
@@ -455,6 +466,7 @@ def _execute_openai_request(
 
 def execute_gpt_4v_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     prompt: List[dict],
     gpt_model_version: str,
@@ -465,6 +477,7 @@ def execute_gpt_4v_request(
     if openai_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             openai_api_key=openai_api_key,
             prompt=prompt,
             gpt_model_version=gpt_model_version,
