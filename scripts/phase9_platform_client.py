@@ -63,24 +63,42 @@ def transform(source: str, class_name: str, path: str):
     lines = source.split(newline)
     tree = ast.parse(source)
     edits = []
-    stats = {"defs": 0, "calls": 0, "ctor": 0, "gip": 0, "super": 0,
-             "post_calls": 0, "old_imports": 0}
+    stats = {
+        "defs": 0,
+        "calls": 0,
+        "ctor": 0,
+        "gip": 0,
+        "super": 0,
+        "post_calls": 0,
+        "old_imports": 0,
+    }
 
-    for node in tree.body:                                    # A: defs
+    for node in tree.body:  # A: defs
         if not isinstance(node, ast.FunctionDef):
             continue
         names = [a.arg for a in node.args.args]
         if "roboflow_api_key" not in names or "platform_client" in names:
             continue
-        if (node.args.vararg or node.args.kwarg or node.args.kwonlyargs
-                or node.args.posonlyargs):
+        if (
+            node.args.vararg
+            or node.args.kwarg
+            or node.args.kwonlyargs
+            or node.args.posonlyargs
+        ):
             raise SystemExit(f"{path}: unsupported signature {node.name}")
         arg = node.args.args[names.index("roboflow_api_key")]
-        edits.append((arg.end_lineno, arg.end_col_offset, arg.end_lineno,
-                      arg.end_col_offset, f", {PARAM_ANNOTATION}"))
+        edits.append(
+            (
+                arg.end_lineno,
+                arg.end_col_offset,
+                arg.end_lineno,
+                arg.end_col_offset,
+                f", {PARAM_ANNOTATION}",
+            )
+        )
         stats["defs"] += 1
 
-    for node in ast.walk(tree):                               # A: calls
+    for node in ast.walk(tree):  # A: calls
         if not isinstance(node, ast.Call):
             continue
         keys = {k.arg for k in node.keywords}
@@ -93,34 +111,65 @@ def transform(source: str, class_name: str, path: str):
                 f"{path}: unexpected roboflow_api_key expression {expr!r} "
                 f"at line {kw.value.lineno}"
             )
-        edits.append((kw.value.end_lineno, kw.value.end_col_offset,
-                      kw.value.end_lineno, kw.value.end_col_offset,
-                      f", platform_client={MAPPING[expr]}"))
+        edits.append(
+            (
+                kw.value.end_lineno,
+                kw.value.end_col_offset,
+                kw.value.end_lineno,
+                kw.value.end_col_offset,
+                f", platform_client={MAPPING[expr]}",
+            )
+        )
         stats["calls"] += 1
 
-    target = next((n for n in ast.walk(tree)                  # B: the class
-                   if isinstance(n, ast.ClassDef) and n.name == class_name), None)
+    target = next(
+        (
+            n
+            for n in ast.walk(tree)  # B: the class
+            if isinstance(n, ast.ClassDef) and n.name == class_name
+        ),
+        None,
+    )
     if target is None:
         raise SystemExit(f"{path}: no class {class_name}")
-    init = next((n for n in target.body
-                 if isinstance(n, ast.FunctionDef) and n.name == "__init__"), None)
-    gip = next((n for n in target.body
-                if isinstance(n, ast.FunctionDef) and n.name == "get_init_parameters"), None)
+    init = next(
+        (
+            n
+            for n in target.body
+            if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+        ),
+        None,
+    )
+    gip = next(
+        (
+            n
+            for n in target.body
+            if isinstance(n, ast.FunctionDef) and n.name == "get_init_parameters"
+        ),
+        None,
+    )
     if init is None or gip is None:
         raise SystemExit(f"{path}: {class_name} needs __init__ and get_init_parameters")
 
     ret = next((n for n in ast.walk(gip) if isinstance(n, ast.Return)), None)
     if ret is None or not isinstance(ret.value, ast.List):
         raise SystemExit(f"{path}: {class_name}.get_init_parameters must return a list")
-    declared = [e.value for e in ret.value.elts
-                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    declared = [
+        e.value
+        for e in ret.value.elts
+        if isinstance(e, ast.Constant) and isinstance(e.value, str)
+    ]
     if len(declared) != len(ret.value.elts):
         raise SystemExit(f"{path}: non-literal in get_init_parameters")
     if "platform_client" not in declared:
-        rendered = "        return [" + ", ".join(
-            f'"{n}"' for n in declared + ["platform_client"]) + "]"
-        edits.append((ret.lineno, 0, ret.end_lineno,
-                      len(lines[ret.end_lineno - 1]), rendered))
+        rendered = (
+            "        return ["
+            + ", ".join(f'"{n}"' for n in declared + ["platform_client"])
+            + "]"
+        )
+        edits.append(
+            (ret.lineno, 0, ret.end_lineno, len(lines[ret.end_lineno - 1]), rendered)
+        )
         stats["gip"] += 1
 
     if "platform_client" not in [a.arg for a in init.args.args]:
@@ -128,40 +177,74 @@ def transform(source: str, class_name: str, path: str):
         if last_arg.arg == "self":
             raise SystemExit(f"{path}: {class_name}.__init__ takes no parameters")
         anchor = init.args.defaults[-1] if init.args.defaults else last_arg
-        edits.append((anchor.end_lineno, anchor.end_col_offset, anchor.end_lineno,
-                      anchor.end_col_offset, f", {CTOR_PARAM}"))
+        edits.append(
+            (
+                anchor.end_lineno,
+                anchor.end_col_offset,
+                anchor.end_lineno,
+                anchor.end_col_offset,
+                f", {CTOR_PARAM}",
+            )
+        )
         stats["ctor"] += 1
         super_call = None
         for node in ast.walk(init):
-            if (isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "__init__"
-                    and isinstance(node.func.value, ast.Call)
-                    and isinstance(node.func.value.func, ast.Name)
-                    and node.func.value.func.id == "super"):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "__init__"
+                and isinstance(node.func.value, ast.Call)
+                and isinstance(node.func.value.func, ast.Name)
+                and node.func.value.func.id == "super"
+            ):
                 super_call = node
         if super_call is not None:
             last_kw = super_call.keywords[-1]
-            edits.append((last_kw.value.end_lineno, last_kw.value.end_col_offset,
-                          last_kw.value.end_lineno, last_kw.value.end_col_offset,
-                          ", platform_client=platform_client"))
+            edits.append(
+                (
+                    last_kw.value.end_lineno,
+                    last_kw.value.end_col_offset,
+                    last_kw.value.end_lineno,
+                    last_kw.value.end_col_offset,
+                    ", platform_client=platform_client",
+                )
+            )
             stats["super"] += 1
         else:
             end = init.body[-1].end_lineno
-            edits.append((end, len(lines[end - 1]), end, len(lines[end - 1]),
-                          newline + "        self._platform_client = platform_client"))
+            edits.append(
+                (
+                    end,
+                    len(lines[end - 1]),
+                    end,
+                    len(lines[end - 1]),
+                    newline + "        self._platform_client = platform_client",
+                )
+            )
 
-    for node in ast.walk(tree):                               # C: the proxy call
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == PROXY_HELPER):
-            edits.append((node.func.lineno, node.func.col_offset,
-                          node.func.end_lineno, node.func.end_col_offset,
-                          "platform_client.post"))
+    for node in ast.walk(tree):  # C: the proxy call
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == PROXY_HELPER
+        ):
+            edits.append(
+                (
+                    node.func.lineno,
+                    node.func.col_offset,
+                    node.func.end_lineno,
+                    node.func.end_col_offset,
+                    "platform_client.post",
+                )
+            )
             stats["post_calls"] += 1
     old_import_span = None
     for node in tree.body:
-        if (isinstance(node, ast.ImportFrom) and node.module == OLD_IMPORT_MODULE
-                and [a.name for a in node.names] == [PROXY_HELPER]):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == OLD_IMPORT_MODULE
+            and [a.name for a in node.names] == [PROXY_HELPER]
+        ):
             old_import_span = (node.lineno, node.end_lineno)
             stats["old_imports"] += 1
 
@@ -179,7 +262,7 @@ def transform(source: str, class_name: str, path: str):
                 anchor = node
         if anchor is None:
             raise SystemExit(f"{path}: no import anchor")
-        out.insert(anchor.end_lineno, IMPORT_BLOCK)
+        out.insert(anchor.end_lineno, IMPORT_BLOCK.replace("\n", newline))
         updated = newline.join(out)
     ast.parse(updated)
     return updated, stats
@@ -206,18 +289,28 @@ def verify(source: str, class_name: str, path: str):
                 problems.append(f"call at line {node.lineno} lacks platform_client")
         if isinstance(node, ast.Name) and node.id == PROXY_HELPER:
             problems.append(f"{PROXY_HELPER} referenced at line {node.lineno}")
-        if (isinstance(node, ast.ImportFrom) and node.module == OLD_IMPORT_MODULE
-                and any(a.name == PROXY_HELPER for a in node.names)):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == OLD_IMPORT_MODULE
+            and any(a.name == PROXY_HELPER for a in node.names)
+        ):
             problems.append(f"{PROXY_HELPER} import survives at line {node.lineno}")
-    cls = next(n for n in ast.walk(tree)
-               if isinstance(n, ast.ClassDef) and n.name == class_name)
-    gip = next(n for n in cls.body
-               if isinstance(n, ast.FunctionDef) and n.name == "get_init_parameters")
+    cls = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ClassDef) and n.name == class_name
+    )
+    gip = next(
+        n
+        for n in cls.body
+        if isinstance(n, ast.FunctionDef) and n.name == "get_init_parameters"
+    )
     ret = next(n for n in ast.walk(gip) if isinstance(n, ast.Return))
     if "platform_client" not in [e.value for e in ret.value.elts]:
         problems.append("get_init_parameters lacks platform_client")
-    init = next(n for n in cls.body
-                if isinstance(n, ast.FunctionDef) and n.name == "__init__")
+    init = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+    )
     if "platform_client" not in [a.arg for a in init.args.args]:
         problems.append("__init__ lacks platform_client")
     return problems
@@ -236,7 +329,9 @@ def main() -> int:
     for pair in args.pairs:
         path_text, _, class_name = pair.partition("=")
         path = pathlib.Path(path_text)
-        updated, stats = transform(path.read_text(encoding="utf-8"), class_name, path_text)
+        updated, stats = transform(
+            path.read_bytes().decode("utf-8"), class_name, path_text
+        )
         problems = verify(updated, class_name, path_text)
         if problems:
             print(f"FAIL {path_text}: {problems}", file=sys.stderr)
@@ -250,14 +345,18 @@ def main() -> int:
         outputs[path_text] = updated
         print(f"  {path_text}: {stats}")
     print("TOTALS", totals)
-    for name, expected in (("defs", args.expected_defs), ("calls", args.expected_calls),
-                           ("post_calls", args.expected_post_calls),
-                           ("ctor", args.expected_ctor)):
+    for name, expected in (
+        ("defs", args.expected_defs),
+        ("calls", args.expected_calls),
+        ("post_calls", args.expected_post_calls),
+        ("ctor", args.expected_ctor),
+    ):
         if totals[name] != expected:
             print(f"FAIL: {name} {totals[name]} != {expected}", file=sys.stderr)
             return 1
     for path_text, updated in outputs.items():
-        pathlib.Path(path_text).write_text(updated, encoding="utf-8")
+        with open(path_text, "w", encoding="utf-8", newline="") as f:
+            f.write(updated)
     print("POST-STATE verified for every file; idempotent; written")
     return 0
 
