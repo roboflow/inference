@@ -1,3 +1,14 @@
+"""Tensor-native sibling of ``vision_events_bundle/v1.py``.
+
+Consumes native ``inference_models`` predictions (detections dataclasses, the
+keypoint tuple, or the native classification dataclasses) instead of
+``sv.Detections`` / classification dicts. The bundle-writing logic (tar layout,
+payload schema, cooldown, fire-and-forget dispatch) is identical - only the
+prediction-to-annotation conversion differs, and that is delegated to the
+tensor-native ``vision_events.v1_tensor`` helpers exactly as the numpy block
+delegates to ``vision_events.v1``.
+"""
+
 import errno
 import io
 import json
@@ -12,7 +23,6 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
-import supervision as sv
 from pydantic import (
     ConfigDict,
     Field,
@@ -27,29 +37,21 @@ from inference.core.workflows.core_steps.sinks.local_file.v1 import (
     path_is_within_specified_directory,
 )
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
-from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
-    ALL_DATA_SCHEMAS_RELEVANT,
-    CUSTOM_RELEVANT,
-    INVENTORY_COUNT_RELEVANT,
-    OPERATOR_FEEDBACK_RELEVANT,
-    QUALITY_CHECK_RELEVANT,
-    SAFETY_ALERT_RELEVANT,
-    _build_event_data,
-    _convert_predictions_to_annotations,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_SOLUTION_KIND,
     STRING_KIND,
     Selector,
@@ -64,6 +66,17 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     is_workflow_selector,
+)
+from inference.roboflow_workflows_plugin.sinks.vision_events.v1_tensor import (
+    ALL_DATA_SCHEMAS_RELEVANT,
+    CUSTOM_RELEVANT,
+    INVENTORY_COUNT_RELEVANT,
+    OPERATOR_FEEDBACK_RELEVANT,
+    QUALITY_CHECK_RELEVANT,
+    SAFETY_ALERT_RELEVANT,
+    TensorNativePrediction,
+    _build_event_data,
+    _convert_predictions_to_annotations,
 )
 
 logger = logging.getLogger(__name__)
@@ -245,10 +258,10 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Optional[
         Selector(
             kind=[
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
-                CLASSIFICATION_PREDICTION_KIND,
+                TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+                TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
             ]
         )
     ] = Field(
@@ -563,7 +576,7 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
         target_directory: str,
         input_image: Optional[WorkflowImageData],
         output_image: Optional[WorkflowImageData],
-        predictions: Optional[Union[sv.Detections, dict]],
+        predictions: Optional[TensorNativePrediction],
         event_type: str,
         custom_metadata: Dict[str, Any],
         fire_and_forget: bool,
@@ -845,7 +858,7 @@ def _write_event_bundle(
     timestamp: datetime,
     input_image: Optional[WorkflowImageData],
     output_image: Optional[WorkflowImageData],
-    prediction: Optional[Union[sv.Detections, dict]],
+    prediction: Optional[TensorNativePrediction],
     event_type: str,
     solution: Optional[str],
     event_data: Dict[str, Any],

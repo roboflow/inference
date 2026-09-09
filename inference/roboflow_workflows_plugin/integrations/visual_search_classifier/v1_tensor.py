@@ -56,13 +56,6 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
-    build_visual_search_candidate_image,
-    format_visual_search_candidate,
-)
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations import (
-    parse_visual_search_classification,
-)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     CLASSIFICATION_STYLE_KEY,
@@ -102,6 +95,13 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_project,
 )
 from inference.core.workflows.utils.images import downscale_image_keeping_aspect_ratio
+from inference.roboflow_workflows_plugin.integrations.visual_search.helpers import (
+    build_visual_search_candidate_image,
+    format_visual_search_candidate,
+)
+from inference.roboflow_workflows_plugin.integrations.visual_search_classifier.classification_annotations import (
+    parse_visual_search_classification,
+)
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,

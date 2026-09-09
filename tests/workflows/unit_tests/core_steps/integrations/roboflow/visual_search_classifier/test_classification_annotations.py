@@ -1,4 +1,4 @@
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations import (
+from inference.roboflow_workflows_plugin.integrations.visual_search_classifier.classification_annotations import (
     parse_classification_annotation,
     parse_visual_search_classification,
 )

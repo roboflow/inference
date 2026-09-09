@@ -1178,6 +1178,25 @@ if LOAD_ENTERPRISE_BLOCKS:
             [ENTERPRISE_BLOCKS_PLUGIN] + _workflows_plugins
         )
 
+# The Roboflow-platform blocks (dataset upload, custom metadata, model
+# monitoring, vision events, asset-library attributes, visual search) live in
+# their own package so `inference/core/workflows` stops importing
+# `roboflow_api` and `active_learning`. They are always listed - they were
+# always part of the core block set - so there is no enable flag to honour;
+# the block-DISABLE policy (WORKFLOW_DISABLED_BLOCK_TYPES / _PATTERNS) is
+# applied inside the plugin's load_blocks(), exactly as the core loader does.
+# PREPENDED after the enterprise expansion so the resulting order is
+# roboflow -> enterprise -> user plugins, matching the historical
+# core-then-enterprise ordering of `load_workflow_blocks()`.
+ROBOFLOW_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
+_workflows_plugins = [
+    plugin for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",") if plugin
+]
+if ROBOFLOW_BLOCKS_PLUGIN not in _workflows_plugins:
+    os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+        [ROBOFLOW_BLOCKS_PLUGIN] + _workflows_plugins
+    )
+
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
     for e in os.getenv("TRANSIENT_ROBOFLOW_API_ERRORS", "").split(",")

@@ -14,11 +14,16 @@ from inference.enterprise.workflows.enterprise_blocks.loader import (
 from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import (
     ModbusTCPBlockV1,
 )
+from inference.roboflow_workflows_plugin.loader import (
+    load_blocks as load_roboflow_platform_blocks,
+)
 
 
 def _load_sink_blocks():
     result = []
-    for block in load_blocks() + load_enterprise_blocks():
+    for block in (
+        load_blocks() + load_enterprise_blocks() + load_roboflow_platform_blocks()
+    ):
         block_type = block.get_manifest().model_json_schema().get("block_type")
         if block_type in {"sink", "sinks"}:
             result.append(block)
@@ -28,6 +33,24 @@ def _load_sink_blocks():
 
 
 SINK_BLOCKS = _load_sink_blocks()
+
+RELOCATED_SINK_TYPES = {
+    "roboflow_core/roboflow_dataset_upload@v1",
+    "roboflow_core/roboflow_dataset_upload@v2",
+    "roboflow_core/roboflow_custom_metadata@v1",
+    "roboflow_core/model_monitoring_inference_aggregator@v1",
+    "roboflow_core/asset_library_attributes@v1",
+    "roboflow_core/roboflow_vision_events@v1",
+    "roboflow_core/vision_event_bundle@v1",
+}
+
+
+def test_relocated_roboflow_sinks_are_still_in_the_policy_inventory() -> None:
+    covered = {
+        block.get_manifest().model_fields["type"].annotation.__args__[0]
+        for block in SINK_BLOCKS
+    }
+    assert RELOCATED_SINK_TYPES <= covered, RELOCATED_SINK_TYPES - covered
 
 
 def test_sink_disabling_defaults_to_false() -> None:
