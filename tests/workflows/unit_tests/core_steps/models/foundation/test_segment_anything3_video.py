@@ -775,10 +775,9 @@ def test_visual_stream_restart_reprompts(block_factory):
         )
 
     assert [call[0] for call in fake.calls] == ["prompt", "track", "prompt"]
-    assert [call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"] == [
-        5,
-        0,
-    ]
+    assert [
+        call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"
+    ] == [5, 0]
     assert [
         call[1]["had_prior_state"] for call in fake.calls if call[0] == "prompt"
     ] == [False, False]
