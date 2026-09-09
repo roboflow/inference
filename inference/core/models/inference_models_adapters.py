@@ -2087,20 +2087,6 @@ def _ensure_clip_fits_the_duration_cap(frame_count: int, source_fps: float) -> N
     raise PayloadTooLargeError(message=message, public_message=message)
 
 
-def _weights_id(model_id: str) -> str:
-    """Strip the task suffix a hosted base carries under this task.
-
-    The hosted reasoner serves more than one task, so it is addressed here as
-    "nvidia/cosmos-3-edge-action-recognition" while its weights answer to
-    "nvidia/cosmos-3-edge". Loading under the weights id keeps one package on
-    disk for both tasks.
-    """
-    task_suffix = "-action-recognition"
-    if model_id.endswith(task_suffix):
-        return model_id[: -len(task_suffix)]
-    return model_id
-
-
 def load_action_recognition_model(
     model_id: str, api_key: Optional[str] = None, **kwargs
 ) -> ActionRecognitionModel:
@@ -2112,7 +2098,7 @@ def load_action_recognition_model(
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     loaded_model = AutoModel.from_pretrained(
-        model_id_or_path=_weights_id(model_id=model_id),
+        model_id_or_path=model_id,
         api_key=api_key,
         allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
         allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,

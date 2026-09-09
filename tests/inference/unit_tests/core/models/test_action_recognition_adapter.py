@@ -285,28 +285,7 @@ def test_a_trained_model_without_a_declared_side_is_read_whole() -> None:
     assert _side_handed_to_the_reader(model) is None
 
 
-@pytest.mark.parametrize(
-    "model_id, expected_weights_id",
-    [
-        ("nvidia/cosmos-3-edge-action-recognition", "nvidia/cosmos-3-edge"),
-        (
-            "peter-robicheaux/video-7-cosmos3-edge-t7",
-            "peter-robicheaux/video-7-cosmos3-edge-t7",
-        ),
-        ("nvidia/cosmos-3-edge", "nvidia/cosmos-3-edge"),
-    ],
-)
-def test_weights_id_maps_the_zero_shot_id_onto_the_shared_base(
-    model_id: str, expected_weights_id: str
-) -> None:
-    from inference.core.models.inference_models_adapters import _weights_id
-
-    assert _weights_id(model_id=model_id) == expected_weights_id
-
-
-def test_load_action_recognition_model_loads_the_shared_base_for_the_zero_shot_id() -> (
-    None
-):
+def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None:
     from inference.core.models import inference_models_adapters as adapters
 
     with patch.object(adapters, "AutoModel") as auto_model, patch.object(
@@ -320,5 +299,5 @@ def test_load_action_recognition_model_loads_the_shared_base_for_the_zero_shot_i
 
     assert (
         auto_model.from_pretrained.call_args.kwargs["model_id_or_path"]
-        == "nvidia/cosmos-3-edge"
+        == "nvidia/cosmos-3-edge-action-recognition"
     )
