@@ -48,3 +48,13 @@ class ModelsProvider(Protocol):
     def __contains__(self, model_id: str) -> bool: ...
 
     def __getitem__(self, key: str) -> Any: ...
+
+
+# The `endpoint_type` value every core-model block registers with. It is the
+# string form of `inference.core.roboflow_api.ModelEndpointType.CORE_MODEL`;
+# importing that enum here would pull the Roboflow API client into every model
+# block. `ModelManager.add_model` forwards it untouched and the two server
+# functions that read it - `roboflow_api.get_roboflow_model_data` and
+# `registries.roboflow._check_if_api_key_has_access_to_model` - coerce it back
+# into the enum. All 37 uses inside Workflows were CORE_MODEL.
+CORE_MODEL_ENDPOINT_TYPE: str = "core_model"
