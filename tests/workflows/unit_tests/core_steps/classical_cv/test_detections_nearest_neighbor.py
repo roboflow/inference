@@ -404,10 +404,10 @@ def test_keypoint_option_requires_keypoint_predictions() -> None:
 
 
 def test_detections_per_set_limit_rejects_oversized_query_set() -> None:
-    # given: 101 query detections exceeds the 100-detection-per-set limit
+    # given: 1001 query detections exceeds the 1000-detection-per-set limit
     query = make_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
-        detection_ids=[f"q{i}" for i in range(101)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"q{i}" for i in range(1001)],
     )
     target = make_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
 
@@ -417,11 +417,11 @@ def test_detections_per_set_limit_rejects_oversized_query_set() -> None:
 
 
 def test_detections_per_set_limit_rejects_oversized_target_set() -> None:
-    # given: 101 target detections exceeds the 100-detection-per-set limit
+    # given: 1001 target detections exceeds the 1000-detection-per-set limit
     query = make_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
     target = make_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
-        detection_ids=[f"t{i}" for i in range(101)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"t{i}" for i in range(1001)],
     )
 
     # when / then
@@ -430,21 +430,21 @@ def test_detections_per_set_limit_rejects_oversized_target_set() -> None:
 
 
 def test_detections_per_set_limit_allows_inputs_at_the_limit() -> None:
-    # given: exactly 100 detections on each side - at, not over, the limit
+    # given: exactly 1000 detections on each side - at, not over, the limit
     query = make_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
-        detection_ids=[f"q{i}" for i in range(100)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"q{i}" for i in range(1000)],
     )
     target = make_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
-        detection_ids=[f"t{i}" for i in range(100)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"t{i}" for i in range(1000)],
     )
 
     # when
     result = run_block(query, target)
 
     # then
-    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 100
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
 
 
 def make_native_detections(
@@ -900,10 +900,10 @@ def test_keypoint_option_requires_keypoint_predictions_tensor_native() -> None:
 
 @_TENSOR_ONLY
 def test_detections_per_set_limit_rejects_oversized_query_set_tensor_native() -> None:
-    # given: 101 query detections exceeds the 100-detection-per-set limit
+    # given: 1001 query detections exceeds the 1000-detection-per-set limit
     query = make_native_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
-        detection_ids=[f"q{i}" for i in range(101)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"q{i}" for i in range(1001)],
     )
     target = make_native_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
 
@@ -914,11 +914,11 @@ def test_detections_per_set_limit_rejects_oversized_query_set_tensor_native() ->
 
 @_TENSOR_ONLY
 def test_detections_per_set_limit_rejects_oversized_target_set_tensor_native() -> None:
-    # given: 101 target detections exceeds the 100-detection-per-set limit
+    # given: 1001 target detections exceeds the 1000-detection-per-set limit
     query = make_native_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
     target = make_native_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
-        detection_ids=[f"t{i}" for i in range(101)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"t{i}" for i in range(1001)],
     )
 
     # when / then
@@ -928,21 +928,21 @@ def test_detections_per_set_limit_rejects_oversized_target_set_tensor_native() -
 
 @_TENSOR_ONLY
 def test_detections_per_set_limit_allows_inputs_at_the_limit_tensor_native() -> None:
-    # given: exactly 100 detections on each side - at, not over, the limit
+    # given: exactly 1000 detections on each side - at, not over, the limit
     query = make_native_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
-        detection_ids=[f"q{i}" for i in range(100)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"q{i}" for i in range(1000)],
     )
     target = make_native_detections(
-        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
-        detection_ids=[f"t{i}" for i in range(100)],
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"t{i}" for i in range(1000)],
     )
 
     # when
     result = run_tensor_block(query, target)
 
     # then
-    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 100
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
 
 
 @_TENSOR_ONLY
