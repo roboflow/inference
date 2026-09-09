@@ -7,8 +7,13 @@ import pytest
 from inference.core.interfaces.stream_manager.manager_app import app
 from inference.core.interfaces.stream_manager.manager_app.app import (
     ManagedInferencePipeline,
+    ensure_idle_pipelines_warmed_up,
     get_or_spawn_pipeline_process,
 )
+
+
+class _StopLoop(Exception):
+    """Breaks out of the infinite warm-up loop after a single sweep."""
 
 
 def _managed_pipeline(
@@ -128,6 +133,49 @@ def test_get_or_spawn_pipeline_process_refuses_to_spawn_above_ram_limit(
     # when
     with pytest.raises(Exception):
         _ = get_or_spawn_pipeline_process(processes_table=processes_table)
+
+    # then
+    spawn_managed_pipeline_process_mock.assert_not_called()
+
+
+@mock.patch.object(app, "STREAM_MANAGER_MAX_ACTIVE_PIPELINES", 2)
+@mock.patch.object(app, "spawn_managed_pipeline_process")
+@mock.patch.object(app, "time")
+def test_ensure_idle_pipelines_warmed_up_spawns_below_limit(
+    time_mock: MagicMock,
+    spawn_managed_pipeline_process_mock: MagicMock,
+) -> None:
+    # given
+    time_mock.sleep.side_effect = _StopLoop()
+    processes_table = {"busy": _managed_pipeline("busy", is_idle=False)}
+
+    # when
+    with mock.patch.object(app, "PROCESSES_TABLE", processes_table):
+        with pytest.raises(_StopLoop):
+            ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines=1)
+
+    # then
+    spawn_managed_pipeline_process_mock.assert_called_once()
+
+
+@mock.patch.object(app, "STREAM_MANAGER_MAX_ACTIVE_PIPELINES", 2)
+@mock.patch.object(app, "spawn_managed_pipeline_process")
+@mock.patch.object(app, "time")
+def test_ensure_idle_pipelines_warmed_up_respects_active_pipelines_limit(
+    time_mock: MagicMock,
+    spawn_managed_pipeline_process_mock: MagicMock,
+) -> None:
+    # given - warm pool is short, but every slot is taken by a busy pipeline
+    time_mock.sleep.side_effect = _StopLoop()
+    processes_table = {
+        "first": _managed_pipeline("first", is_idle=False),
+        "second": _managed_pipeline("second", is_idle=False),
+    }
+
+    # when
+    with mock.patch.object(app, "PROCESSES_TABLE", processes_table):
+        with pytest.raises(_StopLoop):
+            ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines=1)
 
     # then
     spawn_managed_pipeline_process_mock.assert_not_called()

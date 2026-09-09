@@ -501,7 +501,12 @@ def ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines: int) -> None:
     while True:
         with PROCESSES_TABLE_LOCK:
             idle_pipelines = len(get_idle_pipelines_id(processes_table=PROCESSES_TABLE))
-            if idle_pipelines < expected_warmed_up_pipelines:
+            # the warm pool must not push the manager past the limit that
+            # get_or_spawn_pipeline_process enforces - busy pipelines count against it too
+            if (
+                idle_pipelines < expected_warmed_up_pipelines
+                and len(PROCESSES_TABLE) < STREAM_MANAGER_MAX_ACTIVE_PIPELINES
+            ):
                 _ = spawn_managed_pipeline_process(processes_table=PROCESSES_TABLE)
         time.sleep(5)
 
