@@ -184,6 +184,11 @@ def test_non_decoding_task_returns_no_predictions() -> None:
     assert result["error_status"] is False
 
 
+# Deep enough to raise RecursionError in json.loads on every supported
+# interpreter (3.12 tolerates a few thousand levels).
+DEEP_NESTING = 100_000
+
+
 def _run_workflow_batch(definition: Dict[str, Any], raw_outputs: list) -> list:
     execution_engine = ExecutionEngine.init(
         workflow_definition=definition,
@@ -207,7 +212,9 @@ def _run_workflow_batch(definition: Dict[str, Any], raw_outputs: list) -> list:
 @pytest.mark.parametrize(
     "malformed_output",
     [
-        pytest.param("[" * 1100 + "]" * 1100, id="deeply-nested-arrays"),
+        pytest.param(
+            "[" * DEEP_NESTING + "]" * DEEP_NESTING, id="deeply-nested-arrays"
+        ),
         pytest.param('[{"x_min": ' + "9" * 4400 + "}]", id="huge-integer"),
     ],
 )

@@ -1168,8 +1168,11 @@ def test_decode_classification_does_not_salvage_truncated_detection_lists() -> N
 # ``json.loads`` is not total: these two answers make the stdlib parser raise
 # instead of returning a decode error, and neither may escape a block's
 # ``run()`` (Codex review, pass three).
+# Python 3.12 raised the C recursion limit, so ~1100 levels parse there while
+# 3.10 / 3.11 already raise; this depth trips every supported interpreter.
+DEEP_NESTING = 100_000
 PATHOLOGICAL_JSON_ANSWERS = [
-    pytest.param("[" * 1100 + "]" * 1100, id="deeply-nested-arrays"),
+    pytest.param("[" * DEEP_NESTING + "]" * DEEP_NESTING, id="deeply-nested-arrays"),
     pytest.param('[{"x_min": ' + "9" * 4400 + "}]", id="huge-integer"),
 ]
 
