@@ -20,11 +20,18 @@ class TelemetrySettings(BaseSettings):
     flush_interval: int = Field(default=10, ge=10, le=300)
     use_persistent_queue: Optional[bool] = True
     queue_size: int = Field(default=10, ge=10, le=10000)
+    # Upper bound on how long interpreter shutdown waits for the final usage
+    # flush; 0 disables the wait. The usage threads are daemons, so once the
+    # bound is hit they simply die with the process.
+    shutdown_flush_timeout_seconds: float = Field(default=30.0, ge=0, le=300)
 
     @model_validator(mode="after")
     def check_values(cls, inst: TelemetrySettings):
         inst.flush_interval = min(max(inst.flush_interval, 10), 300)
         inst.queue_size = min(max(inst.queue_size, 10), 10000)
+        inst.shutdown_flush_timeout_seconds = min(
+            max(inst.shutdown_flush_timeout_seconds, 0), 300
+        )
         # Wrap in the validator (not in the field defaults) so that
         # TELEMETRY_* env overrides are routed through the secure gateway too.
         inst.api_usage_endpoint_url = wrap_url(inst.api_usage_endpoint_url)

@@ -1,3 +1,4 @@
+import atexit
 import time
 import traceback
 
@@ -94,12 +95,29 @@ class PingbackInfo:
                 replace_existing=True,
             )
             self.scheduler.start()
+            # The scheduler thread is a daemon, but the ThreadPoolExecutor it
+            # submits jobs to is torn down by the interpreter before atexit
+            # hooks run. Without an explicit shutdown the scheduler keeps
+            # ticking during interpreter finalisation and logs
+            # "cannot schedule new futures after shutdown" every interval.
+            atexit.register(self.stop, wait=False)
         except Exception as e:
             logger.debug(e)
 
-    def stop(self):
-        """Stops the scheduler."""
-        self.scheduler.shutdown()
+    def stop(self, wait: bool = True):
+        """Stops the scheduler.
+
+        Args:
+            wait (bool): Whether to wait for currently running pingback jobs to
+                finish before returning. Safe to call more than once.
+        """
+        scheduler = getattr(self, "scheduler", None)
+        if scheduler is None or not scheduler.running:
+            return
+        try:
+            scheduler.shutdown(wait=wait)
+        except Exception as e:
+            logger.debug(e)
 
     def post_data(self, model_manager):
         """Posts data to Roboflow about the models, container, device, and other relevant metrics.

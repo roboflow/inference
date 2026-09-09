@@ -1246,10 +1246,21 @@ class UsageCollector:
         return decorator
 
     def _cleanup(self):
+        # Runs from atexit. Terminating the sender makes it flush everything
+        # still queued, and every payload that previously failed to send is
+        # re-queued - so with an unreachable or slow usage API this final flush
+        # can take minutes. Bound the wait: both threads are daemons and die
+        # with the process once we stop joining them.
+        deadline = time.monotonic() + self._settings.shutdown_flush_timeout_seconds
         self._terminate_collector_thread.set()
-        self._collector_thread.join()
+        self._collector_thread.join(timeout=max(0.0, deadline - time.monotonic()))
         self._terminate_sender_thread.set()
-        self._sender_thread.join()
+        self._sender_thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        if self._collector_thread.is_alive() or self._sender_thread.is_alive():
+            logger.debug(
+                "Usage flush did not complete within %ss of shutdown - giving up",
+                self._settings.shutdown_flush_timeout_seconds,
+            )
 
 
 usage_collector = UsageCollector()

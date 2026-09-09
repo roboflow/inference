@@ -3,6 +3,7 @@ import hashlib
 import json
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from queue import Queue
@@ -17,6 +18,7 @@ from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
+from inference.usage_tracking.collector import UsageCollector
 from inference.usage_tracking.decorator_helpers import (
     record_fixed_model_input_for_request,
     usage_billing_suppressed,
@@ -2822,3 +2824,32 @@ def test_source_tags_reach_nested_model_rows(usage_collector_with_mocked_threads
     assert request_details["source_info"] == "smart-polygon"
     assert model_details["source"] == "app"
     assert usage_source_tags.get() == {}
+
+
+def test_cleanup_gives_up_on_a_flush_that_outlives_the_shutdown_budget():
+    # given
+    release = threading.Event()
+    stuck_flush = threading.Thread(target=release.wait, daemon=True)
+    stuck_flush.start()
+    finished = threading.Thread(target=lambda: None)
+    finished.start()
+    finished.join()
+    collector_like = SimpleNamespace(
+        _settings=SimpleNamespace(shutdown_flush_timeout_seconds=0.5),
+        _terminate_collector_thread=threading.Event(),
+        _collector_thread=finished,
+        _terminate_sender_thread=threading.Event(),
+        _sender_thread=stuck_flush,
+    )
+
+    # when
+    started = time.monotonic()
+    try:
+        UsageCollector._cleanup(collector_like)
+    finally:
+        release.set()
+
+    # then
+    assert time.monotonic() - started < 5
+    assert collector_like._terminate_collector_thread.is_set()
+    assert collector_like._terminate_sender_thread.is_set()
