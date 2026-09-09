@@ -40,8 +40,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.roboflow_api import build_roboflow_api_headers
-from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
@@ -79,6 +77,10 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
@@ -201,14 +203,16 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -363,10 +367,12 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 headers["X-Roboflow-Internal-Service-Secret"] = (
                     ROBOFLOW_INTERNAL_SERVICE_SECRET
                 )
-            headers = build_roboflow_api_headers(explicit_headers=headers)
+            headers = self._platform_client.build_api_headers(explicit_headers=headers)
             try:
                 response = requests.post(
-                    wrap_url(f"{endpoint}?api_key={self._api_key}"),
+                    self._platform_client.wrap_url(
+                        f"{endpoint}?api_key={self._api_key}"
+                    ),
                     json=payload,
                     headers=headers,
                     timeout=60,

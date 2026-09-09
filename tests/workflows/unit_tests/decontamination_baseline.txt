@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 302
+# Count: 278
 inference/core/workflows/core_steps/classical_cv/mask_edge_snap/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/motion_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/template_matching/v1_tensor.py	inference.core.env
@@ -134,48 +134,30 @@ inference/core/workflows/core_steps/models/foundation/qwen_vlm/v3.py	inference.c
 inference/core/workflows/core_steps/models/foundation/qwen_vlm/v3.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/models/foundation/seg_preview/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/seg_preview/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/seg_preview/v1.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/seg_preview/v1.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/seg_preview/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/seg_preview/v1_tensor.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/seg_preview/v1_tensor.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.responses.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything2_video/v1.py	inference.core.roboflow_api
 inference/core/workflows/core_steps/models/foundation/segment_anything2_video/v1.py	inference.usage_tracking.collector
 inference/core/workflows/core_steps/models/foundation/segment_anything2_video/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything2_video/v1_tensor.py	inference.core.roboflow_api
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.responses.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1_tensor.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1_tensor.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.responses.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2_tensor.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2_tensor.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2_tensor.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3_tensor.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3_tensor.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3_tensor.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py	inference.core.entities.requests.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py	inference.core.entities.responses.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py	inference.core.env
@@ -185,16 +167,10 @@ inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1_te
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.responses.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.utils.url_utils
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.roboflow_api
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.utils.url_utils
-inference/core/workflows/core_steps/models/foundation/segment_anything3_video/v1.py	inference.core.roboflow_api
 inference/core/workflows/core_steps/models/foundation/segment_anything3_video/v1.py	inference.usage_tracking.collector
 inference/core/workflows/core_steps/models/foundation/segment_anything3_video/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/segment_anything3_video/v1_tensor.py	inference.core.roboflow_api
 inference/core/workflows/core_steps/models/foundation/segment_anything_common/streaming_video_tensor.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/smolvlm/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/smolvlm/v1.py	inference.core.env

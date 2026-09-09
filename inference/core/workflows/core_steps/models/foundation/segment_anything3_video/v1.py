@@ -24,7 +24,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -76,6 +75,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
@@ -339,6 +342,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
@@ -347,10 +351,11 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         self._current_model_id: Optional[str] = None
         self._concept_sessions: Dict[str, _ConceptSessionBookkeeping] = {}
         self._visual_sessions: Dict[str, VideoSessionBookkeeping] = {}
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -360,7 +365,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
-            extra_weights_provider_headers = get_extra_weights_provider_headers()
+            extra_weights_provider_headers = (
+                self._platform_client.build_weights_provider_headers()
+            )
             self._model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,

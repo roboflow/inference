@@ -36,6 +36,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference_models.models.base.object_detection import Detections
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -457,15 +460,12 @@ def test_model_loader_forwards_inference_owned_dependencies(
         "inference_models",
         SimpleNamespace(AutoModel=SimpleNamespace(from_pretrained=from_pretrained)),
     )
-    monkeypatch.setattr(
-        module,
-        "get_extra_weights_provider_headers",
-        MagicMock(return_value=headers),
-    )
+    client = RecordingPlatformClient(weights_headers=headers)
     block = block_class(
         model_manager=model_manager,
         api_key="rf-test",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=client,
     )
 
     block._get_model(model_id="sam3video")
@@ -476,6 +476,8 @@ def test_model_loader_forwards_inference_owned_dependencies(
         weights_provider_extra_headers=headers,
         content_addressed_artifact_cache=artifact_cache,
     )
+    # `_get_model` calls the port with no arguments (sam2_video/v1.py:267).
+    assert client.weights_calls == [(None, None)]
 
 
 @pytest.mark.parametrize(
@@ -773,9 +775,10 @@ def test_visual_stream_restart_reprompts(block_factory):
         )
 
     assert [call[0] for call in fake.calls] == ["prompt", "track", "prompt"]
-    assert [
-        call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"
-    ] == [5, 0]
+    assert [call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"] == [
+        5,
+        0,
+    ]
     assert [
         call[1]["had_prior_state"] for call in fake.calls if call[0] == "prompt"
     ] == [False, False]
