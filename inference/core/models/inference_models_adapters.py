@@ -2091,10 +2091,11 @@ def _weights_id(model_id: str) -> str:
     """Strip the task suffix a hosted base carries under this task.
 
     The hosted reasoner serves more than one task, so it is addressed here as
-    "cosmos-3-edge/action_recognition" while its weights answer to
-    "cosmos-3-edge".
+    "nvidia/cosmos-3-edge-action-recognition" while its weights answer to
+    "nvidia/cosmos-3-edge". Loading under the weights id keeps one package on
+    disk for both tasks.
     """
-    task_suffix = "/action_recognition"
+    task_suffix = "-action-recognition"
     if model_id.endswith(task_suffix):
         return model_id[: -len(task_suffix)]
     return model_id

@@ -1074,6 +1074,10 @@ def test_get_model_type_when_fine_tuned_sam3_is_cached_but_disabled(
         ("clip/1", ("embed", "clip")),
         ("sam/1", ("embed", "sam")),
         ("gaze/1", ("gaze", "l2cs")),
+        (
+            "nvidia/cosmos-3-edge-action-recognition",
+            ("action-recognition", "cosmos-3-edge"),
+        ),
     ],
 )
 def test_get_model_type_when_generic_model_is_utilised(
