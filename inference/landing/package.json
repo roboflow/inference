@@ -11,8 +11,8 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.0",
     "immutable": ">=5.1.8",
-    "js-yaml": "^4.3.0",
-    "next": "16.2.12",
+    "js-yaml": "^4.3.2",
+    "next": "16.3.3",
     "react": "latest",
     "react-dom": "latest"
   },
@@ -29,11 +29,11 @@
     "eslint": "^10.8.0",
     "eslint-config-next": "^16.2.12",
     "immutable": ">=5.1.8",
-    "js-yaml": "^4.3.0",
+    "js-yaml": "^4.3.2",
     "postcss": "^8.5.18",
     "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
-    "sharp": "0.35.0",
+    "sharp": "0.35.4",
     "tailwindcss": "latest",
     "typescript": "latest"
   },
