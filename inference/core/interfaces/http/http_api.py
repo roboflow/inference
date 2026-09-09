@@ -3,7 +3,6 @@ import concurrent
 import logging
 import os
 import re
-import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -216,6 +215,7 @@ from inference.core.env import (
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -344,7 +344,6 @@ from inference.core.utils.requests import (
     deduct_api_key_from_string,
 )
 from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
-from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -424,13 +423,24 @@ HEALTH_CHECK_LOG_PATHS = frozenset(
 )
 
 
-if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
-    warnings.warn(
-        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
-        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
-        "If your workload relies on that setting, please make adjustment to your configuration before the inference "
-        "release following mentioned date. Otherwise - you may ignore this warning.",
-        category=InferenceDeprecationWarning,
+if (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+    and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "local"
+    and not (
+        WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+    )
+):
+    # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
+    # be able to silence a security notice.
+    logger.warning(
+        "SECURITY: this server accepts requests without authentication and runs Workflows Custom Python "
+        "blocks in its own process (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True), so any client that can "
+        "reach it can execute arbitrary code on this host. This is safe only while the server is reachable "
+        "from trusted clients alone. Set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False if you do not need "
+        "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
+        "in front of the server) if it is reachable from other machines. See "
+        "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
     )
 
 
