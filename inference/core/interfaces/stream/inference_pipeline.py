@@ -46,6 +46,9 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
 from inference.core.interfaces.stream.entities import (
     AnyPrediction,
     InferenceHandler,
@@ -748,6 +751,9 @@ class InferencePipeline:
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            # setdefault semantics: a caller's workflow_init_parameters may
+            # already carry an explicit inner_workflow_spec_resolver.
+            install_workflows_platform_bindings(workflow_init_parameters)
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
