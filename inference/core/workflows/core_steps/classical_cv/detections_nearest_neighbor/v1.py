@@ -67,7 +67,7 @@ This block receives two detection sets and produces the enriched query predictio
 
 This block requires two sets of detection predictions (object detection, instance segmentation, or keypoint detection); the same set can be used for both `query_predictions` and `target_predictions`. To use the `KEYPOINT` anchor option for either set, that set must be keypoint detection predictions and the corresponding `query_keypoint_name`/`target_keypoint_name` must be provided. Self-match exclusion relies on `detection_id` being present on both sets - this is populated automatically for all Roboflow object detection, instance segmentation, and keypoint detection model blocks. `max_distance` is optional; leave it unset to match every query detection to its nearest target regardless of distance.
 
-Because matching computes a full query x target pairwise distance matrix, `query_predictions` and `target_predictions` may each contain at most 1,000 detections; the block raises an error instead of matching when either set exceeds this limit.
+Because matching computes a full query x target pairwise distance matrix, `query_predictions` and `target_predictions` may each contain at most 1,000 detections; the block raises an error instead of matching when either set exceeds this limit. Separately, if many query/target anchor points are co-located (or within the tie epsilon of each other), the number of matched query-target pairs returned in `matched_query_detections`/`matched_target_detections` can be much larger than either input set - up to their full product in the worst case - since a query with several tied targets contributes one row per tie. This is capped independently at 10,000 matched pairs, because slicing a large matched-pair set out of the input detections (including any instance segmentation masks) is its own memory cost, separate from the distance matrix; the block raises an error instead of matching when this limit would be exceeded.
 
 Note that `query_predictions` is enriched in place - the same `sv.Detections` object passed in is mutated (a new `nearest_target_distance` field is added to its `.data`) and returned, the same convention used by blocks like Velocity and Time in Zone. Avoid feeding the same selector into two independent branches of a workflow if each branch needs to see its own, unmodified `nearest_target_distance`.
 """
@@ -80,6 +80,16 @@ TIE_EPSILON_PX = 1.0
 # bounded to a few tens of MB rather than letting a crafted input with many
 # detections exhaust process memory.
 MAX_DETECTIONS_PER_SET = 1_000
+
+# Independent from MAX_DETECTIONS_PER_SET: many co-located (or near-co-located)
+# anchor points can tie every query against every target, so the number of
+# matched pairs - and therefore the size of the matched_query_detections /
+# matched_target_detections slices, masks included - can approach
+# MAX_DETECTIONS_PER_SET ** 2 even though each input set is individually
+# within bounds. Capping the pair count itself (checked directly off the tie
+# mask, before any index list or slice is materialized) keeps that output-side
+# cost bounded regardless of how the ties are distributed.
+MAX_MATCHED_PAIRS = 10_000
 
 KEYPOINT_POINT_OPTION = "KEYPOINT"
 ANCHOR_POINT_OPTIONS = [
@@ -386,6 +396,22 @@ def match_query_to_targets(
     # A tie duplicates the query row once per tied target; row-major `np.where`
     # keeps the two paired outputs the same length and index-aligned.
     tie_mask = distance_matrix <= (min_per_row[:, None] + TIE_EPSILON_PX)
+    # Counted directly off the boolean mask, before `np.where`/`.tolist()`
+    # materialize any index list: widespread co-located ties can produce far
+    # more matched pairs than either input set's size alone would suggest (up
+    # to num_query * num_target), and those pairs get sliced out of the input
+    # detections (masks included) below in `run()`.
+    num_matched_pairs = int(np.count_nonzero(tie_mask))
+    if num_matched_pairs > MAX_MATCHED_PAIRS:
+        raise ValueError(
+            f"`roboflow_core/detections_nearest_neighbor@v1` would produce "
+            f"{num_matched_pairs} matched query-target pairs, exceeding the "
+            f"{MAX_MATCHED_PAIRS} limit. This usually means many query/target "
+            "detections share the same (or a near-identical) anchor point, "
+            "producing widespread ties. Reduce the number of detections or "
+            "increase separation between anchor points before using this "
+            "block."
+        )
     matched_query_indices, matched_target_indices = (
         x.tolist() for x in np.where(tie_mask)
     )

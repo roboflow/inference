@@ -447,6 +447,47 @@ def test_detections_per_set_limit_allows_inputs_at_the_limit() -> None:
     assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
 
 
+def test_matched_pairs_limit_rejects_widespread_ties() -> None:
+    # given: 200 query and 200 target detections, all co-located at the same
+    # anchor point - every pair ties, producing 40,000 matched pairs even
+    # though each set (200) is well under the 1000-detection-per-set limit.
+    # This is exactly the scenario MAX_DETECTIONS_PER_SET alone would miss.
+    query = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"q{i}" for i in range(200)],
+    )
+    target = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"t{i}" for i in range(200)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="matched query-target pairs"):
+        run_block(query, target)
+
+
+def test_matched_pairs_limit_allows_ties_at_the_limit() -> None:
+    # given: 100 query and 100 target detections, all co-located - exactly
+    # 10,000 tied pairs, at (not over) the limit
+    query = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 10_000
+    assert len(matched_target) == 10_000
+
+
 def make_native_detections(
     xyxy, detection_ids=None, class_name="object"
 ) -> NativeDetections:
@@ -943,6 +984,49 @@ def test_detections_per_set_limit_allows_inputs_at_the_limit_tensor_native() -> 
 
     # then
     assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_rejects_widespread_ties_tensor_native() -> None:
+    # given: 200 query and 200 target detections, all co-located at the same
+    # anchor point - every pair ties, producing 40,000 matched pairs even
+    # though each set (200) is well under the 1000-detection-per-set limit.
+    # This is exactly the scenario MAX_DETECTIONS_PER_SET alone would miss.
+    query = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"q{i}" for i in range(200)],
+    )
+    target = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"t{i}" for i in range(200)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="matched query-target pairs"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_allows_ties_at_the_limit_tensor_native() -> None:
+    # given: 100 query and 100 target detections, all co-located - exactly
+    # 10,000 tied pairs, at (not over) the limit
+    query = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_tensor_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 10_000
+    assert len(matched_target) == 10_000
 
 
 @_TENSOR_ONLY

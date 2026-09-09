@@ -32,6 +32,7 @@ import torch
 from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
     KEYPOINT_POINT_OPTION,
     MAX_DETECTIONS_PER_SET,
+    MAX_MATCHED_PAIRS,
     OUTPUT_KEY_MATCHED_QUERY_DETECTIONS,
     OUTPUT_KEY_MATCHED_TARGET_DETECTIONS,
     OUTPUT_KEY_QUERY_PREDICTIONS,
@@ -326,6 +327,23 @@ def match_query_to_targets(
     # A tie duplicates the query row once per tied target; `torch.nonzero` is
     # row-major like `np.where`, keeping the two paired outputs index-aligned.
     tie_mask = valid & (filled <= (min_per_row[:, None] + TIE_EPSILON_PX))
+
+    # Counted directly off the boolean mask, before `torch.nonzero`/`.tolist()`
+    # materialize any index list: widespread co-located ties can produce far
+    # more matched pairs than either input set's size alone would suggest (up
+    # to num_query * num_target), and those pairs get sliced out of the input
+    # predictions (masks included) via `take_prediction_by_indices` in `run()`.
+    num_matched_pairs = int(tie_mask.sum().item())
+    if num_matched_pairs > MAX_MATCHED_PAIRS:
+        raise ValueError(
+            f"`roboflow_core/detections_nearest_neighbor@v1` would produce "
+            f"{num_matched_pairs} matched query-target pairs, exceeding the "
+            f"{MAX_MATCHED_PAIRS} limit. This usually means many query/target "
+            "detections share the same (or a near-identical) anchor point, "
+            "producing widespread ties. Reduce the number of detections or "
+            "increase separation between anchor points before using this "
+            "block."
+        )
 
     # The only device->host hops: the batched minima and the tie indices.
     matched_pairs = torch.nonzero(tie_mask, as_tuple=False).cpu().tolist()
