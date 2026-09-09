@@ -28,11 +28,13 @@ CR-1: the effective tensor mode is `ENABLE_TENSOR_DATA_REPRESENTATION AND
 USE_INFERENCE_MODELS` (inference/core/env.py:1486), so a subprocess builder
 that sets only the former can silently run NumPy in both "modes" if it
 inherits `USE_INFERENCE_MODELS=False` from the shell. `_run()` below pins
-`USE_INFERENCE_MODELS=True` and every child asserts, from inside the child,
-that `inference.core.env.ENABLE_TENSOR_DATA_REPRESENTATION` equals the
-requested mode. The sink-workflow probe additionally asserts which module was
-actually selected for the 7 blocks with a `_tensor` sibling, and that the 2
-blocks with no sibling resolve to the same module in both modes.
+`USE_INFERENCE_MODELS=True`. Every child PRINTS - as part of its JSON output,
+not just an internal `assert` - the effective
+`inference.core.env.ENABLE_TENSOR_DATA_REPRESENTATION` and, for every
+relocated identifier it can still see, the exact module leaf that was
+selected (`v1`/`v1_tensor`/`v2`/`v2_tensor`). The PARENT test functions then
+assert those values against `_expected_module_leaf()` below, so the check
+does not depend solely on the child trusting itself.
 """
 
 import json
@@ -44,6 +46,35 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
+
+RELOCATED_IDENTIFIERS = [
+    "roboflow_core/asset_library_attributes@v1",
+    "roboflow_core/model_monitoring_inference_aggregator@v1",
+    "roboflow_core/roboflow_custom_metadata@v1",
+    "roboflow_core/roboflow_dataset_upload@v1",
+    "roboflow_core/roboflow_dataset_upload@v2",
+    "roboflow_core/roboflow_vision_events@v1",
+    "roboflow_core/vision_event_bundle@v1",
+    "roboflow_core/visual_search@v1",
+    "roboflow_core/visual_search_classifier@v1",
+]
+
+# The 2 blocks with no `_tensor` sibling - their module leaf is the same
+# regardless of tensor mode.
+UNPAIRED_IDENTIFIERS = {
+    "roboflow_core/asset_library_attributes@v1",
+    "roboflow_core/visual_search@v1",
+}
+
+
+def _expected_module_leaf(identifier: str, tensor_mode: bool) -> str:
+    """The exact module leaf (`v1`/`v1_tensor`/`v2`/`v2_tensor`) a relocated
+    identifier must resolve to under the given tensor mode."""
+    base = "v2" if identifier == "roboflow_core/roboflow_dataset_upload@v2" else "v1"
+    if identifier in UNPAIRED_IDENTIFIERS or not tensor_mode:
+        return base
+    return f"{base}_tensor"
+
 
 WORKFLOW = {
     "version": "1.3.0",
@@ -90,6 +121,7 @@ assert env_module.ENABLE_TENSOR_DATA_REPRESENTATION == requested_tensor_mode, (
 )
 
 WORKFLOW = json.loads(%s)
+RELOCATED_IDENTIFIERS = json.loads(%s)
 
 
 class SharedCache:
@@ -125,42 +157,22 @@ result = engine.run(
     }
 )
 
-# CR-1: assert which module the tensor-mode branch actually selected for the
-# 7 blocks with a _tensor sibling, and that the 2 blocks with no sibling
-# resolve to the same module regardless of mode.
-PAIRED_IDENTIFIERS = {
-    "roboflow_core/model_monitoring_inference_aggregator@v1",
-    "roboflow_core/roboflow_custom_metadata@v1",
-    "roboflow_core/roboflow_dataset_upload@v1",
-    "roboflow_core/roboflow_dataset_upload@v2",
-    "roboflow_core/roboflow_vision_events@v1",
-    "roboflow_core/vision_event_bundle@v1",
-    "roboflow_core/visual_search_classifier@v1",
-}
-UNPAIRED_IDENTIFIERS = {
-    "roboflow_core/asset_library_attributes@v1",
-    "roboflow_core/visual_search@v1",
-}
+# CR-1: report - do not just self-assert - the module leaf actually selected
+# for every relocated identifier, and the effective tensor flag, so the
+# PARENT can independently verify them.
 modules_by_identifier = {
     b.manifest_type_identifier: b.fully_qualified_block_class_name
     for b in describe_available_blocks(dynamic_blocks=[]).blocks
-    if b.manifest_type_identifier in PAIRED_IDENTIFIERS | UNPAIRED_IDENTIFIERS
+    if b.manifest_type_identifier in RELOCATED_IDENTIFIERS
 }
-assert (
-    set(modules_by_identifier) == PAIRED_IDENTIFIERS | UNPAIRED_IDENTIFIERS
-), modules_by_identifier
+assert set(modules_by_identifier) == set(RELOCATED_IDENTIFIERS), modules_by_identifier
 # `fully_qualified_block_class_name` is "<module path>.<ClassName>"; the
 # module's own leaf (v1 / v1_tensor / v2 / v2_tensor) is the second-to-last
 # dotted segment, not the last (which is the class name).
-for identifier in PAIRED_IDENTIFIERS:
-    module_name = modules_by_identifier[identifier]
-    module_leaf = module_name.split(".")[-2]
-    is_tensor_module = module_leaf.endswith("_tensor")
-    assert is_tensor_module == requested_tensor_mode, (identifier, module_name)
-for identifier in UNPAIRED_IDENTIFIERS:
-    module_name = modules_by_identifier[identifier]
-    module_leaf = module_name.split(".")[-2]
-    assert module_leaf == "v1", (identifier, module_name)
+module_leaf_by_identifier = {
+    identifier: modules_by_identifier[identifier].split(".")[-2]
+    for identifier in RELOCATED_IDENTIFIERS
+}
 
 print(
     json.dumps(
@@ -168,10 +180,15 @@ print(
             "outputs": result,
             "cache_is_injected": step._cache is cache,
             "cache_untouched": cache.storage == {},
+            "effective_tensor_mode": env_module.ENABLE_TENSOR_DATA_REPRESENTATION,
+            "module_leaf_by_identifier": module_leaf_by_identifier,
         }
     )
 )
-""" % ("'''" + json.dumps(WORKFLOW) + "'''")
+""" % (
+    "'''" + json.dumps(WORKFLOW) + "'''",
+    "'''" + json.dumps(RELOCATED_IDENTIFIERS) + "'''",
+)
 
 DISABLED_MESSAGE = "Sink was disabled by workflow execution policy"
 EXPECTED = {
@@ -179,18 +196,6 @@ EXPECTED = {
     "cache_is_injected": True,
     "cache_untouched": True,
 }
-
-RELOCATED_IDENTIFIERS = [
-    "roboflow_core/asset_library_attributes@v1",
-    "roboflow_core/model_monitoring_inference_aggregator@v1",
-    "roboflow_core/roboflow_custom_metadata@v1",
-    "roboflow_core/roboflow_dataset_upload@v1",
-    "roboflow_core/roboflow_dataset_upload@v2",
-    "roboflow_core/roboflow_vision_events@v1",
-    "roboflow_core/vision_event_bundle@v1",
-    "roboflow_core/visual_search@v1",
-    "roboflow_core/visual_search_classifier@v1",
-]
 
 POLICY_PROBE = """
 import json
@@ -210,9 +215,19 @@ assert env_module.ENABLE_TENSOR_DATA_REPRESENTATION == requested_tensor_mode, (
 )
 
 RELOCATED = json.loads(%s)
-available = {
-    block.manifest_type_identifier
-    for block in describe_available_blocks(dynamic_blocks=[]).blocks
+described = describe_available_blocks(dynamic_blocks=[]).blocks
+available = {block.manifest_type_identifier for block in described}
+# CR-1: for whichever relocated identifiers survive discovery, report the
+# exact module leaf that was selected, so the PARENT can assert it too.
+modules_by_identifier = {
+    block.manifest_type_identifier: block.fully_qualified_block_class_name
+    for block in described
+    if block.manifest_type_identifier in RELOCATED
+}
+module_leaf_by_identifier = {
+    identifier: modules_by_identifier[identifier].split(".")[-2]
+    for identifier in RELOCATED
+    if identifier in modules_by_identifier
 }
 WORKFLOW = {
     "version": "1.3.0",
@@ -241,6 +256,8 @@ print(
         {
             "present": sorted(i for i in RELOCATED if i in available),
             "asset_library_compile": outcome,
+            "effective_tensor_mode": env_module.ENABLE_TENSOR_DATA_REPRESENTATION,
+            "module_leaf_by_identifier": module_leaf_by_identifier,
         }
     )
 )
@@ -311,7 +328,16 @@ def _run(probe: str, tensor_mode: str, extra_env: dict) -> dict:
 
 @pytest.mark.parametrize("tensor_mode", ["False", "True"])
 def test_roboflow_sink_workflow_is_unchanged_by_the_relocation(tensor_mode) -> None:
-    assert _run(PROBE, tensor_mode, {}) == EXPECTED
+    tensor_mode_bool = tensor_mode == "True"
+    expected = {
+        **EXPECTED,
+        "effective_tensor_mode": tensor_mode_bool,
+        "module_leaf_by_identifier": {
+            identifier: _expected_module_leaf(identifier, tensor_mode_bool)
+            for identifier in RELOCATED_IDENTIFIERS
+        },
+    }
+    assert _run(PROBE, tensor_mode, {}) == expected
 
 
 @pytest.mark.parametrize("tensor_mode", ["False", "True"])
@@ -319,7 +345,14 @@ def test_roboflow_sink_workflow_is_unchanged_by_the_relocation(tensor_mode) -> N
 def test_disable_policy_keeps_applying_to_the_relocated_blocks(
     tensor_mode, extra_env, present, compile_outcome
 ) -> None:
-    assert _run(POLICY_PROBE, tensor_mode, extra_env) == {
+    tensor_mode_bool = tensor_mode == "True"
+    expected = {
         "present": present,
         "asset_library_compile": compile_outcome,
+        "effective_tensor_mode": tensor_mode_bool,
+        "module_leaf_by_identifier": {
+            identifier: _expected_module_leaf(identifier, tensor_mode_bool)
+            for identifier in present
+        },
     }
+    assert _run(POLICY_PROBE, tensor_mode, extra_env) == expected

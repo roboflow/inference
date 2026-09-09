@@ -163,3 +163,42 @@ def test_env_expansion_does_not_duplicate_an_already_listed_roboflow_plugin() ->
         if identifier.startswith("inference.roboflow_workflows_plugin.")
     ]
     assert len(roboflow_blocks) == len(set(roboflow_blocks)) == 9
+
+
+def test_env_expansion_moves_an_already_listed_roboflow_plugin_ahead_of_enterprise() -> (
+    None
+):
+    # An operator who already listed the roboflow plugin explicitly must not
+    # end up with it stuck behind the enterprise expansion: normalisation
+    # removes it from wherever it sits and prepends it exactly once.
+    report = _run_probe(
+        PROBE,
+        LOAD_ENTERPRISE_BLOCKS="True",
+        WORKFLOWS_PLUGINS=ROBOFLOW_PLUGIN,
+    )
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN}"
+
+
+def test_env_expansion_moves_roboflow_ahead_of_enterprise_and_a_custom_plugin() -> None:
+    # Same normalisation, this time with the roboflow plugin listed AFTER a
+    # custom plugin - the custom plugin's relative position must be preserved
+    # (it still follows enterprise), only roboflow moves to the front.
+    report = _run_probe(
+        ORDERING_PROBE,
+        LOAD_ENTERPRISE_BLOCKS="True",
+        WORKFLOWS_PLUGINS=f"{FAKE_PLUGIN},{ROBOFLOW_PLUGIN}",
+    )
+    assert report["plugins"] == f"{ROBOFLOW_PLUGIN},{ENTERPRISE_PLUGIN},{FAKE_PLUGIN}"
+
+    identifiers = [identifier for identifier, _ in report["blocks"]]
+    roboflow_positions = [
+        index
+        for index, identifier in enumerate(identifiers)
+        if identifier.startswith("inference.roboflow_workflows_plugin.")
+    ]
+    assert len(roboflow_positions) == 9
+    mqtt_position = identifiers.index(MQTT_BLOCK)
+    fake_position = identifiers.index(FAKE_BLOCK)
+    # The 9 roboflow blocks precede the enterprise (MQTT) block, which in turn
+    # precedes the custom plugin's block.
+    assert max(roboflow_positions) < mqtt_position < fake_position

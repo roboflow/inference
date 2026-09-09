@@ -1185,17 +1185,23 @@ if LOAD_ENTERPRISE_BLOCKS:
 # always part of the core block set - so there is no enable flag to honour;
 # the block-DISABLE policy (WORKFLOW_DISABLED_BLOCK_TYPES / _PATTERNS) is
 # applied inside the plugin's load_blocks(), exactly as the core loader does.
-# PREPENDED after the enterprise expansion so the resulting order is
-# roboflow -> enterprise -> user plugins, matching the historical
-# core-then-enterprise ordering of `load_workflow_blocks()`.
+# NORMALISED (not just prepended-if-absent) after the enterprise expansion:
+# any occurrence already in WORKFLOWS_PLUGINS - wherever it sits, e.g. because
+# an operator listed it explicitly - is removed and the plugin is prepended
+# exactly once, so the resulting order is always roboflow -> enterprise ->
+# user plugins, matching the historical core-then-enterprise ordering of
+# `load_workflow_blocks()`. Only prepending when absent would leave an
+# explicitly-listed entry wherever the operator put it (e.g. after enterprise,
+# or after a custom plugin), silently violating that order.
 ROBOFLOW_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
 _workflows_plugins = [
-    plugin for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",") if plugin
+    plugin
+    for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",")
+    if plugin and plugin != ROBOFLOW_BLOCKS_PLUGIN
 ]
-if ROBOFLOW_BLOCKS_PLUGIN not in _workflows_plugins:
-    os.environ["WORKFLOWS_PLUGINS"] = ",".join(
-        [ROBOFLOW_BLOCKS_PLUGIN] + _workflows_plugins
-    )
+os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+    [ROBOFLOW_BLOCKS_PLUGIN] + _workflows_plugins
+)
 
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)

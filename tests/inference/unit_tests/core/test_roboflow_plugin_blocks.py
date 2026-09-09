@@ -165,6 +165,14 @@ def test_plugin_load_blocks_honours_the_disable_policy(
     assert loaded == expected
 
 
+# The 2 identifiers that survive `WORKFLOW_DISABLED_BLOCK_PATTERNS=
+# "roboflow_workflows_plugin.sinks"`: visual_search@v1 has no _tensor sibling
+# (its module leaf is always "v1"); visual_search_classifier@v1 does.
+_SURVIVOR_EXPECTED_LEAF = {
+    "roboflow_core/visual_search@v1": {"False": "v1", "True": "v1"},
+    "roboflow_core/visual_search_classifier@v1": {"False": "v1", "True": "v1_tensor"},
+}
+
 NEW_PATH_PROBE = """
 import json
 import os
@@ -174,32 +182,28 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
 )
 import inference.core.env as env_module
 
-# CR-1: prove the child actually landed in the requested tensor mode.
-requested_tensor_mode = os.environ["ENABLE_TENSOR_DATA_REPRESENTATION"] == "True"
-assert env_module.ENABLE_TENSOR_DATA_REPRESENTATION == requested_tensor_mode, (
-    env_module.ENABLE_TENSOR_DATA_REPRESENTATION,
-    requested_tensor_mode,
-)
-
 survivors = {
     b.manifest_type_identifier: b.fully_qualified_block_class_name
     for b in describe_available_blocks(dynamic_blocks=[]).blocks
     if b.fully_qualified_block_class_name.startswith("inference.roboflow_workflows_plugin.")
 }
+# CR-1: report - do not just self-assert - the effective tensor flag and the
+# exact module leaf selected for each surviving identifier, so the PARENT can
+# independently verify them (mirrors test_roboflow_sink_acceptance.py).
+module_leaf_by_identifier = {
+    identifier: module_name.rsplit(".", 1)[0].rsplit(".", 1)[-1]
+    for identifier, module_name in survivors.items()
+}
 
-# CR-1: of the two relocated blocks that survive this pattern, one
-# (visual_search_classifier) has a _tensor sibling and one (visual_search)
-# does not - assert the tensor-mode branch actually selected the right module
-# for each, the same way the acceptance test's sink-workflow probe does.
-classifier_module = survivors["roboflow_core/visual_search_classifier@v1"]
-classifier_leaf = classifier_module.rsplit(".", 1)[0].rsplit(".", 1)[-1]
-assert classifier_leaf.endswith("_tensor") == requested_tensor_mode, classifier_module
-
-visual_search_module = survivors["roboflow_core/visual_search@v1"]
-visual_search_leaf = visual_search_module.rsplit(".", 1)[0].rsplit(".", 1)[-1]
-assert visual_search_leaf == "v1", visual_search_module
-
-print(json.dumps(sorted(survivors)))
+print(
+    json.dumps(
+        {
+            "identifiers": sorted(survivors),
+            "effective_tensor_mode": env_module.ENABLE_TENSOR_DATA_REPRESENTATION,
+            "module_leaf_by_identifier": module_leaf_by_identifier,
+        }
+    )
+)
 """
 
 
@@ -224,6 +228,12 @@ def test_new_module_path_pattern_disables_the_sinks_in_both_modes(tensor_mode) -
         [sys.executable, "-c", NEW_PATH_PROBE], env=env, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout.strip().splitlines()[-1]) == sorted(
-        RELOCATED_BLOCKS - RELOCATED_SINKS
-    )
+    survivor_identifiers = sorted(RELOCATED_BLOCKS - RELOCATED_SINKS)
+    assert json.loads(result.stdout.strip().splitlines()[-1]) == {
+        "identifiers": survivor_identifiers,
+        "effective_tensor_mode": tensor_mode == "True",
+        "module_leaf_by_identifier": {
+            identifier: _SURVIVOR_EXPECTED_LEAF[identifier][tensor_mode]
+            for identifier in survivor_identifiers
+        },
+    }
