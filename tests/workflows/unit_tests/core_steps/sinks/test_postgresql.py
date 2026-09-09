@@ -33,7 +33,7 @@ def test_manifest_defaults_and_integer_selectors():
     manifest = v1.BlockManifest(
         type="roboflow_core/postgresql_sink@v1",
         name="pg",
-        **arguments(port="$inputs.port")
+        **arguments(port="$inputs.port"),
     )
     assert manifest.port == "$inputs.port"
     assert manifest.sslmode == "require"
@@ -42,7 +42,6 @@ def test_manifest_defaults_and_integer_selectors():
         "message",
         "error_status",
     }
-    assert manifest.model_json_schema()["ui_manifest"].get("local_only", False) is False
 
 
 @pytest.mark.parametrize(
@@ -60,7 +59,7 @@ def test_invalid_manifest(field, value):
         v1.BlockManifest(
             type="roboflow_core/postgresql_sink@v1",
             name="pg",
-            **arguments(**{field: value})
+            **arguments(**{field: value}),
         )
 
 
@@ -114,13 +113,18 @@ def test_bound_values_and_quoted_identifiers(connect):
     connect.return_value.__exit__.assert_called_once_with(None, None, None)
 
 
-def test_commit_failure_is_not_success(connect, caplog):
+def test_commit_failure_is_not_success(connect, monkeypatch):
+    log = MagicMock()
+    monkeypatch.setattr(v1, "logger", log)
     connect.return_value.__exit__.side_effect = psycopg.OperationalError(
         "secret-password"
     )
     result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
     assert result["error_status"]
-    assert "secret-password" not in result["message"] + caplog.text
+    assert "Commit outcome may be unknown" in result["message"]
+    assert "OperationalError" in result["message"]
+    log.error.assert_called_once_with("PostgreSQL Sink: %s", result["message"])
+    assert "secret-password" not in result["message"] + str(log.error.call_args)
 
 
 def test_missing_driver(monkeypatch):
@@ -153,7 +157,7 @@ def test_background_tasks_take_precedence_and_log_failures(connect, monkeypatch)
     connect.assert_not_called()
     pool.submit.assert_not_called()
     asyncio.run(tasks())
-    assert "PostgreSQL operation failed" in str(log.error.call_args)
+    assert "PostgreSQL connection failed" in str(log.error.call_args)
     assert "secret-password" not in str(log.error.call_args)
 
 
@@ -166,10 +170,11 @@ def test_thread_pool_fallback(connect):
     assert not task()["error_status"]
 
 
-def test_synchronous_mode_does_not_schedule(connect):
+@pytest.mark.parametrize("flag", [False, "false", "False", 0])
+def test_synchronous_mode_does_not_schedule(connect, flag):
     tasks, pool = MagicMock(), MagicMock()
     result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(
-        **arguments(fire_and_forget=False)
+        **arguments(fire_and_forget=flag)
     )
     assert result["message"] == "Successfully inserted 1 records"
     tasks.add_task.assert_not_called()
@@ -182,3 +187,100 @@ def test_enterprise_registration():
     )
 
     assert v1.PostgreSQLSinkBlockV1 in load_enterprise_blocks()
+
+
+def test_connection_and_transaction_settings(connect):
+    v1.PostgreSQLSinkBlockV1(None, None).run(
+        **arguments(
+            password="secret",
+            port=5433,
+            sslmode="verify-full",
+            connect_timeout=7,
+            statement_timeout=1234,
+        )
+    )
+    connect.assert_called_once_with(
+        host="localhost",
+        port=5433,
+        dbname="test",
+        user="writer",
+        password="secret",
+        sslmode="verify-full",
+        connect_timeout=7,
+        autocommit=False,
+    )
+    cursor = (
+        connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+    )
+    cursor.execute.assert_called_once_with(
+        "SELECT set_config('statement_timeout', %s, true)", ("1234",)
+    )
+
+
+@pytest.mark.parametrize("value", [None, "sometimes", [], {}])
+def test_invalid_boolean_does_not_schedule(value, connect):
+    tasks, pool = MagicMock(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(
+        **arguments(fire_and_forget=value)
+    )
+    assert result["error_status"]
+    tasks.add_task.assert_not_called()
+    pool.submit.assert_not_called()
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "phase,error,category",
+    [
+        (
+            "connection",
+            psycopg.OperationalError("sensitive hostname"),
+            "OperationalError",
+        ),
+        ("insert", psycopg.errors.CheckViolation("sensitive row"), "IntegrityError"),
+        (
+            "commit",
+            psycopg.errors.CheckViolation("sensitive deferred constraint"),
+            "IntegrityError",
+        ),
+    ],
+)
+def test_failure_categories_without_false_commit_uncertainty(
+    connect, monkeypatch, phase, error, category
+):
+    log = MagicMock()
+    monkeypatch.setattr(v1, "logger", log)
+    if phase == "connection":
+        connect.side_effect = error
+    elif phase == "insert":
+        connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.executemany.side_effect = (
+            error
+        )
+    else:
+        connect.return_value.__exit__.side_effect = error
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    assert f"PostgreSQL {phase} failed: {category}" in result["message"]
+    assert "unknown" not in result["message"]
+    assert "sensitive" not in result["message"] + str(log.error.call_args)
+
+
+def test_non_ascii_sqlstate_is_not_exposed(connect):
+    class InvalidState(psycopg.Error):
+        sqlstate = "é1234"
+
+    connect.side_effect = InvalidState("sensitive")
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    assert "SQLSTATE" not in result["message"]
+
+
+def test_serverless_manifest_contract():
+    from inference.core.workflows.prototypes.block import Runtime, Severity
+
+    assert not any(
+        restriction.severity == Severity.HARD
+        and Runtime.HOSTED_SERVERLESS in restriction.applies_to_runtimes
+        for restriction in v1.BlockManifest.get_restrictions()
+    )
+    assert not v1.BlockManifest.model_json_schema()["ui_manifest"].get(
+        "local_only", False
+    )

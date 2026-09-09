@@ -1,10 +1,10 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union, get_args
 
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 try:
     import psycopg
@@ -19,6 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
@@ -33,7 +34,8 @@ from inference.core.workflows.prototypes.block import (
 )
 
 logger = logging.getLogger(__name__)
-SSL_MODES = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
+SSLMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+BOOLEAN_ADAPTER = TypeAdapter(bool)
 LONG_DESCRIPTION = """
 Insert workflow data into an existing PostgreSQL table. Supply one dictionary or a
 non-empty list of dictionaries with the same column names. All rows are committed
@@ -59,8 +61,63 @@ upserts, or exactly-once guarantees. A connection failure during commit can leav
 outcome unknown. Connection and statement timeouts do not impose a total network deadline.
 
 Requires the Psycopg binary driver included in the Inference runtime. Self-hosted
-servers can enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`. Cloud execution requires a compatible worker image, block registration, and database
+servers can enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`. Cloud
+execution requires a compatible worker image, block registration, and database
 connectivity; deploying this block does not automatically update hosted workers.
+Supported on hosted serverless and cloud streaming workers with these prerequisites.
+
+## Example
+
+Create the destination table before running the workflow:
+
+```sql
+CREATE TABLE public.detections (
+    camera_id text NOT NULL,
+    label text NOT NULL,
+    confidence double precision
+);
+```
+
+Use the following workflow, supplying `database_host`, `database_password`, and
+`row` at execution time through the runtime's supported input/secret delivery path.
+Do not save a real password as a literal in a shared workflow.
+
+```json
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowParameter", "name": "database_host"},
+    {"type": "WorkflowParameter", "name": "database_password"},
+    {"type": "WorkflowParameter", "name": "row"}
+  ],
+  "steps": [{
+    "type": "roboflow_core/postgresql_sink@v1",
+    "name": "save_detection",
+    "host": "$inputs.database_host",
+    "port": 5432,
+    "database": "production",
+    "username": "workflow_writer",
+    "password": "$inputs.database_password",
+    "schema_name": "public",
+    "table_name": "detections",
+    "data": "$inputs.row",
+    "sslmode": "verify-full",
+    "fire_and_forget": false
+  }],
+  "outputs": [
+    {"type": "JsonField", "name": "error_status", "selector": "$steps.save_detection.error_status"},
+    {"type": "JsonField", "name": "message", "selector": "$steps.save_detection.message"}
+  ]
+}
+```
+
+For example, `row` can be `{"camera_id": "line-1", "label": "part", "confidence": 0.95}`.
+In an inference workflow, wire `data` to an upstream dictionary or list-of-values
+output containing rows.
+A list of rows must be non-empty and every row must have the same column names.
+Column order within a dictionary does not matter. Values retain their native driver
+representation; `None` becomes SQL NULL. Nested objects are not automatically
+converted to JSON.
 """
 
 
@@ -107,7 +164,9 @@ class BlockManifest(WorkflowBlockManifest):
         description="Raw table name, without schema prefix or SQL quoting"
     )
     data: Union[
-        Selector(kind=[DICTIONARY_KIND]), Dict[str, Any], List[Dict[str, Any]]
+        Selector(kind=[DICTIONARY_KIND, LIST_OF_VALUES_KIND]),
+        Dict[str, Any],
+        List[Dict[str, Any]],
     ] = Field(
         description="One row or a non-empty list of rows with identical column names"
     )
@@ -116,7 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     sslmode: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"],
+        SSLMode,
     ] = Field(default="require", description="PostgreSQL TLS mode")
     connect_timeout: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=10, description="Connection timeout in seconds"
@@ -148,13 +207,8 @@ class BlockManifest(WorkflowBlockManifest):
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [
             RuntimeRestriction(
-                severity=Severity.HARD,
-                note="PostgreSQL Sink is not available in hosted serverless execution.",
-                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
-            ),
-            RuntimeRestriction(
                 severity=Severity.SOFT,
-                note="Writes fail unless the worker can reach and authenticate to the database; background status only confirms scheduling.",
+                note="Use fire_and_forget=false to observe persistence failures and avoid accumulating background writes when the database is slower than the stream.",
                 applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
             ),
         ]
@@ -196,6 +250,10 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
+        try:
+            fire_and_forget = BOOLEAN_ADAPTER.validate_python(fire_and_forget)
+        except ValidationError:
+            return failure("fire_and_forget must be a boolean")
         task = partial(
             self._process_data,
             host=host,
@@ -248,7 +306,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
             validate_integer(port, "port", 65535)
             validate_integer(connect_timeout, "connect_timeout", 2147483647)
             validate_integer(statement_timeout, "statement_timeout", 2147483647)
-            if not isinstance(sslmode, str) or sslmode not in SSL_MODES:
+            if not isinstance(sslmode, str) or sslmode not in get_args(SSLMode):
                 raise ValueError("Unsupported sslmode")
         except ValueError as error:
             return failure(str(error))
@@ -256,6 +314,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
             return failure(
                 'PostgreSQL driver unavailable. Install "psycopg[binary]>=3.2,<4" in the runtime.'
             )
+        phase = "connection"
         try:
             with psycopg.connect(
                 host=host,
@@ -267,6 +326,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
                 connect_timeout=connect_timeout,
                 autocommit=False,
             ) as connection:
+                phase = "insert"
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT set_config('statement_timeout', %s, true)",
@@ -282,6 +342,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
                         query,
                         [tuple(row[column] for column in columns) for row in rows],
                     )
+                phase = "commit"
             return {
                 "error_status": False,
                 "message": f"Successfully inserted {len(rows)} records",
@@ -291,11 +352,36 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
             code = error.sqlstate
             suffix = (
                 f" (SQLSTATE {code})"
-                if code and len(code) == 5 and code.isalnum()
+                if code and len(code) == 5 and code.isascii() and code.isalnum()
+                else ""
+            )
+            category = next(
+                (
+                    name
+                    for name in (
+                        "IntegrityError",
+                        "DataError",
+                        "ProgrammingError",
+                        "OperationalError",
+                        "InterfaceError",
+                        "NotSupportedError",
+                        "InternalError",
+                    )
+                    if isinstance(error, getattr(psycopg, name))
+                ),
+                "DatabaseError",
+            )
+            uncertainty = (
+                " Commit outcome may be unknown; verify before retrying."
+                if phase == "commit"
+                and isinstance(
+                    error, (psycopg.OperationalError, psycopg.InterfaceError)
+                )
+                and (not code or code.startswith("08"))
                 else ""
             )
             return failure(
-                f"PostgreSQL operation failed{suffix}. Check connectivity, permissions and column types; commit outcome may be unknown."
+                f"PostgreSQL {phase} failed: {category}{suffix}.{uncertainty}"
             )
         except Exception:
             return failure("Unexpected PostgreSQL insert failure")

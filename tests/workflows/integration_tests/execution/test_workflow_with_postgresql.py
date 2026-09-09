@@ -1,6 +1,8 @@
 """Use POSTGRESQL_TEST_DSN pointing at a disposable database with CREATE privileges."""
 
 import os
+from typing import Literal
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import psycopg
@@ -8,6 +10,12 @@ import pytest
 from psycopg import sql
 
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import LIST_OF_VALUES_KIND
+from inference.core.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.postgresql.v1 import (
     PostgreSQLSinkBlockV1,
 )
@@ -21,24 +29,24 @@ def database():
     schema = "inference_test_" + uuid4().hex
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
-        connection.execute(
-            sql.SQL(
-                'CREATE TABLE {} ("select" text, score integer CHECK (score >= 0))'
-            ).format(sql.Identifier(schema, 'event"rows'))
-        )
-        params = psycopg.conninfo.conninfo_to_dict(dsn)
-        kwargs = dict(
-            host=params.get("host", "localhost"),
-            port=int(params.get("port", 5432)),
-            database=params.get("dbname", "postgres"),
-            username=params.get("user", "postgres"),
-            password=params.get("password"),
-            sslmode=params.get("sslmode", "disable"),
-            schema_name=schema,
-            table_name='event"rows',
-            fire_and_forget=False,
-        )
         try:
+            connection.execute(
+                sql.SQL(
+                    'CREATE TABLE {} ("select" text, score integer CHECK (score >= 0))'
+                ).format(sql.Identifier(schema, 'event"rows'))
+            )
+            params = psycopg.conninfo.conninfo_to_dict(dsn)
+            kwargs = dict(
+                host=params.get("host", "localhost"),
+                port=int(params.get("port", 5432)),
+                database=params.get("dbname", "postgres"),
+                username=params.get("user", "postgres"),
+                password=params.get("password"),
+                sslmode=params.get("sslmode", "disable"),
+                schema_name=schema,
+                table_name='event"rows',
+                fire_and_forget=False,
+            )
             yield connection, kwargs
         finally:
             connection.execute(
@@ -154,3 +162,64 @@ def test_workflow_resolves_inputs_and_writes(database, enterprise_blocks):
     )
     assert result == [{"status": False}]
     assert select_rows(connection, kwargs) == [("workflow", 3)]
+
+
+class RowsManifest(WorkflowBlockManifest):
+    type: Literal["test/rows@v1"]
+
+    @classmethod
+    def describe_outputs(cls):
+        return [OutputDefinition(name="rows", kind=[LIST_OF_VALUES_KIND])]
+
+
+class RowsBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls):
+        return RowsManifest
+
+    def run(self):
+        return {
+            "rows": [{"select": "upstream", "score": 4}, {"select": "list", "score": 5}]
+        }
+
+
+def test_workflow_upstream_list_and_false_boolean_selector(
+    database, enterprise_blocks, monkeypatch
+):
+    from inference.core.workflows.execution_engine.introspection import blocks_loader
+
+    connection, kwargs = database
+    original_load = blocks_loader.load_blocks
+    monkeypatch.setattr(
+        blocks_loader, "load_blocks", lambda: original_load() + [RowsBlock]
+    )
+    blocks_loader.load_core_workflow_blocks.cache_clear()
+    tasks = MagicMock()
+    definition = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "background"}],
+        "steps": [
+            {"type": "test/rows@v1", "name": "source"},
+            {
+                "type": "roboflow_core/postgresql_sink@v1",
+                "name": "pg",
+                **kwargs,
+                "data": "$steps.source.rows",
+                "fire_and_forget": "$inputs.background",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "status",
+                "selector": "$steps.pg.error_status",
+            }
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={"workflows_core.background_tasks": tasks},
+    )
+    assert engine.run(runtime_parameters={"background": "false"}) == [{"status": False}]
+    tasks.add_task.assert_not_called()
+    assert select_rows(connection, kwargs) == [("upstream", 4), ("list", 5)]
