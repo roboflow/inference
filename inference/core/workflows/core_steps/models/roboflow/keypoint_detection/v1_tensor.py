@@ -54,6 +54,9 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.keypoints import (
+    validate_keypoints_padding,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     native_detections_from_inference_predictions,
@@ -611,6 +614,7 @@ def _native_key_points_from_inference_predictions(
         object_class_ids.append(int(detection_dict.get("class_id", 0)))
     number_of_instances = len(detection_dicts)
     max_key_points = max((len(xy) for xy in per_instance_xy), default=0)
+    validate_keypoints_padding(number_of_instances, max_key_points)
     xy_tensor = torch.zeros(
         (number_of_instances, max_key_points, 2), dtype=torch.float32, device=device
     )
