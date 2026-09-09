@@ -2,30 +2,25 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
-from inference.core.workflows.core_steps.common.tensor_native import KeyPointPrediction
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
-    register_datapoint_at_roboflow,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.entities.tensor_native_types import (
-    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
-    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
-    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     Selector,
@@ -40,22 +35,9 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_project,
 )
 from inference.core.workflows.prototypes.cache import WorkflowsCache
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1 import (
+    register_datapoint_at_roboflow,
 )
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
-# A tensor-native prediction may be a classification result, a detection-shaped
-# prediction (object detection / instance segmentation), or a keypoint tuple.
-TensorNativePrediction = Union[
-    Detections,
-    InstanceDetections,
-    KeyPointPrediction,
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-]
 
 FloatZeroToHundred = Annotated[float, Field(ge=0.0, le=100.0)]
 
@@ -160,10 +142,10 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Optional[
         Selector(
             kind=[
-                TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
-                TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
-                TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND,
             ]
         )
     ] = Field(
@@ -315,7 +297,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        predictions: Optional[Batch[TensorNativePrediction]],
+        predictions: Optional[Batch[Union[sv.Detections, dict]]],
         target_project: str,
         usage_quota_name: str,
         data_percentage: float,
@@ -391,7 +373,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
 
 def maybe_register_datapoint_at_roboflow(
     image: WorkflowImageData,
-    prediction: Optional[TensorNativePrediction],
+    prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
     data_percentage: float,

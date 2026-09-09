@@ -4,10 +4,6 @@ from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.roboflow_api import search_project_images_at_roboflow
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
-    build_visual_search_candidate_image,
-    format_visual_search_candidate,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -30,6 +26,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     roboflow_platform_project,
+)
+from inference.roboflow_workflows_plugin.integrations.visual_search.helpers import (
+    build_visual_search_candidate_image,
+    format_visual_search_candidate,
 )
 
 SHORT_DESCRIPTION = "Find visually similar image candidates in a Roboflow project."
