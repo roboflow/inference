@@ -19,6 +19,7 @@ from uuid import uuid4
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.workflows.core_steps.common.openrouter import (
+    LEGACY_DETECTION_BOX_FORMAT,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -35,9 +36,11 @@ from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
 )
 from inference.core.workflows.core_steps.common.vlm_decoding import (
+    BoxFormatName,
     actual_vlm_prediction_outputs,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
+    get_detection_box_format,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -62,11 +65,63 @@ from inference.core.workflows.prototypes.block import (
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
-# The object-detection prompt these blocks send (the legacy OpenRouter JSON
-# contract in `common.openrouter`) asks for `x_min`/`y_min`/`x_max`/`y_max`
-# floats normalized to 0.0-1.0 - the `named_normalized` box format of the
-# shared decoding package.
-DETECTION_BOX_FORMAT = "named_normalized"
+# Default object-detection contract: the legacy OpenRouter system message in
+# `common.openrouter`, which asks for `x_min`/`y_min`/`x_max`/`y_max` floats
+# normalized to 0.0-1.0 (`named_normalized` in the shared decoding package).
+# `detection_format` lets the user switch to any other registered contract,
+# so a new model can be prompted and decoded the way it was trained without
+# a block change.
+DETECTION_BOX_FORMAT = LEGACY_DETECTION_BOX_FORMAT
+
+DETECTION_FORMAT_METADATA = {
+    "named_normalized": {
+        "name": "Named keys, normalized 0-1 (default)",
+        "description": (
+            'Asks for `{"detections": [{"x_min", "y_min", "x_max", '
+            '"y_max", "class_name", "confidence"}]}` with coordinates as '
+            "floats in 0.0-1.0. Generic contract most chat models follow; "
+            "the block's behaviour before this option existed."
+        ),
+    },
+    "xyxy_0_1000": {
+        "name": "box_2d [x_min, y_min, x_max, y_max], 0-1000",
+        "description": (
+            "Asks for `box_2d` integers normalized to 0-1000, x before y. "
+            "The native grounding contract of Qwen-VL and Z.ai GLM models. "
+            "A reported `confidence` is ignored."
+        ),
+    },
+    "yxyx_0_1000": {
+        "name": "box_2d [y_min, x_min, y_max, x_max], 0-1000",
+        "description": (
+            "Asks for `box_2d` integers normalized to 0-1000, y before x. "
+            "The native grounding contract of Google Gemini models."
+        ),
+    },
+    "xyxy_absolute": {
+        "name": "box_2d [x_min, y_min, x_max, y_max], pixels",
+        "description": (
+            "Asks for `box_2d` in absolute pixels of the uploaded image, whose "
+            "size is stated in the prompt. Used by the OpenAI GPT-5.6 / GPT-6 "
+            "and Anthropic Claude blocks."
+        ),
+    },
+    "xyxy_percent": {
+        "name": "box_2d [x_min, y_min, x_max, y_max], percent",
+        "description": (
+            "Asks for `box_2d` as percentages of image width and height "
+            "(floats 0-100). Used by the SpaceXAI Grok block."
+        ),
+    },
+    "named_0_1000": {
+        "name": "Named keys, 0-1000",
+        "description": (
+            "Asks for `label`, `x_min`, `y_min`, `x_max`, `y_max` integers "
+            "normalized to 0-1000. The native grounding contract of Meta Muse "
+            "models. A reported `confidence` is ignored."
+        ),
+    },
+}
 
 # Detections and classifications are decoded in-block from v3 on, so only the
 # structured-answering parser stays relevant.
@@ -127,6 +182,12 @@ This version (v3) decodes model answers inside the block:
 * **`error_status`** - `True` when the model answer could not be parsed.
 * **`inference_id`** - identifier generated per image and attached to the decoded
   predictions.
+* **`detection_format`** - for `object-detection`, picks the bounding-box contract
+  the model is prompted for and decoded with. The default is the generic
+  normalized-floats JSON every chat model understands; pick the model family's
+  native contract (e.g. `box_2d` 0-1000 for Qwen / GLM, `y`-first for Gemini,
+  pixels for GPT-5.6+) to match the wording it was trained on, so a new model
+  can be used without a block change.
 """
 
 
@@ -279,6 +340,23 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
 
+    detection_format: Union[Selector(kind=[STRING_KIND]), BoxFormatName] = Field(
+        default=DETECTION_BOX_FORMAT,
+        description=(
+            "Bounding-box contract used for `object-detection`: both the "
+            "prompt wording the model receives and the decoding of its "
+            "answer. Keep the default for models without a known native "
+            "format, or pick the family's contract for best accuracy."
+        ),
+        examples=["named_normalized", "xyxy_0_1000", "$inputs.detection_format"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": ["object-detection"], "required": False},
+            },
+            "values_metadata": DETECTION_FORMAT_METADATA,
+        },
+    )
+
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         validate_task_type_required_fields(
@@ -347,7 +425,13 @@ class OpenRouterBlockV3(OpenRouterWorkflowBlockBase):
         temperature: float,
         reasoning_effort: Optional[str],
         max_concurrent_requests: Optional[int],
+        detection_format: str = DETECTION_BOX_FORMAT,
     ) -> BlockResult:
+        if task_type == "object-detection":
+            # Fail on an unknown format before any paid request is sent.
+            box_format = get_detection_box_format(detection_format)
+        else:
+            box_format = None
         inference_images = [i.to_inference_format() for i in images]
         prompts = build_prompts_from_images(
             images=inference_images,
@@ -355,6 +439,7 @@ class OpenRouterBlockV3(OpenRouterWorkflowBlockBase):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            detection_box_format=detection_format,
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
@@ -369,13 +454,19 @@ class OpenRouterBlockV3(OpenRouterWorkflowBlockBase):
         predictions = []
         for image, result in zip(images, results):
             inference_id = str(uuid4())
+            upload_width = upload_height = None
+            if box_format is not None and box_format.requires_upload_dimensions:
+                # The OpenRouter path uploads the image at its original size.
+                upload_height, upload_width = image.numpy_image.shape[:2]
             error_status, decoded_predictions = decode_vlm_output(
                 task_type=task_type,
                 raw_output=result.content,
                 image=image,
                 classes=classes,
                 inference_id=inference_id,
-                box_format=DETECTION_BOX_FORMAT,
+                box_format=detection_format,
+                upload_width=upload_width,
+                upload_height=upload_height,
             )
             predictions.append(
                 {
