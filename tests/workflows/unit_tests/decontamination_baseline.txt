@@ -1,13 +1,12 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 275
+# Count: 269
 inference/core/workflows/core_steps/classical_cv/mask_edge_snap/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/motion_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/template_matching/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/common/deserializers.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/common/deserializers_tensor.py	inference.core.env
 inference/core/workflows/core_steps/common/openrouter.py	inference.core.env
-inference/core/workflows/core_steps/common/openrouter.py	inference.core.exceptions
 inference/core/workflows/core_steps/common/openrouter.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/common/query_language/operations/classification_results/base.py	inference.core.env
 inference/core/workflows/core_steps/common/query_language/operations/detection/base.py	inference.core.env
@@ -44,7 +43,6 @@ inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	infe
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2_tensor.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/cog_vlm/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/cog_vlm/v1.py	inference.core.exceptions
 inference/core/workflows/core_steps/models/foundation/cosmos3/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/cosmos3/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/depth_estimation/v1.py	inference.core.entities.requests.inference
@@ -57,7 +55,6 @@ inference/core/workflows/core_steps/models/foundation/florence2/v1.py	inference.
 inference/core/workflows/core_steps/models/foundation/florence2/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/florence2/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/gaze/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/gaze/v1.py	inference.core.exceptions
 inference/core/workflows/core_steps/models/foundation/glm_ocr/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/glm_ocr/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/google_gemini/v1.py	inference.core.env
@@ -181,7 +178,6 @@ inference/core/workflows/core_steps/models/foundation/spacexai/v2.py	inference.c
 inference/core/workflows/core_steps/models/foundation/spacexai/v2.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.env
-inference/core/workflows/core_steps/models/foundation/yolo_world/v1_tensor.py	inference.core.exceptions
 inference/core/workflows/core_steps/models/foundation/zai_vlm/v1.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/models/roboflow/action_recognition/v1.py	inference.core.models.action_recognition
 inference/core/workflows/core_steps/models/roboflow/action_recognition/v1.py	inference.core.models.inference_models_adapters
@@ -243,10 +239,8 @@ inference/core/workflows/core_steps/models/roboflow/semantic_segmentation/v2_ten
 inference/core/workflows/core_steps/models/third_party/barcode_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/models/third_party/qr_code_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/secrets_providers/environment_secrets_store/v1.py	inference.core.env
-inference/core/workflows/core_steps/sinks/email_notification/v2.py	inference.core.exceptions
 inference/core/workflows/core_steps/sinks/email_notification/v2.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/sinks/local_file/v1.py	inference.core.env
-inference/core/workflows/core_steps/sinks/twilio/sms/v2.py	inference.core.exceptions
 inference/core/workflows/core_steps/sinks/twilio/sms/v2.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/transformations/detections_combine/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/transformations/detections_merge/v1_tensor.py	inference.core.env

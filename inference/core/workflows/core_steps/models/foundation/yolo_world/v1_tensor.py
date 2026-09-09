@@ -12,7 +12,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -38,6 +37,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
 )
 from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
+from inference.core.workflows.prototypes.platform_errors import FeatureDeprecatedError
 
 LONG_DESCRIPTION = """
 **DEPRECATED.** YOLO-World is deprecated in the tensor-native Workflows pipeline.
