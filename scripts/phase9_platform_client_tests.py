@@ -37,14 +37,28 @@ import pathlib
 import sys
 
 CHAIN = {
-    "run_gpt_4v_llm_prompting", "execute_gpt_4v_requests", "execute_gpt_4v_request",
-    "_execute_proxied_openai_request", "run_openai_prompting", "execute_openai_requests",
-    "execute_openai_request", "run_gemini_prompting", "execute_gemini_requests",
-    "execute_gemini_request", "_execute_proxied_gemini_request", "run_claude_prompting",
-    "execute_claude_requests", "execute_claude_request", "_execute_proxied_claude_request",
-    "run_spacexai_prompting", "execute_spacexai_requests", "execute_spacexai_request",
-    "_execute_proxied_spacexai_request", "_execute_proxied_google_vision_request",
-    "send_email_via_roboflow_proxy", "send_sms_via_roboflow_proxy",
+    "run_gpt_4v_llm_prompting",
+    "execute_gpt_4v_requests",
+    "execute_gpt_4v_request",
+    "_execute_proxied_openai_request",
+    "run_openai_prompting",
+    "execute_openai_requests",
+    "execute_openai_request",
+    "run_gemini_prompting",
+    "execute_gemini_requests",
+    "execute_gemini_request",
+    "_execute_proxied_gemini_request",
+    "run_claude_prompting",
+    "execute_claude_requests",
+    "execute_claude_request",
+    "_execute_proxied_claude_request",
+    "run_spacexai_prompting",
+    "execute_spacexai_requests",
+    "execute_spacexai_request",
+    "_execute_proxied_spacexai_request",
+    "_execute_proxied_google_vision_request",
+    "send_email_via_roboflow_proxy",
+    "send_sms_via_roboflow_proxy",
     "_execute_proxied_openrouter_request",
 }
 PREAMBLE = (
@@ -80,8 +94,11 @@ def _affected_calls(tree, touched, classes):
     param_origins = collections.defaultdict(set)
     for fn in functions:
         for dec in fn.decorator_list:
-            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
-                    and dec.func.attr == "parametrize"):
+            if not (
+                isinstance(dec, ast.Call)
+                and isinstance(dec.func, ast.Attribute)
+                and dec.func.attr == "parametrize"
+            ):
                 continue
             if len(dec.args) < 2 or not isinstance(dec.args[0], ast.Constant):
                 continue
@@ -101,18 +118,28 @@ def _affected_calls(tree, touched, classes):
             f = node.func
             mods = set()
             if isinstance(f, ast.Name):
-                if f.id in CHAIN and f.id in origin:
+                if f.id in origin and origin[f.id][1] in CHAIN:
                     mods.add(origin[f.id][0])
                 elif (fn.name, f.id) in param_origins:
                     for mod, name in param_origins[(fn.name, f.id)]:
                         if name in CHAIN:
                             mods.add(mod)
-                elif f.id in origin and origin[f.id][1] in classes:
+                elif (
+                    f.id in origin
+                    and origin[f.id][1] in classes
+                    and origin[f.id][0] in touched
+                ):
                     if node.args:
-                        raise SystemExit(f"positional construction at line {node.lineno}")
+                        raise SystemExit(
+                            f"positional construction at line {node.lineno}"
+                        )
                     constructions[(node.lineno, node.col_offset)] = node
                     continue
-            elif isinstance(f, ast.Attribute) and f.attr in CHAIN and isinstance(f.value, ast.Name):
+            elif (
+                isinstance(f, ast.Attribute)
+                and f.attr in CHAIN
+                and isinstance(f.value, ast.Name)
+            ):
                 if f.value.id in alias:
                     mods.add(alias[f.value.id])
             if mods and any(m in touched for m in mods):
@@ -121,7 +148,7 @@ def _affected_calls(tree, touched, classes):
 
 
 def patch(path: pathlib.Path, touched, classes):
-    source = path.read_text(encoding="utf-8")
+    source = path.read_bytes().decode("utf-8")
     newline = "\r\n" if "\r\n" in source else "\n"
     lines = source.split(newline)
     tree = ast.parse(source)
@@ -146,7 +173,9 @@ def patch(path: pathlib.Path, touched, classes):
             raise SystemExit(f"{path}:{node.lineno}: call without keywords")
     for lineno, col in sorted(set(edits), reverse=True):
         line = lines[lineno - 1]
-        lines[lineno - 1] = line[:col] + ", platform_client=platform_client" + line[col:]
+        lines[lineno - 1] = (
+            line[:col] + ", platform_client=platform_client" + line[col:]
+        )
     updated = newline.join(lines)
     if edits and "RecordingPlatformClient" not in updated:
         out = updated.split(newline)
@@ -156,24 +185,31 @@ def patch(path: pathlib.Path, touched, classes):
         for node in new_tree.body:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 anchor = node
-                if isinstance(node, ast.Import) and any(a.name == "pytest" for a in node.names):
+                if isinstance(node, ast.Import) and any(
+                    a.name == "pytest" for a in node.names
+                ):
                     has_pytest = True
         if anchor is None:
             raise SystemExit(f"{path}: no import anchor")
         preamble = PREAMBLE if has_pytest else "import pytest\n\n" + PREAMBLE
-        out.insert(anchor.end_lineno, preamble)
+        out.insert(anchor.end_lineno, preamble.replace("\n", newline))
         updated = newline.join(out)
     ast.parse(updated)
     if edits:
-        path.write_text(updated, encoding="utf-8")
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(updated)
     return edited_calls, edited_ctors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("files", nargs="+")
-    parser.add_argument("--touched", required=True, help="file listing the changed modules")
-    parser.add_argument("--classes", required=True, help="comma-separated block class names")
+    parser.add_argument(
+        "--touched", required=True, help="file listing the changed modules"
+    )
+    parser.add_argument(
+        "--classes", required=True, help="comma-separated block class names"
+    )
     parser.add_argument("--expected-calls", type=int, required=True)
     parser.add_argument("--expected-constructions", type=int, required=True)
     args = parser.parse_args()

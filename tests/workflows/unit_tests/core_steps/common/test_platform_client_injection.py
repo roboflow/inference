@@ -9,6 +9,7 @@ OpenRouter base.
 
 import ast
 import importlib
+import inspect
 import pathlib
 from functools import partial
 
@@ -56,8 +57,12 @@ def test_block_declares_the_platform_client_init_parameter(module_suffix, class_
 
 @pytest.mark.parametrize("module_suffix,class_name", PROXY_BLOCKS)
 def test_block_stores_the_injected_client(module_suffix, class_name):
-    sentinel = RecordingPlatformClient()
     block_class = _load(module_suffix, class_name)
+    if inspect.isabstract(block_class):
+        pytest.skip(
+            f"{class_name} is abstract; storage is proven through QwenVlmBlockV1"
+        )
+    sentinel = RecordingPlatformClient()
     kwargs = {name: None for name in block_class.get_init_parameters()}
     kwargs["platform_client"] = sentinel
     assert block_class(**kwargs)._platform_client is sentinel
