@@ -813,7 +813,7 @@ def send_email_via_roboflow_proxy(
     attachments: Dict[str, Any],
 ) -> Tuple[bool, str]:
     """Send email through Roboflow's proxy service."""
-    from inference.core.exceptions import (
+    from inference.core.workflows.prototypes.platform_errors import (
         RoboflowAPIForbiddenError,
         RoboflowAPIUnsuccessfulRequestError,
     )

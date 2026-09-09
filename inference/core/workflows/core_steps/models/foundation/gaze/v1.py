@@ -3,7 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.env import CORE_MODEL_GAZE_ENABLED
-from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -26,6 +25,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.platform_errors import FeatureDeprecatedError
 
 LONG_DESCRIPTION = """
 **DEPRECATED.** L2CS Gaze detection has been removed from inference along

@@ -31,10 +31,6 @@ from openai import APIStatusError, OpenAI
 from pydantic import ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.exceptions import (
-    RoboflowAPIForbiddenError,
-    RoboflowAPIUnsuccessfulRequestError,
-)
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.token_usage import (
     parse_chat_completion_usage,
@@ -56,6 +52,10 @@ from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
+)
+from inference.core.workflows.prototypes.platform_errors import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPIUnsuccessfulRequestError,
 )
 
 logger = logging.getLogger(__name__)
