@@ -40,6 +40,14 @@ from inference.usage_tracking.block_execution import (
 from inference.usage_tracking.collector import usage_collector
 
 
+class _StubWorkspaceResolver:
+    """Phase 9 replaced the module-level workspace lookup with an injected
+    `WorkspaceResolver`; the modal tests name their sandbox through it."""
+
+    def resolve_workspace(self, api_key):
+        return "test-workspace"
+
+
 @pytest.fixture(autouse=True)
 def cleared_block_execution():
     clear_measured_block_execution()
@@ -195,12 +203,12 @@ def _run_modal_block(execute_remote, unique_identifier):
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, unique_identifier)
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(
+        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+    )
 
     with mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
-    ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
     ), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor_instance
     ), mock.patch.object(
@@ -288,12 +296,12 @@ def _run_modal_block_expecting_error(execute_remote, unique_identifier, expected
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, unique_identifier)
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(
+        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+    )
 
     with mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
-    ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
     ), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor_instance
     ), mock.patch.object(
@@ -356,12 +364,12 @@ def test_modal_client_wall_clock_excludes_executor_acquisition(
         yield mock.MagicMock(execute_remote=execute_remote)
 
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-acquire")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(
+        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+    )
 
     with mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
-    ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
     ), mock.patch.object(
         block_scaffolding, "_acquire_modal_executor", slow_acquire
     ), mock.patch.object(
@@ -438,13 +446,13 @@ def test_modal_user_code_error_is_billed_the_runtime_the_sandbox_reported(
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-user-error")
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(
+        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+    )
 
     # when
     with mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
-    ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
     ), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor_instance
     ), mock.patch.object(

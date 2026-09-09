@@ -16,8 +16,6 @@ from inference.core.env import (
     WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
-from inference.core.exceptions import WorkspaceLoadError
-from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
     DynamicBlockError,
@@ -45,6 +43,10 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+    WorkspaceResolver,
 )
 from inference.usage_tracking.block_execution import (
     BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
@@ -305,6 +307,7 @@ def assembly_custom_python_block(
     manifest: Type[WorkflowBlockManifest],
     python_code: PythonCode,
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
     manifest_description: Optional[ManifestDescription] = None,
 ) -> Type[WorkflowBlock]:
@@ -314,6 +317,7 @@ def assembly_custom_python_block(
         python_code=python_code,
         module_name=f"dynamic_module_{unique_identifier}",
         api_key=api_key,
+        workspace_resolver=workspace_resolver,
         skip_class_eval=skip_class_eval,
     )
 
@@ -358,10 +362,7 @@ def assembly_custom_python_block(
                 declared_input_kinds=declared_input_kinds,
             )
 
-            try:  # Get workspace_id from context if available
-                workspace_id = get_roboflow_workspace(self._api_key)
-            except WorkspaceLoadError:
-                workspace_id = None
+            workspace_id = self._workspace_resolver.resolve_workspace(self._api_key)
 
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
@@ -457,9 +458,14 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self, api_key: Optional[str] = None):
+    def constructor(
+        self,
+        api_key: Optional[str] = None,
+        workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
+    ):
         self._init_results = init_function()
         self._api_key = api_key
+        self._workspace_resolver = workspace_resolver
 
     def get_workflow_context(self) -> Dict[str, Any]:
         return {
@@ -471,7 +477,7 @@ def assembly_custom_python_block(
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "workspace_resolver"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -512,6 +518,7 @@ def create_dynamic_module(
     python_code: PythonCode,
     module_name: str,
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
 ) -> types.ModuleType:
 
@@ -539,10 +546,7 @@ def create_dynamic_module(
             validate_code_in_modal,
         )
 
-        try:  # Get workspace_id from context if available
-            validation_workspace = get_roboflow_workspace(api_key)
-        except WorkspaceLoadError:
-            validation_workspace = None
+        validation_workspace = workspace_resolver.resolve_workspace(api_key)
 
         # Fall back to "anonymous" for non-authenticated users
         if not validation_workspace:

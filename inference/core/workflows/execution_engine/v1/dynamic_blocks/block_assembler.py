@@ -51,6 +51,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     ValueType,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+    WorkspaceResolver,
+)
 
 
 @execution_phase(
@@ -61,6 +65,7 @@ def compile_dynamic_blocks(
     dynamic_blocks_definitions: List[dict],
     profiler: Optional[WorkflowsProfiler] = None,
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
 ) -> List[BlockSpecification]:
     if not dynamic_blocks_definitions:
@@ -78,6 +83,7 @@ def compile_dynamic_blocks(
             dynamic_block_definition=dynamic_block,
             kinds_lookup=kinds_lookup,
             api_key=api_key,
+            workspace_resolver=workspace_resolver,
             skip_class_eval=skip_class_eval,
         )
         compiled_blocks.append(block_specification)
@@ -114,6 +120,7 @@ def create_dynamic_block_specification(
     dynamic_block_definition: DynamicBlockDefinition,
     kinds_lookup: Dict[str, Kind],
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
 ) -> BlockSpecification:
     ensure_tensor_compatibility_supported(
@@ -131,6 +138,7 @@ def create_dynamic_block_specification(
         manifest=block_manifest,
         python_code=dynamic_block_definition.code,
         api_key=api_key,
+        workspace_resolver=workspace_resolver,
         skip_class_eval=skip_class_eval,
         manifest_description=dynamic_block_definition.manifest,
     )

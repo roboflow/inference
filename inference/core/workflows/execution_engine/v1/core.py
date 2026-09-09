@@ -48,6 +48,9 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +262,34 @@ def _resolve_and_pre_load_runtime_dependencies(
         )
 
 
+def _mirror_dynamic_block_parameters(
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
+) -> None:
+    """Copy the init parameters dynamic blocks need into their own namespace.
+
+    Generated blocks carry `block_source = "dynamic_workflows_blocks"`
+    (`dynamic_blocks/entities.BLOCK_SOURCE`), and
+    `retrieve_init_parameter_values` does NOT fall back from a plugin namespace
+    to `workflows_core.*` - `load_core_blocks_initializers` registers the core
+    defaults only under `workflows_core.`. Anything a dynamic block declares in
+    `get_init_parameters()` has to be mirrored here, which is why `api_key`
+    already was. Operates on the engine's PRIVATE copy of init_parameters (see
+    `init`), never on a caller's dictionary.
+    """
+    init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
+        "dynamic_workflows_blocks.api_key",
+        init_parameters.get("workflows_core.api_key"),
+    )
+    init_parameters["dynamic_workflows_blocks.workspace_resolver"] = (
+        init_parameters.get(
+            "dynamic_workflows_blocks.workspace_resolver",
+            init_parameters.get(
+                "workflows_core.workspace_resolver", NULL_WORKSPACE_RESOLVER
+            ),
+        )
+    )
+
+
 class ExecutionEngineV1(BaseExecutionEngine):
 
     @classmethod
@@ -276,8 +307,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
         ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
     ) -> "ExecutionEngineV1":
-        if init_parameters is None:
-            init_parameters = {}
+        # The engine mutates this dict (dynamic-block mirrors below) and the
+        # compiled workflow retains it. Work on a private copy so a caller that
+        # reuses its dictionary across engines never sees, or re-supplies, a
+        # value this engine derived.
+        init_parameters = dict(init_parameters or {})
         if isinstance(step_error_handler, str):
             if step_error_handler not in REGISTERED_STEP_ERROR_HANDLERS:
                 raise WorkflowEnvironmentConfigurationError(
@@ -287,10 +321,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
                     context="workflow_compilation | engine_initialisation",
                 )
             step_error_handler = REGISTERED_STEP_ERROR_HANDLERS[step_error_handler]
-        init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
-            "dynamic_workflows_blocks.api_key",
-            init_parameters.get("workflows_core.api_key"),
-        )
+        _mirror_dynamic_block_parameters(init_parameters)
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
