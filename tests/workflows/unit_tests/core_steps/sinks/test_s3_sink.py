@@ -10,6 +10,7 @@ from inference.core.workflows.core_steps.sinks.s3.v1 import (
     NON_RETRYABLE_CLIENT_ERROR_CODES,
     BlockManifest,
     S3SinkBlockV1,
+    create_s3_client,
     deduct_csv_header,
     dump_json_inline,
     generate_s3_key,
@@ -258,6 +259,34 @@ def test_upload_content_to_s3_returns_error_on_unexpected_exception() -> None:
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.boto3.client")
+def test_create_s3_client_rejects_missing_credentials(mock_boto3_client) -> None:
+    with pytest.raises(ValueError):
+        create_s3_client(
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_region=None,
+        )
+
+    mock_boto3_client.assert_not_called()
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.boto3.client")
+def test_create_s3_client_passes_explicit_credentials(mock_boto3_client) -> None:
+    create_s3_client(
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="SECRET_TEST",
+        aws_region="us-east-1",
+    )
+
+    mock_boto3_client.assert_called_once_with(
+        "s3",
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="SECRET_TEST",
+        region_name="us-east-1",
+    )
 
 
 def test_deduct_csv_header_removes_first_line() -> None:
