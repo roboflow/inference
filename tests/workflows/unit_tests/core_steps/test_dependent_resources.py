@@ -18,7 +18,6 @@ from typing import List, Literal, Optional, get_args
 
 import pytest
 
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     BlockManifest as ClipV1Manifest,
 )
@@ -59,6 +58,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_project,
     third_party_model,
 )
+from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
 from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
     BlockManifest as DatasetUploadV2Manifest,
 )
@@ -327,7 +327,7 @@ def test_clip_v1_synthesizes_core_model_id_from_version() -> None:
     # Core models must register in the model manager the same way
     # load_core_model() does.
     assert resources[0].metadata.model_registration_kwargs == {
-        "endpoint_type": "core_model"
+        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
     }
 
 

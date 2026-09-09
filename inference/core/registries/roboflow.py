@@ -345,16 +345,33 @@ class RoboflowModelRegistry(ModelRegistry):
         return self.registry_dict[model_type]
 
 
-@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 def _check_if_api_key_has_access_to_model(
+    api_key: str,
+    model_id: str,
+    endpoint_type: Union[str, ModelEndpointType] = ModelEndpointType.ORT,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> bool:
+    # Workflow blocks pass the plain string `core_model`
+    # (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE); coerce BEFORE the
+    # ttl cache so the string and the enum share one cache entry.
+    return _check_if_api_key_has_access_to_model_cached(
+        api_key=api_key,
+        model_id=model_id,
+        endpoint_type=ModelEndpointType(endpoint_type),
+        countinference=countinference,
+        service_secret=service_secret,
+    )
+
+
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
+def _check_if_api_key_has_access_to_model_cached(
     api_key: str,
     model_id: str,
     endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> bool:
-    # Same reason as in roboflow_api.get_roboflow_model_data.
-    endpoint_type = ModelEndpointType(endpoint_type)
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
     if pipeline_definition is not None:
@@ -404,6 +421,11 @@ def _check_if_api_key_has_access_to_model(
     except RoboflowAPINotAuthorizedError:
         return False
     return True
+
+
+_check_if_api_key_has_access_to_model.cache_clear = (
+    _check_if_api_key_has_access_to_model_cached.cache_clear
+)
 
 
 def _get_local_model_type(model_id: str) -> Optional[Tuple[TaskType, ModelType]]:
