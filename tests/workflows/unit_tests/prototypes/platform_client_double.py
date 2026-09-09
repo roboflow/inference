@@ -89,4 +89,5 @@ class RecordingPlatformClient:
         if isinstance(value, BaseException):
             self.post_mock.side_effect = value
         else:
+            self.post_mock.side_effect = None
             self.post_mock.return_value = value

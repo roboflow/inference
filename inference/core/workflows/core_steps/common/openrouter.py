@@ -35,7 +35,6 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPIUnsuccessfulRequestError,
 )
-from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.token_usage import (
     parse_chat_completion_usage,
@@ -54,6 +53,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,13 +262,15 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         self,
         model_manager: ModelsProvider,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._roboflow_api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "platform_client"]
 
     def execute_openrouter_batch(
         self,
@@ -345,6 +350,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
             single = partial(
                 _execute_proxied_openrouter_request,
                 roboflow_api_key=self._roboflow_api_key,
+                platform_client=self._platform_client,
                 openrouter_api_key=openrouter_api_key,
                 model=model,
                 privacy_level=privacy_level,
@@ -462,6 +468,7 @@ def _is_unsupported_reasoning_error(error: Exception) -> bool:
 
 def _execute_proxied_openrouter_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     openrouter_api_key: str,
     model: str,
     messages: List[dict],
@@ -485,7 +492,7 @@ def _execute_proxied_openrouter_request(
     if quantizations is not None:
         payload["quantizations"] = list(quantizations)
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint="apiproxy/openrouter",
             api_key=roboflow_api_key,
             payload=payload,
@@ -503,7 +510,7 @@ def _execute_proxied_openrouter_request(
             error,
         )
         retry_payload = {k: v for k, v in payload.items() if k != "reasoning"}
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint="apiproxy/openrouter",
             api_key=roboflow_api_key,
             payload=retry_payload,

@@ -81,6 +81,10 @@ from inference.core.workflows.prototypes.block import (
     third_party_model,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference_sdk import InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
@@ -1170,13 +1174,18 @@ class QwenVlmBlockV2(OpenRouterWorkflowBlockBase):
         model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        super().__init__(model_manager=model_manager, api_key=api_key)
+        super().__init__(
+            model_manager=model_manager,
+            api_key=api_key,
+            platform_client=platform_client,
+        )
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

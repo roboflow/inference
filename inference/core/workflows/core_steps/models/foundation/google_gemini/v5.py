@@ -9,7 +9,6 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from requests import Response
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.reasoning import (
     attach_reasoning_levels,
@@ -46,6 +45,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     third_party_model,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
@@ -444,12 +447,14 @@ class GoogleGeminiBlockV5(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -477,6 +482,7 @@ class GoogleGeminiBlockV5(WorkflowBlock):
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gemini_prompting(
             roboflow_api_key=self._api_key,
+            platform_client=self._platform_client,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -503,6 +509,7 @@ class GoogleGeminiBlockV5(WorkflowBlock):
 
 def run_gemini_prompting(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -544,6 +551,7 @@ def run_gemini_prompting(
         gemini_prompts.append(generated_prompt)
     return execute_gemini_requests(
         roboflow_api_key=roboflow_api_key,
+        platform_client=platform_client,
         google_api_key=google_api_key,
         gemini_prompts=gemini_prompts,
         model_version=model_version,
@@ -553,6 +561,7 @@ def run_gemini_prompting(
 
 def execute_gemini_requests(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     google_api_key: str,
     gemini_prompts: List[dict],
     model_version: str,
@@ -562,6 +571,7 @@ def execute_gemini_requests(
         partial(
             execute_gemini_request,
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
@@ -580,6 +590,7 @@ def execute_gemini_requests(
 
 def execute_gemini_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     google_api_key: str,
     prompt: dict,
     model_version: str,
@@ -588,6 +599,7 @@ def execute_gemini_request(
     if google_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_gemini_request(
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
@@ -602,6 +614,7 @@ def execute_gemini_request(
 
 def _execute_proxied_gemini_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     google_api_key: str,
     prompt: dict,
     model_version: str,
@@ -616,7 +629,7 @@ def _execute_proxied_gemini_request(
     endpoint = "apiproxy/gemini"
 
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,

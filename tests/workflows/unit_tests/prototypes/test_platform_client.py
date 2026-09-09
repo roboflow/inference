@@ -17,6 +17,9 @@ from inference.core.workflows.prototypes.platform_client import (
     OfflineRoboflowPlatformClient,
     RoboflowPlatformClient,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
 
 
 def test_the_shared_offline_instance_is_the_offline_client() -> None:
@@ -174,6 +177,18 @@ def test_server_adapter_header_policy_matches_the_server(monkeypatch) -> None:
         "X-Roboflow-Inference-Version": __version__,
         "X-Allow-Chunked": "true",
     }
+
+
+def test_set_post_response_clears_a_previously_seeded_exception() -> None:
+    # R9-H: seeding an error and then a success must not keep raising.
+    client = RecordingPlatformClient()
+
+    client.set_post_response(RuntimeError("boom"))
+    with pytest.raises(RuntimeError, match="boom"):
+        client.post(endpoint="apiproxy/openai", api_key="k")
+
+    client.set_post_response({"ok": True})
+    assert client.post(endpoint="apiproxy/openai", api_key="k") == {"ok": True}
 
 
 def test_the_two_api_key_redaction_implementations_agree() -> None:

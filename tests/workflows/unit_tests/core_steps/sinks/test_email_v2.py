@@ -33,6 +33,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 @pytest.mark.parametrize(
@@ -340,16 +350,15 @@ def test_apply_operations_to_message_parameters_to_number() -> None:
     assert result["ratio"] == 0.5
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_success(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_success() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
 
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -373,15 +382,16 @@ def test_v2_send_email_via_roboflow_proxy_success(
     assert payload["message_parameters"] == {"var": "value"}
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_applies_message_parameters_operations(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_applies_message_parameters_operations() -> (
+    None
+):
     """When message_parameters_operations are provided, transformed values are sent in payload."""
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
 
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -399,16 +409,15 @@ def test_v2_send_email_via_roboflow_proxy_applies_message_parameters_operations(
     assert payload["message_parameters"]["var"] == "LOWERCASE"
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_with_cc_bcc(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_with_cc_bcc() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
 
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=["cc@gmail.com"],
         bcc_receiver_email=["bcc@gmail.com"],
@@ -432,16 +441,15 @@ def test_v2_send_email_via_roboflow_proxy_with_cc_bcc(
     assert decoded_csv == "csv_content"
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_failure(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_failure() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.side_effect = Exception("API Error")
 
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -464,6 +472,7 @@ def test_v2_roboflow_managed_mode_sends_via_proxy() -> None:
         background_tasks=None,
         thread_pool_executor=thread_pool_executor,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     with mock.patch.object(v2, "send_email_via_roboflow_proxy") as proxy_mock:
@@ -509,6 +518,7 @@ def test_v2_custom_smtp_mode_sends_via_smtp(
         background_tasks=None,
         thread_pool_executor=thread_pool_executor,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -546,6 +556,7 @@ def test_v2_custom_smtp_validates_required_fields() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when - missing sender_email
@@ -583,6 +594,7 @@ def test_v2_cooldown_functionality() -> None:
         background_tasks=None,
         thread_pool_executor=thread_pool_executor,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -620,6 +632,7 @@ def test_v2_cooldown_recovery() -> None:
         background_tasks=None,
         thread_pool_executor=thread_pool_executor,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -657,6 +670,7 @@ def test_v2_disable_sink() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -697,6 +711,7 @@ def test_v2_synchronous_execution_with_roboflow_managed(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -735,6 +750,7 @@ def test_v2_asynchronous_execution_with_background_tasks() -> None:
         background_tasks=background_tasks,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -773,6 +789,7 @@ def test_v2_message_parameters_not_flattened_in_roboflow_mode() -> None:
         background_tasks=None,
         thread_pool_executor=thread_pool_executor,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     with mock.patch.object(v2, "send_email_via_roboflow_proxy") as proxy_mock:
@@ -951,11 +968,9 @@ def test_v2_serialize_image_data_with_nested_structures() -> None:
     assert result["images"][1] == "/9j/nested"
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_serializes_images(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_serializes_images() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     image_data = WorkflowImageData(
@@ -966,6 +981,7 @@ def test_v2_send_email_via_roboflow_proxy_serializes_images(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -985,11 +1001,9 @@ def test_v2_send_email_via_roboflow_proxy_serializes_images(
     assert isinstance(payload["message_parameters"]["image"], str)
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_via_roboflow_proxy_with_multiple_images(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_via_roboflow_proxy_with_multiple_images() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     image1 = WorkflowImageData(
@@ -1004,6 +1018,7 @@ def test_v2_send_email_via_roboflow_proxy_with_multiple_images(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1024,11 +1039,9 @@ def test_v2_send_email_via_roboflow_proxy_with_multiple_images(
     assert all(isinstance(img, str) for img in payload["message_parameters"]["images"])
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_image_attachment(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_image_attachment() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -1040,6 +1053,7 @@ def test_v2_send_email_with_image_attachment(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1070,11 +1084,9 @@ def test_v2_send_email_with_image_attachment(
     assert valid_base64
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_image_attachment_existing_jpg_extension(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_image_attachment_existing_jpg_extension() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((50, 50, 3), dtype=np.uint8)
@@ -1086,6 +1098,7 @@ def test_v2_send_email_with_image_attachment_existing_jpg_extension(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1103,11 +1116,9 @@ def test_v2_send_email_with_image_attachment_existing_jpg_extension(
     assert "image.jpg.jpg" not in payload["attachments"]
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_mixed_attachments(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_mixed_attachments() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((50, 50, 3), dtype=np.uint8)
@@ -1119,6 +1130,7 @@ def test_v2_send_email_with_mixed_attachments(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1159,6 +1171,7 @@ def test_v2_smtp_mode_with_image_attachment(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -1209,6 +1222,7 @@ def test_v2_smtp_mode_with_mixed_attachments(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -1248,11 +1262,9 @@ def test_v2_smtp_mode_with_mixed_attachments(
     assert "name,count" in csv_content
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_multiple_image_attachments(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_multiple_image_attachments() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
 
@@ -1269,6 +1281,7 @@ def test_v2_send_email_with_multiple_image_attachments(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1300,11 +1313,9 @@ def test_v2_send_email_with_multiple_image_attachments(
             pytest.fail(f"Attachment {key} is not valid base64")
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_image_attachment_jpeg_extension(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_image_attachment_jpeg_extension() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((50, 50, 3), dtype=np.uint8)
@@ -1316,6 +1327,7 @@ def test_v2_send_email_with_image_attachment_jpeg_extension(
     # when - filename already has .jpeg extension
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1333,17 +1345,16 @@ def test_v2_send_email_with_image_attachment_jpeg_extension(
     assert "image.jpeg.jpg" not in payload["attachments"]
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_bytes_attachment_via_proxy(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_bytes_attachment_via_proxy() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     binary_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00"
 
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
@@ -1376,6 +1387,7 @@ def test_v2_smtp_mode_with_bytes_attachment(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -1427,6 +1439,7 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -1462,11 +1475,9 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
     assert call_kwargs["attachments"]["detection2.jpg"][:2] == b"\xff\xd8"
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_v2_send_email_with_all_attachment_types(
-    post_to_roboflow_api_mock: MagicMock,
-) -> None:
+def test_v2_send_email_with_all_attachment_types() -> None:
     # given
+    post_to_roboflow_api_mock = platform_client.post_mock
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
 
@@ -1480,6 +1491,7 @@ def test_v2_send_email_with_all_attachment_types(
     # when
     result = send_email_via_roboflow_proxy(
         roboflow_api_key="test_api_key",
+        platform_client=platform_client,
         receiver_email=["receiver@gmail.com"],
         cc_receiver_email=None,
         bcc_receiver_email=None,
