@@ -589,7 +589,7 @@ class ModelEndpointType(Enum):
 def get_roboflow_model_data(
     api_key: str,
     model_id: str,
-    endpoint_type: ModelEndpointType,
+    endpoint_type: Union[str, ModelEndpointType],
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,

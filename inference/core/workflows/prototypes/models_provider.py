@@ -14,9 +14,10 @@ class ModelsProvider(Protocol):
     check against it, and a protocol carrying a data member cannot support one.
 
     ``add_model`` keeps ``**kwargs`` rather than naming ``endpoint_type``,
-    ``countinference`` and ``service_secret`` explicitly - ``endpoint_type`` is
-    typed ``ModelEndpointType`` from ``inference.core.roboflow_api``, and naming
-    it here would reintroduce exactly the import this port removes.
+    ``countinference`` and ``service_secret`` explicitly. Workflows now pass
+    the plain string constant ``CORE_MODEL_ENDPOINT_TYPE`` for ``endpoint_type``
+    to avoid importing the server's ``ModelEndpointType`` enum; the server
+    coerces it back as needed.
 
     PROVISIONAL MEMBERS. ``infer_from_request_sync`` takes a pydantic request
     object built by the caller from ``inference.core.entities`` - it is the
