@@ -67,10 +67,21 @@ This block receives two detection sets and produces the enriched query predictio
 
 This block requires two sets of detection predictions (object detection, instance segmentation, or keypoint detection); the same set can be used for both `query_predictions` and `target_predictions`. To use the `KEYPOINT` anchor option for either set, that set must be keypoint detection predictions and the corresponding `query_keypoint_name`/`target_keypoint_name` must be provided. Self-match exclusion relies on `detection_id` being present on both sets - this is populated automatically for all Roboflow object detection, instance segmentation, and keypoint detection model blocks. `max_distance` is optional; leave it unset to match every query detection to its nearest target regardless of distance.
 
+Because matching computes a full query x target pairwise distance matrix, and this block targets the tens-of-detections-per-set single-frame scale described above, `query_predictions` and `target_predictions` may each contain at most 100 detections; the block raises an error instead of matching when either set exceeds this limit.
+
 Note that `query_predictions` is enriched in place - the same `sv.Detections` object passed in is mutated (a new `nearest_target_distance` field is added to its `.data`) and returned, the same convention used by blocks like Velocity and Time in Zone. Avoid feeding the same selector into two independent branches of a workflow if each branch needs to see its own, unmodified `nearest_target_distance`.
 """
 
 TIE_EPSILON_PX = 1.0
+
+# Matching builds a full query x target pairwise distance matrix (see
+# `match_query_to_targets`), so its memory/CPU cost is O(num_query *
+# num_target). This block targets the single-frame, tens-of-detections-per-set
+# use case described in its docs, so a cap an order of magnitude above that
+# comfortably covers real usage while keeping a worst-case (all-tied) request
+# bounded to a few hundred KB rather than letting a crafted input with many
+# detections exhaust process memory.
+MAX_DETECTIONS_PER_SET = 100
 
 KEYPOINT_POINT_OPTION = "KEYPOINT"
 ANCHOR_POINT_OPTIONS = [
@@ -231,6 +242,24 @@ class DetectionsNearestNeighborBlockV1(WorkflowBlock):
         if target_point == KEYPOINT_POINT_OPTION and not target_keypoint_name:
             raise ValueError(
                 "`target_keypoint_name` must be provided when `target_point` is set to 'KEYPOINT'."
+            )
+        if len(query_predictions) > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`query_predictions` contains {len(query_predictions)} detections, "
+                f"exceeding the {MAX_DETECTIONS_PER_SET}-detection limit for "
+                "`roboflow_core/detections_nearest_neighbor@v1`, which performs a "
+                "full pairwise comparison between the query and target sets. Reduce "
+                "the number of query detections (e.g. filter or limit them "
+                "upstream) before using this block."
+            )
+        if len(target_predictions) > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`target_predictions` contains {len(target_predictions)} "
+                f"detections, exceeding the {MAX_DETECTIONS_PER_SET}-detection "
+                "limit for `roboflow_core/detections_nearest_neighbor@v1`, which "
+                "performs a full pairwise comparison between the query and target "
+                "sets. Reduce the number of target detections (e.g. filter or "
+                "limit them upstream) before using this block."
             )
 
         query_points = resolve_anchor_points(

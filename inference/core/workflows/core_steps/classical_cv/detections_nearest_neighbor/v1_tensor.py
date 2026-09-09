@@ -31,6 +31,7 @@ import torch
 
 from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
     KEYPOINT_POINT_OPTION,
+    MAX_DETECTIONS_PER_SET,
     OUTPUT_KEY_MATCHED_QUERY_DETECTIONS,
     OUTPUT_KEY_MATCHED_TARGET_DETECTIONS,
     OUTPUT_KEY_QUERY_PREDICTIONS,
@@ -91,6 +92,27 @@ class DetectionsNearestNeighborBlockV1(WorkflowBlock):
         # keypoint payloads used below.
         _, query_detections = split_key_point_prediction(query_predictions)
         _, target_detections = split_key_point_prediction(target_predictions)
+
+        num_query_detections = int(query_detections.xyxy.shape[0])
+        num_target_detections = int(target_detections.xyxy.shape[0])
+        if num_query_detections > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`query_predictions` contains {num_query_detections} detections, "
+                f"exceeding the {MAX_DETECTIONS_PER_SET}-detection limit for "
+                "`roboflow_core/detections_nearest_neighbor@v1`, which performs a "
+                "full pairwise comparison between the query and target sets. Reduce "
+                "the number of query detections (e.g. filter or limit them "
+                "upstream) before using this block."
+            )
+        if num_target_detections > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`target_predictions` contains {num_target_detections} "
+                f"detections, exceeding the {MAX_DETECTIONS_PER_SET}-detection "
+                "limit for `roboflow_core/detections_nearest_neighbor@v1`, which "
+                "performs a full pairwise comparison between the query and target "
+                "sets. Reduce the number of target detections (e.g. filter or "
+                "limit them upstream) before using this block."
+            )
 
         query_points = resolve_anchor_points(
             detections=query_detections,

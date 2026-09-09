@@ -403,6 +403,50 @@ def test_keypoint_option_requires_keypoint_predictions() -> None:
         )
 
 
+def test_detections_per_set_limit_rejects_oversized_query_set() -> None:
+    # given: 101 query detections exceeds the 100-detection-per-set limit
+    query = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
+        detection_ids=[f"q{i}" for i in range(101)],
+    )
+    target = make_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
+
+    # when / then
+    with pytest.raises(ValueError, match="query_predictions"):
+        run_block(query, target)
+
+
+def test_detections_per_set_limit_rejects_oversized_target_set() -> None:
+    # given: 101 target detections exceeds the 100-detection-per-set limit
+    query = make_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
+    target = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
+        detection_ids=[f"t{i}" for i in range(101)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="target_predictions"):
+        run_block(query, target)
+
+
+def test_detections_per_set_limit_allows_inputs_at_the_limit() -> None:
+    # given: exactly 100 detections on each side - at, not over, the limit
+    query = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_block(query, target)
+
+    # then
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 100
+
+
 def make_native_detections(
     xyxy, detection_ids=None, class_name="object"
 ) -> NativeDetections:
@@ -852,6 +896,53 @@ def test_keypoint_option_requires_keypoint_predictions_tensor_native() -> None:
             query_point="KEYPOINT",
             query_keypoint_name="left_shoulder",
         )
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_rejects_oversized_query_set_tensor_native() -> None:
+    # given: 101 query detections exceeds the 100-detection-per-set limit
+    query = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
+        detection_ids=[f"q{i}" for i in range(101)],
+    )
+    target = make_native_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
+
+    # when / then
+    with pytest.raises(ValueError, match="query_predictions"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_rejects_oversized_target_set_tensor_native() -> None:
+    # given: 101 target detections exceeds the 100-detection-per-set limit
+    query = make_native_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
+    target = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(101)],
+        detection_ids=[f"t{i}" for i in range(101)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="target_predictions"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_allows_inputs_at_the_limit_tensor_native() -> None:
+    # given: exactly 100 detections on each side - at, not over, the limit
+    query = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(100)],
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_tensor_block(query, target)
+
+    # then
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 100
 
 
 @_TENSOR_ONLY
