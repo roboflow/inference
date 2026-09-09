@@ -140,3 +140,22 @@ def test_qwen_forwards_the_client_to_the_openrouter_base() -> None:
         platform_client=sentinel,
     )
     assert block._platform_client is sentinel
+
+
+def test_no_workflows_module_imports_the_roboflow_api_client_at_all() -> None:
+    """True from Task 9.6 onward: the last two importers were
+    `block_scaffolding.py` and `reference_resolution.py`."""
+    offenders = []
+    for path in WORKFLOWS_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "inference.core.roboflow_api"
+            ):
+                offenders.append(f"{path}:{node.lineno}")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("inference.core.roboflow_api"):
+                        offenders.append(f"{path}:{node.lineno}")
+    assert not offenders, offenders

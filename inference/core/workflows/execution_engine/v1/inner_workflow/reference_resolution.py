@@ -8,7 +8,10 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from inference.core.workflows.errors import WorkflowDefinitionError
+from inference.core.workflows.errors import (
+    WorkflowDefinitionError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
@@ -29,25 +32,22 @@ def default_inner_workflow_spec_resolver(
     workflow_version_id: Optional[str],
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
-    from inference.core.roboflow_api import get_workflow_specification
+    """Standalone default: no platform, so no remote workflow definitions.
 
-    api_key = init_parameters.get("workflows_core.api_key")
-    if workspace_id != "local" and not api_key:
-        raise WorkflowDefinitionError(
-            public_message=(
-                "Resolving an `inner_workflow` step by workflow id requires a Roboflow API key. "
-                "Set `workflows_core.api_key` in workflow init_parameters, inject "
-                "`workflows_core.inner_workflow_spec_resolver`, or use "
-                '`workflow_workspace_id` `"local"` with a matching on-disk workflow '
-                "definition."
-            ),
-            context="workflow_compilation | inner_workflow_spec_resolution",
-        )
-    return get_workflow_specification(
-        api_key=api_key,
-        workspace_id=workspace_id,
-        workflow_id=workflow_id,
-        workflow_version_id=workflow_version_id,
+    The Roboflow-backed implementation moved to
+    `inference.core.interfaces.roboflow_platform_client.default_inner_workflow_spec_resolver`
+    and is installed by every server composition root - the shape Task 7.2 used
+    for the step error handler.
+    """
+    raise WorkflowEnvironmentConfigurationError(
+        public_message=(
+            "Resolving an `inner_workflow` step by workflow id requires access to the "
+            "Roboflow API, which is not available in this installation of `workflows`. "
+            f"Inject `{WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER}` in workflow "
+            'init_parameters, or use `workflow_workspace_id` `"local"` with a matching '
+            "on-disk workflow definition."
+        ),
+        context="workflow_compilation | inner_workflow_spec_resolution",
     )
 
 
