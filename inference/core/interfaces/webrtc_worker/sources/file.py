@@ -1,7 +1,9 @@
 """Video file source for WebRTC - handles uploaded video files."""
 
 import asyncio
+import os
 import queue
+import tempfile
 import threading
 from typing import Dict, Optional
 
@@ -10,6 +12,7 @@ from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
 from av import VideoFrame
 
 from inference.core import logger
+from inference.core.env import MAX_VIDEO_DOWNLOAD_SIZE_MB
 from inference.core.interfaces.webrtc_worker.entities import VideoFileUploadState
 
 
@@ -114,8 +117,22 @@ class VideoFileUploadHandler:
     Auto-completes when all chunks received.
     """
 
-    def __init__(self):
+    def __init__(self, chunk_size: int):
+        self.chunk_size = chunk_size
+        # Use the same clip budget as URL/base64 video input, including its opt-out.
+        self.max_bytes = (
+            MAX_VIDEO_DOWNLOAD_SIZE_MB * 1024 * 1024
+            if MAX_VIDEO_DOWNLOAD_SIZE_MB >= 0
+            else None
+        )
+        self.max_chunks = (
+            (self.max_bytes + chunk_size - 1) // chunk_size
+            if self.max_bytes is not None
+            else None
+        )
+        self._lock = threading.Lock()
         self._chunks: Dict[int, bytes] = {}
+        self._received_bytes = 0
         self._total_chunks: Optional[int] = None
         self._temp_file_path: Optional[str] = None
         self._state = VideoFileUploadState.IDLE
@@ -125,48 +142,78 @@ class VideoFileUploadHandler:
     def temp_file_path(self) -> Optional[str]:
         return self._temp_file_path
 
-    def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> None:
-        """Handle a chunk. Auto-completes when all chunks received."""
-        # TODO: we need to refactor this...
-        if self._total_chunks is None:
+    def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> bool:
+        """Accept one chunk; return whether it adds new upload data."""
+        with self._lock:
+            if self._state not in (
+                VideoFileUploadState.IDLE,
+                VideoFileUploadState.UPLOADING,
+            ):
+                raise ValueError("Video upload is no longer accepting chunks")
+            if total_chunks <= 0 or (
+                self.max_chunks is not None and total_chunks > self.max_chunks
+            ):
+                raise ValueError("Invalid video upload chunk count")
+            if not 0 <= chunk_index < total_chunks:
+                raise ValueError("Invalid video upload chunk index")
+            if not data or len(data) > self.chunk_size:
+                raise ValueError("Invalid video upload chunk size")
+            if self._total_chunks is not None and total_chunks != self._total_chunks:
+                raise ValueError("Video upload chunk count changed")
+            if chunk_index in self._chunks:
+                if self._chunks[chunk_index] != data:
+                    raise ValueError("Conflicting video upload chunk")
+                return False
+            if (
+                self.max_bytes is not None
+                and self._received_bytes + len(data) > self.max_bytes
+            ):
+                raise ValueError("Video upload exceeds the server video size limit")
+
             self._total_chunks = total_chunks
             self._state = VideoFileUploadState.UPLOADING
-
-        self._chunks[chunk_index] = data
-
-        if len(self._chunks) == total_chunks:
-            self._write_to_temp_file()
-            self._state = VideoFileUploadState.COMPLETE
-            self.upload_complete_event.set()
+            self._chunks[chunk_index] = data
+            self._received_bytes += len(data)
+            if len(self._chunks) == self._total_chunks:
+                self._write_to_temp_file()
+                self._state = VideoFileUploadState.COMPLETE
+                self.upload_complete_event.set()
+            return True
 
     def _write_to_temp_file(self) -> None:
         """Reassemble chunks and write to temp file."""
-        import tempfile
-
-        # TODO: we need to refactor this...
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
+            # Retain ownership even if writing or closing the file fails.
+            self._temp_file_path = f.name
             for i in range(self._total_chunks):
                 f.write(self._chunks[i])
-            self._temp_file_path = f.name
 
         self._chunks.clear()
+        self._received_bytes = 0
 
     def try_start_processing(self) -> Optional[str]:
         """Check if upload complete and transition to PROCESSING. Returns path or None."""
-        if self._state == VideoFileUploadState.COMPLETE:
-            self._state = VideoFileUploadState.PROCESSING
-            return self._temp_file_path
+        with self._lock:
+            if self._state == VideoFileUploadState.COMPLETE:
+                self._state = VideoFileUploadState.PROCESSING
+                return self._temp_file_path
         return None
 
     async def cleanup(self) -> None:
-        """Clean up temp file."""
-        # TODO: we need to refactor this...
-        if self._temp_file_path:
-            import os
+        """Wait for pending writes, release chunks and remove the owned file."""
+        await asyncio.to_thread(self._cleanup)
 
-            path = self._temp_file_path
-            self._temp_file_path = None
-            try:
-                await asyncio.to_thread(os.unlink, path)
-            except Exception:
-                pass
+    def _cleanup(self) -> None:
+        with self._lock:
+            self._state = VideoFileUploadState.ERROR
+            self._chunks.clear()
+            self._received_bytes = 0
+            if self._temp_file_path:
+                try:
+                    os.unlink(self._temp_file_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.warning("Could not remove uploaded video", exc_info=True)
+                    return
+                self._temp_file_path = None

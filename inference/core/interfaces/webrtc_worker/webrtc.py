@@ -55,6 +55,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WorkflowConfiguration,
 )
 from inference.core.interfaces.webrtc_worker.entities import (
+    VIDEO_FILE_HEADER_SIZE,
     DataOutputMode,
     StreamOutputMode,
     WebRTCOutput,
@@ -1238,12 +1239,19 @@ async def init_rtc_peer_connection_with_loop(
         logger.info("Data channel '%s' received", channel.label)
         # Handle video file upload channel
         if channel.label == "video_upload":
+            if video_processor.video_upload_handler is not None:
+                channel.close()
+                return
             logger.info("Video upload channel established")
 
-            video_processor.video_upload_handler = VideoFileUploadHandler()
+            upload_handler = VideoFileUploadHandler(chunk_size=CHUNK_SIZE)
+            video_processor.video_upload_handler = upload_handler
+            pending_chunks = 0
+            pending_bytes = 0
 
             @channel.on("message")
             async def on_upload_message(message):
+                nonlocal pending_chunks, pending_bytes
                 # Keep watchdog alive during upload and keepalive pings
                 if video_processor.heartbeat_callback:
                     video_processor.heartbeat_callback()
@@ -1252,10 +1260,39 @@ async def init_rtc_peer_connection_with_loop(
                 if len(message) <= 1:
                     channel.send(message)
                     return
-                loop = asyncio.get_running_loop()
-                video_path = await loop.run_in_executor(
-                    None, process_video_upload_message, message, video_processor
-                )
+                payload_size = len(message) - VIDEO_FILE_HEADER_SIZE
+                if (
+                    not isinstance(message, bytes)
+                    or not 0 < payload_size <= CHUNK_SIZE
+                    or (
+                        upload_handler.max_chunks is not None
+                        and pending_chunks >= upload_handler.max_chunks
+                    )
+                    or (
+                        upload_handler.max_bytes is not None
+                        and pending_bytes + payload_size > upload_handler.max_bytes
+                    )
+                ):
+                    terminate_event.set()
+                    channel.close()
+                    await upload_handler.cleanup()
+                    return
+                pending_chunks += 1
+                pending_bytes += payload_size
+                try:
+                    loop = asyncio.get_running_loop()
+                    video_path = await loop.run_in_executor(
+                        None, process_video_upload_message, message, video_processor
+                    )
+                except (ValueError, OSError):
+                    logger.warning("Video upload rejected", exc_info=True)
+                    terminate_event.set()
+                    channel.close()
+                    await upload_handler.cleanup()
+                    return
+                finally:
+                    pending_chunks -= 1
+                    pending_bytes -= payload_size
                 if video_path:
                     video_processor._file_processing = True
                     logger.info(
