@@ -33,10 +33,12 @@ from inference.core.env import (
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -1223,16 +1225,18 @@ async def init_rtc_peer_connection_with_loop(
         elif state == "connected":
             logger.info("[ICE_STATE] Successfully connected via ICE")
 
+    upload_timeout: Optional[asyncio.TimerHandle] = None
+
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop
     ):
         chunk_index, total_chunks, data = parse_video_file_chunk(message)
-        video_processor.video_upload_handler.handle_chunk(
+        progressed = video_processor.video_upload_handler.handle_chunk(
             chunk_index, total_chunks, data
         )
 
         video_path = video_processor.video_upload_handler.try_start_processing()
-        return video_path
+        return progressed, video_path
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
@@ -1248,13 +1252,31 @@ async def init_rtc_peer_connection_with_loop(
             video_processor.video_upload_handler = upload_handler
             pending_chunks = 0
             pending_bytes = 0
+            loop = asyncio.get_running_loop()
+            remaining = (
+                (termination_date - datetime.datetime.now()).total_seconds()
+                if termination_date is not None
+                else WEBRTC_MODAL_FUNCTION_TIME_LIMIT
+            )
+            upload_deadline = loop.time() + remaining
+
+            def renew_upload_timeout() -> None:
+                nonlocal upload_timeout
+                if upload_timeout:
+                    upload_timeout.cancel()
+                # Progress may extend idle time, but never the session budget.
+                delay = min(
+                    WEBRTC_MODAL_WATCHDOG_TIMEMOUT, upload_deadline - loop.time()
+                )
+                upload_timeout = loop.call_later(max(0, delay), terminate_event.set)
+
+            renew_upload_timeout()
 
             @channel.on("message")
             async def on_upload_message(message):
                 nonlocal pending_chunks, pending_bytes
-                # Keep watchdog alive during upload and keepalive pings
-                if video_processor.heartbeat_callback:
-                    video_processor.heartbeat_callback()
+                if terminate_event.is_set():
+                    return
 
                 # Ignore keepalive pings (1-byte messages)
                 if len(message) <= 1:
@@ -1280,8 +1302,7 @@ async def init_rtc_peer_connection_with_loop(
                 pending_chunks += 1
                 pending_bytes += payload_size
                 try:
-                    loop = asyncio.get_running_loop()
-                    video_path = await loop.run_in_executor(
+                    progressed, video_path = await loop.run_in_executor(
                         None, process_video_upload_message, message, video_processor
                     )
                 except (ValueError, OSError):
@@ -1293,7 +1314,20 @@ async def init_rtc_peer_connection_with_loop(
                 finally:
                     pending_chunks -= 1
                     pending_bytes -= payload_size
+                if terminate_event.is_set() or (
+                    upload_timeout
+                    and not upload_timeout.cancelled()
+                    and loop.time() >= upload_timeout.when()
+                ):
+                    terminate_event.set()
+                    return
+                if progressed and video_processor.heartbeat_callback:
+                    video_processor.heartbeat_callback()
+                if progressed and not video_processor._file_processing:
+                    renew_upload_timeout()
                 if video_path:
+                    if upload_timeout:
+                        upload_timeout.cancel()
                     video_processor._file_processing = True
                     logger.info(
                         "Video upload complete, processing: realtime=%s, path=%s",
@@ -1408,19 +1442,23 @@ async def init_rtc_peer_connection_with_loop(
     )
 
     logger.info("Answer sent, waiting for termination event")
-    await terminate_event.wait()
-    logger.info("Termination event received, closing WebRTC connection")
-    if player:
-        logger.info("Stopping player")
-        player.video.stop()
-    if peer_connection.connectionState != "closed":
+    try:
+        await terminate_event.wait()
+    finally:
+        terminate_event.set()
+        if upload_timeout:
+            upload_timeout.cancel()
         logger.info("Closing WebRTC connection")
-        await peer_connection.close()
-    if video_processor.track:
-        logger.info("Stopping video processor track")
-        video_processor.track.stop()
-    await video_processor.close()
-    await usage_collector.async_push_usage_payloads()
+        if player:
+            logger.info("Stopping player")
+            player.video.stop()
+        if peer_connection.connectionState != "closed":
+            await peer_connection.close()
+        if video_processor.track:
+            logger.info("Stopping video processor track")
+            video_processor.track.stop()
+        await video_processor.close()
+        await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
 
 
