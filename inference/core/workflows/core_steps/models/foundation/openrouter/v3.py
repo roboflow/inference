@@ -75,51 +75,28 @@ DETECTION_BOX_FORMAT = LEGACY_DETECTION_BOX_FORMAT
 
 DETECTION_FORMAT_METADATA = {
     "named_normalized": {
-        "name": "Named keys, normalized 0-1 (default)",
-        "description": (
-            'Asks for `{"detections": [{"x_min", "y_min", "x_max", '
-            '"y_max", "class_name", "confidence"}]}` with coordinates as '
-            "floats in 0.0-1.0. Generic contract most chat models follow; "
-            "the block's behaviour before this option existed."
-        ),
+        "name": "Named keys, 0-1 (default)",
+        "description": "`x_min`/`y_min`/`x_max`/`y_max` floats normalized to 0-1.",
     },
     "xyxy_0_1000": {
-        "name": "box_2d [x_min, y_min, x_max, y_max], 0-1000",
-        "description": (
-            "Asks for `box_2d` integers normalized to 0-1000, x before y. "
-            "The native grounding contract of Qwen-VL and Z.ai GLM models. "
-            "A reported `confidence` is ignored."
-        ),
+        "name": "xyxy, 0-1000",
+        "description": "`box_2d` list of integers normalized to 0-1000.",
     },
     "yxyx_0_1000": {
-        "name": "box_2d [y_min, x_min, y_max, x_max], 0-1000",
-        "description": (
-            "Asks for `box_2d` integers normalized to 0-1000, y before x. "
-            "The native grounding contract of Google Gemini models."
-        ),
+        "name": "yxyx, 0-1000",
+        "description": "`box_2d` list of integers normalized to 0-1000, y first.",
     },
     "xyxy_absolute": {
-        "name": "box_2d [x_min, y_min, x_max, y_max], pixels",
-        "description": (
-            "Asks for `box_2d` in absolute pixels of the uploaded image, whose "
-            "size is stated in the prompt. Used by the OpenAI GPT-5.6 / GPT-6 "
-            "and Anthropic Claude blocks."
-        ),
+        "name": "xyxy, pixels",
+        "description": "`box_2d` list in pixels of the uploaded image.",
     },
     "xyxy_percent": {
-        "name": "box_2d [x_min, y_min, x_max, y_max], percent",
-        "description": (
-            "Asks for `box_2d` as percentages of image width and height "
-            "(floats 0-100). Used by the SpaceXAI Grok block."
-        ),
+        "name": "xyxy, percent",
+        "description": "`box_2d` list of floats as percent of image size.",
     },
     "named_0_1000": {
         "name": "Named keys, 0-1000",
-        "description": (
-            "Asks for `label`, `x_min`, `y_min`, `x_max`, `y_max` integers "
-            "normalized to 0-1000. The native grounding contract of Meta Muse "
-            "models. A reported `confidence` is ignored."
-        ),
+        "description": "`x_min`/`y_min`/`x_max`/`y_max` integers normalized to 0-1000.",
     },
 }
 
@@ -182,12 +159,11 @@ This version (v3) decodes model answers inside the block:
 * **`error_status`** - `True` when the model answer could not be parsed.
 * **`inference_id`** - identifier generated per image and attached to the decoded
   predictions.
-* **`detection_format`** - for `object-detection`, picks the bounding-box contract
-  the model is prompted for and decoded with. The default is the generic
-  normalized-floats JSON every chat model understands; pick the model family's
-  native contract (e.g. `box_2d` 0-1000 for Qwen / GLM, `y`-first for Gemini,
-  pixels for GPT-5.6+) to match the wording it was trained on, so a new model
-  can be used without a block change.
+* **`detection_format`** - for `object-detection`, the bounding-box format the
+  model is asked for and decoded with (`xyxy` / `yxyx` / named keys, in 0-1,
+  0-1000, percent or pixels). Pick the format the model was trained on so a new
+  model can be used without a block change; the default is the generic
+  normalized-floats JSON.
 """
 
 
@@ -343,10 +319,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     detection_format: Union[Selector(kind=[STRING_KIND]), BoxFormatName] = Field(
         default=DETECTION_BOX_FORMAT,
         description=(
-            "Bounding-box contract used for `object-detection`: both the "
-            "prompt wording the model receives and the decoding of its "
-            "answer. Keep the default for models without a known native "
-            "format, or pick the family's contract for best accuracy."
+            "Bounding-box format for `object-detection`: how the model is "
+            "asked for boxes and how its answer is decoded. Pick the format "
+            "the model was trained on; keep the default when unsure."
         ),
         examples=["named_normalized", "xyxy_0_1000", "$inputs.detection_format"],
         json_schema_extra={
