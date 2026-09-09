@@ -1544,6 +1544,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
@@ -1555,6 +1556,11 @@ REGISTERED_INITIALIZERS = {
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
+    # Standalone default. The server overrides it with
+    # `workflows_core.platform_client` at every composition root. An object,
+    # not a function: call_if_callable() would invoke a function registered
+    # here with no arguments.
+    "platform_client": OFFLINE_PLATFORM_CLIENT,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
