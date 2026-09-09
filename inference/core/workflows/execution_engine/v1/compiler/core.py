@@ -177,11 +177,14 @@ def compile_workflow_graph(
 ) -> GraphCompilationResult:
     if init_parameters is None:
         init_parameters = {}
+    pre_resolution_dynamic_blocks_definitions = (
+        collect_dynamic_blocks_definitions_from_workflow_definition(
+            workflow_definition=workflow_definition
+        )
+    )
     cacheable = not _is_resolver_dependent(
         workflow_definition=workflow_definition,
-        dynamic_blocks_definitions=collect_dynamic_blocks_definitions_from_workflow_definition(
-            workflow_definition=workflow_definition
-        ),
+        dynamic_blocks_definitions=pre_resolution_dynamic_blocks_definitions,
     )
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
@@ -189,13 +192,8 @@ def compile_workflow_graph(
     )
     cached_value = COMPILATION_CACHE.get(key=key) if cacheable else None
     if cached_value is not None:
-        dynamic_blocks_definitions = (
-            collect_dynamic_blocks_definitions_from_workflow_definition(
-                workflow_definition=workflow_definition,
-            )
-        )
         ensure_dynamic_blocks_allowed(
-            dynamic_blocks_definitions=dynamic_blocks_definitions
+            dynamic_blocks_definitions=pre_resolution_dynamic_blocks_definitions
         )
         return cached_value
 
