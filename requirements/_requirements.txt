@@ -13,6 +13,7 @@ opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as
 pillow>=12.3.0,<13.0.0
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
+psycopg[binary]>=3.2,<4
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
