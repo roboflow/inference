@@ -15,6 +15,7 @@ from inference.core.interfaces.roboflow_platform_client import (
 from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -461,6 +462,10 @@ def _run_workflow_for_single_image_with_inference(
     if workflows_execution_engine_init_params:
         workflow_init_parameters.update(workflows_execution_engine_init_params)
     install_workflows_platform_bindings(workflow_init_parameters)
+    # AFTER the override merge, never before: a codec written earlier would be
+    # replaced here on Path A while the process registry kept the guarded one
+    # (round-2 Defect 1).
+    bind_image_codec(workflow_init_parameters)
     execution_engine = ExecutionEngine.init(
         workflow_definition=workflow_specification,
         init_parameters=workflow_init_parameters,
