@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 268
+# Count: 265
 inference/core/workflows/core_steps/classical_cv/mask_edge_snap/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/motion_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/template_matching/v1_tensor.py	inference.core.env
@@ -178,8 +178,6 @@ inference/core/workflows/core_steps/models/foundation/spacexai/v2.py	inference.c
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/foundation/zai_vlm/v1.py	inference.core.utils.image_utils
-inference/core/workflows/core_steps/models/roboflow/action_recognition/v1.py	inference.core.models.action_recognition
-inference/core/workflows/core_steps/models/roboflow/action_recognition/v1.py	inference.core.models.inference_models_adapters
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1.py	inference.core.env
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1_tensor.py	inference.core.env
@@ -250,7 +248,6 @@ inference/core/workflows/core_steps/visualizations/common/fonts/__init__.py	infe
 inference/core/workflows/execution_engine/entities/base.py	inference.core.entities.responses.action_recognition
 inference/core/workflows/execution_engine/entities/base.py	inference.core.env
 inference/core/workflows/execution_engine/entities/base.py	inference.core.utils.image_utils
-inference/core/workflows/execution_engine/v1/compiler/syntactic_parser.py	inference.core.entities.responses.workflows
 inference/core/workflows/execution_engine/v1/core.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/block_assembler.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py	inference.core.env

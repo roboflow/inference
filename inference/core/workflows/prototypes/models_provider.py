@@ -38,6 +38,10 @@ class ModelsProvider(Protocol):
         **kwargs: Any,
     ) -> None: ...
 
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs: Any
+    ) -> Any: ...
+
     def infer_from_request_sync(
         self, model_id: str, request: Any, **kwargs: Any
     ) -> Any: ...

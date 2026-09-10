@@ -11,6 +11,7 @@ import pytest
 import torch
 
 import inference.core.env as core_env
+from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
 )
@@ -223,6 +224,7 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     block = ActionRecognitionModelBlockV1(
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
+        model_manager=ModelManager(model_registry=MagicMock()),
     )
 
     loaded = block._get_model(model_id="cosmos-3-edge")
@@ -242,6 +244,7 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
     block = ActionRecognitionModelBlockV1(
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
+        model_manager=ModelManager(model_registry=MagicMock()),
     )
 
     with pytest.raises(
