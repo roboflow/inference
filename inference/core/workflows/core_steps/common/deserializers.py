@@ -9,10 +9,6 @@ import pybase64
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.utils.image_utils import (
-    attempt_loading_image_from_string,
-    load_image_from_url,
-)
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     filter_out_invalid_polygons,
@@ -68,6 +64,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.image_codec import ImageCodec, get_image_codec
 
 AnyNumber = Union[int, float]
 
@@ -76,6 +73,8 @@ def deserialize_image_kind(
     parameter: str,
     image: Any,
     prevent_local_images_loading: bool = False,
+    *,
+    image_codec: Optional[ImageCodec] = None,
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
@@ -116,20 +115,25 @@ def deserialize_image_kind(
         if is_image_dict:
             image = image["value"]
         if isinstance(image, str):
+            # Path A: the engine binds its own codec here (see
+            # ExecutionEngineV1.init); out-of-engine callers such as
+            # modal/modal_app.py fall back to the process registry.
+            codec = image_codec if image_codec is not None else get_image_codec()
             base64_image = None
             image_reference = None
             if image.startswith("http://") or image.startswith("https://"):
                 image_reference = image
-                image = load_image_from_url(value=image)
+                image = codec.fetch_url(image)
             elif not prevent_local_images_loading and os.path.exists(image):
                 # prevent_local_images_loading is introduced to eliminate
                 # server vulnerability - namely it prevents local server
                 # file system from being exploited.
                 image_reference = image
+                codec.ensure_local_file_load_allowed(image)
                 image = cv2.imread(image)
             else:
                 base64_image = image
-                image = attempt_loading_image_from_string(image)[0]
+                image = codec.decode_string(image)[0]
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
                 workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
