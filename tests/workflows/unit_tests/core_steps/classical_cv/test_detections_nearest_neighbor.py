@@ -516,9 +516,7 @@ def test_matched_pairs_limit_with_masks_rejects_widespread_ties() -> None:
         run_block(query, target)
 
 
-def test_matched_pairs_limit_with_masks_applies_when_only_one_side_has_masks() -> (
-    None
-):
+def test_matched_pairs_limit_with_masks_applies_when_only_one_side_has_masks() -> None:
     # given: only the target set carries masks - the stricter limit still
     # applies, since the target side of the match still duplicates masks
     query = make_detections(
@@ -695,9 +693,7 @@ def test_single_nearest_match_tensor_native() -> None:
     matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
     matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
     expected_distance = math.hypot(15 - 5, 15 - 5)
-    assert nearest_distances(query_out)[0] == pytest.approx(
-        expected_distance, rel=1e-6
-    )
+    assert nearest_distances(query_out)[0] == pytest.approx(expected_distance, rel=1e-6)
     assert len(matched_query) == 1
     assert len(matched_target) == 1
     assert matched_query.bboxes_metadata[0]["detection_id"] == "q1"
@@ -929,9 +925,7 @@ def test_bbox_anchor_point_options_tensor_native(point_option, expected_point) -
     ex, ey = expected_point
     expected_distance = math.hypot(100 - ex, 100 - ey)
     query_out = result[OUTPUT_KEY_QUERY_PREDICTIONS]
-    assert nearest_distances(query_out)[0] == pytest.approx(
-        expected_distance, rel=1e-6
-    )
+    assert nearest_distances(query_out)[0] == pytest.approx(expected_distance, rel=1e-6)
 
 
 @_TENSOR_ONLY
@@ -1119,9 +1113,7 @@ def test_matched_pairs_limit_allows_ties_at_the_limit_tensor_native() -> None:
 
 
 @_TENSOR_ONLY
-def test_matched_pairs_limit_with_masks_rejects_widespread_ties_tensor_native() -> (
-    None
-):
+def test_matched_pairs_limit_with_masks_rejects_widespread_ties_tensor_native() -> None:
     # given: 20 co-located instance-segmentation query and target detections -
     # 400 tied pairs exceeds the 100-pair mask-aware limit, even though 400 is
     # well under the general 10,000-pair limit that applies to bbox-only

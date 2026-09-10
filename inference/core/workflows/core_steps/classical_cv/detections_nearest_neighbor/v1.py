@@ -415,7 +415,9 @@ def match_query_to_targets(
     # larger than a plain bbox/keypoint row, so a masked match is held to a
     # much smaller pair budget than the general case.
     has_masks = query_detections.mask is not None or target_detections.mask is not None
-    matched_pairs_limit = MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    matched_pairs_limit = (
+        MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    )
     if num_matched_pairs > matched_pairs_limit:
         mask_note = (
             " (a stricter limit applies because query and/or target "

@@ -342,7 +342,9 @@ def match_query_to_targets(
         getattr(query_detections, "mask", None) is not None
         or getattr(target_detections, "mask", None) is not None
     )
-    matched_pairs_limit = MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    matched_pairs_limit = (
+        MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    )
     if num_matched_pairs > matched_pairs_limit:
         mask_note = (
             " (a stricter limit applies because query and/or target "
