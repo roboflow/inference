@@ -223,6 +223,25 @@ class ModelManager:
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
 
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        """Load an action-recognition model the way every entry point loads it.
+
+        Forwarder so the Workflow block reaches the loader through the models
+        port instead of importing
+        `inference.core.models.inference_models_adapters` directly. The import
+        stays function-local for the same reason it was in the block: loading
+        the adapters module is expensive.
+        """
+        from inference.core.models.inference_models_adapters import (
+            load_action_recognition_model,
+        )
+
+        return load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
+
     def record_request_metadata(
         self,
         model_id: str,

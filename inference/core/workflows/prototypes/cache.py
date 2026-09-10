@@ -10,9 +10,10 @@ class WorkflowsCache(Protocol):
     first.
 
     The server's implementation is Redis-backed when ``REDIS_HOST`` is set and
-    honours ``expire``. There is deliberately NO default implementation here:
-    see the Phase 4 preamble - the initializer stays bound to the server's
-    cache until Phase 9 injects it at the composition roots.
+    honours ``expire``. The standalone default is
+    ``inference.core.workflows.utils.in_memory_cache.InMemoryWorkflowsCache``;
+    every server composition root overrides it with ``workflows_core.cache``
+    (see ``inference/core/interfaces/roboflow_platform_client.py``).
     """
 
     def get(self, key: str) -> Any: ...

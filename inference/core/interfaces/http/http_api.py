@@ -371,7 +371,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
 )
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
-    get_workflow_schema_description,
+    get_workflow_schema as build_workflow_blocks_schema,
+)
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
@@ -2494,7 +2496,9 @@ class HttpInterface(BaseInterface):
             def get_workflow_schema(
                 request: Request,
             ) -> WorkflowsBlocksSchemaDescription:
-                result = get_workflow_schema_description()
+                result = WorkflowsBlocksSchemaDescription(
+                    schema=build_workflow_blocks_schema()
+                )
                 return gzip_response_if_requested(request, response=result)
 
             @app.post(

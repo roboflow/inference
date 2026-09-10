@@ -90,6 +90,13 @@ class ModelManagerDecorator(ModelManager):
             service_secret=service_secret,
         )
 
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        return self.model_manager.load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
+
     def record_request_metadata(
         self,
         model_id: str,
