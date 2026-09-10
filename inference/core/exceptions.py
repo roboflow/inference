@@ -1,5 +1,3 @@
-from typing import Optional
-
 from inference.core.workflows.prototypes.platform_errors import (
     FeatureDeprecatedError,
     RoboflowAPIForbiddenError,
