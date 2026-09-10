@@ -703,6 +703,7 @@ class InferencePipeline:
             from inference.core.interfaces.workflows_execution_observer import (
                 UsageTrackingExecutionObserver,
             )
+            from inference.core.interfaces.workflows_image_codec import bind_image_codec
             from inference.core.interfaces.workflows_step_error_handlers import (
                 resolve_step_error_handler,
             )
@@ -760,6 +761,7 @@ class InferencePipeline:
             # setdefault semantics: a caller's workflow_init_parameters may
             # already carry an explicit inner_workflow_spec_resolver.
             install_workflows_platform_bindings(workflow_init_parameters)
+            bind_image_codec(workflow_init_parameters)
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,

@@ -304,6 +304,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -1601,6 +1602,11 @@ class HttpInterface(BaseInterface):
                     "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
                 }
             )
+            # One codec for both injection paths - the engine deserializes the
+            # input with it, and WorkflowImageData / the block-level loaders
+            # re-load any stored reference with it (see
+            # workflows/prototypes/image_codec.py). Idempotent per request.
+            bind_image_codec(workflow_init_parameters)
             with start_span(
                 "workflow.init",
                 {"workflow.id": workflow_request.workflow_id or ""},
@@ -2559,6 +2565,7 @@ class HttpInterface(BaseInterface):
                         "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
                     }
                 )
+                bind_image_codec(workflow_init_parameters)
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
