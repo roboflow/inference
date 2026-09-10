@@ -238,6 +238,35 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
     assert resolved.allow_runtime_failure_fallback
 
 
+def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+    )
+    profiling_plan = RFDetrExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+        buffer_strategy_id="base",
+        scheduler_id="base",
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        engine_plugin_id="base",
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved = RFDetrExecutionPlan.from_dict(profiling_plan.to_dict())
+
+    assert isinstance(resolved, RFDetrExecutionPlan)
+    assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    assert resolved.buffer_strategy_id == "base"
+    assert resolved.scheduler_id == "base"
+    assert resolved.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert resolved.engine_plugin_id == "base"
+    assert not resolved.allow_compatibility_fallback
+    assert not resolved.allow_runtime_failure_fallback
+
+
 def test_registry_resolves_explicit_and_auto_base() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")

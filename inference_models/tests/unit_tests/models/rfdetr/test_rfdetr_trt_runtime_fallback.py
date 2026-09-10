@@ -25,6 +25,9 @@ from inference_models.models.rfdetr.optimization.contracts import (
     PreprocessRequest,
     PreprocessResult,
 )
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
@@ -106,6 +109,44 @@ def rfdetr_trt_model_class(monkeypatch):
                     delattr(parent, attribute)
             else:
                 setattr(parent, attribute, previous_attribute)
+
+
+def test_model_boundary_parses_serialized_rfdetr_execution_plan(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan.to_dict(),
+    )
+
+    assert isinstance(resolved_plan, RFDetrExecutionPlan)
+    assert resolved_plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert resolved_plan.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert not resolved_plan.allow_compatibility_fallback
+    assert not resolved_plan.allow_runtime_failure_fallback
+
+
+def test_model_boundary_accepts_typed_plan_and_rejects_invalid_mapping(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan()
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan,
+    )
+
+    assert resolved_plan is execution_plan
+
+    with pytest.raises(ValueError, match="must contain exactly"):
+        rfdetr_trt_model_class._resolve_requested_execution_plan(
+            execution_plan={},
+        )
 
 
 class _RuntimeStage:
