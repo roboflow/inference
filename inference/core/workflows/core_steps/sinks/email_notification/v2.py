@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -46,6 +45,7 @@ from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 LONG_DESCRIPTION = """
 The **Email Notification** block allows users to send email notifications as part of a workflow.

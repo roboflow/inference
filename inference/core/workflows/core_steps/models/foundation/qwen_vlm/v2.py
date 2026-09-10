@@ -39,7 +39,6 @@ from inference.core.env import (
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
@@ -85,6 +84,7 @@ from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 from inference_sdk import InferenceHTTPClient
 
 # ---------------------------------------------------------------------------

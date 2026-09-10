@@ -23,7 +23,6 @@ from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
@@ -67,7 +66,11 @@ from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
 )
-from inference.core.workflows.utils.images import downscale_image_keeping_aspect_ratio
+from inference.core.workflows.utils.images import (
+    downscale_image_keeping_aspect_ratio,
+    encode_image_to_jpeg_bytes,
+    load_image,
+)
 
 CLAUDE_MODELS = [
     {

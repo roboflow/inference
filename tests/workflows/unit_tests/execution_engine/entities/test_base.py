@@ -457,7 +457,9 @@ def test_getting_np_image_when_image_provided_in_base64_representation() -> None
     assert np.allclose(result, np.zeros((192, 168, 3), dtype=np.uint8))
 
 
-def test_getting_np_image_when_image_provided_as_file(empty_directory: str) -> None:
+def test_getting_np_image_when_image_provided_as_file(
+    empty_directory: str, guarded_image_codec: None
+) -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
     image_path = os.path.join(empty_directory, "file.jpg")
@@ -532,7 +534,9 @@ def test_getting_base64_image_when_image_provided_in_base64_representation() -> 
     assert result == base64_image
 
 
-def test_getting_base64_image_when_image_provided_as_file(empty_directory: str) -> None:
+def test_getting_base64_image_when_image_provided_as_file(
+    empty_directory: str, guarded_image_codec: None
+) -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
     image_path = os.path.join(empty_directory, "file.jpg")
@@ -1505,7 +1509,7 @@ def test_workflow_image_data_shape_read_fallback_materializes_per_flag() -> None
 
 
 def test_workflow_image_data_tensor_from_file_reference_does_not_cache_numpy(
-    tmp_path,
+    tmp_path, guarded_image_codec: None
 ) -> None:
     # given - a lossless PNG on disk referenced by path
     numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
@@ -1553,7 +1557,7 @@ def test_workflow_image_data_declare_mutated_requires_materialised_representatio
 
 
 def test_workflow_image_data_declare_mutated_cuts_off_original_source(
-    tmp_path,
+    tmp_path, guarded_image_codec: None
 ) -> None:
     # given - a file-born image whose numpy got materialised and mutated
     numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
@@ -1651,3 +1655,23 @@ def test_workflow_image_data_base64_rederived_after_mutation_is_valid_source() -
     # the POST-mutation content (JPEG re-encode is lossy, hence approximate)
     assert recovered.mean() > 150, "decoded pixels must reflect the mutation"
     assert tuple(recovered.shape) == (32, 32, 3)
+
+
+def test_local_file_reference_is_refused_when_no_host_codec_is_installed(
+    tmp_path,
+) -> None:
+    # No `guarded_image_codec` fixture on purpose: standalone Workflows must
+    # refuse filesystem access rather than read a path unguarded.
+    from inference.core.workflows.errors import WorkflowImageLoadError
+    from inference.core.workflows.prototypes.image_codec import reset_image_codec
+
+    reset_image_codec()
+    path = str(tmp_path / "source.png")
+    assert cv2.imwrite(path, np.zeros((4, 6, 3), dtype=np.uint8))
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        image_reference=path,
+    )
+
+    with pytest.raises(WorkflowImageLoadError, match="local filesystem"):
+        _ = image.numpy_image

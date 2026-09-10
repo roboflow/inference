@@ -8,7 +8,6 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
@@ -38,6 +37,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 NOT_DETECTED_VALUE = "not_detected"
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")

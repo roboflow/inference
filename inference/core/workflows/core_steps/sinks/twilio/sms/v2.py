@@ -12,7 +12,6 @@ import requests
 from pydantic import ConfigDict, Field
 from twilio.rest import Client
 
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -50,6 +49,7 @@ from inference.core.workflows.prototypes.platform_errors import (
     RoboflowAPIForbiddenError,
     RoboflowAPIUnsuccessfulRequestError,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 LONG_DESCRIPTION = """
 The **Twilio SMS/MMS Notification** block allows users to send text and multimedia messages as part of a workflow.
