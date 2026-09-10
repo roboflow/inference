@@ -199,3 +199,132 @@ def test_a_false_valued_observer_survives_engine_construction() -> None:
     engine = _engine({"workflows_core.api_key": "k", CORE_KEY: bound})
 
     assert engine._execution_observer is bound
+
+
+# --- dynamic blocks (Task 6) -------------------------------------------------
+
+_IDENTITY_BLOCK = """
+def run(self, value) -> BlockResult:
+    return {"result": value}
+"""
+
+_IDENTITY_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowParameter", "name": "value"}],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "IdentityProbe",
+                "inputs": {
+                    "value": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_parameter"],
+                    }
+                },
+                "outputs": {"result": {"type": "DynamicOutputDefinition", "kind": []}},
+            },
+            "code": {"type": "PythonCode", "run_function_code": _IDENTITY_BLOCK},
+        }
+    ],
+    "steps": [{"type": "IdentityProbe", "name": "probe", "value": "$inputs.value"}],
+    "outputs": [
+        {"type": "JsonField", "name": "result", "selector": "$steps.probe.result"}
+    ],
+}
+
+
+def _engine_and_block(init_parameters: dict):
+    """Build the engine and return it with its one (dynamic) step instance."""
+    engine = ExecutionEngine.init(
+        workflow_definition=_IDENTITY_WORKFLOW, init_parameters=init_parameters
+    )._engine
+    block = next(iter(engine._compiled_workflow.steps.values())).step
+    return engine, block
+
+
+def test_no_binding_gives_the_engine_and_the_block_the_null_observer() -> None:
+    engine, block = _engine_and_block({"workflows_core.api_key": "k"})
+
+    assert engine._execution_observer is NULL_EXECUTION_OBSERVER
+    assert block._execution_observer is NULL_EXECUTION_OBSERVER
+
+
+def test_a_namespaced_object_reaches_the_engine_and_the_block() -> None:
+    bound = NullExecutionObserver()
+
+    engine, block = _engine_and_block({"workflows_core.api_key": "k", CORE_KEY: bound})
+
+    assert engine._execution_observer is bound
+    assert block._execution_observer is bound
+
+
+def test_a_bare_key_reaches_the_engine_and_the_block() -> None:
+    bound = NullExecutionObserver()
+
+    engine, block = _engine_and_block(
+        {"workflows_core.api_key": "k", "execution_observer": bound}
+    )
+
+    assert engine._execution_observer is bound
+    assert block._execution_observer is bound
+
+
+def test_a_factory_is_called_once_and_its_result_is_shared() -> None:
+    # A callable binding is invoked by `_retrieve_init_parameter`; a block must
+    # receive the *instance*, never the factory.
+    made = []
+
+    def factory():
+        made.append(NullExecutionObserver())
+        return made[-1]
+
+    engine, block = _engine_and_block(
+        {"workflows_core.api_key": "k", CORE_KEY: factory}
+    )
+
+    assert len(made) == 1
+    assert engine._execution_observer is made[0]
+    assert block._execution_observer is made[0]
+
+
+def test_an_explicit_dynamic_override_wins_for_dynamic_blocks_only() -> None:
+    engine_observer, dynamic_observer = NullExecutionObserver(), NullExecutionObserver()
+
+    engine, block = _engine_and_block(
+        {
+            "workflows_core.api_key": "k",
+            CORE_KEY: engine_observer,
+            DYNAMIC_KEY: dynamic_observer,
+        }
+    )
+
+    assert engine._execution_observer is engine_observer
+    assert block._execution_observer is dynamic_observer
+
+
+def test_a_replaced_observer_reaches_the_next_engines_dynamic_block() -> None:
+    """With a shared, mutated dictionary the second engine's block kept the
+    first engine's automatically generated mirror - the private copy is what
+    makes the replacement reach the block."""
+    first_observer, second_observer = NullExecutionObserver(), NullExecutionObserver()
+    parameters = {"workflows_core.api_key": "k", CORE_KEY: first_observer}
+
+    _, first_block = _engine_and_block(parameters)
+    parameters[CORE_KEY] = second_observer
+    second_engine, second_block = _engine_and_block(parameters)
+
+    assert first_block._execution_observer is first_observer
+    assert second_engine._execution_observer is second_observer
+    assert second_block._execution_observer is second_observer
+    assert DYNAMIC_KEY not in parameters
+
+
+def test_a_false_valued_observer_reaches_the_dynamic_block() -> None:
+    bound = _FalseValuedObserver()
+
+    engine, block = _engine_and_block({"workflows_core.api_key": "k", CORE_KEY: bound})
+
+    assert engine._execution_observer is bound
+    assert block._execution_observer is bound

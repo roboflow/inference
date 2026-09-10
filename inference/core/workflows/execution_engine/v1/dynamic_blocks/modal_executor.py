@@ -56,6 +56,10 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from inference.core.workflows.execution_engine.entities.base import ParentOrigin
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    record_block_duration,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -64,10 +68,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
-from inference.usage_tracking.block_execution import (
-    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-    record_measured_block_execution,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -651,7 +651,7 @@ class ModalExecutor:
 
             # Published before the failure branch below raises, so an errored
             # block is still billed for the time the sandbox spent on it.
-            record_measured_block_execution(
+            record_block_duration(
                 duration=result.get("execution_time_seconds"),
                 source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
             )
@@ -2021,7 +2021,7 @@ class WebSocketModalExecutor:
 
         # Published before _raise_code_error below, so an errored block is
         # still billed for the time the sandbox spent on it.
-        record_measured_block_execution(
+        record_block_duration(
             duration=result.get("execution_time_seconds"),
             source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
         )
