@@ -1,6 +1,8 @@
+import inspect
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
@@ -14,6 +16,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
+from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -48,6 +51,7 @@ from inference.core.workflows.prototypes.block import (
     StepExecutionMode,
     is_workflow_selector,
 )
+from inference.core.workflows.prototypes.image_codec import ImageCodec
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference.core.workflows.prototypes.observer import (
     NULL_EXECUTION_OBSERVER,
@@ -340,6 +344,39 @@ def _mirror_dynamic_block_parameters(
     )
 
 
+def _bind_image_codec_to_deserializers(
+    kinds_deserializers: Dict[str, Callable[..., Any]],
+    image_codec: ImageCodec,
+) -> Dict[str, Callable[..., Any]]:
+    """Return a COPY of the map with the image deserializer bound to `image_codec`.
+
+    A copy, not a mutation: `compile_workflow_graph` serves `kinds_deserializers`
+    out of `COMPILATION_CACHE` (`compiler/core.py:124-128`), so mutating it would
+    hand one engine's codec to every later engine compiled from the same
+    definition.
+
+    A plugin may register its own image-kind deserializer with the historic
+    3-argument signature; binding a keyword it does not accept would raise at run
+    time, so such a deserializer is left exactly as it is.
+    """
+    deserializer = kinds_deserializers.get(IMAGE_KIND.name)
+    if deserializer is None:
+        return kinds_deserializers
+    try:
+        signature = inspect.signature(deserializer)
+    except (TypeError, ValueError):
+        return kinds_deserializers
+    accepts_codec = "image_codec" in signature.parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if not accepts_codec:
+        return kinds_deserializers
+    bound = dict(kinds_deserializers)
+    bound[IMAGE_KIND.name] = partial(deserializer, image_codec=image_codec)
+    return bound
+
+
 class ExecutionEngineV1(BaseExecutionEngine):
 
     @classmethod
@@ -386,6 +423,15 @@ class ExecutionEngineV1(BaseExecutionEngine):
             execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
             profiler=profiler,
         )
+        image_codec = init_parameters.get("workflows_core.image_codec")
+        if image_codec is not None:
+            compiled_workflow = replace(
+                compiled_workflow,
+                kinds_deserializers=_bind_image_codec_to_deserializers(
+                    kinds_deserializers=compiled_workflow.kinds_deserializers,
+                    image_codec=image_codec,
+                ),
+            )
         pre_init_dependencies_types = (
             _parse_dependencies_pre_init(dependencies_pre_init=dependencies_pre_init)
             if dependencies_pre_init

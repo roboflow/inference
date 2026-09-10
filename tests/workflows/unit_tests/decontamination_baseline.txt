@@ -1,10 +1,9 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 256
+# Count: 255
 inference/core/workflows/core_steps/classical_cv/mask_edge_snap/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/motion_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/template_matching/v1_tensor.py	inference.core.env
-inference/core/workflows/core_steps/common/deserializers.py	inference.core.utils.image_utils
 inference/core/workflows/core_steps/common/deserializers_tensor.py	inference.core.env
 inference/core/workflows/core_steps/common/openrouter.py	inference.core.env
 inference/core/workflows/core_steps/common/openrouter.py	inference.core.utils.image_utils
