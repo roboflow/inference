@@ -1,50 +1,10 @@
 # Security configuration migration
 
 These changes require explicit administrator choices for features that can load code,
-manage device-wide streams, or transmit authentication credentials. Apply the server,
-CLI, SDK and image changes together when using these features.
+interpret raw media pipelines, or transmit authentication credentials. Apply the
+server, CLI and image changes together when using these features.
 
-## Pipeline management
-
-`ENABLE_STREAM_API` is now off by default in all first-party CPU, GPU, CUDA13,
-TensorRT, GPU3D, development and Jetson5.1.1/6.2/7.2 images, and the macOS/Windows
-desktop bundles. Deployments that previously relied on enabled streams must
-explicitly enable them and configure the token before upgrading. To enable it, set `ENABLE_STREAM_API=True` and a dedicated, randomly generated
-`STREAM_API_KEY` through your deployment's secret configuration. The server refuses
-to start unless that key contains 32–256 URL-safe characters (letters, digits, `_`,
-`-`). Generate it with `python -c "import secrets; print(secrets.token_urlsafe(32))"`;
-length validation does not measure entropy. There is no built-in rate limit for
-401 responses; deployments needing request throttling must configure their ingress.
-
-Every `/inference_pipelines` operation requires exactly one `X-Stream-API-Key`
-header: list, status, result consumption, initialization (including WebRTC), pause,
-resume and termination. A Roboflow API key does not grant device administration.
-The stream token grants access to **all pipelines on that server**; use separate
-servers and tokens for tenants that must not administer one another's pipelines.
-There is no anonymous compatibility mode. Browser CORS preflight remains available
-without the token; the actual operation still requires it.
-
-For the synchronous management methods in the Python SDK:
-
-```python
-import os
-from inference_sdk import InferenceHTTPClient
-
-client = InferenceHTTPClient.init(
-    api_url="https://inference.example.com",
-    api_key=os.environ["ROBOFLOW_API_KEY"],
-    stream_api_key=os.environ["STREAM_API_KEY"],
-)
-client.list_inference_pipelines()
-```
-
-The dedicated token is sent only to pipeline management endpoints at the client's
-original API URL. Management requests do not follow redirects, preventing the
-custom header from being forwarded to another destination. Use the final server
-URL, including any mount prefix, and construct a new client when changing servers.
-Ordinary model requests do not carry the stream token. This SDK currently exposes
-synchronous pipeline management methods only. Custom clients must add the header
-explicitly. Use HTTPS for connections outside a trusted local transport.
+## Video source validation
 
 Both standard and enterprise remote stream request schemas accept integer camera
 indices, explicit absolute or relative paths (`/video.mp4`, `./video.mp4`,
@@ -60,7 +20,8 @@ ambiguous local files. Bare identifiers, including `video.mp4`, must be written
 as explicit paths such as `./video.mp4`, preventing bare GStreamer element names
 from reaching backend auto-detection. Administrators who deliberately need arbitrary GStreamer
 pipelines can set `ALLOW_UNSAFE_GSTREAMER_PIPELINES=True`; this restores raw pipeline
-interpretation and its plugin capabilities for authenticated stream administrators.
+interpretation and its plugin capabilities for stream requests. Only enable it for
+trusted workloads.
 This is not a general restriction on camera network destinations. Direct local
 Python media use is unchanged. Actual plugin capabilities vary by target image.
 

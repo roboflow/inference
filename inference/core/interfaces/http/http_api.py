@@ -212,7 +212,6 @@ from inference.core.env import (
     SAM3_FINE_TUNED_MODELS_ENABLED,
     SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
     SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED,
-    STREAM_API_KEY,
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
@@ -261,9 +260,6 @@ from inference.core.interfaces.http.handlers.workflows import (
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
-from inference.core.interfaces.http.middlewares.stream_api_auth import (
-    StreamAPIAuthMiddleware,
-)
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     orjson_response_keeping_parent_id,
@@ -347,7 +343,6 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
-from inference.core.utils.stream_api import validate_stream_api_key
 from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -650,9 +645,6 @@ class HttpInterface(BaseInterface):
                 "mapped to workspaces without API connectivity."
             )
 
-        if ENABLE_STREAM_API:
-            validate_stream_api_key(STREAM_API_KEY)
-
         description = "Roboflow inference server"
 
         app = FastAPI(
@@ -671,7 +663,6 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
-
         # Ensure in-memory logging is initialized as early as possible for all runtimes
         try:
             from inference.core.logging.memory_handler import setup_memory_logging
@@ -695,9 +686,6 @@ class HttpInterface(BaseInterface):
         # so the FastAPI instrumentor wraps at the outermost ASGI layer.
         if OTEL_TRACING_ENABLED:
             setup_telemetry(app)
-
-        if ENABLE_STREAM_API:
-            app.add_middleware(StreamAPIAuthMiddleware, token=STREAM_API_KEY)
 
         @app.middleware("http")
         async def set_request_path_context(request: Request, call_next):

@@ -12,7 +12,6 @@ from inference.core.utils.regions import (
     resolve_roboflow_service_url,
 )
 from inference.core.utils.secure_gateway import normalize_secure_gateway_configuration
-from inference.core.utils.stream_api import validate_stream_api_key
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
@@ -1073,9 +1072,6 @@ if OFFLINE_MODE and (
         "to workspaces without API connectivity."
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
-STREAM_API_KEY = os.getenv("STREAM_API_KEY", "")
-if ENABLE_STREAM_API:
-    validate_stream_api_key(STREAM_API_KEY)
 ALLOW_UNSAFE_GSTREAMER_PIPELINES = str2bool(
     os.getenv("ALLOW_UNSAFE_GSTREAMER_PIPELINES", "False")
 )

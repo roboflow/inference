@@ -7,7 +7,6 @@ from inference.core.interfaces.http import http_api
 from inference.core.interfaces.stream_manager.manager_app import entities
 from inference.enterprise.stream_management.api import entities as enterprise_entities
 
-TOKEN = "test-only-local-admin-token-0123456789ABCDEF"
 PAYLOAD = {
     "video_configuration": {"type": "VideoConfiguration", "video_reference": 0},
     "processing_configuration": {
@@ -27,13 +26,22 @@ ROUTES = [
 ]
 
 
-def make_interface(monkeypatch, root_path="", enabled=True, token=TOKEN):
+def make_interface(
+    monkeypatch,
+    root_path="",
+    enabled=True,
+    dedicated_workspace=None,
+    local_whitelist=None,
+):
     monkeypatch.setattr(http_api, "ENABLE_STREAM_API", enabled)
-    monkeypatch.setattr(http_api, "STREAM_API_KEY", token)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
-    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
-    monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
+    monkeypatch.setattr(
+        http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", dedicated_workspace
+    )
+    monkeypatch.setattr(
+        http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", local_whitelist
+    )
     monkeypatch.setattr(http_api, "ALLOW_ORIGINS", ["https://console.example.test"])
     monkeypatch.setattr(http_api, "InferenceInstrumentator", MagicMock())
     monkeypatch.setattr(
@@ -70,53 +78,54 @@ def make_interface(monkeypatch, root_path="", enabled=True, token=TOKEN):
 
 @pytest.mark.parametrize("root_path", ["", "/edge"])
 @pytest.mark.parametrize("method,suffix", ROUTES)
-def test_every_pipeline_operation_requires_dedicated_admin_token(
+def test_pipeline_operations_work_without_workspace_auth_configuration(
     monkeypatch, root_path, method, suffix
 ):
     interface, manager = make_interface(monkeypatch, root_path)
+    payload = {**PAYLOAD, "webrtc_offer": {"type": "offer", "sdp": "test"}}
     with TestClient(interface.app) as client:
-        path = root_path + "/inference_pipelines" + suffix
-        for headers in [
-            {},
-            {"X-Stream-API-Key": "wrong"},
-            {"Authorization": "Bearer roboflow-key"},
-        ]:
-            response = client.request(method, path, headers=headers, json=PAYLOAD)
-            assert response.status_code == 401
-        assert manager.mock_calls == []
-        payload = {**PAYLOAD, "webrtc_offer": {"type": "offer", "sdp": "test"}}
         response = client.request(
-            method, path, headers={"X-Stream-API-Key": TOKEN}, json=payload
+            method, root_path + "/inference_pipelines" + suffix, json=payload
         )
-        assert response.status_code == 200, response.text
-        assert len(manager.mock_calls) == 1
+    assert response.status_code == 200, response.text
+    assert len(manager.mock_calls) == 1
 
 
-def test_duplicates_trailing_slash_and_cors_preflight(monkeypatch):
-    interface, manager = make_interface(monkeypatch)
+@pytest.mark.parametrize("method,suffix", ROUTES)
+@pytest.mark.parametrize(
+    "auth_config",
+    [
+        {"dedicated_workspace": "allowed-workspace"},
+        {"local_whitelist": ["allowed-workspace"]},
+    ],
+)
+def test_pipeline_operations_retain_configured_workspace_auth(
+    monkeypatch, method, suffix, auth_config
+):
+    interface, manager = make_interface(monkeypatch, **auth_config)
+    workspace_lookup = AsyncMock(return_value="denied-workspace")
+    monkeypatch.setattr(http_api, "get_roboflow_workspace_async", workspace_lookup)
+    payload = {**PAYLOAD, "webrtc_offer": {"type": "offer", "sdp": "test"}}
     with TestClient(interface.app) as client:
-        path = "/inference_pipelines/list"
-        response = client.get(
-            path, headers=[("X-Stream-API-Key", TOKEN), ("X-Stream-API-Key", TOKEN)]
+        path = "/inference_pipelines" + suffix
+        response = client.request(method, path, json=payload)
+        assert response.status_code == 401
+        workspace_lookup.assert_not_awaited()
+        response = client.request(
+            method, path, headers={"Authorization": "Bearer denied-key"}, json=payload
         )
         assert response.status_code == 401
-        assert client.get(path + "/").status_code == 401
-        response = client.options(
-            path,
-            headers={
-                "Origin": "https://console.example.test",
-                "Access-Control-Request-Method": "GET",
-                "Access-Control-Request-Headers": "X-Stream-API-Key",
-            },
-        )
-        assert response.status_code == 200
         assert manager.mock_calls == []
+        workspace_lookup.return_value = "allowed-workspace"
+        response = client.request(
+            method, path, headers={"Authorization": "Bearer allowed-key"}, json=payload
+        )
+    assert response.status_code == 200, response.text
+    assert len(manager.mock_calls) == 1
 
 
-def test_stream_startup_fails_closed_only_when_enabled(monkeypatch):
-    with pytest.raises(RuntimeError, match="requires STREAM_API_KEY"):
-        make_interface(monkeypatch, enabled=True, token="")
-    interface, _ = make_interface(monkeypatch, enabled=False, token="")
+def test_disabled_stream_api_does_not_register_pipeline_routes(monkeypatch):
+    interface, _ = make_interface(monkeypatch, enabled=False)
     assert not any(
         getattr(route, "path", "").startswith("/inference_pipelines")
         for route in interface.app.routes
@@ -178,28 +187,11 @@ def test_stream_requests_accept_supported_sources(monkeypatch, reference, schema
 
 
 @pytest.mark.parametrize("schema", ["manager", "enterprise"])
-def test_trusted_admin_can_explicitly_allow_raw_media_pipeline(monkeypatch, schema):
+def test_operator_can_explicitly_allow_raw_media_pipeline(monkeypatch, schema):
     monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", True)
     monkeypatch.setattr(enterprise_entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", True)
     reference = "videotestsrc ! appsink"
     assert make_video_request(schema, reference).video_reference == reference
-
-
-def test_telemetry_is_installed_before_stream_auth_middleware(monkeypatch):
-    installed = []
-    monkeypatch.setattr(http_api, "OTEL_TRACING_ENABLED", True)
-
-    def setup(app):
-        assert not app.user_middleware
-        installed.append(app)
-
-    monkeypatch.setattr(http_api, "setup_telemetry", setup)
-    interface, _ = make_interface(monkeypatch)
-    assert installed == [interface.app]
-    assert any(
-        m.cls.__name__ == "StreamAPIAuthMiddleware"
-        for m in interface.app.user_middleware
-    )
 
 
 def make_video_request(schema, reference):
@@ -212,11 +204,3 @@ def make_video_request(schema, reference):
         video_reference=reference,
         sink_configuration={"host": "localhost", "port": 5000},
     )
-
-
-@pytest.mark.parametrize(
-    "token", ["short", "a" * 31, "a" * 257, "a" * 32 + "\n", "invalid token" + "a" * 32]
-)
-def test_stream_admin_token_requires_bounded_url_safe_secret(monkeypatch, token):
-    with pytest.raises(RuntimeError, match="requires STREAM_API_KEY"):
-        make_interface(monkeypatch, token=token)

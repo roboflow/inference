@@ -847,7 +847,7 @@ ENV VERSION_CHECK_MODE=once \
     USE_INFERENCE_MODELS=True \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=36.4.0 \
-    ENABLE_STREAM_API=False
+    ENABLE_STREAM_API=True
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, numpy 2.x)"
 
