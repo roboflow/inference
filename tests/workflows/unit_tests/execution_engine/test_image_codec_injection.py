@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
-from inference.core.workflows.errors import WorkflowImageLoadError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND
 from inference.core.workflows.prototypes.image_codec import (
