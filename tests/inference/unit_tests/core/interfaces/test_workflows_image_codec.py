@@ -189,9 +189,20 @@ def test_adapter_rejects_a_deny_listed_destination() -> None:
 def test_adapter_rejects_the_backslash_authority_allow_list_bypass() -> None:
     # `https://localhost:6666\@cdn.allowed.example.com/x` parses one way in a
     # browser and another in urllib; the guard rejects backslashes in the
-    # authority (image_utils.py:439).
-    with pytest.raises(InputImageLoadError):
-        CODEC.fetch_url(f"https://localhost:6666\\@{ALLOWED_HOST}/image.jpg")
+    # authority (image_utils.py:454-455, raising `ValueError("URL authority
+    # contains a backslash")`, converted at :459-464 into
+    # `InputImageLoadError("Provided image URL is invalid")` with `from
+    # error`). Pinned to that specific guard - not just "any
+    # InputImageLoadError" - so the test cannot pass for the wrong reason
+    # (e.g. the allow-list rejecting the `localhost` authority instead).
+    with mock.patch.object(image_utils, "_fetch_image_bytes_from_url") as fetch_mock:
+        with pytest.raises(
+            InputImageLoadError, match="Provided image URL is invalid"
+        ) as error:
+            CODEC.fetch_url(f"https://localhost:6666\\@{ALLOWED_HOST}/image.jpg")
+        fetch_mock.assert_not_called()
+    assert isinstance(error.value.__cause__, ValueError)
+    assert "backslash" in str(error.value.__cause__)
 
 
 # --------------------------------------------------------------------------
@@ -232,9 +243,16 @@ def test_adapter_enforces_the_redirect_hop_cap(requests_mock: Mocker) -> None:
         )
 
     # `fetch_url_content_validating_redirects` raises `TooManyRedirects`
-    # (url_input.py:387), which `load_image_from_url:421-426` converts.
-    with pytest.raises(InputImageLoadError):
+    # (url_input.py:386-387), and `load_image_from_url`'s
+    # `except (RequestException, ConnectionError)` (image_utils.py:437-441)
+    # folds it into the message WITHOUT `from` - so pin on the surfaced text
+    # rather than `__cause__`, which is not set here.
+    with pytest.raises(InputImageLoadError, match="Exceeded maximum of 2 redirects"):
         CODEC.fetch_url("https://hop0.example.com/image.jpg")
+
+    # `range(max_redirects + 1)` (url_input.py:366) allows 3 requests before
+    # raising: hop0, hop1, hop2.
+    assert requests_mock.call_count == 3
 
 
 # --------------------------------------------------------------------------
