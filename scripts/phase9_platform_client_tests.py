@@ -28,6 +28,11 @@ so no test signature or decorator order changes and no return value leaks
 between tests. Tests that seed a response or assert on the call use
 `platform_client.post_mock` (a `unittest.mock.Mock`), which keeps every
 existing `mock_post.*` assertion verbatim - see Task 9.4 Step 8.
+
+Every file's rewrite is computed fully in memory first (`patch()` never
+writes); `main()` validates the aggregate `--expected-calls` /
+`--expected-constructions` counts against the in-memory results and only
+then writes - a count mismatch never leaves any file half-rewritten.
 """
 
 import argparse
@@ -35,6 +40,7 @@ import ast
 import collections
 import pathlib
 import sys
+from typing import Optional
 
 CHAIN = {
     "run_gpt_4v_llm_prompting",
@@ -147,7 +153,12 @@ def _affected_calls(tree, touched, classes):
     return list(helper_calls.values()), list(constructions.values())
 
 
-def patch(path: pathlib.Path, touched, classes):
+def patch(path: pathlib.Path, touched, classes) -> tuple[int, int, Optional[str]]:
+    """Compute the rewrite for `path` without writing anything.
+
+    Returns `(edited_calls, edited_ctors, updated)`. `updated` is `None` when
+    nothing needed editing (nothing to write).
+    """
     source = path.read_bytes().decode("utf-8")
     newline = "\r\n" if "\r\n" in source else "\n"
     lines = source.split(newline)
@@ -195,10 +206,9 @@ def patch(path: pathlib.Path, touched, classes):
         out.insert(anchor.end_lineno, preamble.replace("\n", newline))
         updated = newline.join(out)
     ast.parse(updated)
-    if edits:
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            f.write(updated)
-    return edited_calls, edited_ctors
+    if not edits:
+        return edited_calls, edited_ctors, None
+    return edited_calls, edited_ctors, updated
 
 
 def main() -> int:
@@ -216,15 +226,24 @@ def main() -> int:
     touched = _touched_modules(args.touched)
     classes = set(args.classes.split(","))
     total_calls = total_ctors = 0
+    pending_writes = []
     for name in args.files:
-        calls, ctors = patch(pathlib.Path(name), touched, classes)
+        path = pathlib.Path(name)
+        calls, ctors, updated = patch(path, touched, classes)
         total_calls += calls
         total_ctors += ctors
         print(f"{calls:3d} calls {ctors:3d} constructions edited  {name}")
+        if updated is not None:
+            pending_writes.append((path, updated))
     print(f"TOTAL {total_calls} helper calls, {total_ctors} block constructions edited")
     if total_calls != args.expected_calls or total_ctors != args.expected_constructions:
         print("FAIL: counts do not match", file=sys.stderr)
         return 1
+
+    # Validation above passed for the aggregate - only now do we write.
+    for path, updated in pending_writes:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(updated)
     return 0
 
 

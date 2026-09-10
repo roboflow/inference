@@ -44,8 +44,8 @@ def default_inner_workflow_spec_resolver(
             "Resolving an `inner_workflow` step by workflow id requires access to the "
             "Roboflow API, which is not available in this installation of `workflows`. "
             f"Inject `{WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER}` in workflow "
-            'init_parameters, or use `workflow_workspace_id` `"local"` with a matching '
-            "on-disk workflow definition."
+            "init_parameters, or define the inner workflow inline instead of "
+            "referencing it by id."
         ),
         context="workflow_compilation | inner_workflow_spec_resolution",
     )
