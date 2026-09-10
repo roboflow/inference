@@ -179,7 +179,8 @@ def compile_workflow_graph(
         init_parameters = {}
     pre_resolution_dynamic_blocks_definitions = (
         collect_dynamic_blocks_definitions_from_workflow_definition(
-            workflow_definition=workflow_definition
+            workflow_definition=workflow_definition,
+            warn_on_duplicates=False,
         )
     )
     cacheable = not _is_resolver_dependent(

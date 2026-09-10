@@ -79,11 +79,15 @@ TEST_SOURCE = _crlf(
 
 def test_test_codemod_preserves_crlf_and_resolves_origins_correctly(tmp_path):
     path = tmp_path / "test_fixture.py"
-    path.write_bytes(TEST_SOURCE.encode("utf-8"))
+    original = TEST_SOURCE.encode("utf-8")
+    path.write_bytes(original)
 
-    calls, ctors = test_codemod.patch(
+    # `patch()` only computes the rewrite in memory - it does not write - so
+    # the source file on disk must be untouched after the call.
+    calls, ctors, updated = test_codemod.patch(
         path, touched={"fake.touched.module"}, classes={"SomeBlock"}
     )
+    assert path.read_bytes() == original
 
     # F3(a): the alias's ORIGINAL imported name ("execute_claude_request") is in
     # CHAIN, not the local alias ("aliased_call") - the call must still be edited.
@@ -92,7 +96,6 @@ def test_test_codemod_preserves_crlf_and_resolves_origins_correctly(tmp_path):
     # is not in `touched` - the construction must be left alone.
     assert ctors == 0
 
-    updated = path.read_bytes().decode("utf-8")
     assert "platform_client=platform_client" in updated
     assert 'SomeBlock(some_kwarg="z")' in updated  # untouched: byte-for-byte unchanged
     _assert_all_crlf(updated)
