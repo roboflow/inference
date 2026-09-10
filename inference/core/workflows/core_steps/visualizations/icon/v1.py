@@ -21,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.utils.images import ensure_local_image_load_allowed
 
 TYPE: str = "roboflow_core/icon_visualization@v1"
 SHORT_DESCRIPTION = "Draw icons on an image either at specific static coordinates or dynamically based on detections."
@@ -275,6 +276,10 @@ class IconVisualizationBlockV1(VisualizationBlock):
                 and icon._image_reference
                 and not icon._image_reference.startswith("http")
             ):
+                # Local-filesystem access is a host capability: ask before the
+                # alpha-recovery reload, and OUTSIDE the try below so a policy
+                # refusal propagates rather than being swallowed.
+                ensure_local_image_load_allowed(icon._image_reference)
                 try:
                     icon_with_alpha = cv2.imread(
                         icon._image_reference, cv2.IMREAD_UNCHANGED
