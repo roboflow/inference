@@ -18,6 +18,7 @@ Each re-prompt starts a new session and restarts tracker IDs.
 """
 
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -75,11 +76,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
 from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
 )
-from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 TrackingMode = Literal["concept", "visual"]
@@ -343,6 +347,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
         platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
+        execution_observer: Optional[ExecutionObserver] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
@@ -352,10 +357,21 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         self._concept_sessions: Dict[str, _ConceptSessionBookkeeping] = {}
         self._visual_sessions: Dict[str, VideoSessionBookkeeping] = {}
         self._platform_client = platform_client
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "platform_client",
+            "execution_observer",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -397,7 +413,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
-        # The usage decorator reads `model_id` off the tracked call, so the
+        # The observer reads `model_id` off the tracked call, so the
         # dispatch happens out here where the mode-dependent model is picked.
         selected_model_id = model_id if tracking_mode == "concept" else visual_model_id
         return self._tracked_run(
@@ -412,8 +428,37 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             prompt_interval=prompt_interval,
         )
 
-    @usage_collector("model")
     def _tracked_run(
+        self,
+        images: Batch[WorkflowImageData],
+        class_names: Optional[Union[List[str], str]],
+        model_id: str,
+        threshold: float,
+        tracking_mode: TrackingMode,
+        points: Optional[List[Any]],
+        boxes: Optional[Batch[sv.Detections]],
+        prompt_mode: PromptMode,
+        prompt_interval: int,
+    ) -> BlockResult:
+        return self._execution_observer.observe_model_run(
+            block=self,
+            model_id=model_id,
+            images=images,
+            run=partial(
+                self._run_tracked,
+                images=images,
+                class_names=class_names,
+                model_id=model_id,
+                threshold=threshold,
+                tracking_mode=tracking_mode,
+                points=points,
+                boxes=boxes,
+                prompt_mode=prompt_mode,
+                prompt_interval=prompt_interval,
+            ),
+        )
+
+    def _run_tracked(
         self,
         images: Batch[WorkflowImageData],
         class_names: Optional[Union[List[str], str]],
