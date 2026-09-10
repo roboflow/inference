@@ -12,6 +12,9 @@ from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
 from inference.core.interfaces.roboflow_platform_client import (
     install_workflows_platform_bindings,
 )
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -453,6 +456,7 @@ def _run_workflow_for_single_image_with_inference(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": api_key,
         "workflows_core.thread_pool_executor": thread_pool_executor,
+        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
     }
     if workflows_execution_engine_init_params:
         workflow_init_parameters.update(workflows_execution_engine_init_params)

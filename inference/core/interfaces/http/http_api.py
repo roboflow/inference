@@ -301,6 +301,9 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -1608,6 +1611,7 @@ class HttpInterface(BaseInterface):
                     "workflows_core.inner_workflow_dispatch_depth": (
                         workflow_request.inner_workflow_dispatch_depth
                     ),
+                    "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
                 }
             )
             with start_span(
@@ -2565,6 +2569,7 @@ class HttpInterface(BaseInterface):
                         "workflows_core.api_key": api_key,
                         "workflows_core.background_tasks": None,
                         "workflows_core.step_execution_mode": step_execution_mode,
+                        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
                     }
                 )
                 _ = ExecutionEngine.init(
