@@ -117,16 +117,14 @@ def _rows_for_api_key(api_key: str) -> dict:
     collector module. Read both, and accept either the raw key or its hash.
     """
     import inference.core.interfaces.http.http_api as http_api
-    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
-        block_scaffolding,
-    )
+    from inference.core.interfaces import workflows_execution_observer
     from inference.usage_tracking.collector import usage_collector
 
     rows = {}
     for collector in (
         usage_collector,
         http_api.usage_collector,
-        block_scaffolding.usage_collector,
+        workflows_execution_observer.usage_collector,
     ):
         hashed = collector._hashed_api_keys.get(api_key)
         for bucket_key in (api_key, hashed):

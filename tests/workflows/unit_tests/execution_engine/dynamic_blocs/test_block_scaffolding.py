@@ -138,9 +138,9 @@ def run_function(self, a, b) -> BlockResult:
     execution_result = workflow_block_instance.run(a=3, b=5)
 
     # then
-    assert {"api_key", "workspace_resolver"} <= set(
+    assert {"api_key", "workspace_resolver", "execution_observer"} <= set(
         workflow_block_class.get_init_parameters()
-    ), "Expected api_key and workspace_resolver parameters defined"
+    ), "Expected api_key, workspace_resolver and execution_observer parameters defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"
@@ -174,9 +174,9 @@ def run_function(self, a, b) -> BlockResult:
     execution_result = workflow_block_instance.run(a=3, b=5)
 
     # then
-    assert {"api_key", "workspace_resolver"} <= set(
+    assert {"api_key", "workspace_resolver", "execution_observer"} <= set(
         workflow_block_class.get_init_parameters()
-    ), "Expected api_key and workspace_resolver parameters defined"
+    ), "Expected api_key, workspace_resolver and execution_observer parameters defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"

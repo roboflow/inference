@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 262
+# Count: 259
 inference/core/workflows/core_steps/classical_cv/mask_edge_snap/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/motion_detection/v1_tensor.py	inference.core.env
 inference/core/workflows/core_steps/classical_cv/template_matching/v1_tensor.py	inference.core.env
@@ -252,11 +252,8 @@ inference/core/workflows/execution_engine/v1/core.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/block_assembler.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py	inference.core.env (exec'd string)
-inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py	inference.usage_tracking.block_execution
-inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py	inference.usage_tracking.collector
 inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py	inference.core.env
 inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py	inference.core.utils.image_utils
-inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py	inference.usage_tracking.block_execution
 inference/core/workflows/execution_engine/v1/dynamic_blocks/representation_boundary.py	inference.core.env
 inference/core/workflows/execution_engine/v1/executor/core.py	inference.core.env
 inference/core/workflows/execution_engine/v1/executor/output_constructor.py	inference.core.env

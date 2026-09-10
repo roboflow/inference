@@ -7,17 +7,29 @@ user function, and taken from the sandbox's own measurement when the block ran
 remotely.
 """
 
+import json
 from contextlib import contextmanager
 from unittest import mock
 
 import pytest
 
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
 from inference.core.workflows.core_steps.formatters.expression.v1 import BlockManifest
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
     block_scaffolding,
     modal_executor,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+    BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+    BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE,
+    clear_block_duration,
+    record_block_duration,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
     assembly_custom_python_block,
@@ -27,32 +39,34 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     PythonCode,
 )
 from inference.usage_tracking.block_execution import (
-    BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
     BLOCK_DURATION_SOURCE_DECORATOR_WALL_CLOCK,
-    BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
-    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-    BLOCK_DURATION_SOURCE_UNAVAILABLE,
     BLOCK_EXECUTION_MODE_LOCAL,
     BLOCK_EXECUTION_MODE_REMOTE,
-    clear_measured_block_execution,
-    record_measured_block_execution,
 )
 from inference.usage_tracking.collector import usage_collector
 
+# These tests assert on the usage rows a *server* records, so they instantiate
+# blocks the way the server's composition roots bind them.
+SERVER_OBSERVER = UsageTrackingExecutionObserver()
+
 
 class _StubWorkspaceResolver:
-    """Phase 9 replaced the module-level workspace lookup with an injected
-    `WorkspaceResolver`; the modal tests name their sandbox through it."""
+    """Phase 9's `WorkspaceResolver` shape, answered locally."""
+
+    def __init__(self, workspace="test-workspace"):
+        self._workspace = workspace
+        self.calls = []
 
     def resolve_workspace(self, api_key):
-        return "test-workspace"
+        self.calls.append(api_key)
+        return self._workspace
 
 
 @pytest.fixture(autouse=True)
 def cleared_block_execution():
-    clear_measured_block_execution()
+    clear_block_duration()
     yield
-    clear_measured_block_execution()
+    clear_block_duration()
 
 
 def _clear_modal_executor_cache() -> None:
@@ -65,6 +79,31 @@ def isolated_modal_executor_cache():
     _clear_modal_executor_cache()
     yield
     _clear_modal_executor_cache()
+
+
+def _modal_block(block_class, api_key="workflow-api-key", workspace="test-workspace"):
+    """A server-observed block whose Modal arm resolves a non-anonymous workspace.
+
+    After Phase 9 the generated class declares `workspace_resolver` and the
+    block asks it; before Phase 9 the arm calls
+    `block_scaffolding.get_roboflow_workspace`, which
+    `_legacy_workspace_lookup_pinned` pins. Both orders run the same test body.
+    """
+    kwargs = {"api_key": api_key, "execution_observer": SERVER_OBSERVER}
+    if "workspace_resolver" in block_class.get_init_parameters():
+        kwargs["workspace_resolver"] = _StubWorkspaceResolver(workspace)
+    return block_class(**kwargs)
+
+
+@contextmanager
+def _legacy_workspace_lookup_pinned(workspace="test-workspace"):
+    if hasattr(block_scaffolding, "get_roboflow_workspace"):
+        with mock.patch.object(
+            block_scaffolding, "get_roboflow_workspace", return_value=workspace
+        ):
+            yield
+    else:
+        yield
 
 
 def _assemble_block(run_function: str, unique_identifier: str, api_key=None):
@@ -110,7 +149,7 @@ def test_block_input_named_after_a_usage_kwarg_reaches_the_user_function():
     """
     # given
     block_class, _ = _assemble_block(_RESERVED_NAME_BLOCK, "metered-reserved-names")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
 
     # when
     with mock.patch.object(usage_collector, "record_usage") as record_usage:
@@ -127,7 +166,7 @@ def test_block_input_named_after_a_usage_kwarg_reaches_the_user_function():
 def test_local_block_records_a_workflow_block_row_with_its_own_runtime():
     # given
     block_class, python_code = _assemble_block(_PASSTHROUGH_BLOCK, "metered-local")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
     block._workflow_step_name = "my_step"
     block._workflow_step_type = "MeteredBlock"
     clock = iter([100.0, 100.25])
@@ -163,7 +202,7 @@ def test_local_block_records_a_workflow_block_row_with_its_own_runtime():
 def test_local_block_that_raises_is_still_billed_for_the_time_it_ran():
     # given
     block_class, _ = _assemble_block(_FAILING_BLOCK, "metered-local-failing")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
     clock = iter([100.0, 100.25])
 
     # when
@@ -204,7 +243,9 @@ def _run_modal_block(execute_remote, unique_identifier):
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
     block = block_class(
-        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+        api_key="workflow-api-key",
+        workspace_resolver=_StubWorkspaceResolver(),
+        execution_observer=SERVER_OBSERVER,
     )
 
     with mock.patch.object(
@@ -225,7 +266,7 @@ def test_modal_block_is_billed_for_the_runtime_the_sandbox_reported(
     # given - the sandbox measured 0.25s of user code; the client call around it
     # also covers serialization and the round trip
     def execute_remote(**kwargs):
-        record_measured_block_execution(
+        record_block_duration(
             duration=0.25, source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
         )
         return {"result": 8}
@@ -273,13 +314,11 @@ def test_modal_runtime_is_not_reused_by_a_later_local_block(
 ):
     # given - a remote invocation whose reported runtime nobody consumed, which
     # is what a failure inside usage recording would leave behind
-    record_measured_block_execution(
-        duration=9.0, source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
-    )
+    record_block_duration(duration=9.0, source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME)
 
     # when - a local block runs next in the same thread
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-no-leak")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
     with mock.patch.object(usage_collector, "record_usage") as record_usage:
         block.run(a=1, b=2)
 
@@ -297,7 +336,9 @@ def _run_modal_block_expecting_error(execute_remote, unique_identifier, expected
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
     block = block_class(
-        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+        api_key="workflow-api-key",
+        workspace_resolver=_StubWorkspaceResolver(),
+        execution_observer=SERVER_OBSERVER,
     )
 
     with mock.patch.object(
@@ -365,7 +406,9 @@ def test_modal_client_wall_clock_excludes_executor_acquisition(
 
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-acquire")
     block = block_class(
-        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+        api_key="workflow-api-key",
+        workspace_resolver=_StubWorkspaceResolver(),
+        execution_observer=SERVER_OBSERVER,
     )
 
     with mock.patch.object(
@@ -401,13 +444,13 @@ def test_modal_block_ignores_a_bogus_runtime_and_falls_back_to_wall_clock(
 
     # given
     def execute_remote(**kwargs):
-        record_measured_block_execution(
+        record_block_duration(
             duration=float("nan"), source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
         )
-        record_measured_block_execution(
+        record_block_duration(
             duration=-1.0, source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
         )
-        record_measured_block_execution(
+        record_block_duration(
             duration="0.25", source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
         )
         return {"result": 8}
@@ -435,7 +478,7 @@ def test_modal_user_code_error_is_billed_the_runtime_the_sandbox_reported(
 
     # given
     def execute_remote(**kwargs):
-        record_measured_block_execution(
+        record_block_duration(
             duration=0.25, source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
         )
         raise DynamicBlockCodeError(
@@ -447,7 +490,9 @@ def test_modal_user_code_error_is_billed_the_runtime_the_sandbox_reported(
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
     block = block_class(
-        api_key="workflow-api-key", workspace_resolver=_StubWorkspaceResolver()
+        api_key="workflow-api-key",
+        workspace_resolver=_StubWorkspaceResolver(),
+        execution_observer=SERVER_OBSERVER,
     )
 
     # when
@@ -475,7 +520,7 @@ def test_block_without_an_api_key_records_no_row():
     """`record_usage` drops keyless rows; nothing should reach the payload."""
     # given
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-no-api-key")
-    block = block_class(api_key=None)
+    block = block_class(api_key=None, execution_observer=SERVER_OBSERVER)
 
     # when
     with mock.patch.object(usage_collector, "_update_usage_payload") as update_payload:
@@ -490,7 +535,7 @@ def test_batch_block_is_billed_one_frame_per_element():
     """A batch-oriented block gets the whole batch in one `run()` call."""
     # given
     block_class, _ = _assemble_block(_BATCH_BLOCK, "metered-batch")
-    block = block_class(api_key="workflow-api-key")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
     batch = Batch.init(content=[1, 2, 3, 4], indices=[(i,) for i in range(4)])
 
     # when
@@ -506,9 +551,11 @@ def test_two_steps_sharing_block_code_aggregate_into_one_row():
     # given - two separately assembled classes with the same body
     first_class, python_code = _assemble_block(_PASSTHROUGH_BLOCK, "metered-shared-a")
     second_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-shared-b")
-    first = first_class(api_key="workflow-api-key")
+    first = first_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
     first._workflow_step_name = "step_one"
-    second = second_class(api_key="workflow-api-key")
+    second = second_class(
+        api_key="workflow-api-key", execution_observer=SERVER_OBSERVER
+    )
     second._workflow_step_name = "step_two"
 
     # when - recorded against a throwaway usage dict rather than the singleton's
@@ -529,3 +576,195 @@ def test_two_steps_sharing_block_code_aggregate_into_one_row():
         f"custom_python/{compute_block_code_fingerprint(python_code)}"
     )
     assert rows[0]["processed_frames"] == 2
+
+
+def test_a_dynamic_workflow_compiles_and_runs_with_no_observer_bound():
+    """No host, no observer keys - the block must still be constructible.
+
+    Dynamic blocks resolve init parameters under their own plugin namespace,
+    which the core initializer defaults do not cover, so the engine has to
+    supply the null observer explicitly. Without that this raises
+    `BlockInitParameterNotProvidedError` at compile time.
+    """
+    # given
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    specification = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "value"}],
+        "dynamic_blocks_definitions": [
+            {
+                "type": "DynamicBlockDefinition",
+                "manifest": {
+                    "type": "ManifestDescription",
+                    "block_type": "UnboundProbe",
+                    "inputs": {
+                        "value": {
+                            "type": "DynamicInputDefinition",
+                            "selector_types": ["input_parameter"],
+                        }
+                    },
+                    "outputs": {
+                        "result": {"type": "DynamicOutputDefinition", "kind": []}
+                    },
+                },
+                "code": {
+                    "type": "PythonCode",
+                    "run_function_code": _PASSTHROUGH_BLOCK.replace(
+                        "def run_function(self, a, b)", "def run(self, value)"
+                    ).replace('{"result": a + b}', '{"result": value}'),
+                    "run_function_name": "run",
+                },
+            }
+        ],
+        "steps": [{"type": "UnboundProbe", "name": "probe", "value": "$inputs.value"}],
+        "outputs": [
+            {"type": "JsonField", "name": "result", "selector": "$steps.probe.result"}
+        ],
+    }
+
+    # when - no `workflows_core.execution_observer`, no dynamic override
+    engine = ExecutionEngine.init(
+        workflow_definition=specification,
+        init_parameters={"workflows_core.api_key": "no-observer-key"},
+    )
+    results = engine.run(runtime_parameters={"value": 7})
+
+    # then
+    assert results[0]["result"] == 7
+
+
+def _recorded_rows(run_block, frozen_clock=(100.0, 100.25)):
+    """Run `run_block` and return the workflow_block rows the collector built."""
+    from inference.usage_tracking import collector as collector_module
+
+    recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+    with mock.patch.object(
+        collector_module, "GCP_SERVERLESS", False
+    ), mock.patch.object(
+        collector_module.time, "time", side_effect=list(frozen_clock)
+    ), mock.patch.object(
+        usage_collector, "_usage", recorded
+    ):
+        run_block()
+    return [
+        row
+        for per_key in recorded.values()
+        for row in per_key.values()
+        if row.get("category") == "workflow_block"
+    ]
+
+
+@contextmanager
+def _real_modal_executor_with_faked_transport(post_execute_response):
+    """The production executor, with only the HTTP round trip replaced."""
+    real_executor = modal_executor.ModalExecutor("test-workspace")
+    with mock.patch.object(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    ), _legacy_workspace_lookup_pinned(), mock.patch.object(
+        modal_executor, "MODAL_AVAILABLE", True
+    ), mock.patch.object(
+        modal_executor, "get_modal_executor", lambda workspace_id=None: real_executor
+    ), mock.patch.object(
+        modal_executor.ModalExecutor,
+        "_get_endpoint_url",
+        return_value="https://example.invalid",
+    ), mock.patch.object(
+        modal_executor.ModalExecutor,
+        "_post_execute",
+        return_value=post_execute_response,
+    ):
+        yield
+
+
+def test_local_block_emits_a_row_attributed_to_local_execution():
+    # given
+    block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "row-local")
+    block = block_class(api_key="workflow-api-key", execution_observer=SERVER_OBSERVER)
+    monotonic = iter([200.0, 200.4])
+
+    # when
+    with mock.patch.object(
+        block_scaffolding.time, "monotonic", side_effect=lambda: next(monotonic)
+    ):
+        rows = _recorded_rows(lambda: block.run(a=3, b=5))
+
+    # then
+    assert len(rows) == 1, rows
+    details = json.loads(rows[0]["resource_details"])
+    assert details["duration_source"] == BLOCK_DURATION_SOURCE_LOCAL_RUNTIME
+    assert details["execution_mode"] == BLOCK_EXECUTION_MODE_LOCAL
+    assert rows[0]["execution_duration"] == pytest.approx(0.4)
+
+
+def test_remote_block_emits_a_row_from_the_executors_own_publication(
+    isolated_modal_executor_cache,
+):
+    """The sandbox's runtime, published by `ModalExecutor.execute_remote` itself.
+
+    The client call around it also covers input serialization and the round
+    trip; that is not what must be billed.
+    """
+    # given
+    block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "row-remote-success")
+    block = _modal_block(block_class)
+    response = {
+        "success": True,
+        "result": json.dumps({"result": 8}),
+        "execution_time_seconds": 0.6,
+    }
+
+    # when
+    def run_block():
+        with _real_modal_executor_with_faked_transport(response):
+            assert block.run(a=3, b=5) == {"result": 8}
+
+    rows = _recorded_rows(run_block)
+
+    # then
+    assert len(rows) == 1, rows
+    details = json.loads(rows[0]["resource_details"])
+    assert details["duration_source"] == BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
+    assert details["execution_mode"] == BLOCK_EXECUTION_MODE_REMOTE
+    assert rows[0]["execution_duration"] == pytest.approx(0.6)
+
+
+def test_remote_block_failing_inside_the_sandbox_is_billed_what_it_spent(
+    isolated_modal_executor_cache,
+):
+    """The executor publishes before it raises, so a failed run is still billed.
+
+    Distinct from a transport failure: the block did run, in the sandbox, for
+    the time the sandbox reported.
+    """
+    # given
+    block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "row-remote-failure")
+    block = _modal_block(block_class)
+    response = {
+        "success": False,
+        "error": "boom",
+        "error_type": "ValueError",
+        "execution_time_seconds": 0.4,
+    }
+
+    # when
+    def run_block():
+        with _real_modal_executor_with_faked_transport(response):
+            with pytest.raises(DynamicBlockCodeError):
+                block.run(a=3, b=5)
+
+    rows = _recorded_rows(run_block)
+
+    # then
+    assert len(rows) == 1, rows
+    details = json.loads(rows[0]["resource_details"])
+    assert details["duration_source"] == BLOCK_DURATION_SOURCE_REMOTE_RUNTIME
+    assert details["execution_mode"] == BLOCK_EXECUTION_MODE_REMOTE
+    # The HTTP arm raises `DynamicBlockCodeError` for a sandbox-side failure
+    # WITHOUT an inner exception (`modal_executor.py:684-692` folds the
+    # sandbox's error type into the message), so `inner_error_type` is None
+    # and the collector records the wrapper's own class - unlike the local
+    # arm, where `create_dynamic_block_code_error` attaches the user's
+    # exception and the row says `RuntimeError`.
+    assert details["error_type"] == "DynamicBlockCodeError"
+    assert rows[0]["execution_duration"] == pytest.approx(0.4)
