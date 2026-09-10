@@ -301,6 +301,9 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
 from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
@@ -1613,6 +1616,7 @@ class HttpInterface(BaseInterface):
                         workflow_request.inner_workflow_dispatch_depth
                     ),
                     "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                    "workflows_core.configuration": server_workflows_configuration(),
                 }
             )
             # One codec for both injection paths - the engine deserializes the
@@ -2576,6 +2580,7 @@ class HttpInterface(BaseInterface):
                         "workflows_core.background_tasks": None,
                         "workflows_core.step_execution_mode": step_execution_mode,
                         "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                        "workflows_core.configuration": server_workflows_configuration(),
                     }
                 )
                 bind_image_codec(workflow_init_parameters)

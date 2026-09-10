@@ -700,6 +700,9 @@ class InferencePipeline:
                 WorkflowRunner,
                 wrap_workflow_runner_for_stream_pipeline,
             )
+            from inference.core.interfaces.workflows_configuration import (
+                server_workflows_configuration,
+            )
             from inference.core.interfaces.workflows_execution_observer import (
                 UsageTrackingExecutionObserver,
             )
@@ -762,6 +765,13 @@ class InferencePipeline:
             # already carry an explicit inner_workflow_spec_resolver.
             install_workflows_platform_bindings(workflow_init_parameters)
             bind_image_codec(workflow_init_parameters)
+            # setdefault, not assignment: a caller-supplied configuration must
+            # reach `ExecutionEngine.init`, where a mismatch with the installed
+            # process configuration is reported. Overwriting it here would hide
+            # the mis-wiring the check exists to catch.
+            workflow_init_parameters.setdefault(
+                "workflows_core.configuration", server_workflows_configuration()
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,

@@ -12,6 +12,9 @@ from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
 from inference.core.interfaces.roboflow_platform_client import (
     install_workflows_platform_bindings,
 )
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
 from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
@@ -466,6 +469,9 @@ def _run_workflow_for_single_image_with_inference(
     # replaced here on Path A while the process registry kept the guarded one
     # (round-2 Defect 1).
     bind_image_codec(workflow_init_parameters)
+    workflow_init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
     execution_engine = ExecutionEngine.init(
         workflow_definition=workflow_specification,
         init_parameters=workflow_init_parameters,
