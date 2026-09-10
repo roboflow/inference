@@ -489,3 +489,189 @@ def test_cli_override_conflicting_with_an_install_is_refused_before_the_engine_s
         forwarded_engine_init["init_parameters"] == []
     ), "refused after the engine started"
     assert get_image_codec() is GUARDED_IMAGE_CODEC
+
+
+# --------------------------------------------------------------------------
+# Behaviour (appended by Task 10.8, after `base.py` and the block files are
+# repointed): ONE image goes through both paths, so the two must agree
+# --------------------------------------------------------------------------
+
+
+PASSTHROUGH_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [],
+    "outputs": [{"type": "JsonField", "name": "image", "selector": "$inputs.image"}],
+}
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT", None)
+@mock.patch.object(
+    image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {ALLOWED_HOST}
+)
+def test_one_image_uses_both_paths_and_they_must_agree(requests_mock: Mocker) -> None:
+    # The mechanism (round-4 Defect 2): Path A deserializes the URL input and
+    # keeps the decoded pixels AND the reference (deserializers.py:133-138);
+    # `numpy_image` then serves the cached pixels (base.py:549) - no reload
+    # there. The reload happens downstream: `to_inference_format()` preserves
+    # the URL (base.py:733-740) and a VLM block calls `load_image` on that dict
+    # (openai/v1.py:288, before the endpoint call at :293). Both stages must go
+    # through the SAME codec, so this uses the real guarded adapter with
+    # recording, the real `image_utils` guards, `requests_mock` as the
+    # transport, and stubs only `client.chat.completions.create`.
+    from inference.core.interfaces.workflows_image_codec import (
+        ServerImageCodec,
+        bind_image_codec,
+    )
+    from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
+        execute_gpt_4v_request,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        WorkflowImageData,
+    )
+
+    class _RecordingGuardedCodec(ServerImageCodec):
+        def __init__(self):
+            self.calls = []
+
+        def fetch_url(self, value, cv_imread_flags=cv2.IMREAD_COLOR):
+            self.calls.append(("fetch_url", value))
+            return super().fetch_url(value, cv_imread_flags=cv_imread_flags)
+
+        def load_image(self, value, disable_preproc_auto_orient=False):
+            self.calls.append(("load_image", value))
+            return super().load_image(
+                value, disable_preproc_auto_orient=disable_preproc_auto_orient
+            )
+
+    url = f"https://{ALLOWED_HOST}/image.png"
+    requests_mock.get(url, content=_png_bytes())
+    recorder = _RecordingGuardedCodec()
+    init_parameters = {CODEC_INIT_PARAMETER: recorder}
+    assert bind_image_codec(init_parameters) is recorder
+    assert get_image_codec() is recorder
+
+    # Stage 1 - Path A: the engine deserializes the URL input through the
+    # bound codec and hands the SAME WorkflowImageData out as its output.
+    engine = ExecutionEngine.init(
+        workflow_definition=PASSTHROUGH_WORKFLOW, init_parameters=init_parameters
+    )
+    image = engine.run(runtime_parameters={"image": url})[0]["image"]
+    assert isinstance(image, WorkflowImageData)
+    assert image.numpy_image.shape == (16, 24, 3)  # cached pixels, no reload
+    assert recorder.calls == [("fetch_url", url)]
+    assert requests_mock.call_count == 1
+
+    # Stage 2 - Path B: the downstream block re-loads THAT image from its
+    # inference-format dict through the process registry - the same object.
+    payload = image.to_inference_format()
+    assert payload == {"type": "url", "value": url}
+    client = MagicMock()
+    client.chat.completions.create.return_value.choices = [
+        MagicMock(message=MagicMock(content="a green rectangle"))
+    ]
+    result = execute_gpt_4v_request(
+        client=client,
+        image=payload,
+        prompt="describe",
+        lmm_config=MagicMock(
+            gpt_model_version="gpt-4o", gpt_image_detail="auto", max_tokens=16
+        ),
+    )
+
+    assert result == {
+        "content": "a green rectangle",
+        "image": {"width": 24, "height": 16},
+    }
+    assert recorder.calls == [("fetch_url", url), ("load_image", payload)]
+    assert requests_mock.call_count == 2
+    assert {request.url for request in requests_mock.request_history} == {url}
+    client.chat.completions.create.assert_called_once()
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT", None)
+@mock.patch.object(image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", None)
+def test_reference_born_image_outside_any_engine_uses_the_process_codec(
+    monkeypatch,
+) -> None:
+    # Narrower than the test above, and deliberately so: this covers the
+    # supported reference-only construction API -
+    # `WorkflowImageData(parent_metadata=..., image_reference=...)` with no
+    # cached pixels - so its first `numpy_image` read fetches through the
+    # registry (base.py:573). No engine, no Path A. The production
+    # constructors (e.g. `inference/core/models/inference_models_adapters.py`,
+    # `modal/modal_app.py`) pass `numpy_image` and therefore serve cached
+    # pixels (base.py:549) without loading.
+    # The recorder overrides just `fetch_url`, which is the only method this
+    # path can reach; the transport is blocked below address validation so a
+    # regression to the server loader fails fast. DNS is faked and the proxy
+    # env is cleared (CR-1 / Ruling R10-C, Task 10.6's pattern): with a
+    # reverted/missing `base.py` repoint the server loader calls
+    # `socket.getaddrinfo` (inference/core/utils/url_input.py:121) BEFORE the
+    # blocker, so an unguarded RED would otherwise depend on real DNS.
+    import socket
+
+    import urllib3.connectionpool as connectionpool
+
+    from inference.core.interfaces.workflows_image_codec import bind_image_codec
+    from inference.core.workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "ALL_PROXY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "*")
+    monkeypatch.setenv("no_proxy", "*")
+
+    def _fake_getaddrinfo(host, port, *args, **kwargs):
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("93.184.216.34", port),
+            )
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+
+    class _RecordingCodec(WorkflowsLocalImageCodec):
+        def __init__(self):
+            self.calls = []
+
+        def fetch_url(self, value, cv_imread_flags=cv2.IMREAD_COLOR):
+            self.calls.append(("fetch_url", value))
+            return np.zeros((16, 24, 3), dtype=np.uint8)
+
+    def _blocked(*args, **kwargs):
+        raise AssertionError("transport reached")
+
+    recorder = _RecordingCodec()
+    assert bind_image_codec({CODEC_INIT_PARAMETER: recorder}) is recorder
+    reference_image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        image_reference="https://cdn.example.com/other.jpg",
+    )
+    with mock.patch.object(
+        connectionpool.HTTPConnectionPool, "_new_conn", _blocked
+    ), mock.patch.object(connectionpool.HTTPSConnectionPool, "_new_conn", _blocked):
+        assert reference_image.numpy_image.shape == (16, 24, 3)
+    assert recorder.calls == [("fetch_url", "https://cdn.example.com/other.jpg")]

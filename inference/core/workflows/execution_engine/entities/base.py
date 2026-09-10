@@ -30,16 +30,17 @@ from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
 )
-from inference.core.utils.image_utils import (
-    attempt_loading_image_from_string,
-    encode_image_to_jpeg_bytes,
-    load_image_from_url,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     Kind,
+)
+from inference.core.workflows.utils.images import (
+    attempt_loading_image_from_string,
+    encode_image_to_jpeg_bytes,
+    ensure_local_image_load_allowed,
+    load_image_from_url,
 )
 
 
@@ -572,6 +573,11 @@ class WorkflowImageData:
         ) or self._image_reference.startswith("https://"):
             self._numpy_image = load_image_from_url(value=self._image_reference)
         else:
+            # Local-filesystem access is a host capability: ask before reading.
+            # The decoder stays here - cv2.imread applies EXIF orientation and
+            # `_decode_source_to_tensor` deliberately mirrors that, so neither
+            # decoder may move behind the port.
+            ensure_local_image_load_allowed(self._image_reference)
             self._numpy_image = cv2.imread(self._image_reference)
         return self._numpy_image
 
@@ -626,6 +632,7 @@ class WorkflowImageData:
         ) or self._image_reference.startswith("https://"):
             hwc_bgr = load_image_from_url(value=self._image_reference)
             return torch.from_numpy(hwc_bgr[:, :, ::-1].copy()).permute(2, 0, 1)
+        ensure_local_image_load_allowed(self._image_reference)
         return decode_image(
             read_file(self._image_reference),
             mode=ImageReadMode.RGB,

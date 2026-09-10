@@ -45,7 +45,6 @@ from inference.core.env import (
     WEBEXEC_WS_IDLE_RELEASE_SECONDS,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_image_kind,
     deserialize_rle_detections_kind,
@@ -68,6 +67,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -857,11 +857,11 @@ def validate_syntax():
 def _serialize_image_for_msgpack(image: Any) -> dict:
     """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
     from inference.core.env import WEBEXEC_JPEG_QUALITY
-    from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
     from inference.core.workflows.core_steps.common.serializers import (
         serialize_video_metadata_kind,
     )
     from inference.core.workflows.execution_engine.entities.base import ParentOrigin
+    from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
     jpeg_bytes: bytes = encode_image_to_jpeg_bytes(
         image.numpy_image,

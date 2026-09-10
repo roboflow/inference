@@ -18,7 +18,6 @@ from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.reasoning import (
     attach_reasoning_levels,
     validate_reasoning_level,
@@ -57,6 +56,7 @@ from inference.core.workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
     RoboflowPlatformClient,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 XAI_BASE_URL = "https://api.x.ai/v1"
 

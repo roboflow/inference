@@ -13,7 +13,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -51,6 +50,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 from inference_sdk import InferenceHTTPClient
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
