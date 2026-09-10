@@ -1,6 +1,5 @@
 from typing import List, Type
 
-from inference.core.cache import cache
 from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
@@ -1514,11 +1513,15 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.core.workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
+from inference.core.workflows.utils.in_memory_cache import InMemoryWorkflowsCache
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
-    # Keep bound to the server cache until Phase 9 injects it at the composition roots - see DECONTAMINATION.PLAN.MD, Phase 4 preamble.
-    "cache": cache,
+    # Standalone default. Every server composition root overrides it with
+    # `workflows_core.cache` (the shared, Redis-backed singleton) through
+    # install_workflows_platform_bindings(); a per-process cache here would
+    # make sink cooldown and dedup state per-worker.
+    "cache": InMemoryWorkflowsCache(),
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
