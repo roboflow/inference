@@ -224,3 +224,135 @@ def test_preview_flag_reaches_workflow_and_block_rows(monkeypatch):
     assert preview_by_category["workflows"] is True
     assert preview_by_category["workflow_block"] is True
     assert _billable_by_category(api_key)["workflow_block"] is True
+
+
+_FAILING_BLOCK_CODE = """
+def run(self, value) -> BlockResult:
+    raise RuntimeError("block exploded")
+"""
+
+
+def _failing_specification() -> dict:
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "value"}],
+        "dynamic_blocks_definitions": [
+            {
+                "type": "DynamicBlockDefinition",
+                "manifest": {
+                    "type": "ManifestDescription",
+                    "block_type": "ExplodingBlock",
+                    "inputs": {
+                        "value": {
+                            "type": "DynamicInputDefinition",
+                            "selector_types": ["input_parameter"],
+                        }
+                    },
+                    "outputs": {
+                        "result": {"type": "DynamicOutputDefinition", "kind": []}
+                    },
+                },
+                "code": {
+                    "type": "PythonCode",
+                    "run_function_code": _FAILING_BLOCK_CODE,
+                },
+            }
+        ],
+        "steps": [{"type": "ExplodingBlock", "name": "boom", "value": "$inputs.value"}],
+        "outputs": [
+            {"type": "JsonField", "name": "result", "selector": "$steps.boom.result"}
+        ],
+    }
+
+
+def _row_for_category(api_key: str, category: str) -> dict:
+    """The single usage row recorded for `api_key` in `category`."""
+    rows = [
+        row
+        for key, row in _rows_for_api_key(api_key).items()
+        if key.split(":", 1)[0] == category
+    ]
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+def test_workflow_row_carries_the_identity_the_engine_computed(monkeypatch):
+    # given
+    client = _build_test_client(monkeypatch)
+    api_key = "workflow-row-identity-key"
+
+    # when
+    response = client.post(
+        "/workflows/run",
+        json={
+            "api_key": api_key,
+            "specification": _specification(api_key),
+            "inputs": {"value": 1},
+        },
+    )
+
+    # then - every field the removed decorator derived from its own arguments
+    assert response.status_code == 200
+    row = _row_for_category(api_key, "workflows")
+    assert row["fps"] == 0
+    assert row["api_key_hash"]
+    assert row["resource_id"]
+    details = json.loads(row["resource_details"])
+    assert details["steps"] == ["FakeModelBlock:fake_model"]
+    assert details["billable"] is True
+    assert details["is_preview"] is False
+
+
+def test_a_failing_run_still_bills_an_error_row(monkeypatch):
+    """A run that raises inside a block is billed, and the row says why.
+
+    Real route, real engine, real collector - nothing about the recording is
+    mocked, because the error path is the one that used to live inside the
+    decorator on `run_workflow`.
+    """
+    # given
+    client = _build_test_client(monkeypatch)
+    api_key = "workflow-error-row-key"
+
+    # when
+    response = client.post(
+        "/workflows/run",
+        json={
+            "api_key": api_key,
+            "specification": _failing_specification(),
+            "inputs": {"value": 1},
+        },
+    )
+
+    # then
+    assert response.status_code != 200
+    details = json.loads(_row_for_category(api_key, "workflows")["resource_details"])
+    # The user's exception, not the engine's wrapper: `create_dynamic_block_code_error`
+    # raises `DynamicBlockCodeError` carrying `inner_error`; it is a `WorkflowError`,
+    # so `safe_execute_step` re-raises it unwrapped, and the collector prefers
+    # `inner_error_type` over the exception's own class name.
+    assert details["error_type"] == "RuntimeError"
+
+
+def test_an_unbound_observer_records_no_workflow_row(monkeypatch):
+    """The failure mode this whole phase has to make loud.
+
+    An engine initialised without `workflows_core.execution_observer` runs the
+    workflow and returns results - and bills nothing. Pinned so a root that
+    loses its binding fails here as well as in the AST check.
+    """
+    # given
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    api_key = "unbound-observer-key"
+
+    # when
+    engine = ExecutionEngine.init(
+        workflow_definition=_specification(api_key),
+        init_parameters={"workflows_core.api_key": api_key},
+    )
+    engine.run(runtime_parameters={"value": 1})
+
+    # then
+    categories = {key.split(":", 1)[0] for key in _rows_for_api_key(api_key)}
+    assert "workflows" not in categories

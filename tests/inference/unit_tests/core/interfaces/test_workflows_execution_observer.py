@@ -244,3 +244,100 @@ def test_step_scope_clears_a_previous_requests_session_id() -> None:
 
     # then
     assert seen["value"] is None
+
+
+_STREAM_PROBE_BLOCK = """
+def run(self, value) -> BlockResult:
+    return {"result": value}
+"""
+
+_STREAM_PROBE_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowParameter", "name": "value"}],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "StreamProbe",
+                "inputs": {
+                    "value": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_parameter"],
+                    }
+                },
+                "outputs": {"result": {"type": "DynamicOutputDefinition", "kind": []}},
+            },
+            "code": {"type": "PythonCode", "run_function_code": _STREAM_PROBE_BLOCK},
+        }
+    ],
+    "steps": [{"type": "StreamProbe", "name": "probe", "value": "$inputs.value"}],
+    "outputs": [
+        {"type": "JsonField", "name": "result", "selector": "$steps.probe.result"}
+    ],
+}
+
+
+def _rows_by_category(recorded: dict) -> dict:
+    rows = [row for per_key in recorded.values() for row in per_key.values()]
+    return {row["category"]: row for row in rows}
+
+
+def test_stream_session_reaches_the_workflow_and_the_block_rows() -> None:
+    """A pipeline's session id must be on every row its run produces.
+
+    Real engine, real observer, real collector; only the usage dictionary is a
+    throwaway. The session id is bound in the calling thread, and the block row
+    is recorded inside a pool worker - so this is the end-to-end statement of
+    what `capture_step_context` / `step_scope` exist for.
+    """
+    # given
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    observer = UsageTrackingExecutionObserver()
+    engine = ExecutionEngine.init(
+        workflow_definition=_STREAM_PROBE_WORKFLOW,
+        init_parameters={
+            "workflows_core.api_key": "stream-identity-key",
+            "workflows_core.execution_observer": observer,
+        },
+    )
+    recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+
+    # when
+    token = stream_session_id.set("camera-7")
+    try:
+        with mock.patch.object(usage_collector, "_usage", recorded):
+            engine.run(runtime_parameters={"value": 1})
+    finally:
+        stream_session_id.reset(token)
+
+    # then
+    by_category = _rows_by_category(recorded)
+    assert set(by_category) == {"workflows", "workflow_block"}
+    assert by_category["workflows"]["stream_session_id"] == "camera-7"
+    assert by_category["workflow_block"]["stream_session_id"] == "camera-7"
+
+
+def test_a_run_without_a_stream_session_produces_rows_without_one() -> None:
+    # given - the same workflow, no session bound anywhere
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    engine = ExecutionEngine.init(
+        workflow_definition=_STREAM_PROBE_WORKFLOW,
+        init_parameters={
+            "workflows_core.api_key": "no-stream-key",
+            "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+        },
+    )
+    recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+
+    # when
+    with mock.patch.object(usage_collector, "_usage", recorded):
+        engine.run(runtime_parameters={"value": 1})
+
+    # then - no stale id from a previous test's pool thread
+    by_category = _rows_by_category(recorded)
+    assert set(by_category) == {"workflows", "workflow_block"}
+    for row in by_category.values():
+        assert not row.get("stream_session_id")

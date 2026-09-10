@@ -1,6 +1,7 @@
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from packaging.version import Version
@@ -48,6 +49,10 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
 )
 from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
 from inference.core.workflows.prototypes.workspace_resolver import (
     NULL_WORKSPACE_RESOLVER,
 )
@@ -114,6 +119,51 @@ def _retrieve_step_execution_mode(
     if isinstance(value, StepExecutionMode):
         return value
     return StepExecutionMode(value)
+
+
+def _resolve_execution_observer(
+    init_parameters: Dict[str, Any],
+) -> ExecutionObserver:
+    """Resolve the observer once and republish it for every consumer.
+
+    Three lookup rules have to agree and, left alone, do not:
+
+    * ``_retrieve_init_parameter`` accepts ``workflows_core.execution_observer``
+      *or* the bare name, and calls the value when it is callable - so a host
+      may legitimately bind a factory, or bind without a namespace.
+    * ``retrieve_init_parameter_values`` gives a block whatever object is under
+      ``<block source>.execution_observer``, without calling it.
+    * ``REGISTERED_INITIALIZERS`` defaults are namespaced to ``workflows_core.*``
+      by ``load_core_blocks_initializers``, which is a different namespace from
+      ``dynamic_workflows_blocks`` - not a fallback for it.
+
+    So a bare binding would leave dynamic blocks with the null observer, and a
+    factory would hand them the function itself. Resolving here and writing the
+    resolved object back under both namespaced keys makes all three agree, and
+    calls a factory exactly once per engine.
+
+    ``init_parameters`` is the engine's PRIVATE copy (see ``init``), never the
+    caller's dictionary: writing a resolved factory result into a dictionary
+    the caller reuses would hand every later engine this one's observer.
+
+    A host that deliberately wants a *different* observer for custom-Python
+    blocks keeps that: an explicit ``dynamic_workflows_blocks.execution_observer``
+    is resolved separately and wins for those blocks.
+    """
+    dynamic_key = "dynamic_workflows_blocks.execution_observer"
+    dynamic_override = init_parameters.get(dynamic_key)
+    if callable(dynamic_override):
+        dynamic_override = dynamic_override()
+    observer = _retrieve_init_parameter(
+        init_parameters=init_parameters, parameter_name="execution_observer"
+    )
+    if observer is None:
+        observer = NULL_EXECUTION_OBSERVER
+    init_parameters["workflows_core.execution_observer"] = observer
+    init_parameters[dynamic_key] = (
+        dynamic_override if dynamic_override is not None else observer
+    )
+    return observer
 
 
 def _is_locally_executed_platform_model(
@@ -322,6 +372,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
                 )
             step_error_handler = REGISTERED_STEP_ERROR_HANDLERS[step_error_handler]
         _mirror_dynamic_block_parameters(init_parameters)
+        # Phase 6 - resolve once, so the engine and every block observe through
+        # the same object. Writes both namespaced keys; see
+        # `_resolve_execution_observer`. After the mirror, before compilation:
+        # blocks are constructed during `compile_workflow`.
+        execution_observer = _resolve_execution_observer(init_parameters)
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
@@ -378,6 +433,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             pre_init_model_manager=pre_init_model_manager,
             pre_init_api_key=pre_init_api_key,
             pre_init_step_execution_mode=pre_init_step_execution_mode,
+            execution_observer=execution_observer,
         )
 
     def __init__(
@@ -394,6 +450,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         pre_init_model_manager: Optional[Any] = None,
         pre_init_api_key: Optional[str] = None,
         pre_init_step_execution_mode: Optional[StepExecutionMode] = None,
+        execution_observer: Optional[ExecutionObserver] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
@@ -408,6 +465,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self._pre_init_api_key = pre_init_api_key
         self._pre_init_step_execution_mode = pre_init_step_execution_mode
         self._pending_dependencies_resolution_attempted = False
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
 
     def run(
         self,
@@ -450,20 +512,26 @@ class ExecutionEngineV1(BaseExecutionEngine):
                 self._workflow_id,
             )
             usage_workflow_id = self._workflow_id
-        result = run_workflow(
+        result = self._execution_observer.observe_workflow_run(
             workflow=self._compiled_workflow,
             runtime_parameters=runtime_parameters,
-            max_concurrent_steps=self._max_concurrent_steps,
-            usage_fps=fps,
-            usage_workflow_id=usage_workflow_id,
-            usage_workflow_preview=_is_preview,
-            kinds_serializers=self._compiled_workflow.kinds_serializers,
-            serialize_results=serialize_results,
-            profiler=self._profiler,
-            executor=self._executor,
-            step_error_handler=self._step_error_handler,
-            defer_stream_pipeline_flush=defer_stream_pipeline_flush,
-            resolve_output_futures=resolve_output_futures,
+            workflow_id=usage_workflow_id,
+            fps=fps,
+            is_preview=_is_preview,
+            run=partial(
+                run_workflow,
+                workflow=self._compiled_workflow,
+                runtime_parameters=runtime_parameters,
+                max_concurrent_steps=self._max_concurrent_steps,
+                kinds_serializers=self._compiled_workflow.kinds_serializers,
+                serialize_results=serialize_results,
+                profiler=self._profiler,
+                executor=self._executor,
+                step_error_handler=self._step_error_handler,
+                defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+                resolve_output_futures=resolve_output_futures,
+                observer=self._execution_observer,
+            ),
         )
         self._profiler.end_workflow_run()
         return result
@@ -497,6 +565,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             profiler=self._profiler,
             executor=self._executor,
             step_error_handler=self._step_error_handler,
+            observer=self._execution_observer,
         )
         self._profiler.end_workflow_run()
         return result
