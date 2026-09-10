@@ -420,8 +420,10 @@ class UsageCollector:
                 merged_usage_payloads = zip_usage_payloads(
                     usage_payloads=usage_payloads,
                 )
-                for usage_payload in merged_usage_payloads:
-                    self._queue.put(usage_payload)
+                # Distinct sessions may not compress below the queue capacity.
+                # Keep the merged payloads in one slot so enqueueing cannot
+                # block while holding the lock needed by the queue consumer.
+                self._queue.put(merged_usage_payloads)
 
     def record_resource_details(
         self,
