@@ -775,9 +775,10 @@ def test_visual_stream_restart_reprompts(block_factory):
         )
 
     assert [call[0] for call in fake.calls] == ["prompt", "track", "prompt"]
-    assert [
-        call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"
-    ] == [5, 0]
+    assert [call[1]["frame_idx"] for call in fake.calls if call[0] == "prompt"] == [
+        5,
+        0,
+    ]
     assert [
         call[1]["had_prior_state"] for call in fake.calls if call[0] == "prompt"
     ] == [False, False]
@@ -945,3 +946,78 @@ def test_tensor_visual_boxes_and_points_keep_class_zero_distinct_from_point_prom
         0: "vehicle",
         -1: "foreground",
     }
+
+
+def _recorded_model_rows(run_block):
+    """Run `run_block` and return the model-category rows the collector built."""
+    from unittest.mock import patch
+
+    from inference.usage_tracking import collector as collector_module
+    from inference.usage_tracking.collector import usage_collector
+
+    recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+    with patch.object(collector_module, "GCP_SERVERLESS", False), patch.object(
+        usage_collector, "_usage", recorded
+    ):
+        run_block()
+    return [
+        row
+        for per_key in recorded.values()
+        for row in per_key.values()
+        if row.get("category") == "model"
+    ]
+
+
+def test_sam3_concept_mode_row_is_attributed_to_the_concept_model():
+    # given
+    from inference.core.interfaces.workflows_execution_observer import (
+        UsageTrackingExecutionObserver,
+    )
+
+    block, _ = _make_block_with_fake_model()
+    block._api_key = "sam3-usage-key"
+    block._execution_observer = UsageTrackingExecutionObserver()
+
+    # when
+    rows = _recorded_model_rows(
+        lambda: block.run(
+            images=[_make_frame()],
+            class_names=["person"],
+            model_id="sam3video",
+            visual_model_id="sam3trackervideo",
+            threshold=0.0,
+        )
+    )
+
+    # then
+    assert len(rows) == 1, rows
+    assert rows[0]["resource_id"] == "sam3video"
+
+
+def test_sam3_visual_mode_row_is_attributed_to_the_visual_model():
+    """`run()` swaps the model id before the observed call; the row must follow."""
+    # given
+    from inference.core.interfaces.workflows_execution_observer import (
+        UsageTrackingExecutionObserver,
+    )
+
+    block, _ = _make_visual_block_with_fake_model()
+    block._api_key = "sam3-usage-key"
+    block._execution_observer = UsageTrackingExecutionObserver()
+
+    # when
+    rows = _recorded_model_rows(
+        lambda: block.run(
+            images=[_make_frame()],
+            class_names=None,
+            model_id="sam3video",
+            visual_model_id="sam3trackervideo",
+            threshold=0.0,
+            tracking_mode="visual",
+            points=[{"x": 10, "y": 12, "positive": True}],
+        )
+    )
+
+    # then
+    assert len(rows) == 1, rows
+    assert rows[0]["resource_id"] == "sam3trackervideo"

@@ -454,3 +454,93 @@ def test_no_boxes_and_no_session_emits_empty_detections():
     assert isinstance(dets, sv.Detections)
     assert len(dets) == 0
     assert fake.calls == []
+
+
+def _recorded_model_rows(run_block):
+    """Run `run_block` and return the model-category rows the collector built."""
+    from unittest.mock import patch
+
+    from inference.usage_tracking import collector as collector_module
+    from inference.usage_tracking.collector import usage_collector
+
+    recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+    with patch.object(collector_module, "GCP_SERVERLESS", False), patch.object(
+        usage_collector, "_usage", recorded
+    ):
+        run_block()
+    return [
+        row
+        for per_key in recorded.values()
+        for row in per_key.values()
+        if row.get("category") == "model"
+    ]
+
+
+def test_sam2_video_run_emits_a_model_row_for_the_model_it_ran():
+    """The block loads AutoModel itself, so nothing else reports its usage."""
+    # given
+    from inference.core.interfaces.workflows_execution_observer import (
+        UsageTrackingExecutionObserver,
+    )
+
+    block, _ = _make_block_with_fake_model()
+    block._api_key = "sam2-usage-key"
+    block._execution_observer = UsageTrackingExecutionObserver()
+    boxes = _make_box_detections()
+
+    # when
+    rows = _recorded_model_rows(
+        lambda: block.run(
+            images=[_make_frame(frame_number=0), _make_frame(frame_number=1)],
+            boxes=[boxes, boxes],
+            model_id="sam2video/small",
+            prompt_mode="first_frame",
+            prompt_interval=30,
+            threshold=0.0,
+        )
+    )
+
+    # then
+    assert len(rows) == 1, rows
+    assert rows[0]["resource_id"] == "sam2video/small"
+    assert rows[0]["processed_frames"] == 2
+
+
+def test_sam2_video_remote_mode_rejection_is_billed_as_an_errored_model_row():
+    """The rejection is raised inside the observed call, as it was inside the
+    decorator - so it stays visible in per-model telemetry."""
+    # given
+    import json
+
+    import pytest
+
+    from inference.core.interfaces.workflows_execution_observer import (
+        UsageTrackingExecutionObserver,
+    )
+
+    block = SegmentAnything2VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key="sam2-usage-key",
+        step_execution_mode=StepExecutionMode.REMOTE,
+        execution_observer=UsageTrackingExecutionObserver(),
+    )
+
+    # when
+    def run_block():
+        with pytest.raises(NotImplementedError):
+            block.run(
+                images=[_make_frame()],
+                boxes=None,
+                model_id="sam2video/small",
+                prompt_mode="first_frame",
+                prompt_interval=30,
+                threshold=0.0,
+            )
+
+    rows = _recorded_model_rows(run_block)
+
+    # then
+    assert len(rows) == 1, rows
+    assert (
+        json.loads(rows[0]["resource_details"])["error_type"] == "NotImplementedError"
+    )

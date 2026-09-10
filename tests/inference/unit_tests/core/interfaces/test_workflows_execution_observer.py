@@ -341,3 +341,75 @@ def test_a_run_without_a_stream_session_produces_rows_without_one() -> None:
     assert set(by_category) == {"workflows", "workflow_block"}
     for row in by_category.values():
         assert not row.get("stream_session_id")
+
+
+def test_sam_video_blocks_resolve_the_bound_observer_from_init_parameters() -> None:
+    """The blocks receive the observer the way the composition roots bind it.
+
+    Resolved through the same initialiser the compiler uses, so a block whose
+    `get_init_parameters()` drifts stops reporting model rows loudly.
+    """
+    # given
+    from inference.core.workflows.core_steps.loader import REGISTERED_INITIALIZERS
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        SegmentAnything2VideoBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+        SegmentAnything3VideoBlockV1,
+    )
+    from inference.core.workflows.execution_engine.v1.compiler.steps_initialiser import (
+        retrieve_init_parameters_values,
+    )
+
+    observer = UsageTrackingExecutionObserver()
+    initializers = {
+        f"workflows_core.{name}": value
+        for name, value in REGISTERED_INITIALIZERS.items()
+    }
+
+    for block_class in (SegmentAnything2VideoBlockV1, SegmentAnything3VideoBlockV1):
+        # when
+        values = retrieve_init_parameters_values(
+            block_name="a_step",
+            block_init_parameters=block_class.get_init_parameters(),
+            block_source="workflows_core",
+            explicit_init_parameters={
+                "workflows_core.model_manager": mock.MagicMock(),
+                "workflows_core.api_key": "sam-key",
+                "workflows_core.execution_observer": observer,
+            },
+            initializers=initializers,
+        )
+
+        # then
+        assert values["execution_observer"] is observer
+        assert block_class(**values)._execution_observer is observer
+
+
+def test_sam_video_blocks_keep_a_false_valued_observer() -> None:
+    """The constructors test `is not None`, not truth: a conforming observer
+    whose truth value is False (an empty recording buffer) must survive."""
+    from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        SegmentAnything2VideoBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+        SegmentAnything3VideoBlockV1,
+    )
+    from inference.core.workflows.prototypes.observer import NullExecutionObserver
+
+    class _FalseValuedObserver(NullExecutionObserver):
+        def __len__(self) -> int:
+            return 0
+
+    bound = _FalseValuedObserver()
+    assert not bound
+
+    for block_class in (SegmentAnything2VideoBlockV1, SegmentAnything3VideoBlockV1):
+        block = block_class(
+            model_manager=mock.MagicMock(),
+            api_key="sam-key",
+            step_execution_mode=StepExecutionMode.LOCAL,
+            execution_observer=bound,
+        )
+        assert block._execution_observer is bound
