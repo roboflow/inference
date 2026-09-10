@@ -700,6 +700,9 @@ class InferencePipeline:
                 WorkflowRunner,
                 wrap_workflow_runner_for_stream_pipeline,
             )
+            from inference.core.interfaces.workflows_execution_observer import (
+                UsageTrackingExecutionObserver,
+            )
             from inference.core.interfaces.workflows_step_error_handlers import (
                 resolve_step_error_handler,
             )
@@ -751,6 +754,9 @@ class InferencePipeline:
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            workflow_init_parameters["workflows_core.execution_observer"] = (
+                UsageTrackingExecutionObserver()
+            )
             # setdefault semantics: a caller's workflow_init_parameters may
             # already carry an explicit inner_workflow_spec_resolver.
             install_workflows_platform_bindings(workflow_init_parameters)

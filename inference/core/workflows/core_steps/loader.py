@@ -1512,6 +1512,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 from inference.core.workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
 from inference.core.workflows.utils.in_memory_cache import InMemoryWorkflowsCache
 
@@ -1524,6 +1525,9 @@ REGISTERED_INITIALIZERS = {
     "cache": InMemoryWorkflowsCache(),
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
+    # A no-op by default: billing and tracing are the host's, and a host binds
+    # its own through `workflows_core.execution_observer`.
+    "execution_observer": NULL_EXECUTION_OBSERVER,
     "thread_pool_executor": None,
     "disable_sinks": False,
     # Standalone default. The server overrides it with
