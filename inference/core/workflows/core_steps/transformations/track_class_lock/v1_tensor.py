@@ -27,8 +27,11 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
 )
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    MAX_STATE_TTL,
     MAX_TRACKED_VIDEOS,
     BlockManifest,
+    _eligible_inheritance_candidates,
+    _enforce_track_cap,
     _find_lock_to_inherit,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -154,22 +157,28 @@ def _vote_and_lock(
     active_tids: Set[int] = set()
     if dets.tracker_id is not None:
         active_tids = {int(t) for t in dets.tracker_id if t is not None and int(t) >= 0}
+    # eligible re-attachment sources are fixed for the frame (see the sv variant
+    # in v1.py); precomputing once avoids an O(new_ids * total_tracks) rescan.
+    inherit_candidates = _eligible_inheritance_candidates(
+        tracks=tracks,
+        frame=frame,
+        reattach_window=reattach_window,
+        active_tids=active_tids,
+    )
     for i in range(n):
         tid = dets.tracker_id[i]
         if tid is None or int(tid) < 0:
             continue
         tid = int(tid)
-        if tid not in tracks:
-            inherited = _find_lock_to_inherit(
-                tracks=tracks,
+        if tid not in tracks and inherit_candidates:
+            inherited_idx = _find_lock_to_inherit(
+                candidates=inherit_candidates,
                 xyxy=dets.xyxy[i],
-                frame=frame,
-                reattach_window=reattach_window,
                 reattach_iou=reattach_iou,
-                active_tids=active_tids,
             )
-            if inherited is not None:
-                tracks[tid] = tracks.pop(inherited)
+            if inherited_idx is not None:
+                inherited_tid = inherit_candidates.pop(inherited_idx)[0]
+                tracks[tid] = tracks.pop(inherited_tid)
         st = tracks.setdefault(
             tid,
             {
@@ -241,6 +250,8 @@ def _vote_and_lock(
     stale = [t for t, st in tracks.items() if frame - st["last_seen"] > state_ttl]
     for t in stale:
         del tracks[t]
+
+    _enforce_track_cap(tracks)
 
     out_class_names = (
         np.asarray(class_names)
@@ -337,6 +348,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
             raise ValueError(f"`switch_after` must be >= 1, got {switch_after}")
         if state_ttl < 1:
             raise ValueError(f"`state_ttl` must be >= 1, got {state_ttl}")
+        if state_ttl > MAX_STATE_TTL:
+            raise ValueError(f"`state_ttl` must be <= {MAX_STATE_TTL}, got {state_ttl}")
         if reattach_window < 0:
             raise ValueError(f"`reattach_window` must be >= 0, got {reattach_window}")
         if not 0.0 <= reattach_iou <= 1.0:
