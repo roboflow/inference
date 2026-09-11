@@ -725,6 +725,54 @@ def test_run_pp_ocr_rejects_both_stages_disabled() -> None:
     manager.add_model.assert_not_called()
 
 
+def test_run_pp_ocr_defaults_to_small_small_when_both_stages_omitted() -> None:
+    """Fix round 1: every other `run_pp_ocr` test passes both stage keywords
+    explicitly, so a regression that swapped the adapter's `UNSET` defaults for
+    a plain `None` would go undetected - a plain `None` default is NOT filtered
+    by `_passed()` (it only drops `_Unset` instances), so it would be forwarded
+    as an explicit `text_detection=None, text_recognition=None`, which the
+    validator rejects outright (see `test_run_pp_ocr_rejects_both_stages_disabled`
+    above), rather than resolving to "small"/"small" as it does today."""
+    from inference.core.roboflow_api import ModelEndpointType
+
+    manager = manager_returning(_DictResponse({"result": "HI"}))
+    ModelManagerModelsProvider(manager).run_pp_ocr(image=IMAGE, api_key="k")
+    request = captured_request(manager)
+    # Neither stage keyword is passed to the constructor either - mirroring
+    # what `_passed()` forwards when both arguments are UNSET.
+    expected = PPOCRInferenceRequest(image=IMAGE, api_key="k")
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+    assert request.text_detection == "small"
+    assert request.text_recognition == "small"
+    manager.add_model.assert_called_once_with(
+        "pp_ocr/small-small", "k", endpoint_type=ModelEndpointType.CORE_MODEL
+    )
+
+
+def test_run_pp_ocr_omits_one_stage_while_disabling_the_other() -> None:
+    """Fix round 1: one stage omitted (UNSET, so the "small" default applies),
+    the other explicitly disabled (`None`) - the two omitted-stage cases the
+    existing coverage never exercised together."""
+    from inference.core.roboflow_api import ModelEndpointType
+
+    manager = manager_returning(_DictResponse({"result": "HI"}))
+    ModelManagerModelsProvider(manager).run_pp_ocr(
+        image=IMAGE, api_key="k", text_recognition=None
+    )
+    request = captured_request(manager)
+    # `text_detection` is not passed to the constructor (UNSET was dropped by
+    # `_passed()`); `text_recognition=None` is forwarded explicitly.
+    expected = PPOCRInferenceRequest(image=IMAGE, api_key="k", text_recognition=None)
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+    assert request.text_detection == "small"
+    assert request.text_recognition == "none"
+    manager.add_model.assert_called_once_with(
+        "pp_ocr/small-none", "k", endpoint_type=ModelEndpointType.CORE_MODEL
+    )
+
+
 def test_run_yolo_world_builds_the_request_the_block_used_to_build() -> None:
     manager = manager_returning(_DictResponse({"predictions": []}))
     ModelManagerModelsProvider(manager).run_yolo_world(

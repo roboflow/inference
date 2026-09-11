@@ -16,6 +16,11 @@ via the validator-derived id, same as the adapter-level tests in
 ``test_workflows_models_provider.py``) and ``YOLOWorldInferenceRequest``
 (``yolo_world/v1.py``).
 
+Fix round 1 adds a parity case for the tensor-native sibling
+(``pp_ocr/v1_tensor.py``), which shares ``PPOCRInferenceRequest`` construction
+with ``pp_ocr/v1.py`` but returns a native ``Detections`` instead of the numpy
+``post_process_ocr_result`` shape.
+
 Every case asserts both ``model_dump()`` equality AND ``model_fields_set``
 equality: an omitted field must stay omitted, not be re-supplied as its own
 default.
@@ -39,6 +44,9 @@ from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
+from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1_tensor import (
+    PPOCRBlockV1 as PPOCRTensorBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -48,6 +56,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
+from inference_models.models.base.object_detection import Detections
 
 
 class _DictResponse:
@@ -182,6 +191,64 @@ def test_pp_ocr_request_matches_the_pre_port_construction() -> None:
     manager.add_model.assert_called_once_with(
         "pp_ocr/small-small", "k", endpoint_type=ModelEndpointType.CORE_MODEL
     )
+
+
+def test_pp_ocr_tensor_request_matches_the_pre_port_construction() -> None:
+    """Fix round 1 (minor): the tensor-native sibling shares `PPOCRInferenceRequest`
+    construction with `pp_ocr/v1.py`. Copied verbatim from
+    `git show fbe20ca6e:.../pp_ocr/v1_tensor.py` (identical to `pp_ocr/v1.py`'s
+    pre-port body). Also asserts the native-output path is taken: the block
+    returns a `Detections` object directly (not the numpy `post_process_ocr_result`
+    dict-of-`sv.Detections` shape `pp_ocr/v1.py` uses)."""
+    manager = _manager()
+    manager.infer_from_request_sync.return_value = _DictResponse(
+        {
+            "result": "HELLO",
+            "image": {"width": 10, "height": 20},
+            "predictions": [
+                {
+                    "x": 5.0,
+                    "y": 5.0,
+                    "width": 4.0,
+                    "height": 4.0,
+                    "confidence": 0.9,
+                    "class": "HELLO",
+                    "class_id": 0,
+                }
+            ],
+        }
+    )
+    image = _make_image()
+    images = Batch(content=[image], indices=[(0,)])
+    block = PPOCRTensorBlockV1(
+        model_manager=ModelManagerModelsProvider(manager),
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    result = block.run_locally(
+        images=images, text_detection="small", text_recognition="small"
+    )
+
+    request = _captured_request(manager)
+    expected = PPOCRInferenceRequest(
+        text_detection="small",
+        text_recognition="small",
+        image=image.to_inference_format(numpy_preferred=True),
+        api_key="k",
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+    manager.add_model.assert_called_once_with(
+        "pp_ocr/small-small", "k", endpoint_type=ModelEndpointType.CORE_MODEL
+    )
+
+    # Native-output path: one dict per image, `predictions` is a native
+    # `Detections`, not `sv.Detections` (the numpy `pp_ocr/v1.py` shape).
+    assert len(result) == 1
+    assert result[0]["result"] == "HELLO"
+    assert isinstance(result[0]["predictions"], Detections)
+    assert len(result[0]["predictions"]) == 1
 
 
 def test_yolo_world_request_matches_the_pre_port_construction() -> None:
