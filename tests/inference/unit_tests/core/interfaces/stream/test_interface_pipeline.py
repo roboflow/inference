@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from inspect import signature
 from queue import Queue
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, List, Optional, Tuple, Union
 from unittest.mock import MagicMock
 
@@ -981,3 +981,118 @@ def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None
     assert ids_seen_by_inference["pipeline_1"] == pipeline_1._stream_session_id
     assert ids_seen_by_inference["pipeline_2"] == pipeline_2._stream_session_id
     assert stream_session_id.get() is None
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_completion_statistics_wait_for_prediction_futures(monkeypatch, failed) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+    resolving = Event()
+
+    class PendingPrediction(Future):
+        def result(self, timeout=None):
+            resolving.set()
+            return super().result(timeout=2)
+
+    pending = PendingPrediction()
+    sources = [VideoSourceStub(1, False, source_id=i) for i in range(2)]
+    frames = [source.read_frame() for source in sources]
+    watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(sources)
+    queue = Queue()
+    errors = []
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=sources,
+        predictions_queue=queue,
+        watchdog=watchdog,
+        status_update_handlers=[],
+    )
+    # The existing ready callback measures submission; completion must stay zero.
+    pipeline._queue_inference_result([{"output": pending}, {}], frames)
+    queue.put(None)
+
+    def dispatch():
+        try:
+            pipeline._dispatch_inference_results()
+        except Exception as error:
+            errors.append(error)
+
+    thread = Thread(target=dispatch)
+    thread.start()
+    try:
+        assert resolving.wait(timeout=2)
+        before = watchdog.get_report().completion_statistics
+        assert [s.completed_frames for s in before.sources] == [0, 0]
+        assert all(s.last_completed_at_monotonic is None for s in before.sources)
+        if failed:
+            pending.set_exception(ValueError("prediction failed"))
+        else:
+            pending.set_result("prediction")
+    finally:
+        if not pending.done():
+            pending.set_result(None)
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+    after = watchdog.get_report().completion_statistics
+    assert [s.completed_frames for s in after.sources] == ([0, 0] if failed else [1, 1])
+    assert bool(errors) == failed
+    assert [s.completed_frames for s in before.sources] == [0, 0]
+    if not failed:
+        assert all(s.last_frame_id == 1 for s in after.sources)
+        assert all(
+            before.sampled_at_monotonic
+            <= s.last_completed_at_monotonic
+            <= after.sampled_at_monotonic
+            for s in after.sources
+        )
+
+
+def test_dispatch_preserves_legacy_duck_typed_watchdog(monkeypatch) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "1")
+    queue = Queue()
+    queue.put(([{}], []))
+    queue.put(None)
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=[],
+        predictions_queue=queue,
+        watchdog=_PredictionReadyWatchdog(),
+        status_update_handlers=[],
+    )
+    pipeline._dispatch_inference_results()
+    assert queue.unfinished_tasks == 0
+
+
+def test_completion_counts_null_predictions_before_sink_failure(monkeypatch) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "1")
+    sources = [VideoSourceStub(1, False, source_id=i) for i in range(2)]
+    watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(sources)
+    queue = Queue()
+    queue.put(([None], [sources[0].read_frame()]))
+    queue.put(None)
+    observed = []
+
+    def failing_sink(predictions, frames):
+        observed.append(
+            [
+                s.completed_frames
+                for s in watchdog.get_report().completion_statistics.sources
+            ]
+        )
+        assert predictions == [None, None]
+        assert frames[0].source_id == 0
+        assert frames[1] is None
+        raise RuntimeError("sink unavailable")
+
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=sources,
+        predictions_queue=queue,
+        watchdog=watchdog,
+        status_update_handlers=[],
+        on_prediction=failing_sink,
+    )
+    pipeline._dispatch_inference_results()
+    assert observed == [[1, 0]]
+    assert queue.unfinished_tasks == 0
