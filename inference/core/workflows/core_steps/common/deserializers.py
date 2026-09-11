@@ -263,9 +263,18 @@ def deserialize_detections_kind(
             context="workflow_execution | runtime_input_validation",
         )
     parsed_detections = sv.Detections.from_inference(detections)
-    if len(parsed_detections) == 0:
-        return parsed_detections
     height, width = detections["image"]["height"], detections["image"]["width"]
+    if len(parsed_detections) == 0:
+        # Image dimensions describe the input image, not the rows: keep them on
+        # the empty result the same way empty_detections_with_image_metadata()
+        # does, so a serialize -> deserialize round trip and the tensor-native
+        # boundary still report them (#2974).
+        if height is not None and width is not None:
+            parsed_detections.metadata[IMAGE_DIMENSIONS_KEY] = [
+                int(height),
+                int(width),
+            ]
+        return parsed_detections
     image_metadata = np.array([[height, width]] * len(parsed_detections))
     parsed_detections.data[IMAGE_DIMENSIONS_KEY] = image_metadata
     raw_predictions = detections["predictions"]
