@@ -1,8 +1,11 @@
+import ipaddress
 import logging
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union, get_args
+from typing import Any, Dict, List, Literal, Optional, Set, Type, Union, get_args
 
+import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
@@ -13,6 +16,12 @@ except ImportError:
     psycopg = None
     sql = None
 
+from inference.core.env import (
+    ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+    GCP_SERVERLESS,
+    LAMBDA,
+    POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES,
+)
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
@@ -54,17 +63,33 @@ TLS defaults to `require`; use `verify-full` and configure libpq's trusted root
 certificate to verify the server identity. A local non-TLS database requires
 explicit `sslmode=disable`.
 
+This sink is not available on the Roboflow hosted platform: when the runtime is
+hosted serverless (`GCP_SERVERLESS` or `LAMBDA`) every call fails without opening a
+connection.
+
+On self-hosted runtimes the operator may restrict which destinations the sink can
+reach. When the server sets `ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=False`, a
+host that resolves to a non-global address (loopback, private, link-local/metadata,
+CGNAT, ULA) is rejected and the connection is pinned to the validated public IP so a
+second DNS lookup cannot rebind it; Unix-socket paths and multi-host lists are
+rejected. The server may also set `POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES`
+(comma-separated IPs or hostnames, empty by default) to deny specific destinations
+regardless of the non-global setting; the raw host and every resolved IP are checked
+against it. The default on self-hosted runtimes is permissive (any destination).
+
 Set `fire_and_forget=false` to observe commit success or failure, especially when
 streaming. Background mode returns scheduling status, not persistence confirmation;
-failures are logged and work can be lost on shutdown. There are no automatic retries,
-upserts, or exactly-once guarantees. A connection failure during commit can leave the
-outcome unknown. Connection and statement timeouts do not impose a total network deadline.
+failures are logged and the queued work is dropped on pipeline shutdown. There are
+no automatic retries, upserts, or exactly-once guarantees. A connection failure
+during commit can leave the outcome unknown. `connect_timeout` and `statement_timeout`
+also bound client-side socket inactivity (via libpq `tcp_user_timeout`), so a silently
+dropped connection fails within roughly `connect_timeout + statement_timeout` instead
+of hanging until TCP keepalive fires.
 
 Requires the Psycopg binary driver included in the Inference runtime. Self-hosted
-servers can enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`. Cloud
-execution requires a compatible worker image, block registration, and database
-connectivity; deploying this block does not automatically update hosted workers.
-Supported on hosted serverless and cloud streaming workers with these prerequisites.
+servers can enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`. The block
+runs on self-hosted CPU/GPU servers and self-managed streaming pipelines; it is not
+available on the Roboflow hosted platform (see above).
 
 ## Example
 
@@ -119,6 +144,87 @@ Column order within a dictionary does not matter. Values retain their native dri
 representation; `None` becomes SQL NULL. Nested objects are not automatically
 converted to JSON.
 """
+
+
+# Local copy of the SSRF address primitives from
+# ``inference.core.utils.url_input`` (``address_is_global`` and
+# ``resolve_and_validate_ips``) so this enterprise sink owns its
+# connection-boundary logic without importing from core utils. The util's
+# ``URLAddressNotAllowedError`` is renamed here to ``SinkAddressNotAllowedError``
+# to avoid two different classes sharing one name. Keep the copied bodies in sync
+# with the source. The denylist is layered on top in ``denylisted_reason``
+# rather than baked into the copy.
+class SinkAddressNotAllowedError(Exception):
+    """Raised when a sink host resolves to a destination that is not permitted."""
+
+
+def address_is_global(address: str) -> bool:
+    """Return True only for public, routable unicast addresses.
+
+    ``ipaddress.is_global`` already excludes loopback, private (RFC1918),
+    link-local (incl. 169.254.169.254 metadata), CGNAT (100.64/10), ULA
+    (fc00::/7), unspecified and reserved ranges, so a single check covers the
+    destinations the advisory asks us to block. IPv4-mapped IPv6 is unwrapped so
+    ``::ffff:127.0.0.1`` cannot smuggle a loopback target past the check.
+    """
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+        parsed = parsed.ipv4_mapped
+    return parsed.is_global
+
+
+def resolve_and_validate_ips(
+    host: str,
+    port: int,
+    allow_non_global_addresses: bool,
+) -> List[str]:
+    """Resolve ``host`` and, unless non-global is allowed, require every
+    resolved IP to be global. Returns the resolved IPs (validated ones first
+    would be identical since all must pass).
+
+    Rejecting when *any* resolved address is non-global is deliberately
+    conservative: it prevents a rebinding-style response that mixes a global and
+    a non-global A-record from later steering the pinned connection to the
+    non-global one.
+    """
+    try:
+        addr_infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as error:
+        # Unresolvable host is a normal connection failure, not an SSRF block.
+        raise requests.exceptions.ConnectionError(
+            f"Could not resolve host: {host}"
+        ) from error
+    resolved_ips = [info[4][0] for info in addr_infos]
+    if not resolved_ips:
+        raise requests.exceptions.ConnectionError(f"Could not resolve host: {host}")
+    if not allow_non_global_addresses:
+        for ip in resolved_ips:
+            if not address_is_global(ip):
+                raise SinkAddressNotAllowedError(
+                    f"Host '{host}' resolves to non-global address '{ip}'."
+                )
+    return resolved_ips
+
+
+def denylisted_reason(
+    host: str,
+    resolved_ips: List[str],
+    blacklisted_addresses: Optional[Set[str]],
+) -> Optional[str]:
+    """Denylist screen layered on top of :func:`resolve_and_validate_ips` (kept
+    separate from the copied resolver). Returns a failure reason when the raw
+    host or any resolved IP is denylisted, else None."""
+    if not blacklisted_addresses:
+        return None
+    if host in blacklisted_addresses:
+        return "host is blocked by the sink address denylist"
+    for ip in resolved_ips:
+        if ip in blacklisted_addresses:
+            return f"host '{host}' resolves to a denylisted address '{ip}'"
+    return None
 
 
 def validate_integer(value: Any, name: str, maximum: int) -> None:
@@ -250,10 +356,38 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
+        if GCP_SERVERLESS or LAMBDA:
+            # The sink is not available on the Roboflow hosted platform: it must
+            # never open an outbound database connection from hosted workers.
+            return failure(
+                "PostgreSQL sink is not available on the Roboflow hosted platform"
+            )
         try:
             fire_and_forget = BOOLEAN_ADAPTER.validate_python(fire_and_forget)
         except ValidationError:
             return failure("fire_and_forget must be a boolean")
+        # Validate every input synchronously, before scheduling, so a bad
+        # request is reported to the caller instead of silently failing inside a
+        # background task that has already returned "scheduled".
+        try:
+            rows = validate_inputs(
+                host=host,
+                database=database,
+                username=username,
+                schema_name=schema_name,
+                table_name=table_name,
+                data=data,
+                port=port,
+                sslmode=sslmode,
+                connect_timeout=connect_timeout,
+                statement_timeout=statement_timeout,
+            )
+        except ValueError as error:
+            return failure(str(error))
+        if psycopg is None:
+            return failure(
+                'PostgreSQL driver unavailable. Install "psycopg[binary]>=3.2,<4" in the runtime.'
+            )
         task = partial(
             self._process_data,
             host=host,
@@ -263,7 +397,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
             port=port,
             schema_name=schema_name,
             table_name=table_name,
-            data=data,
+            rows=rows,
             sslmode=sslmode,
             connect_timeout=connect_timeout,
             statement_timeout=statement_timeout,
@@ -285,47 +419,54 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
         port: int,
         schema_name: str,
         table_name: str,
-        data: Union[Dict[str, Any], List[Dict[str, Any]]],
+        rows: List[Dict[str, Any]],
         sslmode: str,
         connect_timeout: int,
         statement_timeout: int,
     ) -> Dict[str, Any]:
-        try:
-            rows = validate_rows(data)
-            for name, value in (
-                ("host", host),
-                ("database", database),
-                ("username", username),
-                ("schema_name", schema_name),
-                ("table_name", table_name),
-            ):
-                if not isinstance(value, str) or not value or "\x00" in value:
-                    raise ValueError(
-                        f"{name} must be a non-empty string without NUL characters"
-                    )
-            validate_integer(port, "port", 65535)
-            validate_integer(connect_timeout, "connect_timeout", 2147483647)
-            validate_integer(statement_timeout, "statement_timeout", 2147483647)
-            if not isinstance(sslmode, str) or sslmode not in get_args(SSLMode):
-                raise ValueError("Unsupported sslmode")
-        except ValueError as error:
-            return failure(str(error))
-        if psycopg is None:
-            return failure(
-                'PostgreSQL driver unavailable. Install "psycopg[binary]>=3.2,<4" in the runtime.'
+        # Connection boundary gate. When a policy is active (non-global blocked
+        # or a denylist configured) resolve the host, enforce the policy, then
+        # pin the socket to the validated IP (host is kept for TLS SNI / cert
+        # verification) so a second DNS lookup cannot rebind the connection to an
+        # internal target.
+        hostaddr: Optional[str] = None
+        if connection_policy_active():
+            try:
+                resolved_ips = resolve_and_validate_ips(
+                    host=host,
+                    port=port,
+                    allow_non_global_addresses=ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+                )
+            except SinkAddressNotAllowedError as error:
+                return failure(str(error))
+            except Exception:
+                return failure(f"Could not resolve host: {host}")
+            reason = denylisted_reason(
+                host, resolved_ips, POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES
             )
+            if reason is not None:
+                return failure(reason)
+            hostaddr = resolved_ips[0]
+        connect_kwargs: Dict[str, Any] = dict(
+            host=host,
+            port=port,
+            dbname=database,
+            user=username,
+            password=password,
+            sslmode=sslmode,
+            connect_timeout=connect_timeout,
+            # Server-side statement_timeout is useless against a peer that never
+            # replies; tcp_user_timeout bounds client-side socket inactivity so a
+            # silently dropped connection fails fast instead of pinning a worker
+            # until TCP keepalive fires (~2h on Linux defaults).
+            tcp_user_timeout=connect_timeout * 1000 + statement_timeout,
+            autocommit=False,
+        )
+        if hostaddr is not None:
+            connect_kwargs["hostaddr"] = hostaddr
         phase = "connection"
         try:
-            with psycopg.connect(
-                host=host,
-                port=port,
-                dbname=database,
-                user=username,
-                password=password,
-                sslmode=sslmode,
-                connect_timeout=connect_timeout,
-                autocommit=False,
-            ) as connection:
+            with psycopg.connect(**connect_kwargs) as connection:
                 phase = "insert"
                 with connection.cursor() as cursor:
                     cursor.execute(
@@ -390,6 +531,58 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
 def failure(message: str) -> Dict[str, Any]:
     logger.error("PostgreSQL Sink: %s", message)
     return {"error_status": True, "message": message}
+
+
+def validate_inputs(
+    host: Any,
+    database: Any,
+    username: Any,
+    schema_name: Any,
+    table_name: Any,
+    data: Any,
+    port: Any,
+    sslmode: Any,
+    connect_timeout: Any,
+    statement_timeout: Any,
+) -> List[Dict[str, Any]]:
+    """Validate every runtime input up front. Raises ValueError on the first
+    problem; returns the normalized list of rows. Network-time checks (host
+    resolution / non-global gate) happen later, in _process_data."""
+    rows = validate_rows(data)
+    for name, value in (
+        ("host", host),
+        ("database", database),
+        ("username", username),
+        ("schema_name", schema_name),
+        ("table_name", table_name),
+    ):
+        if not isinstance(value, str) or not value or "\x00" in value:
+            raise ValueError(
+                f"{name} must be a non-empty string without NUL characters"
+            )
+    validate_integer(port, "port", 65535)
+    validate_integer(connect_timeout, "connect_timeout", 2147483647)
+    validate_integer(statement_timeout, "statement_timeout", 2147483647)
+    if not isinstance(sslmode, str) or sslmode not in get_args(SSLMode):
+        raise ValueError("Unsupported sslmode")
+    if connection_policy_active():
+        # With a policy active only a single TCP hostname/IP is accepted; a
+        # Unix-socket path or a comma-separated multi-host list cannot be safely
+        # IP-gated or denylisted.
+        if host.startswith("/") or "," in host:
+            raise ValueError(
+                "host must be a single global TCP hostname or IP address"
+            )
+    return rows
+
+
+def connection_policy_active() -> bool:
+    """True when the PostgreSQL sink must resolve and screen the destination:
+    either non-global addresses are blocked, or a denylist is configured."""
+    return (
+        not ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
+        or bool(POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES)
+    )
 
 
 def validate_rows(data: Any) -> List[Dict[str, Any]]:

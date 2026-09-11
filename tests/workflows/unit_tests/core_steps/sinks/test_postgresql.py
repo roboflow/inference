@@ -207,6 +207,7 @@ def test_connection_and_transaction_settings(connect):
         password="secret",
         sslmode="verify-full",
         connect_timeout=7,
+        tcp_user_timeout=7 * 1000 + 1234,
         autocommit=False,
     )
     cursor = (
@@ -284,3 +285,129 @@ def test_serverless_manifest_contract():
     assert not v1.BlockManifest.model_json_schema()["ui_manifest"].get(
         "local_only", False
     )
+
+
+def test_permissive_mode_does_not_resolve_or_pin(connect, monkeypatch):
+    # Default (permissive) mode must not resolve the host or set hostaddr.
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    resolver = MagicMock()
+    monkeypatch.setattr(v1, "resolve_and_validate_ips", resolver)
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    resolver.assert_not_called()
+    assert "hostaddr" not in connect.call_args.kwargs
+
+
+def test_restrictive_mode_pins_validated_ip(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(
+        v1, "resolve_and_validate_ips", MagicMock(return_value=["93.184.216.34"])
+    )
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.example.com"))
+    kwargs = connect.call_args.kwargs
+    assert kwargs["host"] == "db.example.com"  # kept for TLS SNI / cert
+    assert kwargs["hostaddr"] == "93.184.216.34"  # socket pinned to validated IP
+
+
+def test_restrictive_mode_blocks_non_global_host(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(
+        v1,
+        "resolve_and_validate_ips",
+        MagicMock(
+            side_effect=v1.SinkAddressNotAllowedError(
+                "Host '169.254.169.254' resolves to non-global address '169.254.169.254'."
+            )
+        ),
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(
+        **arguments(host="169.254.169.254")
+    )
+    assert result["error_status"] is True
+    assert "non-global address" in result["message"]
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql", "10.0.0.1,10.0.0.2"])
+def test_restrictive_mode_rejects_socket_and_multihost(host, connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host=host))
+    assert result["error_status"] is True
+    connect.assert_not_called()
+
+
+def test_invalid_input_reported_synchronously_in_fire_and_forget(connect):
+    # Regression for H3: validation must run before scheduling, so a bad input
+    # surfaces to the caller instead of being swallowed by the background task.
+    tasks, pool = BackgroundTasks(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments(data=[]))
+    assert result["error_status"] is True
+    pool.submit.assert_not_called()
+    assert len(tasks.tasks) == 0
+    connect.assert_not_called()
+
+
+def test_denylisted_reason_blocks_host_literal():
+    assert (
+        v1.denylisted_reason(
+            "db.blocked.example", ["93.184.216.34"], {"db.blocked.example"}
+        )
+        == "host is blocked by the sink address denylist"
+    )
+
+
+def test_denylisted_reason_blocks_resolved_ip():
+    reason = v1.denylisted_reason(
+        "db.example.com", ["93.184.216.34"], {"93.184.216.34"}
+    )
+    assert reason == "host 'db.example.com' resolves to a denylisted address '93.184.216.34'"
+
+
+def test_denylisted_reason_none_when_clear():
+    assert v1.denylisted_reason("db.example.com", ["93.184.216.34"], None) is None
+    assert v1.denylisted_reason("db.example.com", ["93.184.216.34"], {"1.2.3.4"}) is None
+
+
+def test_local_resolver_is_faithful_copy(monkeypatch):
+    # 3-arg copy of the util: returns resolved IPs, raises SinkAddressNotAllowedError
+    # on a non-global result, and takes no denylist argument.
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    assert v1.resolve_and_validate_ips(
+        "db.example.com", 5432, allow_non_global_addresses=True
+    ) == ["93.184.216.34"]
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("127.0.0.1", 5432))])
+    )
+    with pytest.raises(v1.SinkAddressNotAllowedError):
+        v1.resolve_and_validate_ips(
+            "db.example.com", 5432, allow_non_global_addresses=False
+        )
+
+
+def test_denylist_active_even_when_non_global_allowed(connect, monkeypatch):
+    # Non-global permissive, but a denylist is configured -> policy is active and
+    # the connection is screened + pinned.
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", {"93.184.216.34"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.example.com"))
+    assert result["error_status"] is True
+    assert "denylist" in result["message"] or "denylisted" in result["message"]
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize("platform_flag", ["GCP_SERVERLESS", "LAMBDA"])
+def test_sink_always_fails_on_hosted_platform(platform_flag, connect, monkeypatch):
+    monkeypatch.setattr(v1, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(v1, "LAMBDA", False)
+    monkeypatch.setattr(v1, platform_flag, True)
+    tasks, pool = BackgroundTasks(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments())
+    assert result["error_status"] is True
+    assert "hosted platform" in result["message"]
+    connect.assert_not_called()
+    pool.submit.assert_not_called()
+    assert len(tasks.tasks) == 0
