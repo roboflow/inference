@@ -251,8 +251,18 @@ def test_adapter_enforces_the_redirect_hop_cap(requests_mock: Mocker) -> None:
         CODEC.fetch_url("https://hop0.example.com/image.jpg")
 
     # `range(max_redirects + 1)` (url_input.py:366) allows 3 requests before
-    # raising: hop0, hop1, hop2.
-    assert requests_mock.call_count == 3
+    # raising: hop0, hop1, hop2. Count only the hop requests: `Mocker` patches
+    # the transport for EVERY `requests` session in the process, so background
+    # traffic (the usage collector's sender thread) would inflate a global
+    # `call_count` when the whole suite runs.
+    hop_requests = [
+        request.url
+        for request in requests_mock.request_history
+        if request.hostname.startswith("hop")
+    ]
+    assert hop_requests == [
+        f"https://hop{index}.example.com/image.jpg" for index in range(3)
+    ]
 
 
 # --------------------------------------------------------------------------
