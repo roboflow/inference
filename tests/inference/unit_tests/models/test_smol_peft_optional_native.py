@@ -6,6 +6,7 @@ No base model, GPU, weights, network or storage credentials are used.
 """
 import copy
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,9 @@ class SmolNativePeftConstructor(unittest.TestCase):
         from inference.models.transformers import transformers as helper_module
 
         assert peft.__version__ == os.environ["SMOL_EXPECTED_PEFT_VERSION"] == "0.18.1"
+        expected_helper = Path(__file__).resolve().parents[4] / "inference/models/transformers/transformers.py"
+        assert Path(helper_module.__file__).resolve() == expected_helper
+        assert "unsupported_null_keys" in inspect.signature(helper_module.load_compatible_adapter_config).parameters
         cls.lora_config = LoraConfig
         cls.helper_module = helper_module
         cls.raw = Path(FIXTURE).read_bytes()
