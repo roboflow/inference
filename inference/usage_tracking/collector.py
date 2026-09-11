@@ -923,6 +923,9 @@ class UsageCollector:
             resource_id = "unknown"
             category = "unknown"
 
+        if usage_workflow_preview or usage_workflow_is_preview.get():
+            resource_details["is_preview"] = True
+
         source_info = get_source_info_from_kwargs(func_kwargs)
         if source_info:
             resource_details["source_info"] = source_info

@@ -23,8 +23,10 @@ from requests import HTTPError, Response
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
+    WORKFLOW_PREVIEW_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
+    workflow_is_preview,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -2424,6 +2426,7 @@ class InferenceHTTPClient:
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
         disable_sinks: bool = False,
+        is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2455,6 +2458,7 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+            is_preview (bool, optional): Attribute this run to a preview. Defaults to False.
             disable_sinks (bool, optional): Whether to disable sink writes and outbound
                 notifications/uploads. Defaults to False.
 
@@ -2478,6 +2482,7 @@ class InferenceHTTPClient:
             enable_profiling=enable_profiling,
             workflow_version_id=workflow_version_id,
             disable_sinks=disable_sinks,
+            is_preview=is_preview,
         )
 
     def _run_workflow(
@@ -2493,6 +2498,7 @@ class InferenceHTTPClient:
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
         disable_sinks: bool = False,
+        is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         response = self._execute_workflow_request(
             workspace_name=workspace_name,
@@ -2506,6 +2512,7 @@ class InferenceHTTPClient:
             enable_profiling=enable_profiling,
             workflow_version_id=workflow_version_id,
             disable_sinks=disable_sinks,
+            is_preview=is_preview,
         )
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
@@ -2533,6 +2540,7 @@ class InferenceHTTPClient:
         enable_profiling: bool = False,
         workflow_version_id: Optional[str] = None,
         disable_sinks: bool = False,
+        is_preview: bool = False,
     ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -2551,6 +2559,8 @@ class InferenceHTTPClient:
             "use_cache": use_cache,
             "enable_profiling": enable_profiling,
         }
+        if is_preview or workflow_is_preview.get():
+            payload["is_preview"] = True
         if disable_sinks:
             payload["disable_sinks"] = True
         inputs = {}
@@ -2581,10 +2591,13 @@ class InferenceHTTPClient:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:
                 url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_id}"
+        headers = self.__headers_with_auth(DEFAULT_HEADERS)
+        if is_preview:
+            headers = {**headers, WORKFLOW_PREVIEW_HEADER: "true"}
         response = send_post_request(
             url=url,
             payload=payload,
-            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            headers=headers,
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
         return response
@@ -3300,10 +3313,10 @@ class InferenceHTTPClient:
     def __headers_with_auth(
         self, headers: Optional[Dict[str, str]]
     ) -> Optional[Dict[str, str]]:
-        # Returns the input untouched in legacy mode so shared dicts
-        # (DEFAULT_HEADERS) are never mutated and wire behaviour stays
-        # byte-identical for the default transport.
+        # Merge request-scoped headers without mutating shared DEFAULT_HEADERS.
         auth_headers = self.__auth_headers()
+        if workflow_is_preview.get():
+            auth_headers[WORKFLOW_PREVIEW_HEADER] = "true"
         if not auth_headers:
             return headers
         if headers is None:

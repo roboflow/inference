@@ -383,6 +383,7 @@ import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
+from inference_sdk.config import WORKFLOW_PREVIEW_HEADER, workflow_is_preview
 from inference_sdk.http.entities import Confidence
 
 try:
@@ -1367,6 +1368,16 @@ class HttpInterface(BaseInterface):
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
+
+        @app.middleware("http")
+        async def extract_workflow_preview(request: Request, call_next):
+            token = workflow_is_preview.set(
+                request.headers.get(WORKFLOW_PREVIEW_HEADER, "").lower() == "true"
+            )
+            try:
+                return await call_next(request)
+            finally:
+                workflow_is_preview.reset(token)
 
         @app.middleware("http")
         async def extract_header_api_key(request: Request, call_next):
