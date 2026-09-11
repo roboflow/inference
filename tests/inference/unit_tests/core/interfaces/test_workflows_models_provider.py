@@ -186,3 +186,201 @@ def test_action_recognition_block_loads_through_the_adapter() -> None:
     manager.load_action_recognition_model.assert_called_once_with(
         model_id="cosmos-3-edge", api_key="k"
     )
+
+
+from inference.core.entities.requests.inference import (
+    ClassificationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
+    ObjectDetectionInferenceRequest,
+    SemanticSegmentationInferenceRequest,
+)
+
+
+def test_run_object_detection_builds_the_request_the_block_used_to_build() -> None:
+    response = empty_detection_response()
+    manager = manager_returning(response)
+    provider = ModelManagerModelsProvider(manager)
+
+    result = provider.run_object_detection(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        class_agnostic_nms=True,
+        class_filter=["cat"],
+        confidence=0.6,
+        iou_threshold=0.4,
+        max_detections=10,
+        max_candidates=100,
+        disable_active_learning=True,
+        active_learning_target_dataset="ds",
+    )
+
+    manager.add_model.assert_not_called()  # registration stays in the block
+    request = captured_request(manager)
+    expected = ObjectDetectionInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=IMAGES,
+        disable_active_learning=True,
+        active_learning_target_dataset="ds",
+        class_agnostic_nms=True,
+        class_filter=["cat"],
+        confidence=0.6,
+        iou_threshold=0.4,
+        max_detections=10,
+        max_candidates=100,
+        source="workflow-execution",
+    )
+    assert isinstance(request, ObjectDetectionInferenceRequest)
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert result == [response.model_dump(by_alias=True, exclude_none=True)]
+
+
+def test_run_object_detection_accepts_a_symbolic_confidence() -> None:
+    manager = manager_returning(empty_detection_response())
+    ModelManagerModelsProvider(manager).run_object_detection(
+        model_id="m/1", images=IMAGES, api_key="k", confidence="best"
+    )
+    assert captured_request(manager).confidence == "best"
+
+
+def test_run_classification_builds_the_request_the_block_used_to_build() -> None:
+    from inference.core.entities.responses.inference import (
+        ClassificationInferenceResponse,
+    )
+
+    response = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=10, height=20),
+        predictions=[],
+        top="cat",
+        confidence=0.9,
+    )
+    manager = manager_returning(response)
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        confidence=0.7,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+    )
+    request = captured_request(manager)
+    expected = ClassificationInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=IMAGES,
+        confidence=0.7,
+        disable_active_learning=False,
+        source="workflow-execution",
+        active_learning_target_dataset=None,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_keypoints_detection_builds_the_request_the_block_used_to_build() -> None:
+    manager = manager_returning(empty_detection_response())
+    ModelManagerModelsProvider(manager).run_keypoints_detection(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=0.3,
+        max_detections=300,
+        max_candidates=3000,
+        keypoint_confidence=0.5,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+    )
+    request = captured_request(manager)
+    expected = KeypointsDetectionInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=IMAGES,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=0.3,
+        max_detections=300,
+        max_candidates=3000,
+        keypoint_confidence=0.5,
+        source="workflow-execution",
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_semantic_segmentation_keeps_the_numpy_fast_path() -> None:
+    manager = manager_returning(empty_detection_response())
+    ModelManagerModelsProvider(manager).run_semantic_segmentation(
+        model_id="m/1", images=IMAGES, api_key="k", response_mask_format="numpy"
+    )
+    request = captured_request(manager)
+    assert isinstance(request, SemanticSegmentationInferenceRequest)
+    assert request.response_mask_format == "numpy"
+    assert request.source == "workflow-execution"
+
+
+def test_run_semantic_segmentation_omits_confidence_when_never_passed() -> None:
+    manager = manager_returning(empty_detection_response())
+    ModelManagerModelsProvider(manager).run_semantic_segmentation(
+        model_id="m/1", images=IMAGES, api_key="k"
+    )
+    request = captured_request(manager)
+    # v1 never sets it; the pydantic default must survive, not become None.
+    assert (
+        request.confidence
+        == SemanticSegmentationInferenceRequest(
+            api_key="k", model_id="m/1", image=IMAGES
+        ).confidence
+    )
+
+
+def test_run_semantic_segmentation_still_rejects_an_explicit_none_confidence() -> None:
+    """Round-2 defect 5: v2 forwards its manifest value, which can be None, and
+    that raises today. An UNSET sentinel keeps 'not passed' and 'passed None'
+    distinct."""
+    import pytest
+    from pydantic import ValidationError
+
+    manager = manager_returning(empty_detection_response())
+    with pytest.raises(ValidationError):
+        ModelManagerModelsProvider(manager).run_semantic_segmentation(
+            model_id="m/1", images=IMAGES, api_key="k", confidence=None
+        )
+    manager.infer_from_request_sync.assert_not_called()
+
+
+def test_run_classification_forwards_extra_inference_kwargs() -> None:
+    """multi_label v2/v3 pass `confidence` to the model call as well as into the
+    request; the port carries it as `inference_kwargs`."""
+    from inference.core.entities.responses.inference import (
+        ClassificationInferenceResponse,
+    )
+
+    manager = manager_returning(
+        ClassificationInferenceResponse(
+            image=InferenceResponseImage(width=10, height=20),
+            predictions=[],
+            top="cat",
+            confidence=0.9,
+        )
+    )
+    ModelManagerModelsProvider(manager).run_classification(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        confidence=0.7,
+        inference_kwargs={"confidence": 0.7},
+    )
+    assert manager.infer_from_request_sync.call_args.kwargs["confidence"] == 0.7
+
+
+def test_run_methods_normalise_a_single_response_to_a_list() -> None:
+    response = empty_detection_response()
+    manager = manager_returning(response)
+    assert ModelManagerModelsProvider(manager).run_object_detection(
+        model_id="m/1", images=IMAGES, confidence=0.4
+    ) == [response.model_dump(by_alias=True, exclude_none=True)]

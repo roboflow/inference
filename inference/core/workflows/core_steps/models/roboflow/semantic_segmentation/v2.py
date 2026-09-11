@@ -8,9 +8,6 @@ import pycocotools.mask as mask_utils
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.inference import (
-    SemanticSegmentationInferenceRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.environment import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
@@ -213,28 +210,19 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = SemanticSegmentationInferenceRequest(
-            api_key=self._api_key,
-            model_id=model_id,
-            image=inference_images,
-            confidence=confidence,
-            # In-process call: raw numpy masks skip a full-resolution PNG
-            # encode/decode round-trip between the model and this block.
-            response_mask_format="numpy",
-            source="workflow-execution",
-        )
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
+        predictions = self._model_manager.run_semantic_segmentation(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
+            confidence=confidence,
+            # In-process call: raw numpy masks skip a full-resolution PNG
+            # encode/decode round-trip between the model and this block.
+            response_mask_format="numpy",
         )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(predictions=predictions, model_id=model_id)
 
     def run_remotely(

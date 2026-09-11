@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 50
+# Count: 36
 inference/core/workflows/core_steps/models/foundation/clip/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.entities.requests.clip
@@ -37,17 +37,3 @@ inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1.py	
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v2.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v3.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v4.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/keypoint_detection/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/keypoint_detection/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/keypoint_detection/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_class_classification/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_class_classification/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_class_classification/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_label_classification/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_label_classification/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/multi_label_classification/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/object_detection/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/object_detection/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/object_detection/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/semantic_segmentation/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/semantic_segmentation/v2.py	inference.core.entities.requests.inference
