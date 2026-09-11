@@ -42,10 +42,6 @@ See [Example Workflows](https://inference.roboflow.com/workflows/gallery/) for c
 
 [Time In Zone Workflow Example](https://github.com/user-attachments/assets/743233d9-3460-442d-83f8-20e29e76b346)
 
-See the [security configuration migration guide](docs/server_configuration/security_migration.md)
-before updating deployments that use video sources, custom model packages,
-mutual TLS, or a secure gateway.
-
 ## 🔥 quickstart
 
 [Install Docker](https://docs.docker.com/engine/install/) (and

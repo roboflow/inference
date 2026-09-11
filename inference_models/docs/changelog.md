@@ -2,14 +2,6 @@
 
 ## Unreleased
 
-### Security
-
-- Benchmark commands now default to trusted model packages. Loading an untrusted
-  package requires an explicit opt-in; only enable it for packages you control.
-- `SECURE_GATEWAY` defaults to HTTPS when a scheme is omitted. Explicit HTTP is
-  supported only for loopback addresses; provision HTTPS for remote or LAN
-  gateways before upgrading. Invalid gateway configuration fails at startup.
-
 ---
 
 ## `0.37.0`
