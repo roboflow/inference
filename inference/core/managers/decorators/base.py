@@ -190,6 +190,21 @@ class ModelManagerDecorator(ModelManager):
         """
         return self.model_manager.get_class_names(model_id)
 
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        return self.model_manager.get_keypoints_classes(model_id)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return self.model_manager.model_supports_stream_pipeline(model_id)
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self.model_manager.get_model_pipeline_depth(model_id)
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        return self.model_manager.flush_model_stream_pipeline(model_id)
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        return self.model_manager.shutdown_model_stream_pipeline(model_id)
+
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         """Removes a model from the manager.
 

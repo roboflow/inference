@@ -568,11 +568,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             or self._last_model_id not in self._model_manager
         ):
             return False
-        model = self._model_manager[self._last_model_id]
-        return (
-            callable(getattr(model, "flush", None))
-            and getattr(model, "_pipeline_depth", 1) > 1
-        )
+        return self._model_manager.model_supports_stream_pipeline(self._last_model_id)
 
     def can_activate_stream_pipeline(self) -> bool:
         return (
@@ -583,8 +579,8 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
     def stream_pipeline_depth(self) -> int:
         if not self.is_stream_pipelined():
             return 0
-        model = self._model_manager[self._last_model_id]
-        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
+        depth = self._model_manager.get_model_pipeline_depth(self._last_model_id)
+        return max(0, int(depth) - 1)
 
     def flush_stream_pipeline_outputs(
         self,
@@ -595,12 +591,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         ):
             self._pending_stream_prediction_contexts.clear()
             return []
-        model = self._model_manager[self._last_model_id]
-        flush_fn = getattr(model, "flush", None)
-        if not callable(flush_fn):
+        predictions = self._model_manager.flush_model_stream_pipeline(
+            self._last_model_id
+        )
+        if predictions is None:
             self._pending_stream_prediction_contexts.clear()
             return []
-        predictions = flush_fn()
         if not isinstance(predictions, list):
             predictions = [predictions]
 
@@ -646,10 +642,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             or self._last_model_id not in self._model_manager
         ):
             return None
-        model = self._model_manager[self._last_model_id]
-        shutdown_fn = getattr(model, "shutdown_pipeline", None)
-        if callable(shutdown_fn):
-            shutdown_fn()
+        self._model_manager.shutdown_model_stream_pipeline(self._last_model_id)
 
     def _build_stream_context_id(self, images: Batch[WorkflowImageData]) -> str:
         self._stream_context_generation += 1

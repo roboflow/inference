@@ -363,9 +363,9 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
             )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
         # `key_points_classes` (List[List[str]], indexed by *object* class id) is only
-        # exposed on the inference_models adapter - reach the adapter directly through
-        # the manager's item access (the same handle that backs `get_class_names`).
-        key_points_classes = self._model_manager[model_id].key_points_classes
+        # exposed on the inference_models adapter - reach it through the provider's
+        # first-class accessor (the same handle that backs `get_class_names`).
+        key_points_classes = self._model_manager.get_keypoints_classes(model_id)
         results: List[dict] = []
         for image, key_points, detections in zip(
             images, keypoints_batch, detections_batch

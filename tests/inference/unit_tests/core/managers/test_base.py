@@ -782,3 +782,112 @@ def test_add_model_records_all_model_ids() -> None:
 
     # then
     assert ids.get_ids() == {"warm/1", "cold/1"}
+
+
+class _FakeStreamModel:
+    def __init__(self, pipeline_depth=None, has_flush=False, has_shutdown=False):
+        self.key_points_classes = [["nose", "eye"], ["tip"]]
+        if pipeline_depth is not None:
+            self._pipeline_depth = pipeline_depth
+        if has_flush:
+            self.flush = lambda: ["flushed"]
+        if has_shutdown:
+            self.shutdown_called = False
+            self.shutdown_pipeline = self._shutdown
+
+    def _shutdown(self):
+        self.shutdown_called = True
+
+
+def _manager_with(model_id: str, model: object) -> ModelManager:
+    manager = ModelManager(model_registry=MagicMock())
+    manager._models[model_id] = model
+    return manager
+
+
+def test_get_keypoints_classes_returns_model_attribute() -> None:
+    assert _manager_with("m/1", _FakeStreamModel()).get_keypoints_classes("m/1") == [
+        ["nose", "eye"],
+        ["tip"],
+    ]
+
+
+def test_model_supports_stream_pipeline_requires_flush_and_depth_above_one() -> None:
+    assert _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=1, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "other", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+
+
+def test_get_model_pipeline_depth_defaults_to_one() -> None:
+    assert (
+        _manager_with(
+            "m/1", _FakeStreamModel(pipeline_depth=4)
+        ).get_model_pipeline_depth("m/1")
+        == 4
+    )
+    assert _manager_with("m/1", _FakeStreamModel()).get_model_pipeline_depth("m/1") == 1
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).get_model_pipeline_depth("absent") == 1
+    )
+
+
+def test_flush_model_stream_pipeline_returns_none_when_unavailable() -> None:
+    assert _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).flush_model_stream_pipeline("m/1") == ["flushed"]
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).flush_model_stream_pipeline("m/1")
+        is None
+    )
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).flush_model_stream_pipeline("absent")
+        is None
+    )
+
+
+def test_shutdown_model_stream_pipeline_is_a_noop_when_unsupported() -> None:
+    model = _FakeStreamModel(has_shutdown=True)
+    manager = _manager_with("m/1", model)
+    manager.shutdown_model_stream_pipeline("m/1")
+    assert model.shutdown_called is True
+    manager.shutdown_model_stream_pipeline("absent")
+    _manager_with("m/2", _FakeStreamModel()).shutdown_model_stream_pipeline("m/2")
+
+
+def test_decorator_forwards_the_new_members() -> None:
+    from inference.core.managers.decorators.base import ModelManagerDecorator
+
+    inner = MagicMock()
+    decorator = ModelManagerDecorator(inner)
+    assert (
+        decorator.get_keypoints_classes("m/1")
+        is inner.get_keypoints_classes.return_value
+    )
+    inner.get_keypoints_classes.assert_called_once_with("m/1")
+    assert (
+        decorator.model_supports_stream_pipeline("m/1")
+        is inner.model_supports_stream_pipeline.return_value
+    )
+    assert (
+        decorator.get_model_pipeline_depth("m/1")
+        is inner.get_model_pipeline_depth.return_value
+    )
+    assert (
+        decorator.flush_model_stream_pipeline("m/1")
+        is inner.flush_model_stream_pipeline.return_value
+    )
+    decorator.shutdown_model_stream_pipeline("m/1")
+    inner.shutdown_model_stream_pipeline.assert_called_once_with("m/1")
+    decorator.load_action_recognition_model(model_id="ar/1", api_key="k")
+    inner.load_action_recognition_model.assert_called_once_with(
+        model_id="ar/1", api_key="k"
+    )
