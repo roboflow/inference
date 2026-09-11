@@ -330,6 +330,7 @@ def test_adapter_run_instance_segmentation_forwards_explicit_none_and_defaults_o
         api_key="k",
         confidence=0.4,
         class_filter=None,
+        enforce_dense_masks_in_inference_models=None,
     )
 
     request = manager.infer_from_request_sync.call_args.kwargs["request"]
@@ -338,11 +339,12 @@ def test_adapter_run_instance_segmentation_forwards_explicit_none_and_defaults_o
     default = InstanceSegmentationInferenceRequest(
         api_key="k", model_id="m/1", image=[REQUEST_IMAGE]
     )
+    # An explicit None overrides a non-None request default (the `_passed`
+    # rule must forward None, not drop it)...
+    assert default.enforce_dense_masks_in_inference_models is not None
+    assert request.enforce_dense_masks_in_inference_models is None
+    # ...while omitted (UNSET) fields keep the request's defaults.
     assert request.response_mask_format == default.response_mask_format
-    assert (
-        request.enforce_dense_masks_in_inference_models
-        == default.enforce_dense_masks_in_inference_models
-    )
     assert request.stream_pipeline_context_id == default.stream_pipeline_context_id
 
 
