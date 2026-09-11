@@ -31,7 +31,6 @@ from inference.usage_tracking.utils import (
     collect_func_params,
     get_signature,
 )
-from inference_sdk.config import workflow_is_preview as usage_workflow_is_preview
 
 # Whether usage rows recorded in the current execution context must be marked
 # non-billable. Bound by the `usage_collector` wrappers from the arguments the
@@ -51,6 +50,21 @@ EXTERNAL_SOURCE_SENTINEL = "external"
 # default is never mutated, only replaced by `set()`.
 usage_source_tags: ContextVar[Dict[str, str]] = ContextVar(
     "usage_source_tags", default={}
+)
+
+# Whether the current workflow run is a builder/editor preview. Bound by the
+# `usage_collector` wrapper from `usage_workflow_preview` on `run_workflow`,
+# and inherited by nested `workflow_block` rows the same way billing
+# suppression is. Preview is independent of `billable`: a preview run is
+# still counted unless the caller also opted out.
+#
+# In-process only, unlike suppression: billing intent crosses into the SDK via
+# `inference_sdk.config.outbound_service_secret`, which
+# `InferenceConfiguration.to_billing_query_parameters()` reads at send time.
+# There is no `is_preview` anywhere in `inference_sdk`, so rows a *remote*
+# server records during a preview run do not carry the flag.
+usage_workflow_is_preview: ContextVar[bool] = ContextVar(
+    "usage_workflow_is_preview", default=False
 )
 
 

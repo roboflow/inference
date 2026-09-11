@@ -9,12 +9,6 @@ from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
 
-# Shared with the usage collector so preview attribution survives remote calls.
-WORKFLOW_PREVIEW_HEADER = "X-Workflow-Preview"
-workflow_is_preview: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "usage_workflow_is_preview", default=False
-)
-
 # Outbound billing-forwarding authority: the validated service secret to send
 # with every outgoing request while it is set, forcing `countinference=false`
 # regardless of the client's own configuration. `None` means no implicit

@@ -23,10 +23,8 @@ from requests import HTTPError, Response
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
-    WORKFLOW_PREVIEW_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
-    workflow_is_preview,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -2559,7 +2557,7 @@ class InferenceHTTPClient:
             "use_cache": use_cache,
             "enable_profiling": enable_profiling,
         }
-        if is_preview or workflow_is_preview.get():
+        if is_preview:
             payload["is_preview"] = True
         if disable_sinks:
             payload["disable_sinks"] = True
@@ -2591,13 +2589,10 @@ class InferenceHTTPClient:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:
                 url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_id}"
-        headers = self.__headers_with_auth(DEFAULT_HEADERS)
-        if is_preview:
-            headers = {**headers, WORKFLOW_PREVIEW_HEADER: "true"}
         response = send_post_request(
             url=url,
             payload=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
         return response
@@ -3313,10 +3308,10 @@ class InferenceHTTPClient:
     def __headers_with_auth(
         self, headers: Optional[Dict[str, str]]
     ) -> Optional[Dict[str, str]]:
-        # Merge request-scoped headers without mutating shared DEFAULT_HEADERS.
+        # Returns the input untouched in legacy mode so shared dicts
+        # (DEFAULT_HEADERS) are never mutated and wire behaviour stays
+        # byte-identical for the default transport.
         auth_headers = self.__auth_headers()
-        if workflow_is_preview.get():
-            auth_headers[WORKFLOW_PREVIEW_HEADER] = "true"
         if not auth_headers:
             return headers
         if headers is None:
