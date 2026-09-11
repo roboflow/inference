@@ -6,14 +6,20 @@ from packaging import version as packaging_version
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 
-# Hand the Workflows module its configuration before anything can import it.
-# This is the ONE place the ordering is guaranteed: importing any
-# `inference.core.workflows.*` module runs this file to completion first, so
-# `core_steps/loader.py`'s import-time tensor branches and every module-level
-# constant in `inference/core/workflows/environment.py` see the server's
-# values. `inference.core.interfaces.workflows_configuration` imports only
-# `inference.core.env` (already fully imported above) and the dependency-free
-# `inference.core.workflows.configuration`, so this adds no import weight.
+# Hand the Workflows module its configuration before anything can READ it.
+# The invariant: `install_workflows_configuration()` runs before any import
+# of `inference.core.workflows.environment` (the constants facade) or any
+# other configuration-consuming workflows module, so `core_steps/loader.py`'s
+# import-time tensor branches and every facade constant see the server's
+# values. A few configuration-independent workflows modules are already on
+# the bootstrap path above this point (`inference.core.env` ->
+# `utils/environment.py` -> `core/exceptions.py` ->
+# `workflows/prototypes/platform_errors.py`, and the builder's own import of
+# `workflows/configuration.py`); they must stay configuration-independent -
+# none of them may import the facade. `inference.core.interfaces
+# .workflows_configuration` imports only `inference.core.env` (already fully
+# imported above) and `inference.core.workflows.configuration`, so this adds
+# no import weight.
 from inference.core.interfaces.workflows_configuration import (
     install_workflows_configuration,
 )

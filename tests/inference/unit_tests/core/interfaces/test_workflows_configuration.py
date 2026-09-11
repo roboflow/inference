@@ -264,7 +264,10 @@ def test_install_is_idempotent() -> None:
 
 def test_importing_inference_core_installs_before_any_workflows_module_loads() -> None:
     # The ordering guarantee this design rests on: `inference/core/__init__.py`
-    # runs to completion before any `inference.core.workflows.*` body does.
+    # installs the configuration before the constants facade
+    # (`inference.core.workflows.environment`) is first imported - the
+    # configuration-independent bootstrap modules (`prototypes/platform_errors`,
+    # `workflows/configuration`) may load earlier, the facade may not.
     # BOTH flags are pinned - `env.py:1486` ANDs `USE_INFERENCE_MODELS` into
     # the tensor flag (round-3 defect 5) - and the child reports env.py's
     # EFFECTIVE flag, so a gate-induced False can never pass as "both agree".

@@ -9,10 +9,16 @@ api-key-transport validation and the torch-device materialisation
 that logic is duplicated and none of it can drift.
 
 `install_workflows_configuration()` is called from `inference/core/__init__.py`.
-That is an import-system guarantee, not a convention: importing any
-`inference.core.workflows.X` executes `inference/core/__init__.py` to
-completion first, so the configuration is installed before any workflows
-module body - including `core_steps/loader.py`'s tensor-mode branches - runs.
+The invariant is narrower than "before any workflows module": installation
+precedes every import of the constants facade
+(`inference.core.workflows.environment`) and of every configuration-consuming
+workflows module, including `core_steps/loader.py`'s tensor-mode branches.
+A handful of configuration-independent workflows modules are imported earlier,
+on the bootstrap path (`inference.core.env` -> `utils/environment.py` ->
+`core/exceptions.py` -> `workflows/prototypes/platform_errors.py`, plus
+`workflows/configuration.py` itself, imported by this module); they never read
+the facade and must stay that way, or they would freeze standalone defaults
+into it before the server's configuration is installed.
 """
 
 from typing import Optional
