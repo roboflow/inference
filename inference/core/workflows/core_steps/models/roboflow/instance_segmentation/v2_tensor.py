@@ -41,7 +41,13 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    attach_native_detection_metadata,
+    build_native_image_metadata,
+    take_prediction_by_mask,
+)
+from inference.core.workflows.environment import (
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
@@ -50,12 +56,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    attach_native_detection_metadata,
-    build_native_image_metadata,
-    take_prediction_by_mask,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,

@@ -28,7 +28,11 @@ import torch
 from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
+from inference.core.workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -39,10 +43,6 @@ from inference.core.env import (
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

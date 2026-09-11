@@ -45,17 +45,6 @@ import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt
-from inference.core.env import (
-    API_BASE_URL,
-    CORE_MODEL_SAM3_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SAM3_EXEC_MODE,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Reuse the v1_tensor conversion machinery + the v2_tensor per-class/NMS collector.
@@ -70,6 +59,17 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_
     _collect_from_native_with_nms,
     _min_floor,
     _per_class_threshold,
+)
+from inference.core.workflows.environment import (
+    API_BASE_URL,
+    CORE_MODEL_SAM3_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

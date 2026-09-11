@@ -29,7 +29,17 @@ from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+
+# Reuse the v1_tensor SAM3 conversion machinery verbatim.
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+    Item,
+    _assemble_detections,
+    _build_instance_detections,
+    _build_instance_detections_from_polygons,
+    _normalize_class_names,
+)
+from inference.core.workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -40,16 +50,6 @@ from inference.core.env import (
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-
-# Reuse the v1_tensor SAM3 conversion machinery verbatim.
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
-    Item,
-    _assemble_detections,
-    _build_instance_detections,
-    _build_instance_detections_from_polygons,
-    _normalize_class_names,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

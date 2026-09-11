@@ -5,10 +5,10 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,

@@ -15,17 +15,17 @@ either way; there is nothing tensor-native to convert on the remote side).
 
 from typing import List, Optional, Type
 
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Unchanged from v1 — verbatim manifest, class name, type literal, outputs.
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     BlockManifest,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

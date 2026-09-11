@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.deserializers import (
     _parse_optional_parent_metadata,
 )
@@ -21,6 +20,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

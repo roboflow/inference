@@ -31,7 +31,6 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.env import GCP_SERVERLESS, WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
@@ -41,6 +40,10 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor import (
     extract_box_prompts_tensor,
     masks_to_instance_detections,
+)
+from inference.core.workflows.environment import (
+    GCP_SERVERLESS,
+    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

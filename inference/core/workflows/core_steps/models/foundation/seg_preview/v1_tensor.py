@@ -24,15 +24,15 @@ import torch
 from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
+from inference.core.workflows.environment import (
     API_BASE_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
