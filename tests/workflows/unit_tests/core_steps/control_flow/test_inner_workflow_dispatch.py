@@ -265,3 +265,32 @@ def test_disabled_dispatch_does_not_check_depth_or_submit() -> None:
         == {}
     )
     executor.submit.assert_not_called()
+
+
+def test_empty_inline_definition_dispatches_saved_workflow_reference() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/inner_workflow@v1",
+            "name": "dispatch",
+            "execution_mode": "remote_dispatch",
+            "workflow_definition": {},
+            "workflow_workspace_id": "workspace",
+            "workflow_id": "child",
+            "workflow_version_id": "3",
+            "parameter_bindings": {},
+        }
+    )
+    executor = MagicMock()
+    block = InnerWorkflowBlockV1(
+        api_key="secret",
+        background_tasks=None,
+        thread_pool_executor=executor,
+        inner_workflow_remote_target="https://serverless.roboflow.com",
+    )
+
+    block.run(**manifest.model_dump(exclude={"name", "type"}))
+
+    request = executor.submit.call_args.args[0].keywords
+    assert request["url"] == "https://serverless.roboflow.com/workspace/workflows/child"
+    assert "specification" not in request["payload"]
+    assert request["payload"]["workflow_version_id"] == "3"

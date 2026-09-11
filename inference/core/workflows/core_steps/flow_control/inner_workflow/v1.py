@@ -321,7 +321,7 @@ def prepare_workflow_dispatch_request(
         "inputs": serialize_workflow_dispatch_inputs(parameter_bindings),
         "inner_workflow_dispatch_depth": inner_workflow_dispatch_depth + 1,
     }
-    if workflow_definition is not None:
+    if workflow_definition:
         payload["specification"] = workflow_definition
         return f"{base_url}/workflows/run", payload
 
