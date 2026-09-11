@@ -9,10 +9,6 @@ from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from inference.core.entities.requests.inference import (
     InstanceSegmentationInferenceRequest,
 )
-from inference.core.entities.responses.inference import (
-    InstanceSegmentationInferenceResponseDC,
-    _is_response_dc_to_dict,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -502,13 +498,13 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         stream_context: _StreamPredictionContext,
     ) -> BlockResult:
         # The adapter returns dataclass responses when source="workflow-execution"
-        # (cheaper construct + dict-walk than pydantic). Any other response type
-        # (e.g. if a non-rfdetr backend is bound to the same block) falls back
-        # to `model_dump`.
+        # (cheaper construct + dict-walk than pydantic); those expose `to_dict()`.
+        # Any other response type (e.g. if a non-rfdetr backend is bound to the
+        # same block) falls back to `model_dump`.
         predictions = [
             (
-                _is_response_dc_to_dict(e)
-                if isinstance(e, InstanceSegmentationInferenceResponseDC)
+                e.to_dict()
+                if callable(getattr(e, "to_dict", None))
                 else e.model_dump(by_alias=True, exclude_none=True)
             )
             for e in predictions

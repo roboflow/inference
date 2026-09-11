@@ -366,6 +366,15 @@ class InstanceSegmentationInferenceResponseDC:
     _async_response_future: object = None
     _async_response_context_id: object = None
 
+    def to_dict(self) -> dict:
+        """Public form of `_is_response_dc_to_dict`.
+
+        The workflow instance-segmentation block and the workflows models
+        provider duck-type this so they do not import a private symbol across
+        the package boundary.
+        """
+        return _is_response_dc_to_dict(self)
+
 
 def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
     """Bit-equivalent to `InstanceSegmentationPrediction(...).model_dump(by_alias=True, exclude_none=True)`."""
