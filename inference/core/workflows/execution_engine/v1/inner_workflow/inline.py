@@ -1,5 +1,5 @@
 """
-Compile-time expansion of ``roboflow_core/inner_workflow@v1`` into ordinary steps.
+Compile-time expansion of embedded ``roboflow_core/inner_workflow@v1`` steps.
 
 Runs after reference normalization and composition validation on the pre-inline definition.
 """
@@ -19,6 +19,8 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge
     validate_parameter_bindings_against_child,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -37,7 +39,7 @@ _INPUT_REF_PATTERN = re.compile(r"^\$inputs\.(?P<name>[A-Za-z0-9_\-]+)$")
 
 
 def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
-    """Return True if any step in ``steps`` is an ``inner_workflow`` block.
+    """Return True if any step is an embedded ``inner_workflow`` block.
 
     Returns False if ``steps`` is not a list or any entry is not a dict.
     """
@@ -49,6 +51,11 @@ def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
             return False
 
         if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+            continue
+        execution_mode = step.get(
+            "execution_mode", INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED
+        )
+        if execution_mode != INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED:
             continue
 
         return True
@@ -338,12 +345,21 @@ def _replace_inner_step_control_and_output_refs_in_object(
     Non-string leaves are returned unchanged. Dict keys are not passed through ``fn``.
     """
     if isinstance(obj, dict):
+        is_dispatched_inner_workflow = (
+            obj.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE
+            and obj.get("execution_mode")
+            == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
+        )
         return {
-            k: _replace_inner_step_control_and_output_refs_in_object(
-                v,
-                inner_step_name=inner_step_name,
-                output_name_to_selector=output_name_to_selector,
-                first_inlined_step_name=first_inlined_step_name,
+            k: (
+                copy.deepcopy(v)
+                if is_dispatched_inner_workflow and k == "workflow_definition"
+                else _replace_inner_step_control_and_output_refs_in_object(
+                    v,
+                    inner_step_name=inner_step_name,
+                    output_name_to_selector=output_name_to_selector,
+                    first_inlined_step_name=first_inlined_step_name,
+                )
             )
             for k, v in obj.items()
         }
@@ -472,7 +488,19 @@ def _expand_leaf_inner_at_index(
         new_name = next(nname for oname, nname in old_to_new if oname == old_name)
         cloned = copy.deepcopy(inner_step)
         cloned["name"] = new_name
-        inlined_steps.append(_deep_map_leaves(cloned, rewrite_leaf))
+        dispatched_workflow_definition = None
+        if (
+            cloned.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE
+            and cloned.get("execution_mode")
+            == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
+        ):
+            dispatched_workflow_definition = copy.deepcopy(
+                cloned.get("workflow_definition")
+            )
+        cloned = _deep_map_leaves(cloned, rewrite_leaf)
+        if dispatched_workflow_definition is not None:
+            cloned["workflow_definition"] = dispatched_workflow_definition
+        inlined_steps.append(cloned)
 
     if not inlined_steps:
         raise InnerWorkflowInvalidStepEntryError(
@@ -562,6 +590,11 @@ def _inline_one_inner_workflow_leaf(
 
         if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue
+        execution_mode = step.get(
+            "execution_mode", INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED
+        )
+        if execution_mode != INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED:
+            continue
 
         inner = step.get("workflow_definition")
         if not isinstance(inner, dict):
@@ -602,10 +635,10 @@ def inline_inner_workflow_steps(
     available_blocks: Any,
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> Dict[str, Any]:
-    """Return a deep copy of ``workflow_definition`` with every ``inner_workflow`` step inlined.
+    """Return a copy with every embedded ``inner_workflow`` step inlined.
 
-    Repeatedly expands innermost nested workflows until no ``roboflow_core/inner_workflow@v1``
-    steps remain at any depth. The original dict is not modified.
+    Repeatedly expands innermost nested workflows until only dispatched inner-workflow
+    steps remain. The original dict is not modified.
 
     Args:
         workflow_definition: Parsed workflow JSON (root ``steps`` list).

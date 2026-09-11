@@ -1596,6 +1596,9 @@ class HttpInterface(BaseInterface):
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
                 "workflows_core.disable_sinks": workflow_request.disable_sinks,
+                "workflows_core.inner_workflow_dispatch_depth": (
+                    workflow_request.inner_workflow_dispatch_depth
+                ),
             }
             with start_span(
                 "workflow.init",
