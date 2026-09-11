@@ -436,3 +436,74 @@ def test_run_instance_segmentation_can_return_raw_responses() -> None:
     assert result.raw_responses == raw
     assert result.predictions == []
     assert captured_request(manager).stream_pipeline_context_id == "ctx-1"
+
+
+from inference.core.entities.requests.inference import (
+    DepthEstimationRequest,
+    LMMInferenceRequest,
+)
+from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
+
+
+class _LMMResponse:
+    """Minimal stand-in with the two members the adapter and blocks touch."""
+
+    def __init__(self, response):
+        self.response = response
+
+    def model_dump(self, **_kwargs):
+        return {"response": self.response}
+
+
+def test_run_lmm_omits_thinking_and_token_budget_when_unset() -> None:
+    manager = manager_returning(_LMMResponse("hi"))
+    provider = ModelManagerModelsProvider(manager)
+    assert provider.run_lmm(model_id="m/1", image=IMAGE, prompt="p", api_key="k") == {
+        "response": "hi"
+    }
+    request = captured_request(manager)
+    expected = LMMInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=IMAGE,
+        source="workflow-execution",
+        prompt="p",
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_lmm_passes_thinking_and_token_budget_when_set() -> None:
+    manager = manager_returning(_LMMResponse("hi"))
+    ModelManagerModelsProvider(manager).run_lmm(
+        model_id="m/1",
+        image=IMAGE,
+        prompt="p",
+        api_key="k",
+        enable_thinking=True,
+        max_new_tokens=64,
+    )
+    request = captured_request(manager)
+    assert request.enable_thinking is True and request.max_new_tokens == 64
+
+
+def test_run_moondream2_builds_the_request_the_block_used_to_build() -> None:
+    manager = manager_returning(_LMMResponse("cat"))
+    ModelManagerModelsProvider(manager).run_moondream2(
+        model_id="md/2", image=IMAGE, prompt="p", text=[], api_key="k"
+    )
+    request = captured_request(manager)
+    expected = Moondream2InferenceRequest(
+        api_key="k", model_id="md/2", image=IMAGE, text=[], prompt="p"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_depth_estimation_returns_the_raw_response_field() -> None:
+    manager = manager_returning(_LMMResponse("depth-map"))
+    assert (
+        ModelManagerModelsProvider(manager).run_depth_estimation(
+            model_id="d/1", image=IMAGE
+        )
+        == "depth-map"
+    )
+    assert isinstance(captured_request(manager), DepthEstimationRequest)

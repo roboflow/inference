@@ -3,7 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -244,18 +243,15 @@ class Moondream2BlockV1(WorkflowBlock):
 
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            request = Moondream2InferenceRequest(
-                api_key=self._api_key,
-                model_id=model_version,
-                image=image,
-                text=[],
-                prompt=single_prompt,
+            predictions.append(
+                self._model_manager.run_moondream2(
+                    model_id=model_version,
+                    image=image,
+                    prompt=single_prompt,
+                    text=[],
+                    api_key=self._api_key,
+                )
             )
-            # Run inference.
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
 
         return self._post_process_result(images=images, predictions=predictions)
 

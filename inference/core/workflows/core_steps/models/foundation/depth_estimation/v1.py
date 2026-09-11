@@ -3,7 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import DepthEstimationRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.environment import (
     DEPTH_ESTIMATION_ENABLED,
@@ -279,16 +278,12 @@ class DepthEstimationBlockV1(WorkflowBlock):
 
         predictions = []
         for idx, image in enumerate(inference_images):
-            # Run inference.
-            request = DepthEstimationRequest(
-                image=image,
-            )
-
             try:
-                prediction = self._model_manager.infer_from_request_sync(
-                    model_id=model_version, request=request
+                predictions.append(
+                    self._model_manager.run_depth_estimation(
+                        model_id=model_version, image=image
+                    )
                 )
-                predictions.append(prediction.response)
             except Exception as e:
                 raise
 

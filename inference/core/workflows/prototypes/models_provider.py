@@ -151,6 +151,27 @@ class ModelsProvider(Protocol):
         return_raw_responses: bool = False,
     ) -> Union[List[dict], InferenceResultsDC]: ...
 
+    def run_lmm(
+        self,
+        model_id: str,
+        image: Any,
+        prompt: str,
+        api_key: Optional[str] = None,
+        enable_thinking: Union[bool, None, _Unset] = UNSET,
+        max_new_tokens: Optional[int] = None,
+    ) -> dict: ...
+
+    def run_depth_estimation(self, model_id: str, image: Any) -> Any: ...
+
+    def run_moondream2(
+        self,
+        model_id: str,
+        image: Any,
+        prompt: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> dict: ...
+
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 
     def get_class_names(self, model_id: str) -> List[str]: ...

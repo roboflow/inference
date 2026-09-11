@@ -291,7 +291,7 @@ def test_run_dispatches_to_local_native_when_step_mode_local():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "native local answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
@@ -306,9 +306,8 @@ def test_run_dispatches_to_local_native_when_step_mode_local():
     model_manager.add_model.assert_called_once_with(
         model_id="qwen3_5-2b", api_key="ws-key"
     )
-    assert model_manager.infer_from_request_sync.called
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is False
+    assert model_manager.run_lmm.called
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is False
 
 
 def test_run_local_native_with_enable_thinking_splits_response():
@@ -317,7 +316,7 @@ def test_run_local_native_with_enable_thinking_splits_response():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = {"thinking": "reasoning...", "answer": "42"}
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
@@ -333,8 +332,7 @@ def test_run_local_native_with_enable_thinking_splits_response():
         )
     )
     assert result == [{"output": "42", "classes": None, "thinking": "reasoning..."}]
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is True
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is True
 
 
 def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model():
@@ -344,7 +342,7 @@ def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model(
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "ok"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
@@ -360,8 +358,7 @@ def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model(
             enable_thinking=True,
         )
     )
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is False
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is False
 
 
 @patch(
@@ -399,7 +396,7 @@ def test_run_dispatches_to_local_native_with_fine_tuned_model_id():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "finetune answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,

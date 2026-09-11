@@ -32,11 +32,14 @@ from typing import Any, Dict, List, Optional, Union
 
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
+    DepthEstimationRequest,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
+    LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
 )
+from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.prototypes.models_provider import (
     UNSET,
@@ -248,6 +251,55 @@ class ModelManagerModelsProvider:
         if return_raw_responses:
             return InferenceResultsDC(predictions=[], raw_responses=responses)
         return self._dump(responses)
+
+    def run_lmm(
+        self,
+        model_id: str,
+        image: Any,
+        prompt: str,
+        api_key: Optional[str] = None,
+        enable_thinking: Union[bool, None, _Unset] = UNSET,
+        max_new_tokens: Optional[int] = None,
+    ) -> dict:
+        kwargs: Dict[str, Any] = {
+            "api_key": api_key,
+            "model_id": model_id,
+            "image": image,
+            "source": _WORKFLOW_SOURCE,
+            "prompt": prompt,
+            # Forwarded exactly as the block passed it (five blocks do; the
+            # request field is a non-optional bool, so a None keeps raising).
+            **_passed(enable_thinking=enable_thinking),
+        }
+        # The blocks only ever added max_new_tokens to the request when it was
+        # not None (`if max_new_tokens is not None: request_kwargs[...] = ...`);
+        # mirror that, so the pydantic default applies otherwise.
+        if max_new_tokens is not None:
+            kwargs["max_new_tokens"] = max_new_tokens
+        request = LMMInferenceRequest(**kwargs)
+        return self._dump(self._infer(model_id=model_id, request=request))[0]
+
+    def run_depth_estimation(self, model_id: str, image: Any) -> Any:
+        request = DepthEstimationRequest(image=image)
+        return self._infer(model_id=model_id, request=request)[0].response
+
+    def run_moondream2(
+        self,
+        model_id: str,
+        image: Any,
+        prompt: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> dict:
+        # `text` is a required list on the request; the block passes `[]`.
+        request = Moondream2InferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=image,
+            text=text,
+            prompt=prompt,
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))[0]
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(

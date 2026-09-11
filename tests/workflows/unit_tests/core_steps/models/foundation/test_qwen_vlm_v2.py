@@ -407,7 +407,7 @@ def test_run_native_default_max_tokens_is_forwarded():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV2(
         model_manager=model_manager,
@@ -417,15 +417,14 @@ def test_run_native_default_max_tokens_is_forwarded():
     )
     block.run(**_base_run_kwargs())
 
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.max_new_tokens == 2048
+    assert model_manager.run_lmm.call_args.kwargs["max_new_tokens"] == 2048
 
 
 def test_run_native_explicit_max_tokens_is_forwarded_as_max_new_tokens():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV2(
         model_manager=model_manager,
@@ -435,15 +434,14 @@ def test_run_native_explicit_max_tokens_is_forwarded_as_max_new_tokens():
     )
     block.run(**_base_run_kwargs(max_tokens=1024))
 
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.max_new_tokens == 1024
+    assert model_manager.run_lmm.call_args.kwargs["max_new_tokens"] == 1024
 
 
 def test_run_dispatches_to_local_native_when_step_mode_local():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "native local answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV2(
         model_manager=model_manager,
@@ -464,7 +462,7 @@ def test_run_local_native_with_enable_thinking_splits_response():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = {"thinking": "reasoning...", "answer": "42"}
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV2(
         model_manager=model_manager,
@@ -480,8 +478,7 @@ def test_run_local_native_with_enable_thinking_splits_response():
         )
     )
     assert result == [{"output": "42", "classes": None, "thinking": "reasoning..."}]
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is True
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is True
 
 
 @patch(
@@ -512,7 +509,7 @@ def test_run_dispatches_to_local_native_with_fine_tuned_model_id():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "finetune answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV2(
         model_manager=model_manager,

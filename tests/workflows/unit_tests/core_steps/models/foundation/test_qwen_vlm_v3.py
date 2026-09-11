@@ -92,7 +92,7 @@ def test_run_native_reports_none_token_usage():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "native local answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV3(
         model_manager=model_manager,
