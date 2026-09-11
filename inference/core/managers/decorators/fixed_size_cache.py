@@ -89,74 +89,11 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
             )
-            self._refresh_model_position_in_a_queue(model_id=queue_id)
-            self.model_manager.record_request_metadata(
-                model_id=queue_id,
-                original_model_id=model_id,
-                model_id_alias=model_id_alias,
+        else:
+            logger.debug(
+                f"Current capacity of ModelManager: {len(self)}/{self.max_size}"
             )
-            return None
-
-        logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        with acquire_with_timeout(
-            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
-        ) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to add model from active models queue."
-                )
-            cache_full = len(self) >= self.max_size
-            memory_pressure = MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
-            while self._key_queue and (cache_full or memory_pressure):
-                # To prevent flapping around the threshold, remove up to 3 models to make some space.
-                if not self._key_queue:
-                    logger.error(
-                        "Tried to remove model from cache even though key queue is already empty! "
-                        "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
-                        self.max_size,
-                        len(self),
-                        MEMORY_FREE_THRESHOLD,
-                    )
-                    break
-                eviction_reason = "cache_full" if cache_full else "memory_pressure"
-                evicted_count = 0
-                skipped_pinned = []
-                while evicted_count < 3 and self._key_queue:
-                    to_remove_model_id = self._key_queue.popleft()
-                    if to_remove_model_id in self._pinned_models:
-                        skipped_pinned.append(to_remove_model_id)
-                        continue
-                    super().remove(
-                        to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
-                    )  # LRU model overflow cleanup may or maynot need the weights removed from disk
-                    logger.info(
-                        "Model evicted from cache: model_id=%s, reason=%s, "
-                        "loaded_models=%d, max_active_models=%d, "
-                        "memory_free_threshold=%s, evicted_to_make_room_for=%s",
-                        to_remove_model_id,
-                        eviction_reason,
-                        len(self),
-                        self.max_size,
-                        MEMORY_FREE_THRESHOLD,
-                        queue_id,
-                    )
-                    evicted_count += 1
-                # Put pinned models back at the front of the queue
-                for mid in reversed(skipped_pinned):
-                    self._key_queue.appendleft(mid)
-                if evicted_count == 0:
-                    logger.warning(
-                        "Cannot free model cache space — all remaining models are pinned (preloaded). "
-                        "Proceeding with cache exceeding max_size."
-                    )
-                    break
-                gc.collect()
-                cache_full = len(self) >= self.max_size
-                memory_pressure = (
-                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
-                )
-            logger.debug(f"Marking new model {queue_id} as most recently used.")
-            self._key_queue.append(queue_id)
+            self._ensure_capacity_for_model(model_id=queue_id)
         try:
             return super().add_model(
                 model_id,
@@ -166,19 +103,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        except Exception as error:
-            logger.debug(
-                f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
-            )
-            with acquire_with_timeout(
-                lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
-            ) as acquired:
-                if not acquired:
-                    raise ModelManagerLockAcquisitionError(
-                        "Could not acquire lock on Model Manager state to remove model from active models queue."
-                    )
-                self._safe_remove_model_from_queue(queue_id)
-            raise error
+        finally:
+            self._synchronize_model_queue(model_id=queue_id)
 
     def clear(self) -> None:
         """Removes all models from the manager."""
@@ -186,15 +112,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self.remove(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
-        with acquire_with_timeout(
-            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
-        ) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to remove model from active models queue."
-                )
-            self._safe_remove_model_from_queue(model_id=model_id)
-        return super().remove(model_id, delete_from_disk=delete_from_disk)
+        try:
+            return super().remove(model_id, delete_from_disk=delete_from_disk)
+        finally:
+            self._synchronize_model_queue(
+                model_id=model_id, preserve_registered_position=True
+            )
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
@@ -264,6 +187,105 @@ class WithFixedSizeCache(ModelManagerDecorator):
     ) -> str:
         return model_id if model_id_alias is None else model_id_alias
 
+    def _ensure_capacity_for_model(self, model_id: str) -> None:
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to add model from active models queue."
+                )
+            if model_id in self._key_queue:
+                return
+            cache_full = len(self) >= self.max_size
+            memory_pressure = MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+            while self._key_queue and (cache_full or memory_pressure):
+                eviction_reason = "cache_full" if cache_full else "memory_pressure"
+                evicted_count = 0
+                skipped_pinned = []
+                try:
+                    while evicted_count < 3 and self._key_queue:
+                        to_remove_model_id = self._key_queue.popleft()
+                        if to_remove_model_id in self._pinned_models:
+                            skipped_pinned.append(to_remove_model_id)
+                            continue
+                        try:
+                            super().remove(
+                                to_remove_model_id,
+                                delete_from_disk=DISK_CACHE_CLEANUP,
+                            )
+                        except Exception:
+                            if to_remove_model_id in self:
+                                self._key_queue.appendleft(to_remove_model_id)
+                            raise
+                        logger.info(
+                            "Model evicted from cache: model_id=%s, reason=%s, "
+                            "loaded_models=%d, max_active_models=%d, "
+                            "memory_free_threshold=%s, evicted_to_make_room_for=%s",
+                            to_remove_model_id,
+                            eviction_reason,
+                            len(self),
+                            self.max_size,
+                            MEMORY_FREE_THRESHOLD,
+                            model_id,
+                        )
+                        evicted_count += 1
+                finally:
+                    # Put pinned models back at the front of the queue even if
+                    # removing a later candidate fails.
+                    for skipped_model_id in reversed(skipped_pinned):
+                        self._key_queue.appendleft(skipped_model_id)
+                if evicted_count == 0:
+                    logger.warning(
+                        "Cannot free model cache space — all remaining models are pinned (preloaded). "
+                        "Proceeding with cache exceeding max_size."
+                    )
+                    break
+                gc.collect()
+                cache_full = len(self) >= self.max_size
+                memory_pressure = (
+                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                )
+            logger.debug(f"Marking new model {model_id} as most recently used.")
+            self._key_queue.append(model_id)
+
+    def _synchronize_model_queue(
+        self, model_id: str, preserve_registered_position: bool = False
+    ) -> None:
+        # Queue reconciliation is mandatory cleanup and must not replace a model
+        # load or removal error with a secondary lock-acquisition timeout. The
+        # caller no longer holds a per-model lifecycle lock here, so waiting
+        # behind the existing long eviction critical section cannot invert the
+        # queue-lock -> lifecycle-lock order used by eviction.
+        with self._queue_lock:
+            if preserve_registered_position and model_id in self:
+                self._deduplicate_model_queue_entry(model_id=model_id)
+            else:
+                self._update_model_position_in_queue(model_id=model_id)
+
+    def _deduplicate_model_queue_entry(self, model_id: str) -> None:
+        occurrences = self._key_queue.count(model_id)
+        if occurrences == 0:
+            self._key_queue.append(model_id)
+            return
+        if occurrences == 1:
+            return
+        model_position_preserved = False
+        reconciled_queue = deque()
+        for queued_model_id in self._key_queue:
+            if queued_model_id == model_id:
+                if model_position_preserved:
+                    continue
+                model_position_preserved = True
+            reconciled_queue.append(queued_model_id)
+        self._key_queue.clear()
+        self._key_queue.extend(reconciled_queue)
+
+    def _update_model_position_in_queue(self, model_id: str) -> None:
+        self._safe_remove_model_from_queue(model_id=model_id)
+        if model_id in self:
+            self._key_queue.append(model_id)
+
     def _refresh_model_position_in_a_queue(self, model_id: str) -> None:
         with acquire_with_timeout(
             lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
@@ -272,8 +294,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to refresh model position in active models queue."
                 )
-            self._safe_remove_model_from_queue(model_id=model_id)
-            self._key_queue.append(model_id)
+            self._update_model_position_in_queue(model_id=model_id)
 
     def _safe_remove_model_from_queue(self, model_id: str) -> None:
         try:
