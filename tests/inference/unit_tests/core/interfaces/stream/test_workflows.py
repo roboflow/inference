@@ -315,6 +315,21 @@ class _FakeModelManager:
         assert model_id == "model"
         return self.model
 
+    # The stream-pipeline port methods (Phase 11 Task 11.1) mirror
+    # `ModelManager`'s bodies over the single fake model.
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return model_id in self and self.model._pipeline_depth > 1
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self.model._pipeline_depth if model_id in self else 1
+
+    def flush_model_stream_pipeline(self, model_id: str):
+        return self.model.flush() if model_id in self else None
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        if model_id in self:
+            self.model.shutdown_pipeline()
+
 
 class _ContextAwareModelManager(_FakeModelManager):
     def __init__(self, mode: str) -> None:
