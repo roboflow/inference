@@ -6,6 +6,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   push:
     branches:
       - main
@@ -13,6 +14,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 permissions:
@@ -41,3 +43,14 @@ jobs:
           # Shell/Python static analysis belongs to their dedicated checks;
           # this gate is strictly for Actions YAML, expressions, and actions.
           args: -no-color -shellcheck= -pyflakes=
+
+      # Every pull_request/push-triggered workflow must carry the shared
+      # concurrency block (see the `concurrency:` comment in any workflow), and
+      # workflow names must be unique because github.workflow is the group key.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check concurrency blocks and unique workflow names
+        run: |
+          python -m pip install --quiet pyyaml
+          python .github/scripts/check_workflow_concurrency.py
