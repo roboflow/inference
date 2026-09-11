@@ -1,7 +1,7 @@
 """Tensor-native sibling of `roboflow_core/roboflow_semantic_segmentation_model@v1`.
 
-Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via
-`SemanticSegmentationInferenceRequest` + `infer_from_request_sync`; REMOTE: via the
+Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via the models port's
+`run_semantic_segmentation` / `run_instance_segmentation`; REMOTE: via the
 HTTP client) and converts each *dense* per-pixel response into an ``sv.Detections``
 carrying one COCO-RLE mask per class (under ``data['rle_mask']``). Under
 ENABLE_TENSOR_DATA_REPRESENTATION this sibling must instead emit a native
@@ -530,7 +530,7 @@ def _build_instance_detections_from_inference_response(
 ) -> InstanceDetections:
     """Standard inference semantic-seg response (a single ``dict``, matching numpy
     ``v1.py``'s ``_convert_to_sv_detections`` input - produced identically by v1's
-    LOCAL ``infer_from_request_sync`` dump and its REMOTE HTTP client) ->
+    LOCAL ``run_semantic_segmentation`` dump and its REMOTE HTTP client) ->
     one RLE instance per present non-background/non-ignore class.
 
     Response shape (see numpy ``v1.py``):
