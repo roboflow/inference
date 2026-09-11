@@ -133,6 +133,10 @@ def _decode_serialised_image(payload: dict) -> np.ndarray:
     )
 
 
+def _get_urls(requests_mock: Mocker) -> list:
+    return [r.url for r in requests_mock.request_history if r.method == "GET"]
+
+
 def _assert_one_object_on_both_paths(captured: dict, expected) -> None:
     assert len(captured["init_parameters"]) == 1, "expected exactly one engine init"
     # Path A: the SAME dict object the root handed to the engine carries the codec...
@@ -372,10 +376,9 @@ def test_http_run_route_fetches_an_allow_listed_url_input_through_the_bound_code
         )
 
     assert response.status_code == 200, response.text
-    # Count only the image fetch: the process-global usage collector may flush
-    # its own POSTs through the same mocked transport (order-dependent).
-    image_fetches = [r for r in requests_mock.request_history if r.url == url]
-    assert len(image_fetches) == 1
+    # GETs only: the process-global usage collector may POST through the same
+    # mocked transport (order-dependent).
+    assert _get_urls(requests_mock) == [url]
     _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
     blurred = _decode_serialised_image(response.json()["outputs"][0]["blurred"])
     assert blurred.shape == (16, 24, 3)
@@ -567,7 +570,9 @@ def test_one_image_uses_both_paths_and_they_must_agree(requests_mock: Mocker) ->
     assert isinstance(image, WorkflowImageData)
     assert image.numpy_image.shape == (16, 24, 3)  # cached pixels, no reload
     assert recorder.calls == [("fetch_url", url)]
-    assert requests_mock.call_count == 1
+    # GETs only: the process-global usage collector may POST through the same
+    # mocked transport (order-dependent).
+    assert _get_urls(requests_mock) == [url]
 
     # Stage 2 - Path B: the downstream block re-loads THAT image from its
     # inference-format dict through the process registry - the same object.
@@ -591,8 +596,7 @@ def test_one_image_uses_both_paths_and_they_must_agree(requests_mock: Mocker) ->
         "image": {"width": 24, "height": 16},
     }
     assert recorder.calls == [("fetch_url", url), ("load_image", payload)]
-    assert requests_mock.call_count == 2
-    assert {request.url for request in requests_mock.request_history} == {url}
+    assert _get_urls(requests_mock) == [url, url]
     client.chat.completions.create.assert_called_once()
 
 

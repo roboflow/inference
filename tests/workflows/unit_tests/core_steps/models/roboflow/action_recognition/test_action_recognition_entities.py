@@ -5,6 +5,21 @@ from pathlib import Path
 # -> parents[7] is the repo root
 REPO_ROOT = Path(__file__).resolve().parents[7]
 BASE = REPO_ROOT / "inference/core/workflows/execution_engine/entities/base.py"
+ENTITIES = (
+    REPO_ROOT
+    / "inference/core/workflows/core_steps/models/roboflow/action_recognition/entities.py"
+)
+
+
+def test_entities_module_imports_nothing_from_the_server() -> None:
+    tree = ast.parse(ENTITIES.read_text(encoding="utf-8"))
+    imported = [
+        node.module if isinstance(node, ast.ImportFrom) else alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in (node.names if isinstance(node, ast.Import) else [None])
+    ]
+    assert not [m for m in imported if m and m.startswith("inference.")], imported
 
 
 def test_base_does_not_import_server_action_recognition_entities() -> None:
