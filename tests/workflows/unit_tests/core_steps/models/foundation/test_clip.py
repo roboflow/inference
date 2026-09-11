@@ -19,9 +19,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 def mock_model_manager():
     # Mock a model manager that returns a predictable embedding
     mock = MagicMock()
-    mock.infer_from_request_sync.return_value = MagicMock(
-        embeddings=[[0.1, 0.2, 0.3]]  # Sample embedding
-    )
+    mock.run_clip_text_embedding.return_value = [[0.1, 0.2, 0.3]]
+    mock.run_clip_image_embedding.return_value = [[0.1, 0.2, 0.3]]
     return mock
 
 
@@ -84,7 +83,7 @@ def test_run_locally_with_text(mock_model_manager):
     assert isinstance(result, dict)
     assert len(result["embedding"]) == 3
     assert result["embedding"] == [0.1, 0.2, 0.3]
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_clip_text_embedding.assert_called_once()
 
 
 def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
@@ -99,7 +98,7 @@ def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
     assert isinstance(result, dict)
     assert len(result["embedding"]) == 3
     assert result["embedding"] == [0.1, 0.2, 0.3]
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_clip_image_embedding.assert_called_once()
 
 
 @patch(

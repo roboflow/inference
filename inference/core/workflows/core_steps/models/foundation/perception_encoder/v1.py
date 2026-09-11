@@ -3,10 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.perception_encoder import (
-    PerceptionEncoderImageEmbeddingRequest,
-    PerceptionEncoderTextEmbeddingRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.environment import (
@@ -197,38 +193,36 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             cached_value = text_cache.get(hash_key)
             if cached_value is not None:
                 return {"embedding": cached_value}
-            inference_request = PerceptionEncoderTextEmbeddingRequest(
-                perception_encoder_version_id=version,
+            pe_model_id = load_core_model(
+                model_manager=self._model_manager,
+                core_model="perception_encoder",
+                version_id=version,
+                api_key=self._api_key,
+            )
+            embeddings = self._model_manager.run_perception_encoder_text_embedding(
+                model_id=pe_model_id,
+                version_id=version,
                 text=[data],
                 api_key=self._api_key,
             )
-            pe_model_id = load_core_model(
-                model_manager=self._model_manager,
-                version_id=inference_request.perception_encoder_version_id,
-                api_key=self._api_key,
-                core_model="perception_encoder",
-            )
-            predictions = self._model_manager.infer_from_request_sync(
-                pe_model_id, inference_request
-            )
-            text_cache.set(hash_key, predictions.embeddings[0])
-            return {"embedding": predictions.embeddings[0]}
+            text_cache.set(hash_key, embeddings[0])
+            return {"embedding": embeddings[0]}
         else:
-            inference_request = PerceptionEncoderImageEmbeddingRequest(
-                perception_encoder_version_id=version,
-                image=[data.to_inference_format(numpy_preferred=True)],
-                api_key=self._api_key,
-            )
+            # decode BEFORE registration, as HEAD does (CR-1)
+            image = data.to_inference_format(numpy_preferred=True)
             pe_model_id = load_core_model(
                 model_manager=self._model_manager,
-                version_id=inference_request.perception_encoder_version_id,
-                api_key=self._api_key,
                 core_model="perception_encoder",
+                version_id=version,
+                api_key=self._api_key,
             )
-            predictions = self._model_manager.infer_from_request_sync(
-                pe_model_id, inference_request
+            embeddings = self._model_manager.run_perception_encoder_image_embedding(
+                model_id=pe_model_id,
+                version_id=version,
+                images=[image],
+                api_key=self._api_key,
             )
-            return {"embedding": predictions.embeddings[0]}
+            return {"embedding": embeddings[0]}
 
     def run_remotely(
         self,

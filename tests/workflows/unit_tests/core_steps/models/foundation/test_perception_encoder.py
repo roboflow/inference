@@ -18,7 +18,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 @pytest.fixture
 def mock_model_manager():
     mock = MagicMock()
-    mock.infer_from_request_sync.return_value = MagicMock(embeddings=[[0.1, 0.2, 0.3]])
+    mock.run_perception_encoder_text_embedding.return_value = [[0.1, 0.2, 0.3]]
+    mock.run_perception_encoder_image_embedding.return_value = [[0.1, 0.2, 0.3]]
     return mock
 
 
@@ -66,7 +67,7 @@ def test_run_locally_with_text(mock_model_manager):
     result = block.run(data="hello", version="PE-Core-B16-224")
 
     assert result["embedding"] == [0.1, 0.2, 0.3]
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_perception_encoder_text_embedding.assert_called_once()
 
 
 def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
@@ -79,7 +80,7 @@ def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
     result = block.run(data=mock_workflow_image_data, version="PE-Core-B16-224")
 
     assert result["embedding"] == [0.1, 0.2, 0.3]
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_perception_encoder_image_embedding.assert_called_once()
 
 
 @patch(
