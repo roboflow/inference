@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+import pytest
+
 from inference.core import env as env_module
 
 
@@ -151,3 +153,31 @@ def test_local_packages_require_model_authorization_to_be_disabled(
         assert "cannot authorize local model paths" in result.stderr
     else:
         assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, {"*"}),
+        (" * ", {"*"}),
+        ("", set()),
+        (" , ", set()),
+        (
+            " https://approved.example/v1/, http://localhost:8000/v1/ ",
+            {"https://approved.example/v1", "http://localhost:8000/v1"},
+        ),
+    ],
+)
+def test_openai_compatible_allowed_base_urls_configuration(
+    monkeypatch, value, expected
+) -> None:
+    try:
+        with monkeypatch.context() as env_context:
+            if value is None:
+                env_context.delenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", raising=False)
+            else:
+                env_context.setenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", value)
+            importlib.reload(env_module)
+            assert env_module.OPENAI_COMPATIBLE_ALLOWED_BASE_URLS == expected
+    finally:
+        importlib.reload(env_module)
