@@ -34,6 +34,12 @@ from inference.core.workflows.core_steps.models.roboflow.multi_class_classificat
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     RoboflowMultiLabelClassificationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+    RoboflowMultiLabelClassificationModelBlockV2,
+)
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+    RoboflowMultiLabelClassificationModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
 )
@@ -250,6 +256,97 @@ def test_multi_label_classification_v1_request_matches_the_pre_port_construction
         active_learning_target_dataset=None,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_multi_label_classification_v2_forwards_the_separate_confidence_keyword() -> (
+    None
+):
+    # Round-2 review finding: v2 passes `confidence` to `infer_from_request_sync`
+    # as a SEPARATE keyword in addition to the request field - the adapter
+    # carries this as `inference_kwargs`. Assert both the request and that
+    # extra keyword match the pre-11.8 call.
+    manager = _manager()
+    images = _make_images()
+    block = RoboflowMultiLabelClassificationModelBlockV2(
+        model_manager=ModelManagerModelsProvider(manager),
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._post_process_result = lambda **_: None
+
+    block.run_locally(
+        images=images,
+        model_id="m/1",
+        confidence=0.7,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+    )
+
+    _assert_registers_before_inferring(manager, model_id="m/1", api_key="k")
+    request = _captured_request(manager)
+
+    # Copied verbatim from `git show 93b644ca7:.../multi_label_classification/v2.py`.
+    inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
+    expected = ClassificationInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=inference_images,
+        confidence=0.7,
+        disable_active_learning=False,
+        source="workflow-execution",
+        active_learning_target_dataset=None,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+    # Old code: `infer_from_request_sync(model_id=model_id, request=request,
+    # confidence=confidence)` - the extra `confidence` keyword, unchanged.
+    call = manager.infer_from_request_sync.call_args
+    assert call.kwargs["confidence"] == 0.7
+
+
+def test_multi_label_classification_v3_forwards_the_separate_confidence_keyword() -> (
+    None
+):
+    # Same shape as v2 (round-2 review finding); v3 additionally resolves
+    # `confidence` from `confidence_mode`/`custom_confidence` in `run()`, but
+    # `run_locally` (called directly here) takes the resolved `confidence`.
+    manager = _manager()
+    images = _make_images()
+    block = RoboflowMultiLabelClassificationModelBlockV3(
+        model_manager=ModelManagerModelsProvider(manager),
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._post_process_result = lambda **_: None
+
+    block.run_locally(
+        images=images,
+        model_id="m/1",
+        confidence=0.7,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+    )
+
+    _assert_registers_before_inferring(manager, model_id="m/1", api_key="k")
+    request = _captured_request(manager)
+
+    # Copied verbatim from `git show 93b644ca7:.../multi_label_classification/v3.py`.
+    inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
+    expected = ClassificationInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=inference_images,
+        confidence=0.7,
+        disable_active_learning=False,
+        source="workflow-execution",
+        active_learning_target_dataset=None,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+    # Old code: `infer_from_request_sync(model_id=model_id, request=request,
+    # confidence=confidence)` - the extra `confidence` keyword, unchanged.
+    call = manager.infer_from_request_sync.call_args
+    assert call.kwargs["confidence"] == 0.7
 
 
 def test_keypoint_detection_v1_request_matches_the_pre_port_construction() -> None:
