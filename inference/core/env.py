@@ -85,6 +85,41 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
     os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
 )
 
+# Connection boundary for the PostgreSQL Workflow sink, which opens an outbound
+# connection to a host taken from the workflow definition. When False, a host
+# that resolves to a non-global address (loopback, private/RFC1918,
+# link-local/metadata 169.254.169.254, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP so a second DNS resolution cannot
+# rebind it; Unix-socket paths and multi-host lists are rejected too. Default is
+# True (permissive: any destination) to preserve behaviour. The hosted platform
+# sets this to False so tenant workflows cannot reach internal services.
+ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+)
+# Optional comma-separated denylist of destinations the PostgreSQL Workflow sink
+# may never connect to (IP literals or hostnames). Enforced regardless of the
+# non-global setting above: the raw host and every resolved IP are checked
+# against it. Default None (empty denylist).
+POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES.split(",")
+    )
+# Optional comma-separated allowlist of destinations the PostgreSQL Workflow sink
+# may connect to (IP literals or hostnames). When set, ONLY these are permitted:
+# a destination is allowed if the raw host matches or every resolved IP matches;
+# anything else is rejected. Enforced regardless of the non-global setting above.
+# Default None (no allowlist, i.e. any destination subject to the other checks).
+POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
+    )
+
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
