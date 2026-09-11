@@ -37,11 +37,16 @@ import requests
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.sam2 import Box, Point, Sam2Prompt, Sam2PromptSet
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
     split_key_point_prediction,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
     SYNTHETIC_POINT_PROMPT_CLASS_ID,

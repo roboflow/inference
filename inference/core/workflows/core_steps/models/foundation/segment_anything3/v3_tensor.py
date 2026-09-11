@@ -44,7 +44,6 @@ import numpy as np
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Reuse the v1_tensor conversion machinery + the v2_tensor per-class/NMS collector.
@@ -59,6 +58,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_
     _collect_from_native_with_nms,
     _min_floor,
     _per_class_threshold,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Sam3Prompt,
 )
 from inference.core.workflows.environment import (
     API_BASE_URL,
