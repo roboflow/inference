@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
 from inference.core.workflows.environment import (
@@ -191,28 +190,18 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = ClassificationInferenceRequest(
-            api_key=self._api_key,
-            model_id=model_id,
-            image=inference_images,
-            confidence=confidence,
-            disable_active_learning=disable_active_learning,
-            source="workflow-execution",
-            active_learning_target_dataset=active_learning_target_dataset,
-        )
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
+        predictions = self._model_manager.run_classification(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
+            confidence=confidence,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
         )
-        if isinstance(predictions, list):
-            predictions = [
-                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-            ]
-        else:
-            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             predictions=predictions,
             images=images,

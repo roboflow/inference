@@ -1,6 +1,27 @@
 from typing import Any, Dict, List, Optional, Protocol, Union
 
 
+class _Unset:
+    """Sentinel type: 'the caller did not pass this argument at all'.
+
+    Distinct from `None`: the adapter forwards `None` into the request exactly
+    as the block used to, so a request field that rejects `None`
+    (`multimask_output`, `enable_thinking`, `confidence`) or treats it
+    differently from its default (`sam2_version_id`, `output_prob_thresh`,
+    `enforce_dense_masks_in_inference_models`, `clip_version_id`) behaves as
+    before. Every optional request argument of a `run_*` method that a block
+    passes only sometimes defaults to UNSET.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "UNSET"
+
+
+UNSET = _Unset()
+
+
 class ModelsProvider(Protocol):
     """The port through which Workflows reach models.
 
@@ -46,6 +67,57 @@ class ModelsProvider(Protocol):
     def infer_from_request_sync(
         self, model_id: str, request: Any, **kwargs: Any
     ) -> Any: ...
+
+    def run_object_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+    ) -> List[dict]: ...
+
+    def run_classification(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: Optional[Union[float, str]] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+        inference_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> List[dict]: ...
+
+    def run_keypoints_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        keypoint_confidence: Optional[float] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+    ) -> List[dict]: ...
+
+    def run_semantic_segmentation(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: Union[float, str, None, _Unset] = UNSET,
+        response_mask_format: str = "base64_png",
+    ) -> List[dict]: ...
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 

@@ -30,9 +30,25 @@ step execution. Keep the argument names aligned with
 
 from typing import Any, Dict, List, Optional, Union
 
+from inference.core.entities.requests.inference import (
+    ClassificationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
+    ObjectDetectionInferenceRequest,
+    SemanticSegmentationInferenceRequest,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.prototypes.models_provider import UNSET, _Unset
 
 _WORKFLOW_SOURCE = "workflow-execution"
+
+
+def _passed(**arguments: Any) -> Dict[str, Any]:
+    """The request keywords the caller actually passed: drops UNSET, keeps None."""
+    return {
+        name: value
+        for name, value in arguments.items()
+        if not isinstance(value, _Unset)
+    }
 
 
 class ModelManagerModelsProvider:
@@ -69,6 +85,113 @@ class ModelManagerModelsProvider:
         return self._model_manager.infer_from_request_sync(
             model_id=model_id, request=request, **kwargs
         )
+
+    def run_object_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+    ) -> List[dict]:
+        request = ObjectDetectionInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            class_agnostic_nms=class_agnostic_nms,
+            class_filter=class_filter,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            max_candidates=max_candidates,
+            source=_WORKFLOW_SOURCE,
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))
+
+    def run_classification(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: Optional[Union[float, str]] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+        inference_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> List[dict]:
+        request = ClassificationInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            confidence=confidence,
+            disable_active_learning=disable_active_learning,
+            source=_WORKFLOW_SOURCE,
+            active_learning_target_dataset=active_learning_target_dataset,
+        )
+        return self._dump(
+            self._infer(model_id=model_id, request=request, **(inference_kwargs or {}))
+        )
+
+    def run_keypoints_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        keypoint_confidence: Optional[float] = None,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+    ) -> List[dict]:
+        request = KeypointsDetectionInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            class_agnostic_nms=class_agnostic_nms,
+            class_filter=class_filter,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            max_candidates=max_candidates,
+            keypoint_confidence=keypoint_confidence,
+            source=_WORKFLOW_SOURCE,
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))
+
+    def run_semantic_segmentation(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: Union[float, str, None, _Unset] = UNSET,
+        response_mask_format: str = "base64_png",
+    ) -> List[dict]:
+        # UNSET means "v1, which never sets confidence" -> omitted, so the
+        # pydantic default applies. An explicit None means "v2 resolved its
+        # manifest to None" -> forwarded, so the ValidationError it raises today
+        # still happens. Collapsing the two would be a silent behaviour change.
+        request = SemanticSegmentationInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            response_mask_format=response_mask_format,
+            source=_WORKFLOW_SOURCE,
+            **_passed(confidence=confidence),
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(
