@@ -4,7 +4,6 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
@@ -297,22 +296,15 @@ class Qwen35VLBlockV1(WorkflowBlock):
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
             # Build an LMMInferenceRequest with both prompt and image.
-            request_kwargs = dict(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=single_prompt,
+                api_key=self._api_key,
                 enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
-            if max_new_tokens is not None:
-                request_kwargs["max_new_tokens"] = max_new_tokens
-            request = LMMInferenceRequest(**request_kwargs)
-            # Run inference.
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            response_text = prediction.response
+            response_text = prediction["response"]
             # When enable_thinking is used and the response contains
             # thinking data (dict with 'thinking' and 'answer' keys),
             # extract them separately.

@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.environment import (
     COSMOS3_ENABLED,
@@ -244,17 +243,13 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
 
         predictions = []
         for image in inference_images:
-            request = LMMInferenceRequest(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=combined_prompt,
+                api_key=self._api_key,
             )
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            predictions.append({"output": prediction.response})
+            predictions.append({"output": prediction["response"]})
         return predictions
 
 

@@ -5,7 +5,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.environment import (
@@ -556,22 +555,18 @@ class Florence2BlockV1(WorkflowBlock):
             else:
                 prompt = task_type + (single_prompt or "")
 
-            request = LMMInferenceRequest(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=prompt,
-            )
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
+                api_key=self._api_key,
             )
             if is_not_florence_task:
-                prediction_data = prediction.response[
-                    list(prediction.response.keys())[0]
+                prediction_data = prediction["response"][
+                    list(prediction["response"].keys())[0]
                 ]
             else:
-                prediction_data = prediction.response[task_type]
+                prediction_data = prediction["response"][task_type]
             if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
                 classes = prediction_data.get("labels", [])
             predictions.append(

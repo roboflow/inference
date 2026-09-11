@@ -1,26 +1,14 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 32
+# Count: 19
 inference/core/workflows/core_steps/models/foundation/clip/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.entities.requests.clip
-inference/core/workflows/core_steps/models/foundation/cosmos3/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/depth_estimation/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/easy_ocr/v1.py	inference.core.entities.requests.easy_ocr
-inference/core/workflows/core_steps/models/foundation/florence2/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/glm_ocr/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/moondream2/v1.py	inference.core.entities.requests.moondream2
 inference/core/workflows/core_steps/models/foundation/ocr/v1.py	inference.core.entities.requests.doctr
 inference/core/workflows/core_steps/models/foundation/perception_encoder/v1.py	inference.core.entities.requests.perception_encoder
 inference/core/workflows/core_steps/models/foundation/pp_ocr/v1.py	inference.core.entities.requests.pp_ocr
 inference/core/workflows/core_steps/models/foundation/pp_ocr/v1_tensor.py	inference.core.entities.requests.pp_ocr
-inference/core/workflows/core_steps/models/foundation/qwen/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen3_5vl/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen3_5vl/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen3vl/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen_vlm/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen_vlm/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/qwen_vlm/v3.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.requests.sam3
@@ -31,5 +19,4 @@ inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1_tensor.py	inference.core.entities.requests.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.entities.requests.sam2
-inference/core/workflows/core_steps/models/foundation/smolvlm/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world
