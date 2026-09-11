@@ -62,7 +62,10 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json_atomic, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.model_types import record_model_descriptor
+from inference.usage_tracking.model_types import (
+    normalize_model_latency_ms,
+    record_model_descriptor,
+)
 from inference_models.models.auto_loaders import core as inference_models_auto_loaders
 from inference_models.models.auto_loaders.core import parse_model_config
 from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
@@ -88,7 +91,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "sam3": ("embed", "sam3"),
     "sam3/sam3_interactive": ("interactive-segmentation", "sam3"),
-    "cosmos-3-edge/action_recognition": ("action-recognition", "cosmos-3-edge"),
+    "nvidia/cosmos-3-edge-action-recognition": ("action-recognition", "cosmos-3-edge"),
     "sam3-3d-objects": ("3d-reconstruction", "sam3-3d-objects"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
@@ -450,7 +453,7 @@ def get_model_type(
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
-    task_type, model_type, model_variant = _resolve_model_type(
+    task_type, model_type, model_variant, model_latency_ms = _resolve_model_type(
         model_id=model_id,
         api_key=api_key,
         countinference=countinference,
@@ -465,12 +468,14 @@ def get_model_type(
         model_id=model_id,
         architecture=model_type,
         variant=model_variant,
+        latency_ms=model_latency_ms,
         task_type=task_type,
     )
     record_model_descriptor(
         model_id=resolve_roboflow_model_alias(model_id=model_id),
         architecture=model_type,
         variant=model_variant,
+        latency_ms=model_latency_ms,
         task_type=task_type,
     )
     return task_type, model_type
@@ -494,11 +499,11 @@ def _resolve_model_type(
     api_key: Optional[str] = None,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
-) -> Tuple[TaskType, ModelType, Optional[str]]:
+) -> Tuple[TaskType, ModelType, Optional[str], Optional[float]]:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     local_model_type = _get_local_model_type(model_id=model_id)
     if local_model_type is not None:
-        return local_model_type[0], local_model_type[1], None
+        return local_model_type[0], local_model_type[1], None, None
     pipeline_definition = _get_model_pipeline_definition(model_id=model_id)
     if pipeline_definition is not None:
         logger.debug(f"Loading model pipeline: {model_id}.")
@@ -506,6 +511,7 @@ def _resolve_model_type(
             pipeline_definition.task_type,
             pipeline_definition.model_type,
             _coded_model_variant(model_id=model_id),
+            None,
         )
     validate_model_id_for_cache(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
@@ -513,13 +519,13 @@ def _resolve_model_type(
     if model_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {model_id}.")
         task_type, model_type = GENERIC_MODELS[model_id]
-        return task_type, model_type, _coded_model_variant(model_id=model_id)
+        return task_type, model_type, _coded_model_variant(model_id=model_id), None
 
     # then check if the dataset id is in the GENERIC_MODELS dictionary
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         task_type, model_type = GENERIC_MODELS[dataset_id]
-        return task_type, model_type, _coded_model_variant(model_id=model_id)
+        return task_type, model_type, _coded_model_variant(model_id=model_id), None
 
     if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
         if not _check_if_api_key_has_access_to_model(
@@ -544,7 +550,12 @@ def _resolve_model_type(
             project_task_type=cached_metadata[0],
             model_type=cached_metadata[1],
         )
-        return cached_metadata[0], cached_metadata[1], cached_metadata[2]
+        return (
+            cached_metadata[0],
+            cached_metadata[1],
+            cached_metadata[2],
+            cached_metadata[3],
+        )
     if version_id == STUB_VERSION_ID:
         if api_key is None:
             raise MissingApiKeyError(
@@ -562,7 +573,7 @@ def _resolve_model_type(
             model_type=model_type,
             api_key=api_key,
         )
-        return project_task_type, model_type, None
+        return project_task_type, model_type, None, None
 
     if USE_INFERENCE_MODELS:
         api_data = get_model_metadata_from_inference_models_registry(
@@ -603,6 +614,7 @@ def _resolve_model_type(
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     model_variant = api_data.get("modelVariant") or None
+    model_latency_ms = normalize_model_latency_ms(api_data.get("modelLatencyMs"))
     _ensure_model_supported_on_this_deployment(
         model_id=model_id,
         project_task_type=project_task_type,
@@ -614,10 +626,11 @@ def _resolve_model_type(
         project_task_type=project_task_type,
         model_type=model_type,
         model_variant=model_variant,
+        model_latency_ms=model_latency_ms,
         api_key=api_key,
     )
 
-    return project_task_type, model_type, model_variant
+    return project_task_type, model_type, model_variant, model_latency_ms
 
 
 def _ensure_model_supported_on_this_deployment(
@@ -655,7 +668,7 @@ def _get_cached_model_metadata(
     dataset_id: Union[DatasetID, ModelID],
     version_id: Optional[VersionID],
     api_key: Optional[str] = None,
-) -> Optional[Tuple[TaskType, ModelType, Optional[str]]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[str], Optional[float]]]:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     validate_model_id_for_cache(model_id=model_id)
     cache_key = _get_in_process_metadata_cache_key(
@@ -690,13 +703,18 @@ def _get_cached_model_metadata(
 
 def _normalize_cached_model_metadata(
     cached: Optional[Tuple[Any, ...]],
-) -> Optional[Tuple[TaskType, ModelType, Optional[str]]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[str], Optional[float]]]:
     if cached is None:
         return None
     if len(cached) >= 3:
-        return cached[0], cached[1], cached[2]
+        return (
+            cached[0],
+            cached[1],
+            cached[2],
+            normalize_model_latency_ms(cached[3]) if len(cached) >= 4 else None,
+        )
     if len(cached) == 2:
-        return cached[0], cached[1], None
+        return cached[0], cached[1], None, None
     return None
 
 
@@ -704,7 +722,7 @@ def _get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID],
     version_id: Optional[VersionID],
     api_key: Optional[str] = None,
-) -> Optional[Tuple[TaskType, ModelType, Optional[str]]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[str], Optional[float]]]:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     # Layout 1: traditional model_type.json
     try:
@@ -770,7 +788,7 @@ def _load_model_metadata_from_path(
     path: str,
     required_model_id: Optional[str] = None,
     allow_ownerless: bool = False,
-) -> Optional[Tuple[TaskType, ModelType, Optional[str]]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[str], Optional[float]]]:
     try:
         model_metadata = _read_model_metadata_json(path=path)
     except FileNotFoundError:
@@ -807,13 +825,14 @@ def _load_model_metadata_from_path(
         model_metadata[PROJECT_TASK_TYPE_KEY],
         model_metadata[MODEL_TYPE_KEY],
         model_variant,
+        normalize_model_latency_ms(model_metadata.get("model_latency_ms")),
     )
 
 
 def _get_model_metadata_from_inference_models_cache(
     model_id: str,
     api_key: Optional[str] = None,
-) -> Optional[Tuple[TaskType, ModelType, Optional[str]]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[str], Optional[float]]]:
     """Check the `inference-models` cache layout for model metadata.
 
     Best-effort fallback used when the traditional ``model_type.json`` is
@@ -859,7 +878,7 @@ def _get_model_metadata_from_inference_models_cache(
             metadata.get("model_id"),
         ),
     )
-    return task_type, model_architecture, model_variant
+    return task_type, model_architecture, model_variant, None
 
 
 def _model_variant_from_offline_registry(
@@ -928,6 +947,7 @@ def save_model_metadata_in_cache(
     model_type: ModelType,
     api_key: Optional[str] = None,
     model_variant: Optional[str] = None,
+    model_latency_ms: Optional[float] = None,
 ) -> None:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     validate_model_id_for_cache(model_id=model_id)
@@ -938,6 +958,7 @@ def save_model_metadata_in_cache(
             project_task_type=project_task_type,
             model_type=model_type,
             model_variant=model_variant,
+            model_latency_ms=model_latency_ms,
         )
     else:
         with cache.lock(
@@ -950,6 +971,7 @@ def save_model_metadata_in_cache(
                 project_task_type=project_task_type,
                 model_type=model_type,
                 model_variant=model_variant,
+                model_latency_ms=model_latency_ms,
             )
     _in_process_metadata_cache.set(
         _get_in_process_metadata_cache_key(
@@ -957,7 +979,7 @@ def save_model_metadata_in_cache(
             version_id=version_id,
             api_key=api_key,
         ),
-        (project_task_type, model_type, model_variant),
+        (project_task_type, model_type, model_variant, model_latency_ms),
     )
 
 
@@ -967,6 +989,7 @@ def _save_model_metadata_in_cache(
     project_task_type: TaskType,
     model_type: ModelType,
     model_variant: Optional[str] = None,
+    model_latency_ms: Optional[float] = None,
 ) -> None:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     model_type_cache_path = construct_model_type_cache_path(
@@ -983,6 +1006,8 @@ def _save_model_metadata_in_cache(
     }
     if model_variant:
         metadata[MODEL_VARIANT_KEY] = model_variant
+    if model_latency_ms is not None:
+        metadata["model_latency_ms"] = model_latency_ms
     dump_json_atomic(
         path=model_type_cache_path, content=metadata, allow_override=True, indent=4
     )

@@ -21,6 +21,9 @@ from pycocotools import mask as mask_utils
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.core_steps.common.keypoints import (
+    validate_keypoints_padding,
+)
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
@@ -1030,6 +1033,7 @@ def build_native_key_points(
         list(conf) if conf else [] for conf in per_instance_confidence
     ]
     max_key_points = max((len(xy) for xy in normalised_xy), default=0)
+    validate_keypoints_padding(number_of_instances, max_key_points)
     xy_tensor = torch.zeros(
         (number_of_instances, max_key_points, 2), dtype=torch.float32
     )
