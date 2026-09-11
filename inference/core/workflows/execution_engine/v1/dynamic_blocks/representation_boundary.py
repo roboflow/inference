@@ -33,6 +33,9 @@ from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
 )
+from inference.core.workflows.core_steps.common.keypoints import (
+    validate_keypoints_padding,
+)
 from inference.core.workflows.core_steps.common.serializers_tensor import (
     serialise_native_classification,
 )
@@ -704,6 +707,7 @@ def _attach_padded_keypoint_columns(
         for per_box in bboxes_metadata
     ]
     max_kps = max((len(kp) for kp in keypoints_xy), default=0)
+    validate_keypoints_padding(detections_number, max_kps)
     padded_xy = np.zeros((detections_number, max_kps, 2), dtype=np.float32)
     padded_conf = np.zeros((detections_number, max_kps), dtype=np.float32)
     padded_class_id = np.zeros((detections_number, max_kps), dtype=int)

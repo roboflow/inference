@@ -30,6 +30,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
+    validate_keypoints_padding,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -193,6 +194,7 @@ def add_inference_keypoints_to_sv_detections(
     # is_data_equal (used in Detections indexing/comparison).
     max_kps = max((len(kp) for kp in keypoints_xy), default=0)
     n = len(inference_prediction)
+    validate_keypoints_padding(n, max_kps)
     padded_xy = np.zeros((n, max_kps, 2), dtype=np.float32)
     padded_conf = np.zeros((n, max_kps), dtype=np.float32)
     padded_class_id = np.zeros((n, max_kps), dtype=int)
