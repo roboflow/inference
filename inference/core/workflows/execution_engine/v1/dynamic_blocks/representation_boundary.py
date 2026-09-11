@@ -29,10 +29,6 @@ import numpy as np
 import supervision as sv
 import torch
 
-from inference.core.env import (
-    ENABLE_TENSOR_DATA_REPRESENTATION,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-)
 from inference.core.workflows.core_steps.common.keypoints import (
     validate_keypoints_padding,
 )
@@ -42,6 +38,10 @@ from inference.core.workflows.core_steps.common.serializers_tensor import (
 from inference.core.workflows.core_steps.common.tensor_native import (
     HOST_MIRROR_KEYS,
     build_native_key_points,
+)
+from inference.core.workflows.environment import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
 )
 from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.constants import (

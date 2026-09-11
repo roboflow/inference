@@ -21,7 +21,7 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
-from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
+from inference.core.workflows.environment import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.workflows.errors import (
     BlockTraceback,
     StepExecutionError,
