@@ -372,8 +372,10 @@ def test_http_run_route_fetches_an_allow_listed_url_input_through_the_bound_code
         )
 
     assert response.status_code == 200, response.text
-    assert requests_mock.call_count == 1
-    assert requests_mock.request_history[0].url == url
+    # Count only the image fetch: the process-global usage collector may flush
+    # its own POSTs through the same mocked transport (order-dependent).
+    image_fetches = [r for r in requests_mock.request_history if r.url == url]
+    assert len(image_fetches) == 1
     _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
     blurred = _decode_serialised_image(response.json()["outputs"][0]["blurred"])
     assert blurred.shape == (16, 24, 3)
