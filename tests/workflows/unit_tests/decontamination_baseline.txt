@@ -1,10 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 15
-inference/core/workflows/core_steps/models/foundation/easy_ocr/v1.py	inference.core.entities.requests.easy_ocr
-inference/core/workflows/core_steps/models/foundation/ocr/v1.py	inference.core.entities.requests.doctr
-inference/core/workflows/core_steps/models/foundation/pp_ocr/v1.py	inference.core.entities.requests.pp_ocr
-inference/core/workflows/core_steps/models/foundation/pp_ocr/v1_tensor.py	inference.core.entities.requests.pp_ocr
+# Count: 10
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.requests.sam3
@@ -15,4 +11,3 @@ inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1_tensor.py	inference.core.entities.requests.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.entities.requests.sam2
-inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world

@@ -6,7 +6,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -236,25 +235,23 @@ class EasyOCRBlockV1(WorkflowBlock):
 
         predictions = []
         for single_image in images:
-
-            inference_request = EasyOCRInferenceRequest(
-                easy_ocr_version_id=version,
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
-                language_codes=language_codes,
-                quantize=quantize,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             model_id = load_core_model(
                 model_manager=self._model_manager,
-                version_id=inference_request.easy_ocr_version_id,
-                api_key=self._api_key,
                 core_model="easy_ocr",
+                version_id=version,
+                api_key=self._api_key,
             )
-            result = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
+            predictions.append(
+                self._model_manager.run_easy_ocr(
+                    model_id=model_id,
+                    version_id=version,
+                    image=image,
+                    api_key=self._api_key,
+                    language_codes=language_codes,
+                    quantize=quantize,
+                )
             )
-
-            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
 
         return post_process_ocr_result(
             predictions=predictions,

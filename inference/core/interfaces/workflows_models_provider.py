@@ -35,6 +35,8 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     DepthEstimationRequest,
@@ -49,6 +51,8 @@ from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
+from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.prototypes.models_provider import (
@@ -390,6 +394,81 @@ class ModelManagerModelsProvider:
             perception_encoder_version_id=version_id, image=images, api_key=api_key
         )
         return self._infer(model_id=model_id, request=request)[0].embeddings
+
+    def run_doctr_ocr(
+        self,
+        model_id: str,
+        image: Any,
+        api_key: Optional[str] = None,
+        generate_bounding_boxes: Union[bool, None, _Unset] = UNSET,
+    ) -> dict:
+        request = DoctrOCRInferenceRequest(
+            image=image,
+            api_key=api_key,
+            **_passed(generate_bounding_boxes=generate_bounding_boxes),
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))[0]
+
+    def run_easy_ocr(
+        self,
+        model_id: str,
+        version_id: str,
+        image: Any,
+        api_key: Optional[str] = None,
+        language_codes: Optional[List[str]] = None,
+        quantize: Optional[bool] = None,
+    ) -> dict:
+        request = EasyOCRInferenceRequest(
+            easy_ocr_version_id=version_id,
+            image=image,
+            api_key=api_key,
+            language_codes=language_codes,
+            quantize=quantize,
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))[0]
+
+    def run_pp_ocr(
+        self,
+        image: Any,
+        api_key: Optional[str] = None,
+        text_detection: Union[str, None, _Unset] = UNSET,
+        text_recognition: Union[str, None, _Unset] = UNSET,
+    ) -> dict:
+        # The request has its own "omitted" sentinel with different semantics
+        # from None (requests/pp_ocr.py:13): omitted -> "small", None -> the
+        # stage is disabled. Forward only what the caller actually passed.
+        request = PPOCRInferenceRequest(
+            image=image,
+            api_key=api_key,
+            **_passed(text_detection=text_detection, text_recognition=text_recognition),
+        )
+        # The validator derived `pp_ocr_version_id` from the normalised stages;
+        # `load_core_model` read exactly that attribute before, so the id is
+        # unchanged. Registration keeps its position: build -> register ->
+        # infer.
+        core_model_id = f"pp_ocr/{request.pp_ocr_version_id}"
+        self._model_manager.add_model(
+            core_model_id, api_key, endpoint_type=ModelEndpointType.CORE_MODEL
+        )
+        return self._dump(self._infer(model_id=core_model_id, request=request))[0]
+
+    def run_yolo_world(
+        self,
+        model_id: str,
+        version_id: str,
+        image: Any,
+        text: List[str],
+        api_key: Optional[str] = None,
+        confidence: Optional[Union[float, str]] = None,
+    ) -> dict:
+        request = YOLOWorldInferenceRequest(
+            image=image,
+            yolo_world_version_id=version_id,
+            confidence=confidence,
+            text=text,
+            api_key=api_key,
+        )
+        return self._dump(self._infer(model_id=model_id, request=request))[0]
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(
