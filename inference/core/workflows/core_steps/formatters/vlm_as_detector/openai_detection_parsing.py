@@ -90,11 +90,7 @@ def parse_openai_object_detection_response(
     if not isinstance(parsed_data, list):
         raise ValueError("Unexpected OpenAI object detection response format")
     if len(parsed_data) == 0:
-        image_height, image_width = image.numpy_image.shape[:2]
-        return empty_detections_with_image_metadata(
-            image_height=image_height,
-            image_width=image_width,
-        )
+        return empty_detections_with_image_metadata(image=image)
 
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]

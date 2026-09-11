@@ -371,10 +371,7 @@ def parse_llm_object_detection_response(
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
     if len(parsed_data["detections"]) == 0:
-        return empty_detections_with_image_metadata(
-            image_height=image_height,
-            image_width=image_width,
-        )
+        return empty_detections_with_image_metadata(image=image)
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in parsed_data["detections"]:
         xyxy.append(
