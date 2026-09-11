@@ -7,15 +7,15 @@ from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.environment import (
     CORE_MODEL_PE_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,

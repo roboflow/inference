@@ -3,18 +3,18 @@ from typing import List, Literal, Optional, Type
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    post_process_ocr_result,
+)
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    post_process_ocr_result,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

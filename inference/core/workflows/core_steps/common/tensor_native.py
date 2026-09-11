@@ -20,7 +20,7 @@ import torch
 from pycocotools import mask as mask_utils
 from supervision.config import ORIENTED_BOX_COORDINATES
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,

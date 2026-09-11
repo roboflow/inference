@@ -5,18 +5,18 @@ import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+    split_key_point_prediction,
+)
+from inference.core.workflows.environment import (
     CORE_MODEL_SAM2_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
-    split_key_point_prediction,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

@@ -28,12 +28,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
@@ -45,6 +39,12 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

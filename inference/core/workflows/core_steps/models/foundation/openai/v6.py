@@ -9,7 +9,6 @@ import requests
 from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.workflows.core_steps.common.reasoning import (
     attach_reasoning_levels,
     models_supporting_reasoning,
@@ -25,6 +24,9 @@ from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,

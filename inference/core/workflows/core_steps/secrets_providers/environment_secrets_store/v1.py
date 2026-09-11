@@ -3,7 +3,9 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES
+from inference.core.workflows.environment import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import SECRET_KIND
 from inference.core.workflows.prototypes.block import (

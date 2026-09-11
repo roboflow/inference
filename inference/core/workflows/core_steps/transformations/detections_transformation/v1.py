@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     DEFAULT_OPERAND_NAME,
     AllOperationsType,
@@ -17,6 +16,7 @@ from inference.core.workflows.core_steps.common.utils import (
     grab_batch_parameters,
     grab_non_batch_parameters,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,

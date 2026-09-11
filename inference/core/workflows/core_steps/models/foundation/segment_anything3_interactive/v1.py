@@ -14,17 +14,6 @@ from inference.core.entities.requests.sam2 import (
     Sam2SegmentationRequest,
 )
 from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
-from inference.core.env import (
-    API_BASE_URL,
-    CORE_MODEL_SAM3_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SAM3_EXEC_MODE,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -38,6 +27,17 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
     SYNTHETIC_POINT_PROMPT_CLASS_ID,
     SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
+)
+from inference.core.workflows.environment import (
+    API_BASE_URL,
+    CORE_MODEL_SAM3_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

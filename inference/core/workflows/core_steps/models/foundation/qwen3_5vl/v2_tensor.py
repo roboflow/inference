@@ -15,18 +15,18 @@ routes through the inference_models adapter exactly as v1_tensor does, with
 
 from typing import List, Optional, Type
 
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor import (
     Qwen35VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
     BlockManifest,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

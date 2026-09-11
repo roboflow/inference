@@ -11,16 +11,16 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.env import (
-    API_BASE_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
+)
+from inference.core.workflows.environment import (
+    API_BASE_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

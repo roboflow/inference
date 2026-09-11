@@ -26,12 +26,6 @@ from typing import Set
 
 from filelock import FileLock
 
-from inference.core.env import (
-    ALLOW_WORKFLOWS_FONTS_DOWNLOAD,
-    MODEL_CACHE_DIR,
-    OFFLINE_MODE,
-    SECURE_GATEWAY,
-)
 from inference.core.workflows.core_steps.visualizations.common.fonts.downloader import (
     FontDownloadError,
     compute_file_sha256,
@@ -44,6 +38,12 @@ from inference.core.workflows.core_steps.visualizations.common.fonts.registry im
 )
 from inference.core.workflows.core_steps.visualizations.common.fonts.schema import (
     font_family_to_identifier,
+)
+from inference.core.workflows.environment import (
+    ALLOW_WORKFLOWS_FONTS_DOWNLOAD,
+    MODEL_CACHE_DIR,
+    OFFLINE_MODE,
+    SECURE_GATEWAY,
 )
 
 ASSETS_DIR = Path(__file__).parent / "assets"

@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.env import LMM_ENABLED
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
@@ -10,6 +9,7 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
+from inference.core.workflows.environment import LMM_ENABLED
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,

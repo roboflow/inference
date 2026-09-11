@@ -4,7 +4,7 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,

@@ -4,18 +4,18 @@ from typing import List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    MOONDREAM2_ENABLED,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    MOONDREAM2_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

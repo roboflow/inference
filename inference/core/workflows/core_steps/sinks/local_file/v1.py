@@ -7,8 +7,10 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
+from inference.core.workflows.environment import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,

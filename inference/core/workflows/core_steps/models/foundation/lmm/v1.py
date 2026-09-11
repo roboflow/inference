@@ -7,16 +7,16 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.env import (
-    LMM_ENABLED,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     run_in_parallel,
+)
+from inference.core.workflows.environment import (
+    LMM_ENABLED,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,

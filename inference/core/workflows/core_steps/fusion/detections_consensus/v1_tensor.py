@@ -23,11 +23,11 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     take_prediction_by_indices,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,

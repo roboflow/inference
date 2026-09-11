@@ -38,7 +38,17 @@ import torch
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.sam2 import Box, Point, Sam2Prompt, Sam2PromptSet
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+    split_key_point_prediction,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+    normalise_labeled_points,
+)
+from inference.core.workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -49,16 +59,6 @@ from inference.core.env import (
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
-    split_key_point_prediction,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
-    SYNTHETIC_POINT_PROMPT_CLASS_ID,
-    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
-    normalise_labeled_points,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,

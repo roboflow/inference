@@ -5,11 +5,11 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlm_json import (
     coerce_classification_payload,
     extract_json_payload,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     CLASSIFICATION_STYLE_FORMATTER,

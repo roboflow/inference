@@ -17,19 +17,19 @@ from inference.core.entities.responses.inference import (
     Point,
 )
 from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
-from inference.core.env import (
-    CORE_MODEL_SAM2_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
+)
+from inference.core.workflows.environment import (
+    CORE_MODEL_SAM2_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

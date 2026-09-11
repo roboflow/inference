@@ -5,18 +5,18 @@ import torch
 import torch.nn.functional as F
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    remove_unexpected_keys_from_dictionary,
+    run_in_parallel,
+)
+from inference.core.workflows.environment import (
     CLIP_VERSION_ID,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    remove_unexpected_keys_from_dictionary,
-    run_in_parallel,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,

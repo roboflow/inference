@@ -87,7 +87,11 @@ import numpy as np
 import torch
 from pydantic import ConfigDict
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
+from inference.core.workflows.environment import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -95,10 +99,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
