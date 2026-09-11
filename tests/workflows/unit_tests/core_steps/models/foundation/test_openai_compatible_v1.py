@@ -1,10 +1,15 @@
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from inference.core.workflows.core_steps.models.foundation.openai_compatible import (
+    v1 as openai_compatible,
+)
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     BlockManifest,
     OpenAICompatibleBlockV1,
@@ -203,6 +208,11 @@ def test_resolve_parameters_no_ops() -> None:
 @patch(
     "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
 )
+@patch.object(
+    openai_compatible,
+    "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+    {"http://localhost:8000/v1"},
+)
 def test_block_run_success(mock_execute: MagicMock) -> None:
     mock_execute.return_value = "The model response"
     block = OpenAICompatibleBlockV1()
@@ -225,6 +235,11 @@ def test_block_run_success(mock_execute: MagicMock) -> None:
 @patch(
     "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
 )
+@patch.object(
+    openai_compatible,
+    "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+    {"http://localhost:8000/v1"},
+)
 def test_block_run_error(mock_execute: MagicMock) -> None:
     mock_execute.side_effect = RuntimeError("Connection refused")
     block = OpenAICompatibleBlockV1()
@@ -246,6 +261,11 @@ def test_block_run_error(mock_execute: MagicMock) -> None:
 
 @patch(
     "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
+)
+@patch.object(
+    openai_compatible,
+    "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+    {"http://localhost:8000/v1"},
 )
 def test_block_run_forwards_extra_body(mock_execute: MagicMock) -> None:
     mock_execute.return_value = "A"
@@ -300,6 +320,11 @@ def test_manifest_extra_body_defaults_to_none() -> None:
 
 @patch(
     "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
+)
+@patch.object(
+    openai_compatible,
+    "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+    {"http://localhost:8000/v1"},
 )
 def test_block_run_without_extra_body_kwarg_is_backwards_compatible(
     mock_execute: MagicMock,
@@ -394,3 +419,146 @@ def test_execute_request_forwards_empty_extra_body(mock_openai: MagicMock) -> No
         extra_body={},
     )
     assert mock_client.chat.completions.create.call_args.kwargs["extra_body"] == {}
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://127.0.0.1/v1",
+        "http://10.0.0.1/v1",
+        "http://169.254.169.254/latest",
+        "http://[::1]/v1",
+        "https://attacker.example/v1",
+        "https://approved.example.attacker.example/v1",
+        "https://approved.example@attacker.example/v1",
+        "https://approved.example:8443/v1",
+        "https://approved.example/v1/other",
+        "http://approved.example/v1",
+    ],
+)
+def test_unapproved_endpoints_never_create_client(monkeypatch, base_url) -> None:
+    monkeypatch.setattr(
+        openai_compatible,
+        "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+        {"https://approved.example/v1"},
+    )
+    with patch.object(openai_compatible, "OpenAI") as create_client:
+        with pytest.raises(ValueError, match="not approved"):
+            OpenAICompatibleBlockV1()._get_client(base_url, "test-key")
+    create_client.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "file:///tmp/v1",
+        "ftp://approved.example/v1",
+        "//approved.example/v1",
+        "https://user:password@approved.example/v1",
+        "https://approved.example/v1?path=other",
+        "https://approved.example/v1#fragment",
+    ],
+)
+def test_invalid_approved_url_never_creates_client(monkeypatch, base_url) -> None:
+    monkeypatch.setattr(
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {base_url}
+    )
+    with patch.object(openai_compatible, "OpenAI") as create_client:
+        with pytest.raises(ValueError, match=r"HTTP\(S\) URL"):
+            OpenAICompatibleBlockV1()._get_client(base_url, "test-key")
+    create_client.assert_not_called()
+
+
+def test_empty_allowlist_blocks_run_before_network_access(monkeypatch) -> None:
+    monkeypatch.setattr(openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", set())
+    with patch.object(openai_compatible, "OpenAI") as create_client:
+        result = OpenAICompatibleBlockV1().run(
+            base_url="http://localhost:8000/v1",
+            model_name="test-model",
+            api_key="test-key",
+            system_prompt=None,
+            prompt="Hello",
+            prompt_parameters={},
+            prompt_parameters_operations={},
+            max_tokens=10,
+            temperature=None,
+        )
+    assert result["output"] == ""
+    assert "not approved" in result["error_status"]
+    create_client.assert_not_called()
+
+
+def test_cached_client_still_requires_approved_endpoint(monkeypatch) -> None:
+    base_url = "http://localhost:8000/v1"
+    allowed = {base_url}
+    monkeypatch.setattr(
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", allowed
+    )
+    block = OpenAICompatibleBlockV1()
+    with block._get_client(base_url, "test-key") as client:
+        assert block._get_client(base_url + "/", "test-key") is client
+        allowed.clear()
+        with pytest.raises(ValueError, match="not approved"):
+            block._get_client(base_url, "test-key")
+
+
+@pytest.mark.parametrize("allowed_url", ["*", "http://localhost:8000/v1"])
+@pytest.mark.parametrize("status_code", [200, 301, 302, 303, 307, 308])
+def test_approved_endpoint_uses_real_sdk_without_following_redirects(
+    monkeypatch, status_code, allowed_url
+) -> None:
+    base_url = "http://localhost:8000/v1"
+    monkeypatch.setattr(
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {allowed_url}
+    )
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1 and status_code != 200:
+            return httpx.Response(
+                status_code,
+                headers={"Location": "http://169.254.169.254/redirect-target"},
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}]},
+        )
+
+    block = OpenAICompatibleBlockV1()
+    with patch.object(httpx.HTTPTransport, "handle_request", side_effect=respond):
+        with block._get_client(base_url, "synthetic-secret"):
+            result = block.run(
+                base_url=base_url + "/",
+                model_name="test-model",
+                api_key="synthetic-secret",
+                system_prompt=None,
+                prompt="Value: {{ $parameters.secret }}",
+                prompt_parameters={"secret": "private-text", "image": b"image"},
+                prompt_parameters_operations={},
+                max_tokens=10,
+                temperature=None,
+            )
+    assert len(requests) == 1
+    assert str(requests[0].url) == base_url + "/chat/completions"
+    assert requests[0].headers["Authorization"] == "Bearer synthetic-secret"
+    content = json.loads(requests[0].content)["messages"][0]["content"]
+    assert content[0] == {"type": "text", "text": "Value: private-text"}
+    assert content[1]["image_url"]["url"] == "data:image/jpeg;base64,aW1hZ2U="
+    if status_code == 200:
+        assert result == {"output": "ok", "error_status": ""}
+    else:
+        assert result["output"] == ""
+        assert result["error_status"]
+
+
+@pytest.mark.parametrize("allowed", [{"*"}, {"*", "https://approved.example/v1"}])
+@pytest.mark.parametrize(
+    "base_url", ["http://127.0.0.1/v1", "https://other.example/v1"]
+)
+def test_wildcard_allows_any_destination(monkeypatch, allowed, base_url) -> None:
+    monkeypatch.setattr(
+        openai_compatible, "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", allowed
+    )
+    with OpenAICompatibleBlockV1()._get_client(base_url, "test-key") as client:
+        assert str(client.base_url) == base_url + "/"
