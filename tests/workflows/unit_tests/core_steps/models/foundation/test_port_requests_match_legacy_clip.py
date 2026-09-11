@@ -15,7 +15,18 @@ One case per distinct request-building shape the task touches:
 which never set `clip_version_id`) and with it forwarded explicitly
 (`clip_comparison/v2.py`), and
 `PerceptionEncoderTextEmbeddingRequest`/`PerceptionEncoderImageEmbeddingRequest`
-(`perception_encoder/v1.py`).
+(`perception_encoder/v1.py`). Plus one case for the OTHER `ClipCompareRequest`
+union shape (text subject, image prompt(s)) that no current block exercises
+(both blocks hardcode `subject_type="image"`/`prompt_type="text"`), driven
+directly through the adapter's `run_clip_comparison`, compared against the
+same pre-Task-11.11 `ClipCompareRequest(...)` constructor pattern
+(`git show ed9034266:.../clip_comparison/v2.py`) with those inputs substituted.
+
+Every case asserts both `model_dump()` equality AND `model_fields_set`
+equality: a field the pre-port code never set must stay unset on the ported
+request too, not be re-supplied with its own default value - `model_dump()`
+alone cannot tell "never passed" from "passed the same value as the default"
+apart.
 """
 
 from unittest.mock import MagicMock
@@ -54,6 +65,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
+
+# A payload `InferenceRequestImage` accepts. A bare string does not validate.
+IMAGE = {"type": "base64", "value": "aGVsbG8="}
 
 
 class _EmbeddingResponse:
@@ -107,6 +121,7 @@ def test_clip_text_embedding_request_matches_the_pre_port_construction() -> None
         clip_version_id="ViT-B-16", text=["a parity test cat"], api_key="k"
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     assert result == {"embedding": [0.1, 0.2]}
 
 
@@ -135,6 +150,7 @@ def test_clip_image_embedding_request_matches_the_pre_port_construction() -> Non
         api_key="k",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     assert result == {"embedding": [0.3]}
 
 
@@ -164,6 +180,7 @@ def test_clip_comparison_v1_request_matches_the_pre_port_construction() -> None:
         prompt_type="text",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     manager.add_model.assert_called_once_with(
         f"clip/{expected.clip_version_id}",
         "k",
@@ -196,6 +213,50 @@ def test_clip_comparison_v2_request_matches_the_pre_port_construction() -> None:
         api_key="k",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+    manager.add_model.assert_called_once_with(
+        "clip/RN50", "k", endpoint_type=ModelEndpointType.CORE_MODEL
+    )
+
+
+def test_clip_comparison_text_subject_image_prompt_matches_the_pre_port_construction() -> (
+    None
+):
+    # Neither block ever builds this shape - both hardcode
+    # `subject_type="image"`/`prompt_type="text"` - but `ClipCompareRequest`
+    # (and the adapter's generic `run_clip_comparison`) support the other
+    # union member on `subject`/`prompt` too. Drive it directly through the
+    # adapter and compare against the same constructor pattern
+    # `clip_comparison/v2.py` used pre-Task-11.11
+    # (`git show ed9034266:.../clip_comparison/v2.py`:
+    # `ClipCompareRequest(clip_version_id=version, subject=..., subject_type=...,
+    # prompt=..., prompt_type=..., api_key=...)`), with a text subject and an
+    # image-list prompt substituted for the inputs.
+    manager = _manager()
+    manager.infer_from_request_sync.return_value = _ComparisonResponse([0.7])
+    provider = ModelManagerModelsProvider(manager)
+
+    result = provider.run_clip_comparison(
+        subject="a parity test cat",
+        subject_type="text",
+        prompt=[IMAGE],
+        prompt_type="image",
+        api_key="k",
+        version_id="RN50",
+    )
+
+    assert result == {"similarity": [0.7]}
+    request = _captured_request(manager)
+    expected = ClipCompareRequest(
+        clip_version_id="RN50",
+        subject="a parity test cat",
+        subject_type="text",
+        prompt=[IMAGE],
+        prompt_type="image",
+        api_key="k",
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     manager.add_model.assert_called_once_with(
         "clip/RN50", "k", endpoint_type=ModelEndpointType.CORE_MODEL
     )
@@ -227,6 +288,7 @@ def test_perception_encoder_text_embedding_request_matches_the_pre_port_construc
         api_key="k",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     assert result == {"embedding": [0.4]}
 
 
@@ -257,4 +319,5 @@ def test_perception_encoder_image_embedding_request_matches_the_pre_port_constru
         api_key="k",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
     assert result == {"embedding": [0.5]}
