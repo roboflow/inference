@@ -614,6 +614,19 @@ if (
         "trusted single-tenant deployment, or disable one of these modes."
     )
 
+# Local paths have no Roboflow identity for per-model authorization. Offline
+# deployments already require an explicit authorization bypass above.
+if (
+    MODELS_CACHE_AUTH_ENABLED
+    and not OFFLINE_MODE
+    and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+):
+    raise ValueError(
+        "MODELS_CACHE_AUTH_ENABLED cannot authorize local model paths. "
+        "Disable ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES "
+        "when per-model authorization is required."
+    )
+
 # Models cache auth cache ttl, default is 15 minutes
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
 
@@ -826,6 +839,10 @@ DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
     os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
 )
 WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+# Enable only on trusted deployments that need MJPEG cameras on private networks.
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES", "False")
+)
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
@@ -1414,6 +1431,15 @@ if HTTP_API_THREADPOOL_WORKERS:
     HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
 else:
     HTTP_API_THREADPOOL_WORKERS = None
+
+# Exact operator-approved OpenAI-compatible base URLs, ignoring trailing slashes.
+# "*" allows any destination by default for compatibility; empty blocks all.
+OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = {
+    url.rstrip("/")
+    for url in safe_split_value(
+        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", "*"), strip=True
+    )
+}
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
