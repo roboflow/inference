@@ -107,6 +107,18 @@ if POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is not None:
     POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = set(
         POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES.split(",")
     )
+# Optional comma-separated allowlist of destinations the PostgreSQL Workflow sink
+# may connect to (IP literals or hostnames). When set, ONLY these are permitted:
+# a destination is allowed if the raw host matches or every resolved IP matches;
+# anything else is rejected. Enforced regardless of the non-global setting above.
+# Default None (no allowlist, i.e. any destination subject to the other checks).
+POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
+    )
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")

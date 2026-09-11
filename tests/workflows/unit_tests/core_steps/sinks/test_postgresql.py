@@ -411,3 +411,52 @@ def test_sink_always_fails_on_hosted_platform(platform_flag, connect, monkeypatc
     connect.assert_not_called()
     pool.submit.assert_not_called()
     assert len(tasks.tasks) == 0
+
+
+def test_not_whitelisted_reason_allows_host_match():
+    assert (
+        v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], {"db.example.com"})
+        is None
+    )
+
+
+def test_not_whitelisted_reason_allows_when_all_ips_match():
+    assert (
+        v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], {"93.184.216.34"})
+        is None
+    )
+
+
+def test_not_whitelisted_reason_blocks_when_absent():
+    assert (
+        v1.not_whitelisted_reason("db.other.com", ["203.0.113.9"], {"db.example.com"})
+        == "host is not in the sink address allowlist"
+    )
+
+
+def test_not_whitelisted_reason_none_when_no_allowlist():
+    assert v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], None) is None
+
+
+def test_allowlist_blocks_non_listed_host_end_to_end(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"db.allowed.com"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.evil.com"))
+    assert result["error_status"] is True
+    assert "allowlist" in result["message"]
+    connect.assert_not_called()
+
+
+def test_allowlist_permits_listed_host_end_to_end(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"db.allowed.com"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.allowed.com"))
+    kwargs = connect.call_args.kwargs
+    assert kwargs["host"] == "db.allowed.com"
+    assert kwargs["hostaddr"] == "93.184.216.34"

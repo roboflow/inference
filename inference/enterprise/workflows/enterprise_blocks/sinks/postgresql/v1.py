@@ -21,6 +21,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     LAMBDA,
     POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES,
+    POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES,
 )
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -75,7 +76,10 @@ second DNS lookup cannot rebind it; Unix-socket paths and multi-host lists are
 rejected. The server may also set `POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES`
 (comma-separated IPs or hostnames, empty by default) to deny specific destinations
 regardless of the non-global setting; the raw host and every resolved IP are checked
-against it. The default on self-hosted runtimes is permissive (any destination).
+against it. For the tightest control, `POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES`
+(comma-separated, empty by default) restricts the sink to an allowlist: a destination
+is permitted only if the raw host matches or every resolved IP matches, and anything
+else is rejected. The default on self-hosted runtimes is permissive (any destination).
 
 Set `fire_and_forget=false` to observe commit success or failure, especially when
 streaming. Background mode returns scheduling status, not persistence confirmation;
@@ -225,6 +229,25 @@ def denylisted_reason(
         if ip in blacklisted_addresses:
             return f"host '{host}' resolves to a denylisted address '{ip}'"
     return None
+
+
+def not_whitelisted_reason(
+    host: str,
+    resolved_ips: List[str],
+    whitelisted_addresses: Optional[Set[str]],
+) -> Optional[str]:
+    """Allowlist screen layered on top of :func:`resolve_and_validate_ips` (kept
+    separate from the copied resolver). When an allowlist is configured, the
+    destination is permitted only if the raw host matches or every resolved IP
+    matches; otherwise a failure reason is returned. Returns None when no
+    allowlist is configured (no restriction)."""
+    if not whitelisted_addresses:
+        return None
+    if host in whitelisted_addresses:
+        return None
+    if resolved_ips and all(ip in whitelisted_addresses for ip in resolved_ips):
+        return None
+    return "host is not in the sink address allowlist"
 
 
 def validate_integer(value: Any, name: str, maximum: int) -> None:
@@ -443,6 +466,8 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
                 return failure(f"Could not resolve host: {host}")
             reason = denylisted_reason(
                 host, resolved_ips, POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES
+            ) or not_whitelisted_reason(
+                host, resolved_ips, POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES
             )
             if reason is not None:
                 return failure(reason)
@@ -570,18 +595,18 @@ def validate_inputs(
         # Unix-socket path or a comma-separated multi-host list cannot be safely
         # IP-gated or denylisted.
         if host.startswith("/") or "," in host:
-            raise ValueError(
-                "host must be a single global TCP hostname or IP address"
-            )
+            raise ValueError("host must be a single global TCP hostname or IP address")
     return rows
 
 
 def connection_policy_active() -> bool:
     """True when the PostgreSQL sink must resolve and screen the destination:
-    either non-global addresses are blocked, or a denylist is configured."""
+    non-global addresses are blocked, a denylist is configured, or an allowlist
+    is configured."""
     return (
         not ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
         or bool(POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES)
+        or bool(POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES)
     )
 
 
