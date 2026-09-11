@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    MAX_CLASSES_PER_TRACK,
     MAX_REATTACH_CANDIDATES,
     MAX_STATE_TTL,
     MAX_TRACKED_VIDEOS,
@@ -608,3 +609,109 @@ def test_track_class_lock_manifest_rejects_state_ttl_over_max() -> None:
     # when / then
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(data)
+
+
+def _one_track_many_classes(n: int, tracker_id: int = 7) -> sv.Detections:
+    # one tracker id repeated n times, a never-before-seen class per detection
+    return sv.Detections(
+        xyxy=np.tile(np.array([[10.0, 10.0, 50.0, 50.0]]), (n, 1)),
+        confidence=np.full(n, 0.9),
+        class_id=np.arange(n),
+        tracker_id=np.full(n, tracker_id),
+        data={"class_name": np.array([f"class_{i}" for i in range(n)], dtype=object)},
+    )
+
+
+def test_track_class_lock_bounds_per_track_class_state() -> None:
+    # given - a single track fed a fresh class name on every detection; the
+    # track cap and TTL key on tracker id, so only a per-track class cap helps
+    block = TrackClassLockBlockV1()
+    n = MAX_CLASSES_PER_TRACK * 4
+
+    # when - spread over frames so TTL never expires the track either
+    for _ in range(3):
+        block.run(image=_image(), detections=_one_track_many_classes(n), **KNOBS)
+
+    # then - vote/confidence/class-id tables stay bounded, no spurious lock
+    st = block._per_video_state["vid_1"]["tracks"][7]
+    assert len(st["votes"]) <= MAX_CLASSES_PER_TRACK
+    assert len(st["conf_sum"]) <= MAX_CLASSES_PER_TRACK
+    assert len(st["class_ids"]) <= MAX_CLASSES_PER_TRACK + 3
+    assert st["locked"] is None
+
+
+def test_track_class_lock_bounds_class_ids_for_post_lock_challengers() -> None:
+    # given - a locked track that then sees a different challenger class on
+    # every frame (each challenger records its class id)
+    block = TrackClassLockBlockV1()
+    for _ in range(10):
+        block.run(image=_image(), detections=_frame("cat", 0.9), **KNOBS)
+    assert block._per_video_state["vid_1"]["tracks"][7]["locked"] == "cat"
+
+    # when
+    for i in range(MAX_CLASSES_PER_TRACK * 2):
+        challenger = sv.Detections(
+            xyxy=np.array([[10.0, 10.0, 50.0, 50.0]]),
+            confidence=np.array([0.95]),
+            class_id=np.array([100 + i]),
+            tracker_id=np.array([7]),
+            data={"class_name": np.array([f"challenger_{i}"], dtype=object)},
+        )
+        result = block.run(image=_image(), detections=challenger, **KNOBS)
+
+    # then - still locked on cat, class-id table bounded, lock id preserved
+    st = block._per_video_state["vid_1"]["tracks"][7]
+    assert st["locked"] == "cat"
+    assert len(st["class_ids"]) <= MAX_CLASSES_PER_TRACK + 3
+    assert st["class_ids"]["cat"] == CLASS_IDS["cat"]
+    out = result["tracked_detections"]
+    assert out.data["class_name"][0] == "cat"
+    assert out.class_id[0] == CLASS_IDS["cat"]
+
+
+def test_track_class_lock_still_locks_when_true_class_is_among_many() -> None:
+    # given - junk classes fill the per-track table, but the real class keeps
+    # being observed; admitted classes must keep collecting votes and lock
+    block = TrackClassLockBlockV1()
+    block.run(
+        image=_image(),
+        detections=_one_track_many_classes(MAX_CLASSES_PER_TRACK),
+        **KNOBS,
+    )
+    # class_0 is already admitted; vote for it repeatedly
+    for _ in range(12):
+        frame = sv.Detections(
+            xyxy=np.array([[10.0, 10.0, 50.0, 50.0]]),
+            confidence=np.array([0.9]),
+            class_id=np.array([0]),
+            tracker_id=np.array([7]),
+            data={"class_name": np.array(["class_0"], dtype=object)},
+        )
+        result = block.run(image=_image(), detections=frame, **KNOBS)
+
+    # then
+    out = result["tracked_detections"]
+    assert out.data["class_locked"][0]
+    assert out.data["class_name"][0] == "class_0"
+
+
+def test_track_class_lock_tensor_variant_bounds_per_track_class_state() -> None:
+    # given - the tensor-native sibling duplicates the voting loop; it must
+    # apply the same per-track class cap (skipped where torch is unavailable)
+    pytest.importorskip("torch")
+    from inference.core.workflows.core_steps.transformations.track_class_lock import (
+        v1_tensor,
+    )
+
+    block = v1_tensor.TrackClassLockBlockV1()
+    n = MAX_CLASSES_PER_TRACK * 4
+
+    # when - drive the shared voting state machine on a boundary sv.Detections
+    for _ in range(3):
+        v1_tensor._vote_and_lock(block, _image(), _one_track_many_classes(n), **KNOBS)
+
+    # then
+    st = block._per_video_state["vid_1"]["tracks"][7]
+    assert len(st["votes"]) <= MAX_CLASSES_PER_TRACK
+    assert len(st["class_ids"]) <= MAX_CLASSES_PER_TRACK + 3
+    assert st["locked"] is None

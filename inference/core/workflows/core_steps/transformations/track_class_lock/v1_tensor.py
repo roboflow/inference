@@ -15,6 +15,7 @@ component drives the voting and the relabelled tuple is returned so keypoints
 survive. Instance-segmentation masks are carried through unchanged.
 """
 
+import heapq
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from typing import List, Optional, Set, Tuple, Type, Union
@@ -30,9 +31,11 @@ from inference.core.workflows.core_steps.transformations.track_class_lock.v1 imp
     MAX_STATE_TTL,
     MAX_TRACKED_VIDEOS,
     BlockManifest,
+    _class_admissible,
     _eligible_inheritance_candidates,
     _enforce_track_cap,
     _find_lock_to_inherit,
+    _record_class_id,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -206,13 +209,13 @@ def _vote_and_lock(
         qualifying = conf >= vote_confidence
 
         if st["locked"] is None:
-            if qualifying:
+            if qualifying and _class_admissible(st, cname):
                 st["votes"][cname] += 1
                 st["conf_sum"][cname] += conf
                 if dets.class_id is not None:
-                    st["class_ids"][cname] = int(dets.class_id[i])
+                    _record_class_id(st, cname, int(dets.class_id[i]))
             if st["votes"]:
-                ranked = sorted(st["votes"].items(), key=lambda kv: kv[1], reverse=True)
+                ranked = heapq.nlargest(2, st["votes"].items(), key=lambda kv: kv[1])
                 top_c, top_v = ranked[0]
                 runner_v = ranked[1][1] if len(ranked) > 1 else 0
                 if top_v >= min_votes and top_v - runner_v >= lead_margin:
@@ -227,7 +230,7 @@ def _vote_and_lock(
                     st["streak"] = 1
                     st["streak_conf"] = conf
                     if dets.class_id is not None:
-                        st["class_ids"][cname] = int(dets.class_id[i])
+                        _record_class_id(st, cname, int(dets.class_id[i]))
                 if st["streak"] >= switch_after:
                     new = st["challenger"]
                     st["locked"] = new
