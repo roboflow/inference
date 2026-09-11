@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 57
+# Count: 51
 inference/core/workflows/core_steps/models/foundation/clip/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.entities.requests.clip
@@ -21,21 +21,15 @@ inference/core/workflows/core_steps/models/foundation/qwen3vl/v1.py	inference.co
 inference/core/workflows/core_steps/models/foundation/qwen_vlm/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/qwen_vlm/v2.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/qwen_vlm/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/foundation/seg_preview/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.requests.sam2
-inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v2_tensor.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/foundation/segment_anything3/v3_tensor.py	inference.core.entities.requests.sam3
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py	inference.core.entities.requests.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1_tensor.py	inference.core.entities.requests.sam3_3d
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.requests.sam2
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.responses.sam2
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/smolvlm/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world

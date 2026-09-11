@@ -8,13 +8,15 @@ import supervision as sv
 from pydantic import ConfigDict, Field, model_validator, validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
-from inference.core.entities.responses.inference import (
-    InferenceResponseImage,
-    InstanceSegmentationInferenceResponse,
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.inference_response_dc import (
+    InferenceResponseImageDC,
+    InstanceSegmentationInferenceResponseDC,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -390,15 +392,13 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
-            final_inference_prediction = InstanceSegmentationInferenceResponse(
+            final_inference_prediction = InstanceSegmentationInferenceResponseDC(
                 predictions=class_predictions,
-                image=InferenceResponseImage(width=image_width, height=image_height),
+                image=InferenceResponseImageDC(width=image_width, height=image_height),
             )
             predictions.append(final_inference_prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -476,15 +476,13 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
-            final_inference_prediction = InstanceSegmentationInferenceResponse(
+            final_inference_prediction = InstanceSegmentationInferenceResponseDC(
                 predictions=class_predictions,
-                image=InferenceResponseImage(width=image_width, height=image_height),
+                image=InferenceResponseImageDC(width=image_width, height=image_height),
             )
             predictions.append(final_inference_prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -579,15 +577,13 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
-            final_inference_prediction = InstanceSegmentationInferenceResponse(
+            final_inference_prediction = InstanceSegmentationInferenceResponseDC(
                 predictions=class_predictions,
-                image=InferenceResponseImage(width=image_width, height=image_height),
+                image=InferenceResponseImageDC(width=image_width, height=image_height),
             )
             predictions.append(final_inference_prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -621,7 +617,7 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     confidence: float,
     text_prompt: Optional[str] = None,
     specific_class_id: Optional[int] = None,
-) -> InstanceSegmentationInferenceResponse:
+) -> InstanceSegmentationInferenceResponseDC:
     image_width = image.numpy_image.shape[1]
     image_height = image.numpy_image.shape[0]
     predictions = []
@@ -671,7 +667,7 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
                     }
                 )
             )
-    return InstanceSegmentationInferenceResponse(
+    return InstanceSegmentationInferenceResponseDC(
         predictions=predictions,
-        image=InferenceResponseImage(width=image_width, height=image_height),
+        image=InferenceResponseImageDC(width=image_width, height=image_height),
     )
