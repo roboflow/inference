@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 68
+# Count: 67
 inference/core/workflows/core_steps/common/utils.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/common/utils.py	inference.core.entities.requests.doctr
 inference/core/workflows/core_steps/common/utils.py	inference.core.entities.requests.easy_ocr
@@ -52,7 +52,6 @@ inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v2.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v3.py	inference.core.entities.responses.inference
 inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v4.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/keypoint_detection/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/keypoint_detection/v2.py	inference.core.entities.requests.inference
