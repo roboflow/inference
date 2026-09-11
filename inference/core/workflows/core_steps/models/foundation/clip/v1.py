@@ -3,10 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.clip import (
-    ClipImageEmbeddingRequest,
-    ClipTextEmbeddingRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.environment import (
@@ -189,40 +185,36 @@ class ClipModelBlockV1(WorkflowBlock):
             if cached_value is not None:
                 return {"embedding": cached_value}
 
-            inference_request = ClipTextEmbeddingRequest(
-                clip_version_id=version,
+            clip_model_id = load_core_model(
+                model_manager=self._model_manager,
+                core_model="clip",
+                version_id=version,
+                api_key=self._api_key,
+            )
+            embeddings = self._model_manager.run_clip_text_embedding(
+                model_id=clip_model_id,
+                version_id=version,
                 text=[data],
                 api_key=self._api_key,
             )
-            clip_model_id = load_core_model(
-                model_manager=self._model_manager,
-                version_id=inference_request.clip_version_id,
-                api_key=self._api_key,
-                core_model="clip",
-            )
-            predictions = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
-            )
-
-            text_cache.set(hash_key, predictions.embeddings[0])
-
-            return {"embedding": predictions.embeddings[0]}
+            text_cache.set(hash_key, embeddings[0])
+            return {"embedding": embeddings[0]}
         else:
-            inference_request = ClipImageEmbeddingRequest(
-                clip_version_id=version,
-                image=[data.to_inference_format(numpy_preferred=True)],
-                api_key=self._api_key,
-            )
+            # decode BEFORE registration, as HEAD does (CR-1)
+            image = data.to_inference_format(numpy_preferred=True)
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
-                version_id=inference_request.clip_version_id,
-                api_key=self._api_key,
                 core_model="clip",
+                version_id=version,
+                api_key=self._api_key,
             )
-            predictions = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
+            embeddings = self._model_manager.run_clip_image_embedding(
+                model_id=clip_model_id,
+                version_id=version,
+                images=[image],
+                api_key=self._api_key,
             )
-            return {"embedding": predictions.embeddings[0]}
+            return {"embedding": embeddings[0]}
 
     def run_remotely(
         self,

@@ -30,6 +30,11 @@ step execution. Keep the argument names aligned with
 
 from typing import Any, Dict, List, Optional, Union
 
+from inference.core.entities.requests.clip import (
+    ClipCompareRequest,
+    ClipImageEmbeddingRequest,
+    ClipTextEmbeddingRequest,
+)
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     DepthEstimationRequest,
@@ -40,7 +45,12 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
+from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderTextEmbeddingRequest,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.prototypes.models_provider import (
     UNSET,
     InferenceResultsDC,
@@ -300,6 +310,86 @@ class ModelManagerModelsProvider:
             prompt=prompt,
         )
         return self._dump(self._infer(model_id=model_id, request=request))[0]
+
+    def run_clip_text_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]:
+        request = ClipTextEmbeddingRequest(
+            clip_version_id=version_id, text=text, api_key=api_key
+        )
+        return self._infer(model_id=model_id, request=request)[0].embeddings
+
+    def run_clip_image_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]:
+        request = ClipImageEmbeddingRequest(
+            clip_version_id=version_id, image=images, api_key=api_key
+        )
+        return self._infer(model_id=model_id, request=request)[0].embeddings
+
+    def run_clip_comparison(
+        self,
+        subject: Any,
+        subject_type: str,
+        prompt: Any,
+        prompt_type: str,
+        api_key: Optional[str] = None,
+        version_id: Union[str, None, _Unset] = UNSET,
+    ) -> dict:
+        # v1 never sets the version (UNSET -> the pydantic default,
+        # env.CLIP_VERSION_ID); v2 passes its `version` local, forwarded as is -
+        # a None stays None, and the id below is then "clip/None", exactly what
+        # `load_core_model` derived from the validated request before.
+        request = ClipCompareRequest(
+            api_key=api_key,
+            subject=subject,
+            subject_type=subject_type,
+            prompt=prompt,
+            prompt_type=prompt_type,
+            **_passed(clip_version_id=version_id),
+        )
+        # Registration in the same position the block used: build -> register ->
+        # infer. The id is only knowable from the validated request when the
+        # version came from the pydantic default (clip_comparison/v1.py).
+        core_model_id = f"clip/{request.clip_version_id}"
+        self._model_manager.add_model(
+            core_model_id, api_key, endpoint_type=ModelEndpointType.CORE_MODEL
+        )
+        # The two clip_comparison blocks used the BARE `model_dump()`, not the
+        # by_alias/exclude_none form - keep that, the output keys depend on it.
+        return self._infer(model_id=core_model_id, request=request)[0].model_dump()
+
+    def run_perception_encoder_text_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]:
+        request = PerceptionEncoderTextEmbeddingRequest(
+            perception_encoder_version_id=version_id, text=text, api_key=api_key
+        )
+        return self._infer(model_id=model_id, request=request)[0].embeddings
+
+    def run_perception_encoder_image_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]:
+        request = PerceptionEncoderImageEmbeddingRequest(
+            perception_encoder_version_id=version_id, image=images, api_key=api_key
+        )
+        return self._infer(model_id=model_id, request=request)[0].embeddings
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(

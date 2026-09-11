@@ -172,6 +172,48 @@ class ModelsProvider(Protocol):
         api_key: Optional[str] = None,
     ) -> dict: ...
 
+    def run_clip_text_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]: ...
+
+    def run_clip_image_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]: ...
+
+    def run_clip_comparison(
+        self,
+        subject: Any,
+        subject_type: str,
+        prompt: Any,
+        prompt_type: str,
+        api_key: Optional[str] = None,
+        version_id: Union[str, None, _Unset] = UNSET,
+    ) -> dict: ...
+
+    def run_perception_encoder_text_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        text: List[str],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]: ...
+
+    def run_perception_encoder_image_embedding(
+        self,
+        model_id: str,
+        version_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+    ) -> List[List[float]]: ...
+
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 
     def get_class_names(self, model_id: str) -> List[str]: ...

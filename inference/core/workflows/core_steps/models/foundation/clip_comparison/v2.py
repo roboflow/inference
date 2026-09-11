@@ -4,12 +4,8 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    run_in_parallel,
-)
+from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -203,24 +199,16 @@ class ClipComparisonBlockV2(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = ClipCompareRequest(
-                clip_version_id=version,
-                subject=single_image.to_inference_format(numpy_preferred=True),
-                subject_type="image",
-                prompt=classes,
-                prompt_type="text",
-                api_key=self._api_key,
+            predictions.append(
+                self._model_manager.run_clip_comparison(
+                    subject=single_image.to_inference_format(numpy_preferred=True),
+                    subject_type="image",
+                    prompt=classes,
+                    prompt_type="text",
+                    api_key=self._api_key,
+                    version_id=version,
+                )
             )
-            clip_model_id = load_core_model(
-                model_manager=self._model_manager,
-                version_id=inference_request.clip_version_id,
-                api_key=self._api_key,
-                core_model="clip",
-            )
-            prediction = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
-            )
-            predictions.append(prediction.model_dump())
         return self._post_process_result(
             images=images,
             predictions=predictions,

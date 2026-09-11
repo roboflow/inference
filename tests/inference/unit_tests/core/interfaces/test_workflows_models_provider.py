@@ -507,3 +507,105 @@ def test_run_depth_estimation_returns_the_raw_response_field() -> None:
         == "depth-map"
     )
     assert isinstance(captured_request(manager), DepthEstimationRequest)
+
+
+from inference.core.entities.requests.clip import (
+    ClipCompareRequest,
+    ClipImageEmbeddingRequest,
+    ClipTextEmbeddingRequest,
+)
+
+
+class _EmbeddingResponse:
+    def __init__(self, embeddings):
+        self.embeddings = embeddings
+
+
+class _ComparisonResponse:
+    def __init__(self, similarity):
+        self._similarity = similarity
+
+    def model_dump(self, **_kwargs):
+        return {"similarity": self._similarity}
+
+
+def test_run_clip_text_embedding_builds_the_request_and_returns_embeddings() -> None:
+    manager = manager_returning(_EmbeddingResponse([[0.1, 0.2]]))
+    assert ModelManagerModelsProvider(manager).run_clip_text_embedding(
+        model_id="clip/ViT-B-16", version_id="ViT-B-16", text=["a cat"], api_key="k"
+    ) == [[0.1, 0.2]]
+    manager.add_model.assert_not_called()  # the block registers, not the adapter
+    request = captured_request(manager)
+    expected = ClipTextEmbeddingRequest(
+        clip_version_id="ViT-B-16", text=["a cat"], api_key="k"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_clip_image_embedding_builds_the_request_and_returns_embeddings() -> None:
+    manager = manager_returning(_EmbeddingResponse([[0.3]]))
+    assert ModelManagerModelsProvider(manager).run_clip_image_embedding(
+        model_id="clip/ViT-B-16", version_id="ViT-B-16", images=IMAGES, api_key="k"
+    ) == [[0.3]]
+    request = captured_request(manager)
+    expected = ClipImageEmbeddingRequest(
+        clip_version_id="ViT-B-16", image=IMAGES, api_key="k"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_clip_comparison_leaves_the_version_default_when_unset() -> None:
+    from inference.core.roboflow_api import ModelEndpointType
+
+    manager = manager_returning(_ComparisonResponse([0.5]))
+    assert ModelManagerModelsProvider(manager).run_clip_comparison(
+        subject=IMAGE,
+        subject_type="image",
+        prompt=["cat"],
+        prompt_type="text",
+        api_key="k",
+    ) == {"similarity": [0.5]}
+    request = captured_request(manager)
+    expected = ClipCompareRequest(
+        api_key="k",
+        subject=IMAGE,
+        subject_type="image",
+        prompt=["cat"],
+        prompt_type="text",
+    )
+    assert request.clip_version_id == expected.clip_version_id
+    # This method - and only this method, among the CLIP/PE family - registers.
+    manager.add_model.assert_called_once_with(
+        f"clip/{expected.clip_version_id}",
+        "k",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+
+def test_run_perception_encoder_embeddings_build_their_requests() -> None:
+    from inference.core.entities.requests.perception_encoder import (
+        PerceptionEncoderImageEmbeddingRequest,
+        PerceptionEncoderTextEmbeddingRequest,
+    )
+
+    manager = manager_returning(_EmbeddingResponse([[1.0]]))
+    provider = ModelManagerModelsProvider(manager)
+    assert provider.run_perception_encoder_text_embedding(
+        model_id="perception_encoder/v", version_id="v", text=["a"], api_key="k"
+    ) == [[1.0]]
+    request = captured_request(manager)
+    expected = PerceptionEncoderTextEmbeddingRequest(
+        perception_encoder_version_id="v", text=["a"], api_key="k"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+    manager = manager_returning(_EmbeddingResponse([[2.0]]))
+    provider = ModelManagerModelsProvider(manager)
+    assert provider.run_perception_encoder_image_embedding(
+        model_id="perception_encoder/v", version_id="v", images=IMAGES, api_key="k"
+    ) == [[2.0]]
+    request = captured_request(manager)
+    expected = PerceptionEncoderImageEmbeddingRequest(
+        perception_encoder_version_id="v", image=IMAGES, api_key="k"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
