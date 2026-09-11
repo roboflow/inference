@@ -32,12 +32,17 @@ from typing import Any, Dict, List, Optional, Union
 
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
+    InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.prototypes.models_provider import UNSET, _Unset
+from inference.core.workflows.prototypes.models_provider import (
+    UNSET,
+    InferenceResultsDC,
+    _Unset,
+)
 
 _WORKFLOW_SOURCE = "workflow-execution"
 
@@ -192,6 +197,57 @@ class ModelManagerModelsProvider:
             **_passed(confidence=confidence),
         )
         return self._dump(self._infer(model_id=model_id, request=request))
+
+    def run_instance_segmentation(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        mask_decode_mode: Optional[str] = None,
+        tradeoff_factor: Optional[float] = None,
+        response_mask_format: Union[str, None, _Unset] = UNSET,
+        enforce_dense_masks_in_inference_models: Union[bool, None, _Unset] = UNSET,
+        stream_pipeline_context_id: Union[str, None, _Unset] = UNSET,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+        return_raw_responses: bool = False,
+    ) -> Union[List[dict], InferenceResultsDC]:
+        # The three UNSET-defaulted fields are each set by only some of the
+        # four block versions. Whatever a version passes - None included - is
+        # forwarded (v1/v2/v3 pass enforce_dense_masks_in_inference_models even
+        # when a selector resolved it to None, and the request stored that
+        # None); what it does not pass is left to the pydantic default.
+        request = InstanceSegmentationInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            class_agnostic_nms=class_agnostic_nms,
+            class_filter=class_filter,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            max_candidates=max_candidates,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
+            source=_WORKFLOW_SOURCE,
+            **_passed(
+                response_mask_format=response_mask_format,
+                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+                stream_pipeline_context_id=stream_pipeline_context_id,
+            ),
+        )
+        responses = self._infer(model_id=model_id, request=request)
+        if return_raw_responses:
+            return InferenceResultsDC(predictions=[], raw_responses=responses)
+        return self._dump(responses)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(

@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Union
 
 
@@ -20,6 +21,16 @@ class _Unset:
 
 
 UNSET = _Unset()
+
+
+@dataclass(slots=True)
+class InferenceResultsDC:
+    """What an inference call returns when the caller also needs the raw
+    response objects - today only the rfdetr async stream handoff does
+    (`run_instance_segmentation(..., return_raw_responses=True)`)."""
+
+    predictions: List[dict] = field(default_factory=list)
+    raw_responses: List[Any] = field(default_factory=list)
 
 
 class ModelsProvider(Protocol):
@@ -118,6 +129,27 @@ class ModelsProvider(Protocol):
         confidence: Union[float, str, None, _Unset] = UNSET,
         response_mask_format: str = "base64_png",
     ) -> List[dict]: ...
+
+    def run_instance_segmentation(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        class_filter: Optional[List[str]] = None,
+        confidence: Optional[Union[float, str]] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
+        max_candidates: Optional[int] = None,
+        mask_decode_mode: Optional[str] = None,
+        tradeoff_factor: Optional[float] = None,
+        response_mask_format: Union[str, None, _Unset] = UNSET,
+        enforce_dense_masks_in_inference_models: Union[bool, None, _Unset] = UNSET,
+        stream_pipeline_context_id: Union[str, None, _Unset] = UNSET,
+        disable_active_learning: Optional[bool] = None,
+        active_learning_target_dataset: Optional[str] = None,
+        return_raw_responses: bool = False,
+    ) -> Union[List[dict], InferenceResultsDC]: ...
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 

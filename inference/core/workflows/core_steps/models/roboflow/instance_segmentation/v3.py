@@ -6,9 +6,6 @@ from weakref import finalize
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
-from inference.core.entities.requests.inference import (
-    InstanceSegmentationInferenceRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -370,12 +367,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         )
         if self.stream_pipeline_depth() > 0 and len(images) == 1:
             self._pending_stream_prediction_contexts.append(stream_context)
-        request = InstanceSegmentationInferenceRequest(
-            api_key=self._api_key,
+        results = self._model_manager.run_instance_segmentation(
             model_id=model_id,
-            image=inference_images,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
+            images=inference_images,
+            api_key=self._api_key,
             class_agnostic_nms=class_agnostic_nms,
             class_filter=class_filter,
             confidence=confidence,
@@ -384,15 +379,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
-            source="workflow-execution",
-            stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            stream_pipeline_context_id=stream_context.context_id,
+            # The rfdetr stream path hands back a `Future` on the response
+            # object; `_extract_async_response_future` needs the object, not
+            # its dict form.
+            return_raw_responses=True,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
-        )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
+        predictions = results.raw_responses
         async_response_future = self._extract_async_response_future(
             predictions=predictions
         )

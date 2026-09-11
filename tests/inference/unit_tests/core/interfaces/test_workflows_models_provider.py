@@ -384,3 +384,55 @@ def test_run_methods_normalise_a_single_response_to_a_list() -> None:
     assert ModelManagerModelsProvider(manager).run_object_detection(
         model_id="m/1", images=IMAGES, confidence=0.4
     ) == [response.model_dump(by_alias=True, exclude_none=True)]
+
+
+from inference.core.entities.requests.inference import (
+    InstanceSegmentationInferenceRequest,
+)
+from inference.core.workflows.prototypes.models_provider import InferenceResultsDC
+
+
+def test_run_instance_segmentation_omits_unset_optional_fields() -> None:
+    manager = manager_returning([empty_detection_response()])
+    ModelManagerModelsProvider(manager).run_instance_segmentation(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=0.3,
+        max_detections=300,
+        max_candidates=3000,
+        mask_decode_mode="accurate",
+        tradeoff_factor=0.0,
+        enforce_dense_masks_in_inference_models=True,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+    )
+    manager.add_model.assert_not_called()
+    request = captured_request(manager)
+    assert isinstance(request, InstanceSegmentationInferenceRequest)
+    assert request.enforce_dense_masks_in_inference_models is True
+    assert request.stream_pipeline_context_id is None
+    default = InstanceSegmentationInferenceRequest(
+        api_key="k", model_id="m/1", image=IMAGES
+    )
+    assert request.response_mask_format == default.response_mask_format
+
+
+def test_run_instance_segmentation_can_return_raw_responses() -> None:
+    raw = [object(), object()]
+    manager = manager_returning(raw)
+    result = ModelManagerModelsProvider(manager).run_instance_segmentation(
+        model_id="m/1",
+        images=IMAGES,
+        api_key="k",
+        confidence=0.4,
+        stream_pipeline_context_id="ctx-1",
+        return_raw_responses=True,
+    )
+    assert isinstance(result, InferenceResultsDC)
+    assert result.raw_responses == raw
+    assert result.predictions == []
+    assert captured_request(manager).stream_pipeline_context_id == "ctx-1"
