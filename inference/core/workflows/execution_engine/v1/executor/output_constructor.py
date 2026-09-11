@@ -412,7 +412,7 @@ def data_needs_sv_detections_coordinate_conversion(data: Any) -> bool:
 
 def _sv_detections_need_root_coordinate_conversion(detections: sv.Detections) -> bool:
     if len(detections) == 0:
-        return False
+        return ROOT_PARENT_DIMENSIONS_KEY in detections.metadata
     root_coordinates = detections.data.get(ROOT_PARENT_COORDINATES_KEY)
     if root_coordinates is None:
         return False

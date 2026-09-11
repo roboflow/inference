@@ -86,7 +86,7 @@ def address_is_global(address: str) -> bool:
         return False
     if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
         parsed = parsed.ipv4_mapped
-    return parsed.is_global
+    return parsed.is_global and not parsed.is_multicast
 
 
 def _strip_ipv6_brackets(host: str) -> str:

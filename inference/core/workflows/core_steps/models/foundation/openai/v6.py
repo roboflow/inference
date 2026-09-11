@@ -361,6 +361,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OpenAI",
             "version": "v6",
+            "deprecated": True,
+            "deprecation_message": "Use OpenAI v7, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
             "short_description": "Run OpenAI's GPT models with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

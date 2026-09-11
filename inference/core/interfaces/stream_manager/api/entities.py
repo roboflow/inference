@@ -33,8 +33,8 @@ class FrameMetadata(BaseModel):
 
 
 class ConsumePipelineResponse(CommandResponse):
-    outputs: List[dict]
-    frames_metadata: List[FrameMetadata]
+    outputs: List[Optional[dict]]
+    frames_metadata: List[Optional[FrameMetadata]]
 
 
 class InitializeWebRTCPipelineResponse(CommandResponse):

@@ -469,6 +469,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         json_schema_extra={
             "name": "Z.ai",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use Z.ai v2, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
             "short_description": "Run Z.ai GLM vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",

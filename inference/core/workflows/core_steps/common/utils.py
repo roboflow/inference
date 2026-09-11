@@ -30,6 +30,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
+    validate_keypoints_padding,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -193,6 +194,7 @@ def add_inference_keypoints_to_sv_detections(
     # is_data_equal (used in Detections indexing/comparison).
     max_kps = max((len(kp) for kp in keypoints_xy), default=0)
     n = len(inference_prediction)
+    validate_keypoints_padding(n, max_kps)
     padded_xy = np.zeros((n, max_kps, 2), dtype=np.float32)
     padded_conf = np.zeros((n, max_kps), dtype=np.float32)
     padded_class_id = np.zeros((n, max_kps), dtype=int)
@@ -228,6 +230,16 @@ def attach_parents_coordinates_to_batch_of_sv_detections(
     return result
 
 
+def empty_detections_with_image_metadata(image: WorkflowImageData) -> sv.Detections:
+    """Keep image/parent metadata for zero-row results and retain the empty
+    confidence/class_id arrays expected by downstream blocks.
+    """
+    image_height, image_width = image.numpy_image.shape[:2]
+    detections = sv.Detections.empty()
+    detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
+    return attach_parents_coordinates_to_sv_detections(detections, image)
+
+
 def attach_parents_coordinates_to_sv_detections(
     detections: sv.Detections,
     image: WorkflowImageData,
@@ -256,6 +268,21 @@ def attach_parent_coordinates_to_detections(
     dimensions_key: str,
 ) -> sv.Detections:
     parent_coordinates_system = parent_metadata.origin_coordinates
+    if len(detections) == 0:
+        # Per-row data cannot retain lineage when there are no rows.
+        detections.metadata.update(
+            {
+                parent_id_key: parent_metadata.parent_id,
+                coordinates_key: [
+                    parent_coordinates_system.left_top_x,
+                    parent_coordinates_system.left_top_y,
+                ],
+                dimensions_key: [
+                    parent_coordinates_system.origin_height,
+                    parent_coordinates_system.origin_width,
+                ],
+            }
+        )
     detections[parent_id_key] = np.array([parent_metadata.parent_id] * len(detections))
     coordinates = np.array(
         [[parent_coordinates_system.left_top_x, parent_coordinates_system.left_top_y]]
@@ -287,6 +314,22 @@ def sv_detections_to_root_coordinates(
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
+        root_dimensions = detections_copy.metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
+        if root_dimensions is not None:
+            detections_copy.metadata.update(
+                {
+                    IMAGE_DIMENSIONS_KEY: list(root_dimensions),
+                    PARENT_DIMENSIONS_KEY: list(root_dimensions),
+                    PARENT_COORDINATES_KEY: [0, 0],
+                    ROOT_PARENT_COORDINATES_KEY: [0, 0],
+                    SCALING_RELATIVE_TO_PARENT_KEY: 1.0,
+                    SCALING_RELATIVE_TO_ROOT_PARENT_KEY: 1.0,
+                }
+            )
+            if ROOT_PARENT_ID_KEY in detections_copy.metadata:
+                detections_copy.metadata[PARENT_ID_KEY] = detections_copy.metadata[
+                    ROOT_PARENT_ID_KEY
+                ]
         return detections_copy
 
     if any(

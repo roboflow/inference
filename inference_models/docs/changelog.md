@@ -6,6 +6,14 @@
 
 ## `0.37.0`
 
+### Fixed
+
+- `GitPython` lower-bound got updated to `3.1.59` to mitigate security risks.
+
+---
+
+## `0.37.0`
+
 ### Added
 
 - New task `action-recognition`: class-labeled frame ranges, which can overlap.

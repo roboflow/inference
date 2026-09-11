@@ -671,6 +671,10 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
 
+# Box format of `_prepare_object_detection_prompt` below, in `vlm_decoding`
+# terms: named `x_min`..`y_max` floats normalized to 0.0-1.0.
+LEGACY_DETECTION_BOX_FORMAT = "named_normalized"
+
 RECOMMENDED_PARSERS = {
     "structured-answering": "roboflow_core/json_parser@v1",
     "classification": "roboflow_core/vlm_as_classifier@v2",
@@ -933,6 +937,58 @@ def _prepare_object_detection_prompt(
     ]
 
 
+def _prepare_format_object_detection_prompt(
+    base64_image: str,
+    classes: List[str],
+    box_format: str,
+    image_width: int,
+    image_height: int,
+    **_,
+) -> List[dict]:
+    """Object-detection prompt for a registered ``vlm_decoding`` box format.
+
+    Used when a block lets the user pick the coordinate contract instead of
+    the legacy ``named_normalized`` system message above. The image is sent
+    at its original resolution, so absolute-pixel formats are rendered with
+    that resolution.
+
+    Args:
+        base64_image: JPEG-encoded image.
+        classes: Class names the model may predict.
+        box_format: Registered box format name (see ``DETECTION_BOX_FORMATS``).
+        image_width: Width of the uploaded image in pixels.
+        image_height: Height of the uploaded image in pixels.
+        **_: Ignored builder arguments shared across task types.
+
+    Returns:
+        OpenRouter ``messages`` array.
+    """
+    from inference.core.workflows.core_steps.common.vlm_decoding import (
+        build_object_detection_prompt,
+    )
+
+    prompt_text = build_object_detection_prompt(
+        box_format=box_format,
+        classes=classes,
+        upload_width=image_width,
+        upload_height=image_height,
+    )
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt_text},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                    },
+                },
+            ],
+        }
+    ]
+
+
 PROMPT_BUILDERS = {
     "unconstrained": _prepare_unconstrained_prompt,
     "ocr": _prepare_ocr_prompt,
@@ -952,18 +1008,34 @@ def build_prompts_from_images(
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
+    detection_box_format: Optional[str] = None,
 ) -> List[List[dict]]:
     """Build a list of OpenRouter ``messages`` arrays, one per input image.
 
     ``images`` items are inference-format image dicts as produced by
     ``WorkflowImageData.to_inference_format()``.
+
+    ``detection_box_format`` switches the ``object-detection`` prompt to the
+    ``vlm_decoding`` template of that registered box format. ``None`` (and
+    ``named_normalized``, whose wording lives here) keeps the legacy system
+    message.
     """
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
     builder = PROMPT_BUILDERS[task_type]
+    if (
+        task_type == "object-detection"
+        and detection_box_format is not None
+        and detection_box_format != LEGACY_DETECTION_BOX_FORMAT
+    ):
+        builder = partial(
+            _prepare_format_object_detection_prompt,
+            box_format=detection_box_format,
+        )
     built: List[List[dict]] = []
     for image in images:
         loaded_image, _ = load_image(image)
+        image_height, image_width = loaded_image.shape[:2]
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
@@ -973,6 +1045,8 @@ def build_prompts_from_images(
                 prompt=prompt,
                 output_structure=output_structure,
                 classes=classes,
+                image_width=image_width,
+                image_height=image_height,
             )
         )
     return built
