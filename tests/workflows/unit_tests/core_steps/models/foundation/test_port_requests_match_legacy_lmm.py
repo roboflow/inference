@@ -5,14 +5,24 @@ Each test drives a block's real `run_locally` through a real
 `ModelManagerModelsProvider` wrapping a `MagicMock` `ModelManager`, then
 compares the pydantic request the adapter built against the exact request
 construction the block used to run inline before Task 11.10 (copied from
-`git show 723646aed:.../<family>/v1.py`, the BASE commit for this task - at
-that commit these blocks were unmodified, so the pre-port construction is the
-same code visible today on `git show 723646aed`).
+`git show 32b749865:.../<family>/v1.py` - the commit this task was actually
+built on top of; it landed after this task's nominal BASE, 723646aed, but
+touched none of the files these tests read, so the pre-port construction is
+unchanged there).
+
+Every case asserts both `model_dump()` equality AND `model_fields_set`
+equality: an omitted (UNSET) field must stay omitted, not be re-supplied as
+its own default - `model_dump()` alone can't tell "never set" from
+"explicitly set to the same value as the default" apart, but the pydantic
+`model_fields_set` bookkeeping can.
 
 One case per distinct request-building shape the task touches:
 `LMMInferenceRequest` with neither optional field set (`cosmos3`), with only
-`max_new_tokens` forwarded (`glm_ocr`), and with both `enable_thinking` and
-`max_new_tokens` forwarded (`qwen3_5vl` v1); plus `DepthEstimationRequest`
+`max_new_tokens` forwarded (`glm_ocr`), with both `enable_thinking` and
+`max_new_tokens` forwarded (`qwen3_5vl` v1), and with `enable_thinking` set
+but `max_new_tokens` left `None` - and therefore omitted, per the old
+`if max_new_tokens is not None` guard also present in `qwen_vlm/v3.py`'s
+`_run_native_locally` (`qwen3_5vl` v1 again); plus `DepthEstimationRequest`
 (`depth_estimation`) and `Moondream2InferenceRequest` (`moondream2`).
 """
 
@@ -79,7 +89,7 @@ def _captured_request(manager: MagicMock):
 def test_lmm_request_matches_the_pre_port_construction_without_optional_fields() -> (
     None
 ):
-    # Copied verbatim from `git show 723646aed:.../cosmos3/v1.py`: neither
+    # Copied verbatim from `git show 32b749865:.../cosmos3/v1.py`: neither
     # `enable_thinking` nor `max_new_tokens` is ever set by this block.
     manager = _manager()
     images = _make_images()
@@ -108,12 +118,13 @@ def test_lmm_request_matches_the_pre_port_construction_without_optional_fields()
         prompt="custom prompt",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_lmm_request_matches_the_pre_port_construction_with_max_new_tokens_only() -> (
     None
 ):
-    # Copied verbatim from `git show 723646aed:.../glm_ocr/v1.py`: forwards
+    # Copied verbatim from `git show 32b749865:.../glm_ocr/v1.py`: forwards
     # `max_new_tokens` only when it is not None; never sets `enable_thinking`.
     manager = _manager()
     images = _make_images()
@@ -143,12 +154,13 @@ def test_lmm_request_matches_the_pre_port_construction_with_max_new_tokens_only(
         max_new_tokens=64,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_lmm_request_matches_the_pre_port_construction_with_thinking_and_tokens() -> (
     None
 ):
-    # Copied verbatim from `git show 723646aed:.../qwen3_5vl/v1.py`: always
+    # Copied verbatim from `git show 32b749865:.../qwen3_5vl/v1.py`: always
     # sets `enable_thinking`, forwards `max_new_tokens` only when not None.
     manager = _manager()
     images = _make_images()
@@ -181,10 +193,54 @@ def test_lmm_request_matches_the_pre_port_construction_with_thinking_and_tokens(
         max_new_tokens=100,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+
+
+def test_lmm_request_matches_the_pre_port_construction_with_thinking_only() -> None:
+    # Copied verbatim from `git show 32b749865:.../qwen3_5vl/v1.py` (the same
+    # `if max_new_tokens is not None: request_kwargs["max_new_tokens"] = ...`
+    # guard is in `qwen_vlm/v3.py`'s `_run_native_locally`): `enable_thinking`
+    # is always forwarded, but with `max_new_tokens=None` the guard never
+    # fires, so the OLD request never had `max_new_tokens` in
+    # `model_fields_set` either - only `model_dump()` equality would miss a
+    # regression here, since an omitted field and one explicitly set to its
+    # own default (`None`) dump identically.
+    manager = _manager()
+    images = _make_images()
+    block = Qwen35VLBlockV1(
+        model_manager=ModelManagerModelsProvider(manager),
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    block.run_locally(
+        images=images,
+        model_version="m/1",
+        prompt="Hi",
+        system_prompt="Sys",
+        enable_thinking=True,
+        max_new_tokens=None,
+    )
+
+    manager.add_model.assert_called_once_with(model_id="m/1", api_key="k")
+    request = _captured_request(manager)
+
+    inference_images = [i.to_inference_format(numpy_preferred=False) for i in images]
+    expected = LMMInferenceRequest(
+        api_key="k",
+        model_id="m/1",
+        image=inference_images[0],
+        source="workflow-execution",
+        prompt="Hi<system_prompt>Sys",
+        enable_thinking=True,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
+    assert "max_new_tokens" not in request.model_fields_set
 
 
 def test_depth_estimation_request_matches_the_pre_port_construction() -> None:
-    # Copied verbatim from `git show 723646aed:.../depth_estimation/v1.py`:
+    # Copied verbatim from `git show 32b749865:.../depth_estimation/v1.py`:
     # `DepthEstimationRequest(image=image)` - no `model_id` on the request
     # itself (it only goes to `infer_from_request_sync`'s own `model_id` kwarg).
     manager = _manager()
@@ -204,10 +260,11 @@ def test_depth_estimation_request_matches_the_pre_port_construction() -> None:
     inference_images = [i.to_inference_format(numpy_preferred=False) for i in images]
     expected = DepthEstimationRequest(image=inference_images[0])
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_moondream2_request_matches_the_pre_port_construction() -> None:
-    # Copied verbatim from `git show 723646aed:.../moondream2/v1.py`.
+    # Copied verbatim from `git show 32b749865:.../moondream2/v1.py`.
     manager = _manager()
     images = _make_images()
     block = Moondream2BlockV1(
@@ -231,3 +288,4 @@ def test_moondream2_request_matches_the_pre_port_construction() -> None:
         prompt="p",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
