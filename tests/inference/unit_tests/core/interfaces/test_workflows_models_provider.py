@@ -792,3 +792,463 @@ def test_run_yolo_world_builds_the_request_the_block_used_to_build() -> None:
         api_key="k",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+from inference.core.entities.requests.sam2 import (
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
+    Sam2SegmentationRequest,
+)
+from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
+from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
+
+
+def test_run_sam2_segmentation_revives_box_and_point_prompts_from_a_version_id() -> (
+    None
+):
+    response = object()
+    manager = manager_returning(response)
+    result = ModelManagerModelsProvider(manager).run_sam2_segmentation(
+        model_id="sam2/hiera_large",
+        image=IMAGE,
+        prompts=[
+            {"box": {"x": 5.0, "y": 5.0, "width": 4.0, "height": 4.0}},
+            {"points": [{"x": 1.0, "y": 2.0, "positive": True}]},
+        ],
+        api_key="k",
+        version_id="hiera_large",
+        multimask_output=False,
+        threshold=0.5,
+    )
+    assert result == [response]
+    manager.add_model.assert_not_called()
+    request = captured_request(manager)
+    expected = Sam2SegmentationRequest(
+        image=IMAGE,
+        sam2_version_id="hiera_large",
+        api_key="k",
+        source="workflow-execution",
+        prompts=Sam2PromptSet(
+            prompts=[
+                Sam2Prompt(box=Box(x=5.0, y=5.0, width=4.0, height=4.0)),
+                Sam2Prompt(points=[Point(x=1.0, y=2.0, positive=True)]),
+            ]
+        ),
+        threshold=0.5,
+        multimask_output=False,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_sam2_segmentation_accepts_an_explicit_request_model_id() -> None:
+    manager = manager_returning(object())
+    ModelManagerModelsProvider(manager).run_sam2_segmentation(
+        model_id="sam3-interactive",
+        image=IMAGE,
+        prompts=[{"box": {"x": 1.0, "y": 1.0, "width": 2.0, "height": 2.0}}],
+        api_key="k",
+        request_model_id="sam3-interactive",
+        multimask_output=True,
+    )
+    assert captured_request(manager).model_id == "sam3-interactive"
+
+
+def test_run_sam3_segmentation_revives_text_prompts() -> None:
+    manager = manager_returning(object())
+    ModelManagerModelsProvider(manager).run_sam3_segmentation(
+        model_id="sam3/sam3_final",
+        image=IMAGE,
+        api_key="k",
+        prompts=[{"type": "text", "text": "cat", "output_prob_thresh": 0.4}],
+        output_prob_thresh=0.4,
+        nms_iou_threshold=0.5,
+    )
+    request = captured_request(manager)
+    expected = Sam3SegmentationRequest(
+        api_key="k",
+        model_id="sam3/sam3_final",
+        image=IMAGE,
+        prompts=[Sam3Prompt(type="text", text="cat", output_prob_thresh=0.4)],
+        output_prob_thresh=0.4,
+        nms_iou_threshold=0.5,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_sam3_segmentation_omits_unset_optionals() -> None:
+    manager = manager_returning(object())
+    ModelManagerModelsProvider(manager).run_sam3_segmentation(
+        model_id="sam3/sam3_final",
+        image=IMAGE,
+        api_key="k",
+        prompts=[{"type": "text", "text": "cat"}],
+    )
+    request = captured_request(manager)
+    default = Sam3SegmentationRequest(
+        api_key="k",
+        model_id="sam3/sam3_final",
+        image=IMAGE,
+        prompts=[Sam3Prompt(type="text", text="cat")],
+    )
+    assert request.output_prob_thresh == default.output_prob_thresh
+    assert request.nms_iou_threshold == default.nms_iou_threshold
+    assert request.format == default.format
+
+
+def test_run_sam3_3d_objects_builds_the_request_and_returns_the_response() -> None:
+    response = object()
+    manager = manager_returning(response)
+    assert (
+        ModelManagerModelsProvider(manager).run_sam3_3d_objects(
+            model_id="sam3-3d-objects", image=IMAGE, mask_input=[[0, 1]], api_key="k"
+        )
+        is response
+    )
+    manager.add_model.assert_not_called()
+    request = captured_request(manager)
+    expected = Sam3_3D_Objects_InferenceRequest(
+        image=IMAGE, mask_input=[[0, 1]], api_key="k", model_id="sam3-3d-objects"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_sam2_prompt_dicts_encode_the_same_prompt_set_as_the_inline_construction() -> (
+    None
+):
+    produced = ModelManagerModelsProvider(MagicMock())._sam2_prompt_set(
+        [
+            {"box": {"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0}},
+            {"points": [{"x": 5.0, "y": 6.0, "positive": False}]},
+        ]
+    )
+    expected = Sam2PromptSet(
+        prompts=[
+            Sam2Prompt(box=Box(x=1.0, y=2.0, width=3.0, height=4.0)),
+            Sam2Prompt(points=[Point(x=5.0, y=6.0, positive=False)]),
+        ]
+    )
+    assert produced.model_dump() == expected.model_dump()
+
+
+# --- round-5 defect 1: an explicit None must have the SAME outcome through the
+# adapter as through the block's inline construction - the same stored value,
+# or the same ValidationError (type, message, error table). One row per caller
+# shape whose argument the none-matrix flagged (Global Constraints, forwarding
+# rule); the request classes are imported above (Tasks 11.8-11.14).
+from pydantic import ValidationError
+
+BOX_PROMPT = {"box": {"x": 30.0, "y": 30.0, "width": 40.0, "height": 40.0}}
+BOX_PROMPT_SET = Sam2PromptSet(
+    prompts=[Sam2Prompt(box=Box(x=30.0, y=30.0, width=40.0, height=40.0))]
+)
+ISEG_COMMON = dict(
+    class_agnostic_nms=False,
+    class_filter=None,
+    confidence=0.4,
+    iou_threshold=0.3,
+    max_detections=300,
+    max_candidates=3000,
+    mask_decode_mode="accurate",
+    tradeoff_factor=0.0,
+    disable_active_learning=False,
+    active_learning_target_dataset=None,
+)
+
+
+def _outcome(build):
+    """What the caller observes: the request dump, or the error as the HTTP
+    layer exposes it (error_handlers.py:148-152: type name and str(error))."""
+    try:
+        return ("ok", build().model_dump(exclude={"id"}))
+    except ValidationError as error:
+        return (
+            "error",
+            type(error).__name__,
+            str(error),
+            [(e["loc"], e["type"]) for e in error.errors()],
+        )
+
+
+# (id, adapter method, adapter kwargs, request class, the kwargs the block passed inline)
+NONE_CASES = [
+    (
+        "segment_anything2/v1.py: multimask_output=None",
+        "run_sam2_segmentation",
+        dict(
+            model_id="sam2/hiera_large",
+            image=IMAGE,
+            prompts=[BOX_PROMPT],
+            api_key="k",
+            version_id="hiera_large",
+            threshold=0.0,
+            multimask_output=None,
+        ),
+        Sam2SegmentationRequest,
+        dict(
+            image=IMAGE,
+            sam2_version_id="hiera_large",
+            api_key="k",
+            source="workflow-execution",
+            prompts=BOX_PROMPT_SET,
+            threshold=0.0,
+            multimask_output=None,
+        ),
+    ),
+    (
+        "segment_anything3_interactive/v1.py: multimask_output=None",
+        "run_sam2_segmentation",
+        dict(
+            model_id="sam3-interactive",
+            image=IMAGE,
+            prompts=[BOX_PROMPT],
+            api_key="k",
+            request_model_id="sam3-interactive",
+            multimask_output=None,
+        ),
+        Sam2SegmentationRequest,
+        dict(
+            image=IMAGE,
+            model_id="sam3-interactive",
+            api_key="k",
+            source="workflow-execution",
+            prompts=BOX_PROMPT_SET,
+            multimask_output=None,
+        ),
+    ),
+    (
+        "segment_anything2/v1.py: version=None",
+        "run_sam2_segmentation",
+        dict(
+            model_id="sam2/None",
+            image=IMAGE,
+            prompts=[BOX_PROMPT],
+            api_key="k",
+            version_id=None,
+            threshold=0.0,
+            multimask_output=True,
+        ),
+        Sam2SegmentationRequest,
+        dict(
+            image=IMAGE,
+            sam2_version_id=None,
+            api_key="k",
+            source="workflow-execution",
+            prompts=BOX_PROMPT_SET,
+            threshold=0.0,
+            multimask_output=True,
+        ),
+    ),
+    (
+        "segment_anything3/v1.py: threshold=None",
+        "run_sam3_segmentation",
+        dict(
+            model_id="sam3/sam3_final",
+            image=IMAGE,
+            prompts=[{"type": "text", "text": "cat"}],
+            api_key="k",
+            output_prob_thresh=None,
+        ),
+        Sam3SegmentationRequest,
+        dict(
+            image=IMAGE,
+            model_id="sam3/sam3_final",
+            api_key="k",
+            prompts=[Sam3Prompt(type="text", text="cat")],
+            output_prob_thresh=None,
+        ),
+    ),
+    (
+        "segment_anything3/v2.py: apply_nms=False (nms_iou_threshold=None)",
+        "run_sam3_segmentation",
+        dict(
+            model_id="sam3/sam3_final",
+            image=IMAGE,
+            prompts=[{"type": "text", "text": "cat"}],
+            api_key="k",
+            output_prob_thresh=0.5,
+            nms_iou_threshold=None,
+        ),
+        Sam3SegmentationRequest,
+        dict(
+            image=IMAGE,
+            model_id="sam3/sam3_final",
+            api_key="k",
+            prompts=[Sam3Prompt(type="text", text="cat")],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=None,
+        ),
+    ),
+    (
+        "segment_anything3/v3.py: format=None",
+        "run_sam3_segmentation",
+        dict(
+            model_id="sam3/sam3_final",
+            image=IMAGE,
+            prompts=[{"type": "text", "text": "cat"}],
+            api_key="k",
+            output_prob_thresh=0.5,
+            nms_iou_threshold=0.9,
+            format=None,
+        ),
+        Sam3SegmentationRequest,
+        dict(
+            image=IMAGE,
+            model_id="sam3/sam3_final",
+            api_key="k",
+            prompts=[Sam3Prompt(type="text", text="cat")],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=0.9,
+            format=None,
+        ),
+    ),
+    (
+        "instance_segmentation/v1.py: enforce_dense_masks_in_inference_models=None",
+        "run_instance_segmentation",
+        dict(
+            model_id="m/1",
+            images=IMAGES,
+            api_key="k",
+            enforce_dense_masks_in_inference_models=None,
+            **ISEG_COMMON,
+        ),
+        InstanceSegmentationInferenceRequest,
+        dict(
+            api_key="k",
+            model_id="m/1",
+            image=IMAGES,
+            source="workflow-execution",
+            enforce_dense_masks_in_inference_models=None,
+            **ISEG_COMMON,
+        ),
+    ),
+    (
+        "qwen3_5vl/v1.py (any LMM block passing it): enable_thinking=None",
+        "run_lmm",
+        dict(
+            model_id="m/1", image=IMAGE, prompt="p", api_key="k", enable_thinking=None
+        ),
+        LMMInferenceRequest,
+        dict(
+            api_key="k",
+            model_id="m/1",
+            image=IMAGE,
+            source="workflow-execution",
+            prompt="p",
+            enable_thinking=None,
+        ),
+    ),
+    (
+        "clip_comparison/v2.py: version=None",
+        "run_clip_comparison",
+        dict(
+            subject=IMAGE,
+            subject_type="image",
+            prompt=["cat"],
+            prompt_type="text",
+            api_key="k",
+            version_id=None,
+        ),
+        ClipCompareRequest,
+        dict(
+            clip_version_id=None,
+            subject=IMAGE,
+            subject_type="image",
+            prompt=["cat"],
+            prompt_type="text",
+            api_key="k",
+        ),
+    ),
+    (
+        "semantic_segmentation/v2.py: confidence=None",
+        "run_semantic_segmentation",
+        dict(
+            model_id="m/1",
+            images=IMAGES,
+            api_key="k",
+            confidence=None,
+            response_mask_format="numpy",
+        ),
+        SemanticSegmentationInferenceRequest,
+        dict(
+            api_key="k",
+            model_id="m/1",
+            image=IMAGES,
+            confidence=None,
+            response_mask_format="numpy",
+            source="workflow-execution",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("case", NONE_CASES, ids=[case[0] for case in NONE_CASES])
+def test_an_explicit_none_has_the_same_outcome_through_the_adapter_as_inline(
+    case,
+) -> None:
+    _, method, adapter_kwargs, request_class, inline_kwargs = case
+    manager = MagicMock()
+    manager.__contains__.return_value = True
+    manager.infer_from_request_sync.return_value = MagicMock(embeddings=[[0.0]])
+    provider = ModelManagerModelsProvider(manager)
+
+    def through_adapter():
+        getattr(provider, method)(**adapter_kwargs)
+        return captured_request(manager)
+
+    inline = _outcome(lambda: request_class(**inline_kwargs))
+    assert _outcome(through_adapter) == inline
+    if inline[0] == "error":
+        manager.infer_from_request_sync.assert_not_called()
+
+
+def test_clip_comparison_registers_the_id_the_block_derived_for_a_none_version() -> (
+    None
+):
+    """`load_core_model` read `inference_request.clip_version_id` (None) and
+    registered `clip/None`; the adapter must not silently upgrade that to the
+    default version."""
+    manager = MagicMock()
+    manager.infer_from_request_sync.return_value = MagicMock()
+    ModelManagerModelsProvider(manager).run_clip_comparison(
+        subject=IMAGE,
+        subject_type="image",
+        prompt=["cat"],
+        prompt_type="text",
+        api_key="k",
+        version_id=None,
+    )
+    assert manager.add_model.call_args.args[0] == "clip/None"
+
+
+def test_sam2_multimask_none_is_rejected_before_inference_with_the_inline_message() -> (
+    None
+):
+    """The reviewer's reproduction: both consuming manifests allow None, both
+    forward it, and the request field is a non-optional bool."""
+    manager = MagicMock()
+    with pytest.raises(ValidationError) as through_adapter:
+        ModelManagerModelsProvider(manager).run_sam2_segmentation(
+            model_id="sam2/hiera_large",
+            image=IMAGE,
+            prompts=[BOX_PROMPT],
+            api_key="k",
+            version_id="hiera_large",
+            threshold=0.0,
+            multimask_output=None,
+        )
+    with pytest.raises(ValidationError) as inline:
+        Sam2SegmentationRequest(
+            image=IMAGE,
+            sam2_version_id="hiera_large",
+            api_key="k",
+            source="workflow-execution",
+            prompts=BOX_PROMPT_SET,
+            threshold=0.0,
+            multimask_output=None,
+        )
+    assert type(through_adapter.value) is type(inline.value)
+    assert str(through_adapter.value) == str(inline.value)
+    assert "multimask_output" in str(inline.value) and "bool_type" in str(inline.value)
+    manager.infer_from_request_sync.assert_not_called()

@@ -250,6 +250,37 @@ class ModelsProvider(Protocol):
         confidence: Optional[Union[float, str]] = None,
     ) -> dict: ...
 
+    def run_sam2_segmentation(
+        self,
+        model_id: str,
+        image: Any,
+        prompts: List[dict],
+        api_key: Optional[str] = None,
+        version_id: Union[str, None, _Unset] = UNSET,
+        request_model_id: Union[str, None, _Unset] = UNSET,
+        multimask_output: Union[bool, None, _Unset] = UNSET,
+        threshold: Union[float, None, _Unset] = UNSET,
+    ) -> List[Any]: ...
+
+    def run_sam3_segmentation(
+        self,
+        model_id: str,
+        image: Any,
+        prompts: List[dict],
+        api_key: Optional[str] = None,
+        output_prob_thresh: Union[float, None, _Unset] = UNSET,
+        nms_iou_threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
+    ) -> List[Any]: ...
+
+    def run_sam3_3d_objects(
+        self,
+        model_id: str,
+        image: Any,
+        mask_input: Any,
+        api_key: Optional[str] = None,
+    ) -> Any: ...
+
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 
     def get_class_names(self, model_id: str) -> List[str]: ...

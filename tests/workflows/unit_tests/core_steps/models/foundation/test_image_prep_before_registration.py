@@ -18,6 +18,9 @@ from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
     EasyOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    SegmentAnything2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -108,3 +111,30 @@ def test_failed_yolo_world_image_preparation_leaves_registration_and_inference_u
 
     model_manager.add_model.assert_not_called()
     model_manager.run_yolo_world.assert_not_called()
+
+
+def test_failed_sam2_image_preparation_leaves_registration_and_inference_uncalled() -> (
+    None
+):
+    # Task 11.14 CR-1 site: segment_anything2/v1.py decodes the image (now the
+    # local `image = single_image.to_inference_format(...)`) BEFORE
+    # `load_core_model`.
+    model_manager = mock.MagicMock()
+    block = SegmentAnything2BlockV1(
+        model_manager=model_manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    images = _failing_image_batch()
+
+    with pytest.raises(ValueError, match="decode failed"):
+        block.run_locally(
+            images=images,
+            boxes=None,
+            version="hiera_large",
+            threshold=0.0,
+            multimask_output=True,
+        )
+
+    model_manager.add_model.assert_not_called()
+    model_manager.run_sam2_segmentation.assert_not_called()

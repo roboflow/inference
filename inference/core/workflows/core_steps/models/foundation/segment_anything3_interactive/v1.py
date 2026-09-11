@@ -6,13 +6,6 @@ import requests
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.sam2 import (
-    Box,
-    Point,
-    Sam2Prompt,
-    Sam2PromptSet,
-    Sam2SegmentationRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.segmentation_entities import (
     Sam2SegmentationPrediction,
@@ -24,6 +17,12 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
     SYNTHETIC_POINT_PROMPT_CLASS_ID,
@@ -333,17 +332,16 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 [],
             )
             for group in groups:
-                inference_request = Sam2SegmentationRequest(
-                    image=single_image.to_inference_format(numpy_preferred=True),
+                segmentation_response = self._model_manager.run_sam2_segmentation(
                     model_id=SAM3_INTERACTIVE_MODEL_ID,
+                    image=single_image.to_inference_format(numpy_preferred=True),
+                    prompts=[
+                        prompt.model_dump(exclude_none=True) for prompt in group.prompts
+                    ],
                     api_key=self._api_key,
-                    source="workflow-execution",
-                    prompts=Sam2PromptSet(prompts=group.prompts),
+                    request_model_id=SAM3_INTERACTIVE_MODEL_ID,
                     multimask_output=multimask_output,
-                )
-                segmentation_response = self._model_manager.infer_from_request_sync(
-                    SAM3_INTERACTIVE_MODEL_ID, inference_request
-                )
+                )[0]
                 segmentation_predictions.extend(segmentation_response.predictions)
                 class_ids.extend(group.class_ids)
                 class_names.extend(group.class_names)
