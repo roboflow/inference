@@ -26,7 +26,7 @@ from typing_extensions import Annotated, Literal
 from inference.core.entities.responses.action_recognition import (
     ActionRecognitionPrediction,
 )
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
 )

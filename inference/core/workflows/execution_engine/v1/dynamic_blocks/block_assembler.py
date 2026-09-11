@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,

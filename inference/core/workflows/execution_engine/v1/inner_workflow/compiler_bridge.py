@@ -10,7 +10,7 @@ import hashlib
 import json
 from typing import Any, Dict, List, Set, Tuple
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     WORKFLOWS_MAX_INNER_WORKFLOW_COUNT,
     WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
 )
