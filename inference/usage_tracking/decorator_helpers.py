@@ -361,6 +361,7 @@ def get_model_descriptor_from_kwargs(
                 architecture=str(architecture),
                 variant=str(variant) if variant else None,
                 task_type=str(task_type) if task_type else None,
+                latency_ms=getattr(model, "model_latency_ms", None),
             )
 
     return get_recorded_model_descriptor(get_model_id_from_kwargs(func_kwargs))
@@ -384,6 +385,8 @@ def get_model_resource_details_from_kwargs(
     model_descriptor = get_model_descriptor_from_kwargs(func_kwargs)
     if model_descriptor:
         resource_details["model_architecture"] = model_descriptor.architecture
+        if model_descriptor.latency_ms is not None:
+            resource_details["model_latency_ms"] = float(model_descriptor.latency_ms)
         if model_descriptor.variant:
             resource_details["model_variant"] = model_descriptor.variant
         if not task_type:

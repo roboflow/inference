@@ -22,6 +22,20 @@ from typing import Optional, Sequence
 # ``add_inference_keypoints_to_sv_detections``. Real keypoints never carry it.
 KEYPOINT_PADDING_CLASS_NAME = ""
 
+# Bounds the dense keypoint arrays to about 28 MB on 64-bit NumPy (12 MB for
+# torch). A limit on real keypoints alone would not bound ragged padding.
+MAX_KEYPOINTS_PADDING_CELLS = 1_000_000
+
+
+def validate_keypoints_padding(detections_count: int, max_keypoints: int) -> None:
+    padding_cells = detections_count * max_keypoints
+    if padding_cells > MAX_KEYPOINTS_PADDING_CELLS:
+        raise ValueError(
+            f"Keypoint padding requires {padding_cells} slots, exceeding the limit "
+            f"of {MAX_KEYPOINTS_PADDING_CELLS}. Reduce the number of detections "
+            "or keypoints per detection."
+        )
+
 
 def real_keypoints_count(keypoint_class_names: Optional[Sequence], total: int) -> int:
     """Return how many of a detection's keypoint slots are real (not padding).
