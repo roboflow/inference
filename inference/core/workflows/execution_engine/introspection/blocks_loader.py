@@ -9,7 +9,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from inference.core.env import LOAD_ENTERPRISE_BLOCKS
 from inference.core.workflows.core_steps.loader import (
     KINDS_DESERIALIZERS,
     KINDS_SERIALIZERS,
@@ -42,9 +41,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.enterprise.workflows.enterprise_blocks.loader import (
-    load_enterprise_blocks,
-)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
@@ -70,13 +66,13 @@ def _get_restrictions(block: BlockSpecification) -> List[dict]:
         return []
 
 
-def _get_env_configuration_state() -> Tuple[Tuple[str, ...], bool]:
+def _get_env_configuration_state() -> Tuple[Tuple[str, ...]]:
     """
     Returns current environment configuration state for cache keying.
-    This ensures caches are invalidated when plugins or enterprise blocks change.
+    This ensures caches are invalidated when the configured plugins change.
     """
     plugins = tuple(get_plugin_modules())
-    return (plugins, LOAD_ENTERPRISE_BLOCKS)
+    return (plugins,)
 
 
 def clear_caches() -> None:
@@ -146,13 +142,13 @@ def describe_available_blocks(
 @lru_cache(maxsize=8)
 def _cached_describe_available_blocks(
     execution_engine_version: Optional[Union[str, Version]] = None,
-    env_state: Tuple[Tuple[str, ...], bool] = None,
+    env_state: Tuple[Tuple[str, ...]] = None,
 ) -> BlocksDescription:
     """Cached version for when there are no dynamic blocks (common case).
 
     Args:
         execution_engine_version: Version filter for blocks
-        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+        env_state: Tuple of (plugins,) for cache invalidation
     """
     blocks = load_workflow_blocks(execution_engine_version=execution_engine_version)
     result = []
@@ -252,8 +248,6 @@ def load_workflow_blocks(
 @lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
-    if LOAD_ENTERPRISE_BLOCKS:
-        core_blocks.extend(load_enterprise_blocks())
     already_spotted_blocks = set()
     result = []
     for block in core_blocks:
@@ -302,6 +296,11 @@ def load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 
 def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     module = importlib.import_module(plugin_name)
+    # A plugin may ask to be namespaced under another source. The enterprise
+    # blocks use this to stay under `workflows_core`, which is where the
+    # server's per-request init parameters (`workflows_core.disable_sinks`,
+    # ...) and the core initializers are registered.
+    block_source = getattr(module, "BLOCKS_SOURCE", plugin_name)
     blocks = module.load_blocks()
     already_spotted_blocks = set()
     result = []
@@ -324,7 +323,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
             continue
         result.append(
             BlockSpecification(
-                block_source=plugin_name,
+                block_source=block_source,
                 identifier=get_full_type_name(selected_type=block),
                 block_class=block,
                 manifest_class=block.get_manifest(),
@@ -396,9 +395,11 @@ def _load_initializers_from_plugin(
     plugin_name: str,
 ) -> Dict[str, Callable[[None], Any]]:
     module = importlib.import_module(plugin_name)
+    # a plugin's blocks and its initializers must always share a namespace
+    block_source = getattr(module, "BLOCKS_SOURCE", plugin_name)
     registered_initializers = getattr(module, "REGISTERED_INITIALIZERS", {})
     return {
-        f"{plugin_name}.{parameter_name}": initializer
+        f"{block_source}.{parameter_name}": initializer
         for parameter_name, initializer in registered_initializers.items()
     }
 
@@ -450,12 +451,12 @@ def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
 
 @lru_cache(maxsize=8)
 def _cached_load_all_defined_kinds(
-    env_state: Tuple[Tuple[str, ...], bool] = None,
+    env_state: Tuple[Tuple[str, ...]] = None,
 ) -> List[Kind]:
     """Cached version of load_all_defined_kinds.
 
     Args:
-        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+        env_state: Tuple of (plugins,) for cache invalidation
     """
     return load_all_defined_kinds()
 

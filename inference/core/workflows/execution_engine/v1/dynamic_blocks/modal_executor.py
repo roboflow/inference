@@ -19,6 +19,7 @@ import base64
 import gzip
 import hashlib
 import json
+import logging
 import os
 import sys
 import threading
@@ -44,13 +45,20 @@ from inference.core.env import (
     WEBEXEC_WS_IDLE_RELEASE_SECONDS,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
-from inference.core.logger import logger
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_image_kind,
+    deserialize_rle_detections_kind,
+    deserialize_video_metadata_kind,
+)
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_video_metadata_kind,
 )
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from inference.core.workflows.execution_engine.entities.base import ParentOrigin
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
+    record_block_duration,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -59,10 +67,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
-from inference.usage_tracking.block_execution import (
-    BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
-    record_measured_block_execution,
-)
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
+
+logger = logging.getLogger(__name__)
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
@@ -71,13 +78,6 @@ else:
     MODAL_AVAILABLE = False
     logger.info("Modal credentials not configured")
 
-from datetime import datetime
-
-from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
-    deserialize_rle_detections_kind,
-    deserialize_video_metadata_kind,
-)
 
 _WEBEXEC_EXECUTOR_CLASS_LABEL = "executor"
 _WEBEXEC_HTTP_METHOD_LABEL = "execute-block"
@@ -651,7 +651,7 @@ class ModalExecutor:
 
             # Published before the failure branch below raises, so an errored
             # block is still billed for the time the sandbox spent on it.
-            record_measured_block_execution(
+            record_block_duration(
                 duration=result.get("execution_time_seconds"),
                 source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
             )
@@ -857,11 +857,11 @@ def validate_syntax():
 def _serialize_image_for_msgpack(image: Any) -> dict:
     """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
     from inference.core.env import WEBEXEC_JPEG_QUALITY
-    from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
     from inference.core.workflows.core_steps.common.serializers import (
         serialize_video_metadata_kind,
     )
     from inference.core.workflows.execution_engine.entities.base import ParentOrigin
+    from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
     jpeg_bytes: bytes = encode_image_to_jpeg_bytes(
         image.numpy_image,
@@ -2021,7 +2021,7 @@ class WebSocketModalExecutor:
 
         # Published before _raise_code_error below, so an errored block is
         # still billed for the time the sandbox spent on it.
-        record_measured_block_execution(
+        record_block_duration(
             duration=result.get("execution_time_seconds"),
             source=BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
         )

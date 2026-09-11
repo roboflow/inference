@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 from typing import List, Literal, Optional, Tuple, Type, Union
 
@@ -8,7 +9,6 @@ import torch
 from pydantic import ConfigDict, Field
 from supervision.annotators.utils import resolve_text_background_xyxy, wrap_text
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -36,6 +36,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 TYPE: str = "roboflow_core/label_visualization@v1"
 SHORT_DESCRIPTION = (

@@ -24,8 +24,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -59,6 +57,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     is_workflow_selector,
     roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -197,16 +199,14 @@ class BlockManifest(WorkflowBlockManifest):
                     model_id=self.version,
                     model_id_resolver=lambda version: f"sam2/{version}",
                     model_registration_kwargs={
-                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
                     },
                 )
             ]
         return [
             roboflow_platform_model(
                 model_id=f"sam2/{self.version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -215,7 +215,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

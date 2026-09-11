@@ -7,7 +7,7 @@ project is declared. The optional ``workspace`` field is NOT emitted as a
 dependent resource, whether left unset or explicitly provided.
 """
 
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+from inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1 import (
     BlockManifest as VisualSearchClassifierV1Manifest,
 )
 from inference.core.workflows.prototypes.block import roboflow_platform_project

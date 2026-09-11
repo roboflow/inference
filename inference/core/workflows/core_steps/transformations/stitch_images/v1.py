@@ -1,10 +1,10 @@
+import logging
 from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OutputDefinition,
@@ -21,6 +21,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_KEY: str = "stitched_image"
 LONG_DESCRIPTION = """

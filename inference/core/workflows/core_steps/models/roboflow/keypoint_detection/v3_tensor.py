@@ -22,7 +22,7 @@ The ``predictions`` output value is the full tuple ``(KeyPoints, Detections)`` s
 ``KeyPoints`` component stays available to downstream tensor-native consumers; only the
 serialiser unwraps the tuple back to the bbox ``Detections``.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns
   ``Tuple[List[KeyPoints], List[Detections]]`` from the adapter. ``class_filter`` is
   applied here natively (the adapter/model does NOT read it on this path) - the slice
   is applied to the tuple so the ``KeyPoints`` and bbox ``Detections`` stay aligned.
@@ -47,7 +47,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
@@ -95,6 +94,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
@@ -274,7 +274,7 @@ class RoboflowKeypointDetectionModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

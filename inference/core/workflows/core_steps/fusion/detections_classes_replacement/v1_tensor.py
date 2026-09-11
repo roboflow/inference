@@ -1,3 +1,4 @@
+import logging
 import sys
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -5,7 +6,6 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     HOST_MIRROR_KEYS,
     TensorNativeDetections,
@@ -44,6 +44,8 @@ from inference_models import (
     MultiLabelClassificationPrediction,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
+
+logger = logging.getLogger(__name__)
 
 LONG_DESCRIPTION = """
 Replace class labels of detection bounding boxes with classes predicted by a classification model applied to cropped regions, combining generic detection results with specialized classification predictions to enable two-stage detection workflows, fine-grained classification, and class refinement workflows where generic detections are refined with specific class labels from specialized classifiers.

@@ -73,6 +73,7 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowsInvalidEnvironmentValueError,
     WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -394,6 +395,7 @@ def with_route_exceptions(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,
@@ -873,6 +875,7 @@ def with_route_exceptions_async(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,

@@ -13,6 +13,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowsBlocksDescription,
 )
 from inference.core.env import ENABLE_BUILDER
+from inference.core.interfaces.roboflow_platform_client import SERVER_WORKSPACE_RESOLVER
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -57,6 +58,7 @@ def handle_describe_workflows_blocks_request(
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=dynamic_blocks_definitions,
         api_key=api_key,
+        workspace_resolver=SERVER_WORKSPACE_RESOLVER,
     )
     blocks_description = describe_available_blocks(
         dynamic_blocks=dynamic_blocks,

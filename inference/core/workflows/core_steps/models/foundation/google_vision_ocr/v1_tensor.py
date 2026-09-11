@@ -8,7 +8,6 @@ import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
-from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
@@ -35,6 +34,10 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 from inference_models.models.base.object_detection import Detections
 
@@ -134,12 +137,14 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._roboflow_api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -170,6 +175,7 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         if api_key.startswith(("rf_key:account", "rf_key:user:")):
             result = _execute_proxied_google_vision_request(
                 roboflow_api_key=self._roboflow_api_key,
+                platform_client=self._platform_client,
                 google_vision_api_key=api_key,
                 request_json=request_json,
             )
@@ -200,6 +206,7 @@ def _build_request_json(
 
 def _execute_proxied_google_vision_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     google_vision_api_key: str,
     request_json: dict,
 ) -> dict:
@@ -209,7 +216,7 @@ def _execute_proxied_google_vision_request(
     }
 
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint="apiproxy/google_vision_ocr",
             api_key=roboflow_api_key,
             payload=payload,

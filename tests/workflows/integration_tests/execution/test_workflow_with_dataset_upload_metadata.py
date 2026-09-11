@@ -10,7 +10,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload import (
     v2,
     v2_tensor,
 )

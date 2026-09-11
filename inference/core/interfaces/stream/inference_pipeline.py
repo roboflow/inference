@@ -46,6 +46,9 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
 from inference.core.interfaces.stream.entities import (
     AnyPrediction,
     InferenceHandler,
@@ -697,6 +700,16 @@ class InferencePipeline:
                 WorkflowRunner,
                 wrap_workflow_runner_for_stream_pipeline,
             )
+            from inference.core.interfaces.workflows_configuration import (
+                server_workflows_configuration,
+            )
+            from inference.core.interfaces.workflows_execution_observer import (
+                UsageTrackingExecutionObserver,
+            )
+            from inference.core.interfaces.workflows_image_codec import bind_image_codec
+            from inference.core.interfaces.workflows_step_error_handlers import (
+                resolve_step_error_handler,
+            )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -745,6 +758,20 @@ class InferencePipeline:
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            workflow_init_parameters["workflows_core.execution_observer"] = (
+                UsageTrackingExecutionObserver()
+            )
+            # setdefault semantics: a caller's workflow_init_parameters may
+            # already carry an explicit inner_workflow_spec_resolver.
+            install_workflows_platform_bindings(workflow_init_parameters)
+            bind_image_codec(workflow_init_parameters)
+            # setdefault, not assignment: a caller-supplied configuration must
+            # reach `ExecutionEngine.init`, where a mismatch with the installed
+            # process configuration is reported. Overwriting it here would hide
+            # the mis-wiring the check exists to catch.
+            workflow_init_parameters.setdefault(
+                "workflows_core.configuration", server_workflows_configuration()
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
@@ -752,6 +779,7 @@ class InferencePipeline:
                 profiler=profiler,
                 executor=execution_engine_thread_pool_executor,
                 dependencies_pre_init=workflows_dependencies_pre_init,
+                step_error_handler=resolve_step_error_handler(),
             )
             workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,

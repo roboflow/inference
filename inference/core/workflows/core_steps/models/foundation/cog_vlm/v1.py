@@ -4,8 +4,6 @@ from typing import Dict, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.env import LMM_ENABLED
-from inference.core.exceptions import FeatureDeprecatedError
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -31,6 +29,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.platform_errors import FeatureDeprecatedError
 
 NOT_DETECTED_VALUE = "not_detected"
 
@@ -165,17 +164,15 @@ class CogVLMBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

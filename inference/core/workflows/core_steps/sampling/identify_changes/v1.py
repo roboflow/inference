@@ -4,7 +4,6 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.utils.postprocess import cosine_similarity
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -22,6 +21,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.text import cosine_similarity
 
 LONG_DESCRIPTION = """
 Identify changes and detect when data patterns change at unusual rates compared to historical norms by tracking embedding vectors over time, measuring cosine similarity changes, computing rate-of-change statistics, and flagging anomalies when changes occur faster or slower than expected for change detection, anomaly monitoring, rate-of-change analysis, and temporal pattern detection workflows.

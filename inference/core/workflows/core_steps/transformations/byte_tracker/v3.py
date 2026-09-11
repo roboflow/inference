@@ -1,10 +1,10 @@
+import logging
 from collections import deque
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -26,6 +26,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_KEY: str = "tracked_detections"
 SHORT_DESCRIPTION = (

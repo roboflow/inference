@@ -1162,6 +1162,51 @@ PINNED_MODELS = (
 )
 
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
+
+# Enterprise blocks load through the generic Workflows plugin mechanism. The
+# flag is kept for compatibility and expanded here into WORKFLOWS_PLUGINS, which
+# blocks_loader.get_plugin_modules() reads from the process environment. This
+# module is imported by inference/core/__init__.py before any workflows module
+# can load, so the expansion always precedes the first block load.
+# The plugin is PREPENDED, not appended: enterprise blocks used to be merged
+# into the core list, so `load_workflow_blocks()` yielded core -> enterprise ->
+# custom plugins. Appending would reorder that to core -> custom -> enterprise
+# for anyone who also sets WORKFLOWS_PLUGINS.
+ENTERPRISE_BLOCKS_PLUGIN = "inference.enterprise.workflows.enterprise_blocks.loader"
+if LOAD_ENTERPRISE_BLOCKS:
+    _workflows_plugins = [
+        plugin for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",") if plugin
+    ]
+    if ENTERPRISE_BLOCKS_PLUGIN not in _workflows_plugins:
+        os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+            [ENTERPRISE_BLOCKS_PLUGIN] + _workflows_plugins
+        )
+
+# The Roboflow-platform blocks (dataset upload, custom metadata, model
+# monitoring, vision events, asset-library attributes, visual search) live in
+# their own package so `inference/core/workflows` stops importing
+# `roboflow_api` and `active_learning`. They are always listed - they were
+# always part of the core block set - so there is no enable flag to honour;
+# the block-DISABLE policy (WORKFLOW_DISABLED_BLOCK_TYPES / _PATTERNS) is
+# applied inside the plugin's load_blocks(), exactly as the core loader does.
+# NORMALISED (not just prepended-if-absent) after the enterprise expansion:
+# any occurrence already in WORKFLOWS_PLUGINS - wherever it sits, e.g. because
+# an operator listed it explicitly - is removed and the plugin is prepended
+# exactly once, so the resulting order is always roboflow -> enterprise ->
+# user plugins, matching the historical core-then-enterprise ordering of
+# `load_workflow_blocks()`. Only prepending when absent would leave an
+# explicitly-listed entry wherever the operator put it (e.g. after enterprise,
+# or after a custom plugin), silently violating that order.
+ROBOFLOW_BLOCKS_PLUGIN = "inference.roboflow_workflows_plugin.loader"
+_workflows_plugins = [
+    plugin
+    for plugin in os.getenv("WORKFLOWS_PLUGINS", "").split(",")
+    if plugin and plugin != ROBOFLOW_BLOCKS_PLUGIN
+]
+os.environ["WORKFLOWS_PLUGINS"] = ",".join(
+    [ROBOFLOW_BLOCKS_PLUGIN] + _workflows_plugins
+)
+
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
     for e in os.getenv("TRANSIENT_ROBOFLOW_API_ERRORS", "").split(",")

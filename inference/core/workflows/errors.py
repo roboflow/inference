@@ -267,5 +267,32 @@ class RuntimeInputError(WorkflowExecutionEngineError):
     pass
 
 
+class WorkflowImageLoadError(WorkflowExecutionEngineError):
+    """An image could not be loaded because the capability it needs is absent.
+
+    The workflows-local `ImageCodec` default (see
+    `inference.core.workflows.prototypes.image_codec`) refuses URL fetching,
+    local-filesystem reads and pickled-numpy payloads outright: each carries a
+    host policy (SSRF allow/deny lists plus redirect and address validation,
+    `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`, `ALLOW_NUMPY_INPUT`) that
+    Workflows must not reimplement. A host that wants them installs a codec that
+    provides them - the Roboflow inference server does so in
+    `inference.core.interfaces.workflows_image_codec`.
+
+    Maps to HTTP 500 through the generic `WorkflowError` arm of
+    `inference/core/interfaces/http/error_handlers.py:571`.
+    """
+
+
 class WorkflowExecutionEngineVersionError(WorkflowError):
+    pass
+
+
+class WorkflowsInvalidEnvironmentValueError(ValueError):
+    """Raised when an environment value cannot be interpreted by workflows helpers.
+
+    Deliberately NOT a `WorkflowError` subclass: `WorkflowError.__init__` requires
+    `public_message` and `context`, while this error is raised with a single message.
+    """
+
     pass

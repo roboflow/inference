@@ -42,6 +42,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.image_codec import ImageCodec
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -88,6 +89,8 @@ def deserialize_image_kind(
     parameter: str,
     image: Any,
     prevent_local_images_loading: bool = False,
+    *,
+    image_codec: Optional["ImageCodec"] = None,
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
@@ -125,6 +128,7 @@ def deserialize_image_kind(
         parameter=parameter,
         image=image,
         prevent_local_images_loading=prevent_local_images_loading,
+        image_codec=image_codec,
     )
 
 

@@ -21,6 +21,16 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
     prepare_unconstrained_prompt,
     prepare_vqa_prompt,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def test_openai_step_validation_when_input_is_valid() -> None:
@@ -486,6 +496,7 @@ def test_execute_openai_request_routes_to_proxy_for_rf_key_account() -> None:
         # when
         result = execute_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="rf_key:account",
             instructions="test",
             input_content=[],
@@ -510,6 +521,7 @@ def test_execute_openai_request_routes_to_proxy_for_rf_key_user() -> None:
         # when
         result = execute_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="rf_key:user:12345",
             instructions="test",
             input_content=[],
@@ -534,6 +546,7 @@ def test_execute_openai_request_routes_to_direct_for_regular_api_key() -> None:
         # when
         result = execute_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="sk-test-key",
             instructions="test",
             input_content=[],
@@ -604,16 +617,13 @@ def test_direct_request_with_invalid_reasoning_effort_for_gpt_5_1_raises_error(
     assert 'does not support reasoning effort "minimal"' in str(exc_info.value)
 
 
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.openai.v4.post_to_roboflow_api"
-)
-def test_proxied_request_with_invalid_reasoning_effort_for_gpt_5_raises_error(
-    mock_post: Mock,
-) -> None:
+def test_proxied_request_with_invalid_reasoning_effort_for_gpt_5_raises_error() -> None:
+    mock_post = platform_client.post_mock
     # when/then
     with pytest.raises(ValueError) as exc_info:
         _execute_proxied_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="rf_key:account",
             instructions="test",
             input_content=[{"role": "user", "content": []}],

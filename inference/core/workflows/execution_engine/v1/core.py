@@ -1,11 +1,14 @@
+import inspect
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from packaging.version import Version
 
 from inference.core.env import WORKFLOWS_STEP_EXECUTION_MODE
-from inference.core.logger import logger
 from inference.core.workflows.errors import (
     RuntimeInputError,
     WorkflowEnvironmentConfigurationError,
@@ -13,6 +16,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
+from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -37,7 +41,6 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_validat
     validate_runtime_input,
 )
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
-    extended_roboflow_errors_handler,
     legacy_step_error_handler,
 )
 from inference.core.workflows.prototypes.block import (
@@ -48,16 +51,26 @@ from inference.core.workflows.prototypes.block import (
     StepExecutionMode,
     is_workflow_selector,
 )
+from inference.core.workflows.prototypes.image_codec import ImageCodec
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+)
+
+logger = logging.getLogger(__name__)
 
 EXECUTION_ENGINE_V1_VERSION = Version("1.15.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
-    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
+    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "legacy"
 )
 
 REGISTERED_STEP_ERROR_HANDLERS = {
     "legacy": legacy_step_error_handler,
-    "extended_roboflow_errors": extended_roboflow_errors_handler,
 }
 
 PRE_INIT_SUPPORTED_DEPENDENCIES = {DependentResourceType.ROBOFLOW_PLATFORM_MODEL}
@@ -112,6 +125,51 @@ def _retrieve_step_execution_mode(
     return StepExecutionMode(value)
 
 
+def _resolve_execution_observer(
+    init_parameters: Dict[str, Any],
+) -> ExecutionObserver:
+    """Resolve the observer once and republish it for every consumer.
+
+    Three lookup rules have to agree and, left alone, do not:
+
+    * ``_retrieve_init_parameter`` accepts ``workflows_core.execution_observer``
+      *or* the bare name, and calls the value when it is callable - so a host
+      may legitimately bind a factory, or bind without a namespace.
+    * ``retrieve_init_parameter_values`` gives a block whatever object is under
+      ``<block source>.execution_observer``, without calling it.
+    * ``REGISTERED_INITIALIZERS`` defaults are namespaced to ``workflows_core.*``
+      by ``load_core_blocks_initializers``, which is a different namespace from
+      ``dynamic_workflows_blocks`` - not a fallback for it.
+
+    So a bare binding would leave dynamic blocks with the null observer, and a
+    factory would hand them the function itself. Resolving here and writing the
+    resolved object back under both namespaced keys makes all three agree, and
+    calls a factory exactly once per engine.
+
+    ``init_parameters`` is the engine's PRIVATE copy (see ``init``), never the
+    caller's dictionary: writing a resolved factory result into a dictionary
+    the caller reuses would hand every later engine this one's observer.
+
+    A host that deliberately wants a *different* observer for custom-Python
+    blocks keeps that: an explicit ``dynamic_workflows_blocks.execution_observer``
+    is resolved separately and wins for those blocks.
+    """
+    dynamic_key = "dynamic_workflows_blocks.execution_observer"
+    dynamic_override = init_parameters.get(dynamic_key)
+    if callable(dynamic_override):
+        dynamic_override = dynamic_override()
+    observer = _retrieve_init_parameter(
+        init_parameters=init_parameters, parameter_name="execution_observer"
+    )
+    if observer is None:
+        observer = NULL_EXECUTION_OBSERVER
+    init_parameters["workflows_core.execution_observer"] = observer
+    init_parameters[dynamic_key] = (
+        dynamic_override if dynamic_override is not None else observer
+    )
+    return observer
+
+
 def _is_locally_executed_platform_model(
     dependency: DependentResource,
     step_execution_mode: StepExecutionMode,
@@ -138,7 +196,7 @@ def _is_locally_executed_platform_model(
 
 
 def _verify_pre_loaded_models_presence(
-    model_manager: Any, expected_model_ids: Set[str]
+    model_manager: ModelsProvider, expected_model_ids: Set[str]
 ) -> None:
     # Registration happens sequentially without capacity reservation — a
     # size/memory-bounded model manager may evict earlier entries while
@@ -162,7 +220,7 @@ def _verify_pre_loaded_models_presence(
 
 def _pre_load_roboflow_platform_models(
     dependencies: List[DependentResource],
-    model_manager: Any,
+    model_manager: ModelsProvider,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
 ) -> List[DependentResource]:
@@ -203,7 +261,7 @@ def _pre_load_roboflow_platform_models(
 def _resolve_and_pre_load_runtime_dependencies(
     pending_dependencies: List[DependentResource],
     runtime_parameters: Dict[str, Any],
-    model_manager: Any,
+    model_manager: ModelsProvider,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
 ) -> None:
@@ -258,6 +316,67 @@ def _resolve_and_pre_load_runtime_dependencies(
         )
 
 
+def _mirror_dynamic_block_parameters(
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
+) -> None:
+    """Copy the init parameters dynamic blocks need into their own namespace.
+
+    Generated blocks carry `block_source = "dynamic_workflows_blocks"`
+    (`dynamic_blocks/entities.BLOCK_SOURCE`), and
+    `retrieve_init_parameter_values` does NOT fall back from a plugin namespace
+    to `workflows_core.*` - `load_core_blocks_initializers` registers the core
+    defaults only under `workflows_core.`. Anything a dynamic block declares in
+    `get_init_parameters()` has to be mirrored here, which is why `api_key`
+    already was. Operates on the engine's PRIVATE copy of init_parameters (see
+    `init`), never on a caller's dictionary.
+    """
+    init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
+        "dynamic_workflows_blocks.api_key",
+        init_parameters.get("workflows_core.api_key"),
+    )
+    init_parameters["dynamic_workflows_blocks.workspace_resolver"] = (
+        init_parameters.get(
+            "dynamic_workflows_blocks.workspace_resolver",
+            init_parameters.get(
+                "workflows_core.workspace_resolver", NULL_WORKSPACE_RESOLVER
+            ),
+        )
+    )
+
+
+def _bind_image_codec_to_deserializers(
+    kinds_deserializers: Dict[str, Callable[..., Any]],
+    image_codec: ImageCodec,
+) -> Dict[str, Callable[..., Any]]:
+    """Return a COPY of the map with the image deserializer bound to `image_codec`.
+
+    A copy, not a mutation: `compile_workflow_graph` serves `kinds_deserializers`
+    out of `COMPILATION_CACHE` (`compiler/core.py:124-128`), so mutating it would
+    hand one engine's codec to every later engine compiled from the same
+    definition.
+
+    A plugin may register its own image-kind deserializer with the historic
+    3-argument signature; binding a keyword it does not accept would raise at run
+    time, so such a deserializer is left exactly as it is.
+    """
+    deserializer = kinds_deserializers.get(IMAGE_KIND.name)
+    if deserializer is None:
+        return kinds_deserializers
+    try:
+        signature = inspect.signature(deserializer)
+    except (TypeError, ValueError):
+        return kinds_deserializers
+    accepts_codec = "image_codec" in signature.parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if not accepts_codec:
+        return kinds_deserializers
+    bound = dict(kinds_deserializers)
+    bound[IMAGE_KIND.name] = partial(deserializer, image_codec=image_codec)
+    return bound
+
+
 class ExecutionEngineV1(BaseExecutionEngine):
 
     @classmethod
@@ -275,8 +394,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
         ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
     ) -> "ExecutionEngineV1":
-        if init_parameters is None:
-            init_parameters = {}
+        # The engine mutates this dict (dynamic-block mirrors below) and the
+        # compiled workflow retains it. Work on a private copy so a caller that
+        # reuses its dictionary across engines never sees, or re-supplies, a
+        # value this engine derived.
+        init_parameters = dict(init_parameters or {})
         if isinstance(step_error_handler, str):
             if step_error_handler not in REGISTERED_STEP_ERROR_HANDLERS:
                 raise WorkflowEnvironmentConfigurationError(
@@ -286,10 +408,12 @@ class ExecutionEngineV1(BaseExecutionEngine):
                     context="workflow_compilation | engine_initialisation",
                 )
             step_error_handler = REGISTERED_STEP_ERROR_HANDLERS[step_error_handler]
-        init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
-            "dynamic_workflows_blocks.api_key",
-            init_parameters.get("workflows_core.api_key"),
-        )
+        _mirror_dynamic_block_parameters(init_parameters)
+        # Phase 6 - resolve once, so the engine and every block observe through
+        # the same object. Writes both namespaced keys; see
+        # `_resolve_execution_observer`. After the mirror, before compilation:
+        # blocks are constructed during `compile_workflow`.
+        execution_observer = _resolve_execution_observer(init_parameters)
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
@@ -299,6 +423,15 @@ class ExecutionEngineV1(BaseExecutionEngine):
             execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
             profiler=profiler,
         )
+        image_codec = init_parameters.get("workflows_core.image_codec")
+        if image_codec is not None:
+            compiled_workflow = replace(
+                compiled_workflow,
+                kinds_deserializers=_bind_image_codec_to_deserializers(
+                    kinds_deserializers=compiled_workflow.kinds_deserializers,
+                    image_codec=image_codec,
+                ),
+            )
         pre_init_dependencies_types = (
             _parse_dependencies_pre_init(dependencies_pre_init=dependencies_pre_init)
             if dependencies_pre_init
@@ -346,6 +479,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             pre_init_model_manager=pre_init_model_manager,
             pre_init_api_key=pre_init_api_key,
             pre_init_step_execution_mode=pre_init_step_execution_mode,
+            execution_observer=execution_observer,
         )
 
     def __init__(
@@ -362,6 +496,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         pre_init_model_manager: Optional[Any] = None,
         pre_init_api_key: Optional[str] = None,
         pre_init_step_execution_mode: Optional[StepExecutionMode] = None,
+        execution_observer: Optional[ExecutionObserver] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
@@ -376,6 +511,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self._pre_init_api_key = pre_init_api_key
         self._pre_init_step_execution_mode = pre_init_step_execution_mode
         self._pending_dependencies_resolution_attempted = False
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
 
     def run(
         self,
@@ -418,20 +558,26 @@ class ExecutionEngineV1(BaseExecutionEngine):
                 self._workflow_id,
             )
             usage_workflow_id = self._workflow_id
-        result = run_workflow(
+        result = self._execution_observer.observe_workflow_run(
             workflow=self._compiled_workflow,
             runtime_parameters=runtime_parameters,
-            max_concurrent_steps=self._max_concurrent_steps,
-            usage_fps=fps,
-            usage_workflow_id=usage_workflow_id,
-            usage_workflow_preview=_is_preview,
-            kinds_serializers=self._compiled_workflow.kinds_serializers,
-            serialize_results=serialize_results,
-            profiler=self._profiler,
-            executor=self._executor,
-            step_error_handler=self._step_error_handler,
-            defer_stream_pipeline_flush=defer_stream_pipeline_flush,
-            resolve_output_futures=resolve_output_futures,
+            workflow_id=usage_workflow_id,
+            fps=fps,
+            is_preview=_is_preview,
+            run=partial(
+                run_workflow,
+                workflow=self._compiled_workflow,
+                runtime_parameters=runtime_parameters,
+                max_concurrent_steps=self._max_concurrent_steps,
+                kinds_serializers=self._compiled_workflow.kinds_serializers,
+                serialize_results=serialize_results,
+                profiler=self._profiler,
+                executor=self._executor,
+                step_error_handler=self._step_error_handler,
+                defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+                resolve_output_futures=resolve_output_futures,
+                observer=self._execution_observer,
+            ),
         )
         self._profiler.end_workflow_run()
         return result
@@ -465,6 +611,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             profiler=self._profiler,
             executor=self._executor,
             step_error_handler=self._step_error_handler,
+            observer=self._execution_observer,
         )
         self._profiler.end_workflow_run()
         return result

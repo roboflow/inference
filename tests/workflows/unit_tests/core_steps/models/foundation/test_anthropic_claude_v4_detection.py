@@ -20,6 +20,16 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 i
     prepare_object_detection_prompt,
     run_claude_prompting,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def test_manifest_parsing_for_object_detection_task() -> None:
@@ -166,6 +176,7 @@ def test_run_claude_prompting_states_uploaded_dimensions_in_detection_prompt(
     # when
     result = run_claude_prompting(
         roboflow_api_key="rf-key",
+        platform_client=platform_client,
         images=images,
         task_type="object-detection",
         prompt=None,

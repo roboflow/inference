@@ -1,13 +1,10 @@
 import time
 from datetime import datetime
 from typing import Any
-from unittest import mock
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from inference.core.workflows.core_steps.common import deserializers
 from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
@@ -46,26 +43,48 @@ def test_assemble_runtime_parameters_when_image_is_not_provided() -> None:
         )
 
 
-@mock.patch.object(deserializers, "load_image_from_url")
-def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict(
-    load_image_from_url_mock: MagicMock,
-) -> None:
-    # given
-    load_image_from_url_mock.return_value = np.zeros((192, 168, 3), dtype=np.uint8)
-    runtime_parameters = {
-        "image1": {
-            "type": "url",
-            "value": "https://some.com/image.jpg",
-        }
-    }
-    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
-
-    # when
-    result = assemble_runtime_parameters(
-        runtime_parameters=runtime_parameters,
-        defined_inputs=defined_inputs,
-        kinds_deserializers=KINDS_DESERIALIZERS,
+def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict() -> (
+    None
+):
+    # given - the URL fetch is a host capability now; stand in for the host with
+    # a codec that returns a canned image instead of reaching the network.
+    from inference.core.workflows.prototypes.image_codec import (
+        reset_image_codec,
+        set_image_codec,
     )
+
+    class _CannedCodec:
+        def load_image(self, value, disable_preproc_auto_orient=False):
+            raise AssertionError("not used by this path")
+
+        def fetch_url(self, value, cv_imread_flags=None):
+            return np.zeros((192, 168, 3), dtype=np.uint8)
+
+        def decode_string(self, value, cv_imread_flags=None):
+            raise AssertionError("not used by this path")
+
+        def ensure_local_file_load_allowed(self, path):
+            return None
+
+    reset_image_codec()
+    set_image_codec(_CannedCodec())
+    try:
+        runtime_parameters = {
+            "image1": {
+                "type": "url",
+                "value": "https://some.com/image.jpg",
+            }
+        }
+        defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
+
+        # when
+        result = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
+        )
+    finally:
+        reset_image_codec()
 
     # then
     assert (
@@ -82,21 +101,32 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
 def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_allowed(
     example_image_file: str,
 ) -> None:
-    # given
-    runtime_parameters = {
-        "image1": {
-            "type": "file",
-            "value": example_image_file,
-        }
-    }
-    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
-
-    # when
-    result = assemble_runtime_parameters(
-        runtime_parameters=runtime_parameters,
-        defined_inputs=defined_inputs,
-        kinds_deserializers=KINDS_DESERIALIZERS,
+    # given - reading a local path is a host capability; the server's codec
+    # permits it while ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM is on (default).
+    from inference.core.interfaces.workflows_image_codec import (
+        install_guarded_image_codec,
     )
+    from inference.core.workflows.prototypes.image_codec import reset_image_codec
+
+    reset_image_codec()
+    install_guarded_image_codec()
+    try:
+        runtime_parameters = {
+            "image1": {
+                "type": "file",
+                "value": example_image_file,
+            }
+        }
+        defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
+
+        # when
+        result = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
+        )
+    finally:
+        reset_image_codec()
 
     # then
     assert (

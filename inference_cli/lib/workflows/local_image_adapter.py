@@ -9,6 +9,19 @@ from rich.progress import Progress, TaskID
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -447,15 +460,25 @@ def _run_workflow_for_single_image_with_inference(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": api_key,
         "workflows_core.thread_pool_executor": thread_pool_executor,
+        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
     }
     if workflows_execution_engine_init_params:
         workflow_init_parameters.update(workflows_execution_engine_init_params)
+    install_workflows_platform_bindings(workflow_init_parameters)
+    # AFTER the override merge, never before: a codec written earlier would be
+    # replaced here on Path A while the process registry kept the guarded one
+    # (round-2 Defect 1).
+    bind_image_codec(workflow_init_parameters)
+    workflow_init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
     execution_engine = ExecutionEngine.init(
         workflow_definition=workflow_specification,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=max_concurrent_workflows_steps,
         workflow_id=workflow_id,
         executor=thread_pool_executor,
+        step_error_handler=resolve_step_error_handler(),
     )
     runtime_parameters = workflow_parameters or {}
     runtime_parameters[image_input_name] = cv2.imread(image_path)

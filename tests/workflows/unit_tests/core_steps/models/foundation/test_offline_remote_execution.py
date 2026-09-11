@@ -110,11 +110,13 @@ def test_builtin_remote_inference_leaves_fail_closed_offline(
     kwargs: Dict[str, Any],
 ) -> None:
     monkeypatch.setattr(offline, "OFFLINE_MODE", True)
-    block = block_type(
-        model_manager=MagicMock(),
-        api_key="test-api-key",
-        step_execution_mode=StepExecutionMode.REMOTE,
-    )
+    init_kwargs: Dict[str, Any] = {
+        "api_key": "test-api-key",
+        "step_execution_mode": StepExecutionMode.REMOTE,
+    }
+    if "model_manager" in block_type.get_init_parameters():
+        init_kwargs["model_manager"] = MagicMock()
+    block = block_type(**init_kwargs)
 
     with pytest.raises(RuntimeError, match="OFFLINE_MODE"):
         getattr(block, method_name)(images=[], **kwargs)

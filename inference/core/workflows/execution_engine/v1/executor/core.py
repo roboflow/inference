@@ -1,3 +1,4 @@
+import logging
 import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -20,14 +21,7 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
-from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
-from inference.core.telemetry import (
-    attach_context,
-    capture_context,
-    detach_context,
-    start_span,
-)
 from inference.core.workflows.errors import (
     BlockTraceback,
     StepExecutionError,
@@ -65,8 +59,12 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.usage_tracking.collector import usage_collector
-from inference.usage_tracking.stream_session import stream_session_id
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _store_crash_info(
@@ -94,7 +92,6 @@ def _store_crash_info(
         logger.error(f"Failed to store crash info: {e}")
 
 
-@usage_collector("workflows")
 @execution_phase(
     name="workflow_execution",
     categories=["execution_engine_operation"],
@@ -110,20 +107,21 @@ def run_workflow(
     step_error_handler: Optional[Callable[[Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
 ) -> List[Dict[str, Any]]:
-    with start_span("workflow.run"):
-        return _run_workflow(
-            workflow=workflow,
-            runtime_parameters=runtime_parameters,
-            max_concurrent_steps=max_concurrent_steps,
-            kinds_serializers=kinds_serializers,
-            serialize_results=serialize_results,
-            profiler=profiler,
-            executor=executor,
-            step_error_handler=step_error_handler,
-            defer_stream_pipeline_flush=defer_stream_pipeline_flush,
-            resolve_output_futures=resolve_output_futures,
-        )
+    return _run_workflow(
+        workflow=workflow,
+        runtime_parameters=runtime_parameters,
+        max_concurrent_steps=max_concurrent_steps,
+        kinds_serializers=kinds_serializers,
+        serialize_results=serialize_results,
+        profiler=profiler,
+        executor=executor,
+        step_error_handler=step_error_handler,
+        defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+        resolve_output_futures=resolve_output_futures,
+        observer=observer,
+    )
 
 
 def _run_workflow(
@@ -137,6 +135,7 @@ def _run_workflow(
     step_error_handler: Optional[Callable[[Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
@@ -158,6 +157,7 @@ def _run_workflow(
                 profiler=profiler,
                 executor=executor,
                 step_error_handler=step_error_handler,
+                observer=observer,
             )
             next_steps = execution_coordinator.get_steps_to_execute_next(
                 profiler=profiler
@@ -197,6 +197,7 @@ def flush_stream_pipeline_workflow(
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[Exception], None]] = None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
@@ -234,6 +235,7 @@ def flush_stream_pipeline_workflow(
                 executor=executor,
                 step_error_handler=step_error_handler,
                 workflow_execution_id=workflow_execution_id,
+                observer=observer,
             )
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     return construct_workflow_output(
@@ -339,6 +341,7 @@ def execute_steps(
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
 ) -> None:
     if remote_processing_times is not None:
         processing_time_collector = remote_processing_times.get()
@@ -353,9 +356,9 @@ def execute_steps(
     # set in this thread do not propagate into ThreadPoolExecutor workers.
     debug_collector = current_debug_collector.get()
     debug_trace = current_debug_trace.get()
-    pipeline_stream_session_id = stream_session_id.get()
-    # Capture OTel context so it can be re-attached inside worker threads
-    otel_ctx = capture_context()
+    # Whatever the host needs inside a worker thread, snapshotted here for the
+    # same reason.
+    step_context = observer.capture_step_context()
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -369,9 +372,9 @@ def execute_steps(
             duration_minimum_value=duration_minimum_value,
             debug_collector=debug_collector,
             debug_trace=debug_trace,
-            pipeline_stream_session_id=pipeline_stream_session_id,
             step_error_handler=step_error_handler,
-            otel_ctx=otel_ctx,
+            observer=observer,
+            step_context=step_context,
         )
         for step_selector in next_steps
     ]
@@ -395,9 +398,9 @@ def safe_execute_step(
     duration_minimum_value=None,
     debug_collector=None,
     debug_trace=None,
-    pipeline_stream_session_id=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
-    otel_ctx=None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+    step_context=None,
 ) -> None:
     if execution_id is not None and workflow_execution_id:
         execution_id.set(workflow_execution_id)
@@ -410,58 +413,50 @@ def safe_execute_step(
     # this thread, silently accumulating logs on a dead object.
     current_debug_collector.set(debug_collector)
     current_debug_trace.set(debug_trace)
-    stream_session_id.set(pipeline_stream_session_id)
     step_name = get_last_chunk_of_selector(selector=step_selector)
     current_debug_step_name.set(step_name)
-    # Re-attach OTel context in worker thread so trace propagation works.
-    # Must detach when done — threads are reused in the pool, and leaked
-    # contexts cause incorrect span parenting on subsequent tasks.
-    _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
-    try:
-        with start_span("workflow.step", {"workflow.step": step_name}):
-            try:
-                logger.debug(
-                    f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-                )
-                run_step(
-                    step_selector=step_selector,
-                    workflow=workflow,
-                    execution_data_manager=execution_data_manager,
-                    profiler=profiler,
-                )
-                logger.debug(
-                    f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-                )
-            except WorkflowError:
-                raise
-            except Exception as error:
-                if step_error_handler:
-                    step_error_handler(step_name, error)
-                logger.exception(
-                    f"Execution of step {step_selector} encountered error."
-                )
-                error_traceback = "".join(
-                    traceback.format_exception(type(error), error, error.__traceback__)
-                )
-                block_traceback = BlockTraceback(
-                    traceback=error_traceback,
-                    error_line=getattr(error, "error_line", None),
-                    code_snippet=getattr(error, "code_snippet", None),
-                    stdout=getattr(error, "stdout", None),
-                    stderr=getattr(error, "stderr", None),
-                )
-                raise StepExecutionError(
-                    block_id=step_name,
-                    block_type=workflow.steps[step_name].manifest.type,
-                    block_traceback=block_traceback,
-                    public_message=str(error),
-                    context="workflow_execution | step_execution",
-                    inner_error=error,
-                ) from error
-    finally:
-        detach_context(_otel_token)
+    # The host re-establishes its own context here, for this step only: pool
+    # threads are reused, so anything it binds it must also unbind.
+    with observer.step_scope(context=step_context, step_name=step_name):
+        try:
+            logger.debug(
+                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+            run_step(
+                step_selector=step_selector,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                profiler=profiler,
+            )
+            logger.debug(
+                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+        except WorkflowError:
+            raise
+        except Exception as error:
+            if step_error_handler:
+                step_error_handler(step_name, error)
+            logger.exception(f"Execution of step {step_selector} encountered error.")
+            error_traceback = "".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            )
+            block_traceback = BlockTraceback(
+                traceback=error_traceback,
+                error_line=getattr(error, "error_line", None),
+                code_snippet=getattr(error, "code_snippet", None),
+                stdout=getattr(error, "stdout", None),
+                stderr=getattr(error, "stderr", None),
+            )
+            raise StepExecutionError(
+                block_id=step_name,
+                block_type=workflow.steps[step_name].manifest.type,
+                block_traceback=block_traceback,
+                public_message=str(error),
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
 
 
 def run_step(

@@ -270,6 +270,9 @@ from inference.core.interfaces.http.request_metrics import (
     GCPServerlessMiddleware,
     build_model_response_headers,
 )
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
     CommandResponse,
@@ -297,6 +300,16 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
@@ -364,7 +377,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
 )
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
-    get_workflow_schema_description,
+    get_workflow_schema as build_workflow_blocks_schema,
+)
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
@@ -1591,12 +1606,21 @@ class HttpInterface(BaseInterface):
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
 
-            workflow_init_parameters = {
-                "workflows_core.model_manager": model_manager,
-                "workflows_core.api_key": workflow_request.api_key,
-                "workflows_core.background_tasks": background_tasks,
-                "workflows_core.disable_sinks": workflow_request.disable_sinks,
-            }
+            workflow_init_parameters = install_workflows_platform_bindings(
+                {
+                    "workflows_core.model_manager": model_manager,
+                    "workflows_core.api_key": workflow_request.api_key,
+                    "workflows_core.background_tasks": background_tasks,
+                    "workflows_core.disable_sinks": workflow_request.disable_sinks,
+                    "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                    "workflows_core.configuration": server_workflows_configuration(),
+                }
+            )
+            # One codec for both injection paths - the engine deserializes the
+            # input with it, and WorkflowImageData / the block-level loaders
+            # re-load any stored reference with it (see
+            # workflows/prototypes/image_codec.py). Idempotent per request.
+            bind_image_codec(workflow_init_parameters)
             with start_span(
                 "workflow.init",
                 {"workflow.id": workflow_request.workflow_id or ""},
@@ -1609,6 +1633,7 @@ class HttpInterface(BaseInterface):
                     profiler=profiler,
                     executor=self.shared_thread_pool_executor,
                     workflow_id=workflow_request.workflow_id,
+                    step_error_handler=resolve_step_error_handler(),
                 )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
@@ -2495,7 +2520,9 @@ class HttpInterface(BaseInterface):
             def get_workflow_schema(
                 request: Request,
             ) -> WorkflowsBlocksSchemaDescription:
-                result = get_workflow_schema_description()
+                result = WorkflowsBlocksSchemaDescription(
+                    schema=build_workflow_blocks_schema()
+                )
                 return gzip_response_if_requested(request, response=result)
 
             @app.post(
@@ -2543,17 +2570,23 @@ class HttpInterface(BaseInterface):
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 api_key = api_key_fallback(api_key)
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
-                workflow_init_parameters = {
-                    "workflows_core.model_manager": model_manager,
-                    "workflows_core.api_key": api_key,
-                    "workflows_core.background_tasks": None,
-                    "workflows_core.step_execution_mode": step_execution_mode,
-                }
+                workflow_init_parameters = install_workflows_platform_bindings(
+                    {
+                        "workflows_core.model_manager": model_manager,
+                        "workflows_core.api_key": api_key,
+                        "workflows_core.background_tasks": None,
+                        "workflows_core.step_execution_mode": step_execution_mode,
+                        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                        "workflows_core.configuration": server_workflows_configuration(),
+                    }
+                )
+                bind_image_codec(workflow_init_parameters)
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
+                    step_error_handler=resolve_step_error_handler(),
                 )
                 return WorkflowValidationStatus(status="ok")
 

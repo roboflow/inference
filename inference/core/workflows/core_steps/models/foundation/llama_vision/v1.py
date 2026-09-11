@@ -7,8 +7,6 @@ from openai import OpenAI
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -34,6 +32,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 MODEL_VERSION_MAPPING = {
     "11B (Free) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct:free",
@@ -326,15 +325,9 @@ class BlockManifest(WorkflowBlockManifest):
 
 class LlamaVisionBlockV1(WorkflowBlock):
 
-    def __init__(
-        self,
-        model_manager: ModelManager,
-    ):
-        self._model_manager = model_manager
-
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager"]
+        return []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

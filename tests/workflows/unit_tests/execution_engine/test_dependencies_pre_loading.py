@@ -4,6 +4,7 @@ init time (`dependencies_pre_init`) and on the first run (for dependencies
 declared through `$inputs.<name>` selectors).
 """
 
+import inspect
 from unittest.mock import MagicMock, NonCallableMagicMock
 
 import networkx as nx
@@ -17,6 +18,7 @@ from inference.core.workflows.errors import (
     RuntimeInputError,
     WorkflowEnvironmentConfigurationError,
 )
+from inference.core.workflows.execution_engine.v1 import core as ee_core
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     ParsedWorkflowDefinition,
@@ -41,6 +43,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_project,
     third_party_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 
 
 def _object_detection_manifest(name: str, model_id: str) -> ObjectDetectionV3Manifest:
@@ -659,3 +662,15 @@ def test_execution_engine_init_without_pre_init_dependencies_does_not_touch_mana
 
     model_manager.add_model.assert_not_called()
     assert engine._pending_runtime_dependencies == []
+
+
+def test_preloading_helpers_are_typed_against_the_port() -> None:
+    # The engine drives the model manager itself (add_model / __contains__).
+    # Typing it `Any` hid that dependency from import-based tooling.
+    for fn in (
+        ee_core._pre_load_roboflow_platform_models,
+        ee_core._resolve_and_pre_load_runtime_dependencies,
+        ee_core._verify_pre_loaded_models_presence,
+    ):
+        annotation = inspect.signature(fn).parameters["model_manager"].annotation
+        assert annotation is ModelsProvider, (fn.__name__, annotation)

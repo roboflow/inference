@@ -20,7 +20,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Unchanged from v1 — verbatim manifest, class name and type literal.
@@ -36,13 +35,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class SmolVLM2BlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

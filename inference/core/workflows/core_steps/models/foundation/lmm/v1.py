@@ -13,8 +13,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -52,6 +50,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 from inference_sdk import InferenceHTTPClient
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
@@ -210,17 +209,15 @@ class LMMBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

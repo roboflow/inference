@@ -2,7 +2,7 @@ from unittest import mock
 
 import numpy as np
 
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
+from inference.roboflow_workflows_plugin.integrations.visual_search.helpers import (
     build_visual_search_candidate_image,
     format_visual_search_candidate,
 )

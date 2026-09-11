@@ -10,7 +10,7 @@ separate ``sv.Detections`` row. Tensor-native differences:
   tensor, class names resolved via per-box ``CLASS_NAME_KEY`` override or the
   ``image_metadata[CLASS_NAMES_KEY]`` map, ``detection_id`` from
   ``bboxes_metadata`` (mirroring ``segment_anything2/v1_tensor.py``).
-- LOCAL goes through ``ModelManager.run_tensor_native_inference`` (the
+- LOCAL goes through ``ModelsProvider.run_tensor_native_inference`` (the
   ``InferenceModelsSAM3InteractiveAdapter`` ``action="segment"`` bridge to
   ``SAM3Torch.segment_with_visual_prompts``): tensor-resident images are handed
   over directly (RGB; host-only images are flipped BGR→RGB), prompts are
@@ -27,6 +27,7 @@ separate ``sv.Detections`` row. Tensor-native differences:
   convention keeping numpy-faithful boxes).
 """
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
@@ -36,7 +37,6 @@ import requests
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core import logger
 from inference.core.entities.requests.sam2 import Box, Point, Sam2Prompt, Sam2PromptSet
 from inference.core.env import (
     API_BASE_URL,
@@ -50,9 +50,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import build_roboflow_api_headers
-from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
@@ -97,6 +94,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
@@ -104,6 +106,8 @@ from inference_models.models.common.rle_utils import (
     torch_mask_to_coco_rle,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+logger = logging.getLogger(__name__)
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -285,17 +289,19 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -529,9 +535,13 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                         headers["X-Roboflow-Internal-Service-Secret"] = (
                             ROBOFLOW_INTERNAL_SERVICE_SECRET
                         )
-                    headers = build_roboflow_api_headers(explicit_headers=headers)
+                    headers = self._platform_client.build_api_headers(
+                        explicit_headers=headers
+                    )
                     response = requests.post(
-                        wrap_url(f"{endpoint}?api_key={self._api_key}"),
+                        self._platform_client.wrap_url(
+                            f"{endpoint}?api_key={self._api_key}"
+                        ),
                         json=payload,
                         headers=headers,
                         timeout=60,

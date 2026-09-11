@@ -6,11 +6,8 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.roboflow_api import post_to_roboflow_api
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -36,6 +33,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
@@ -43,6 +41,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 LONG_DESCRIPTION = """
 The **Email Notification** block allows users to send email notifications as part of a workflow.
@@ -437,20 +440,28 @@ class EmailNotificationBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         api_key: Optional[str],
         disable_sinks: bool = False,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._api_key = api_key
         self._disable_sinks = disable_sinks
         self._last_notification_fired: Optional[datetime] = None
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor", "api_key", "disable_sinks"]
+        return [
+            "background_tasks",
+            "thread_pool_executor",
+            "api_key",
+            "disable_sinks",
+            "platform_client",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -519,6 +530,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
             send_email_handler = partial(
                 send_email_via_roboflow_proxy,
                 roboflow_api_key=self._api_key,
+                platform_client=self._platform_client,
                 receiver_email=receiver_email,
                 cc_receiver_email=cc_receiver_email,
                 bcc_receiver_email=bcc_receiver_email,
@@ -790,6 +802,7 @@ def process_attachments(attachments: Dict[str, Any]) -> Dict[str, bytes]:
 
 def send_email_via_roboflow_proxy(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     receiver_email: List[str],
     cc_receiver_email: Optional[List[str]],
     bcc_receiver_email: Optional[List[str]],
@@ -800,7 +813,7 @@ def send_email_via_roboflow_proxy(
     attachments: Dict[str, Any],
 ) -> Tuple[bool, str]:
     """Send email through Roboflow's proxy service."""
-    from inference.core.exceptions import (
+    from inference.core.workflows.prototypes.platform_errors import (
         RoboflowAPIForbiddenError,
         RoboflowAPIUnsuccessfulRequestError,
     )
@@ -893,7 +906,7 @@ def send_email_via_roboflow_proxy(
 
         endpoint = "apiproxy/email"
 
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,

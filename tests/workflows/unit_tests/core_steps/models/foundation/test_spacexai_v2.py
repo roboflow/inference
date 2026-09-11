@@ -7,10 +7,23 @@ and direct execution paths.
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
     _execute_direct_spacexai_request,
     _execute_proxied_spacexai_request,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
+
 
 _XAI_OK = {
     "status": "completed",
@@ -23,15 +36,13 @@ _XAI_OK = {
 }
 
 
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.spacexai.v2.post_to_roboflow_api"
-)
-def test_proxied_request_returns_usage_and_none_when_omitted(
-    mock_post: MagicMock,
-) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted() -> None:
+    mock_post = platform_client.post_mock
+
     def call():
         return _execute_proxied_spacexai_request(
             roboflow_api_key="rf_abc",
+            platform_client=platform_client,
             xai_api_key="rf_key:account",
             instructions=None,
             input_content=[],

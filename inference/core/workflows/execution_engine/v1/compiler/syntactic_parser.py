@@ -5,7 +5,6 @@ import pydantic
 from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
-from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
 from inference.core.workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
@@ -130,12 +129,12 @@ def build_workflow_definition_entity(
 
 @lru_cache(maxsize=8)
 def _cached_workflow_schema(
-    env_state: Tuple[Tuple[str, ...], bool] = None,
+    env_state: Tuple[Tuple[str, ...]] = None,
 ) -> dict:
     """Cached schema generation - called only when blocks don't change.
 
     Args:
-        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+        env_state: Tuple of (plugins,) for cache invalidation
     """
     available_blocks = load_workflow_blocks()
     workflow_definition_class = build_workflow_definition_entity(
@@ -149,7 +148,11 @@ def clear_cache() -> None:
     _cached_workflow_schema.cache_clear()
 
 
-def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+def get_workflow_schema() -> dict:
+    """The JSON schema of every available block manifest.
+
+    Returns the raw schema; wrapping it in the HTTP response model is the
+    server's job (`http_api.py`), which is why the DTO import is gone.
+    """
     env_state = _get_env_configuration_state()
-    schema = _cached_workflow_schema(env_state=env_state)
-    return WorkflowsBlocksSchemaDescription(schema=schema)
+    return _cached_workflow_schema(env_state=env_state)

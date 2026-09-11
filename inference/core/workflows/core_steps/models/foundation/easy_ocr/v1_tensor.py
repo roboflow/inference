@@ -11,8 +11,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
@@ -41,6 +39,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceHTTPClient
@@ -172,9 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             roboflow_platform_model(
                 model_id=f"easy_ocr/{version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -182,7 +182,7 @@ class BlockManifest(WorkflowBlockManifest):
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -239,7 +239,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self._model_manager.add_model(
             model_id,
             self._api_key,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
+            endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
         )
         results = []
         for single_image in images:

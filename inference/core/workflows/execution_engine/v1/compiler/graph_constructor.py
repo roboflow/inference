@@ -1,4 +1,5 @@
 import itertools
+import logging
 from collections import defaultdict
 from copy import copy, deepcopy
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -7,7 +8,6 @@ from uuid import uuid4
 import networkx as nx
 from networkx import DiGraph
 
-from inference.core import logger
 from inference.core.workflows.errors import (
     AssumptionError,
     BlockInterfaceError,
@@ -87,6 +87,8 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     node_as,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 NODE_DEFINITION_KEY = "definition"
 STEP_INPUT_SELECTORS_PROPERTY = "step_input_selectors"

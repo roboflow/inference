@@ -32,6 +32,7 @@ def _dynamic_block_type(definition: Dict[str, Any]) -> Optional[str]:
 
 def collect_dynamic_blocks_definitions_from_workflow_definition(
     workflow_definition: Dict[str, Any],
+    warn_on_duplicates: bool = True,
 ) -> List[Any]:
     """Collect dynamic block definitions from a workflow and nested inner workflows.
 
@@ -40,15 +41,19 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
     ``workflow_definition``.
 
     When the same ``manifest.block_type`` appears more than once, the first occurrence
-    is kept (parent definitions win over nested children) and a warning is logged for
-    each skipped duplicate. Definitions without a ``block_type`` are still included and
-    are not deduplicated.
+    is kept (parent definitions win over nested children) and, when ``warn_on_duplicates``
+    is ``True``, a warning is logged for each skipped duplicate. Definitions without a
+    ``block_type`` are still included and are not deduplicated.
 
     Malformed entries (non-list ``dynamic_blocks_definitions``, non-dict list items)
     are passed through as-is so :func:`compile_dynamic_blocks` can validate them.
 
     Args:
         workflow_definition: Raw workflow JSON (``steps``, optional nested definitions).
+        warn_on_duplicates: Whether to log a warning for each skipped duplicate. The
+            compiler collects definitions twice per cold compile (once before
+            normalisation, once after); the pre-resolution call passes ``False`` so
+            the warning is logged only once.
 
     Returns:
         Merged list of dynamic block definition dicts in discovery order.
@@ -63,11 +68,12 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
 
         if block_type is not None:
             if block_type in seen_block_types:
-                logger.warning(
-                    "Skipping duplicate dynamic block definition for block_type=%r; "
-                    "using the first definition collected while compiling the workflow.",
-                    block_type,
-                )
+                if warn_on_duplicates:
+                    logger.warning(
+                        "Skipping duplicate dynamic block definition for block_type=%r; "
+                        "using the first definition collected while compiling the workflow.",
+                        block_type,
+                    )
                 return
 
             seen_block_types.add(block_type)

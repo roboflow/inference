@@ -9,8 +9,6 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from requests import Response
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
@@ -36,6 +34,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
@@ -266,15 +265,13 @@ class GoogleGeminiBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

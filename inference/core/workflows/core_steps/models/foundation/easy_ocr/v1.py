@@ -6,7 +6,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
@@ -16,8 +15,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
@@ -44,6 +41,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference.core.workflows.utils.lru_cache import LRUCache
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
@@ -170,9 +172,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             roboflow_platform_model(
                 model_id=f"easy_ocr/{version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -180,7 +180,7 @@ class BlockManifest(WorkflowBlockManifest):
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):

@@ -1,3 +1,4 @@
+import logging
 import sys
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -7,7 +8,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core import logger
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     PARENT_ID_KEY,
@@ -31,6 +31,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+logger = logging.getLogger(__name__)
 
 LONG_DESCRIPTION = """
 Replace class labels of detection bounding boxes with classes predicted by a classification model applied to cropped regions, combining generic detection results with specialized classification predictions to enable two-stage detection workflows, fine-grained classification, and class refinement workflows where generic detections are refined with specific class labels from specialized classifiers.

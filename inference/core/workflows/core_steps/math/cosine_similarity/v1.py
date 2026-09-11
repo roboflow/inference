@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.utils.postprocess import cosine_similarity
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     EMBEDDING_KIND,
@@ -14,6 +13,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.text import cosine_similarity
 
 LONG_DESCRIPTION = """
 Calculate the cosine similarity between two embedding vectors by computing the cosine of the angle between them, measuring directional similarity regardless of magnitude to enable similarity comparison, semantic matching, embedding-based search, and similarity-based filtering workflows.

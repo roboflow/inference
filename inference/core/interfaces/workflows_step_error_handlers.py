@@ -1,0 +1,275 @@
+import os
+from typing import Callable, Optional, Union
+
+from inference.core.exceptions import (
+    CannotInitialiseModelDueToInputSizeError,
+    FeatureDeprecatedError,
+    InferenceModelNotFound,
+    InvalidModelIDError,
+    ModelDeploymentNotSupportedError,
+    ModelManagerLockAcquisitionError,
+    PaymentRequiredError,
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIUsagePausedError,
+)
+from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
+    RuntimeLimitsCausedStepExecutionError,
+)
+from inference_models.errors import (
+    ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+    ModelRetrievalError,
+    UnauthorizedModelAccessError,
+)
+from inference_sdk.http.errors import HTTPCallErrorError
+
+MODEL_ACCESS_ERROR_MESSAGES = {
+    402: "Not enough credits to execute step {step_name}. Verify your workspace billing page.",
+    403: "Forbidden error occurred while execution of step {step_name}. "
+    "This error usually means there is a problem with the Roboflow API key.",
+    423: "Roboflow API usage is paused while executing step {step_name}. "
+    "Contact your workspace administrator to re-enable API keys.",
+}
+
+
+def legacy_step_error_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
+    if isinstance(error, (ModelManagerLockAcquisitionError, InferenceModelNotFound)):
+        raise error
+    return None
+
+
+def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
+    if isinstance(
+        error,
+        (
+            ModelManagerLockAcquisitionError,
+            InferenceModelNotFound,
+        ),
+    ):
+        raise error
+    if isinstance(error, CannotInitialiseModelDueToInputSizeError):
+        raise RuntimeLimitsCausedStepExecutionError(
+            block_id=step_name,
+            status_code=507,
+            public_message=f"Could not complete workflow execution due to configured runtime constraints. "
+            f"Details: model input size causes runtime memory requirements exceed the limit "
+            f"configured for the environment.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, ModelPackageRestrictedError):
+        raise RuntimeLimitsCausedStepExecutionError(
+            block_id=step_name,
+            status_code=507,
+            public_message="Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for instance "
+            "caused by large input size).",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, ModelPackageAlternativesExhaustedError) and any(
+        isinstance(e, ModelPackageRestrictedError)
+        for e in (error.alternatives_errors or [])
+    ):
+        raise RuntimeLimitsCausedStepExecutionError(
+            block_id=step_name,
+            status_code=507,
+            public_message="Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for instance "
+            "caused by large input size).",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, InvalidModelIDError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=400,
+            public_message=f"Problem with Workflow Block configuration - {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, (RoboflowAPINotAuthorizedError, UnauthorizedModelAccessError)):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=401,
+            public_message=f"Unauthorized error occurred while execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, PaymentRequiredError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=402,
+            public_message=f"Not enough credits to execute step {step_name}. "
+            f"Verify your workspace billing page. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPIForbiddenError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=403,
+            public_message=f"Forbidden error occurred while execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPIUsagePausedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=423,
+            public_message=f"Roboflow API usage is paused while executing step {step_name}. "
+            f"Contact your workspace administrator to re-enable API keys. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, ModelRetrievalError):
+        status_code = getattr(error, "status_code", None)
+        if status_code in MODEL_ACCESS_ERROR_MESSAGES:
+            public_message = MODEL_ACCESS_ERROR_MESSAGES[status_code].format(
+                step_name=step_name
+            )
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=status_code,
+                public_message=f"{public_message} Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+    if isinstance(error, (RoboflowAPINotNotFoundError, ModelNotFoundError)):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=404,
+            public_message=f"Could not find requested Roboflow resource while execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with not existing model.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, HTTPCallErrorError):
+        if error.status_code == 400:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=400,
+                public_message=f"Bad request error detected while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean that the Workflow block configuration is faulty.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 401:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=401,
+                public_message=f"Unauthorized error occurred while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 402:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=402,
+                public_message=f"Not enough credits to remote execute step {step_name}. "
+                f"Verify your workspace billing page. Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 403:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=403,
+                public_message=f"Forbidden error occurred while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 404:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=404,
+                public_message=f"Could not find requested Roboflow resource while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean the problem with not existing model.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 410:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=410,
+                public_message=f"Deprecated feature usage detected while remote execution of step {step_name} - "
+                f"details of error: {error}.",
+                context="workflow_execution | step_execution | feature_deprecated",
+                inner_error=error,
+            ) from error
+        if error.status_code == 423:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=423,
+                public_message=f"Roboflow API usage is paused while remote executing step {step_name}. "
+                f"Contact your workspace administrator to re-enable API keys. Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 501:
+            public_message = error.api_message or (
+                f"Remote execution of step {step_name} is not supported on this deployment."
+            )
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=501,
+                public_message=public_message,
+                context="workflow_execution | step_execution | deployment_not_supported",
+                inner_error=ModelDeploymentNotSupportedError(public_message),
+            ) from error
+        if error.status_code == 507:
+            raise RuntimeLimitsCausedStepExecutionError(
+                block_id=step_name,
+                status_code=507,
+                public_message=f"Could not complete workflow execution due to configured runtime constraints. "
+                f"Details: {error.api_message}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+    return None
+
+
+SERVER_STEP_ERROR_HANDLERS = {
+    "legacy": legacy_step_error_handler,
+    "extended_roboflow_errors": extended_roboflow_errors_handler,
+}
+
+
+def resolve_step_error_handler(
+    name: Optional[str] = None,
+) -> Union[str, Callable[[str, Exception], None]]:
+    """Pick the handler the server passes to ``ExecutionEngine.init``.
+
+    The engine's own default is bound at function-definition time, so the
+    server must pass its choice explicitly at every composition root. Unknown
+    names are returned unchanged: the engine raises
+    ``WorkflowEnvironmentConfigurationError`` for them, exactly as before.
+    """
+    name = name or os.getenv(
+        "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
+    )
+    return SERVER_STEP_ERROR_HANDLERS.get(name, name)

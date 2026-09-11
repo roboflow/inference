@@ -13,6 +13,9 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.exceptions import FeatureDeprecatedError
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import ClientCausedStepExecutionError
@@ -88,6 +91,7 @@ def test_gaze_workflow_compiles_and_raises_410_via_executor_middleware(
         workflow_definition=GAZE_DETECTION_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        step_error_handler=resolve_step_error_handler(),
     )
     image = np.zeros((32, 32, 3), dtype=np.uint8)
 
