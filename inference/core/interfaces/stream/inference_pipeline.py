@@ -68,6 +68,9 @@ from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
 )
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -752,7 +755,9 @@ class InferencePipeline:
             execution_engine_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=execution_engine_thread_pool_workers
             )
-            workflow_init_parameters["workflows_core.model_manager"] = model_manager
+            workflow_init_parameters["workflows_core.model_manager"] = (
+                ModelManagerModelsProvider(model_manager)
+            )
             workflow_init_parameters["workflows_core.api_key"] = api_key
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor

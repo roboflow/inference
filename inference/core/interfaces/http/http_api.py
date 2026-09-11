@@ -397,6 +397,9 @@ if LAMBDA and not OFFLINE_MODE:
 
 import time
 
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 from inference_sdk.http.entities import Confidence
@@ -1598,7 +1601,9 @@ class HttpInterface(BaseInterface):
 
             workflow_init_parameters = install_workflows_platform_bindings(
                 {
-                    "workflows_core.model_manager": model_manager,
+                    "workflows_core.model_manager": ModelManagerModelsProvider(
+                        model_manager
+                    ),
                     "workflows_core.api_key": workflow_request.api_key,
                     "workflows_core.background_tasks": background_tasks,
                     "workflows_core.disable_sinks": workflow_request.disable_sinks,
@@ -2562,7 +2567,9 @@ class HttpInterface(BaseInterface):
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = install_workflows_platform_bindings(
                     {
-                        "workflows_core.model_manager": model_manager,
+                        "workflows_core.model_manager": ModelManagerModelsProvider(
+                            model_manager
+                        ),
                         "workflows_core.api_key": api_key,
                         "workflows_core.background_tasks": None,
                         "workflows_core.step_execution_mode": step_execution_mode,

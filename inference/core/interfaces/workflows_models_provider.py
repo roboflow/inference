@@ -1,0 +1,142 @@
+"""Server-side implementation of the Workflows `ModelsProvider` port.
+
+Workflow blocks describe an inference call with plain arguments; this adapter
+turns those into the server's pydantic request objects and runs them through
+`ModelManager`, so `inference.core.workflows` never imports
+`inference.core.entities`. Every `run_*` method reproduces, argument for
+argument, the request a block used to build inline - see
+`tests/inference/unit_tests/core/interfaces/test_workflows_models_provider.py`,
+which pins each one against the pydantic class.
+
+MODEL REGISTRATION IS NOT DONE HERE, with two exceptions. `add_model` /
+`load_core_model` stay in the blocks: `core_steps/models/roboflow/
+instance_segmentation/v3.py` registers the model, then reads its pipeline depth
+to decide whether to queue a stream frame context, and only then infers.
+Registering inside the inference call would make that check report "no
+pipeline" on a cold model and the first delayed response would find no pending
+context. The exceptions are `run_clip_comparison` and `run_pp_ocr`, whose core
+model id exists only on the validated request; they register in the position
+the blocks used (build -> register -> infer).
+
+Bound at the four composition roots as
+`init_parameters["workflows_core.model_manager"]`, and by the test fixtures
+that used to inject a raw manager (Task 11.7 Step 6b).
+
+Phase 12 note: a second implementation backed by `inference_sdk`
+(`InferenceHTTPClientModelsProvider`) would satisfy the same port for REMOTE
+step execution. Keep the argument names aligned with
+`inference_sdk.http.entities.InferenceConfiguration`.
+"""
+
+from typing import Any, Dict, List, Optional, Union
+
+from inference.core.managers.base import ModelManager
+
+_WORKFLOW_SOURCE = "workflow-execution"
+
+
+class ModelManagerModelsProvider:
+    """Implements `inference.core.workflows.prototypes.models_provider.ModelsProvider`."""
+
+    def __init__(self, model_manager: ModelManager):
+        self._model_manager = model_manager
+
+    # -- forwarded members -------------------------------------------------
+
+    @property
+    def content_addressed_artifact_cache(self) -> Any:
+        return self._model_manager.content_addressed_artifact_cache
+
+    def add_model(
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        # Forwarded as the block made the call (keywords, no synthesised
+        # `model_id_alias=None`), so a class-level test patch on
+        # `ModelManager.add_model` observes the same call it observes today.
+        if model_id_alias is not None:
+            kwargs["model_id_alias"] = model_id_alias
+        return self._model_manager.add_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
+
+    def infer_from_request_sync(
+        self, model_id: str, request: Any, **kwargs: Any
+    ) -> Any:
+        return self._model_manager.infer_from_request_sync(
+            model_id=model_id, request=request, **kwargs
+        )
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
+        return self._model_manager.run_tensor_native_inference(
+            model_id=model_id, **kwargs
+        )
+
+    def get_class_names(self, model_id: str) -> List[str]:
+        return self._model_manager.get_class_names(model_id)
+
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs: Any
+    ) -> Any:
+        # Phase 9's loader (Task 9.9); the action block calls it with keywords.
+        return self._model_manager.load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
+
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        return self._model_manager.get_keypoints_classes(model_id)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return self._model_manager.model_supports_stream_pipeline(model_id)
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self._model_manager.get_model_pipeline_depth(model_id)
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        return self._model_manager.flush_model_stream_pipeline(model_id)
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        return self._model_manager.shutdown_model_stream_pipeline(model_id)
+
+    def __contains__(self, model_id: str) -> bool:
+        return model_id in self._model_manager
+
+    # -- shared helpers used by the run_* methods --------------------------
+
+    def _infer(self, model_id: str, request: Any, **kwargs: Any) -> List[Any]:
+        """Run one request and normalise the result to a list.
+
+        `kwargs` are forwarded to `ModelManager.infer_from_request_sync`, which
+        passes them on to `model_infer_sync` - two multi-label blocks send an
+        extra `confidence` that way today.
+
+        The caller has already registered `model_id` unless this adapter owns
+        that registration (`run_clip_comparison`, `run_pp_ocr`).
+        """
+        responses = self._model_manager.infer_from_request_sync(
+            model_id=model_id, request=request, **kwargs
+        )
+        if not isinstance(responses, list):
+            responses = [responses]
+        return responses
+
+    @staticmethod
+    def _dump(responses: List[Any]) -> List[dict]:
+        """The dict form every block's `_post_process_result` consumes.
+
+        Identical to the `e.model_dump(by_alias=True, exclude_none=True)` the
+        blocks ran inline, with the `to_dict()` fast path the rfdetr adapter's
+        dataclass responses expose (see
+        `inference/core/entities/responses/inference.py`).
+        """
+        return [
+            (
+                response.to_dict()
+                if callable(getattr(response, "to_dict", None))
+                else response.model_dump(by_alias=True, exclude_none=True)
+            )
+            for response in responses
+        ]

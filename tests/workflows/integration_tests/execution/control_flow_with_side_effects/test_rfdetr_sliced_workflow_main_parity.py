@@ -706,6 +706,9 @@ def do_run(
     model_id, cleanup_model_bundle = _prepare_local_workflow_model_bundle(repo_path)
     try:
         case = WORKFLOW_PARITY_CASES[workflow_case]
+        from inference.core.interfaces.workflows_models_provider import (
+            ModelManagerModelsProvider,
+        )
         from inference.core.managers.base import ModelManager
         from inference.core.registries.roboflow import RoboflowModelRegistry
         from inference.core.workflows.core_steps.common.entities import (
@@ -724,7 +727,9 @@ def do_run(
         execution_engine = ExecutionEngine.init(
             workflow_definition=workflow_definition,
             init_parameters={
-                "workflows_core.model_manager": model_manager,
+                "workflows_core.model_manager": ModelManagerModelsProvider(
+                    model_manager
+                ),
                 "workflows_core.api_key": None,
                 "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
             },

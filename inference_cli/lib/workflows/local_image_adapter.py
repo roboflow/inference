@@ -19,6 +19,9 @@ from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
 from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -457,7 +460,7 @@ def _run_workflow_for_single_image_with_inference(
     workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     workflow_init_parameters = {
-        "workflows_core.model_manager": model_manager,
+        "workflows_core.model_manager": ModelManagerModelsProvider(model_manager),
         "workflows_core.api_key": api_key,
         "workflows_core.thread_pool_executor": thread_pool_executor,
         "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
