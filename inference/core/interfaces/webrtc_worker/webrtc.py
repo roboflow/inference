@@ -68,6 +68,7 @@ from inference.core.interfaces.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
     VideoFileUploadHandler,
 )
+from inference.core.interfaces.webrtc_worker.sources.rtsp import ThreadedRTSPTrack
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
@@ -1111,16 +1112,19 @@ async def init_rtc_peer_connection_with_loop(
             "Processing RTSP URL: %s",
             sanitize_source_reference(webrtc_request.rtsp_url),
         )
-        player = _open_media_player(
-            webrtc_request.rtsp_url,
-            format="rtsp",
-            options={
-                "rtsp_transport": "tcp",
-                "rtsp_flags": "prefer_tcp",
-                "stimeout": "2000000",  # 2s socket timeout
-            },
-        )
-        video_processor.set_track(track=player.video)
+        if webrtc_request.webrtc_realtime_processing:
+            player = _open_media_player(
+                webrtc_request.rtsp_url,
+                format="rtsp",
+                options={
+                    "rtsp_transport": "tcp",
+                    "rtsp_flags": "prefer_tcp",
+                    "stimeout": "2000000",  # 2s socket timeout
+                },
+            )
+            video_processor.set_track(track=player.video)
+        else:
+            video_processor.set_track(track=ThreadedRTSPTrack(webrtc_request.rtsp_url))
 
         # For DATA_ONLY mode, start data-only processing task
         if not should_send_video:
