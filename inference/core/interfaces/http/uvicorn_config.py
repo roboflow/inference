@@ -1,5 +1,6 @@
 """Helpers for translating SSL env vars into uvicorn configuration."""
 
+import ssl
 from typing import Any, Dict, List, Optional
 
 
@@ -34,6 +35,7 @@ def build_ssl_uvicorn_kwargs(
         kwargs["ssl_keyfile_password"] = ssl_keyfile_password
     if ssl_ca_certs:
         kwargs["ssl_ca_certs"] = ssl_ca_certs
+        kwargs["ssl_cert_reqs"] = ssl.CERT_REQUIRED
     return kwargs
 
 
@@ -61,9 +63,11 @@ def build_ssl_uvicorn_cli_args(
         "ssl_keyfile": "--ssl-keyfile",
         "ssl_keyfile_password": "--ssl-keyfile-password",
         "ssl_ca_certs": "--ssl-ca-certs",
+        "ssl_cert_reqs": "--ssl-cert-reqs",
     }
     args: List[str] = []
     for key, flag in flag_map.items():
         if key in kwargs:
-            args.extend([flag, str(kwargs[key])])
+            value = int(kwargs[key]) if key == "ssl_cert_reqs" else kwargs[key]
+            args.extend([flag, str(value)])
     return args

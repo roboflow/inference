@@ -166,6 +166,28 @@ jobs:
             echo "prompt_available=true"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Install and verify Claude Code
+        id: claude-code
+        if: steps.review-prompt.outputs.prompt_available == 'true'
+        env:
+          # Match the CLI version bundled with the pinned review action below.
+          CLAUDE_CODE_VERSION: "2.1.265"
+          # linux-x64 checksum from the release's manifest.json.
+          CLAUDE_CODE_SHA256: e14738e3a58d1fc6ccc23b9c919451b4846bc27074a3fb48db976a7d595bdeeb
+        run: |
+          set -euo pipefail
+          # Use the release binary directly: the native installer can report
+          # success without creating its ~/.local/bin/claude launcher.
+          install_dir="$(mktemp -d "${RUNNER_TEMP}/claude-code.XXXXXX")"
+          cd "$install_dir"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/linux-x64/claude" \
+            --output claude
+          printf '%s  claude\n' "$CLAUDE_CODE_SHA256" | sha256sum --check --strict
+          chmod +x claude
+          ./claude --version
+          echo "executable=${install_dir}/claude" >> "$GITHUB_OUTPUT"
+
       - name: Stage trusted review skills
         run: |
           # Snapshot the review skills from the TRUSTED base checkout so the PR's
@@ -233,8 +255,11 @@ jobs:
 
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@0d0e0876d3eaa933f45dc692f7a4312c83caf36f # v1
+        env:
+          DISABLE_AUTOUPDATER: "1"
         with:
+          path_to_claude_code_executable: ${{ steps.claude-code.outputs.executable }}
           anthropic_api_key: ${{ secrets.TMP_PAWELS_CLAUDE_API_KEY_USE_WISELY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           include_fix_links: false

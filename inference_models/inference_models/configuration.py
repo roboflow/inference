@@ -13,6 +13,7 @@ from inference_models.utils.environment import (
     get_integer_from_env,
     parse_comma_separated_values,
 )
+from inference_models.utils.secure_gateway import normalize_secure_gateway_configuration
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -64,7 +65,10 @@ ROBOFLOW_API_HOST = os.getenv(
     ],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
+# Bare hosts use HTTPS with a migration warning; explicit HTTP is loopback-only.
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "

@@ -274,7 +274,7 @@ def test_invalidate_connection_survives_the_pool_being_cleared_mid_disconnect(
     with patch.object(
         manager, "_safe_disconnect", side_effect=sweep_the_pool_during_disconnect
     ):
-        manager.invalidate_connection(URL, None)  # must not raise
+        manager.invalidate_connection(URL, None, None)  # must not raise
 
     # then
     assert manager.get_pool_stats()["total_connections"] == 0
@@ -306,7 +306,7 @@ def test_invalidated_client_stays_visible_to_a_shutdown_sweep(manager) -> None:
     with patch.object(
         manager, "_safe_disconnect", side_effect=sweep_while_disconnecting
     ):
-        manager.invalidate_connection(URL, None)
+        manager.invalidate_connection(URL, None, None)
 
     # then
     assert seen_by_sweep == [[key]]
@@ -345,7 +345,7 @@ def test_invalidation_holds_the_key_lock_until_the_old_session_is_gone(manager) 
 
     # when
     with patch.object(manager, "_safe_disconnect", side_effect=probe_key_lock):
-        manager.invalidate_connection(URL, None)
+        manager.invalidate_connection(URL, None, None)
 
     # then - another writer to this server cannot slip in mid-teardown
     assert key_lock_free_during_disconnect == [False]
@@ -593,7 +593,7 @@ def test_pooled_connection_survives_a_session_limit_hit_on_another_credential(
     """A healthy session must not be torn down because the server is full for someone else."""
     # given - one credential already has a working pooled connection
     pooled_client = MagicMock()
-    pooled_key = manager._get_connection_key(URL, "operator")
+    pooled_key = manager._get_connection_key(URL, "operator", "secret")
     manager._connections[pooled_key] = pooled_client
 
     # when - another credential is refused because the server is out of slots
@@ -777,14 +777,14 @@ def test_release_connection_keeps_connection_pooled_by_default(manager) -> None:
     manager._connections[key] = pooled_client
 
     # when
-    manager.release_connection(url=URL, user_name=None)
+    manager.release_connection(url=URL, user_name=None, password=None)
 
     # then
     assert manager._connections[key] is pooled_client
     pooled_client.disconnect.assert_not_called()
 
     # and when
-    manager.release_connection(url=URL, user_name=None, force_close=True)
+    manager.release_connection(url=URL, user_name=None, force_close=True, password=None)
 
     # then
     assert key not in manager._connections
@@ -808,3 +808,59 @@ def test_positive_float_from_env_reads_override() -> None:
 
     # then
     assert value == 15.0
+
+
+@pytest.mark.parametrize("password", ["wrong", None, ""])
+def test_wrong_password_cannot_reuse_authenticated_write_session(manager, password):
+    from asyncua.ua.uaerrors import BadUserAccessDenied
+
+    writes = []
+
+    def create_client(url, user_name, password, timeout):
+        client = MagicMock()
+        client.connect.side_effect = (
+            None if password == "correct" else BadUserAccessDenied()
+        )
+        client.write.side_effect = lambda value: writes.append((password, value))
+        return client
+
+    with patch.object(manager, "_create_client", side_effect=create_client):
+        valid = manager.get_connection(URL, "operator", "correct", timeout=2)
+        valid.write("authorized")
+        with pytest.raises(Exception, match="AUTH ERROR"):
+            manager.get_connection(URL, "operator", password, timeout=2).write(
+                "unauthorized"
+            )
+        assert manager.get_connection(URL, "operator", "correct", timeout=2) is valid
+    assert writes == [("correct", "authorized")]
+    assert len(manager._connections) == 1
+
+
+def test_credential_keys_are_unambiguous_and_do_not_contain_passwords(manager):
+    first = manager._get_connection_key(URL, "alice|part", "secret")
+    second = manager._get_connection_key(URL, "alice", "part|secret")
+    assert first != second
+    assert "secret" not in first
+    assert manager._get_connection_key(
+        URL, "alice", None
+    ) != manager._get_connection_key(URL, "alice", "")
+
+
+def test_password_specific_invalidation_preserves_other_sessions(manager):
+    one, two = MagicMock(), MagicMock()
+    with patch.object(manager, "_create_client", side_effect=[one, two]), patch.object(
+        manager, "_connect_with_retry"
+    ):
+        manager.get_connection(URL, "operator", "one", timeout=2)
+        manager.get_connection(URL, "operator", "two", timeout=2)
+    manager.invalidate_connection(URL, "operator", "one")
+    one.disconnect.assert_called_once()
+    two.disconnect.assert_not_called()
+    assert manager.get_connection(URL, "operator", "two", timeout=2) is two
+
+
+def test_pool_invalidation_requires_explicit_credentials(manager):
+    with pytest.raises(TypeError):
+        manager.invalidate_connection(URL, None)
+    with pytest.raises(TypeError):
+        manager.release_connection(URL, None)
