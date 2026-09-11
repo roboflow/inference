@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
+    WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
 )
 
 if ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -70,6 +71,8 @@ can be changed by the runtime with `WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET`.
 The parent API key is forwarded only to that runtime-configured target. Other per-block targets
 receive no inherited credentials; configure the runtime target to authorize credential forwarding
 to a dedicated deployment. Redirects are never followed.
+Remote dispatch chains are limited by `WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH` (default: 4).
+Every target in a chain must run a version supporting the dispatch-depth request field.
 """
 
 
@@ -206,12 +209,14 @@ class InnerWorkflowBlockV1(WorkflowBlock):
         thread_pool_executor: Optional[ThreadPoolExecutor],
         inner_workflow_remote_target: str,
         disable_sinks: bool = False,
+        inner_workflow_dispatch_depth: int = 0,
     ):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._remote_target = inner_workflow_remote_target
         self._disable_sinks = disable_sinks
+        self._dispatch_depth = inner_workflow_dispatch_depth
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -221,6 +226,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
             "thread_pool_executor",
             "inner_workflow_remote_target",
             "disable_sinks",
+            "inner_workflow_dispatch_depth",
         ]
 
     @classmethod
@@ -256,6 +262,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
             workflow_workspace_id=workflow_workspace_id,
             workflow_id=workflow_id,
             workflow_version_id=workflow_version_id,
+            inner_workflow_dispatch_depth=self._dispatch_depth,
         )
         request_handler = partial(
             execute_workflow_dispatch_request,
@@ -301,11 +308,18 @@ def prepare_workflow_dispatch_request(
     workflow_workspace_id: Optional[str],
     workflow_id: Optional[str],
     workflow_version_id: Optional[str],
+    inner_workflow_dispatch_depth: int = 0,
 ) -> Tuple[str, Dict[str, Any]]:
+    if not 0 <= inner_workflow_dispatch_depth < WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH:
+        raise ValueError(
+            f"Inner workflow dispatch depth must be non-negative and below "
+            f"{WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH}."
+        )
     base_url = remote_target.rstrip("/")
     payload: Dict[str, Any] = {
         "api_key": api_key,
         "inputs": serialize_workflow_dispatch_inputs(parameter_bindings),
+        "inner_workflow_dispatch_depth": inner_workflow_dispatch_depth + 1,
     }
     if workflow_definition is not None:
         payload["specification"] = workflow_definition

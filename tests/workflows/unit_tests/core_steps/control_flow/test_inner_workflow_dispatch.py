@@ -6,6 +6,10 @@ import numpy as np
 import pytest
 import requests
 
+from inference.core.entities.requests.workflows import (
+    PredefinedWorkflowInferenceRequest,
+)
+from inference.core.env import WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH
 from inference.core.workflows.core_steps.flow_control.inner_workflow.v1 import (
     BlockManifest,
     InnerWorkflowBlockV1,
@@ -205,3 +209,59 @@ def test_dispatch_does_not_follow_redirects() -> None:
     assert post.call_args.kwargs["allow_redirects"] is False
     warning.assert_called_once()
     response.raise_for_status.assert_not_called()
+
+
+def test_self_dispatch_stops_at_depth_limit() -> None:
+    request = PredefinedWorkflowInferenceRequest(inputs={})
+    for depth in range(WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH + 1):
+        executor = MagicMock()
+        block = InnerWorkflowBlockV1(
+            api_key="secret",
+            background_tasks=None,
+            thread_pool_executor=executor,
+            inner_workflow_remote_target="https://serverless.roboflow.com",
+            inner_workflow_dispatch_depth=request.inner_workflow_dispatch_depth,
+        )
+        arguments = dict(
+            execution_mode="remote_dispatch",
+            remote_target=None,
+            parameter_bindings={},
+            workflow_definition=None,
+            workflow_workspace_id="workspace",
+            workflow_id="self",
+            workflow_version_id=None,
+        )
+        if depth == WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH:
+            with pytest.raises(ValueError, match="dispatch depth"):
+                block.run(**arguments)
+            executor.submit.assert_not_called()
+        else:
+            block.run(**arguments)
+            payload = executor.submit.call_args.args[0].keywords["payload"]
+            request = PredefinedWorkflowInferenceRequest.model_validate(payload)
+            assert request.inner_workflow_dispatch_depth == depth + 1
+
+
+def test_disabled_dispatch_does_not_check_depth_or_submit() -> None:
+    executor = MagicMock()
+    block = InnerWorkflowBlockV1(
+        api_key="secret",
+        background_tasks=None,
+        thread_pool_executor=executor,
+        inner_workflow_remote_target="https://serverless.roboflow.com",
+        inner_workflow_dispatch_depth=WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
+        disable_sinks=True,
+    )
+    assert (
+        block.run(
+            execution_mode="remote_dispatch",
+            remote_target=None,
+            parameter_bindings={},
+            workflow_definition=None,
+            workflow_workspace_id="workspace",
+            workflow_id="self",
+            workflow_version_id=None,
+        )
+        == {}
+    )
+    executor.submit.assert_not_called()

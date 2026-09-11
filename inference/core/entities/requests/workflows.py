@@ -37,6 +37,12 @@ class WorkflowInferenceRequest(BaseModel):
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
     )
+    inner_workflow_dispatch_depth: int = Field(
+        default=0,
+        ge=0,
+        strict=True,
+        description="Number of remote inner-workflow dispatch hops preceding this request.",
+    )
     disable_sinks: bool = Field(
         default=False,
         description="Run the workflow with sink writes and outbound notifications/uploads disabled.",

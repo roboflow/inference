@@ -1577,6 +1577,7 @@ REGISTERED_INITIALIZERS = {
     "background_tasks": None,
     "thread_pool_executor": None,
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
+    "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
