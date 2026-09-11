@@ -86,6 +86,10 @@ class LoRASmolVLM(LoRATransformerModel):
                 "exclude_modules",
                 "trainable_token_indices",
             ],
+            # PEFT 0.19.1 serializes these inert null defaults; the serving
+            # PEFT 0.18.1 constructor does not know the fields. Active values
+            # remain unsupported and must fail closed, not change semantics.
+            unsupported_null_keys=["lora_ga_config", "use_bdlora"],
         )
 
         lora_config = LoraConfig(**config)

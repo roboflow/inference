@@ -45,10 +45,22 @@ if TYPE_CHECKING:
 def load_compatible_adapter_config(
     config_file: str,
     unsupported_keys: Iterable[str],
+    unsupported_null_keys: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Load a PEFT config without requiring writes to an offline cache."""
     with open(config_file, "r") as file:
         config = json.load(file)
+
+    # Explicitly named newer options may be omitted only when their writer's
+    # default is null. Never silently discard an enabled/unknown configuration.
+    # Validate before the existing online-cache compatibility write below.
+    unsupported_null_keys = tuple(unsupported_null_keys)
+    for key in unsupported_null_keys:
+        if key in config and config[key] is not None:
+            raise ValueError(
+                f"Adapter enables unsupported PEFT option '{key}'; "
+                "use a serving PEFT version that supports this option."
+            )
 
     changed = False
     for key in unsupported_keys:
@@ -63,6 +75,11 @@ def load_compatible_adapter_config(
     if changed and not OFFLINE_MODE:
         with open(config_file, "w") as file:
             json.dump(config, file, indent=2)
+
+    # Do not rewrite these fields in either online or offline artifacts. PEFT
+    # receives this in-memory config directly, so it need not reread the file.
+    for key in unsupported_null_keys:
+        config.pop(key, None)
     return config
 
 
