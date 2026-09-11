@@ -136,6 +136,7 @@ def test_object_detection_v1_request_matches_the_pre_port_construction() -> None
         source="workflow-execution",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_object_detection_v3_request_matches_the_pre_port_construction() -> None:
@@ -182,6 +183,7 @@ def test_object_detection_v3_request_matches_the_pre_port_construction() -> None
         source="workflow-execution",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_multi_class_classification_v1_request_matches_the_pre_port_construction() -> (
@@ -219,6 +221,7 @@ def test_multi_class_classification_v1_request_matches_the_pre_port_construction
         active_learning_target_dataset=None,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_multi_label_classification_v1_request_matches_the_pre_port_construction() -> (
@@ -256,6 +259,7 @@ def test_multi_label_classification_v1_request_matches_the_pre_port_construction
         active_learning_target_dataset=None,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_multi_label_classification_v2_forwards_the_separate_confidence_keyword() -> (
@@ -297,6 +301,7 @@ def test_multi_label_classification_v2_forwards_the_separate_confidence_keyword(
         active_learning_target_dataset=None,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
     # Old code: `infer_from_request_sync(model_id=model_id, request=request,
     # confidence=confidence)` - the extra `confidence` keyword, unchanged.
@@ -342,6 +347,7 @@ def test_multi_label_classification_v3_forwards_the_separate_confidence_keyword(
         active_learning_target_dataset=None,
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
     # Old code: `infer_from_request_sync(model_id=model_id, request=request,
     # confidence=confidence)` - the extra `confidence` keyword, unchanged.
@@ -394,6 +400,7 @@ def test_keypoint_detection_v1_request_matches_the_pre_port_construction() -> No
         source="workflow-execution",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_semantic_segmentation_v1_request_matches_the_pre_port_construction() -> None:
@@ -422,6 +429,7 @@ def test_semantic_segmentation_v1_request_matches_the_pre_port_construction() ->
         source="workflow-execution",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
 
 
 def test_semantic_segmentation_v2_request_matches_the_pre_port_construction() -> None:
@@ -452,3 +460,4 @@ def test_semantic_segmentation_v2_request_matches_the_pre_port_construction() ->
         source="workflow-execution",
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    assert request.model_fields_set == expected.model_fields_set
