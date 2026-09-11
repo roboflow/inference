@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import (
     Any,
     Generic,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -10,7 +11,6 @@ from typing import (
     Set,
     Tuple,
     Union,
-    Iterator,
     runtime_checkable,
 )
 

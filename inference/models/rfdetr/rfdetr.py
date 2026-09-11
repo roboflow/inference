@@ -133,6 +133,15 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
+        # Convert to RGB *before* per-channel normalization: `preprocess_means`
+        # / `preprocess_stds` are RGB-ordered, so normalizing a BGR image and
+        # swapping channels afterwards applies the R stats to B and vice versa.
+        if is_bgr:
+            if isinstance(preprocessed_image, np.ndarray):
+                preprocessed_image = cv2.cvtColor(preprocessed_image, cv2.COLOR_BGR2RGB)
+            else:
+                preprocessed_image = preprocessed_image[:, :, [2, 1, 0]]
+
         if USE_PYTORCH_FOR_PREPROCESSING:
             preprocessed_image = (
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous()
@@ -223,12 +232,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     "This is most likely a bug. Contact Roboflow team through github issues "
                     "(https://github.com/roboflow/inference/issues) providing full context of the problem"
                 )
-
-        if is_bgr:
-            if isinstance(resized, np.ndarray):
-                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-            else:
-                resized = resized[:, [2, 1, 0], :, :]
 
         if isinstance(resized, np.ndarray):
             img_in = np.transpose(resized, (2, 0, 1))

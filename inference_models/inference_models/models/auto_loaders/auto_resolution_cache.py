@@ -49,15 +49,7 @@ class AutoResolutionCacheEntry(BaseModel):
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
-    # Hash of package-selection inputs that deliberately excludes API
-    # credentials.  It lets an air-gapped restart reuse the exact package that
-    # was warmed online without weakening trust, dependency, runtime, or
-    # package-selection constraints.
-    offline_compatibility_hash: Optional[str] = Field(default=None)
     trusted_source: Optional[bool] = Field(default=None)
-    # SHA-256 of the exact package manifest published by the successful warm.
-    # Older entries deserialize, but current attribution requires this value.
-    package_manifest_hash: Optional[str] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):
@@ -77,34 +69,6 @@ class AutoResolutionCache(ABC):
     @abstractmethod
     def invalidate(self, auto_negotiation_hash: str) -> None:
         pass
-
-    def find_compatible(
-        self,
-        offline_compatibility_hash: str,
-    ) -> Optional[Tuple[str, AutoResolutionCacheEntry]]:
-        """Return the newest matching entry when the cache can enumerate.
-
-        Custom cache implementations remain source-compatible and may opt in
-        by overriding this method.
-        """
-
-        return None
-
-    def find_compatible_candidates(
-        self,
-        offline_compatibility_hash: str,
-    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
-        """Return compatible entries in preferred order when supported.
-
-        The default wraps the original single-result extension point so custom
-        cache implementations that only override ``find_compatible`` keep
-        working without changes.
-        """
-
-        compatible_entry = self.find_compatible(
-            offline_compatibility_hash=offline_compatibility_hash
-        )
-        return [] if compatible_entry is None else [compatible_entry]
 
     def find_model_candidates(
         self,
@@ -143,7 +107,10 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
         )
         target_file_dir, target_file_name = os.path.split(path_for_cached_content)
         lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
-        content = cache_entry.model_dump(mode="json")
+        # Unset optional fields are omitted rather than written as nulls -
+        # the tolerant reader defaults them, and retired fields (e.g. the
+        # v1-era compatibility hashes) must not reappear in fresh entries.
+        content = cache_entry.model_dump(mode="json", exclude_none=True)
         if os.path.islink(target_file_dir):
             LOGGER.warning(
                 "Refusing to write auto-resolution metadata through a symlinked directory"
@@ -252,48 +219,6 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
                 self._invalidate_path_while_locked(
                     path_for_cached_content=path_for_cached_content
                 )
-
-    def find_compatible(
-        self,
-        offline_compatibility_hash: str,
-    ) -> Optional[Tuple[str, AutoResolutionCacheEntry]]:
-        candidates = self.find_compatible_candidates(
-            offline_compatibility_hash=offline_compatibility_hash
-        )
-        return candidates[0] if candidates else None
-
-    def find_compatible_candidates(
-        self,
-        offline_compatibility_hash: str,
-    ) -> List[Tuple[str, AutoResolutionCacheEntry]]:
-        cache_dir = os.path.abspath(
-            os.path.join(INFERENCE_HOME, "auto-resolution-cache")
-        )
-        if os.path.islink(cache_dir) or not os.path.isdir(cache_dir):
-            return []
-        try:
-            entries = sorted(os.listdir(cache_dir))
-        except OSError:
-            return []
-        matches: List[Tuple[str, AutoResolutionCacheEntry]] = []
-        for entry_name in entries:
-            if not re.fullmatch(r"[0-9a-f]{64}\.json", entry_name):
-                continue
-            entry_path = os.path.join(cache_dir, entry_name)
-            if os.path.islink(entry_path) or not os.path.isfile(entry_path):
-                continue
-            auto_negotiation_hash = entry_name[:-5]
-            cache_entry = self.retrieve(auto_negotiation_hash=auto_negotiation_hash)
-            if (
-                cache_entry is not None
-                and cache_entry.offline_compatibility_hash == offline_compatibility_hash
-            ):
-                matches.append((auto_negotiation_hash, cache_entry))
-        return sorted(
-            matches,
-            key=lambda match: match[1].created_at.timestamp(),
-            reverse=True,
-        )
 
     def find_model_candidates(
         self,

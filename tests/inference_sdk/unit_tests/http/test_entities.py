@@ -1,3 +1,4 @@
+from inference_sdk.config import outbound_service_secret
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     DEFAULT_IMAGE_EXTENSIONS,
@@ -197,3 +198,87 @@ def test_to_api_v1_query_parameters_when_only_count_inference_set() -> None:
 
     # then
     assert query == {"countinference": True}
+
+
+def test_to_billing_query_parameters_uses_outbound_context_when_present() -> None:
+    # given - no explicit billing configuration on the object itself
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        query = configuration.to_billing_query_parameters()
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    assert query == {"service_secret": "ctx-secret", "countinference": False}
+
+
+def test_to_billing_query_parameters_context_overrides_explicit_configuration() -> None:
+    # given - explicit configuration says billable, and even names its own secret
+    configuration = InferenceConfiguration(
+        count_inference=True, service_secret="explicit-secret"
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when - the outbound context wins: it must not be possible to
+        # upgrade an authenticated suppression back to billable
+        query = configuration.to_billing_query_parameters()
+    finally:
+        outbound_service_secret.reset(token)
+
+    assert query == {"service_secret": "ctx-secret", "countinference": False}
+
+
+def test_to_billing_query_parameters_preserves_explicit_configuration_without_context() -> (
+    None
+):
+    # given - no outbound context is active
+    assert outbound_service_secret.get() is None
+    configuration = InferenceConfiguration(
+        count_inference=True, service_secret="explicit-secret"
+    )
+
+    # when
+    query = configuration.to_billing_query_parameters()
+
+    # then
+    assert query == {"service_secret": "explicit-secret", "countinference": True}
+
+
+def test_to_legacy_call_parameters_uses_outbound_context_when_present() -> None:
+    # given - a v0 caller configured nothing about billing
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        parameters = configuration.to_legacy_call_parameters()
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    assert parameters["countinference"] is False
+    assert parameters["service_secret"] == "ctx-secret"
+
+
+def test_to_legacy_call_parameters_context_overrides_explicit_count_inference_true() -> (
+    None
+):
+    # given
+    configuration = InferenceConfiguration(
+        count_inference=True, service_secret="explicit-secret"
+    )
+    token = outbound_service_secret.set("ctx-secret")
+
+    try:
+        # when
+        parameters = configuration.to_legacy_call_parameters()
+    finally:
+        outbound_service_secret.reset(token)
+
+    # then
+    assert parameters["countinference"] is False
+    assert parameters["service_secret"] == "ctx-secret"

@@ -94,3 +94,53 @@ def test_script_passes_through_extra_args(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     forwarded = result.stdout.splitlines()
     assert "--proxy-headers" in forwarded
+
+
+def test_script_requires_client_certificates_with_ca_bundle(tmp_path):
+    cert, key, ca = [tmp_path / name for name in ["cert.pem", "key.pem", "ca.pem"]]
+    for path in [cert, key, ca]:
+        path.write_text("test fixture")
+    result = _run(
+        {
+            "ENABLE_HTTPS": "true",
+            "SSL_CERTFILE": str(cert),
+            "SSL_KEYFILE": str(key),
+            "SSL_CA_CERTS": str(ca),
+        },
+        ["cpu_http:app"],
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    args = result.stdout.splitlines()
+    assert args[args.index("--ssl-cert-reqs") + 1] == "2"
+
+
+def test_tls_arguments_preserve_spaces_and_literal_metacharacters(tmp_path):
+    cert, key, ca = [
+        tmp_path / name
+        for name in ["server cert.pem", "server key.pem", "client ca.pem"]
+    ]
+    for path in [cert, key, ca]:
+        path.write_text("test fixture")
+    password = "literal $value; words"
+    result = _run(
+        {
+            "ENABLE_HTTPS": "true",
+            "SSL_CERTFILE": str(cert),
+            "SSL_KEYFILE": str(key),
+            "SSL_CA_CERTS": str(ca),
+            "SSL_KEYFILE_PASSWORD": password,
+        },
+        ["cpu_http:app"],
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    args = result.stdout.splitlines()
+    for option, value in [
+        ("--ssl-certfile", str(cert)),
+        ("--ssl-keyfile", str(key)),
+        ("--ssl-ca-certs", str(ca)),
+        ("--ssl-keyfile-password", password),
+        ("--ssl-cert-reqs", "2"),
+    ]:
+        assert args[args.index(option) + 1] == value

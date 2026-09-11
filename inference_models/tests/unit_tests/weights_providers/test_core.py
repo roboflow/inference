@@ -8,9 +8,8 @@ from inference_models.weights_providers.core import get_model_from_provider
 
 
 @mock.patch.object(core, "WEIGHTS_PROVIDERS", {"some": lambda model_id, api_key: "ok"})
-@mock.patch.object(core, "OFFLINE_MODE", False)
 def test_get_model_from_provider_when_provider_recognised() -> None:
-    """A registered provider returns metadata when online mode is enabled."""
+    """A registered provider returns metadata."""
     # when
     result = get_model_from_provider(model_id="my-model", provider="some")
 
@@ -19,7 +18,6 @@ def test_get_model_from_provider_when_provider_recognised() -> None:
 
 
 @mock.patch.object(core, "WEIGHTS_PROVIDERS", {"some": lambda model_id, api_key: "ok"})
-@mock.patch.object(core, "OFFLINE_MODE", False)
 def test_get_model_from_provider_when_provider_not_recognised() -> None:
     """An unknown provider raises a model retrieval error."""
     # when
@@ -28,9 +26,8 @@ def test_get_model_from_provider_when_provider_not_recognised() -> None:
 
 
 @mock.patch.object(core, "WEIGHTS_PROVIDERS", {})
-@mock.patch.object(core, "OFFLINE_MODE", True)
-def test_get_model_from_custom_provider_in_offline_mode() -> None:
-    """A custom provider can resolve fully local metadata in offline mode."""
+def test_registered_custom_provider_serves_metadata() -> None:
+    """A custom provider resolves metadata through the registry."""
     # given
     local_metadata = object()
     local_provider = mock.Mock(return_value=local_metadata)
@@ -44,32 +41,17 @@ def test_get_model_from_custom_provider_in_offline_mode() -> None:
     local_provider.assert_called_once_with("my-model", None)
 
 
-@mock.patch.object(core, "OFFLINE_MODE", True)
-def test_get_model_from_builtin_network_provider_in_offline_mode() -> None:
-    """The built-in network provider remains unavailable in offline mode."""
-    # when
-    with pytest.raises(ModelRetrievalError, match="OFFLINE_MODE"):
-        get_model_from_provider(model_id="my-model", provider="roboflow")
-
-
 @mock.patch.object(core, "WEIGHTS_PROVIDERS", {})
-@mock.patch.object(core, "OFFLINE_MODE", True)
-def test_custom_provider_cannot_override_builtin_name_offline() -> None:
+@pytest.mark.parametrize(
+    "reserved_name", ["roboflow", "Roboflow", "roboflow-offline-weights"]
+)
+def test_custom_provider_cannot_override_reserved_names(reserved_name: str) -> None:
     """Built-in provenance cannot be replaced by a self-asserted local handler."""
     # given
     local_provider = mock.Mock()
     with pytest.raises(ValueError, match="reserved"):
-        core.register_model_provider("roboflow", local_provider)
+        core.register_model_provider(reserved_name, local_provider)
 
     # then
     assert core.WEIGHTS_PROVIDERS == {}
     local_provider.assert_not_called()
-
-
-@mock.patch.object(
-    core,
-    "WEIGHTS_PROVIDERS",
-    {"roboflow": lambda model_id, api_key: object()},
-)
-def test_builtin_network_requirement_is_bound_to_reserved_provider_name() -> None:
-    assert core.model_provider_requires_network(provider="roboflow") is True

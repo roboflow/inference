@@ -22,6 +22,7 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
     immutable_mapping,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.optimization.registry import ImplementationRegistry
 from inference_models.models.rfdetr.optimization.catalog import (
@@ -35,6 +36,7 @@ from inference_models.models.rfdetr.optimization.catalog import (
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     PreprocessRequest,
+    PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
@@ -51,8 +53,10 @@ from inference_models.models.rfdetr.optimization.readiness import (
 )
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_postprocessor_for_request,
+    resolve_postprocessor_runtime_fallback,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
+    resolve_preprocessor_runtime_fallback,
 )
 
 
@@ -64,6 +68,7 @@ class _Stage:
         compatible: bool = True,
         model_supported: bool = True,
         request_supported: bool = True,
+        runtime_supported: bool = True,
         stage: OptimizationStage = OptimizationStage.PREPROCESS,
     ) -> None:
         self.metadata = OptimizationMetadata(
@@ -81,6 +86,9 @@ class _Stage:
         self._compatible = compatible
         self._model_supported = model_supported
         self._request_supported = request_supported
+        self._runtime_supported = runtime_supported
+        self.preprocess_calls = 0
+        self.postprocess_calls = 0
 
     def is_compatible(self, context: ExecutionContext) -> bool:
         return self._compatible
@@ -108,6 +116,44 @@ class _Stage:
             return CompatibilityResult.compatible()
 
         return CompatibilityResult.incompatible("heterogeneous source dimensions")
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        del request, context
+        if self._runtime_supported:
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            "implementation runtime failed during an earlier request"
+        )
+
+    def preprocess(
+        self,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        del request, context
+        self.preprocess_calls += 1
+
+        return PreprocessResult(
+            tensor=torch.zeros((1, 3, 8, 9)),
+            metadata=[],
+            implementation_id=self.metadata.implementation_id,
+        )
+
+    def postprocess(
+        self,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ):
+        del request, context
+        self.postprocess_calls += 1
+
+        return []
 
 
 def _context() -> ExecutionContext:
@@ -178,6 +224,8 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
         buffer_strategy_id="future-buffer",
         scheduler_id="future-scheduler",
         engine_plugin_id="future-plugin",
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=True,
     )
 
     resolved = RFDetrExecutionPlan.resolve(execution_plan=plan)
@@ -186,6 +234,8 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
     assert resolved.buffer_strategy_id == "future-buffer"
     assert resolved.scheduler_id == "future-scheduler"
     assert resolved.engine_plugin_id == "future-plugin"
+    assert not resolved.allow_compatibility_fallback
+    assert resolved.allow_runtime_failure_fallback
 
 
 def test_registry_resolves_explicit_and_auto_base() -> None:
@@ -355,6 +405,86 @@ def test_request_incompatibility_resolves_declared_base_fallback() -> None:
     assert selection.fallback_reason == "heterogeneous source dimensions"
 
 
+def test_recorded_runtime_failure_resolves_declared_base_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate", runtime_supported=False)
+    registry.register(base)
+    registry.register(candidate)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+    request_selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=False,
+    )
+    first_selection = resolve_preprocessor_runtime_fallback(
+        registry=registry,
+        selection=request_selection,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+    second_selection = resolve_preprocessor_runtime_fallback(
+        registry=registry,
+        selection=request_selection,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    assert first_selection.effective_id == "base"
+    assert second_selection.effective_id == "base"
+    assert (
+        first_selection.fallback_reason
+        == "implementation runtime failed during an earlier request"
+    )
+
+
+def test_recorded_runtime_failure_is_raised_when_fallback_is_disabled() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base")
+    candidate = _Stage("candidate", runtime_supported=False)
+    registry.register(base)
+    registry.register(candidate)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+
+    request_selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Runtime failure fallback is disabled",
+    ):
+        resolve_preprocessor_runtime_fallback(
+            registry=registry,
+            selection=request_selection,
+            request=request,
+            context=_context(),
+            allow_fallback=False,
+        )
+
+    assert base.preprocess_calls == 0
+
+
 def test_fallback_is_rejected_when_base_is_also_incompatible() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register(_Stage("base", model_supported=False))
@@ -426,6 +556,89 @@ def test_postprocessor_contract_uses_same_declared_fallback_policy() -> None:
             context=_context(),
             allow_fallback=False,
         )
+
+
+def test_recorded_postprocessor_runtime_failure_resolves_base_fallback() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base", stage=OptimizationStage.POSTPROCESS)
+    candidate = _Stage(
+        "candidate",
+        runtime_supported=False,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+    registry.register(base)
+    registry.register(candidate)
+    request = PostprocessRequest(
+        bboxes=torch.zeros((1, 2, 4)),
+        logits=torch.zeros((1, 2, 3)),
+        pre_processing_meta=[],
+        threshold=0.5,
+        num_classes=3,
+        classes_re_mapping=None,
+    )
+    request_selection = resolve_postprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=False,
+    )
+
+    fallback_selection = resolve_postprocessor_runtime_fallback(
+        registry=registry,
+        selection=request_selection,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    assert fallback_selection.implementation is base
+    assert fallback_selection.effective_id == "base"
+    assert (
+        fallback_selection.fallback_reason
+        == "implementation runtime failed during an earlier request"
+    )
+
+
+def test_recorded_postprocessor_runtime_failure_respects_strict_plan() -> None:
+    registry = ImplementationRegistry(scope_name="RF-DETR")
+    base = _Stage("base", stage=OptimizationStage.POSTPROCESS)
+    candidate = _Stage(
+        "candidate",
+        runtime_supported=False,
+        stage=OptimizationStage.POSTPROCESS,
+    )
+    registry.register(base)
+    registry.register(candidate)
+    request = PostprocessRequest(
+        bboxes=torch.zeros((1, 2, 4)),
+        logits=torch.zeros((1, 2, 3)),
+        pre_processing_meta=[],
+        threshold=0.5,
+        num_classes=3,
+        classes_re_mapping=None,
+    )
+    request_selection = resolve_postprocessor_for_request(
+        registry=registry,
+        implementation=candidate,
+        request=request,
+        context=_context(),
+        allow_fallback=True,
+    )
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Runtime failure fallback is disabled",
+    ):
+        resolve_postprocessor_runtime_fallback(
+            registry=registry,
+            selection=request_selection,
+            request=request,
+            context=_context(),
+            allow_fallback=False,
+        )
+
+    assert base.postprocess_calls == 0
 
 
 def test_implementation_metadata_is_typed_and_immutable() -> None:

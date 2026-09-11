@@ -4,7 +4,7 @@ from typing import Optional
 
 import torch
 
-from inference_models._offline import OFFLINE_MODE, OFFLINE_MODE_CONTRACT_VERSION
+from inference_models._offline import OFFLINE_MODE
 from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -13,6 +13,7 @@ from inference_models.utils.environment import (
     get_integer_from_env,
     parse_comma_separated_values,
 )
+from inference_models.utils.secure_gateway import normalize_secure_gateway_configuration
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -64,7 +65,10 @@ ROBOFLOW_API_HOST = os.getenv(
     ],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
+# Bare hosts use HTTPS with a migration warning; explicit HTTP is loopback-only.
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
@@ -98,6 +102,9 @@ if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
         RuntimeWarning,
         stacklevel=1,
     )
+OFFLINE_MODE_WARM_UP = get_boolean_from_env(
+    variable_name="OFFLINE_MODE_WARM_UP", default=False
+)
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
@@ -136,6 +143,49 @@ CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
 )
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
+)
+
+
+# Single source of truth for the optional shared model blob cache. Values are
+# only parsed here - `ModelBlobCacheConfig` validates them on construction so a
+# misconfigured cache falls open instead of breaking the library import.
+MODEL_BLOB_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED", default=False
+)
+MODEL_BLOB_CACHE_BUCKET = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET")
+MODEL_BLOB_CACHE_PREFIX = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX", "model-blobs"
+)
+MODEL_BLOB_CACHE_ENDPOINT_URL = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL"
+)
+MODEL_BLOB_CACHE_REGION = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION")
+MODEL_BLOB_CACHE_ACCESS_KEY_ID = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID"
+)
+MODEL_BLOB_CACHE_SECRET_ACCESS_KEY = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY"
+)
+MODEL_BLOB_CACHE_ADDRESSING_STYLE = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE", "auto"
+)
+MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
+    default=1.0,
+)
+MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
+    default=2.0,
+)
+MODEL_BLOB_CACHE_FAILURE_THRESHOLD = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD", default=3
+)
+MODEL_BLOB_CACHE_COOLDOWN_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS", default=60.0
+)
+MODEL_BLOB_CACHE_MAX_OBJECT_BYTES = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES",
+    default=20 * 1024**3,  # 20 GiB
 )
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
@@ -297,6 +347,54 @@ INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+MAGE_VL_CODEC_ENGINES = {"hevc", "dcvc-rt"}
+
+
+def _parse_mage_vl_codec_engine(variable_name: str, default: str) -> str:
+    value = os.getenv(variable_name, default)
+    if value not in MAGE_VL_CODEC_ENGINES:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be one of "
+            f"{sorted(MAGE_VL_CODEC_ENGINES)} but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+def _parse_positive_integer_from_env(variable_name: str, default: int) -> int:
+    value = get_integer_from_env(variable_name=variable_name, default=default)
+    if value <= 0:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be a "
+            f"positive integer but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+# "hevc" runs the cv-preinfer binary on CPU; "dcvc-rt" runs the bundled neural
+# codec and is an order of magnitude slower without its compiled CUDA kernels.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE = _parse_mage_vl_codec_engine(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE",
+    default="hevc",
+)
+# Number of codec canvases packed out of the video and handed to the model.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS",
+    default=16,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS",
+    default=153664,
+)
 INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
     default=8192,
@@ -311,6 +409,14 @@ INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
 )
 INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
 INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(

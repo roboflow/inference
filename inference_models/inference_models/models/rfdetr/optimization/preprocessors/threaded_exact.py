@@ -120,6 +120,16 @@ class ThreadedExactPreprocessor:
 
         return result
 
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Return runtime compatibility for the stateless threaded path."""
+        del request, context
+        return CompatibilityResult.compatible()
+
     def preprocess(
         self,
         request: PreprocessRequest,

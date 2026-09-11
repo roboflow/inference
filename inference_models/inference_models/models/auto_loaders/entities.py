@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Union
 
+from inference_models.models.base.action_recognition import ActionRecognitionModel
 from inference_models.models.base.classification import (
     ClassificationModel,
     MultiLabelClassificationModel,
@@ -47,6 +48,7 @@ AnyModel = Union[
     OpenVocabularyObjectDetectionModel,
     SemanticSegmentationModel,
     TextOnlyOCRModel,
+    ActionRecognitionModel,
 ]
 
 
@@ -64,8 +66,6 @@ class InferenceModelConfig:
     quantization: Optional[str] = None
     dynamic_batch_size_supported: Optional[bool] = None
     static_batch_size: Optional[int] = None
-    runtime_compatibility_hash: Optional[str] = None
-    offline_compatibility_hash: Optional[str] = None
     offline_manifest_version: Optional[int] = None
     model_id: Optional[str] = None
     # Provider-resolved identity that owns this cached package.  ``model_id``

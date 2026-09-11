@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.util
 import os
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
@@ -27,6 +28,7 @@ _GRAB_TIMEOUT_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_GRAB_TIMEOUT_SECONDS"
 _RTSP_CODEC_ENV_VAR = "ROBOFLOW_RTSP_VIDEO_CODEC"
 _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
+_APPSINK_SYNC_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_APPSINK_SYNC"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
 _RTSP_VIDEO_CODECS = ("h264", "h265")
@@ -190,8 +192,9 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         if is_live
         else "max-size-buffers=4 max-size-bytes=0 max-size-time=0"
     )
+    appsink_sync = "true" if _appsink_sync_enabled() else "false"
     appsink_options = (
-        "max-buffers=1 drop=true sync=false"
+        f"max-buffers=1 drop=true sync={appsink_sync}"
         if is_live
         else "max-buffers=4 drop=false sync=false"
     )
@@ -285,6 +288,12 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
         self._decoder_validated = False
         self._prerolled_frame_pending = False
         self._cached_source_properties: Optional[SourceProperties] = None
+        self._last_grabbed_at_ns: Optional[int] = None
+        self._grab_gap_count = 0
+        self._grab_gap_sum_ns = 0
+        self._grab_gap_max_ns = 0
+        self._grab_gap_under_half_period = 0
+        self._grab_gap_over_one_and_half_period = 0
         self._grab_timeout_ns = _resolve_grab_timeout_ns()
         self._closed = False
         self._eos = False
@@ -303,6 +312,8 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
             self._prerolled_frame_pending = False
             return True
         grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
+        if grabbed:
+            self._record_grab_cadence()
         if grabbed and not self._decoder_validated:
             self._validate_pipeline()
         if not grabbed:
@@ -374,7 +385,61 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
 
     @property
     def tensor_bridge_stats(self) -> Dict[str, int]:
-        return self._native_pipeline.stats()
+        stats = self._native_pipeline.stats()
+        stats.update(self._grab_cadence_stats())
+        return stats
+
+    @property
+    def appsink_sync_enabled(self) -> bool:
+        return _appsink_sync_enabled()
+
+    @property
+    def source_stream_metadata(self) -> Dict[str, object]:
+        properties = self._cached_source_properties
+        if properties is None:
+            return {}
+        fps = float(properties.fps or 0.0)
+        metadata: Dict[str, object] = {
+            "width": int(properties.width),
+            "height": int(properties.height),
+        }
+        if fps > 0:
+            metadata["fps"] = fps
+        return metadata
+
+    def _record_grab_cadence(self) -> None:
+        grabbed_at_ns = time.monotonic_ns()
+        previous_ns = self._last_grabbed_at_ns
+        self._last_grabbed_at_ns = grabbed_at_ns
+        properties = self._cached_source_properties
+        if previous_ns is None or properties is None or not properties.fps:
+            return
+        frame_period_ns = int(1_000_000_000 / float(properties.fps))
+        if frame_period_ns <= 0:
+            return
+        gap_ns = max(0, grabbed_at_ns - previous_ns)
+        self._grab_gap_count += 1
+        self._grab_gap_sum_ns += gap_ns
+        self._grab_gap_max_ns = max(self._grab_gap_max_ns, gap_ns)
+        if gap_ns < frame_period_ns / 2:
+            self._grab_gap_under_half_period += 1
+        if gap_ns > frame_period_ns * 3 / 2:
+            self._grab_gap_over_one_and_half_period += 1
+
+    def _grab_cadence_stats(self) -> Dict[str, int]:
+        stats = {
+            "grab_gap_count": self._grab_gap_count,
+            "grab_gap_under_half_period": self._grab_gap_under_half_period,
+            "grab_gap_over_one_and_half_period": (
+                self._grab_gap_over_one_and_half_period
+            ),
+            "grab_gap_max_us": self._grab_gap_max_ns // 1_000,
+        }
+        if self._grab_gap_count:
+            stats["grab_gap_mean_us"] = (
+                self._grab_gap_sum_ns // self._grab_gap_count // 1_000
+            )
+        return stats
 
     def _validate_pipeline(self) -> None:
         if not self._native_pipeline.has_factory("cudaconvertscale"):
@@ -426,6 +491,15 @@ def _rtsp_latency_ms() -> int:
     except ValueError:
         return _DEFAULT_RTSP_LATENCY_MS
     return latency if latency >= 0 else _DEFAULT_RTSP_LATENCY_MS
+
+
+def _appsink_sync_enabled() -> bool:
+    return os.getenv(_APPSINK_SYNC_ENV_VAR, "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _source_uri(video: str) -> str:

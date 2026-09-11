@@ -62,6 +62,7 @@ from inference.core.workflows.execution_engine.constants import (
     VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
     ImageParentMetadata,
     ParentOrigin,
     VideoMetadata,
@@ -209,6 +210,35 @@ def deserialize_video_metadata_kind(
             public_message=f"Detected runtime parameter `{parameter}` holding "
             f"`WorkflowVideoMetadata`, but provided value is malformed. "
             f"See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def deserialize_action_recognition_prediction_kind(
+    parameter: str,
+    value: Any,
+) -> List[ActionRecognitionPrediction]:
+    if not isinstance(value, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"list, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if not all(isinstance(entry, dict) for entry in value):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            "a list of action recognitions, but at least one entry "
+            "is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return [ActionRecognitionPrediction.model_validate(entry) for entry in value]
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            "a list of action recognitions, but the provided value "
+            "is malformed. See details in inner error.",
             context="workflow_execution | runtime_input_validation",
             inner_error=error,
         )

@@ -1,3 +1,4 @@
+import importlib
 import time
 from datetime import datetime
 from functools import partial
@@ -12,6 +13,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core import env as env_module
 from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera import video_source
 from inference.core.interfaces.camera.entities import (
@@ -311,6 +313,41 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
 def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
     credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
     with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
+        with patch(
+            "inference.core.interfaces.camera.gstreamer_rtsp_producer.gstreamer_rtsp_capture_available",
+            return_value=True,
+        ):
+            with patch(
+                "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
+            ) as mock_producer_cls:
+                mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
+                )
+                source = VideoSource.init(video_reference=credentialed_url)
+                source.start()
+
+    mock_producer_cls.assert_called_once_with(credentialed_url)
+
+
+@_NUMPY_ONLY
+def test_video_source_selects_gstreamer_for_rtsps_when_running_on_jetson_alias_resolves(
+    monkeypatch,
+) -> None:
+    credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
+    with monkeypatch.context() as env_context:
+        env_context.delenv("RUNS_ON_JETSON", raising=False)
+        env_context.setenv("RUNNING_ON_JETSON", "True")
+        importlib.reload(env_module)
+        resolved_runs_on_jetson = env_module.RUNS_ON_JETSON
+    importlib.reload(env_module)
+
+    assert resolved_runs_on_jetson is True
+    with patch.object(video_source, "RUNS_ON_JETSON", resolved_runs_on_jetson):
         with patch(
             "inference.core.interfaces.camera.gstreamer_rtsp_producer.gstreamer_rtsp_capture_available",
             return_value=True,

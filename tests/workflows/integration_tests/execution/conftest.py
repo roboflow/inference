@@ -149,7 +149,7 @@ def face_image() -> np.ndarray:
 
 # Below taken from https://github.com/eclipse-paho/paho.mqtt.python/blob/d45de3737879cfe7a6acc361631fa5cb1ef584bb/tests/testsupport/broker.py
 class FakeMQTTBroker:
-    def __init__(self):
+    def __init__(self, connack_reason_code: int = 0, listening: bool = True):
         # Bind to "localhost" for maximum performance, as described in:
         # http://docs.python.org/howto/sockets.html#ipc
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -159,12 +159,18 @@ class FakeMQTTBroker:
         self.port = sock.getsockname()[1]
         self.messages = []
         self.messages_count_to_wait_for = 2
+        self.connack_reason_code = connack_reason_code
 
         sock.settimeout(5)
-        sock.listen(1)
 
         self._sock = sock
         self._conn = None
+        # bound but not listening: connection attempts are refused until listen()
+        if listening:
+            self.listen()
+
+    def listen(self):
+        self._sock.listen(1)
 
     def start(self):
         if self._sock is None:
@@ -175,14 +181,16 @@ class FakeMQTTBroker:
         conn, address = self._sock.accept()
         conn.settimeout(1)
         self._conn = conn
-        while len(self.messages) < self.messages_count_to_wait_for:
+        connack_sent = False
+        while len(self.messages) < self.messages_count_to_wait_for or not connack_sent:
             packet = self.receive_packet(1000)
             print(f"Received {packet}")
             if not packet:
-                continue
+                break
             if packet.startswith(b"\x10"):
                 print("sending CONNACK")
-                self._conn.send(b"\x20\x02\x00\x00")
+                self._conn.send(b"\x20\x02\x00" + bytes([self.connack_reason_code]))
+                connack_sent = True
                 continue
             self.messages.append(packet)
 

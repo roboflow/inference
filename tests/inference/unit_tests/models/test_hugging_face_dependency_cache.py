@@ -36,6 +36,9 @@ def test_owlv2_singleton_uses_explicit_hugging_face_cache_path(
 
     expected_cache_path = "/mounted/inference-cache/hf_home/hub"
     monkeypatch.setattr(owlv2, "HF_HUB_CACHE", expected_cache_path)
+    # The singleton is asked about the cache path, not compilation: torch>=2.14
+    # validates what torch.compile is handed and rejects the MagicMock model.
+    monkeypatch.setattr(owlv2, "OWLV2_COMPILE_MODEL", False)
     owlv2.Owlv2Singleton._instances.clear()
 
     model = MagicMock()

@@ -32,6 +32,7 @@ from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
 
 
 class Clip(OnnxRoboflowCoreModel):
@@ -81,6 +82,8 @@ class Clip(OnnxRoboflowCoreModel):
                     )
 
         self.resolution = self.visual_onnx_session.get_inputs()[0].shape[2]
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        self.image_size = self.resolution
 
         self.clip_preprocess = clip.clip._transform(self.resolution)
         self.log(f"CLIP model loaded in {perf_counter() - t1:.2f} seconds")
@@ -303,6 +306,7 @@ class Clip(OnnxRoboflowCoreModel):
         """
         return ["textual.onnx", "visual.onnx"]
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: ClipInferenceRequest
     ) -> ClipEmbeddingResponse:

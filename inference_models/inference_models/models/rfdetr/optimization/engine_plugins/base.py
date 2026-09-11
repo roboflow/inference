@@ -14,9 +14,7 @@ from inference_models.models.optimization.contracts import (
     immutable_mapping,
     metadata_supports_context,
 )
-from inference_models.models.rfdetr.optimization.contracts import (
-    EngineExecutionRequest,
-)
+from inference_models.models.rfdetr.optimization.contracts import EngineExecutionRequest
 from inference_models.models.rfdetr.optimization.ids import RFDETR_ENGINE_PLUGIN_BASE
 
 

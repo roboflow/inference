@@ -7,6 +7,7 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.optimization.catalog import (
@@ -136,6 +137,56 @@ def test_fused_postprocessor_direct_call_remains_strict_for_incompatibility() ->
             num_classes=3,
             classes_re_mapping=None,
         )
+
+
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not TRITON_AVAILABLE,
+    reason="CUDA and Triton are required",
+)
+def test_fused_postprocessor_records_recognized_runtime_failure(monkeypatch) -> None:
+    class FailingKernel:
+        def __getitem__(self, grid):
+            del grid
+
+            def launch(*args, **kwargs):
+                del args, kwargs
+                raise RuntimeError(
+                    "Failed to find C compiler. "
+                    "Please specify via CC environment variable."
+                )
+
+            return launch
+
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_object_detection_postprocess."
+        "_compact_transform_detections_kernel",
+        FailingKernel(),
+    )
+    device = torch.device("cuda:0")
+    postprocessor = FusedObjectDetectionPostprocessor(device)
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Failed to find C compiler",
+    ):
+        postprocessor.postprocess(
+            bboxes=torch.zeros((1, 2, 4), device=device),
+            logits=torch.zeros((1, 2, 3), device=device),
+            pre_processing_meta=[_metadata()],
+            threshold=0.5,
+            num_classes=3,
+            classes_re_mapping=None,
+            stream=torch.cuda.Stream(device=device),
+        )
+
+    compatibility = postprocessor.check_runtime_compatibility()
+
+    assert not compatibility.supported
+    assert "Failed to find C compiler" in compatibility.reason
+    assert "Category: missing_compiler" in compatibility.reason
+    assert "Suggested action:" in compatibility.reason
 
 
 def test_metadata_values_match_reference_transform_parameters() -> None:

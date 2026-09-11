@@ -1,3 +1,4 @@
+import contextvars
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
 
@@ -13,6 +14,7 @@ def run_steps_in_parallel(
     max_workers: int = 1,
     executor: Optional[ThreadPoolExecutor] = None,
 ) -> List[T]:
+    steps = [wrap_with_context_snapshot(step) for step in steps]
     if executor is None:
         with ThreadPoolExecutor(max_workers=max_workers) as inner_executor:
             return list(inner_executor.map(_run, steps))
@@ -21,6 +23,22 @@ def run_steps_in_parallel(
         batch_results = list(executor.map(_run, batch))
         results.extend(batch_results)
     return results
+
+
+def wrap_with_context_snapshot(fun: Callable[[], T]) -> Callable[[], T]:
+    """Bind ``fun`` to run inside its own copy of the caller's context.
+
+    ``ThreadPoolExecutor`` workers do not inherit the submitting thread's
+    ``contextvars`` state, and pool threads are reused across requests. Taking
+    a fresh snapshot per task and entering it with ``Context.run`` gives every
+    task the caller's context - any ``ContextVar``, not a hand-picked list -
+    while guaranteeing a reused worker thread cannot retain state a previous
+    task set: each snapshot is a throwaway ``Context`` scoped to this one
+    call. A separate snapshot is required per task because the same
+    ``Context`` object cannot be entered concurrently.
+    """
+    ctx = contextvars.copy_context()
+    return lambda: ctx.run(fun)
 
 
 def create_batches(

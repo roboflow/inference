@@ -7,7 +7,10 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    MAX_REATTACH_CANDIDATES,
+    MAX_STATE_TTL,
     MAX_TRACKED_VIDEOS,
+    MAX_TRACKS_PER_VIDEO,
     BlockManifest,
     TrackClassLockBlockV1,
 )
@@ -404,6 +407,7 @@ def test_track_class_lock_manifest_rejects_null_param() -> None:
         {"lead_margin": -1},
         {"switch_after": 0},
         {"state_ttl": 0},
+        {"state_ttl": MAX_STATE_TTL + 1},
         {"reattach_window": -1},
         {"reattach_iou": -0.1},
         {"reattach_iou": 1.1},
@@ -484,3 +488,123 @@ def test_track_class_lock_does_not_mutate_input_detections() -> None:
     # then - input object untouched
     assert contrary.data["class_name"][0] == "dog"
     assert "class_locked" not in contrary.data
+
+
+def _multi_frame(class_name: str, confidence: float, tracker_ids, box_step=0.0):
+    # one detection per tracker id; boxes optionally spread apart so they do not
+    # all overlap (overlap would let them re-attach to each other)
+    n = len(tracker_ids)
+    xyxy = np.array(
+        [[10.0 + i * box_step, 10.0, 50.0 + i * box_step, 50.0] for i in range(n)]
+    )
+    return sv.Detections(
+        xyxy=xyxy,
+        confidence=np.full(n, confidence),
+        class_id=np.full(n, CLASS_IDS[class_name]),
+        tracker_id=np.array(list(tracker_ids)),
+        data={"class_name": np.array([class_name] * n)},
+    )
+
+
+def test_track_class_lock_bounds_tracks_per_video() -> None:
+    # given - a stream that keeps introducing brand-new, non-overlapping
+    # tracker ids (adversarial input or a runaway tracker) with a huge ttl
+    block = TrackClassLockBlockV1()
+    knobs = {**KNOBS, "state_ttl": MAX_STATE_TTL, "reattach_window": 0}
+
+    # when - far more distinct tracks than the cap are seen over time
+    nxt = 0
+    per_frame = 500
+    frames = (MAX_TRACKS_PER_VIDEO // per_frame) + 5
+    for _ in range(frames):
+        ids = range(nxt, nxt + per_frame)
+        nxt += per_frame
+        block.run(
+            image=_image(),
+            detections=_multi_frame("cat", 0.9, ids, box_step=5.0),
+            **knobs,
+        )
+
+    # then - retained per-video track state never exceeds the cap
+    assert len(block._per_video_state["vid_1"]["tracks"]) <= MAX_TRACKS_PER_VIDEO
+
+
+def test_track_class_lock_new_ids_do_not_trigger_quadratic_scan() -> None:
+    # given - a single frame with many unique tracker ids, none of which can be
+    # inherited (all are active in the same frame). The re-attachment candidate
+    # set must be computed once, not rescanned per id.
+    from inference.core.workflows.core_steps.transformations import track_class_lock
+
+    block = TrackClassLockBlockV1()
+    calls = {"n": 0}
+    original = track_class_lock.v1._find_lock_to_inherit
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    track_class_lock.v1._find_lock_to_inherit = counting
+    try:
+        # when
+        block.run(
+            image=_image(),
+            detections=_multi_frame("cat", 0.9, range(2000), box_step=5.0),
+            **KNOBS,
+        )
+    finally:
+        track_class_lock.v1._find_lock_to_inherit = original
+
+    # then - no eligible lost-locked candidates exist, so the matcher is never
+    # invoked (and certainly not once per id)
+    assert calls["n"] == 0
+
+
+def test_track_class_lock_reattach_candidate_pool_is_bounded() -> None:
+    # given - many locked tracks are lost in the same location, then a frame of
+    # new ids arrives. The matcher must only ever scan a bounded candidate pool.
+    from inference.core.workflows.core_steps.transformations import track_class_lock
+
+    block = TrackClassLockBlockV1()
+    knobs = {**KNOBS, "min_votes": 1, "lead_margin": 0, "reattach_window": 100}
+    pool = MAX_REATTACH_CANDIDATES + 200
+
+    # lock `pool` overlapping tracks (min_votes=1 -> locks on first frame)
+    block.run(image=_image(), detections=_multi_frame("cat", 0.9, range(pool)), **knobs)
+    # they all vanish -> become lost + locked candidates
+    block.run(image=_image(), detections=_empty_frame(), **knobs)
+
+    max_seen = {"n": 0}
+    original = track_class_lock.v1._find_lock_to_inherit
+
+    def measuring(candidates, *args, **kwargs):
+        max_seen["n"] = max(max_seen["n"], len(candidates))
+        return original(candidates, *args, **kwargs)
+
+    track_class_lock.v1._find_lock_to_inherit = measuring
+    try:
+        # when - a frame of new ids each tries to re-attach
+        block.run(
+            image=_image(),
+            detections=_multi_frame("dog", 0.9, range(10_000, 10_000 + pool)),
+            **knobs,
+        )
+    finally:
+        track_class_lock.v1._find_lock_to_inherit = original
+
+    # then - the candidate pool handed to the matcher never exceeds the cap
+    assert max_seen["n"] <= MAX_REATTACH_CANDIDATES
+
+
+def test_track_class_lock_manifest_rejects_state_ttl_over_max() -> None:
+    # given - an unbounded state_ttl would prolong retention indefinitely
+    data = {
+        "type": "roboflow_core/track_class_lock@v1",
+        "name": "class_lock",
+        "image": "$inputs.image",
+        "detections": "$steps.byte_tracker.tracked_detections",
+        "state_ttl": MAX_STATE_TTL + 1,
+    }
+
+    # when / then
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(data)

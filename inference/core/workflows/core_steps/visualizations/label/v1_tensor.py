@@ -21,6 +21,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     empty_predictions_passthrough,
+    resolve_overlap_winners,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.core_steps.visualizations.common.label_text import (
@@ -640,12 +641,14 @@ def gpu_paste_label_sprites(
     )
     labels_overlap = int((inter_x & inter_y).sum()) > pieces  # diagonal always True
     if labels_overlap:
-        # include_self=False: uninitialized cells never participate, and every
-        # gathered position below was scattered to.
+        # Later-label-wins ownership, provably in [0, total) for any
+        # duplication pattern (see resolve_overlap_winners for why the
+        # previous empty + include_self=False formulation was retired).
         order = torch.arange(total, device=device, dtype=torch.int32)
-        owner = torch.empty(height * width, dtype=torch.int32, device=device)
-        owner.scatter_reduce_(0, flat, order, reduce="amax", include_self=False)
-        colors = colors[owner[flat].long()]
+        winners = resolve_overlap_winners(
+            flat, order, num_cells=height * width, num_candidates=total
+        )
+        colors = colors[winners]
     scene_chw.view(3, -1)[:, flat] = colors.t()
     return scene_chw
 

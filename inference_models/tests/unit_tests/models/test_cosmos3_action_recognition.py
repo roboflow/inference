@@ -1,0 +1,651 @@
+import json
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
+import torch
+
+from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.base.action_recognition import (
+    SLIDING_WINDOW_MODE,
+    WHOLE_VIDEO_MODE,
+    ActionRecognitionPrediction,
+    VideoSampling,
+)
+from inference_models.models.cosmos3 import cosmos3_action_recognition
+from inference_models.models.cosmos3.cosmos3_action_recognition import (
+    FINE_TUNE_MAX_NEW_TOKENS,
+    FINE_TUNE_SYSTEM_PROMPT,
+    ZERO_SHOT_MAX_NEW_TOKENS,
+    ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
+    Cosmos3EdgeActionRecognition,
+    _normalize_frames,
+)
+from inference_models.models.cosmos3.cosmos3_reasoner_hf import (
+    SYSTEM_PROMPT_SENTINEL,
+    Cosmos3EdgeReasoner,
+)
+
+
+class _FakeTokenizer:
+    def __init__(self, class_names=()):
+        ordinary_tokens = [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            ".",
+            "<",
+            ">",
+            " ",
+            "\n",
+            "n",
+            "o",
+            "e",
+            "none",
+            "x",
+        ]
+        self.unk_token_id = 0
+        self.eos_token_id = 99
+        self.pad_token_id = 99
+        self.eos_token = "<|im_end|>"
+        self._vocabulary = {
+            token: index + 1 for index, token in enumerate(ordinary_tokens)
+        }
+        self._added_vocabulary = {
+            f"<|cls:{class_name}|>": 50 + index
+            for index, class_name in enumerate(class_names)
+        }
+        self._vocabulary.update(self._added_vocabulary)
+        self._id_to_token = {
+            token_id: token for token, token_id in self._vocabulary.items()
+        }
+
+    def get_added_vocab(self):
+        return dict(self._added_vocabulary)
+
+    def get_vocab(self):
+        return dict(self._vocabulary)
+
+    def convert_tokens_to_ids(self, token):
+        return self._vocabulary.get(token, self.unk_token_id)
+
+    def decode(self, token_ids, **kwargs):
+        del kwargs
+        return "".join(self._id_to_token.get(token_id, "") for token_id in token_ids)
+
+    def id(self, token):
+        return self._vocabulary[token]
+
+
+class _FakeProcessor:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+
+class _FakeReasoner:
+    def __init__(self, response="", tokenizer=None):
+        self.response = response
+        self.calls = []
+        self._processor = _FakeProcessor(tokenizer or _FakeTokenizer())
+
+    def prompt_video(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.response
+
+
+def _frames(count):
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    return [frame] * count
+
+
+def _prediction(start, end, label):
+    return ActionRecognitionPrediction(
+        start_frame_idx=start,
+        end_frame_idx=end,
+        class_name=label,
+    )
+
+
+def _cookbook_response(entries=None) -> str:
+    """The cookbook answer shape: a JSON list wrapped in the model's prose."""
+    entries = (
+        entries
+        if entries is not None
+        else [{"start": 0.0, "end": 2.0, "caption": "a person walks"}]
+    )
+    return (
+        "Looking at the clip, I can see the following events.\n\n"
+        "```json\n" + json.dumps(entries, indent=1) + "\n```"
+    )
+
+
+def test_class_token_presence_routes_to_fine_tune_mode_for_long_clip() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking", "running"],
+    )
+
+    result = wrapper.infer(frames=_frames(200), fps=2.0)
+
+    assert result == []
+    call = reasoner.calls[0]
+    assert call["max_new_tokens"] == FINE_TUNE_MAX_NEW_TOKENS
+    assert call["enable_thinking"] is False
+    assert call["prefix_allowed_tokens_fn"] is not None
+    assert SYSTEM_PROMPT_SENTINEL in call["prompt"]
+
+
+def test_missing_class_tokens_routes_long_clip_to_zero_shot_mode() -> None:
+    reasoner = _FakeReasoner(response=_cookbook_response(), tokenizer=_FakeTokenizer())
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking", "running"],
+    )
+
+    result = wrapper.infer(frames=_frames(200), fps=2.0)
+
+    assert result == [_prediction(0, 4, "a person walks")]
+    call = reasoner.calls[0]
+    assert call["max_new_tokens"] == ZERO_SHOT_MAX_NEW_TOKENS
+    assert call["prefix_allowed_tokens_fn"] is None
+    assert SYSTEM_PROMPT_SENTINEL not in call["prompt"]
+    assert call["prompt"] == ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT
+    # The reasoning pass is what keeps the output dense.
+    assert call["enable_thinking"] is True
+
+
+def test_fine_tune_mode_caps_frame_side_at_the_training_resolution() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking"],
+        video_sampling=VideoSampling(max_frame_side=360),
+    )
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+
+    sent_frames = reasoner.calls[0]["frames"]
+    assert all(frame.shape == (202, 360, 3) for frame in sent_frames)
+
+
+def test_a_model_that_declares_no_frame_side_reads_frames_whole() -> None:
+    # Only training fixes a frame side. Without one the frames go in as they
+    # arrive, which is what the zero-shot path needs.
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner, class_names=["walking"])
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+
+    assert all(f.shape == (480, 854, 3) for f in reasoner.calls[0]["frames"])
+
+
+def test_from_pretrained_rejects_class_names_that_miss_their_tokens(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    # The package lists a class the tokenizer has no token for.
+    (tmp_path / "class_names.txt").write_text("walking\nrunning\n")
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+
+def test_zero_shot_uses_caller_max_new_tokens() -> None:
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    wrapper.infer(
+        frames=_frames(2),
+        class_names=["walking"],
+        fps=5.0,
+        max_new_tokens=17,
+    )
+
+    assert reasoner.calls[0]["max_new_tokens"] == 17
+
+
+def test_fine_tune_prompt_contains_exact_legend_instruction_and_system_prompt() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking", "running"],
+    )
+
+    wrapper.infer(frames=_frames(4), fps=5.0)
+
+    user_prompt = (
+        "Find every occurrence of these classes in the video: "
+        "<|cls:walking|> (walking), <|cls:running|> (running). "
+        "For each occurrence output one line as `class token <start> <end>`, "
+        "with start and end in seconds from the frame timestamps, in order "
+        "of start time. Output `none` if none occurs."
+    )
+    assert reasoner.calls[0]["prompt"] == (
+        f"{user_prompt}{SYSTEM_PROMPT_SENTINEL}{FINE_TUNE_SYSTEM_PROMPT}"
+    )
+    assert reasoner.calls[0]["skip_special_tokens"] is False
+
+
+def test_fine_tune_class_filter_drops_non_members_and_limits_parser() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(
+        response=("<|cls:walking|> <0.00> <0.20>\n" "<|cls:running|> <0.20> <0.40>"),
+        tokenizer=tokenizer,
+    )
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking", "running"],
+    )
+
+    result = wrapper.infer(
+        frames=_frames(5),
+        class_names=["running", "not-a-model-class"],
+        fps=5.0,
+    )
+
+    assert result == [_prediction(1, 2, "running")]
+    assert "<|cls:running|> (running)" in reasoner.calls[0]["prompt"]
+    assert "walking" not in reasoner.calls[0]["prompt"]
+    assert "not-a-model-class" not in reasoner.calls[0]["prompt"]
+
+
+def test_fine_tune_empty_valid_class_filter_returns_without_generation() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner,
+        class_names=["walking"],
+    )
+
+    assert (
+        wrapper.infer(
+            frames=_frames(2),
+            class_names=["not-a-model-class"],
+            fps=5.0,
+        )
+        == []
+    )
+    assert reasoner.calls == []
+
+
+def test_from_pretrained_wraps_loaded_reasoner(monkeypatch) -> None:
+    reasoner = _FakeReasoner()
+    calls = []
+
+    def load_reasoner(model_name_or_path: str, **kwargs):
+        calls.append((model_name_or_path, kwargs))
+        return reasoner
+
+    monkeypatch.setattr(Cosmos3EdgeReasoner, "from_pretrained", load_reasoner)
+
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(
+        "nvidia/Cosmos3-Edge",
+        local_files_only=False,
+    )
+
+    assert wrapper._reasoner is reasoner
+    assert calls == [("nvidia/Cosmos3-Edge", {"local_files_only": False})]
+
+
+def test_from_pretrained_reads_class_names_file(monkeypatch, tmp_path) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\nrunning\n")
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+    assert wrapper.class_names == ["walking", "running"]
+    assert wrapper._fine_tune_prefix_allowed_tokens_fn is not None
+
+
+def test_from_pretrained_rejects_a_fine_tune_without_class_names(
+    monkeypatch, tmp_path
+) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(tokenizer=tokenizer)
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    with pytest.raises(CorruptedModelPackageError):
+        Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+
+def test_from_pretrained_accepts_a_base_model_without_class_names(
+    monkeypatch, tmp_path
+) -> None:
+    reasoner = _FakeReasoner(tokenizer=_FakeTokenizer())
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+
+    assert wrapper.class_names is None
+    assert wrapper._fine_tune_prefix_allowed_tokens_fn is None
+
+
+def test_from_pretrained_reads_the_recorded_sampling(monkeypatch, tmp_path) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(
+            {"video_pre_processing": {"max_frame_side": 100, "window_seconds": 8.0}}
+        )
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner,
+        "from_pretrained",
+        MagicMock(return_value=reasoner),
+    )
+
+    wrapper = Cosmos3EdgeActionRecognition.from_pretrained(str(tmp_path))
+    assert wrapper.video_sampling.max_frame_side == 100
+    assert wrapper.video_sampling.window_seconds == 8.0
+
+    large_frames = [np.zeros((480, 854, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=large_frames, fps=2.0)
+    sent_frames = reasoner.calls[0]["frames"]
+    assert all(frame.shape == (56, 100, 3) for frame in sent_frames)
+
+
+def test_fine_tune_parser_accepts_trailing_end_token(monkeypatch) -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking", "running"])
+    reasoner = _FakeReasoner(
+        response=(
+            "<|cls:walking|> <0.00> <1.00>\n" "<|cls:running|> <1.00> <2.00><|im_end|>"
+        ),
+        tokenizer=tokenizer,
+    )
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=reasoner, class_names=["walking", "running"]
+    )
+
+    result = wrapper.infer(frames=_frames(8), fps=4.0)
+
+    assert [segment.class_name for segment in result] == ["walking", "running"]
+
+
+def test_infer_accepts_chw_tensor_frames() -> None:
+    reasoner = _FakeReasoner(
+        response=_cookbook_response([{"start": 0.0, "end": 0.5, "caption": "moving"}])
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+    frames = [torch.zeros((3, 8, 9), dtype=torch.uint8) for _ in range(3)]
+
+    result = wrapper.infer(frames=frames, fps=4.0)
+
+    processed_frames = reasoner.calls[0]["frames"]
+    assert all(isinstance(frame, np.ndarray) for frame in processed_frames)
+    assert all(frame.shape == (8, 9, 3) for frame in processed_frames)
+    assert result == [_prediction(0, 2, "moving")]
+
+
+def test_infer_requires_fps() -> None:
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner())
+
+    with pytest.raises(ValueError, match="fps"):
+        wrapper.infer(frames=_frames(1), class_names=["moving"])
+
+
+def test_zero_shot_reads_every_event_the_cookbook_list_holds() -> None:
+    reasoner = _FakeReasoner(
+        response=_cookbook_response(
+            [
+                {"start": 0.0, "end": 2.0, "caption": "a person walks"},
+                {"start": 3.0, "end": 5.0, "caption": "a person sits down"},
+            ]
+        )
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(frames=_frames(40), fps=4.0)
+
+    # Seconds become frame indices at the rate the frames were drawn at.
+    assert result == [
+        _prediction(0, 8, "a person walks"),
+        _prediction(12, 20, "a person sits down"),
+    ]
+
+
+def test_zero_shot_clamps_segments_to_the_frames_it_was_given() -> None:
+    reasoner = _FakeReasoner(
+        response=_cookbook_response(
+            [{"start": -1.0, "end": 999.0, "caption": "the whole clip"}]
+        )
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(frames=_frames(10), fps=4.0)
+
+    assert result == [_prediction(0, 9, "the whole clip")]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "",
+        "no json here at all",
+        '```json\n{"start": 0}\n```',
+        '```json\n[{"start": 0.0, "end": 1.0}]\n```',
+        '```json\n[{"caption": "walking"}]\n```',
+        '```json\n[{"start": null, "end": 1.0, "caption": "walking"}]\n```',
+    ],
+)
+def test_zero_shot_returns_nothing_when_the_answer_does_not_parse(response) -> None:
+    reasoner = _FakeReasoner(response=response)
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    assert wrapper.infer(frames=_frames(10), fps=4.0) == []
+
+
+def test_zero_shot_ignores_a_requested_vocabulary_and_says_so(monkeypatch) -> None:
+    # The checkpoint ignores classes stated inside the localization prompt,
+    # so the wrapper says so rather than look like it applied them.
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+    warn = MagicMock()
+    monkeypatch.setattr(cosmos3_action_recognition.LOGGER, "warning", warn)
+
+    result = wrapper.infer(
+        frames=_frames(10), class_names=["walking", "running"], fps=4.0
+    )
+
+    assert result == [_prediction(0, 8, "a person walks")]
+    warn.assert_called_once()
+    assert "ignored" in warn.call_args.args[0]
+    assert "walking" not in reasoner.calls[0]["prompt"]
+
+
+def test_zero_shot_declares_whole_video_sampling() -> None:
+    # Zero-shot has no trained window, so it reads a clip in one call.
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner(response="none"))
+
+    assert wrapper.video_sampling.mode == WHOLE_VIDEO_MODE
+
+
+def test_a_fine_tune_keeps_the_sampling_mode_its_package_declares() -> None:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    wrapper = Cosmos3EdgeActionRecognition(
+        reasoner=_FakeReasoner(response="none", tokenizer=tokenizer),
+        class_names=["walking"],
+    )
+
+    assert wrapper.video_sampling.mode == SLIDING_WINDOW_MODE
+
+
+def test_a_package_that_omits_a_limit_declares_no_limit(monkeypatch, tmp_path) -> None:
+    # Guessing a frame side is how a model gets read at a size it never
+    # trained on, so an absent key means absent, not a default.
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps({"video_pre_processing": {"sample_fps": 4.0}})
+    )
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+
+    sampling = Cosmos3EdgeActionRecognition.from_pretrained(
+        str(tmp_path)
+    ).video_sampling
+
+    assert sampling.max_frame_side is None
+    assert sampling.max_frames is None
+    assert sampling.sample_fps == 4.0
+
+
+def _package_with_config(tmp_path, monkeypatch, config) -> str:
+    tokenizer = _FakeTokenizer(class_names=["walking"])
+    reasoner = _FakeReasoner(response="none", tokenizer=tokenizer)
+    (tmp_path / "class_names.txt").write_text("walking\n")
+    (tmp_path / "inference_config.json").write_text(config)
+    monkeypatch.setattr(
+        Cosmos3EdgeReasoner, "from_pretrained", MagicMock(return_value=reasoner)
+    )
+    return str(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["-4", '"4"', "true", "0", "null"],
+)
+def test_a_sampling_value_we_cannot_honour_is_rejected(
+    monkeypatch, tmp_path, value
+) -> None:
+    # A key the package wrote with an unusable value is corruption. Falling
+    # back to a default would serve the model on a grid it never trained on.
+    path = _package_with_config(
+        tmp_path,
+        monkeypatch,
+        '{"video_pre_processing": {"sample_fps": ' + value + "}}",
+    )
+
+    with pytest.raises(CorruptedModelPackageError, match="sample_fps"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_a_fractional_frame_budget_is_rejected(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(
+        tmp_path, monkeypatch, '{"video_pre_processing": {"window_frames": 63.5}}'
+    )
+
+    with pytest.raises(CorruptedModelPackageError, match="whole number"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_an_unparseable_inference_config_is_rejected(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(tmp_path, monkeypatch, "{not json")
+
+    with pytest.raises(CorruptedModelPackageError, match="does not parse"):
+        Cosmos3EdgeActionRecognition.from_pretrained(path)
+
+
+def test_a_key_the_package_never_wrote_keeps_the_default(monkeypatch, tmp_path) -> None:
+    path = _package_with_config(
+        tmp_path, monkeypatch, '{"video_pre_processing": {"sample_fps": 2.0}}'
+    )
+
+    sampling = Cosmos3EdgeActionRecognition.from_pretrained(path).video_sampling
+
+    assert sampling.sample_fps == 2.0
+    assert sampling.window_seconds == VideoSampling().window_seconds
+    assert sampling.max_frames is None
+
+
+def test_batched_and_per_frame_transfer_give_the_same_arrays() -> None:
+    # The batched path must be a transfer optimisation only: same values,
+    # same dtype, same shape as converting each frame on its own.
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        _normalize_frames,
+    )
+
+    tensors = [torch.randint(0, 255, (3, 6, 8), dtype=torch.uint8) for _ in range(5)]
+
+    batched = _normalize_frames(list(tensors))
+    per_frame = [t.detach().cpu().permute(1, 2, 0).numpy() for t in tensors]
+
+    assert len(batched) == len(per_frame)
+    for actual, expected in zip(batched, per_frame):
+        assert actual.shape == expected.shape == (6, 8, 3)
+        assert actual.dtype == expected.dtype
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_ragged_tensor_frames_still_convert() -> None:
+    # Frames of differing shape cannot stack, so they keep the per-frame path.
+    frames = [
+        torch.zeros((3, 4, 4), dtype=torch.uint8),
+        torch.zeros((3, 6, 8), dtype=torch.uint8),
+    ]
+
+    result = _normalize_frames(frames)
+
+    assert [f.shape for f in result] == [(4, 4, 3), (6, 8, 3)]
+
+
+def test_numpy_frames_pass_through_untouched() -> None:
+    frames = [np.zeros((4, 4, 3), dtype=np.uint8)]
+
+    result = _normalize_frames(frames)
+
+    assert result[0] is frames[0]
+
+
+def test_a_mixed_batch_converts_only_the_tensors() -> None:
+    numpy_frame = np.ones((6, 8, 3), dtype=np.uint8)
+    frames = [torch.zeros((3, 6, 8), dtype=torch.uint8), numpy_frame]
+
+    result = _normalize_frames(frames)
+
+    assert result[1] is numpy_frame
+    assert result[0].shape == (6, 8, 3)
+
+
+def test_zero_shot_caps_a_4k_frame_at_1080p() -> None:
+    reasoner = _FakeReasoner(response="[]")
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)  # untrained: zero-shot
+
+    frames = [np.zeros((2160, 3840, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=frames, fps=4.0)
+
+    assert all(f.shape == (1080, 1920, 3) for f in reasoner.calls[0]["frames"])
+
+
+def test_zero_shot_leaves_a_1080p_frame_alone() -> None:
+    reasoner = _FakeReasoner(response="[]")
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    frames = [np.zeros((1080, 1920, 3), dtype=np.uint8) for _ in range(4)]
+    wrapper.infer(frames=frames, fps=4.0)
+
+    assert all(f.shape == (1080, 1920, 3) for f in reasoner.calls[0]["frames"])

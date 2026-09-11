@@ -17,7 +17,13 @@ shutil.copyfile(
     os.path.join(root, "inference_sdk/version.py"),
 )
 
-from inference.core.version import __version__
+# Read the version without importing the package - `inference/__init__.py`
+# pulls in the full runtime (inference_models, torch, cv2), which wheel-build
+# stages may not be able to load.
+_version_namespace = {"__name__": "inference.core.version"}
+with open(os.path.join(root, "inference", "core", "version.py")) as _version_file:
+    exec(_version_file.read(), _version_namespace)
+__version__ = _version_namespace["__version__"]
 
 with open("inference_cli/README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()

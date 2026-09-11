@@ -540,95 +540,6 @@ class TestScanModelConfigJson:
         )
 
         assert scan_cached_models(cache) == []
-
-    def test_uses_resolution_metadata_for_legacy_config(self, tmp_path):
-        """Pre-upgrade configs are listed using their auto-resolution metadata."""
-        from inference.core.cache.air_gapped import scan_cached_models
-        from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format_v1,
-        )
-
-        cache = str(tmp_path)
-        model_id = "workspace/my-project/3"
-        package_id = "pkg001"
-        model_slug = slugify_model_id_to_os_safe_format_v1(model_id=model_id)
-        _write_model_config_json(
-            cache,
-            slug_dir=model_slug,
-            package_id=package_id,
-            config={
-                "task_type": "object-detection",
-                "model_architecture": "yolov8n",
-                "backend_type": "onnx",
-            },
-        )
-        _write_auto_resolution_cache_entry(
-            cache_dir=cache,
-            model_id=model_id,
-            package_id=package_id,
-        )
-
-        result = scan_cached_models(cache)
-
-        assert result == [
-            {
-                "model_id": model_id,
-                "name": model_id,
-                "task_type": "object-detection",
-                "model_architecture": "yolov8n",
-                "is_foundation": False,
-            }
-        ]
-
-    def test_accepts_exactly_attributed_legacy_v1_config(self, tmp_path):
-        from inference.core.cache.air_gapped import scan_cached_models
-        from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format_v1,
-        )
-
-        model_id = "workspace/my-project/3"
-        _write_model_config_json(
-            str(tmp_path),
-            slug_dir=slugify_model_id_to_os_safe_format_v1(model_id=model_id),
-            package_id="pkg001",
-            config={
-                "model_id": model_id,
-                "task_type": "object-detection",
-                "model_architecture": "yolov8n",
-                "backend_type": "onnx",
-            },
-        )
-
-        assert [entry["model_id"] for entry in scan_cached_models(str(tmp_path))] == [
-            model_id
-        ]
-
-    def test_does_not_use_v2_path_for_pre_manifest_legacy_attribution(self, tmp_path):
-        from inference.core.cache.air_gapped import scan_cached_models
-        from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format_v2,
-        )
-
-        model_id = "workspace/my-project/3"
-        package_id = "pkg001"
-        _write_model_config_json(
-            str(tmp_path),
-            slug_dir=slugify_model_id_to_os_safe_format_v2(model_id=model_id),
-            package_id=package_id,
-            config={
-                "task_type": "object-detection",
-                "model_architecture": "yolov8n",
-                "backend_type": "onnx",
-            },
-        )
-        _write_auto_resolution_cache_entry(
-            cache_dir=str(tmp_path),
-            model_id=model_id,
-            package_id=package_id,
-        )
-
-        assert scan_cached_models(str(tmp_path)) == []
-
     def test_legacy_scan_tolerates_missing_inference_models_package(self, tmp_path):
         from inference.core.cache.air_gapped import scan_cached_models
 
@@ -882,14 +793,14 @@ class TestScanModelConfigJson:
     def test_skips_non_regular_metadata_without_opening_it(self, tmp_path):
         from inference.core.cache.air_gapped import scan_cached_models
         from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format_v2,
+            slugify_model_id_to_os_safe_format,
         )
 
         model_id = "workspace/project/3"
         package_dir = (
             tmp_path
             / "models-cache"
-            / slugify_model_id_to_os_safe_format_v2(model_id=model_id)
+            / slugify_model_id_to_os_safe_format(model_id=model_id)
             / "pkg001"
         )
         package_dir.mkdir(parents=True)

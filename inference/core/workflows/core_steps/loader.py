@@ -10,6 +10,7 @@ from inference.core.env import (
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
     WORKFLOW_DISABLED_BLOCK_TYPES,
+    WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
@@ -242,6 +243,7 @@ else:
     )
 
 from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_action_recognition_prediction_kind,
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
@@ -263,6 +265,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
+    serialize_action_recognition_prediction_kind,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
@@ -344,6 +347,9 @@ from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.string_template.v1 import (
+    StringTemplateBlockV1,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
@@ -421,6 +427,7 @@ else:
     from inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor import (
         DetectionsDifferenceBlockV1,
     )
+
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -475,6 +482,12 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     AnthropicClaudeBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
+    AnthropicClaudeBlockV4,
+)
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    AnthropicClaudeBlockV5,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -556,11 +569,23 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
     GoogleGeminiBlockV4,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v5 import (
+    GoogleGeminiBlockV5,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v6 import (
+    GoogleGeminiBlockV6,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
     GoogleGemmaBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v3 import (
+    GoogleGemmaBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v4 import (
+    GoogleGemmaBlockV4,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -578,6 +603,9 @@ from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 im
 from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
     KimiOpenrouterBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v3 import (
+    KimiOpenrouterBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -587,6 +615,15 @@ from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 impor
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v1 import (
+    MetaVlmBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v2 import (
+    MetaVlmBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.meta_vlm.v3 import (
+    MetaVlmBlockV3,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -621,14 +658,32 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
     OpenAIBlockV5,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v6 import (
+    OpenAIBlockV6,
+)
+from inference.core.workflows.core_steps.models.foundation.openai.v7 import (
+    OpenAIBlockV7,
+)
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.openrouter.v2 import (
+    OpenRouterBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.openrouter.v3 import (
+    OpenRouterBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
     SpaceXAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.spacexai.v2 import (
+    SpaceXAIBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.spacexai.v3 import (
+    SpaceXAIBlockV3,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -687,6 +742,21 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     QwenVlmBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2 import (
+    QwenVlmBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3 import (
+    QwenVlmBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v4 import (
+    QwenVlmBlockV4,
+)
+from inference.core.workflows.core_steps.models.foundation.zai_vlm.v1 import (
+    ZaiVlmBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.zai_vlm.v2 import (
+    ZaiVlmBlockV2,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -897,6 +967,14 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
         RoboflowMultiLabelClassificationModelBlockV3,
     )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
+        ActionRecognitionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+        ActionRecognitionModelBlockV1,
+    )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
         RoboflowObjectDetectionModelBlockV1,
@@ -1041,6 +1119,7 @@ else:
     from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1,
     )
+
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1486,6 +1565,7 @@ else:
     )
 
 from inference.core.workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -1539,6 +1619,8 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
+    "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
@@ -1549,6 +1631,7 @@ REGISTERED_INITIALIZERS = {
 KINDS_SERIALIZERS = {
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: serialize_action_recognition_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
@@ -1596,6 +1679,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    ACTION_RECOGNITION_PREDICTION_KIND.name: deserialize_action_recognition_prediction_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
@@ -1719,6 +1803,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
+        StringTemplateBlockV1,
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
@@ -1726,7 +1811,11 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
+        AnthropicClaudeBlockV4,
+        AnthropicClaudeBlockV5,
         SpaceXAIBlockV1,
+        SpaceXAIBlockV2,
+        SpaceXAIBlockV3,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
@@ -1765,6 +1854,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV2,
         GoogleGeminiBlockV3,
         GoogleGeminiBlockV4,
+        GoogleGeminiBlockV5,
+        GoogleGeminiBlockV6,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -1798,6 +1889,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV3,
         OpenAIBlockV4,
         OpenAIBlockV5,
+        OpenAIBlockV6,
+        OpenAIBlockV7,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -1871,6 +1964,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
+        ActionRecognitionModelBlockV1,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
@@ -1884,8 +1978,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GazeBlockV1,
         LlamaVisionBlockV1,
         LlamaVisionBlockV2,
+        MetaVlmBlockV1,
+        MetaVlmBlockV2,
+        MetaVlmBlockV3,
         GoogleGemmaBlockV1,
         GoogleGemmaBlockV2,
+        GoogleGemmaBlockV3,
+        GoogleGemmaBlockV4,
         ImageSlicerBlockV2,
         Cosmos3EdgeBlockV1,
         Qwen25VLBlockV1,
@@ -1895,10 +1994,18 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen35OpenRouterBlockV1,
         Qwen36OpenRouterBlockV1,
         QwenVlmBlockV1,
+        QwenVlmBlockV2,
+        QwenVlmBlockV3,
+        QwenVlmBlockV4,
+        ZaiVlmBlockV1,
+        ZaiVlmBlockV2,
         OpenAICompatibleBlockV1,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
+        KimiOpenrouterBlockV3,
         OpenRouterBlockV1,
+        OpenRouterBlockV2,
+        OpenRouterBlockV3,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
@@ -1931,6 +2038,7 @@ def load_kinds() -> List[Kind]:
         WILDCARD_KIND,
         IMAGE_KIND,
         VIDEO_METADATA_KIND,
+        ACTION_RECOGNITION_PREDICTION_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
         ROBOFLOW_SOLUTION_KIND,

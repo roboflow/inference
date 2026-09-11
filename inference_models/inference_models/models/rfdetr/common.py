@@ -20,12 +20,12 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results_to_rle_masks,
     rescale_image_detections,
 )
-from inference_models.models.rfdetr.class_remapping import ClassesReMapping
-from inference_models.models.rfdetr.post_processor import select_topk_predictions
-from inference_models.models.rfdetr.triton_jit_fallback import (
+from inference_models.models.optimization.triton_jit import (
     is_triton_jit_failure,
     warn_triton_jit_fallback,
 )
+from inference_models.models.rfdetr.class_remapping import ClassesReMapping
+from inference_models.models.rfdetr.post_processor import select_topk_predictions
 from inference_models.models.rfdetr.triton_postprocess import (
     post_process_single_instance_segmentation_result_to_rle_masks_triton,
 )

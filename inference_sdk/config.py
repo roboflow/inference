@@ -9,6 +9,19 @@ from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
 
+# Outbound billing-forwarding authority: the validated service secret to send
+# with every outgoing request while it is set, forcing `countinference=false`
+# regardless of the client's own configuration. `None` means no implicit
+# billing parameters - a caller who configured `InferenceConfiguration`
+# explicitly keeps full control. Set (and reset) by the usage decorator
+# (`inference.usage_tracking.collector`) only for a call it proved carries an
+# authenticated opt-out, and read at request-send time by
+# `InferenceConfiguration.to_billing_query_parameters()` so a bare
+# `InferenceHTTPClient` forwards it with no per-call code.
+outbound_service_secret: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "outbound_service_secret", default=None
+)
+
 
 class RemoteProcessingTimeCollector:
     """Thread-safe collector for GPU processing times from remote execution responses.
@@ -211,5 +224,11 @@ RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", resolve_roboflow_service_url("api
 
 class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
+
+    pass
+
+
+class InferenceSDKGuidanceWarning(Warning):
+    """Class used for recommendations on how to use the Inference SDK"""
 
     pass

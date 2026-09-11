@@ -195,6 +195,34 @@ def test_serialise_sv_detections() -> None:
     }
 
 
+def test_serialise_sv_detections_empty_without_metadata_returns_none_dims() -> None:
+    # given — plain sv.Detections.empty() has no metadata, so the serialiser
+    # cannot recover image dimensions (the historical behaviour).
+    detections = sv.Detections.empty()
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {"image": {"width": None, "height": None}, "predictions": []}
+
+
+def test_serialise_sv_detections_empty_with_metadata_returns_real_dims() -> None:
+    # given — zero-row detections carrying IMAGE_DIMENSIONS_KEY in metadata
+    # (the contract producers use to pass image-level info past zero rows).
+    detections = sv.Detections(
+        xyxy=np.empty((0, 4), dtype=np.float32),
+        metadata={"image_dimensions": [480, 640]},
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then — the serialiser reads image dimensions from metadata as a fallback
+    # when the per-row loop never executes, matching the tensor-native path.
+    assert result == {"image": {"width": 640, "height": 480}, "predictions": []}
+
+
 def test_serialise_sv_detections_skips_padded_keypoint_slots() -> None:
     # given the padded, rectangular (n, max_kps, 2) keypoint layout that
     # add_inference_keypoints_to_sv_detections produces when detections carry
