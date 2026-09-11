@@ -31,8 +31,13 @@ def test_model_manager_is_structurally_compatible_with_the_port() -> None:
     # the wrong signature. Check that ModelManager can actually be CALLED the
     # way the port declares, so a signature drift in the server surfaces here
     # rather than at runtime inside a block.
+    from inference.core.interfaces.workflows_models_provider import (
+        ModelManagerModelsProvider,
+    )
+
     for member in REQUIRED_METHODS:
         assert hasattr(ModelManager, member), member
+        assert hasattr(ModelManagerModelsProvider, member), member
     port_add = inspect.signature(ModelsProvider.add_model)
     real_add = inspect.signature(ModelManager.add_model)
     for name in ("model_id", "api_key", "model_id_alias"):
