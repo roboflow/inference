@@ -37,7 +37,9 @@ class ModelsProvider(Protocol):
     """The port through which Workflows reach models.
 
     Implemented in the Roboflow inference server by
-    ``inference.core.managers.base.ModelManager``. Declared here so that
+    ``inference.core.interfaces.workflows_models_provider.ModelManagerModelsProvider``,
+    an adapter over ``inference.core.managers.base.ModelManager`` bound at the
+    composition roots. Declared here so that
     ``inference.core.workflows`` does not import the server package for a type
     annotation - that import alone pulls in FastAPI, the model registry, the
     cache, telemetry and usage tracking.
