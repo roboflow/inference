@@ -1201,6 +1201,14 @@ try:
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
 
+# Upper bound on managed pipeline processes. STREAM_MANAGER_MAX_RAM_MB is unset by default,
+# so without this the stream API can be made to spawn processes until the host runs out of
+# memory. Never lower than the number of processes the manager pre-loads on start.
+STREAM_MANAGER_MAX_ACTIVE_PIPELINES: int = max(
+    int(os.getenv("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", "8")),
+    STREAM_API_PRELOADED_PROCESSES,
+)
+
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
 MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0"))

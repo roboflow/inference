@@ -49,4 +49,4 @@ jobs:
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
-          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
+          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model; import psycopg; assert psycopg.pq.__impl__ == 'binary'"
