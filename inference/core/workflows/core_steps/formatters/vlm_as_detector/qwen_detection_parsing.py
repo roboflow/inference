@@ -8,6 +8,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     create_classes_index,
@@ -34,7 +35,8 @@ def extract_qwen_detection_entries(
     """Extract the list of detection entries from parsed Qwen JSON output.
 
     The Qwen prompt asks for a bare JSON list, but some responses wrap the
-    entries in a ``{"detections": [...]}`` object; both shapes are accepted.
+    entries in a ``{"detections": [...]}`` object or emit a single detection
+    object on its own; all three shapes are accepted.
 
     Args:
         parsed_data: JSON payload extracted from the VLM output.
@@ -51,6 +53,8 @@ def extract_qwen_detection_entries(
         parsed_data.get("detections"), list
     ):
         return parsed_data["detections"]
+    if isinstance(parsed_data, dict) and any(key in parsed_data for key in _BOX_KEYS):
+        return [parsed_data]
     raise ValueError("Unexpected Qwen object detection response format")
 
 
@@ -150,8 +154,8 @@ def parse_qwen_object_detection_response(
         Parsed detections in the original image's coordinate space.
 
     Raises:
-        ValueError: If the response is neither a JSON list nor a
-            ``{"detections": [...]}`` object.
+        ValueError: If the response is not a JSON list, a
+            ``{"detections": [...]}`` object, or a single detection object.
     """
     entries = extract_qwen_detection_entries(parsed_data=parsed_data)
     class_name2id = create_classes_index(classes=classes)
@@ -183,7 +187,7 @@ def parse_qwen_object_detection_response(
         confidence.append(1.0)
 
     if not xyxy:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(image=image)
 
     xyxy = np.array(xyxy).round(0)
     confidence = np.array(confidence)

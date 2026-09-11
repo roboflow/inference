@@ -24,6 +24,7 @@ GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 WORLD_MODEL_TASK = "world-model"
+ACTION_RECOGNITION_TASK = "action-recognition"
 
 
 @dataclass(frozen=True)
@@ -311,6 +312,21 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
         class_name="Cosmos3EdgeReasoner",
     ),
+    # Roboflow fine-tunes register the architecture under the platform's model
+    # type, "cosmos3-edge".
+    ("cosmos3-edge", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.cosmos3.cosmos3_reasoner_hf",
+        class_name="Cosmos3EdgeReasoner",
+    ),
+    # An action recognition fine-tune registered under its own task.
+    (
+        "cosmos3-edge",
+        ACTION_RECOGNITION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name=("inference_models.models.cosmos3.cosmos3_action_recognition"),
+        class_name="Cosmos3EdgeActionRecognition",
+    ),
     ("cosmos-3-edge-world", WORLD_MODEL_TASK, BackendType.CUSTOM): LazyClass(
         module_name="inference_models.models.cosmos3.cosmos3_world",
         class_name="Cosmos3EdgeWorldModel",
@@ -395,6 +411,20 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_onnx",
             class_name="RFDetrForKeyPointsONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
+    ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.TRT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_trt",
+            class_name="RFDetrForKeyPointsTRT",
         ),
         supported_model_features={
             "resolution",

@@ -16,10 +16,12 @@ from simple_pid import PID
 
 from inference.core import logger
 from inference.core.utils.function import experimental
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
     take_prediction_by_mask,
+)
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+    NO_LAN_FROM_HOSTED_RESTRICTION,
 )
 from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_DIMENSIONS_KEY,
@@ -43,7 +45,6 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
-    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -122,7 +123,7 @@ This block receives predictions and produces camera control commands and trackin
 
 ## Requirements
 
-This block requires an ONVIF-compatible PTZ camera with network access. The camera must support the ONVIF ContinuousMove service for Follow mode and GotoPreset service for preset movement. For optimal performance, use a camera with variable speed movement capability - cameras without variable speed can use the simulate_variable_speed option but may experience jerky movement. The block must run in local execution mode (not suitable for remote/cloud execution). PID tuning is recommended to achieve smooth tracking without overshooting or hunting - adjust pid_kp, pid_ki, and pid_kd parameters based on camera responsiveness and video latency. For accurate tracking, use an eager buffer consumption strategy to minimize lag between camera movement and video feedback. The camera must have presets configured if using preset movement or auto-reset functionality.
+This block requires an ONVIF-compatible PTZ camera with network access. The camera must support the ONVIF ContinuousMove service for Follow mode and GotoPreset service for preset movement. For optimal performance, use a camera with variable speed movement capability - cameras without variable speed can use the simulate_variable_speed option but may experience jerky movement. The block must run in a process that can reach the camera over the network, so it is not usable from Roboflow-hosted runtimes. PID tuning is recommended to achieve smooth tracking without overshooting or hunting - adjust pid_kp, pid_ki, and pid_kd parameters based on camera responsiveness and video latency. For accurate tracking, use an eager buffer consumption strategy to minimize lag between camera movement and video feedback. The camera must have presets configured if using preset movement or auto-reset functionality.
 """
 
 
@@ -257,27 +258,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        no_remote_step_execution = RuntimeRestriction(
-            severity=Severity.HARD,
-            note=(
-                "Block requires step_execution_mode=local; raises ValueError "
-                "otherwise. ONVIF commands must be issued from the same "
-                "process that drives the workflow."
-            ),
-            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
-        )
-        no_lan_from_hosted = RuntimeRestriction(
-            severity=Severity.HARD,
-            note=(
-                "Block requires LAN access to a PTZ camera. Hosted Serverless "
-                "and Roboflow Dedicated Deployments cannot reach customer LANs."
-            ),
-            applies_to_runtimes=[
-                Runtime.HOSTED_SERVERLESS,
-                Runtime.DEDICATED_DEPLOYMENT,
-            ],
-        )
-        return [no_remote_step_execution, no_lan_from_hosted]
+        return [NO_LAN_FROM_HOSTED_RESTRICTION]
 
 
 # primarily used for rate limiting
@@ -727,10 +708,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        step_execution_mode: StepExecutionMode,
         disable_sinks: bool = False,
     ):
-        self._step_execution_mode = step_execution_mode
         self._disable_sinks = disable_sinks
         # all commands will be send to the camera normalized to -1 to 1
         # all setpoints are 0, which represents the center of the frame
@@ -751,7 +730,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["step_execution_mode", "disable_sinks"]
+        return ["disable_sinks"]
 
     # gets the CameraWrapper from the static cameras collection
     def get_camera(
@@ -815,9 +794,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # than 10% then it's unlikely the camera will ever move
         if simulate_variable_speed:
             minimum_camera_speed = max(minimum_camera_speed, 0.1)
-
-        if self._step_execution_mode != StepExecutionMode.LOCAL:
-            raise ValueError("Inference must be run locally for the ONVIF block")
 
         if move_to_position_after_idle_seconds and not default_position_preset:
             raise ValueError(

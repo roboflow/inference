@@ -49,6 +49,8 @@ def _fake_getaddrinfo(ip: str):
         ("fc00::1", False),  # IPv6 ULA
         ("::ffff:127.0.0.1", False),  # IPv4-mapped loopback must not slip through
         ("2001:4860:4860::8888", True),  # public IPv6 (Google DNS)
+        ("224.0.0.1", False),  # multicast is not a public unicast destination
+        ("ff02::1", False),
         ("not-an-ip", False),
     ],
 )

@@ -86,11 +86,12 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["Is the walkway free of obstacles?", "$inputs.prompt"],
     )
     model_version: Union[
-        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"], str
     ] = Field(
         default="nvidia/cosmos-3-edge",
-        description="The Cosmos 3 Edge model to be used for inference.",
-        examples=["nvidia/cosmos-3-edge"],
+        description="The Cosmos 3 Edge model to be used for inference: the base model, "
+        "or the model id of a Roboflow fine-tune.",
+        examples=["nvidia/cosmos-3-edge", "my-project/3"],
     )
     system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
@@ -258,6 +259,10 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
 
 
 def _combine_prompt(prompt: Optional[str], system_prompt: Optional[str]) -> str:
+    """Only a system prompt the user set rides the sentinel: with none, the model
+    applies its own default, which for a Roboflow fine-tune is the prompt it was
+    trained with rather than the base model's."""
     prompt = prompt or DEFAULT_PROMPT
-    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    if not system_prompt:
+        return prompt
     return prompt + "<system_prompt>" + system_prompt

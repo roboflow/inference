@@ -138,11 +138,16 @@ jobs:
       - name: Determine Version
         id: determine_version
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.manual_version }}
+          GIT_REF: ${{ github.ref }}
         run: |
+          set -euo pipefail
           VERSION=""
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            if [ -n "${{ inputs.manual_version }}" ]; then
-              VERSION="${{ inputs.manual_version }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            if [ -n "$MANUAL_VERSION" ]; then
+              VERSION="$MANUAL_VERSION"
               VERSION=${VERSION#v} # Remove leading 'v'
               echo "Manual run. Using provided version: $VERSION"
             else
@@ -150,27 +155,31 @@ jobs:
               VERSION="0.0.0-manual-dev"
               echo "Manual run. No version provided, will use default in build script: $VERSION"
             fi
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
+          elif [[ "$GIT_REF" == refs/tags/v* ]]; then
+            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/v!!')
             echo "Release run. Version from tag: $VERSION"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
+          elif [[ "$GIT_REF" == refs/tags/* ]]; then
+            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/!!')
             echo "Release run. Version from tag: $VERSION"
           fi
 
-          if [ -z "$VERSION" ] && [ "${{ github.event_name }}" == "release" ]; then
+          if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9][A-Za-z0-9.+_-]{0,127}$ ]]; then
+            echo "Invalid installer version." >&2
+            exit 1
+          fi
+          if [ -z "$VERSION" ] && [ "$EVENT_NAME" == "release" ]; then
             echo "Error: Could not determine installer version for release."
             exit 1
           fi
           # For cases where manual_version is empty, ensure build.py uses its internal default
           # If version is set (from tag or manual input), pass it
           if [ -n "$VERSION" ]; then
-             echo "BUILD_VERSION_ENV=$VERSION" >> $GITHUB_OUTPUT
+             echo "BUILD_VERSION_ENV=$VERSION" >> "$GITHUB_OUTPUT"
           else
              # Let build.py handle the default, pass an empty string or don't set BUILD_VERSION_ENV
              # For consistency in later steps that might need a version (like release upload), this path should be handled.
              # If it's a release, it should have failed above. If manual and no input, it will be 0.0.0-manual-dev.
-             echo "BUILD_VERSION_ENV=$VERSION" >> $GITHUB_OUTPUT # Will be 0.0.0-manual-dev here if manual and no input
+             echo "BUILD_VERSION_ENV=$VERSION" >> "$GITHUB_OUTPUT" # Will be 0.0.0-manual-dev here if manual and no input
           fi
 
       - name: Build macOS app and DMG

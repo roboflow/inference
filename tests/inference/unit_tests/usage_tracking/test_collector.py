@@ -116,6 +116,56 @@ def test_merge_usage_dicts_raises_on_mismatched_resource_id():
         merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
 
 
+@pytest.mark.parametrize("queue_size", [1, 2, 10])
+def test_full_usage_queue_preserves_batches_across_repeated_saturation(
+    usage_collector_with_mocked_threads, monkeypatch, queue_size
+):
+    class NonBlockingQueue(Queue):
+        def put(self, item, block=True, timeout=None):
+            # Turn a would-be deadlock into a deterministic test failure.
+            super().put(item, block=False)
+
+    collector = usage_collector_with_mocked_threads
+    monkeypatch.setattr(collector, "_queue", NonBlockingQueue(maxsize=queue_size))
+
+    for cycle in range(2):
+        expected = {}
+        for index in range(4 * queue_size + 1):
+            # Revisit identities to check aggregation, while keeping more
+            # distinct sessions and outcomes than the queue can hold.
+            session = f"cycle-{cycle}-session-{index % (queue_size + 1)}"
+            api_key = f"test-key-{index % 2}"
+            fps = index % 2
+            key = usage_key(
+                "model", "test-model", outcome="error" if index % 3 else "success"
+            )
+            row = {
+                "resource_id": "test-model",
+                "api_key_hash": api_key,
+                "exec_session_id": session,
+                "fps": fps,
+                "processed_frames": 1,
+                "source_duration": 1,
+                "execution_duration": 2,
+            }
+            identity = (api_key, key, session, bool(fps))
+            expected[identity] = expected.get(identity, 0) + 1
+            collector._enqueue_payload({api_key: {key: row}})
+
+        payloads = collector._dump_usage_queue_with_lock()
+        assert collector._queue.empty()
+        actual = {}
+        for payload in payloads:
+            for api_key, rows in payload.items():
+                for key, row in rows.items():
+                    identity = (api_key, key, row["exec_session_id"], bool(row["fps"]))
+                    frames = row["processed_frames"]
+                    assert row["source_duration"] == frames
+                    assert row["execution_duration"] == 2 * frames
+                    actual[identity] = actual.get(identity, 0) + frames
+        assert actual == expected
+
+
 def test_merge_usage_dicts_merge_with_empty():
     # given
     usage_payload_1 = {

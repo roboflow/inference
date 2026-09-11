@@ -1,9 +1,22 @@
-"""Shared scaffolding for tests that load ``modal/modal_app.py`` directly.
+"""Shared harness for tests that load the real ``modal/modal_app.py``.
 
-``modal_app`` imports the real ``modal`` package at module scope and decorates
-``Executor`` with ``@app.cls`` / ``@modal.concurrent`` / ``@modal.fastapi_endpoint``.
-Stubbing those out lets the sandbox-side code be imported and driven in-process,
-so tests can exercise the shipped path instead of reimplementing it.
+``modal_app.py`` is deployed separately (``modal deploy``) and is not part of
+the ``inference`` package, so it is imported here by path with a stubbed
+``modal`` module. Loading the real server module is what makes the websocket
+protocol tests genuine behavior tests rather than mock theater.
+
+Two equivalent harnesses were written independently (one on ``main``, one on
+the webexec websocket branch) and met here. This file keeps ONE
+implementation and re-exports the older public names, so neither set of tests
+had to be rewritten to land the merge:
+
+* ``load_modal_app(monkeypatch, module_name)`` — the loader. Takes the module
+  name so each test can hold a FRESH module, which matters because the server
+  keeps container-local state (compiled namespaces, session and dedup
+  registries) at module/class scope.
+* ``modal_app`` / ``modal_app_with_fake_modal`` — fixtures over that loader.
+* ``FakeModalApp`` / ``FakeModalImage`` / ``identity_decorator`` — the stubs,
+  also exported under their original underscore-free names.
 """
 
 import importlib.util
@@ -14,7 +27,7 @@ from types import ModuleType
 import pytest
 
 
-class FakeModalImage:
+class _FakeModalImage:
     @classmethod
     def debian_slim(cls, *args, **kwargs):
         return cls()
@@ -33,35 +46,64 @@ class FakeModalImage:
         return self
 
 
-class FakeModalApp:
-    def __init__(self, name: str):
-        self.name = name
+class _FakeModalApp:
+    def __init__(self, *args, **kwargs):
+        pass
 
     def cls(self, *args, **kwargs):
         return lambda cls: cls
 
 
-def identity_decorator(*args, **kwargs):
+def _identity_decorator(*args, **kwargs):
     return lambda obj: obj
+
+
+# Names the tests that arrived via ``main`` import directly.
+FakeModalImage = _FakeModalImage
+FakeModalApp = _FakeModalApp
+identity_decorator = _identity_decorator
+
+
+def load_modal_app(monkeypatch, module_name: str = "modal_app_under_test"):
+    """Import ``modal/modal_app.py`` fresh, with ``modal`` stubbed out.
+
+    A fresh module per test keeps container-local state (namespaces, session
+    and dedup registries) from leaking between tests.
+    """
+    fake_modal = ModuleType("modal")
+    fake_modal.App = _FakeModalApp
+    fake_modal.Image = _FakeModalImage
+    fake_modal.parameter = lambda *args, **kwargs: None
+    fake_modal.enter = _identity_decorator
+    fake_modal.fastapi_endpoint = _identity_decorator
+    fake_modal.asgi_app = _identity_decorator
+    fake_modal.concurrent = _identity_decorator
+    monkeypatch.setitem(sys.modules, "modal", fake_modal)
+
+    modal_app_path = Path(__file__).resolve().parents[5] / "modal" / "modal_app.py"
+    spec = importlib.util.spec_from_file_location(module_name, modal_app_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def build_ws_app(modal_app, run_user_code):
+    """Build the websocket ASGI app with only user-code execution stubbed."""
+    cls = modal_app.Executor
+    user_cls = cls._get_user_cls() if hasattr(cls, "_get_user_cls") else cls
+    executor = user_cls.__new__(user_cls)
+    executor.workspace_id = "test-ws"
+    user_cls.identify(executor)
+    user_cls._run_user_code_ws = staticmethod(run_user_code).__func__
+    return executor, user_cls.wsapp(executor)
+
+
+@pytest.fixture()
+def modal_app(monkeypatch):
+    return load_modal_app(monkeypatch, "modal_app_under_test")
 
 
 @pytest.fixture()
 def modal_app_with_fake_modal(monkeypatch):
-    """Import ``modal/modal_app.py`` with a stubbed ``modal`` package."""
-    fake_modal = ModuleType("modal")
-    fake_modal.App = FakeModalApp
-    fake_modal.Image = FakeModalImage
-    fake_modal.parameter = lambda *args, **kwargs: None
-    fake_modal.enter = identity_decorator
-    fake_modal.fastapi_endpoint = identity_decorator
-    fake_modal.asgi_app = identity_decorator
-    fake_modal.concurrent = identity_decorator
-    monkeypatch.setitem(sys.modules, "modal", fake_modal)
-
-    modal_app_path = Path(__file__).resolve().parents[5] / "modal" / "modal_app.py"
-    spec = importlib.util.spec_from_file_location(
-        "modal_app_under_test", modal_app_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """Alias of :func:`modal_app`, kept for the tests that arrived via ``main``."""
+    return load_modal_app(monkeypatch, "modal_app_under_test")

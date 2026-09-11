@@ -148,7 +148,8 @@ BACKGROUND_CLASS_ID = 0
 
 # `image_metadata` key under which the dense per-pixel confidence map is carried
 # for numpy parity (numpy `v1.py` stores `conf_array` on the sv.Detections under
-# `result["confidence_mask"]`). The serialiser never emits it into `predictions`,
+# `result["confidence_mask"]`, as a per-detection object array sharing one map).
+# The serialiser never emits it into `predictions`,
 # but it survives for consumers reading the prediction's `image_metadata`.
 CONFIDENCE_MASK_KEY = "confidence_mask"
 

@@ -13,6 +13,7 @@ opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as
 pillow>=12.3.0,<13.0.0
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
+psycopg[binary]>=3.2,<4
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
@@ -25,7 +26,7 @@ setuptools>=83.0.0  # lack of upper-bound to ensure compatibility with Google Co
 networkx>=3.0.0,<4.0.0
 pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
-openai>=1.12.0,<2.0.0
+openai>=1.17.0,<2.0.0
 structlog>=24.1.0,<25.0.0
 zxing-cpp~=2.2.0
 boto3>=1.40.0,<=1.41.5
@@ -45,6 +46,12 @@ slack-sdk~=3.33.4
 twilio~=9.3.7
 httpx~=0.28.1
 msgpack
+# Both are hard requirements of WEBEXEC_TRANSPORT=websocket (the custom Python
+# block transport in
+# inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py).
+# websocket-client was previously only present transitively via the docker SDK,
+# which made an opt-in transport depend on an unrelated package's dependency.
+websocket-client~=1.9.0
 pylogix==1.0.5
 pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0

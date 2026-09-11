@@ -44,6 +44,11 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     PreProcessingOverrides,
 )
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionModel,
+    ActionRecognitionPrediction,
+    VideoSampling,
+)
 from inference_models.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,

@@ -3,7 +3,6 @@ import concurrent
 import logging
 import os
 import re
-import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -45,6 +44,10 @@ from inference.core.constants import (
     WORKSPACE_ID_HEADER,
 )
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+    InferenceRequestVideo,
+)
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
     ClipImageEmbeddingRequest,
@@ -96,6 +99,9 @@ from inference.core.entities.requests.workflows import (
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionInferenceResponse,
+)
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
@@ -144,6 +150,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_ENABLED,
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
@@ -208,6 +215,7 @@ from inference.core.env import (
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -336,7 +344,6 @@ from inference.core.utils.requests import (
     deduct_api_key_from_string,
 )
 from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
-from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -416,13 +423,24 @@ HEALTH_CHECK_LOG_PATHS = frozenset(
 )
 
 
-if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
-    warnings.warn(
-        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
-        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
-        "If your workload relies on that setting, please make adjustment to your configuration before the inference "
-        "release following mentioned date. Otherwise - you may ignore this warning.",
-        category=InferenceDeprecationWarning,
+if (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+    and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "local"
+    and not (
+        WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+    )
+):
+    # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
+    # be able to silence a security notice.
+    logger.warning(
+        "SECURITY: this server accepts requests without authentication and runs Workflows Custom Python "
+        "blocks in its own process (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True), so any client that can "
+        "reach it can execute arbitrary code on this host. This is safe only while the server is reachable "
+        "from trusted clients alone. Set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False if you do not need "
+        "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
+        "in front of the server) if it is reachable from other machines. See "
+        "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
     )
 
 
@@ -574,6 +592,14 @@ def _log_serverless_request_received(
     # Debug: one INFO line per request doubles serverless log volume; the
     # structured access log already records every request with the same ids.
     logger.debug(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    """Read the comma separated class list the legacy route carries."""
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 class HttpInterface(BaseInterface):
@@ -4269,6 +4295,74 @@ class HttpInterface(BaseInterface):
                         model_id=model_id,
                     )
 
+            if ACTION_RECOGNITION_ENABLED:
+
+                @app.post(
+                    "/infer/action_recognition",
+                    response_model=ActionRecognitionInferenceResponse,
+                    summary="Action Recognition",
+                    description=(
+                        "Classify the actions in a video clip. The model states "
+                        "how the clip is cut and how its frames are sampled, so a "
+                        "caller sends the clip and nothing else. Frame indices in "
+                        "the response count from the first frame of the clip, and "
+                        "windows_classified reports how many calls the clip was "
+                        "cut into. A fine-tuned model reports its own classes. A "
+                        "zero-shot model names the events it finds in its own "
+                        "words. Frames are chosen by the clip's nominal frame "
+                        "rate, so a variable-frame-rate source is sampled at "
+                        "different instants than the model trained on. Send the "
+                        "clip as a URL. Base64 grows it by a third and holds the "
+                        "whole request in memory, so it suits short clips only."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def infer_action_recognition(
+                    inference_request: ActionRecognitionInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Classify the actions in a video clip.
+
+                    Args:
+                        inference_request (ActionRecognitionInferenceRequest): The
+                            clip to classify and the model to classify it with.
+                        api_key (Optional[str], default None): Roboflow API Key
+                            passed to the model during initialization for artifact
+                            retrieval.
+                        request (Request): The HTTP request.
+
+                    Returns:
+                        ActionRecognitionInferenceResponse: The classified ranges
+                        covering the clip.
+                    """
+                    logger.debug("Reached /infer/action_recognition")
+                    api_key = api_key_fallback(api_key)
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        model_id,
+                        inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(model_id, actor)
+                    return response
+
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
@@ -4507,6 +4601,14 @@ class HttpInterface(BaseInterface):
                     "base64",
                     description="One of base64 or numpy. Note, numpy input is not supported for Roboflow Hosted Inference.",
                 ),
+                class_filter: Optional[str] = Query(
+                    None,
+                    description=(
+                        "Action recognition only: comma separated classes. The "
+                        "subset of a fine-tuned model's classes to report. A "
+                        "zero-shot model answers in its own words and ignores it."
+                    ),
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4673,6 +4775,31 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
+                if task_type == "action-recognition":
+                    # The payload is a clip, so none of the image-shaped
+                    # arguments below apply to it. The `image` query parameter
+                    # carries a URL here, which is the transport to prefer: a
+                    # base64 body grows the clip by a third and is held whole
+                    # in memory.
+                    inference_response = self.model_manager.infer_from_request_sync(
+                        # add_model above registers under the alias, which is
+                        # model_id, so the lookup asks for that. Under Lambda
+                        # request_model_id is the authorizer's endpoint and
+                        # names nothing the manager holds.
+                        model_id,
+                        ActionRecognitionInferenceRequest(
+                            api_key=api_key,
+                            model_id=model_id,
+                            video=InferenceRequestVideo(
+                                type=request_image.type, value=request_image.value
+                            ),
+                            class_filter=_parse_legacy_class_filter(
+                                class_filter=class_filter
+                            ),
+                        ),
+                    )
+                    logger.debug("Response ready.")
+                    return orjson_response(inference_response)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":

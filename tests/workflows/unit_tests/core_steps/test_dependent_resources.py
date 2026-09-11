@@ -493,6 +493,7 @@ CARRY_ONLY_ALLOWLIST = {
 NON_MODEL_MANAGER_LOADERS_ALLOWLIST = {
     "roboflow_core/segment_anything_2_video@v1",
     "roboflow_core/sam3_video@v1",
+    "roboflow_core/roboflow_action_recognition_model@v1",
 }
 
 UNDECLARED_BLOCKS_ALLOWLIST = CARRY_ONLY_ALLOWLIST | NON_MODEL_MANAGER_LOADERS_ALLOWLIST

@@ -8,6 +8,8 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.muse_detecti
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
+from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
+from inference.core.workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -93,6 +95,22 @@ def test_parse_skips_malformed_entries_but_keeps_valid_ones():
     )
     assert len(result) == 1
     assert result.data["class_name"][0] == "cat"
+
+
+def test_parse_empty_response_carries_image_dimensions():
+    result = parse_muse_object_detection_response(
+        image=_build_image(480, 640),
+        parsed_data=[],
+        classes=["cat"],
+        inference_id="inf",
+    )
+    assert len(result) == 0
+    # Empty detections must still carry image dimensions in metadata so the
+    # numpy serialiser emits real width/height (matching the tensor-native path).
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    serialized = serialise_sv_detections(result)
+    assert serialized["image"] == {"width": 640, "height": 480}
+    assert serialized["predictions"] == []
 
 
 def test_parse_raises_on_unexpected_shape():

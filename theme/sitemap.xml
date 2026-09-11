@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-{# Always emit the homepage first — index.md uses `template: home.html` and may
-   be skipped or under-prioritised by some build pipelines. Hard-coding the
-   site root guarantees AI crawlers and search engines see it. #}
+{# Emit the homepage first with an explicit priority. index.md uses
+   `template: home.html`, so some build pipelines skip it or rank it low.
+   The loop below then skips every page that resolves to the same URL,
+   otherwise the homepage is listed twice. Note that zensical does not
+   supply `is_homepage`, `is_link`, `abs_url` or `update_date`; those are
+   undefined here and must not be used as the only guard. #}
+{%- set home = config.site_url|trim('/') %}
     <url>
-         <loc>{{ config.site_url|e }}</loc>
-         {%- if build_date_utc %}
-         <lastmod>{{ build_date_utc.strftime('%Y-%m-%d') }}</lastmod>
-         {%- endif %}
+         <loc>{{ config.site_url }}</loc>
          <changefreq>weekly</changefreq>
          <priority>1.0</priority>
     </url>
 {%- for page in pages -%}
-    {%- if not page.is_link and not page.is_homepage and (page.abs_url or page.canonical_url) %}
+    {%- set url = page.canonical_url or page.abs_url %}
+    {%- if url and url|trim('/') != home %}
     <url>
-         <loc>{% if page.canonical_url %}{{ page.canonical_url|e }}{% else %}{{ page.abs_url|e }}{% endif %}</loc>
-         {%- if page.update_date %}
-         <lastmod>{{ page.update_date }}</lastmod>
-         {%- endif %}
+         <loc>{{ url }}</loc>
     </url>
     {%- endif -%}
 {% endfor %}
