@@ -259,6 +259,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Anthropic Claude",
             "version": "v4",
+            "deprecated": True,
+            "deprecation_message": "Use Anthropic Claude v5, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
             "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

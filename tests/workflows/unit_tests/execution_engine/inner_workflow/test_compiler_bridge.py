@@ -22,3 +22,23 @@ def test_validate_inner_workflow_composition_rejects_non_object_step() -> None:
     bad = {**definition, "steps": [{"name": "a", "type": "x"}, None]}
     with pytest.raises(InnerWorkflowInvalidStepEntryError, match="index 1"):
         validate_inner_workflow_composition_from_raw_workflow_definition(bad)
+
+
+def test_dispatched_workflow_is_not_part_of_local_composition() -> None:
+    definition = {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [
+            {
+                "name": "dispatch",
+                "type": "roboflow_core/inner_workflow@v1",
+                "execution_mode": "remote_dispatch",
+                "workflow_workspace_id": "workspace",
+                "workflow_id": "child",
+                "parameter_bindings": {},
+            }
+        ],
+        "outputs": [],
+    }
+
+    validate_inner_workflow_composition_from_raw_workflow_definition(definition)

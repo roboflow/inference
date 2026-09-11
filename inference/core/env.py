@@ -11,6 +11,7 @@ from inference.core.utils.regions import (
     get_roboflow_region,
     resolve_roboflow_service_url,
 )
+from inference.core.utils.secure_gateway import normalize_secure_gateway_configuration
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
@@ -84,6 +85,41 @@ MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", 30))
 ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
     os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
 )
+
+# Connection boundary for the PostgreSQL Workflow sink, which opens an outbound
+# connection to a host taken from the workflow definition. When False, a host
+# that resolves to a non-global address (loopback, private/RFC1918,
+# link-local/metadata 169.254.169.254, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP so a second DNS resolution cannot
+# rebind it; Unix-socket paths and multi-host lists are rejected too. Default is
+# True (permissive: any destination) to preserve behaviour. The hosted platform
+# sets this to False so tenant workflows cannot reach internal services.
+ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+)
+# Optional comma-separated denylist of destinations the PostgreSQL Workflow sink
+# may never connect to (IP literals or hostnames). Enforced regardless of the
+# non-global setting above: the raw host and every resolved IP are checked
+# against it. Default None (empty denylist).
+POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES.split(",")
+    )
+# Optional comma-separated allowlist of destinations the PostgreSQL Workflow sink
+# may connect to (IP literals or hostnames). When set, ONLY these are permitted:
+# a destination is allowed if the raw host matches or every resolved IP matches;
+# anything else is rejected. Enforced regardless of the non-global setting above.
+# Default None (no allowlist, i.e. any destination subject to the other checks).
+POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
+    )
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
@@ -540,10 +576,12 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # Secure gateway address for air-gapped deployments.
 # Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
-# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# May be a bare host[:port] (HTTPS with a migration warning) or
 # scheme-qualified, e.g. https://gateway.local, for TLS gateways.
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
@@ -612,6 +650,19 @@ if (
         "MODELS_CACHE_AUTH_ENABLED cannot verify model access while OFFLINE_MODE "
         "is enabled. Set ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS=True only for a "
         "trusted single-tenant deployment, or disable one of these modes."
+    )
+
+# Local paths have no Roboflow identity for per-model authorization. Offline
+# deployments already require an explicit authorization bypass above.
+if (
+    MODELS_CACHE_AUTH_ENABLED
+    and not OFFLINE_MODE
+    and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+):
+    raise ValueError(
+        "MODELS_CACHE_AUTH_ENABLED cannot authorize local model paths. "
+        "Disable ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES "
+        "when per-model authorization is required."
     )
 
 # Models cache auth cache ttl, default is 15 minutes
@@ -826,6 +877,10 @@ DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
     os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
 )
 WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+# Enable only on trusted deployments that need MJPEG cameras on private networks.
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES", "False")
+)
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
@@ -936,6 +991,13 @@ WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
 WORKFLOWS_MAX_INNER_WORKFLOW_COUNT = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_COUNT", "32")
 )
+WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET = os.getenv(
+    "WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET",
+    "https://serverless.roboflow.com",
+)
+WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT = float(
+    os.getenv("WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT", "300.0")
+)
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
 )
@@ -947,17 +1009,17 @@ ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
 )
 
 # Modal configuration for Custom Python Blocks
-WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
-    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
-).lower()  # "local" or "modal"
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = (
+    os.getenv("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local").strip().lower()
+)  # "local" or "modal"
+if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE not in {"local", "modal"}:
+    raise ValueError("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE must be local or modal")
 if OFFLINE_MODE and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-    warnings.warn(
-        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal is not available while "
-        "OFFLINE_MODE is enabled. Forcing local custom Python execution.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
+    raise RuntimeError(
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal cannot run in OFFLINE_MODE. "
+        "Disable offline mode to retain sandbox isolation, or explicitly configure "
+        "local execution only for trusted custom Python workflows."
     )
-    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = "local"
 
 # JPEG quality used when serializing images for the webexec round-trip.
 # Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
@@ -1069,6 +1131,9 @@ if OFFLINE_MODE and (
         "to workspaces without API connectivity."
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+ALLOW_UNSAFE_GSTREAMER_PIPELINES = str2bool(
+    os.getenv("ALLOW_UNSAFE_GSTREAMER_PIPELINES", "False")
+)
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
 RUNS_ON_JETSON = str2bool(
@@ -1200,6 +1265,14 @@ try:
     )
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Upper bound on managed pipeline processes. STREAM_MANAGER_MAX_RAM_MB is unset by default,
+# so without this the stream API can be made to spawn processes until the host runs out of
+# memory. Never lower than the number of processes the manager pre-loads on start.
+STREAM_MANAGER_MAX_ACTIVE_PIPELINES: int = max(
+    int(os.getenv("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", "8")),
+    STREAM_API_PRELOADED_PROCESSES,
+)
 
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
@@ -1406,6 +1479,15 @@ if HTTP_API_THREADPOOL_WORKERS:
     HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
 else:
     HTTP_API_THREADPOOL_WORKERS = None
+
+# Exact operator-approved OpenAI-compatible base URLs, ignoring trailing slashes.
+# "*" allows any destination by default for compatibility; empty blocks all.
+OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = {
+    url.rstrip("/")
+    for url in safe_split_value(
+        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", "*"), strip=True
+    )
+}
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")

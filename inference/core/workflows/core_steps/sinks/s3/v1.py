@@ -186,14 +186,14 @@ class BlockManifest(WorkflowBlockManifest):
         Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
     ] = Field(
         default=None,
-        description="AWS access key ID for authentication. If not provided, boto3's default credential chain is used (environment variables, ~/.aws/credentials, or IAM role). Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
+        description="AWS access key ID for authentication. Required, and must be set together with `aws_secret_access_key`. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_access_key_id"],
     )
     aws_secret_access_key: Optional[
         Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
     ] = Field(
         default=None,
-        description="AWS secret access key for authentication. If not provided, boto3's default credential chain is used. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
+        description="AWS secret access key for authentication. Required, and must be set together with `aws_access_key_id`. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_secret_access_key"],
     )
     aws_region: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
@@ -384,11 +384,15 @@ def create_s3_client(
     aws_secret_access_key: Optional[str],
     aws_region: Optional[str],
 ):
-    kwargs = {}
-    if aws_access_key_id:
-        kwargs["aws_access_key_id"] = aws_access_key_id
-    if aws_secret_access_key:
-        kwargs["aws_secret_access_key"] = aws_secret_access_key
+    if not aws_access_key_id or not aws_secret_access_key:
+        raise ValueError(
+            "S3 sink requires `aws_access_key_id` and `aws_secret_access_key` to be "
+            "provided by the workflow. The server's ambient AWS credentials are not used."
+        )
+    kwargs = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+    }
     if aws_region:
         kwargs["region_name"] = aws_region
     return boto3.client("s3", **kwargs)
