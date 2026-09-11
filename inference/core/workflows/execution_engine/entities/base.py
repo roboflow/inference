@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
-from inference.core.entities.responses.action_recognition import (
+from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (
     ActionRecognitionPrediction,
 )
 from inference.core.workflows.environment import (
