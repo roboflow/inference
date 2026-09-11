@@ -614,6 +614,19 @@ if (
         "trusted single-tenant deployment, or disable one of these modes."
     )
 
+# Local paths have no Roboflow identity for per-model authorization. Offline
+# deployments already require an explicit authorization bypass above.
+if (
+    MODELS_CACHE_AUTH_ENABLED
+    and not OFFLINE_MODE
+    and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+):
+    raise ValueError(
+        "MODELS_CACHE_AUTH_ENABLED cannot authorize local model paths. "
+        "Disable ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES "
+        "when per-model authorization is required."
+    )
+
 # Models cache auth cache ttl, default is 15 minutes
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
 
