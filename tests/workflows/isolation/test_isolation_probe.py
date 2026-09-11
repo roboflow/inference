@@ -81,21 +81,31 @@ def test_main_reports_failure_when_the_child_returns_nothing(monkeypatch) -> Non
     [
         ("WORKFLOWS_PLUGINS", "inference.enterprise.workflows.enterprise_blocks"),
         ("DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"),
+        # Since Phase 5 these six reach the child through a WorkflowsConfiguration
+        # the child installs itself. An inherited value must not reach it.
+        ("ENABLE_TENSOR_DATA_REPRESENTATION", "True"),
+        ("WORKFLOWS_IMAGE_TENSOR_DEVICE", "cuda"),
+        ("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", "False"),
+        ("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"),
+        ("ALLOW_WORKFLOWS_FONTS_DOWNLOAD", "True"),
+        ("MODEL_CACHE_DIR", "/somewhere/else"),
     ],
 )
 def test_child_env_drops_server_only_configuration(
     tmp_path, monkeypatch, variable, value
 ) -> None:
-    # Both are server settings the child must not inherit: the plugin list
-    # would load enterprise blocks, and the step-error handler names a handler
-    # the standalone engine does not register - which would fail
-    # `ExecutionEngine.init` for a reason unrelated to contamination.
+    # Server settings the child must not inherit: the plugin list would load
+    # enterprise blocks, the step-error handler names a handler the standalone
+    # engine does not register, and the rest are configuration the child now
+    # installs explicitly.
     probe = _load_probe()
     monkeypatch.setenv(variable, value)
     env = probe._child_env(tmp_path, tensor_mode=False)
     assert variable not in env
     assert "WORKFLOWS_PLUGINS" not in env
     assert "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER" not in env
+    assert "ENABLE_TENSOR_DATA_REPRESENTATION" not in env
+    assert "MODEL_CACHE_DIR" not in env
 
 
 def test_child_refuses_to_run_with_assertions_stripped(tmp_path, monkeypatch) -> None:

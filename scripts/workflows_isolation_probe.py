@@ -77,6 +77,39 @@ class ServerImportBlocker:
 
 sys.meta_path.insert(0, ServerImportBlocker())
 
+# The isolated tree's `inference/__init__.py` and `inference/core/__init__.py`
+# are EMPTY stubs, so nothing installs a WorkflowsConfiguration. In isolation
+# the probe IS the host: it builds one explicitly. This must happen before the
+# first workflows import, because `core_steps/loader.py` branches on the tensor
+# flag at import time and `environment.py` freezes every constant at its own
+# import.
+import dataclasses as _dc
+from inference.core.workflows.configuration import (
+    configure_process,
+    default_configuration,
+    resolve_image_tensor_device,
+)
+
+_BASE = default_configuration()
+configure_process(_dc.replace(
+    _BASE,
+    tensor=_dc.replace(
+        _BASE.tensor,
+        representation_enabled=TENSOR_MODE,
+        image_tensor_device=resolve_image_tensor_device(TENSOR_MODE),
+    ),
+    engine=_dc.replace(
+        _BASE.engine,
+        allow_custom_python_execution=True,
+        custom_python_execution_mode="local",
+    ),
+    fonts=_dc.replace(
+        _BASE.fonts,
+        allow_download=False,
+        model_cache_dir=os.path.join(T, "cache"),
+    ),
+))
+
 
 def check(name, fn):
     try:
@@ -383,18 +416,23 @@ def _child_env(tree: Path, tensor_mode: bool) -> dict:
         # checkout's `inference_models` (an allowed dependency that the venv
         # would otherwise resolve from a different checkout).
         "PYTHONPATH": str(tree) + os.pathsep + str(REPO_ROOT / "inference_models"),
-        "MODEL_CACHE_DIR": str(tree / "cache"),  # no previously cached fonts
-        # Standalone configuration. Phase 5 decides how the workflows-local
-        # default reads these; until then they are the env names the module
-        # consumes today. Adjust here if Phase 5 moves them.
-        "ENABLE_TENSOR_DATA_REPRESENTATION": "True" if tensor_mode else "False",
-        "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": "True",
-        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
-        "ALLOW_WORKFLOWS_FONTS_DOWNLOAD": "False",
         # The checks verify with `assert`; an inherited PYTHONOPTIMIZE would
         # strip every one of them and turn the probe green by deleting it.
         "PYTHONOPTIMIZE": "0",
     }
+    # Since Phase 5 the module takes these from a `WorkflowsConfiguration` the
+    # child installs itself (see CHILD). They used to be pinned here; they are
+    # now REMOVED so an inherited value cannot make the probe pass or fail for
+    # a reason the configuration does not explain.
+    for variable in (
+        "ENABLE_TENSOR_DATA_REPRESENTATION",
+        "WORKFLOWS_IMAGE_TENSOR_DEVICE",
+        "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS",
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE",
+        "ALLOW_WORKFLOWS_FONTS_DOWNLOAD",
+        "MODEL_CACHE_DIR",
+    ):
+        env.pop(variable, None)
     # Never inherit the server's plugin list (Task 7.1 expands the enterprise
     # plugin into it); the probe loads core blocks only.
     env.pop("WORKFLOWS_PLUGINS", None)
