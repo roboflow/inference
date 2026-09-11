@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Dict, List, Optional, Type
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
@@ -95,9 +95,13 @@ IMPORTS_LINES = [
 # tensor mode too (user code may mix representations for its own math).
 # NOTE: `modal/modal_app.py` mirrors this list into the remote sandbox namespace
 # via a guarded import of this constant — keep it importable and self-contained.
+# The device is read from the Workflows configuration facade, not from the
+# server's env module: the generated code must be importable wherever the
+# workflows package is, including the Modal sandbox, where the sandbox's own
+# `inference/core/__init__.py` installs its configuration.
 TENSOR_NATIVE_IMPORTS_LINES = [
     "import torch",
-    "from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE",
+    "from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE",
     "from inference_models.models.base.object_detection import Detections",
     "from inference_models.models.base.instance_segmentation import InstanceDetections",
     "from inference_models.models.base.keypoints_detection import KeyPoints",
