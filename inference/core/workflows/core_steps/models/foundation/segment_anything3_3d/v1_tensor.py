@@ -23,7 +23,6 @@ from typing import Any, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
@@ -256,14 +255,11 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
 
         for single_image, single_mask_input in zip(images, mask_input):
             converted_mask = extract_masks_from_input(single_mask_input)
-            inference_request = Sam3_3D_Objects_InferenceRequest(
+            response = self._model_manager.run_sam3_3d_objects(
+                model_id=model_id,
                 image=single_image.to_inference_format(numpy_preferred=True),
                 mask_input=converted_mask,
                 api_key=self._api_key,
-                model_id=model_id,
-            )
-            response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
             )
             results.append(_format_response(response))
         return results

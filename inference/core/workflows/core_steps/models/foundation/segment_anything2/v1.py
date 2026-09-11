@@ -4,12 +4,6 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam2 import (
-    Box,
-    Sam2Prompt,
-    Sam2PromptSet,
-    Sam2SegmentationRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.inference_response_dc import (
     InferenceResponseImageDC,
@@ -24,6 +18,10 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Box,
+    Sam2Prompt,
 )
 from inference.core.workflows.environment import (
     CORE_MODEL_SAM2_ENABLED,
@@ -448,25 +446,22 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                         )
                     )
                     prompts.append(prompt)
-            inference_request = Sam2SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                sam2_version_id=version,
-                api_key=self._api_key,
-                source="workflow-execution",
-                prompts=Sam2PromptSet(prompts=prompts),
-                threshold=threshold,
-                multimask_output=multimask_output,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,
-                version_id=inference_request.sam2_version_id,
+                version_id=version,
                 api_key=self._api_key,
                 core_model="sam2",
             )
-
-            sam2_segmentation_response = self._model_manager.infer_from_request_sync(
-                sam_model_id, inference_request
-            )
+            sam2_segmentation_response = self._model_manager.run_sam2_segmentation(
+                model_id=sam_model_id,
+                image=image,
+                prompts=[prompt.model_dump(exclude_none=True) for prompt in prompts],
+                api_key=self._api_key,
+                version_id=version,
+                threshold=threshold,
+                multimask_output=multimask_output,
+            )[0]
 
             prediction = convert_sam2_segmentation_response_to_inference_instances_seg_response(
                 sam2_segmentation_predictions=sam2_segmentation_response.predictions,

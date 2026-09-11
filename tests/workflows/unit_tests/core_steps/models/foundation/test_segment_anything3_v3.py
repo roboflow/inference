@@ -254,7 +254,7 @@ def test_v3_local_polygon_path_converts_through_supervision() -> None:
     `sv.Detections.from_inference` path actually executes. Before Task 11.4
     Step 8 this raised `TypeError: … object is not subscriptable`."""
     model_manager = MagicMock()
-    model_manager.infer_from_request_sync.return_value = _sam3_polygon_response()
+    model_manager.run_sam3_segmentation.return_value = [_sam3_polygon_response()]
     block = SegmentAnything3BlockV3(
         model_manager=model_manager,
         api_key="k",
@@ -268,7 +268,7 @@ def test_v3_local_polygon_path_converts_through_supervision() -> None:
     detections = result[0]["predictions"]
     assert len(detections) == 1
     assert detections.xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
-    model_manager.infer_from_request_sync.assert_called_once()
+    model_manager.run_sam3_segmentation.assert_called_once()
 
 
 def test_v3_remote_polygon_path_converts_through_supervision() -> None:

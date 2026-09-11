@@ -52,6 +52,15 @@ from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderTextEmbeddingRequest,
 )
 from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
+from inference.core.entities.requests.sam2 import (
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
+    Sam2SegmentationRequest,
+)
+from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
+from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
@@ -469,6 +478,86 @@ class ModelManagerModelsProvider:
             api_key=api_key,
         )
         return self._dump(self._infer(model_id=model_id, request=request))[0]
+
+    @staticmethod
+    def _sam2_prompt_set(prompts: List[dict]) -> Sam2PromptSet:
+        revived = []
+        for prompt in prompts:
+            if "box" in prompt:
+                revived.append(Sam2Prompt(box=Box(**prompt["box"])))
+            elif "points" in prompt:
+                revived.append(
+                    Sam2Prompt(points=[Point(**point) for point in prompt["points"]])
+                )
+            else:
+                raise ValueError(
+                    f"SAM2 prompt must carry 'box' or 'points'; got {sorted(prompt)}"
+                )
+        return Sam2PromptSet(prompts=revived)
+
+    def run_sam2_segmentation(
+        self,
+        model_id: str,
+        image: Any,
+        prompts: List[dict],
+        api_key: Optional[str] = None,
+        version_id: Union[str, None, _Unset] = UNSET,
+        request_model_id: Union[str, None, _Unset] = UNSET,
+        multimask_output: Union[bool, None, _Unset] = UNSET,
+        threshold: Union[float, None, _Unset] = UNSET,
+    ) -> List[Any]:
+        # segment_anything2/v1.py passes sam2_version_id, threshold and
+        # multimask_output; segment_anything3_interactive/v1.py passes model_id
+        # and multimask_output. Each is forwarded exactly as passed - None
+        # included: `multimask_output: bool` rejects it, as it did inline.
+        request = Sam2SegmentationRequest(
+            image=image,
+            api_key=api_key,
+            source=_WORKFLOW_SOURCE,
+            prompts=self._sam2_prompt_set(prompts),
+            **_passed(
+                sam2_version_id=version_id,
+                model_id=request_model_id,
+                multimask_output=multimask_output,
+                threshold=threshold,
+            ),
+        )
+        return self._infer(model_id=model_id, request=request)
+
+    def run_sam3_segmentation(
+        self,
+        model_id: str,
+        image: Any,
+        prompts: List[dict],
+        api_key: Optional[str] = None,
+        output_prob_thresh: Union[float, None, _Unset] = UNSET,
+        nms_iou_threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
+    ) -> List[Any]:
+        request = Sam3SegmentationRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=image,
+            prompts=[Sam3Prompt(**prompt) for prompt in prompts],
+            **_passed(
+                output_prob_thresh=output_prob_thresh,
+                nms_iou_threshold=nms_iou_threshold,
+                format=format,
+            ),
+        )
+        return self._infer(model_id=model_id, request=request)
+
+    def run_sam3_3d_objects(
+        self,
+        model_id: str,
+        image: Any,
+        mask_input: Any,
+        api_key: Optional[str] = None,
+    ) -> Any:
+        request = Sam3_3D_Objects_InferenceRequest(
+            image=image, mask_input=mask_input, api_key=api_key, model_id=model_id
+        )
+        return self._infer(model_id=model_id, request=request)[0]
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
         return self._model_manager.run_tensor_native_inference(

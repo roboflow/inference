@@ -1,10 +1,4 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 7
-inference/core/workflows/core_steps/models/foundation/segment_anything2/v1.py	inference.core.entities.requests.sam2
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v1.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v2.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3/v3.py	inference.core.entities.requests.sam3
-inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1.py	inference.core.entities.requests.sam3_3d
-inference/core/workflows/core_steps/models/foundation/segment_anything3_3d/v1_tensor.py	inference.core.entities.requests.sam3_3d
-inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1.py	inference.core.entities.requests.sam2
+# Count: 0
+

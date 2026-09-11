@@ -30,7 +30,7 @@ def mock_model_manager():
     mock_obj.metadata.translation = [0, 0, 0]
     mock_obj.metadata.scale = [1, 1, 1]
     mock_response.objects = [mock_obj]
-    mock.infer_from_request_sync.return_value = mock_response
+    mock.run_sam3_3d_objects.return_value = mock_response
     return mock
 
 
@@ -78,7 +78,7 @@ def test_run_locally(mock_model_manager, mock_workflow_image_data, mock_mask_inp
     assert "objects" in result[0]
     assert "inference_time" in result[0]
     mock_model_manager.add_model.assert_called_once()
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_sam3_3d_objects.assert_called_once()
 
 
 @patch(
@@ -169,3 +169,56 @@ def test_run_remotely_converts_numpy_masks_to_lists(
     call_args = mock_client.sam3_3d_infer.call_args
     mask_input = call_args.kwargs.get("mask_input")
     assert isinstance(mask_input, list)
+
+
+def test_sam3_3d_registers_the_model_once_before_inferring(
+    mock_workflow_image_data, mock_mask_input
+) -> None:
+    """Round-2 defect 3: inference needs an already-loaded model
+    (`managers/base.py:639` raises otherwise), so the block keeps its single
+    pre-loop registration and the adapter never registers for this family."""
+    from unittest.mock import MagicMock
+
+    from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+        SegmentAnything3_3D_ObjectsBlockV1,
+    )
+
+    calls = []
+    response = MagicMock()
+    response.mesh_glb = b"mesh"
+    response.gaussian_ply = b"gaussian"
+    response.time = 1.5
+    obj = MagicMock()
+    obj.mesh_glb = b"obj_mesh"
+    obj.gaussian_ply = b"obj_gaussian"
+    obj.metadata.rotation = [0, 0, 0, 1]
+    obj.metadata.translation = [0, 0, 0]
+    obj.metadata.scale = [1, 1, 1]
+    response.objects = [obj]
+
+    model_manager = MagicMock()
+    model_manager.add_model.side_effect = lambda **kwargs: calls.append(
+        ("add_model", kwargs)
+    )
+
+    def _run(**kwargs):
+        calls.append(("infer", kwargs))
+        return response
+
+    model_manager.run_sam3_3d_objects.side_effect = _run
+
+    block = SegmentAnything3_3D_ObjectsBlockV1(
+        model_manager=model_manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    results = block.run_locally(
+        images=[mock_workflow_image_data, mock_workflow_image_data],
+        mask_input=[mock_mask_input, mock_mask_input],
+    )
+
+    # One registration, before the loop; then one inference per image.
+    assert [name for name, _ in calls] == ["add_model", "infer", "infer"]
+    assert calls[0][1] == {"model_id": "sam3-3d-objects", "api_key": "k"}
+    assert len(results) == 2

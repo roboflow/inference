@@ -22,7 +22,7 @@ def mock_model_manager():
     mock_prediction = MagicMock()
     mock_prediction.masks = [[[0, 0], [100, 0], [100, 100], [0, 100]]]
     mock_prediction.confidence = 0.95
-    mock.infer_from_request_sync.return_value = MagicMock(predictions=[mock_prediction])
+    mock.run_sam2_segmentation.return_value = [MagicMock(predictions=[mock_prediction])]
     return mock
 
 
@@ -192,3 +192,62 @@ def test_convert_sam2_response_produces_the_same_dict_as_the_pydantic_form() -> 
         ],
     ).model_dump(by_alias=True, exclude_none=True)
     assert produced == expected
+
+
+def test_sam2_v1_local_sends_the_box_centre_prompt_it_computed() -> None:
+    """Drives `run_locally` with one detection so the box-centre arithmetic and
+    the prompt encoding both execute. A replacement range that swallowed the
+    `cx`/`cy` assignments raises NameError here."""
+    import supervision as sv
+
+    from inference.core.roboflow_api import ModelEndpointType
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        DETECTION_ID_FIELD,
+        DETECTIONS_CLASS_NAME_FIELD,
+    )
+    from inference.core.workflows.execution_engine.entities.base import Batch
+
+    detections = sv.Detections(
+        xyxy=np.array([[10.0, 10.0, 50.0, 50.0]], dtype=np.float32),
+        confidence=np.array([0.9], dtype=np.float32),
+        class_id=np.array([0]),
+        data={
+            DETECTIONS_CLASS_NAME_FIELD: np.array(["object"]),
+            DETECTION_ID_FIELD: np.array(["d1"]),
+        },
+    )
+    model_manager = MagicMock()
+    model_manager.run_sam2_segmentation.return_value = [MagicMock(predictions=[])]
+    block = SegmentAnything2BlockV1(
+        model_manager=model_manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    images = Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="p"),
+                numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+            )
+        ],
+        indices=[(0,)],
+    )
+    block.run_locally(
+        images=images,
+        boxes=Batch(content=[detections], indices=[(0,)]),
+        version="hiera_large",
+        threshold=0.0,
+        multimask_output=True,
+    )
+    prompts = model_manager.run_sam2_segmentation.call_args.kwargs["prompts"]
+    # centre of [10, 10, 50, 50] is (30, 30) with width/height 40
+    assert prompts == [{"box": {"x": 30.0, "y": 30.0, "width": 40.0, "height": 40.0}}]
+    # Registration stayed in the block, in its original position. Asserted by
+    # enum coercion: `load_core_model` passes the enum before Phase 9 and the
+    # string "core_model" after it (Task 9.2) - `ModelEndpointType(...)` maps
+    # both to CORE_MODEL, and `ModelEndpointType.CORE_MODEL == "core_model"`
+    # is False (plain Enum, roboflow_api.py:582).
+    args, kwargs = model_manager.add_model.call_args
+    assert args == ("sam2/hiera_large", "k")
+    assert set(kwargs) == {"endpoint_type"}
+    assert ModelEndpointType(kwargs["endpoint_type"]) is ModelEndpointType.CORE_MODEL

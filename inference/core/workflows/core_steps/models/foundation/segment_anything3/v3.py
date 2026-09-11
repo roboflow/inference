@@ -7,7 +7,6 @@ import supervision as sv
 from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, model_validator, validator
 
-from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.inference_response_dc import (
     InferenceResponseImageDC,
@@ -21,6 +20,9 @@ from inference.core.workflows.core_steps.common.segmentation_entities import (
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Sam3Prompt,
 )
 from inference.core.workflows.environment import (
     API_BASE_URL,
@@ -395,19 +397,17 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 )
 
             # Single batched request with all prompts
-            inference_request = Sam3SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
+            sam3_response = self._model_manager.run_sam3_segmentation(
                 model_id=model_id,
+                image=single_image.to_inference_format(numpy_preferred=True),
+                prompts=[
+                    prompt.model_dump(exclude_none=True) for prompt in unified_prompts
+                ],
                 api_key=self._api_key,
-                prompts=unified_prompts,
                 output_prob_thresh=confidence,
                 nms_iou_threshold=nms_iou_threshold if apply_nms else None,
                 format=model_format,
-            )
-
-            sam3_response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
+            )[0]
 
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]

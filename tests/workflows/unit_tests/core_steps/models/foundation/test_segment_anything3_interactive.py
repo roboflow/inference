@@ -29,7 +29,7 @@ def mock_model_manager():
     mock_prediction = MagicMock()
     mock_prediction.masks = [[[0, 0], [100, 0], [100, 100], [0, 100]]]
     mock_prediction.confidence = 0.95
-    mock.infer_from_request_sync.return_value = MagicMock(predictions=[mock_prediction])
+    mock.run_sam2_segmentation.return_value = [MagicMock(predictions=[mock_prediction])]
     return mock
 
 
@@ -144,13 +144,12 @@ def test_run_locally_with_point_prompts(
     assert len(result) == 1
     assert "predictions" in result[0]
     mock_model_manager.add_model.assert_called_once()
-    inference_request = mock_model_manager.infer_from_request_sync.call_args[0][1]
-    prompts = inference_request.prompts.prompts
+    prompts = mock_model_manager.run_sam2_segmentation.call_args.kwargs["prompts"]
     assert len(prompts) == 1
-    assert len(prompts[0].points) == 2
-    assert prompts[0].points[0].x == 320
-    assert prompts[0].points[0].positive is True
-    assert prompts[0].points[1].positive is False
+    assert len(prompts[0]["points"]) == 2
+    assert prompts[0]["points"][0]["x"] == 320
+    assert prompts[0]["points"][0]["positive"] is True
+    assert prompts[0]["points"][1]["positive"] is False
     predictions = result[0]["predictions"]
     assert predictions.class_id.tolist() == [-1]
     assert predictions["class_name"].tolist() == ["foreground"]
@@ -176,18 +175,20 @@ def test_numpy_boxes_and_points_keep_class_zero_distinct_from_point_prompt(
     assert len(result) == 1
     # box and point prompts cannot be mixed in a single SAM prompt batch,
     # so the block issues one request per prompt group
-    assert mock_model_manager.infer_from_request_sync.call_count == 2
-    box_request = mock_model_manager.infer_from_request_sync.call_args_list[0][0][1]
-    box_prompts = box_request.prompts.prompts
+    assert mock_model_manager.run_sam2_segmentation.call_count == 2
+    box_prompts = mock_model_manager.run_sam2_segmentation.call_args_list[0].kwargs[
+        "prompts"
+    ]
     assert len(box_prompts) == 1
-    assert box_prompts[0].box is not None
-    assert box_prompts[0].box.x == 30  # box centre of [10, 10, 50, 50]
-    assert box_prompts[0].points is None
-    points_request = mock_model_manager.infer_from_request_sync.call_args_list[1][0][1]
-    point_prompts = points_request.prompts.prompts
+    assert "box" in box_prompts[0]
+    assert box_prompts[0]["box"]["x"] == 30  # box centre of [10, 10, 50, 50]
+    assert "points" not in box_prompts[0]
+    point_prompts = mock_model_manager.run_sam2_segmentation.call_args_list[1].kwargs[
+        "prompts"
+    ]
     assert len(point_prompts) == 1
-    assert point_prompts[0].box is None
-    assert point_prompts[0].points[0].x == 320
+    assert "box" not in point_prompts[0]
+    assert point_prompts[0]["points"][0]["x"] == 320
     # masks from both requests are merged into a single output
     predictions = result[0]["predictions"]
     assert predictions.class_id.tolist() == [0, -1]
@@ -257,7 +258,7 @@ def test_run_locally_with_empty_detections_and_no_points(
 
     assert len(result) == 1
     assert len(result[0]["predictions"]) == 0
-    mock_model_manager.infer_from_request_sync.assert_not_called()
+    mock_model_manager.run_sam2_segmentation.assert_not_called()
 
 
 @patch(
