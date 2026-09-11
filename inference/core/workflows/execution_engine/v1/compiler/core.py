@@ -18,6 +18,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.compiler.cache import (
     BasicWorkflowsCache,
 )
+from inference.core.workflows.execution_engine.v1.compiler.disabled_steps import (
+    strip_disabled_steps,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     GraphCompilationResult,
@@ -168,6 +171,10 @@ def compile_workflow_graph(
         raw_workflow_definition,
         available_blocks=available_blocks,
         profiler=profiler,
+    )
+    inlined_raw_workflow_definition = strip_disabled_steps(
+        workflow_definition=inlined_raw_workflow_definition,
+        available_blocks=available_blocks,
     )
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=inlined_raw_workflow_definition,
