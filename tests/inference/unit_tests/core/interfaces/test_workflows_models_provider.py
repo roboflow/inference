@@ -932,6 +932,30 @@ def test_sam2_prompt_dicts_encode_the_same_prompt_set_as_the_inline_construction
     assert produced.model_dump() == expected.model_dump()
 
 
+def test_sam2_prompt_dict_carrying_both_box_and_points_revives_both() -> None:
+    """Fix round 1: the `if "box" ... elif "points"` shape silently dropped
+    `points` when a single prompt dict carried both keys. Both must survive."""
+    produced = ModelManagerModelsProvider(MagicMock())._sam2_prompt_set(
+        [
+            {
+                "box": {"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0},
+                "points": [{"x": 5.0, "y": 6.0, "positive": False}],
+            }
+        ]
+    )
+    expected = Sam2PromptSet(
+        prompts=[
+            Sam2Prompt(
+                box=Box(x=1.0, y=2.0, width=3.0, height=4.0),
+                points=[Point(x=5.0, y=6.0, positive=False)],
+            )
+        ]
+    )
+    assert produced.model_dump() == expected.model_dump()
+    assert produced.prompts[0].box is not None
+    assert produced.prompts[0].points is not None
+
+
 # --- round-5 defect 1: an explicit None must have the SAME outcome through the
 # adapter as through the block's inline construction - the same stored value,
 # or the same ValidationError (type, message, error table). One row per caller

@@ -483,16 +483,16 @@ class ModelManagerModelsProvider:
     def _sam2_prompt_set(prompts: List[dict]) -> Sam2PromptSet:
         revived = []
         for prompt in prompts:
-            if "box" in prompt:
-                revived.append(Sam2Prompt(box=Box(**prompt["box"])))
-            elif "points" in prompt:
-                revived.append(
-                    Sam2Prompt(points=[Point(**point) for point in prompt["points"]])
-                )
-            else:
+            if "box" not in prompt and "points" not in prompt:
                 raise ValueError(
                     f"SAM2 prompt must carry 'box' or 'points'; got {sorted(prompt)}"
                 )
+            kwargs: Dict[str, Any] = {}
+            if "box" in prompt:
+                kwargs["box"] = Box(**prompt["box"])
+            if "points" in prompt:
+                kwargs["points"] = [Point(**point) for point in prompt["points"]]
+            revived.append(Sam2Prompt(**kwargs))
         return Sam2PromptSet(prompts=revived)
 
     def run_sam2_segmentation(
