@@ -5,8 +5,8 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
-from supervision.config import ORIENTED_BOX_COORDINATES
 from pycocotools import mask as mask_utils
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_rle_sv_detections,
@@ -48,7 +48,11 @@ from inference.core.workflows.execution_engine.entities.base import (
 
 def test_empty_detections_with_image_metadata_keeps_empty_field_contract() -> None:
     # given / when
-    result = empty_detections_with_image_metadata(image_height=480, image_width=640)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+    )
+    result = empty_detections_with_image_metadata(image=image)
 
     # then - image dimensions travel in metadata (zero rows means `data` is
     # invisible to the serialiser), while the fields `sv.Detections.empty()`

@@ -164,10 +164,7 @@ def parse_muse_object_detection_response(
         confidence.append(1.0)
 
     if not xyxy:
-        return empty_detections_with_image_metadata(
-            image_height=image_height,
-            image_width=image_width,
-        )
+        return empty_detections_with_image_metadata(image=image)
 
     xyxy = np.array(xyxy).round(0)
     detection_ids = np.array([str(uuid4()) for _ in range(len(xyxy))])
