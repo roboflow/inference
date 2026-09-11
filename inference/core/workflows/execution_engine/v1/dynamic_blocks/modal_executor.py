@@ -32,7 +32,15 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import numpy as np
 import requests
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_image_kind,
+    deserialize_rle_detections_kind,
+    deserialize_video_metadata_kind,
+)
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_video_metadata_kind,
+)
+from inference.core.workflows.environment import (
     MODAL_ANONYMOUS_WORKSPACE_NAME,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
@@ -44,14 +52,6 @@ from inference.core.env import (
     WEBEXEC_WS_FAIL_ON_SESSION_LOSS,
     WEBEXEC_WS_IDLE_RELEASE_SECONDS,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
-)
-from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
-    deserialize_rle_detections_kind,
-    deserialize_video_metadata_kind,
-)
-from inference.core.workflows.core_steps.common.serializers import (
-    serialize_video_metadata_kind,
 )
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from inference.core.workflows.execution_engine.entities.base import ParentOrigin
@@ -609,7 +609,9 @@ class ModalExecutor:
                 or workspace == "unauthorized"
                 or workspace == MODAL_ANONYMOUS_WORKSPACE_NAME
             ):
-                from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
+                from inference.core.workflows.environment import (
+                    MODAL_ALLOW_ANONYMOUS_EXECUTION,
+                )
 
                 if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
                     raise DynamicBlockError(
@@ -856,10 +858,10 @@ def validate_syntax():
 
 def _serialize_image_for_msgpack(image: Any) -> dict:
     """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
-    from inference.core.env import WEBEXEC_JPEG_QUALITY
     from inference.core.workflows.core_steps.common.serializers import (
         serialize_video_metadata_kind,
     )
+    from inference.core.workflows.environment import WEBEXEC_JPEG_QUALITY
     from inference.core.workflows.execution_engine.entities.base import ParentOrigin
     from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
@@ -1626,7 +1628,9 @@ class WebSocketModalExecutor:
             "unauthorized",
             MODAL_ANONYMOUS_WORKSPACE_NAME,
         ):
-            from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
+            from inference.core.workflows.environment import (
+                MODAL_ALLOW_ANONYMOUS_EXECUTION,
+            )
 
             if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
                 raise DynamicBlockError(
@@ -2324,7 +2328,7 @@ class PooledWebSocketModalExecutor:
 
 def get_modal_executor(workspace_id: Optional[str] = None) -> Any:
     """Returns the right executor based on ``WEBEXEC_TRANSPORT``."""
-    from inference.core.env import WEBEXEC_TRANSPORT
+    from inference.core.workflows.environment import WEBEXEC_TRANSPORT
 
     if WEBEXEC_TRANSPORT == "websocket":
         return PooledWebSocketModalExecutor(workspace_id)
