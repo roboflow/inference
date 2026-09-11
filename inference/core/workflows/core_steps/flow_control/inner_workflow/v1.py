@@ -1,6 +1,7 @@
 import base64
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 from enum import Enum
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
@@ -316,6 +317,8 @@ def _make_json_serializable(value: Any) -> Any:
         return value.item()
     if isinstance(value, bytes):
         return base64.b64encode(value).decode("ascii")
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
     if isinstance(value, Enum):
         return _make_json_serializable(value.value)
     if isinstance(value, dict):

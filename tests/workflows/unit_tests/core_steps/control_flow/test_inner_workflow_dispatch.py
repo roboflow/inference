@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -48,14 +49,16 @@ def test_embedded_manifest_retains_wildcard_compile_time_output() -> None:
 def test_prepare_named_workflow_dispatch_serializes_inputs_and_uses_override_url() -> (
     None
 ):
-    image = WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="image"),
-        numpy_image=np.zeros((2, 3, 3), dtype=np.uint8),
-    )
     video_metadata = VideoMetadata(
         video_identifier="camera-1",
         frame_number=7,
         frame_timestamp=datetime(2026, 9, 2, tzinfo=timezone.utc),
+    )
+
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((2, 3, 3), dtype=np.uint8),
+        video_metadata=video_metadata,
     )
 
     url, payload = prepare_workflow_dispatch_request(
@@ -80,6 +83,13 @@ def test_prepare_named_workflow_dispatch_serializes_inputs_and_uses_override_url
     assert payload["inputs"]["video_metadata"]["video_identifier"] == "camera-1"
     assert payload["inputs"]["video_metadata"]["frame_timestamp"] == (
         "2026-09-02T00:00:00Z"
+    )
+    encoded_payload = json.loads(json.dumps(payload))
+    assert (
+        datetime.fromisoformat(
+            encoded_payload["inputs"]["image"]["video_metadata"]["frame_timestamp"]
+        )
+        == video_metadata.frame_timestamp
     )
     assert payload["use_cache"] is True
     assert payload["workflow_version_id"] == "3"
