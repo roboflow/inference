@@ -24,7 +24,6 @@ import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
-from inference.core.entities.responses.sam3_3d import Sam3_3D_Objects_Response
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
@@ -263,8 +262,8 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 model_id=model_id,
             )
-            response: Sam3_3D_Objects_Response = (
-                self._model_manager.infer_from_request_sync(model_id, inference_request)
+            response = self._model_manager.infer_from_request_sync(
+                model_id, inference_request
             )
             results.append(_format_response(response))
         return results
@@ -288,7 +287,7 @@ def extract_masks_from_input(mask_input: Any) -> Any:
     return mask_input
 
 
-def _format_response(response: Sam3_3D_Objects_Response) -> dict:
+def _format_response(response: Any) -> dict:
     """Format response with base64 encoded outputs."""
 
     def encode(data):

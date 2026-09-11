@@ -196,7 +196,8 @@ class ClipModelBlockV1(WorkflowBlock):
             )
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.clip_version_id,
+                api_key=self._api_key,
                 core_model="clip",
             )
             predictions = self._model_manager.infer_from_request_sync(
@@ -214,7 +215,8 @@ class ClipModelBlockV1(WorkflowBlock):
             )
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.clip_version_id,
+                api_key=self._api_key,
                 core_model="clip",
             )
             predictions = self._model_manager.infer_from_request_sync(

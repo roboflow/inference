@@ -246,7 +246,8 @@ class EasyOCRBlockV1(WorkflowBlock):
             )
             model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.easy_ocr_version_id,
+                api_key=self._api_key,
                 core_model="easy_ocr",
             )
             result = self._model_manager.infer_from_request_sync(

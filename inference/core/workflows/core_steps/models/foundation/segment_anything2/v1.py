@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, TypeVar, Union
+from typing import Any, List, Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -16,7 +16,6 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -460,7 +459,8 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             )
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.sam2_version_id,
+                api_key=self._api_key,
                 core_model="sam2",
             )
 
@@ -504,7 +504,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
 
 
 def convert_sam2_segmentation_response_to_inference_instances_seg_response(
-    sam2_segmentation_predictions: List[Sam2SegmentationPrediction],
+    # Items are the server's Sam2SegmentationPrediction; only .masks and
+    # .confidence are read.
+    sam2_segmentation_predictions: List[Any],
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],

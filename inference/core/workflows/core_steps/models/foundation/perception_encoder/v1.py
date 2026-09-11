@@ -204,7 +204,8 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             )
             pe_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.perception_encoder_version_id,
+                api_key=self._api_key,
                 core_model="perception_encoder",
             )
             predictions = self._model_manager.infer_from_request_sync(
@@ -220,7 +221,8 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             )
             pe_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.perception_encoder_version_id,
+                api_key=self._api_key,
                 core_model="perception_encoder",
             )
             predictions = self._model_manager.infer_from_request_sync(

@@ -225,7 +225,8 @@ class YoloWorldModelBlockV1(WorkflowBlock):
             )
             yolo_world_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=inference_request.yolo_world_version_id,
+                api_key=self._api_key,
                 core_model="yolo_world",
             )
             prediction = self._model_manager.infer_from_request_sync(
