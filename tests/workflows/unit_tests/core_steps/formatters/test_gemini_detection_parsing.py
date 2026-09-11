@@ -1,8 +1,40 @@
+import numpy as np
 import pytest
 
+from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     convert_gemini_detection_to_pixel_xyxy,
+    parse_gemini_object_detection_response,
 )
+from inference.core.workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+
+
+def _build_image(height: int, width: int) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
+    )
+
+
+def test_parse_empty_response_carries_image_dimensions() -> None:
+    result = parse_gemini_object_detection_response(
+        image=_build_image(height=480, width=640),
+        parsed_data=[],
+        classes=["cat", "dog"],
+        inference_id="inference-id",
+    )
+
+    assert len(result) == 0
+    # Empty detections must still carry image dimensions in metadata so the
+    # numpy serialiser emits real width/height (matching the tensor-native path).
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    serialized = serialise_sv_detections(result)
+    assert serialized["image"] == {"width": 640, "height": 480}
+    assert serialized["predictions"] == []
 
 
 @pytest.mark.parametrize(

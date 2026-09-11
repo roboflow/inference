@@ -8,6 +8,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.workflows.core_steps.common.utils import (
     DETECTION_MAX_EDGE_PIXELS,
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
     scale_dimensions_to_max_edge,
 )
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
@@ -89,7 +90,11 @@ def parse_openai_object_detection_response(
     if not isinstance(parsed_data, list):
         raise ValueError("Unexpected OpenAI object detection response format")
     if len(parsed_data) == 0:
-        return sv.Detections.empty()
+        image_height, image_width = image.numpy_image.shape[:2]
+        return empty_detections_with_image_metadata(
+            image_height=image_height,
+            image_width=image_width,
+        )
 
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
