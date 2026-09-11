@@ -299,3 +299,102 @@ def test_cold_model_first_frame_is_queued_before_inference_and_the_pipeline_pair
         if executor is not None:
             executor.shutdown(wait=True)
         block.close_stream_pipeline()
+
+
+from inference.core.entities.requests.inference import (
+    InstanceSegmentationInferenceRequest,
+)
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
+
+# A payload `InferenceRequestImage` accepts - distinct from `IMAGE_10x20`, which
+# is shaped like a *response* image and would fail request validation.
+REQUEST_IMAGE = {"type": "base64", "value": "aGVsbG8="}
+
+
+def test_adapter_run_instance_segmentation_forwards_explicit_none_and_defaults_omitted_fields() -> (
+    None
+):
+    """Round-1 review finding: an explicitly-passed `None` (e.g. `class_filter`)
+    must reach the built request as `None`, while a field that is simply never
+    passed (the UNSET-defaulted ones) must keep the pydantic default rather than
+    becoming `None`."""
+    manager = MagicMock()
+    manager.infer_from_request_sync.return_value = []
+    provider = ModelManagerModelsProvider(manager)
+
+    provider.run_instance_segmentation(
+        model_id="m/1",
+        images=[REQUEST_IMAGE],
+        api_key="k",
+        confidence=0.4,
+        class_filter=None,
+    )
+
+    request = manager.infer_from_request_sync.call_args.kwargs["request"]
+    assert isinstance(request, InstanceSegmentationInferenceRequest)
+    assert request.class_filter is None
+    default = InstanceSegmentationInferenceRequest(
+        api_key="k", model_id="m/1", image=[REQUEST_IMAGE]
+    )
+    assert request.response_mask_format == default.response_mask_format
+    assert (
+        request.enforce_dense_masks_in_inference_models
+        == default.enforce_dense_masks_in_inference_models
+    )
+    assert request.stream_pipeline_context_id == default.stream_pipeline_context_id
+
+
+def test_adapter_run_instance_segmentation_wraps_a_single_raw_response_like_v3_used_to() -> (
+    None
+):
+    """`return_raw_responses=True` over a SINGLE (non-list) manager response must
+    get the same `[predictions]` wrapping the blocks used to apply inline, with
+    the same object identity preserved inside."""
+    manager = MagicMock()
+    raw = object()
+    manager.infer_from_request_sync.return_value = raw  # not a list
+    provider = ModelManagerModelsProvider(manager)
+
+    result = provider.run_instance_segmentation(
+        model_id="m/1",
+        images=[REQUEST_IMAGE],
+        api_key="k",
+        confidence=0.4,
+        return_raw_responses=True,
+    )
+
+    assert isinstance(result, InferenceResultsDC)
+    assert result.predictions == []
+    assert result.raw_responses == [raw]
+    assert result.raw_responses[0] is raw
+
+
+def test_adapter_run_instance_segmentation_normalises_a_list_response_like_the_inlined_dump_used_to() -> (
+    None
+):
+    """The default (non-raw) output must equal what v1/v2/v3/v4 produced inline
+    before Task 11.9: `[e.model_dump(by_alias=True, exclude_none=True) for e in
+    predictions]`."""
+    from inference.core.entities.responses.inference import (
+        InferenceResponseImage,
+        InstanceSegmentationInferenceResponse,
+    )
+
+    response = InstanceSegmentationInferenceResponse(
+        image=InferenceResponseImage(width=10, height=20),
+        predictions=[],
+    )
+    manager = MagicMock()
+    manager.infer_from_request_sync.return_value = [response]
+    provider = ModelManagerModelsProvider(manager)
+
+    result = provider.run_instance_segmentation(
+        model_id="m/1",
+        images=[REQUEST_IMAGE],
+        api_key="k",
+        confidence=0.4,
+    )
+
+    assert result == [response.model_dump(by_alias=True, exclude_none=True)]

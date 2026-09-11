@@ -14,6 +14,9 @@ from inference.core.interfaces.stream.model_handlers.workflows import (
     _index_list_parameters_by_frame_id,
     wrap_workflow_runner_for_stream_pipeline,
 )
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
@@ -24,7 +27,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowBatchInput,
     WorkflowParameter,
 )
-from inference.core.workflows.prototypes.models_provider import InferenceResultsDC
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -305,18 +307,9 @@ class _FakeModelManager:
     def add_model(self, model_id: str, api_key: str) -> None:
         self.add_model_calls.append((model_id, api_key))
 
-    def run_instance_segmentation(
-        self,
-        model_id: str,
-        images,
-        return_raw_responses: bool = False,
-        **kwargs,
-    ):
+    def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
-        responses = self._inference_results.pop(0)
-        if return_raw_responses:
-            return InferenceResultsDC(predictions=[], raw_responses=responses)
-        return responses
+        return self._inference_results.pop(0)
 
     def __contains__(self, model_id: str) -> bool:
         return model_id == "model"
@@ -347,20 +340,14 @@ class _ContextAwareModelManager(_FakeModelManager):
         self.mode = mode
         self.stream_pipeline_context_ids = []
 
-    def run_instance_segmentation(
-        self,
-        model_id: str,
-        images,
-        stream_pipeline_context_id=None,
-        return_raw_responses: bool = False,
-        **kwargs,
-    ):
+    def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
-        self.stream_pipeline_context_ids.append(stream_pipeline_context_id)
+        assert request.source_info is None
+        self.stream_pipeline_context_ids.append(request.stream_pipeline_context_id)
         if self.infer_calls == 1:
-            responses = [_FakeResponse("priming", width=8, height=8)]
-        elif self.mode == "previous":
-            responses = [
+            return [_FakeResponse("priming", width=8, height=8)]
+        if self.mode == "previous":
+            return [
                 _make_async_placeholder(
                     "first-final",
                     context_id=self.stream_pipeline_context_ids[0],
@@ -368,27 +355,23 @@ class _ContextAwareModelManager(_FakeModelManager):
                     response_height=8,
                 )
             ]
-        elif self.mode == "current-with-old-size":
-            responses = [
+        if self.mode == "current-with-old-size":
+            return [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=stream_pipeline_context_id,
+                    context_id=request.stream_pipeline_context_id,
                     response_width=8,
                     response_height=8,
                 )
             ]
-        else:
-            responses = [
-                _make_async_placeholder(
-                    "first-final",
-                    context_id="missing-context",
-                    response_width=8,
-                    response_height=8,
-                )
-            ]
-        if return_raw_responses:
-            return InferenceResultsDC(predictions=[], raw_responses=responses)
-        return responses
+        return [
+            _make_async_placeholder(
+                "first-final",
+                context_id="missing-context",
+                response_width=8,
+                response_height=8,
+            )
+        ]
 
 
 def _make_async_placeholder(
@@ -752,7 +735,9 @@ def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_o
     monkeypatch,
 ) -> None:
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=_FakeModelManager(inference_results=[]),
+        model_manager=ModelManagerModelsProvider(
+            _FakeModelManager(inference_results=[])
+        ),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -780,7 +765,7 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
         ]
     )
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -851,7 +836,7 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
 def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> None:
     manager = _ContextAwareModelManager(mode="previous")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -905,7 +890,7 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
 def test_instance_segmentation_stream_pipeline_rejects_unknown_context_id() -> None:
     manager = _ContextAwareModelManager(mode="missing")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -957,7 +942,7 @@ def test_instance_segmentation_stream_pipeline_rejects_image_metadata_mismatch()
 ):
     manager = _ContextAwareModelManager(mode="current-with-old-size")
     block = RoboflowInstanceSegmentationModelBlockV3(
-        model_manager=manager,
+        model_manager=ModelManagerModelsProvider(manager),
         api_key="api-key",
         step_execution_mode=StepExecutionMode.LOCAL,
     )
