@@ -1605,6 +1605,7 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         "modelType": "yolov8",
         "taskType": "instance-segmentation",
         "modelVariant": "yolov8-n",
+        "modelLatencyMs": 2.3,
     }
 
     try:
@@ -1615,12 +1616,13 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
 
         assert result == ("instance-segmentation", "yolov8")
         assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
-            "yolov8", "yolov8-n", task_type="instance-segmentation"
+            "yolov8", "yolov8-n", task_type="instance-segmentation", latency_ms=2.3
         )
         with open(metadata_path) as f:
             persisted_metadata = json.load(f)
         assert persisted_metadata["model_type"] == "yolov8"
         assert persisted_metadata["model_variant"] == "yolov8-n"
+        assert persisted_metadata["model_latency_ms"] == 2.3
 
         _in_process_metadata_cache.cache.clear()
         clear_recorded_model_descriptors()
@@ -1630,7 +1632,7 @@ def test_get_model_type_records_registry_variant_for_usage_tracking(
         )
         assert cached_result == ("instance-segmentation", "yolov8")
         assert get_recorded_model_descriptor("yolov8n-seg-640") == ModelDescriptor(
-            "yolov8", "yolov8-n", task_type="instance-segmentation"
+            "yolov8", "yolov8-n", task_type="instance-segmentation", latency_ms=2.3
         )
         get_model_metadata_from_inference_models_registry_mock.assert_called_once()
     finally:
@@ -2053,7 +2055,7 @@ def test_get_model_metadata_from_inference_models_cache_when_config_found(
         )
 
     # then
-    assert result == ("object-detection", "yolov8", None)
+    assert result == ("object-detection", "yolov8", None, None)
     find_cached_package.assert_called_once_with(
         model_id="coco/22",
         api_key="credential-a",
@@ -2095,7 +2097,7 @@ def test_get_model_metadata_from_inference_models_cache_reads_offline_registry_v
             api_key="credential-a",
         )
 
-    assert result == ("object-detection", "rfdetr", "rfdetr-nano")
+    assert result == ("object-detection", "rfdetr", "rfdetr-nano", None)
     load_record_raw_mock.assert_called_once_with(model_id="coco/38")
 
 
@@ -2133,7 +2135,7 @@ def test_get_model_metadata_from_inference_models_cache_reads_variant_by_canonic
             model_id="rfdetr-nano"
         )
 
-    assert result == ("object-detection", "rfdetr", "rfdetr-nano")
+    assert result == ("object-detection", "rfdetr", "rfdetr-nano", None)
     assert [
         call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
     ] == [
@@ -2174,7 +2176,7 @@ def test_get_model_metadata_from_inference_models_cache_survives_corrupt_id_fiel
         )
 
     # then - the unusable candidates are skipped, the requested id is still tried
-    assert result == ("object-detection", "rfdetr", None)
+    assert result == ("object-detection", "rfdetr", None, None)
     assert [
         call.kwargs["model_id"] for call in load_record_raw_mock.call_args_list
     ] == ["coco/38"]
@@ -2250,3 +2252,16 @@ def test_get_model_metadata_from_inference_models_cache_when_backend_disabled() 
 
     # then
     assert result is None
+
+
+@pytest.mark.parametrize(
+    "cached,expected",
+    [
+        (("object-detection", "rfdetr"), None),
+        (("object-detection", "rfdetr", "rfdetr-nas"), None),
+        (("object-detection", "rfdetr", "rfdetr-nas", 2.3), 2.3),
+        (("object-detection", "rfdetr", "rfdetr-nas", float("nan")), None),
+    ],
+)
+def test_cached_latency_backwards_compatibility(cached, expected):
+    assert roboflow._normalize_cached_model_metadata(cached)[3] == expected
