@@ -1,6 +1,10 @@
 from typing import List, Type
 
-from inference.core.env import (
+from inference.core.workflows.configuration import get_configuration
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
+from inference.core.workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
@@ -10,9 +14,6 @@ from inference.core.env import (
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
     WORKFLOW_DISABLED_BLOCK_TYPES,
     WORKFLOWS_STEP_EXECUTION_MODE,
-)
-from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
-    DataAggregatorBlockV1,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -1539,6 +1540,13 @@ REGISTERED_INITIALIZERS = {
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    # The whole configuration, for core blocks that want more than the values
+    # this dict spells out. It resolves for blocks whose `block_source` is
+    # `workflows_core` - every core block, plus a plugin that declares
+    # `BLOCKS_SOURCE = "workflows_core"`. An ordinary plugin must import
+    # `inference.core.workflows.configuration.get_configuration` instead;
+    # see `steps_initialiser.retrieve_init_parameter_values`.
+    "configuration": get_configuration(),
 }
 
 KINDS_SERIALIZERS = {
