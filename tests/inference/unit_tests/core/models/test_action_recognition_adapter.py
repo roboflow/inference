@@ -283,3 +283,21 @@ def test_a_trained_model_without_a_declared_side_is_read_whole() -> None:
     model = _FakeModel(responses=[], sampling=VideoSampling(max_frames=64))
 
     assert _side_handed_to_the_reader(model) is None
+
+
+def test_load_action_recognition_model_passes_the_zero_shot_id_through() -> None:
+    from inference.core.models import inference_models_adapters as adapters
+
+    with patch.object(adapters, "AutoModel") as auto_model, patch.object(
+        adapters,
+        "_as_action_recognition_model",
+        side_effect=lambda model, model_id: model,
+    ):
+        adapters.load_action_recognition_model(
+            model_id="nvidia/cosmos-3-edge-action-recognition", api_key="key"
+        )
+
+    assert (
+        auto_model.from_pretrained.call_args.kwargs["model_id_or_path"]
+        == "nvidia/cosmos-3-edge-action-recognition"
+    )
