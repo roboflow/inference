@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 import torch
 
-import inference.core.env as core_env
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
@@ -1047,18 +1046,35 @@ def test_tensor_sibling_normalizes_mixed_window_to_rgb_numpy():
 
 
 @pytest.mark.parametrize("tensor_enabled", [False, True])
-def test_loader_registers_block_kind_and_codecs_for_both_modes(
-    monkeypatch, tensor_enabled
-):
+def test_loader_registers_block_kind_and_codecs_for_both_modes(tensor_enabled):
+    import dataclasses
+    import importlib
+
+    from inference.core.workflows import configuration as workflows_configuration
+    from inference.core.workflows import environment as workflows_environment
     from inference.core.workflows.core_steps import loader
 
-    original = core_env.ENABLE_TENSOR_DATA_REPRESENTATION
+    previous = workflows_configuration.get_configuration()
     try:
-        monkeypatch.setattr(
-            core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor_enabled
+        workflows_configuration.reset_configuration()
+        workflows_configuration.configure_process(
+            dataclasses.replace(
+                previous,
+                tensor=dataclasses.replace(
+                    previous.tensor,
+                    representation_enabled=tensor_enabled,
+                    image_tensor_device=(
+                        workflows_configuration.resolve_image_tensor_device(
+                            tensor_enabled
+                        )
+                    ),
+                ),
+            )
         )
+        importlib.reload(workflows_environment)
         reloaded_loader = importlib.reload(loader)
 
+        assert reloaded_loader.ENABLE_TENSOR_DATA_REPRESENTATION is tensor_enabled
         assert reloaded_loader.ActionRecognitionModelBlockV1 in (
             reloaded_loader.load_blocks()
         )
@@ -1079,7 +1095,9 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
             is deserialize_action_recognition_prediction_kind
         )
     finally:
-        monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", original)
+        with workflows_configuration._INSTALL_LOCK:
+            workflows_configuration._CONFIGURATION = previous
+        importlib.reload(workflows_environment)
         importlib.reload(loader)
 
 
