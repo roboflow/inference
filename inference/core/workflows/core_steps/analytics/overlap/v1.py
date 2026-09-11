@@ -128,7 +128,7 @@ class OverlapBlockV1(WorkflowBlock):
         other: list[int],
         overlap_type: Literal["Center Overlap", "Any Overlap"],
     ):
-
+        """Check bbox-to-bbox overlap (fallback when masks unavailable)."""
         # coords are [x1, y1, x2, y2]
         if overlap_type == "Center Overlap":
             size = [other[2] - other[0], other[3] - other[1]]
@@ -144,33 +144,109 @@ class OverlapBlockV1(WorkflowBlock):
                 or other[1] > overlap[3]
             )
 
+    @classmethod
+    def mask_overlap(
+        cls,
+        overlap_mask: np.ndarray,
+        other_mask: np.ndarray,
+        overlap_type: Literal["Center Overlap", "Any Overlap"],
+    ) -> bool:
+        """Check mask-to-mask overlap for instance segmentation.
+
+        Args:
+            overlap_mask: Binary mask for overlap class detection (H, W)
+            other_mask: Binary mask for other detection (H, W)
+            overlap_type: Type of overlap to check
+
+        Returns:
+            True if masks overlap according to overlap_type
+
+        Note:
+            For "Center Overlap": Checks if the center of other's bounding box
+            falls within the overlap mask (mask-aware center check).
+            For "Any Overlap": Checks if masks have any pixel intersection.
+        """
+        if overlap_type == "Center Overlap":
+            # Find center of other_mask's bounding box
+            other_coords = np.argwhere(other_mask > 0)
+            if len(other_coords) == 0:
+                return False  # Empty mask
+
+            # Center of bounding box in (row, col) format
+            min_row, min_col = other_coords.min(axis=0)
+            max_row, max_col = other_coords.max(axis=0)
+            center_row = (min_row + max_row) // 2
+            center_col = (min_col + max_col) // 2
+
+            # Check if center point is inside overlap mask
+            if (
+                0 <= center_row < overlap_mask.shape[0]
+                and 0 <= center_col < overlap_mask.shape[1]
+            ):
+                return overlap_mask[center_row, center_col] > 0
+            return False
+
+        else:  # "Any Overlap"
+            # Check if there's any pixel intersection
+            intersection = np.logical_and(overlap_mask > 0, other_mask > 0)
+            return np.any(intersection)
+
     def run(
         self,
         predictions: sv.Detections,
         overlap_type: Literal["Center Overlap", "Any Overlap"],
         overlap_class_name: str,
     ) -> BlockResult:
+        """Filter predictions to keep only objects overlapping with overlap_class_name.
 
+        Uses mask-aware overlap detection when masks are available (instance segmentation),
+        falls back to bounding box overlap for object detection.
+        """
+        # Check if masks are available
+        has_masks = predictions.mask is not None and len(predictions.mask) > 0
+
+        # Separate overlap class detections from others
         overlaps = []
+        overlap_indices = []
         others = {}
         for i in range(len(predictions.xyxy)):
             data = get_data_item(predictions.data, i)
             if data["class_name"] == overlap_class_name:
-                overlaps.append(predictions.xyxy[i])
+                if has_masks:
+                    overlaps.append((i, predictions.mask[i]))
+                else:
+                    overlaps.append((i, predictions.xyxy[i]))
+                overlap_indices.append(i)
             else:
-                others[i] = predictions.xyxy[i]
+                if has_masks:
+                    others[i] = predictions.mask[i]
+                else:
+                    others[i] = predictions.xyxy[i]
 
-        # set of indices representing the overlapped objects
+        # Find overlapping objects
         idx = set()
-        for overlap in overlaps:
+        for overlap_idx, overlap_data in overlaps:
             if not others:
                 break
-            overlapped = {
-                k
-                for k in others
-                if OverlapBlockV1.coords_overlap(overlap, others[k], overlap_type)
-            }
-            # once it's overlapped we don't need to check again
+
+            if has_masks:
+                # Use mask-aware overlap detection
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.mask_overlap(overlap_data, others[k], overlap_type)
+                }
+            else:
+                # Fall back to bbox overlap
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.coords_overlap(
+                        predictions.xyxy[overlap_idx], others[k], overlap_type
+                    )
+                }
+
+            # Once overlapped, don't need to check again
             for k in overlapped:
                 del others[k]
 
