@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -216,23 +215,23 @@ class YoloWorldModelBlockV1(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = YOLOWorldInferenceRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                yolo_world_version_id=version,
-                confidence=confidence,
-                text=class_names,
-                api_key=self._api_key,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             yolo_world_model_id = load_core_model(
                 model_manager=self._model_manager,
-                version_id=inference_request.yolo_world_version_id,
-                api_key=self._api_key,
                 core_model="yolo_world",
+                version_id=version,
+                api_key=self._api_key,
             )
-            prediction = self._model_manager.infer_from_request_sync(
-                yolo_world_model_id, inference_request
+            predictions.append(
+                self._model_manager.run_yolo_world(
+                    model_id=yolo_world_model_id,
+                    version_id=version,
+                    image=image,
+                    text=class_names,
+                    api_key=self._api_key,
+                    confidence=confidence,
+                )
             )
-            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
         return self._post_process_result(
             images=images,
             predictions=predictions,

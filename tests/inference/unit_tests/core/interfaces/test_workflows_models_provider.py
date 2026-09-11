@@ -609,3 +609,138 @@ def test_run_perception_encoder_embeddings_build_their_requests() -> None:
         perception_encoder_version_id="v", image=IMAGES, api_key="k"
     )
     assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+
+
+class _DictResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def model_dump(self, **_kwargs):
+        return self._payload
+
+
+def test_run_doctr_ocr_builds_the_request_the_block_used_to_build() -> None:
+    manager = manager_returning(_DictResponse({"result": "HELLO"}))
+    assert ModelManagerModelsProvider(manager).run_doctr_ocr(
+        model_id="doctr/x", image=IMAGE, api_key="k", generate_bounding_boxes=True
+    ) == {"result": "HELLO"}
+    manager.add_model.assert_not_called()
+    request = captured_request(manager)
+    expected = DoctrOCRInferenceRequest(
+        image=IMAGE, api_key="k", generate_bounding_boxes=True
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_easy_ocr_builds_the_request_the_block_used_to_build() -> None:
+    manager = manager_returning(_DictResponse({"result": "HI"}))
+    ModelManagerModelsProvider(manager).run_easy_ocr(
+        model_id="easy_ocr/v",
+        version_id="v",
+        image=IMAGE,
+        api_key="k",
+        language_codes=["en"],
+        quantize=False,
+    )
+    request = captured_request(manager)
+    expected = EasyOCRInferenceRequest(
+        easy_ocr_version_id="v",
+        image=IMAGE,
+        api_key="k",
+        language_codes=["en"],
+        quantize=False,
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+
+
+def test_run_pp_ocr_builds_the_request_and_registers_the_derived_model_id() -> None:
+    from inference.core.roboflow_api import ModelEndpointType
+
+    manager = manager_returning(_DictResponse({"result": "HI"}))
+    ModelManagerModelsProvider(manager).run_pp_ocr(
+        image=IMAGE, api_key="k", text_detection="small", text_recognition="small"
+    )
+    request = captured_request(manager)
+    expected = PPOCRInferenceRequest(
+        text_detection="small", text_recognition="small", image=IMAGE, api_key="k"
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})
+    manager.add_model.assert_called_once_with(
+        "pp_ocr/small-small", "k", endpoint_type=ModelEndpointType.CORE_MODEL
+    )
+
+
+def test_run_pp_ocr_covers_detection_only_recognition_only_and_normalisation() -> None:
+    """The validator (requests/pp_ocr.py:33-72) lower-cases the stages, maps a
+    disabled stage to "none" and derives the id from the normalised pair."""
+    for (detection, recognition), expected_id in [
+        (("small", None), "pp_ocr/small-none"),
+        ((None, "small"), "pp_ocr/none-small"),
+        (("SMALL", "Medium"), "pp_ocr/small-medium"),
+    ]:
+        manager = manager_returning(_DictResponse({"result": "HI"}))
+        ModelManagerModelsProvider(manager).run_pp_ocr(
+            image=IMAGE,
+            api_key="k",
+            text_detection=detection,
+            text_recognition=recognition,
+        )
+        assert manager.add_model.call_args.args[0] == expected_id, (
+            detection,
+            recognition,
+        )
+
+
+def test_run_pp_ocr_rejects_an_invalid_stage_before_registering() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    manager = manager_returning(_DictResponse({}))
+    with pytest.raises(ValidationError):
+        ModelManagerModelsProvider(manager).run_pp_ocr(
+            image=IMAGE,
+            api_key="k",
+            text_detection="enormous",
+            text_recognition="small",
+        )
+    manager.add_model.assert_not_called()
+    manager.infer_from_request_sync.assert_not_called()
+
+
+def test_run_pp_ocr_rejects_both_stages_disabled() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    manager = manager_returning(_DictResponse({}))
+    with pytest.raises(ValidationError):
+        ModelManagerModelsProvider(manager).run_pp_ocr(
+            image=IMAGE, api_key="k", text_detection=None, text_recognition=None
+        )
+    manager.add_model.assert_not_called()
+
+
+def test_run_yolo_world_builds_the_request_the_block_used_to_build() -> None:
+    manager = manager_returning(_DictResponse({"predictions": []}))
+    ModelManagerModelsProvider(manager).run_yolo_world(
+        model_id="yolo_world/v",
+        version_id="v",
+        image=IMAGE,
+        text=["cat"],
+        api_key="k",
+        confidence=0.3,
+    )
+    request = captured_request(manager)
+    expected = YOLOWorldInferenceRequest(
+        image=IMAGE,
+        yolo_world_version_id="v",
+        confidence=0.3,
+        text=["cat"],
+        api_key="k",
+    )
+    assert request.model_dump(exclude={"id"}) == expected.model_dump(exclude={"id"})

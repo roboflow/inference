@@ -27,12 +27,10 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
-from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -236,25 +234,15 @@ class PPOCRBlockV1(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = PPOCRInferenceRequest(
-                text_detection=text_detection,
-                text_recognition=text_recognition,
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
-            )
-            model_id = load_core_model(
-                model_manager=self._model_manager,
-                version_id=inference_request.pp_ocr_version_id,
-                api_key=self._api_key,
-                core_model="pp_ocr",
-            )
-            result = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
             predictions.append(
                 _build_native_prediction(
                     image=single_image,
-                    response=result.model_dump(by_alias=True, exclude_none=True),
+                    response=self._model_manager.run_pp_ocr(
+                        image=single_image.to_inference_format(numpy_preferred=True),
+                        api_key=self._api_key,
+                        text_detection=text_detection,
+                        text_recognition=text_recognition,
+                    ),
                 )
             )
         return predictions

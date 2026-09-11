@@ -214,6 +214,42 @@ class ModelsProvider(Protocol):
         api_key: Optional[str] = None,
     ) -> List[List[float]]: ...
 
+    def run_doctr_ocr(
+        self,
+        model_id: str,
+        image: Any,
+        api_key: Optional[str] = None,
+        generate_bounding_boxes: Union[bool, None, _Unset] = UNSET,
+    ) -> dict: ...
+
+    def run_easy_ocr(
+        self,
+        model_id: str,
+        version_id: str,
+        image: Any,
+        api_key: Optional[str] = None,
+        language_codes: Optional[List[str]] = None,
+        quantize: Optional[bool] = None,
+    ) -> dict: ...
+
+    def run_pp_ocr(
+        self,
+        image: Any,
+        api_key: Optional[str] = None,
+        text_detection: Union[str, None, _Unset] = UNSET,
+        text_recognition: Union[str, None, _Unset] = UNSET,
+    ) -> dict: ...
+
+    def run_yolo_world(
+        self,
+        model_id: str,
+        version_id: str,
+        image: Any,
+        text: List[str],
+        api_key: Optional[str] = None,
+        confidence: Optional[Union[float, str]] = None,
+    ) -> dict: ...
+
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any: ...
 
     def get_class_names(self, model_id: str) -> List[str]: ...
