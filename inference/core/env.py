@@ -826,6 +826,10 @@ DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
     os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
 )
 WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+# Enable only on trusted deployments that need MJPEG cameras on private networks.
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES", "False")
+)
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
