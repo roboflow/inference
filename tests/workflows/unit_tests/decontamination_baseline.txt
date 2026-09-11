@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 51
+# Count: 50
 inference/core/workflows/core_steps/models/foundation/clip/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.entities.requests.clip
@@ -51,4 +51,3 @@ inference/core/workflows/core_steps/models/roboflow/object_detection/v2.py	infer
 inference/core/workflows/core_steps/models/roboflow/object_detection/v3.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/semantic_segmentation/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/roboflow/semantic_segmentation/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/execution_engine/entities/base.py	inference.core.entities.responses.action_recognition
