@@ -114,3 +114,90 @@ def test_prepare_container_environment_when_env_file_not_defined() -> None:
             "NUM_WORKERS=3",
         ]
     )
+
+
+@mock.patch.object(container_adapter, "pull_image")
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
+@mock.patch.object(container_adapter, "docker")
+def test_start_inference_container_publishes_ports_on_loopback_by_default(
+    docker_mock: MagicMock,
+    _find_containers_mock: MagicMock,
+    _pull_image_mock: MagicMock,
+) -> None:
+    # when
+    start_inference_container(
+        image="roboflow/roboflow-inference-server-cpu:latest",
+        port=9001,
+        development=True,
+    )
+
+    # then
+    _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
+    assert kwargs["ports"] == {"9001": ("127.0.0.1", 9001), "9002": ("127.0.0.1", 9002)}
+
+
+@mock.patch.object(container_adapter, "pull_image")
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
+@mock.patch.object(container_adapter, "docker")
+def test_start_inference_container_publishes_ports_on_all_interfaces_for_jetson(
+    docker_mock: MagicMock,
+    _find_containers_mock: MagicMock,
+    _pull_image_mock: MagicMock,
+) -> None:
+    # when
+    start_inference_container(
+        image="roboflow/roboflow-inference-server-jetson-6.2.0:latest",
+        port=9001,
+    )
+
+    # then
+    _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
+    assert kwargs["ports"] == {"9001": ("0.0.0.0", 9001)}
+
+
+@mock.patch.object(container_adapter, "pull_image")
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
+@mock.patch.object(container_adapter, "docker")
+def test_start_inference_container_bind_address_overrides_jetson_default(
+    docker_mock: MagicMock,
+    _find_containers_mock: MagicMock,
+    _pull_image_mock: MagicMock,
+) -> None:
+    # when
+    start_inference_container(
+        image="roboflow/roboflow-inference-server-jetson-6.2.0:latest",
+        port=9001,
+        bind_address="127.0.0.1",
+    )
+
+    # then
+    _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
+    assert kwargs["ports"] == {"9001": ("127.0.0.1", 9001)}
+
+
+@mock.patch.object(container_adapter, "pull_image")
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
+@mock.patch.object(container_adapter, "docker")
+def test_start_inference_container_publishes_ports_on_requested_bind_address(
+    docker_mock: MagicMock,
+    _find_containers_mock: MagicMock,
+    _pull_image_mock: MagicMock,
+) -> None:
+    # when
+    start_inference_container(
+        image="roboflow/roboflow-inference-server-cpu:latest",
+        port=9001,
+        bind_address="0.0.0.0",
+    )
+
+    # then
+    _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
+    assert kwargs["ports"] == {"9001": ("0.0.0.0", 9001)}
