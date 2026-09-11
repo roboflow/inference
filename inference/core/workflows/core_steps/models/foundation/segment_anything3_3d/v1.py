@@ -282,6 +282,8 @@ def extract_masks_from_input(mask_input: Any) -> Any:
     return mask_input
 
 
+# `response` is the server's Sam3_3D_Objects_Response; only the fields read
+# below are accessed, so the annotation is dropped (decontamination).
 def _format_response(response: Any) -> dict:
     """Format response with base64 encoded outputs."""
 
