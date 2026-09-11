@@ -24,7 +24,11 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_timestamp,
     deserialize_zone_kind,
 )
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
@@ -84,6 +88,28 @@ def test_deserialize_detections_kind_when_serialized_empty_detections_given() ->
     # then
     assert isinstance(result, sv.Detections)
     assert len(result) == 0
+
+
+def test_deserialize_detections_kind_keeps_image_dimensions_for_empty_detections() -> (
+    None
+):
+    # given - the wire form of an empty result (issue #2974)
+    detections = {
+        "image": {"height": 480, "width": 640},
+        "predictions": [],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then - dimensions describe the image, not the rows, so an empty
+    # round trip must still report them instead of nulls
+    assert len(result) == 0
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert serialise_sv_detections(result)["image"] == {"width": 640, "height": 480}
 
 
 def test_deserialize_detections_kind_when_serialized_non_empty_object_detections_given() -> (
@@ -1469,9 +1495,10 @@ def test_tensor_deserialize_detections_kind_round_trips_nearest_target_distance(
     )
 
     # then
-    assert [
-        entry["nearest_target_distance"] for entry in result.bboxes_metadata
-    ] == [12.5, None]
+    assert [entry["nearest_target_distance"] for entry in result.bboxes_metadata] == [
+        12.5,
+        None,
+    ]
     serialized = serializers_tensor.serialise_sv_detections(result)
     assert [
         prediction["nearest_target_distance"]

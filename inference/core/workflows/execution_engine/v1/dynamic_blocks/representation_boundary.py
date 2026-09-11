@@ -1108,7 +1108,7 @@ def sv_detections_to_native(
     detections_number = int(len(sv_detections))
     data = sv_detections.data or {}
     image_metadata = _rebuild_image_metadata_from_sv(
-        data=data, detections_number=detections_number
+        data=data, detections_number=detections_number, metadata=sv_detections.metadata
     )
     class_names_column = data.get(CLASS_NAME_DATA_COLUMN)
     class_id_values = (
@@ -1186,9 +1186,18 @@ def sv_detections_to_native(
 def _rebuild_image_metadata_from_sv(
     data: Dict[str, Any],
     detections_number: int,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> dict:
     image_metadata: dict = {}
     if detections_number == 0:
+        # No rows means no broadcast ``.data`` columns to read from, but the
+        # image dimensions are a property of the image and zero-row results
+        # carry them in ``sv.Detections.metadata`` (#2974).
+        image_dimensions = (metadata or {}).get(IMAGE_DIMENSIONS_KEY)
+        if image_dimensions is not None:
+            image_metadata[IMAGE_DIMENSIONS_KEY] = [
+                int(value) for value in np.asarray(image_dimensions).reshape(-1)[:2]
+            ]
         return image_metadata
     for key in _IMAGE_LEVEL_ID_KEYS + _IMAGE_LEVEL_SCALAR_KEYS:
         column = data.get(key)
