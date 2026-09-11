@@ -1,6 +1,6 @@
 import logging
 from types import SimpleNamespace
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
@@ -14,7 +14,6 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam3 import Sam3SegmentationPrediction
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -612,7 +611,9 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
 
 def convert_sam3_segmentation_response_to_inference_instances_seg_response(
-    sam3_segmentation_predictions: List[Sam3SegmentationPrediction],
+    # Items are the server's Sam3SegmentationPrediction; only .masks and
+    # .confidence are read.
+    sam3_segmentation_predictions: List[Any],
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],

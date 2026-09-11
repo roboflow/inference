@@ -21,11 +21,6 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD, ORIENTED_BOX_COORDINATES
 
-from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.sam2 import Sam2InferenceRequest
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
 )
@@ -78,22 +73,20 @@ T = TypeVar("T")
 
 def load_core_model(
     model_manager: ModelsProvider,
-    inference_request: Union[
-        DoctrOCRInferenceRequest,
-        EasyOCRInferenceRequest,
-        ClipCompareRequest,
-        YOLOWorldInferenceRequest,
-        Sam2InferenceRequest,
-    ],
     core_model: str,
+    version_id: Optional[str],
+    api_key: Optional[str],
 ) -> str:
-    version_id_field = f"{core_model}_version_id"
-    core_model_id = (
-        f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
-    )
+    """Register a Roboflow core model and return the id it was registered under.
+
+    Takes the version id and api key directly rather than a request object, so
+    `inference.core.workflows` does not import the server's HTTP request
+    classes just to read two attributes off them.
+    """
+    core_model_id = f"{core_model}/{version_id}"
     model_manager.add_model(
         core_model_id,
-        inference_request.api_key,
+        api_key,
         endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
     )
     return core_model_id
