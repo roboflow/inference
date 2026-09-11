@@ -1,20 +1,22 @@
-"""Unified Qwen-VL workflow block, v3 — Qwen-specific OpenRouter plumbing.
+"""Unified Qwen-VL workflow block, v4 — Qwen-specific OpenRouter plumbing.
 
-Same surface as ``qwen_vlm@v2``, plus ``input_tokens`` / ``output_tokens``
-outputs with per-call token usage (``None`` on the native backend).
+Same surface as ``qwen_vlm@v3``, plus in-block decoding of the model
+answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
+next to the raw ``output`` string on both backends, so no separate
+"VLM as Detector" / "VLM as Classifier" step is needed.
 
-v2 kept the surface of ``qwen_vlm@v1`` (``backend`` = "Native (Roboflow)" or
-"OpenRouter", combined ``model_version`` pickers, the shared VLM
+v3 kept the surface of ``qwen_vlm@v2`` (``backend`` = "Native (Roboflow)"
+or "OpenRouter", combined ``model_version`` pickers, the shared VLM
 ``task_type`` set) but the OpenRouter path no longer relies on the generic
 prompt builders from ``common.openrouter``. Instead it uses the contract
 that performed best for Qwen models in the vlm-exam benchmarks:
 
 * **object-detection** asks for a bare JSON list of ``box_2d``/``label``
   entries with ``[x_min, y_min, x_max, y_max]`` integer coordinates
-  normalized to 0-1000 — Qwen's native grounding convention — parsed by
-  ``vlm_as_detector@v2`` with ``model_type="qwen"``. Both backends emit
-  this same contract: the native path replaces v1's ad-hoc
-  ``x_min``/0.0-1.0 detection prompt with the benchmarked template.
+  normalized to 0-1000 — Qwen's native grounding convention, the shared
+  ``xyxy_0_1000`` box format. Both backends emit this same contract: the
+  native path replaces v1's ad-hoc ``x_min``/0.0-1.0 detection prompt with
+  the benchmarked template.
 * every task sends a single user message with the **image before the
   text** and no system role, matching how the benchmarks prompt Qwen.
 * requests carry an explicit OpenRouter ``reasoning`` config: disabled by
@@ -31,6 +33,7 @@ object-detection prompt, which is unified on the benchmarked template.
 import base64
 import json
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -48,7 +51,6 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
-    RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -64,6 +66,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     scale_dimensions_to_max_edge,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -404,22 +412,20 @@ def encode_image_for_qwen_openrouter(numpy_image: np.ndarray) -> str:
 # Every task sends a single user message with the image part FIRST and the
 # instruction text second, with no system role — the structure used for
 # Qwen models in the vlm-exam benchmarks. Output-format contracts for
-# non-detection tasks stay identical to the generic builders so downstream
-# parsers (`vlm_as_classifier@v2`, `json_parser@v1`) keep working.
+# non-detection tasks stay identical to the generic builders, so both the
+# in-block classification decoding and `json_parser@v1` keep working.
 
-# Ported verbatim from vlm-exam's detection prompt for the
-# xyxy_normalized_0_to_1000 coordinate format — the format pinned for every
-# Qwen model in the benchmark configs.
-QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "box_2d" and the text label in the key "label". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners as integers between 0 and 1000, "
-    "normalized to the image width (x) and height (y). "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+# Qwen grounds objects with `box_2d` integers normalized to 0-1000 - the
+# shared `xyxy_0_1000` contract, whose prompt wording is the vlm-exam
+# xyxy_normalized_0_to_1000 template pinned for every Qwen model in the
+# benchmark configs. Both backends use it.
+DETECTION_BOX_FORMAT = "xyxy_0_1000"
+
+# Detection and classification answers are decoded in-block now, so only
+# `structured-answering` still points at a downstream parser.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
 _TASK_CLASSIFICATION = (
     "You act as single-class classification model. You must provide reasonable "
@@ -553,8 +559,9 @@ def _prepare_structured_answering_prompt(
 def _prepare_object_detection_prompt(
     base64_image: str, classes: List[str], **_
 ) -> List[dict]:
-    text = QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
-        class_list=", ".join(classes),
+    text = build_object_detection_prompt(
+        box_format=DETECTION_BOX_FORMAT,
+        classes=classes,
     )
 
     return _prepare_qwen_user_message(base64_image=base64_image, text=text)
@@ -639,8 +646,8 @@ def _coerce_native_response(response: Any) -> Tuple[str, str]:
     ``{"thinking": "...", "answer": "..."}`` dict; split that into the two
     output fields. For string responses, return them as-is with an empty
     thinking trace. For any other non-string type, JSON-serialize so
-    downstream parsers (``vlm_as_classifier@v2``, ``json_parser@v1``) still
-    get a string they can parse.
+    in-block decoding and ``json_parser@v1`` still get a string they can
+    parse.
     """
     if isinstance(response, str):
         return response, ""
@@ -667,8 +674,8 @@ def _build_native_prompt(
     native qwen convention. The system half is fully derived from
     ``task_type`` — for unconstrained we identity-prime as Qwen-VL, for
     every other task we use a task-tuned system prompt whose output format
-    is contractually tied to downstream parsers (``vlm_as_classifier@v2``,
-    ``json_parser@v1``).
+    is contractually tied to the in-block decoding and to
+    ``json_parser@v1``.
     """
     if task_type == "unconstrained":
         # Manifest validation guarantees `prompt` is non-None for unconstrained,
@@ -705,12 +712,14 @@ def _build_native_prompt(
         system_text = _TASK_MULTI_LABEL
     elif task_type == "object-detection":
         # Same benchmarked box_2d/0-1000 contract as the OpenRouter path, so
-        # both backends parse with vlm_as_detector@v2 model_type="qwen". Sent
+        # both backends decode with the shared `xyxy_0_1000` format. Sent
         # as user text with an empty system half — the model server falls
         # back to its default system prompt, which is the closest native
         # equivalent of the benchmark's single-user-message structure.
-        cls_str = ", ".join(classes or [])
-        user_text = QWEN_OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=cls_str)
+        user_text = build_object_detection_prompt(
+            box_format=DETECTION_BOX_FORMAT,
+            classes=classes or [],
+        )
         system_text = ""
     elif task_type == "structured-answering":
         spec = json.dumps(output_structure or {}, indent=4)
@@ -743,8 +752,7 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
 
 * **Object detection** prompts for Qwen's native grounding format on **both backends**:
   a JSON list of `box_2d`/`label` entries with `[x_min, y_min, x_max, y_max]` integer
-  coordinates normalized to 0-1000. Parse the output with `VLM as Detector`
-  (`vlm_as_detector@v2`) using `model_type="qwen"`.
+  coordinates normalized to 0-1000.
 * Every request sends the image **before** the instruction text in a single user
   message, matching how Qwen models are trained.
 * **Reasoning control**: Qwen models default to extended reasoning on OpenRouter,
@@ -775,6 +783,24 @@ A validator catches mismatches between your selected backend and model.
 * **No data collection** *(default)* – providers may not train on your inputs.
 * **Allow data collection** – broader provider pool.
 * **Zero data retention** – strictest, restricts to providers that retain nothing.
+
+## Version Differences
+
+This version (v4) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string, on both backends:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 """
 
 
@@ -782,9 +808,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Qwen",
-            "version": "v3",
-            "deprecated": True,
-            "deprecation_message": "Use Qwen v4, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v4",
             "short_description": "Run any Qwen vision model — natively or via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -809,7 +833,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/qwen_vlm@v3"]
+    type: Literal["roboflow_core/qwen_vlm@v4"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
@@ -1115,6 +1139,19 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -1199,10 +1236,11 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 # ---------------------------------------------------------------------------
 
 
-class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
-    """Unified Qwen-VL block v2. Inherits OpenRouter routing/execution from
-    base, uses Qwen-specific prompt building on the OpenRouter path, and
-    keeps the native local/remote dispatch from v1.
+class QwenVlmBlockV4(OpenRouterWorkflowBlockBase):
+    """Unified Qwen-VL block v4. Inherits OpenRouter routing/execution from
+    base, uses Qwen-specific prompt building on the OpenRouter path, keeps
+    the native local/remote dispatch from v1, and decodes detection and
+    classification answers in-block on both backends.
     """
 
     def __init__(
@@ -1305,16 +1343,30 @@ class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
                 max_concurrent_requests=max_concurrent_requests,
                 reasoning=reasoning,
             )
-            return [
-                {
-                    "output": result.content,
-                    "classes": classes,
-                    "thinking": result.reasoning_trace,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                }
-                for result in results
-            ]
+            openrouter_outputs = []
+            for image, result in zip(images, results):
+                inference_id = str(uuid4())
+                error_status, predictions = decode_vlm_output(
+                    task_type=task_type,
+                    raw_output=result.content,
+                    image=image,
+                    classes=classes,
+                    inference_id=inference_id,
+                    box_format=DETECTION_BOX_FORMAT,
+                )
+                openrouter_outputs.append(
+                    {
+                        "output": result.content,
+                        "classes": classes,
+                        "thinking": result.reasoning_trace,
+                        "input_tokens": result.input_tokens,
+                        "output_tokens": result.output_tokens,
+                        "predictions": predictions,
+                        "error_status": error_status,
+                        "inference_id": inference_id,
+                    }
+                )
+            return openrouter_outputs
 
         # `enable_thinking` is only meaningful on Qwen3.5-VL native variants
         # (and qwen3-vl fine-tunes derived from them). Silently ignore on
@@ -1331,16 +1383,30 @@ class QwenVlmBlockV3(OpenRouterWorkflowBlockBase):
             enable_thinking=enable_thinking and supports_thinking,
             max_tokens=max_tokens,
         )
-        return [
-            {
-                "output": o["output"],
-                "classes": classes,
-                "thinking": o["thinking"],
-                "input_tokens": None,
-                "output_tokens": None,
-            }
-            for o in native_outputs
-        ]
+        results = []
+        for image, native_output in zip(images, native_outputs):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=native_output["output"],
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            results.append(
+                {
+                    "output": native_output["output"],
+                    "classes": classes,
+                    "thinking": native_output["thinking"],
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return results
 
     # ----------------------- Native dispatch -----------------------
 

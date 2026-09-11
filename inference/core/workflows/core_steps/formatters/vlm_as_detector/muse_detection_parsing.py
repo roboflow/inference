@@ -1,4 +1,3 @@
-import json
 import math
 from typing import List, Optional, Union
 from uuid import uuid4
@@ -10,6 +9,9 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding.json_extraction import (
+    extract_flat_object_entries,
 )
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     create_classes_index,
@@ -24,40 +26,6 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 
 MUSE_BOX_COORDINATE_SCALE = 1000.0
 _BOX_FIELDS = ("x_min", "y_min", "x_max", "y_max")
-
-
-def extract_flat_object_entries(prediction: str) -> List[dict]:
-    """Recover detection dicts from loose, non-JSON Muse output.
-
-    Muse Glimmer sometimes emits ``{...}, {...}`` objects without the
-    surrounding array brackets, which ``json.loads`` rejects. Scan the raw
-    string and decode each top-level ``{...}`` object individually. Only
-    dicts carrying all four named box fields are kept, so unrelated JSON
-    fragments in garbage output do not turn a parse failure into an
-    empty success.
-
-    Args:
-        prediction: Raw VLM output that failed regular JSON parsing.
-
-    Returns:
-        List of detection entry dicts; empty when nothing recoverable.
-    """
-    decoder = json.JSONDecoder()
-    entries: List[dict] = []
-    index = 0
-    while True:
-        start = prediction.find("{", index)
-        if start == -1:
-            break
-        try:
-            entry, end = decoder.raw_decode(prediction, start)
-        except json.JSONDecodeError:
-            index = start + 1
-            continue
-        if isinstance(entry, dict) and all(field in entry for field in _BOX_FIELDS):
-            entries.append(entry)
-        index = end
-    return entries
 
 
 def extract_muse_detection_entries(

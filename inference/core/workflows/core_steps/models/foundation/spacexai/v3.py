@@ -1,15 +1,21 @@
-"""SpaceXAI (Grok) workflow block.
+"""SpaceXAI (Grok) workflow block, v3.
 
 Calls Grok vision models via xAI's OpenAI-compatible Responses API, either
 directly with a user-provided xAI key or through Roboflow's ``apiproxy/xai``
 managed-key proxy. Object-detection prompting uses the percent-of-image
 ``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6.
+
+Same surface as ``spacexai@v2``, plus in-block decoding of the model
+answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
+next to the raw ``output`` string, so no separate "VLM as Detector" /
+"VLM as Classifier" step is needed.
 """
 
 import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -30,6 +36,12 @@ from inference.core.workflows.core_steps.common.token_usage import (
     parse_responses_api_usage,
 )
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    actual_vlm_prediction_outputs,
+    build_object_detection_prompt,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -85,15 +97,10 @@ MODEL_VERSION_METADATA = attach_reasoning_levels(
 
 REASONING_EFFORT_VALUES = ["low", "medium", "high", "xhigh"]
 
-OBJECT_DETECTION_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the text label in the key "
-    '"label" and the 2D bounding box in the key "box_2d". '
-    'The "box_2d" value must be [x_min, y_min, x_max, y_max] as percentages '
-    "of image width and height (floats between 0 and 100). "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
+# Grok grounds objects with `box_2d` percentages of image width and height
+# - the shared `xyxy_percent` contract, whose prompt wording is the
+# vlm-exam template this block was benchmarked with for Grok 4.5/4.6.
+DETECTION_BOX_FORMAT = "xyxy_percent"
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -133,13 +140,30 @@ the following types of prompt:
 
 The `object-detection` task asks Grok for a JSON list of
 `{{"label": ..., "box_2d": [x_min, y_min, x_max, y_max]}}` entries where
-coordinates are percentages of image width and height (floats 0-100). Use
-`roboflow_core/vlm_as_detector@v2` with `model_type="spacexai"` to convert the
-output into predictions. Confidence scores are optional; when absent the
-parser assigns `1.0`.
+coordinates are percentages of image width and height (floats 0-100).
+Confidence scores are optional; when absent decoded detections are assigned
+`1.0`.
 
 Images for object detection are sent at original resolution as lossless PNG
 with `detail: "high"`, matching the vlm-exam benchmark setup for Grok 4.5/4.6.
+
+## Version Differences
+
+This version (v3) decodes the model answer inside the block, adding
+`predictions`, `error_status` and `inference_id` outputs next to the raw
+`output` string:
+
+* `predictions` holds object detections for the `object-detection` task and a
+classification prediction for the `classification` /
+`multi-label-classification` tasks - the kind of the output follows the
+selected task type.
+* `predictions` is `None` for every other task (unconstrained prompting, OCR,
+captioning, structured answering, visual question answering).
+* `error_status` is `True` when the answer could not be decoded.
+* `inference_id` is generated per image.
+
+Separate `roboflow_core/vlm_as_detector@v2` and
+`roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
 {API_KEY_OPTIONS_DOCS}"""
 
@@ -175,9 +199,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "SpaceXAI",
-            "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use SpaceXAI v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v3",
             "short_description": "Run SpaceXAI Grok models with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -193,7 +215,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/spacexai@v2"]
+    type: Literal["roboflow_core/spacexai@v3"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -205,9 +227,6 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v2",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
-                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -339,6 +358,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            *cls._describe_raw_outputs(),
+            *describe_vlm_prediction_outputs(),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return [
+            *self._describe_raw_outputs(),
+            *actual_vlm_prediction_outputs(self.task_type),
+        ]
+
+    @classmethod
+    def _describe_raw_outputs(cls) -> List[OutputDefinition]:
+        return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
@@ -354,7 +386,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [third_party_model(provider="xai", model_id=self.model_version)]
 
 
-class SpaceXAIBlockV2(WorkflowBlock):
+class SpaceXAIBlockV3(WorkflowBlock):
 
     def __init__(
         self,
@@ -405,15 +437,29 @@ class SpaceXAIBlockV2(WorkflowBlock):
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
         )
-        return [
-            {
-                "output": content,
-                "classes": classes,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-            for content, input_tokens, output_tokens in raw_outputs
-        ]
+        results = []
+        for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
+            inference_id = str(uuid4())
+            error_status, predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=DETECTION_BOX_FORMAT,
+            )
+            results.append(
+                {
+                    "output": content,
+                    "classes": classes,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "predictions": predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return results
 
 
 def run_spacexai_prompting(
@@ -1009,8 +1055,10 @@ def prepare_object_detection_prompt(
         Request payload with an ``input`` key containing the detection prompt
         and a high-detail PNG image.
     """
-    class_list = ", ".join(classes)
-    prompt_text = OBJECT_DETECTION_PROMPT_TEMPLATE.format(class_list=class_list)
+    prompt_text = build_object_detection_prompt(
+        box_format=DETECTION_BOX_FORMAT,
+        classes=classes,
+    )
     return {
         "input": [
             {
