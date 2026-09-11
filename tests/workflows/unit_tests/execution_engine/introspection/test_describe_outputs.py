@@ -72,6 +72,24 @@ def test_handle_describe_workflow_outputs_when_valid_specification_provided() ->
     }
 
 
+def test_handle_describe_workflow_interface_when_output_selects_input() -> None:
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    definition["outputs"].append(
+        {
+            "type": "JsonField",
+            "name": "input_image",
+            "selector": "$inputs.image",
+        }
+    )
+
+    # when
+    result = handle_describe_workflows_interface(definition=definition)
+
+    # then
+    assert result.outputs["input_image"] == ["image"]
+
+
 def test_handle_describe_workflow_outputs_when_specification_without_steps_provided() -> (
     None
 ):
