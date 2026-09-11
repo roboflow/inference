@@ -11,8 +11,12 @@ REQUIRED_METHODS = [
     "infer_from_request_sync",
     "run_tensor_native_inference",
     "get_class_names",
+    "get_keypoints_classes",
+    "model_supports_stream_pipeline",
+    "get_model_pipeline_depth",
+    "flush_model_stream_pipeline",
+    "shutdown_model_stream_pipeline",
     "__contains__",
-    "__getitem__",
 ]
 
 
@@ -49,7 +53,7 @@ def test_model_manager_is_structurally_compatible_with_the_port() -> None:
     # anything that binds by keyword (a mock, a wrapper, a future refactor)
     # would break. Compare ordered parameter NAMES only; annotations differ
     # deliberately (the port returns `Any`, ModelManager returns `Model`).
-    for member in ("__getitem__", "__contains__"):
+    for member in ("__contains__",):
         port_names = [
             name
             for name in inspect.signature(getattr(ModelsProvider, member)).parameters
@@ -75,3 +79,24 @@ def test_model_manager_is_structurally_compatible_with_the_port() -> None:
         )
     )
     assert assigns_content_addressed_artifact_cache
+
+
+def test_port_dropped_getitem_and_declares_first_class_model_access() -> None:
+    from inference.core.managers.decorators.base import ModelManagerDecorator
+
+    assert "__getitem__" not in ModelsProvider.__dict__
+    for name in (
+        "get_keypoints_classes",
+        "model_supports_stream_pipeline",
+        "get_model_pipeline_depth",
+        "flush_model_stream_pipeline",
+        "shutdown_model_stream_pipeline",
+        "load_action_recognition_model",
+    ):
+        assert name in ModelManager.__dict__, f"{name} must be declared on ModelManager"
+        # A decorator that inherits instead of forwarding hits the `_models`
+        # property that raises (decorators/base.py:35-37), so the override must
+        # exist in the decorator's own __dict__.
+        assert (
+            name in ModelManagerDecorator.__dict__
+        ), f"{name} must be forwarded by ModelManagerDecorator"

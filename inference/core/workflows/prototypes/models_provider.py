@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Union
 
 
 class ModelsProvider(Protocol):
@@ -19,13 +19,14 @@ class ModelsProvider(Protocol):
     to avoid importing the server's ``ModelEndpointType`` enum; the server
     coerces it back as needed.
 
-    PROVISIONAL MEMBERS. ``infer_from_request_sync`` takes a pydantic request
+    The stream-pipeline members are prefixed because ``flush_stream_pipeline``,
+    ``stream_pipeline_depth``, ``close_stream_pipeline`` and
+    ``is_stream_pipelined`` are already a *block*-level duck-typed protocol that
+    the executor and the server's stream handler call on step instances.
+
+    PROVISIONAL MEMBER. ``infer_from_request_sync`` takes a pydantic request
     object built by the caller from ``inference.core.entities`` - it is the
-    method Phase 11 option 2 removes entirely. ``__getitem__`` returns a raw
-    model object that seven call sites introspect (``key_points_classes``,
-    ``flush()``, ``_pipeline_depth``, ``shutdown_pipeline()``); it exists so
-    Phase 2 stays a mechanical swap, and Phase 11 must replace it with
-    first-class methods. Do not build new code against either.
+    method Phase 11 removes entirely. Do not build new code against it.
     """
 
     content_addressed_artifact_cache: Any
@@ -50,9 +51,17 @@ class ModelsProvider(Protocol):
 
     def get_class_names(self, model_id: str) -> List[str]: ...
 
-    def __contains__(self, model_id: str) -> bool: ...
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]: ...
 
-    def __getitem__(self, key: str) -> Any: ...
+    def model_supports_stream_pipeline(self, model_id: str) -> bool: ...
+
+    def get_model_pipeline_depth(self, model_id: str) -> int: ...
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]: ...
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None: ...
+
+    def __contains__(self, model_id: str) -> bool: ...
 
 
 # The `endpoint_type` value every core-model block registers with. It is the

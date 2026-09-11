@@ -599,6 +599,52 @@ class ModelManager:
         model = self._get_model_reference(model_id=model_id)
         return model.class_names
 
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        """Per-object-class keypoint class names, indexed by object class id.
+
+        Only the `inference_models` adapters expose this; the workflow keypoint
+        blocks read it to label the keypoints they emit.
+        """
+        model = self._get_model_reference(model_id=model_id)
+        return model.key_points_classes
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """True when the loaded model runs a depth>1 async inference pipeline."""
+        if model_id not in self:
+            return False
+        model = self._get_model_reference(model_id=model_id)
+        return (
+            callable(getattr(model, "flush", None))
+            and getattr(model, "_pipeline_depth", 1) > 1
+        )
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's async pipeline depth; 1 when it has none or is not loaded."""
+        if model_id not in self:
+            return 1
+        model = self._get_model_reference(model_id=model_id)
+        return int(getattr(model, "_pipeline_depth", 1))
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        """Drain the model's in-flight pipeline, or None when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        flush_fn = getattr(model, "flush", None)
+        if not callable(flush_fn):
+            return None
+        return flush_fn()
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline workers. A no-op when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        shutdown_fn = getattr(model, "shutdown_pipeline", None)
+        if callable(shutdown_fn):
+            shutdown_fn()
+        return None
+
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Retrieves the task type for a given model.
 
