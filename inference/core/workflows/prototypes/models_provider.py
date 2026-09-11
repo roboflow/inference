@@ -56,9 +56,13 @@ class ModelsProvider(Protocol):
     ``is_stream_pipelined`` are already a *block*-level duck-typed protocol that
     the executor and the server's stream handler call on step instances.
 
-    PROVISIONAL MEMBER. ``infer_from_request_sync`` takes a pydantic request
-    object built by the caller from ``inference.core.entities`` - it is the
-    method Phase 11 removes entirely. Do not build new code against it.
+    Every member here takes plain arguments. The server implementation
+    (`inference.core.interfaces.workflows_models_provider.ModelManagerModelsProvider`)
+    builds the HTTP request objects; an `inference_sdk`-backed implementation
+    can satisfy the same port for remote execution. Three families still return
+    the server's response objects unchanged (SAM2/SAM3 predictions, the SAM3-3D
+    object tree, the rfdetr async handoff) - those are `Any` by design; nothing
+    about them is imported here.
     """
 
     content_addressed_artifact_cache: Any
@@ -73,10 +77,6 @@ class ModelsProvider(Protocol):
 
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs: Any
-    ) -> Any: ...
-
-    def infer_from_request_sync(
-        self, model_id: str, request: Any, **kwargs: Any
     ) -> Any: ...
 
     def run_object_detection(

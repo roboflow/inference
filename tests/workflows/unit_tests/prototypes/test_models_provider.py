@@ -8,7 +8,6 @@ from inference.core.workflows.prototypes.models_provider import ModelsProvider
 
 REQUIRED_METHODS = [
     "add_model",
-    "infer_from_request_sync",
     "run_tensor_native_inference",
     "get_class_names",
     "get_keypoints_classes",
@@ -105,3 +104,16 @@ def test_port_dropped_getitem_and_declares_first_class_model_access() -> None:
         assert (
             name in ModelManagerDecorator.__dict__
         ), f"{name} must be forwarded by ModelManagerDecorator"
+
+
+def test_port_no_longer_carries_provisional_members() -> None:
+    from pathlib import Path
+
+    assert "infer_from_request_sync" not in ModelsProvider.__dict__
+    assert "__getitem__" not in ModelsProvider.__dict__
+    # tests/workflows/unit_tests/prototypes/<file> -> parents[4] is the repo root
+    source = (
+        Path(__file__).resolve().parents[4]
+        / "inference/core/workflows/prototypes/models_provider.py"
+    ).read_text(encoding="utf-8")
+    assert "PROVISIONAL" not in source
