@@ -9,14 +9,17 @@ user provides their own ``sk-or-...`` key.
 
 The task-type surface (unconstrained, OCR, classification, detection, etc.)
 is the one shared via ``common.openrouter`` with the other VLM blocks.
+Detection and classification answers are decoded in-block via
+``common.vlm_decoding``.
 """
 
 from typing import Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.workflows.core_steps.common.openrouter import (
-    RECOMMENDED_PARSERS,
+    LEGACY_DETECTION_BOX_FORMAT,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
     OpenRouterBlockManifestMixin,
@@ -31,6 +34,13 @@ from inference.core.workflows.core_steps.common.reasoning import (
 )
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    BoxFormatName,
+    actual_vlm_prediction_outputs,
+    decode_vlm_output,
+    describe_vlm_prediction_outputs,
+    get_detection_box_format,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -54,6 +64,47 @@ from inference.core.workflows.prototypes.block import (
 )
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
+
+# Default object-detection contract: the legacy OpenRouter system message in
+# `common.openrouter`, which asks for `x_min`/`y_min`/`x_max`/`y_max` floats
+# normalized to 0.0-1.0 (`named_normalized` in the shared decoding package).
+# `detection_format` lets the user switch to any other registered contract,
+# so a new model can be prompted and decoded the way it was trained without
+# a block change.
+DETECTION_BOX_FORMAT = LEGACY_DETECTION_BOX_FORMAT
+
+DETECTION_FORMAT_METADATA = {
+    "named_normalized": {
+        "name": "Named keys, 0-1 (default)",
+        "description": "`x_min`/`y_min`/`x_max`/`y_max` floats normalized to 0-1.",
+    },
+    "xyxy_0_1000": {
+        "name": "xyxy, 0-1000",
+        "description": "`box_2d` list of integers normalized to 0-1000.",
+    },
+    "yxyx_0_1000": {
+        "name": "yxyx, 0-1000",
+        "description": "`box_2d` list of integers normalized to 0-1000, y first.",
+    },
+    "xyxy_absolute": {
+        "name": "xyxy, pixels",
+        "description": "`box_2d` list in pixels of the uploaded image.",
+    },
+    "xyxy_percent": {
+        "name": "xyxy, percent",
+        "description": "`box_2d` list of floats as percent of image size.",
+    },
+    "named_0_1000": {
+        "name": "Named keys, 0-1000",
+        "description": "`x_min`/`y_min`/`x_max`/`y_max` integers normalized to 0-1000.",
+    },
+}
+
+# Detections and classifications are decoded in-block from v3 on, so only the
+# structured-answering parser stays relevant.
+RECOMMENDED_PARSERS = {
+    "structured-answering": "roboflow_core/json_parser@v1",
+}
 
 
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
@@ -95,16 +146,49 @@ own `sk-or-...` key into the `api_key` field.
     the model can't return a visible response (e.g. a reasoning model that
     burns all of `max_tokens` on internal thinking), try increasing
     `max_tokens` or pick a different model.
+
+## Version Differences
+
+This version (v3) decodes model answers inside the block:
+
+* **`predictions`** - classification and object-detection answers are parsed here,
+  so the deprecated `VLM as Detector` / `VLM as Classifier` blocks are no longer
+  needed. The output kind follows `task_type`: object detection predictions for
+  `object-detection`, classification predictions for `classification` and
+  `multi-label-classification`, and `None` for every other task.
+* **`error_status`** - `True` when the model answer could not be parsed.
+* **`inference_id`** - identifier generated per image and attached to the decoded
+  predictions.
+* **`detection_format`** - for `object-detection`, the bounding-box format the
+  model is asked for and decoded with (`xyxy` / `yxyx` / named keys, in 0-1,
+  0-1000, percent or pixels). Pick the format the model was trained on so a new
+  model can be used without a block change; the default is the generic
+  normalized-floats JSON.
 """
+
+
+def _base_outputs() -> List[OutputDefinition]:
+    """Outputs the block produces regardless of the selected task."""
+    return [
+        OutputDefinition(name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]),
+        OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
+        OutputDefinition(
+            name="thinking",
+            kind=[STRING_KIND],
+            description=(
+                "Reasoning trace when OpenRouter returns one (reasoning "
+                "models with reasoning enabled). Empty string otherwise."
+            ),
+        ),
+        *TOKEN_OUTPUT_DEFINITIONS,
+    ]
 
 
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "OpenRouter",
-            "version": "v2",
-            "deprecated": True,
-            "deprecation_message": "Use OpenRouter v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
+            "version": "v3",
             "short_description": "Run any OpenRouter model by pasting its model slug.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -127,7 +211,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/openrouter@v2"]
+    type: Literal["roboflow_core/openrouter@v3"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
@@ -232,6 +316,22 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
 
+    detection_format: Union[Selector(kind=[STRING_KIND]), BoxFormatName] = Field(
+        default=DETECTION_BOX_FORMAT,
+        description=(
+            "Bounding-box format for `object-detection`: how the model is "
+            "asked for boxes and how its answer is decoded. Pick the format "
+            "the model was trained on; keep the default when unsure."
+        ),
+        examples=["named_normalized", "xyxy_0_1000", "$inputs.detection_format"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": ["object-detection"], "required": False},
+            },
+            "values_metadata": DETECTION_FORMAT_METADATA,
+        },
+    )
+
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         validate_task_type_required_fields(
@@ -263,21 +363,10 @@ class BlockManifest(OpenRouterBlockManifestMixin):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
-            ),
-            OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(
-                name="thinking",
-                kind=[STRING_KIND],
-                description=(
-                    "Reasoning trace when OpenRouter returns one (reasoning "
-                    "models with reasoning enabled). Empty string otherwise."
-                ),
-            ),
-            *TOKEN_OUTPUT_DEFINITIONS,
-        ]
+        return _base_outputs() + describe_vlm_prediction_outputs()
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return _base_outputs() + actual_vlm_prediction_outputs(self.task_type)
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -287,7 +376,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         return [third_party_model(provider="openrouter", model_id=self.model_id)]
 
 
-class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
+class OpenRouterBlockV3(OpenRouterWorkflowBlockBase):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -311,7 +400,13 @@ class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
         temperature: float,
         reasoning_effort: Optional[str],
         max_concurrent_requests: Optional[int],
+        detection_format: str = DETECTION_BOX_FORMAT,
     ) -> BlockResult:
+        if task_type == "object-detection":
+            # Fail on an unknown format before any paid request is sent.
+            box_format = get_detection_box_format(detection_format)
+        else:
+            box_format = None
         inference_images = [i.to_inference_format() for i in images]
         prompts = build_prompts_from_images(
             images=inference_images,
@@ -319,6 +414,7 @@ class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            detection_box_format=detection_format,
         )
         results = self.execute_openrouter_batch_with_usage(
             openrouter_api_key=api_key,
@@ -330,13 +426,33 @@ class OpenRouterBlockV2(OpenRouterWorkflowBlockBase):
             max_concurrent_requests=max_concurrent_requests,
             reasoning=build_openrouter_reasoning_config(reasoning_effort),
         )
-        return [
-            {
-                "output": result.content,
-                "classes": classes,
-                "thinking": result.reasoning_trace,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-            }
-            for result in results
-        ]
+        predictions = []
+        for image, result in zip(images, results):
+            inference_id = str(uuid4())
+            upload_width = upload_height = None
+            if box_format is not None and box_format.requires_upload_dimensions:
+                # The OpenRouter path uploads the image at its original size.
+                upload_height, upload_width = image.numpy_image.shape[:2]
+            error_status, decoded_predictions = decode_vlm_output(
+                task_type=task_type,
+                raw_output=result.content,
+                image=image,
+                classes=classes,
+                inference_id=inference_id,
+                box_format=detection_format,
+                upload_width=upload_width,
+                upload_height=upload_height,
+            )
+            predictions.append(
+                {
+                    "output": result.content,
+                    "classes": classes,
+                    "thinking": result.reasoning_trace,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "predictions": decoded_predictions,
+                    "error_status": error_status,
+                    "inference_id": inference_id,
+                }
+            )
+        return predictions
