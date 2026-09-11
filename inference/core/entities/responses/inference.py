@@ -5,6 +5,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
 
+from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
+    InstanceSegmentationBasePrediction,
+    InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
+    Point,
+)
+
 
 class ObjectDetectionPrediction(BaseModel):
     """Object Detection prediction.
@@ -51,18 +58,6 @@ class ObjectDetectionPrediction(BaseModel):
     )
 
 
-class Point(BaseModel):
-    """Point coordinates.
-
-    Attributes:
-        x (float): The x-axis pixel coordinate of the point.
-        y (float): The y-axis pixel coordinate of the point.
-    """
-
-    x: float = Field(description="The x-axis pixel coordinate of the point")
-    y: float = Field(description="The y-axis pixel coordinate of the point")
-
-
 class Point3D(Point):
     """3D Point coordinates.
 
@@ -71,53 +66,6 @@ class Point3D(Point):
     """
 
     z: float = Field(description="The z-axis pixel coordinate of the point")
-
-
-class InstanceSegmentationBasePrediction(BaseModel):
-    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
-    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
-    width: float = Field(
-        description="The width of the prediction bounding box in number of pixels"
-    )
-    height: float = Field(
-        description="The height of the prediction bounding box in number of pixels"
-    )
-    confidence: float = Field(
-        description="The detection confidence as a fraction between 0 and 1"
-    )
-    class_name: str = Field(alias="class", description="The predicted class label")
-    class_id: int = Field(description="The class id of the prediction")
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
-    )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region",
-        default=None,
-    )
-
-
-class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
-    class_confidence: Union[float, None] = Field(
-        None, description="The class label confidence as a fraction between 0 and 1"
-    )
-    points: List[Point] = Field(
-        description="The list of points that make up the instance polygon"
-    )
-    mask_format: Literal["polygon"] = Field(
-        default="polygon",
-        description="Type of mask format",
-    )
-
-
-class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
-    rle: dict = Field(
-        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
-    )
-    mask_format: Literal["rle"] = Field(
-        default="rle",
-        description="Type of mask format",
-    )
 
 
 def _mask_to_base64_png(mask: Any) -> str:

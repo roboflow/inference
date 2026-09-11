@@ -8,14 +8,16 @@ from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, model_validator, validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
-from inference.core.entities.responses.inference import (
-    InferenceResponseImage,
-    InstanceSegmentationInferenceResponse,
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.inference_response_dc import (
+    InferenceResponseImageDC,
+    InstanceSegmentationInferenceResponseDC,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (
     InstanceSegmentationPrediction,
     InstanceSegmentationRLEPrediction,
     Point,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -428,7 +430,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     image_height=image_height,
                     image_width=image_width,
                 )
-                detections = sv.Detections.from_inference(inference_response)
+                # `from_inference` subscripts its argument unless it exposes
+                # `.dict()`/`.json()`; the local dataclass exposes `to_dict()`.
+                detections = sv.Detections.from_inference(inference_response.to_dict())
                 detections[DETECTION_ID_KEY] = np.array(
                     [p.detection_id for p in inference_response.predictions]
                 )
@@ -518,7 +522,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                         image_width=image_width,
                     )
                 )
-                detections = sv.Detections.from_inference(inference_response)
+                # `from_inference` subscripts its argument unless it exposes
+                # `.dict()`/`.json()`; the local dataclass exposes `to_dict()`.
+                detections = sv.Detections.from_inference(inference_response.to_dict())
                 detections[DETECTION_ID_KEY] = np.array(
                     [p.detection_id for p in inference_response.predictions]
                 )
@@ -625,7 +631,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                         image_width=image_width,
                     )
                 )
-                detections = sv.Detections.from_inference(inference_response)
+                # `from_inference` subscripts its argument unless it exposes
+                # `.dict()`/`.json()`; the local dataclass exposes `to_dict()`.
+                detections = sv.Detections.from_inference(inference_response.to_dict())
                 detections[DETECTION_ID_KEY] = np.array(
                     [p.detection_id for p in inference_response.predictions]
                 )
@@ -806,7 +814,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         confidence: float,
         image_height: int,
         image_width: int,
-    ) -> InstanceSegmentationInferenceResponse:
+    ) -> InstanceSegmentationInferenceResponseDC:
         predictions: List[InstanceSegmentationPrediction] = []
 
         for prompt_result in sam3_response.prompt_results:
@@ -826,9 +834,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     if pred:
                         predictions.append(pred)
 
-        return InstanceSegmentationInferenceResponse(
+        return InstanceSegmentationInferenceResponseDC(
             predictions=predictions,
-            image=InferenceResponseImage(width=image_width, height=image_height),
+            image=InferenceResponseImageDC(width=image_width, height=image_height),
         )
 
     def _convert_polygon_json_response_to_inference_format(
@@ -838,7 +846,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         confidence: float,
         image_height: int,
         image_width: int,
-    ) -> InstanceSegmentationInferenceResponse:
+    ) -> InstanceSegmentationInferenceResponseDC:
         predictions: List[InstanceSegmentationPrediction] = []
 
         for prompt_result in resp_json.get("prompt_results", []):
@@ -859,9 +867,9 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     if pred:
                         predictions.append(pred)
 
-        return InstanceSegmentationInferenceResponse(
+        return InstanceSegmentationInferenceResponseDC(
             predictions=predictions,
-            image=InferenceResponseImage(width=image_width, height=image_height),
+            image=InferenceResponseImageDC(width=image_width, height=image_height),
         )
 
     @staticmethod

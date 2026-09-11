@@ -13,8 +13,10 @@ from inference.core.entities.requests.sam2 import (
     Sam2PromptSet,
     Sam2SegmentationRequest,
 )
-from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.segmentation_entities import (
+    Sam2SegmentationPrediction,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -358,9 +360,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -428,9 +428,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -515,9 +513,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [e.to_dict() for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,

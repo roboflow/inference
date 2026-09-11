@@ -132,3 +132,63 @@ def test_run_remotely_with_prompts(
     # Verify prompts were passed
     call_args = mock_client.sam2_segment_image.call_args
     assert call_args.kwargs.get("prompts") is not None
+
+
+def test_convert_sam2_response_produces_the_same_dict_as_the_pydantic_form() -> None:
+    import numpy as np
+
+    from inference.core.entities.responses.inference import (
+        InferenceResponseImage,
+        InstanceSegmentationInferenceResponse,
+        InstanceSegmentationPrediction,
+        Point,
+    )
+    from inference.core.workflows.core_steps.common.segmentation_entities import (
+        Sam2SegmentationPrediction,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        convert_sam2_segmentation_response_to_inference_instances_seg_response,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        numpy_image=np.zeros((20, 10, 3), dtype=np.uint8),
+    )
+    result = convert_sam2_segmentation_response_to_inference_instances_seg_response(
+        sam2_segmentation_predictions=[
+            # the parser's own input shape: a str confidence the pydantic class coerces
+            Sam2SegmentationPrediction(
+                masks=[[[0, 0], [4, 0], [4, 4]]], confidence="0.9"
+            )
+        ],
+        image=image,
+        prompt_class_ids=[1],
+        prompt_class_names=["cat"],
+        prompt_detection_ids=["d1"],
+        threshold=0.1,
+    )
+    produced = result.to_dict()
+    expected = InstanceSegmentationInferenceResponse(
+        image=InferenceResponseImage(width=10, height=20),
+        predictions=[
+            InstanceSegmentationPrediction(
+                **{
+                    "x": 2.0,
+                    "y": 2.0,
+                    "width": 4.0,
+                    "height": 4.0,
+                    "confidence": 0.9,
+                    "class": "cat",
+                    "class_id": 1,
+                    "parent_id": "d1",
+                    "detection_id": produced["predictions"][0]["detection_id"],
+                    "points": [Point(x=0, y=0), Point(x=4, y=0), Point(x=4, y=4)],
+                }
+            )
+        ],
+    ).model_dump(by_alias=True, exclude_none=True)
+    assert produced == expected

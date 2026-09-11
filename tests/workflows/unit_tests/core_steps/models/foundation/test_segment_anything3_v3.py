@@ -195,3 +195,162 @@ def test_run_with_partial_class_mapping(mock_run_locally, mock_workflow_image_da
         "dog",
         "bird",
     ]
+
+
+def _sam3_polygon_response():
+    """One text prompt, one polygon; the shapes
+    `_convert_polygon_response_to_inference_format` reads off the response."""
+    prediction = MagicMock()
+    prediction.confidence = 0.9
+    prediction.masks = [[[0, 0], [8, 0], [8, 6], [0, 6]]]
+    prompt_result = MagicMock()
+    prompt_result.prompt_index = 0
+    prompt_result.predictions = [prediction]
+    response = MagicMock()
+    response.prompt_results = [prompt_result]
+    response.predictions = [prediction]
+    return response
+
+
+_SAM3_POLYGON_JSON = {
+    "prompt_results": [
+        {
+            "prompt_index": 0,
+            "predictions": [
+                {"confidence": 0.9, "masks": [[[0, 0], [8, 0], [8, 6], [0, 6]]]}
+            ],
+        }
+    ]
+}
+
+
+def _one_polygon_image_batch():
+    from inference.core.workflows.execution_engine.entities.base import Batch
+
+    return Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="p"),
+                numpy_image=np.zeros((10, 20, 3), dtype=np.uint8),
+            )
+        ],
+        indices=[(0,)],
+    )
+
+
+_POLYGON_RUN_KWARGS = dict(
+    class_names=["cat"],
+    confidence=0.5,
+    per_class_confidence=None,
+    apply_nms=False,
+    nms_iou_threshold=0.9,
+    output_format="polygons",
+)
+
+
+def test_v3_local_polygon_path_converts_through_supervision() -> None:
+    """Drives `run_locally` with a stubbed provider so the changed
+    `_convert_polygon_response_to_inference_format(...).to_dict()` ->
+    `sv.Detections.from_inference` path actually executes. Before Task 11.4
+    Step 8 this raised `TypeError: … object is not subscriptable`."""
+    model_manager = MagicMock()
+    model_manager.infer_from_request_sync.return_value = _sam3_polygon_response()
+    block = SegmentAnything3BlockV3(
+        model_manager=model_manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    result = block.run_locally(
+        images=_one_polygon_image_batch(),
+        model_id="sam3/sam3_final",
+        **_POLYGON_RUN_KWARGS
+    )
+    detections = result[0]["predictions"]
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
+    model_manager.infer_from_request_sync.assert_called_once()
+
+
+def test_v3_remote_polygon_path_converts_through_supervision() -> None:
+    """The REMOTE branch converts `_convert_polygon_json_response_to_inference_format(...)`
+    through the same `to_dict()` seam (`v3.py:517`)."""
+    import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as v3_module
+
+    with patch.object(v3_module, "InferenceHTTPClient") as client_cls:
+        client_cls.return_value.sam3_concept_segment.return_value = _SAM3_POLYGON_JSON
+        block = SegmentAnything3BlockV3(
+            model_manager=MagicMock(),
+            api_key="k",
+            step_execution_mode=StepExecutionMode.REMOTE,
+        )
+        result = block.run_remotely(
+            images=_one_polygon_image_batch(),
+            model_id="sam3/sam3_final",
+            **_POLYGON_RUN_KWARGS
+        )
+    assert len(result[0]["predictions"]) == 1
+    assert result[0]["predictions"].xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
+
+
+def test_v3_proxy_polygon_path_converts_through_supervision() -> None:
+    """The inference-proxy branch (`run_via_request`, `v3.py:622`) - the third
+    changed call site."""
+    import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as v3_module
+
+    response = MagicMock()
+    response.json.return_value = _SAM3_POLYGON_JSON
+    with patch.object(v3_module.requests, "post", return_value=response):
+        block = SegmentAnything3BlockV3(
+            model_manager=MagicMock(),
+            api_key="k",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+        result = block.run_via_request(
+            images=_one_polygon_image_batch(), **_POLYGON_RUN_KWARGS
+        )
+    assert len(result[0]["predictions"]) == 1
+    assert result[0]["predictions"].xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
+
+
+def test_v3_polygon_dataclass_matches_the_pydantic_form_through_supervision() -> None:
+    """Explains the contract the block tests rely on: the response dataclass,
+    passed as a dict, produces the same Detections the pydantic response did."""
+    from inference.core.entities.responses.inference import (
+        InferenceResponseImage,
+        InstanceSegmentationInferenceResponse,
+        InstanceSegmentationPrediction,
+        Point,
+    )
+    from inference.core.workflows.core_steps.common.inference_response_dc import (
+        InferenceResponseImageDC,
+        InstanceSegmentationInferenceResponseDC,
+    )
+
+    polygon = [(0.0, 0.0), (8.0, 0.0), (8.0, 6.0), (0.0, 6.0)]
+    prediction = InstanceSegmentationPrediction(
+        **{
+            "x": 4.0,
+            "y": 3.0,
+            "width": 8.0,
+            "height": 6.0,
+            "confidence": 0.75,
+            "class": "cat",
+            "class_id": 2,
+            "detection_id": "fixed",
+            "points": [Point(x=px, y=py) for px, py in polygon],
+        }
+    )
+    local = InstanceSegmentationInferenceResponseDC(
+        image=InferenceResponseImageDC(width=20, height=10), predictions=[prediction]
+    )
+    pydantic = InstanceSegmentationInferenceResponse(
+        image=InferenceResponseImage(width=20, height=10), predictions=[prediction]
+    )
+    from_local = sv.Detections.from_inference(local.to_dict())
+    from_pydantic = sv.Detections.from_inference(pydantic)
+    assert np.array_equal(from_local.xyxy, from_pydantic.xyxy)
+    assert np.array_equal(from_local.class_id, from_pydantic.class_id)
+    assert np.array_equal(from_local.confidence, from_pydantic.confidence)
+    assert (from_local.mask is None) == (from_pydantic.mask is None)
+    if from_local.mask is not None:
+        assert np.array_equal(from_local.mask, from_pydantic.mask)
