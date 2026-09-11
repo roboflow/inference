@@ -1367,6 +1367,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": 2.3,
             "taskType": "object-detection",
         },
     }
@@ -1388,6 +1389,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "rfdetr",
         "taskType": "object-detection",
         "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": 2.3,
     }
 
 
@@ -1403,6 +1405,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
             "modelId": "rfdetr-nano",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1424,6 +1427,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
         "modelType": "rfdetr",
         "taskType": "object-detection",
         "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": None,
     }
 
 
@@ -1441,6 +1445,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1469,6 +1474,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1487,6 +1493,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1521,6 +1528,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1539,6 +1547,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1563,6 +1572,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1581,6 +1591,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1602,6 +1613,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 

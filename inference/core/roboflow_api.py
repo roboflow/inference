@@ -722,6 +722,7 @@ def get_model_metadata_from_inference_models_registry(
         "modelType": model_metadata["modelArchitecture"],
         "taskType": model_metadata["taskType"],
         "modelVariant": model_metadata.get("modelVariant"),
+        "modelLatencyMs": model_metadata.get("modelLatencyMs"),
     }
     cache.set(
         api_data_cache_key,
