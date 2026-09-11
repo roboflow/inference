@@ -1143,6 +1143,12 @@ class InferencePipeline:
             predictions, video_frames = inference_results
             if _rfdetr_stream_pipeline_enabled():
                 predictions = _resolve_prediction_futures(predictions)
+            # Older duck-typed watchdogs need not implement completion telemetry.
+            on_completed = getattr(
+                self._watchdog, "on_model_prediction_completed", None
+            )
+            if on_completed is not None:
+                on_completed(frames=video_frames)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,
