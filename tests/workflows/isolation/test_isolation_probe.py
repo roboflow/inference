@@ -22,7 +22,6 @@ class _FakeChild:
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(strict=True, reason="decontamination in progress")
 def test_workflows_module_works_in_isolation(bundled_fonts) -> None:
     # `bundled_fonts` (tests/workflows/conftest.py) provisions the assets the
     # probe copies; the probe itself never downloads anything.
