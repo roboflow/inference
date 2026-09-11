@@ -142,19 +142,12 @@ class LoRASmolVLM(LoRATransformerModel):
 
         self.model.merge_and_unload()
 
-        if is_smolvlm_256m:
-            self.processor = self.processor_class.from_pretrained(
-                os.path.join(
-                    MODEL_CACHE_DIR,
-                    "lora-bases/smolvlm2/smolvlm-256m/main",
-                ),
-                local_files_only=OFFLINE_MODE,
-            )
-        else:
-            self.processor = self.processor_class.from_pretrained(
-                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main"),
-                local_files_only=OFFLINE_MODE,
-            )
+        # The native cache resolver may namespace the directory. The processor
+        # belongs to the same resolved base archive as the model weights.
+        self.processor = self.processor_class.from_pretrained(
+            model_load_id,
+            local_files_only=OFFLINE_MODE,
+        )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
         prompt = prompt or "Describe what's in this image."
