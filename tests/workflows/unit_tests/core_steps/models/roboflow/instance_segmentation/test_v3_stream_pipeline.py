@@ -112,3 +112,190 @@ def test_dc_and_pydantic_responses_normalise_to_the_same_dict() -> None:
     assert dc.to_dict() == pydantic_equivalent.model_dump(
         by_alias=True, exclude_none=True
     )
+
+
+from concurrent.futures import Future
+
+import numpy as np
+import supervision as sv
+
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+from inference.core.workflows.prototypes.models_provider import InferenceResultsDC
+
+
+class _StreamResponse:
+    """Shaped like the rfdetr adapter's workflow-execution responses: `to_dict()`
+    plus, when the adapter attached a handoff, the two private attributes
+    `attach_async_response_future` sets
+    (inference_models/models/base/async_handoff.py:106-114)."""
+
+    def __init__(self, image, predictions=(), future=None, context_id=None):
+        self._payload = {
+            "inference_id": "inf",
+            "image": image,
+            "predictions": list(predictions),
+        }
+        if future is not None:
+            self._async_response_future = future
+        if context_id is not None:
+            self._async_response_context_id = context_id
+
+    def to_dict(self):
+        return self._payload
+
+
+IMAGE_10x20 = {"width": 10, "height": 20}
+ONE_PREDICTION = [
+    {
+        "x": 5.0,
+        "y": 10.0,
+        "width": 4.0,
+        "height": 6.0,
+        "confidence": 0.9,
+        "class": "a",
+        "class_id": 0,
+        "detection_id": "d0",
+        "points": [{"x": 3.0, "y": 7.0}, {"x": 7.0, "y": 7.0}, {"x": 7.0, "y": 13.0}],
+    }
+]
+
+
+def _one_image_batch(parent_id):
+    return Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id=parent_id),
+                numpy_image=np.zeros((20, 10, 3), dtype=np.uint8),
+            )
+        ],
+        indices=[(0,)],
+    )
+
+
+def _run_locally(block, images):
+    return block.run_locally(
+        images=images,
+        model_id="m/1",
+        class_agnostic_nms=False,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=0.3,
+        max_detections=300,
+        max_candidates=3000,
+        mask_decode_mode="accurate",
+        tradeoff_factor=0.0,
+        disable_active_learning=False,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+
+def test_cold_model_first_frame_is_queued_before_inference_and_the_pipeline_pairs_and_flushes() -> (
+    None
+):
+    """Round-1 defect 1 + round-3 defect 5. Registration must happen BEFORE
+    the depth check, so the FIRST frame - on a cold model - is queued by the
+    time the provider is called. A later frame's response then carries the
+    first frame's future and context id, which pairs with (and removes) that
+    queued context; the frame that carried it stays queued until flush."""
+    loaded = {"value": False}
+    registered = []
+    at_provider_call = []  # (context id passed, pending ids at that moment)
+
+    manager = MagicMock()
+    manager.__contains__.side_effect = lambda model_id: loaded["value"]
+
+    def _add_model(**kwargs):
+        registered.append(kwargs)
+        loaded["value"] = True
+
+    manager.add_model.side_effect = _add_model
+    manager.model_supports_stream_pipeline.side_effect = lambda _: loaded["value"]
+    manager.get_model_pipeline_depth.side_effect = lambda _: 3 if loaded["value"] else 1
+
+    frame_0_future = Future()
+
+    def _run_instance_segmentation(**kwargs):
+        context_id = kwargs["stream_pipeline_context_id"]
+        assert kwargs["return_raw_responses"] is True
+        at_provider_call.append(
+            (
+                context_id,
+                [c.context_id for c in block._pending_stream_prediction_contexts],
+            )
+        )
+        if len(at_provider_call) == 1:
+            # Cold pipeline: the adapter has no finished response yet, so it
+            # hands back an empty response with NO future attached.
+            response = _StreamResponse(IMAGE_10x20)
+        else:
+            # Steady state: frame N's call returns the finished result of an
+            # OLDER frame - here frame 0's - as a future carrying frame 0's id.
+            response = _StreamResponse(
+                IMAGE_10x20, future=frame_0_future, context_id=at_provider_call[0][0]
+            )
+        return InferenceResultsDC(predictions=[], raw_responses=[response])
+
+    manager.run_instance_segmentation.side_effect = _run_instance_segmentation
+
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    try:
+        first = _run_locally(block, _one_image_batch("p0"))
+        assert registered == [{"model_id": "m/1", "api_key": "k"}]
+        c0 = at_provider_call[0][0]
+        # Registration preceded the depth check: the COLD first frame was
+        # already queued when the provider was called.
+        assert at_provider_call[0][1] == [c0]
+        # No handoff on the cold response -> finalised immediately, c0 stays queued.
+        assert [c.context_id for c in block._pending_stream_prediction_contexts] == [c0]
+        assert len(first) == 1 and len(first[0]["predictions"]) == 0
+
+        second = _run_locally(block, _one_image_batch("p1"))
+        c1 = at_provider_call[1][0]
+        assert at_provider_call[1][1] == [c0, c1]
+        # Frame 1's call returned frame 0's future: c0 moved to deferred
+        # processing, c1 is the genuinely outstanding context.
+        assert [c.context_id for c in block._pending_stream_prediction_contexts] == [c1]
+        assert isinstance(second[0]["predictions"], Future)
+        assert second[0]["model_id"] == "m/1"
+
+        # Resolve frame 0's delayed result: it must be finalised against frame
+        # 0's image (parent "p0"), not the frame that carried it.
+        frame_0_future.set_result(
+            [_StreamResponse(IMAGE_10x20, predictions=ONE_PREDICTION)]
+        )
+        resolved = second[0]["predictions"].result(timeout=5)
+        assert isinstance(resolved, sv.Detections) and len(resolved) == 1
+        assert resolved["parent_id"].tolist() == ["p0"]
+
+        # Flush drains exactly the outstanding context (c1) and pairs it with frame 1.
+        manager.flush_model_stream_pipeline.return_value = [
+            _StreamResponse(IMAGE_10x20, predictions=ONE_PREDICTION)
+        ]
+        flushed = block.flush_stream_pipeline_outputs()
+        assert len(flushed) == 1
+        indices, outputs = flushed[0]
+        assert indices == [(0,)]
+        assert outputs[0]["predictions"]["parent_id"].tolist() == ["p1"]
+        assert len(block._pending_stream_prediction_contexts) == 0
+    finally:
+        # Round-4 defect 7: if an assertion above fails before `set_result`, the
+        # worker is still blocked in `_finalize_async_prediction_value`
+        # (`v3.py:763`, `future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)`,
+        # 60 s by default, env.py:1240). Cancel the source future first - the
+        # waiter gets CancelledError immediately - then drain the executor with
+        # a blocking shutdown, then close the pipeline.
+        if not frame_0_future.done():
+            frame_0_future.cancel()
+        executor = block._stream_response_executor
+        if executor is not None:
+            executor.shutdown(wait=True)
+        block.close_stream_pipeline()

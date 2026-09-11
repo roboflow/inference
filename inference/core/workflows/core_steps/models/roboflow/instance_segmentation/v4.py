@@ -2,9 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
-from inference.core.entities.requests.inference import (
-    InstanceSegmentationInferenceRequest,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -328,12 +325,14 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = InstanceSegmentationInferenceRequest(
-            api_key=self._api_key,
+        self._model_manager.add_model(
             model_id=model_id,
-            image=inference_images,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
+            api_key=self._api_key,
+        )
+        predictions = self._model_manager.run_instance_segmentation(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
             class_agnostic_nms=class_agnostic_nms,
             class_filter=class_filter,
             confidence=confidence,
@@ -342,21 +341,10 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
-            source="workflow-execution",
             response_mask_format="rle",
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
         )
-        self._model_manager.add_model(
-            model_id=model_id,
-            api_key=self._api_key,
-        )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
-        )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,

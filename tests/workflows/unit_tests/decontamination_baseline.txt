@@ -1,6 +1,6 @@
 # Remaining `inference.*` imports inside inference/core/workflows.
 # This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 36
+# Count: 32
 inference/core/workflows/core_steps/models/foundation/clip/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v1.py	inference.core.entities.requests.clip
 inference/core/workflows/core_steps/models/foundation/clip_comparison/v2.py	inference.core.entities.requests.clip
@@ -33,7 +33,3 @@ inference/core/workflows/core_steps/models/foundation/segment_anything3_interact
 inference/core/workflows/core_steps/models/foundation/segment_anything3_interactive/v1_tensor.py	inference.core.entities.requests.sam2
 inference/core/workflows/core_steps/models/foundation/smolvlm/v1.py	inference.core.entities.requests.inference
 inference/core/workflows/core_steps/models/foundation/yolo_world/v1.py	inference.core.entities.requests.yolo_world
-inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v1.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v2.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v3.py	inference.core.entities.requests.inference
-inference/core/workflows/core_steps/models/roboflow/instance_segmentation/v4.py	inference.core.entities.requests.inference

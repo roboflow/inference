@@ -24,6 +24,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowBatchInput,
     WorkflowParameter,
 )
+from inference.core.workflows.prototypes.models_provider import InferenceResultsDC
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -304,9 +305,18 @@ class _FakeModelManager:
     def add_model(self, model_id: str, api_key: str) -> None:
         self.add_model_calls.append((model_id, api_key))
 
-    def infer_from_request_sync(self, model_id: str, request):
+    def run_instance_segmentation(
+        self,
+        model_id: str,
+        images,
+        return_raw_responses: bool = False,
+        **kwargs,
+    ):
         self.infer_calls += 1
-        return self._inference_results.pop(0)
+        responses = self._inference_results.pop(0)
+        if return_raw_responses:
+            return InferenceResultsDC(predictions=[], raw_responses=responses)
+        return responses
 
     def __contains__(self, model_id: str) -> bool:
         return model_id == "model"
@@ -337,14 +347,20 @@ class _ContextAwareModelManager(_FakeModelManager):
         self.mode = mode
         self.stream_pipeline_context_ids = []
 
-    def infer_from_request_sync(self, model_id: str, request):
+    def run_instance_segmentation(
+        self,
+        model_id: str,
+        images,
+        stream_pipeline_context_id=None,
+        return_raw_responses: bool = False,
+        **kwargs,
+    ):
         self.infer_calls += 1
-        assert request.source_info is None
-        self.stream_pipeline_context_ids.append(request.stream_pipeline_context_id)
+        self.stream_pipeline_context_ids.append(stream_pipeline_context_id)
         if self.infer_calls == 1:
-            return [_FakeResponse("priming", width=8, height=8)]
-        if self.mode == "previous":
-            return [
+            responses = [_FakeResponse("priming", width=8, height=8)]
+        elif self.mode == "previous":
+            responses = [
                 _make_async_placeholder(
                     "first-final",
                     context_id=self.stream_pipeline_context_ids[0],
@@ -352,23 +368,27 @@ class _ContextAwareModelManager(_FakeModelManager):
                     response_height=8,
                 )
             ]
-        if self.mode == "current-with-old-size":
-            return [
+        elif self.mode == "current-with-old-size":
+            responses = [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=request.stream_pipeline_context_id,
+                    context_id=stream_pipeline_context_id,
                     response_width=8,
                     response_height=8,
                 )
             ]
-        return [
-            _make_async_placeholder(
-                "first-final",
-                context_id="missing-context",
-                response_width=8,
-                response_height=8,
-            )
-        ]
+        else:
+            responses = [
+                _make_async_placeholder(
+                    "first-final",
+                    context_id="missing-context",
+                    response_width=8,
+                    response_height=8,
+                )
+            ]
+        if return_raw_responses:
+            return InferenceResultsDC(predictions=[], raw_responses=responses)
+        return responses
 
 
 def _make_async_placeholder(
