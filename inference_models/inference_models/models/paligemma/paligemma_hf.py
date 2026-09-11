@@ -53,7 +53,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 
@@ -212,7 +212,7 @@ class PaliGemmaHF:
             else:
                 image_list = [_to_tensor(img) for img in images]
         else:
-            images = pre_process_network_input(
+            image_list, _ = pre_process_network_input_to_image_list(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
                 network_input=self._inference_config.network_input,
@@ -220,8 +220,7 @@ class PaliGemmaHF:
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
                 pre_processing_overrides=pre_processing_overrides,
-            )[0]
-            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
+            )
         num_images = len(image_list)
 
         if isinstance(prompt, str) and num_images > 1:

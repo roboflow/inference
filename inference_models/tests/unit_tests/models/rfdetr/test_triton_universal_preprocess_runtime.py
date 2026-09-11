@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 import pytest
 import torch
@@ -15,6 +17,8 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     TrainingInputSize,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.rfdetr import triton_universal_preprocess_runtime
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
 )
@@ -297,6 +301,91 @@ def test_float_request_reports_missing_triton(monkeypatch) -> None:
 
     assert not compatibility.supported
     assert "Triton is not installed" in compatibility.reasons
+
+
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) -> None:
+    runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
+
+    def failing_kernel(*args, **kwargs):
+        raise RuntimeError(
+            "Failed to find C compiler. Please specify via CC environment variable."
+        )
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
+        failing_kernel,
+    )
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Failed to find C compiler",
+    ):
+        runtime.preprocess(
+            images=np.zeros((8, 9, 3), dtype=np.uint8),
+            input_color_format=ColorMode.BGR,
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
+            pre_processing_overrides=None,
+            stream=stream,
+        )
+
+    compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
+
+    assert not compatibility.supported
+    assert "Failed to find C compiler" in compatibility.reason
+    assert "Category: missing_compiler" in compatibility.reason
+    assert "Suggested action:" in compatibility.reason
+
+
+def test_recorded_uint8_jit_failure_preserves_float_runtime_path() -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+
+    uint8_compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
+    float_compatibility = runtime.check_runtime_compatibility(
+        images=torch.zeros((1, 3, 8, 9), dtype=torch.float32)
+    )
+
+    assert not uint8_compatibility.supported
+    assert float_compatibility.supported
+
+
+def test_runtime_compatibility_inspects_only_first_validated_batch_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+    inspect_calls = 0
+    original_inspect = triton_universal_preprocess_runtime._inspect_item_contract
+
+    def inspect_item_contract(item):
+        nonlocal inspect_calls
+        inspect_calls += 1
+        return original_inspect(item)
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "_inspect_item_contract",
+        inspect_item_contract,
+    )
+
+    compatibility = runtime.check_runtime_compatibility(
+        images=[np.zeros((8, 9, 3), dtype=np.uint8) for _ in range(8)]
+    )
+
+    assert not compatibility.supported
+    assert inspect_calls == 1
 
 
 def test_preprocessor_worker_limit_can_be_selected_from_environment(

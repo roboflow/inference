@@ -322,14 +322,6 @@ class BlockManifest(WorkflowBlockManifest):
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
-        json_schema_extra={
-            "relevant_for": {
-                "model_version": {
-                    "values": MODELS_NOT_SUPPORTING_THINKING_LEVEL,
-                    "required": False,
-                },
-            },
-        },
     )
     max_tokens: Optional[int] = Field(
         default=None,
@@ -1046,7 +1038,11 @@ def prepare_generation_config(
     if thinking_level is not None and supports_thinking_level:
         result["thinking_config"] = {"thinking_level": thinking_level}
 
-    if temperature is not None and not supports_thinking_level:
+    # The Gemini API accepts temperature alongside thinking_config for
+    # thinking-level models, so forward it whenever the user set it explicitly.
+    # Silently dropping it left workflows with no way to make structured
+    # extraction deterministic on Gemini 3.x models.
+    if temperature is not None:
         result["temperature"] = temperature
 
     return result

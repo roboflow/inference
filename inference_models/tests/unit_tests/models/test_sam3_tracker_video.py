@@ -70,11 +70,16 @@ class _FakeSam3TrackerVideoProcessor:
         self.last_add_inputs_kwargs = {
             "frame_idx": frame_idx,
             "obj_ids": obj_ids,
+            "input_points": input_points,
+            "input_labels": input_labels,
             "input_boxes": input_boxes,
             "original_size": original_size,
         }
-        inference_session.obj_ids = list(obj_ids)
-        inference_session.boxes_added = input_boxes[0] if input_boxes else []
+        inference_session.obj_ids = list(
+            dict.fromkeys([*inference_session.obj_ids, *obj_ids])
+        )
+        if input_boxes:
+            inference_session.boxes_added.extend(input_boxes[0])
         return inference_session
 
     def post_process_masks(self, masks_list, original_sizes, binarize=True):
@@ -148,6 +153,50 @@ def test_sam3_tracker_video_accepts_box_prompts():
         [[1.0, 2.0, 10.0, 12.0], [5.0, 6.0, 20.0, 22.0]]
     ]
     assert processor.last_add_inputs_kwargs["original_size"] == (32, 48)
+
+
+def test_sam3_tracker_video_accepts_point_prompts():
+    tracker, processor, _ = _build_model()
+    frame = np.zeros((32, 48, 3), dtype=np.uint8)
+
+    masks, obj_ids, _state = tracker.prompt(
+        image=frame,
+        points=[(10, 12, True), (14, 16, False)],
+        clear_old_prompts=True,
+    )
+
+    assert masks.shape == (1, 32, 48)
+    assert obj_ids.tolist() == [0]
+    assert processor.last_add_inputs_kwargs["obj_ids"] == [0]
+    assert processor.last_add_inputs_kwargs["input_points"] == [
+        [[[10.0, 12.0], [14.0, 16.0]]]
+    ]
+    assert processor.last_add_inputs_kwargs["input_labels"] == [[[1, 0]]]
+
+
+def test_sam3_tracker_video_keeps_boxes_and_points_as_separate_objects():
+    tracker, processor, _ = _build_model()
+    frame = np.zeros((32, 48, 3), dtype=np.uint8)
+
+    masks, obj_ids, _state = tracker.prompt(
+        image=frame,
+        bboxes=[(1, 2, 10, 12), (5, 6, 20, 22)],
+        points=[(10, 12, True)],
+    )
+
+    assert processor.sessions_created == 1
+    assert masks.shape == (3, 32, 48)
+    assert obj_ids.tolist() == [0, 1, 2]
+    assert processor.last_add_inputs_kwargs["obj_ids"] == [0, 1, 2]
+    assert processor.last_add_inputs_kwargs["input_boxes"] is None
+    assert processor.last_add_inputs_kwargs["input_points"] == [
+        [
+            [[1.0, 2.0], [10.0, 12.0]],
+            [[5.0, 6.0], [20.0, 22.0]],
+            [[10.0, 12.0]],
+        ]
+    ]
+    assert processor.last_add_inputs_kwargs["input_labels"] == [[[2, 3], [2, 3], [1]]]
 
 
 def test_sam3_tracker_video_track_without_state_raises():

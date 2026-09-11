@@ -5,7 +5,11 @@ import numpy as np
 import pytest
 import requests
 
-from tests.inference.integration_tests.conftest import on_demand_clean_loaded_models
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    on_demand_clean_loaded_models,
+    without_api_key_in_header_mode,
+)
 
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
@@ -74,7 +78,7 @@ def get_classes_confidence(response: dict) -> np.ndarray:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_s() -> None:
+def test_yolo_world_v1_s(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -96,7 +100,8 @@ def test_yolo_world_v1_s() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -116,7 +121,7 @@ def test_yolo_world_v1_s() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_m() -> None:
+def test_yolo_world_v1_m(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -142,7 +147,8 @@ def test_yolo_world_v1_m() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -162,7 +168,7 @@ def test_yolo_world_v1_m() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_l() -> None:
+def test_yolo_world_v1_l(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -188,7 +194,8 @@ def test_yolo_world_v1_l() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -208,7 +215,7 @@ def test_yolo_world_v1_l() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_x() -> None:
+def test_yolo_world_v1_x(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -234,7 +241,8 @@ def test_yolo_world_v1_x() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -254,7 +262,7 @@ def test_yolo_world_v1_x() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_s() -> None:
+def test_yolo_world_v2_s(auth_mode: str) -> None:
     on_demand_clean_loaded_models()
     # given
     payload = {
@@ -276,7 +284,8 @@ def test_yolo_world_v2_s() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -296,7 +305,7 @@ def test_yolo_world_v2_s() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_m() -> None:
+def test_yolo_world_v2_m(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -322,7 +331,8 @@ def test_yolo_world_v2_m() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -342,7 +352,7 @@ def test_yolo_world_v2_m() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_l() -> None:
+def test_yolo_world_v2_l(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -369,7 +379,8 @@ def test_yolo_world_v2_l() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then
@@ -389,7 +400,7 @@ def test_yolo_world_v2_l() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_x() -> None:
+def test_yolo_world_v2_x(auth_mode: str) -> None:
     # given
     on_demand_clean_loaded_models()
     payload = {
@@ -415,7 +426,8 @@ def test_yolo_world_v2_x() -> None:
     # when
     response = requests.post(
         f"{base_url}:{port}/yolo_world/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
 
     # then

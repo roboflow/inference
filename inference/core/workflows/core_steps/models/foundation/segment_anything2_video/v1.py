@@ -33,7 +33,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,
@@ -67,6 +67,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.usage_tracking.collector import usage_collector
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 
@@ -268,12 +269,16 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
             self._sessions.clear()
         return self._model
 
+    @usage_collector("model")
     def run(
         self,
         images: Batch[WorkflowImageData],

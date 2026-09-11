@@ -554,7 +554,21 @@ def slugify_kind_name(kind_name: str) -> str:
 
 def slugify_block_name(name: str) -> str:
     name = re.sub(r"[/\- ]+", r"", name)
-    return camel_to_snake(name=name)
+    name = camel_to_snake(name=name)
+
+    # Brackets terminate a markdown link destination, so a block name carrying
+    # them produces a link the renderer truncates: "PTZ Tracking (ONVIF)" became
+    # [PTZ Tracking (ONVIF)](ptz_tracking(onvif).md), which mkdocs cut at the
+    # inner ")" and resolved to a page that does not exist. Every block page
+    # cross-references every other block, so one such name breaks links site
+    # wide. slugify_kind_name already sanitises the same class of character.
+    #
+    # Deliberately narrower than "strip everything unsafe": dots are legal in a
+    # URL and several published pages rely on them (qwen2.5_vl,
+    # llama3.2_vision), so widening this would silently move working URLs.
+    name = re.sub(r"[()\[\]]+", "_", name)
+
+    return re.sub(r"_+", "_", name).strip("_")
 
 
 def camel_to_snake(name: str) -> str:

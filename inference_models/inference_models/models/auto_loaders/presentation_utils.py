@@ -1,14 +1,21 @@
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import List, Optional, Tuple, Union
 
 from rich.table import Table
 
+from inference_models.errors import BaseInferenceModelsError
+from inference_models.models.auto_loaders.model_cache_paths import (
+    resolve_existing_model_package_cache_path,
+)
 from inference_models.runtime_introspection.core import RuntimeXRayResult
 from inference_models.utils.download import get_content_length
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    LocalFileArtefactSpecs,
     ModelDependency,
     ModelPackageMetadata,
     Quantization,
@@ -54,20 +61,66 @@ def render_table_with_model_overview(
 def calculate_size_of_all_model_packages_artefacts(
     model_packages: List[ModelPackageMetadata],
     max_workers: int = 16,
+    model_id: Optional[str] = None,
 ) -> List[Tuple[int, bool]]:
-    all_artefacts = [package.package_artefacts for package in model_packages]
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        return list(pool.map(calculate_artefacts_size, all_artefacts))
+        return list(
+            pool.map(
+                partial(calculate_model_package_size, model_id=model_id),
+                model_packages,
+            )
+        )
+
+
+def calculate_model_package_size(
+    model_package: ModelPackageMetadata,
+    model_id: Optional[str] = None,
+) -> Tuple[int, bool]:
+    return calculate_artefacts_size(
+        package_artefacts=model_package.package_artefacts,
+        local_package_dir=resolve_local_model_package_dir(
+            model_package=model_package,
+            model_id=model_id,
+        ),
+    )
+
+
+def resolve_local_model_package_dir(
+    model_package: ModelPackageMetadata,
+    model_id: Optional[str] = None,
+) -> Optional[str]:
+    """Locate the cache dir holding a package's local artefacts, if any."""
+
+    cache_model_id = model_package.cache_model_id or model_id
+    if cache_model_id is None:
+        return None
+    try:
+        return resolve_existing_model_package_cache_path(
+            model_id=cache_model_id,
+            package_id=model_package.package_id,
+        )
+    except (BaseInferenceModelsError, OSError):
+        return None
 
 
 def calculate_artefacts_size(
-    package_artefacts: List[FileDownloadSpecs],
+    package_artefacts: List[Union[FileDownloadSpecs, LocalFileArtefactSpecs]],
+    local_package_dir: Optional[str] = None,
 ) -> Tuple[int, bool]:
     result = 0
     success = True
     for artefact in package_artefacts:
         try:
-            result += get_content_length(url=artefact.download_url)
+            if isinstance(artefact, LocalFileArtefactSpecs):
+                if local_package_dir is None:
+                    raise FileNotFoundError(
+                        f"No local package dir to size artefact {artefact.file_handle}"
+                    )
+                result += os.path.getsize(
+                    os.path.join(local_package_dir, artefact.file_handle)
+                )
+            else:
+                result += get_content_length(url=artefact.download_url)
         except Exception:
             success = False
     return result, success
@@ -99,7 +152,7 @@ def render_table_with_model_packages(
             if model_package.static_batch_size
             else "N"
         )
-        if model_package.quantization is Quantization.UNKNOWN:
+        if model_package.quantization in (None, Quantization.UNKNOWN):
             quantization_str = "N/A"
         else:
             quantization_str = model_package.quantization.value
@@ -133,7 +186,7 @@ def render_model_package_details_table(
     batch_size = (
         str(model_package.static_batch_size) if model_package.static_batch_size else "N"
     )
-    if model_package.quantization is Quantization.UNKNOWN:
+    if model_package.quantization in (None, Quantization.UNKNOWN):
         quantization_str = "N/A"
     else:
         quantization_str = model_package.quantization.value

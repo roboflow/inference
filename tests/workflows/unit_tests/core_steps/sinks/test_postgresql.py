@@ -1,0 +1,462 @@
+import asyncio
+from unittest.mock import MagicMock
+
+import psycopg
+import pytest
+from fastapi import BackgroundTasks
+from pydantic import ValidationError
+
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_response
+from inference.enterprise.workflows.enterprise_blocks.sinks.postgresql import v1
+
+
+def arguments(**overrides):
+    values = dict(
+        host="localhost",
+        database="test",
+        username="writer",
+        table_name="events",
+        data={"label": "part", "score": 0.9},
+    )
+    values.update(overrides)
+    return values
+
+
+@pytest.fixture
+def connect(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr(v1.psycopg, "connect", mock)
+    return mock
+
+
+def test_manifest_defaults_and_integer_selectors():
+    manifest = v1.BlockManifest(
+        type="roboflow_core/postgresql_sink@v1",
+        name="pg",
+        **arguments(port="$inputs.port"),
+    )
+    assert manifest.port == "$inputs.port"
+    assert manifest.sslmode == "require"
+    assert manifest.statement_timeout == 10000
+    assert {output.name for output in manifest.describe_outputs()} == {
+        "message",
+        "error_status",
+    }
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("port", 0),
+        ("port", 65536),
+        ("connect_timeout", 0),
+        ("statement_timeout", -1),
+        ("sslmode", "bad"),
+    ],
+)
+def test_invalid_manifest(field, value):
+    with pytest.raises(ValidationError):
+        v1.BlockManifest(
+            type="roboflow_core/postgresql_sink@v1",
+            name="pg",
+            **arguments(**{field: value}),
+        )
+
+
+@pytest.mark.parametrize(
+    "data", [None, [], {}, [{}], "bad", [1], [{"a": 1}, {"b": 2}], {"": 1}, {1: 1}]
+)
+def test_invalid_rows_do_not_connect(data, connect):
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(data=data))
+    assert result["error_status"]
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("port", True),
+        ("port", "$inputs.port"),
+        ("connect_timeout", -1),
+        ("statement_timeout", 0),
+        ("sslmode", "bad"),
+        ("host", ""),
+    ],
+)
+def test_invalid_resolved_settings_do_not_connect(field, value, connect):
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(**{field: value}))
+    assert result["error_status"]
+    connect.assert_not_called()
+
+
+def test_bound_values_and_quoted_identifiers(connect):
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(
+        **arguments(
+            schema_name='my"schema',
+            table_name="select",
+            data=[{"a": "'); DROP TABLE events; --", "b": None}, {"b": 2, "a": "ok"}],
+        )
+    )
+    cursor = (
+        connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+    )
+    query, rows = cursor.executemany.call_args.args
+    assert (
+        query.as_string()
+        == 'INSERT INTO "my""schema"."select" ("a", "b") VALUES (%s, %s)'
+    )
+    assert rows == [("'); DROP TABLE events; --", None), ("ok", 2)]
+    assert result == {
+        "error_status": False,
+        "message": "Successfully inserted 2 records",
+    }
+    connect.return_value.__exit__.assert_called_once_with(None, None, None)
+
+
+def test_commit_failure_is_not_success(connect, monkeypatch):
+    log = MagicMock()
+    monkeypatch.setattr(v1, "logger", log)
+    connect.return_value.__exit__.side_effect = psycopg.OperationalError(
+        "secret-password"
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    assert result["error_status"]
+    assert "Commit outcome may be unknown" in result["message"]
+    assert "OperationalError" in result["message"]
+    log.error.assert_called_once_with("PostgreSQL Sink: %s", result["message"])
+    assert "secret-password" not in result["message"] + str(log.error.call_args)
+
+
+def test_missing_driver(monkeypatch):
+    monkeypatch.setattr(v1, "psycopg", None)
+    assert (
+        "driver unavailable"
+        in v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())["message"]
+    )
+
+
+def test_disabled_sink_precedes_all_processing(monkeypatch, connect):
+    tasks, pool = MagicMock(), MagicMock()
+    monkeypatch.setattr(v1, "psycopg", None)
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool, disable_sinks=True).run(
+        **arguments(data=None)
+    )
+    assert result == disabled_sink_response()
+    tasks.add_task.assert_not_called()
+    pool.submit.assert_not_called()
+    connect.assert_not_called()
+
+
+def test_background_tasks_take_precedence_and_log_failures(connect, monkeypatch):
+    log = MagicMock()
+    monkeypatch.setattr(v1, "logger", log)
+    tasks, pool = BackgroundTasks(), MagicMock()
+    connect.side_effect = psycopg.OperationalError("secret-password")
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments())
+    assert result == {"error_status": False, "message": "Data processing scheduled"}
+    connect.assert_not_called()
+    pool.submit.assert_not_called()
+    asyncio.run(tasks())
+    assert "PostgreSQL connection failed" in str(log.error.call_args)
+    assert "secret-password" not in str(log.error.call_args)
+
+
+def test_thread_pool_fallback(connect):
+    pool = MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(None, pool).run(**arguments())
+    assert result["message"] == "Data processing scheduled"
+    connect.assert_not_called()
+    task = pool.submit.call_args.args[0]
+    assert not task()["error_status"]
+
+
+@pytest.mark.parametrize("flag", [False, "false", "False", 0])
+def test_synchronous_mode_does_not_schedule(connect, flag):
+    tasks, pool = MagicMock(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(
+        **arguments(fire_and_forget=flag)
+    )
+    assert result["message"] == "Successfully inserted 1 records"
+    tasks.add_task.assert_not_called()
+    pool.submit.assert_not_called()
+
+
+def test_enterprise_registration():
+    from inference.enterprise.workflows.enterprise_blocks.loader import (
+        load_enterprise_blocks,
+    )
+
+    assert v1.PostgreSQLSinkBlockV1 in load_enterprise_blocks()
+
+
+def test_connection_and_transaction_settings(connect):
+    v1.PostgreSQLSinkBlockV1(None, None).run(
+        **arguments(
+            password="secret",
+            port=5433,
+            sslmode="verify-full",
+            connect_timeout=7,
+            statement_timeout=1234,
+        )
+    )
+    connect.assert_called_once_with(
+        host="localhost",
+        port=5433,
+        dbname="test",
+        user="writer",
+        password="secret",
+        sslmode="verify-full",
+        connect_timeout=7,
+        tcp_user_timeout=7 * 1000 + 1234,
+        autocommit=False,
+    )
+    cursor = (
+        connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+    )
+    cursor.execute.assert_called_once_with(
+        "SELECT set_config('statement_timeout', %s, true)", ("1234",)
+    )
+
+
+@pytest.mark.parametrize("value", [None, "sometimes", [], {}])
+def test_invalid_boolean_does_not_schedule(value, connect):
+    tasks, pool = MagicMock(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(
+        **arguments(fire_and_forget=value)
+    )
+    assert result["error_status"]
+    tasks.add_task.assert_not_called()
+    pool.submit.assert_not_called()
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "phase,error,category",
+    [
+        (
+            "connection",
+            psycopg.OperationalError("sensitive hostname"),
+            "OperationalError",
+        ),
+        ("insert", psycopg.errors.CheckViolation("sensitive row"), "IntegrityError"),
+        (
+            "commit",
+            psycopg.errors.CheckViolation("sensitive deferred constraint"),
+            "IntegrityError",
+        ),
+    ],
+)
+def test_failure_categories_without_false_commit_uncertainty(
+    connect, monkeypatch, phase, error, category
+):
+    log = MagicMock()
+    monkeypatch.setattr(v1, "logger", log)
+    if phase == "connection":
+        connect.side_effect = error
+    elif phase == "insert":
+        connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.executemany.side_effect = (
+            error
+        )
+    else:
+        connect.return_value.__exit__.side_effect = error
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    assert f"PostgreSQL {phase} failed: {category}" in result["message"]
+    assert "unknown" not in result["message"]
+    assert "sensitive" not in result["message"] + str(log.error.call_args)
+
+
+def test_non_ascii_sqlstate_is_not_exposed(connect):
+    class InvalidState(psycopg.Error):
+        sqlstate = "é1234"
+
+    connect.side_effect = InvalidState("sensitive")
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    assert "SQLSTATE" not in result["message"]
+
+
+def test_serverless_manifest_contract():
+    from inference.core.workflows.prototypes.block import Runtime, Severity
+
+    assert not any(
+        restriction.severity == Severity.HARD
+        and Runtime.HOSTED_SERVERLESS in restriction.applies_to_runtimes
+        for restriction in v1.BlockManifest.get_restrictions()
+    )
+    assert not v1.BlockManifest.model_json_schema()["ui_manifest"].get(
+        "local_only", False
+    )
+
+
+def test_permissive_mode_does_not_resolve_or_pin(connect, monkeypatch):
+    # Default (permissive) mode must not resolve the host or set hostaddr.
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    resolver = MagicMock()
+    monkeypatch.setattr(v1, "resolve_and_validate_ips", resolver)
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments())
+    resolver.assert_not_called()
+    assert "hostaddr" not in connect.call_args.kwargs
+
+
+def test_restrictive_mode_pins_validated_ip(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(
+        v1, "resolve_and_validate_ips", MagicMock(return_value=["93.184.216.34"])
+    )
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.example.com"))
+    kwargs = connect.call_args.kwargs
+    assert kwargs["host"] == "db.example.com"  # kept for TLS SNI / cert
+    assert kwargs["hostaddr"] == "93.184.216.34"  # socket pinned to validated IP
+
+
+def test_restrictive_mode_blocks_non_global_host(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(
+        v1,
+        "resolve_and_validate_ips",
+        MagicMock(
+            side_effect=v1.SinkAddressNotAllowedError(
+                "Host '169.254.169.254' resolves to non-global address '169.254.169.254'."
+            )
+        ),
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(
+        **arguments(host="169.254.169.254")
+    )
+    assert result["error_status"] is True
+    assert "non-global address" in result["message"]
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql", "10.0.0.1,10.0.0.2"])
+def test_restrictive_mode_rejects_socket_and_multihost(host, connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False)
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host=host))
+    assert result["error_status"] is True
+    connect.assert_not_called()
+
+
+def test_invalid_input_reported_synchronously_in_fire_and_forget(connect):
+    # Regression for H3: validation must run before scheduling, so a bad input
+    # surfaces to the caller instead of being swallowed by the background task.
+    tasks, pool = BackgroundTasks(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments(data=[]))
+    assert result["error_status"] is True
+    pool.submit.assert_not_called()
+    assert len(tasks.tasks) == 0
+    connect.assert_not_called()
+
+
+def test_denylisted_reason_blocks_host_literal():
+    assert (
+        v1.denylisted_reason(
+            "db.blocked.example", ["93.184.216.34"], {"db.blocked.example"}
+        )
+        == "host is blocked by the sink address denylist"
+    )
+
+
+def test_denylisted_reason_blocks_resolved_ip():
+    reason = v1.denylisted_reason(
+        "db.example.com", ["93.184.216.34"], {"93.184.216.34"}
+    )
+    assert reason == "host 'db.example.com' resolves to a denylisted address '93.184.216.34'"
+
+
+def test_denylisted_reason_none_when_clear():
+    assert v1.denylisted_reason("db.example.com", ["93.184.216.34"], None) is None
+    assert v1.denylisted_reason("db.example.com", ["93.184.216.34"], {"1.2.3.4"}) is None
+
+
+def test_local_resolver_is_faithful_copy(monkeypatch):
+    # 3-arg copy of the util: returns resolved IPs, raises SinkAddressNotAllowedError
+    # on a non-global result, and takes no denylist argument.
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    assert v1.resolve_and_validate_ips(
+        "db.example.com", 5432, allow_non_global_addresses=True
+    ) == ["93.184.216.34"]
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("127.0.0.1", 5432))])
+    )
+    with pytest.raises(v1.SinkAddressNotAllowedError):
+        v1.resolve_and_validate_ips(
+            "db.example.com", 5432, allow_non_global_addresses=False
+        )
+
+
+def test_denylist_active_even_when_non_global_allowed(connect, monkeypatch):
+    # Non-global permissive, but a denylist is configured -> policy is active and
+    # the connection is screened + pinned.
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", {"93.184.216.34"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.example.com"))
+    assert result["error_status"] is True
+    assert "denylist" in result["message"] or "denylisted" in result["message"]
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize("platform_flag", ["GCP_SERVERLESS", "LAMBDA"])
+def test_sink_always_fails_on_hosted_platform(platform_flag, connect, monkeypatch):
+    monkeypatch.setattr(v1, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(v1, "LAMBDA", False)
+    monkeypatch.setattr(v1, platform_flag, True)
+    tasks, pool = BackgroundTasks(), MagicMock()
+    result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments())
+    assert result["error_status"] is True
+    assert "hosted platform" in result["message"]
+    connect.assert_not_called()
+    pool.submit.assert_not_called()
+    assert len(tasks.tasks) == 0
+
+
+def test_not_whitelisted_reason_allows_host_match():
+    assert (
+        v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], {"db.example.com"})
+        is None
+    )
+
+
+def test_not_whitelisted_reason_allows_when_all_ips_match():
+    assert (
+        v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], {"93.184.216.34"})
+        is None
+    )
+
+
+def test_not_whitelisted_reason_blocks_when_absent():
+    assert (
+        v1.not_whitelisted_reason("db.other.com", ["203.0.113.9"], {"db.example.com"})
+        == "host is not in the sink address allowlist"
+    )
+
+
+def test_not_whitelisted_reason_none_when_no_allowlist():
+    assert v1.not_whitelisted_reason("db.example.com", ["93.184.216.34"], None) is None
+
+
+def test_allowlist_blocks_non_listed_host_end_to_end(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"db.allowed.com"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    result = v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.evil.com"))
+    assert result["error_status"] is True
+    assert "allowlist" in result["message"]
+    connect.assert_not_called()
+
+
+def test_allowlist_permits_listed_host_end_to_end(connect, monkeypatch):
+    monkeypatch.setattr(v1, "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+    monkeypatch.setattr(v1, "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"db.allowed.com"})
+    monkeypatch.setattr(
+        v1.socket, "getaddrinfo", MagicMock(return_value=[(0, 0, 0, "", ("93.184.216.34", 5432))])
+    )
+    v1.PostgreSQLSinkBlockV1(None, None).run(**arguments(host="db.allowed.com"))
+    kwargs = connect.call_args.kwargs
+    assert kwargs["host"] == "db.allowed.com"
+    assert kwargs["hostaddr"] == "93.184.216.34"

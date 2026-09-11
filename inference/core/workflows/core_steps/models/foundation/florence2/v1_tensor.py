@@ -13,6 +13,7 @@ import torch
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -35,7 +36,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 from inference_models import Detections, InstanceDetections, KeyPoints
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # inference_models native prediction shapes accepted on the grounding input.
 TensorNativeGrounding = Union[
@@ -197,6 +198,9 @@ class Florence2BlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

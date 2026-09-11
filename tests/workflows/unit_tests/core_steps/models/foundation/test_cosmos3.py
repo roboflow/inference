@@ -49,6 +49,11 @@ def test_manifest_accepts_model_version_selector():
     assert result.model_version == "$inputs.model_version"
 
 
+def test_manifest_accepts_a_fine_tuned_model_id():
+    result = BlockManifest.model_validate({**BASE, "model_version": "my-project/3"})
+    assert result.model_version == "my-project/3"
+
+
 def test_manifest_rejects_invalid_image_selector():
     with pytest.raises(ValidationError):
         BlockManifest.model_validate({**BASE, "images": 42})
@@ -66,6 +71,12 @@ def test_combine_prompt_uses_sentinel():
     )
 
 
-def test_combine_prompt_applies_defaults():
+def test_combine_prompt_applies_the_default_prompt_and_leaves_the_system_prompt_to_the_model():
     combined = _combine_prompt(prompt=None, system_prompt=None)
-    assert combined.startswith("Describe what's in this image.<system_prompt>")
+    assert combined == "Describe what's in this image."
+    assert "<system_prompt>" not in combined
+
+
+def test_combine_prompt_keeps_a_user_system_prompt():
+    combined = _combine_prompt(prompt=None, system_prompt="Be terse.")
+    assert combined == "Describe what's in this image.<system_prompt>Be terse."

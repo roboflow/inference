@@ -43,10 +43,14 @@ from inference_models.models.optimization.contracts import (
     OptimizationMetadata,
     OptimizationStage,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -68,13 +72,14 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
 )
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_postprocessor_for_request,
+    resolve_postprocessor_runtime_fallback,
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
+    resolve_preprocessor_runtime_fallback,
 )
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
-from inference_models.models.rfdetr.triton_preprocess import TRITON_AVAILABLE
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -103,6 +108,20 @@ except ImportError as import_error:
         f"model, You can also contact Roboflow to get support.",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
+
+
+_MODEL_RUNTIME_ERROR_HELP_URL = (
+    "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror"
+)
+
+
+def _as_model_runtime_error(
+    error: RecoverableStageExecutionError,
+) -> ModelRuntimeError:
+    return ModelRuntimeError(
+        message=str(error),
+        help_url=_MODEL_RUNTIME_ERROR_HELP_URL,
+    )
 
 
 class RFDetrForObjectDetectionTRT(
@@ -339,6 +358,9 @@ class RFDetrForObjectDetectionTRT(
             postprocessor_id=self._postprocessor.metadata.implementation_id,
             engine_plugin_id=self._engine_plugin.metadata.implementation_id,
             allow_compatibility_fallback=(requested_plan.allow_compatibility_fallback),
+            allow_runtime_failure_fallback=(
+                requested_plan.allow_runtime_failure_fallback
+            ),
         )
         model_selections = {
             "preprocessor": preprocessor_selection,
@@ -533,10 +555,51 @@ class RFDetrForObjectDetectionTRT(
             context=context,
             allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
         )
-        self._record_last_execution(
-            stage="preprocessor",
-            selection=selection.to_dict(),
+
+        allow_runtime_failure_fallback = (
+            self._rfdetr_execution_plan.allow_compatibility_fallback
+            and self._rfdetr_execution_plan.allow_runtime_failure_fallback
         )
+        try:
+            selection = resolve_preprocessor_runtime_fallback(
+                registry=self._implementation_registry,
+                selection=selection,
+                request=request,
+                context=context,
+                allow_fallback=allow_runtime_failure_fallback,
+            )
+            self._record_last_execution(
+                stage="preprocessor",
+                selection=selection.to_dict(),
+            )
+            try:
+                result = selection.implementation.preprocess(
+                    request=request,
+                    context=context,
+                )
+            except RecoverableStageExecutionError:
+                if not allow_runtime_failure_fallback:
+                    raise
+                fallback_selection = resolve_preprocessor_runtime_fallback(
+                    registry=self._implementation_registry,
+                    selection=selection,
+                    request=request,
+                    context=context,
+                    allow_fallback=allow_runtime_failure_fallback,
+                )
+                if fallback_selection.implementation is selection.implementation:
+                    raise
+                selection = fallback_selection
+                self._record_last_execution(
+                    stage="preprocessor",
+                    selection=selection.to_dict(),
+                )
+                result = selection.implementation.preprocess(
+                    request=request,
+                    context=context,
+                )
+        except RecoverableStageExecutionError as error:
+            raise _as_model_runtime_error(error) from error
         if selection.used_fallback and self._request_fallback_warnings.claim(
             stage=OptimizationStage.PREPROCESS,
             requested_id=selection.requested_id,
@@ -550,10 +613,6 @@ class RFDetrForObjectDetectionTRT(
                 selection.effective_id,
                 selection.fallback_reason,
             )
-        result = selection.implementation.preprocess(
-            request=request,
-            context=context,
-        )
         if selection.fallback_reason is not None:
             result = replace(result, fallback_reason=selection.fallback_reason)
         engine_input_buffer = self._buffer_strategy.prepare_engine_input(
@@ -668,10 +727,51 @@ class RFDetrForObjectDetectionTRT(
                     self._rfdetr_execution_plan.allow_compatibility_fallback
                 ),
             )
-            self._record_last_execution(
-                stage="postprocessor",
-                selection=selection.to_dict(),
+
+            allow_runtime_failure_fallback = (
+                self._rfdetr_execution_plan.allow_compatibility_fallback
+                and self._rfdetr_execution_plan.allow_runtime_failure_fallback
             )
+            try:
+                selection = resolve_postprocessor_runtime_fallback(
+                    registry=self._implementation_registry,
+                    selection=selection,
+                    request=request,
+                    context=context,
+                    allow_fallback=allow_runtime_failure_fallback,
+                )
+                self._record_last_execution(
+                    stage="postprocessor",
+                    selection=selection.to_dict(),
+                )
+                try:
+                    results = selection.implementation.postprocess(
+                        request=request,
+                        context=context,
+                    )
+                except RecoverableStageExecutionError:
+                    if not allow_runtime_failure_fallback:
+                        raise
+                    fallback_selection = resolve_postprocessor_runtime_fallback(
+                        registry=self._implementation_registry,
+                        selection=selection,
+                        request=request,
+                        context=context,
+                        allow_fallback=allow_runtime_failure_fallback,
+                    )
+                    if fallback_selection.implementation is selection.implementation:
+                        raise
+                    selection = fallback_selection
+                    self._record_last_execution(
+                        stage="postprocessor",
+                        selection=selection.to_dict(),
+                    )
+                    results = selection.implementation.postprocess(
+                        request=request,
+                        context=context,
+                    )
+            except RecoverableStageExecutionError as error:
+                raise _as_model_runtime_error(error) from error
             if selection.used_fallback and self._request_fallback_warnings.claim(
                 stage=OptimizationStage.POSTPROCESS,
                 requested_id=selection.requested_id,
@@ -685,10 +785,6 @@ class RFDetrForObjectDetectionTRT(
                     selection.effective_id,
                     selection.fallback_reason,
                 )
-            results = selection.implementation.postprocess(
-                request=request,
-                context=context,
-            )
 
             return results
 
@@ -712,7 +808,7 @@ class RFDetrForObjectDetectionTRT(
             compute_capability=torch.cuda.get_device_capability(
                 self._device.index or 0
             ),
-            runtime_components={"triton": TRITON_AVAILABLE},
+            runtime_components=get_runtime_components(),
         )
 
         return context

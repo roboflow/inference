@@ -73,7 +73,9 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
 
 @dataclass
 class MultiLabelClassificationPrediction:
-    class_ids: torch.Tensor  # (predicted_labels_ids, ) — indices of above-threshold classes
+    class_ids: (
+        torch.Tensor
+    )  # (predicted_labels_ids, ) — indices of above-threshold classes
     confidence: torch.Tensor  # (num_classes, ) — full sigmoid distribution
     image_metadata: Optional[dict] = None
 

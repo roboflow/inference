@@ -13,6 +13,10 @@ from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_im
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
+    build_thinking_config,
+    resolve_temperature,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -251,13 +255,15 @@ class BlockManifest(WorkflowBlockManifest):
     extended_thinking: Optional[bool] = Field(
         default=None,
         description="Enable extended thinking for deeper reasoning on complex tasks. "
-        "Note: temperature cannot be used when extended thinking is enabled.",
+        "Note: temperature cannot be used when extended thinking is enabled. Models that "
+        "only support adaptive thinking (Claude Opus 4.7 and newer) ignore `thinking_budget_tokens`.",
     )
     thinking_budget_tokens: Optional[int] = Field(
         default=None,
         description="Maximum number of tokens for internal thinking when extended thinking is enabled. "
         "Higher values allow deeper reasoning but increase latency and cost. "
-        "Must be less than max_tokens. Minimum: 1024.",
+        "Must be less than max_tokens. Minimum: 1024. Ignored by models that only support "
+        "adaptive thinking (Claude Opus 4.7 and newer).",
         ge=1024,
         json_schema_extra={
             "relevant_for": {
@@ -275,7 +281,8 @@ class BlockManifest(WorkflowBlockManifest):
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-1.0, the higher - the more "
-        'random / "creative" the generations are. Cannot be used when extended_thinking is enabled.',
+        'random / "creative" the generations are. Cannot be used when extended_thinking is enabled. '
+        "Ignored by models that no longer accept sampling parameters (Claude Opus 4.7 and newer).",
         ge=0.0,
         le=1.0,
     )
@@ -518,7 +525,12 @@ def execute_claude_request(
     if system_prompt is None:
         system_prompt = NOT_GIVEN
 
-    if temperature is None or extended_thinking:
+    temperature = resolve_temperature(
+        temperature,
+        model_version=model_version,
+        extended_thinking=extended_thinking,
+    )
+    if temperature is None:
         temperature = NOT_GIVEN
 
     model_max_output = MAX_OUTPUT_TOKENS.get(model_version, DEFAULT_MAX_OUTPUT_TOKENS)
@@ -532,16 +544,14 @@ def execute_claude_request(
         "temperature": temperature,
     }
 
-    if extended_thinking:
-        effective_budget = (
-            thinking_budget_tokens
-            if thinking_budget_tokens is not None
-            else model_max_output // 2
-        )
-        request_params["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": effective_budget,
-        }
+    thinking = build_thinking_config(
+        extended_thinking=extended_thinking,
+        thinking_budget_tokens=thinking_budget_tokens,
+        model_version=model_version,
+        model_max_output=model_max_output,
+    )
+    if thinking is not None:
+        request_params["thinking"] = thinking
 
     # Stream response to avoid max_tokens limitation
     with client.messages.stream(**request_params) as stream:

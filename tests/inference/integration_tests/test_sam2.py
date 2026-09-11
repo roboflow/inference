@@ -7,6 +7,10 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import bool_env
 
 api_key = os.environ.get("API_KEY")
@@ -30,19 +34,21 @@ payload_ = {
 
 tests = ["embed_image", "segment_image"]
 
+
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_SAM2_TESTS", True)),
     reason="Skipping SAM test",
 )
 @pytest.mark.parametrize("version_id", version_ids)
 @pytest.mark.parametrize("test", tests)
-def test_sam2(version_id, test, clean_loaded_models_fixture):
+def test_sam2(version_id, test, auth_mode, clean_loaded_models_fixture):
     payload = deepcopy(payload_)
     payload["api_key"] = api_key
     payload["sam2_version_id"] = version_id
     response = requests.post(
         f"{base_url}:{port}/sam2/{test}",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
     try:
         response.raise_for_status()

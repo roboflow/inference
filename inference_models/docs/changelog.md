@@ -3,6 +3,219 @@
 ## Unreleased
 
 ---
+
+## `0.37.0`
+
+### Fixed
+
+- `GitPython` lower-bound got updated to `3.1.59` to mitigate security risks.
+
+---
+
+## `0.37.0`
+
+### Added
+
+- New task `action-recognition`: class-labeled frame ranges, which can overlap.
+  Ships `ActionRecognitionModel`, `ActionRecognitionPrediction`, and a
+  `VideoSampling` contract that travels with the model, so a caller never
+  states how to cut a video. `plan_windows` and `merge_segment` apply it.
+
+- `Cosmos3EdgeReasoner.from_pretrained` loads Roboflow fine-tunes: a LoRA
+  adapter at the package root over the base checkpoint under `base/`, the
+  layout the other fine-tuned VLMs use. A video fine-tune adds one class
+  token per class; its tokenizer and chat template are read from the package
+  root, and the embedding table grows before the adapter attaches. The
+  registry resolves the architecture under the platform's model type,
+  `cosmos3-edge`, and the loader names the `transformers>=5.15` floor the
+  `cosmos3_edge` model type needs.
+
+- `Cosmos3EdgeReasoner` gained `enable_thinking`, which a fine-tune turns
+  off, and constrained decoding on the video path. It passes real
+  `VideoMetadata`, so the model's frame timestamps match the clip.
+
+- NVIDIA Cosmos 3 Edge action recognition (`cosmos3-edge`, task
+  `action-recognition`, backend `hugging-face`). A fine-tune registered under
+  that task carries a class list that resolves to `<|cls:...|>` tokens, and
+  answers in the training span format under a decoding constraint. The hosted
+  base runs zero-shot, in its own words.
+
+- `InferenceConfig` accepts a package with no
+  `network_input.training_input_size` when the model accepts any input size
+  (`dynamic_spatial_size_supported` with an any-size mode), which is what
+  roboflow-train ships for a VLM fine-tuned on a version without a resize.
+  Such packages failed to load with `CorruptedModelPackageError`. They load
+  now, and the shared preprocessing keeps each image at its own size, or the
+  size requested, while still applying the version's photometric steps.
+
+- RF-DETR keypoint TensorRT backend (`RFDetrForKeyPointsTRT`).
+
+### Fixed
+
+- Any-size VLM preprocessing returns independently sized images to Cosmos 3,
+  SmolVLM, PaliGemma, Qwen2.5-VL, Gemma 4, and Florence 2. Before, it
+  distorted a tensor batch to its first image, or failed to concatenate
+  NumPy inputs of different sizes. A caller that needs a dense batch still
+  gets one for uniform images, and gets a clear `ModelInputError` for mixed
+  sizes. A dense 4D tensor input keeps its vectorized preprocessing. An
+  invalid Cosmos package configuration is no longer ignored, and an
+  input-size restriction rejects a package that omits the size needed to
+  enforce it.
+- Bumped required dependencies versions for security reasons. 
+
+---
+
+## `0.36.0`
+
+### Fixed
+
+- TensorRT CUDA graphs are now captured in thread-local capture mode and serialized behind a
+  process-wide lock. Capturing in the default global mode made every other thread in the process
+  fail with `CUDA error 906` (`cudaErrorStreamCaptureImplicit`, "operation would make the legacy
+  stream depend on a capturing blocking stream") whenever a graph was captured for a newly seen
+  input shape, which broke concurrent inference on devices running several pipelines in one process.
+  On torch builds whose `torch.cuda.graph` does not accept `capture_error_mode` (pre-`2.1`), the
+  capture transparently falls back to the legacy global mode.
+
+### Added
+
+- Optional S3-compatible shared caching for content-hashed model files. Cache
+  misses, errors, corrupt objects, and timeouts fail open to the original model
+  source.
+- `get_shared_model_blob_cache()` returns the process-wide blob cache instance
+  (one S3 client, one upload queue, one circuit-breaker view). The model
+  manager and model preloading consume it automatically;
+  `create_model_blob_cache()` still builds a private instance per call.
+
+---
+
+## `0.36.0`
+
+
+### Changed
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter
+
+#### Offline mode rebuilt
+
+- **Model package directories are no longer allow-listed.** The layout-inventory and
+  artifact-identity validation introduced in `0.32.0` is removed. Undeclared files in a
+  package directory (TensorRT engine caches, bytecode, tooling droppings) no longer
+  invalidate the package. This fixes the defect where the first inference under the
+  ONNX Runtime TensorRT execution provider permanently poisoned the model package.
+- **TensorRT engine caching is unconditional again**, including `OFFLINE_MODE` — warm
+  restarts on air-gapped devices reuse the cached engine instead of recompiling.
+- **`OFFLINE_MODE` now serves the offline-weights registry.** The `roboflow` provider is
+  transparently swapped for the new `roboflow-offline-weights` provider, which replays
+  the provider metadata recorded during warm-up; package auto-negotiation (backend /
+  quantization / batch / TensorRT-CUDA environment filtering) runs offline exactly as it
+  does online. Artefact verification offline is presence-only.
+- **The v1 offline fallback tiers are removed** (compatible-entry scan, raw cache scan,
+  `RetryError` cache fallback). An unreachable API in online mode is an error; raise
+  `AUTO_LOADER_CACHE_EXPIRATION_MINUTES` for outage tolerance.
+- `model_provider_requires_network` is removed. `OFFLINE_MODE` with a custom weights
+  provider is the operator's responsibility. The `ROBOFLOW_API_KEY` env fallback now
+  applies only to the `roboflow` / `roboflow-offline-weights` providers.
+- Caches warmed by `<= 0.35` contain no registry records: run once with
+  `OFFLINE_MODE_WARM_UP=True` before flipping to `OFFLINE_MODE`. Existing v4
+  `model_config.json` manifests remain on disk and are tolerated.
+- Rollback caveat: package directories used by this release may accumulate TensorRT
+  engine files that `<= 0.35` validators reject; delete `*.engine` files before
+  downgrading.
+- **Model cache paths are deduced, not discovered.** `model_cache_paths` is reduced to
+  the collision-resistant `v2-…` slug plus simple path joins;
+  `resolve_existing_model_package_cache_path` now only checks that the deduced
+  directory exists. The legacy 32-bit-digest (`pre-0.32.0`) cache directories are no
+  longer read anywhere — including the air-gapped builder scan — and need one online
+  run (or `OFFLINE_MODE_WARM_UP`) to re-materialize under current paths. Attribution
+  and content validation belong to the layers that read directory contents, not to
+  path resolution.
+- Removed the public `ModelAccessManager.retrieve_model_storage_path` method along
+  with the package-path attribution it read (`_inference_models_package_path` stamped
+  on cached instances). It had no callers left: the auto-loader now hands the package
+  directory to the model explicitly during initialization. Custom managers overriding
+  the method must drop the override.
+
+### Added
+
+- `OFFLINE_MODE_WARM_UP` env flag: online behavior plus offline-cache building. Every
+  requested model gets a metadata pre-fetch (cache hits included); packages that
+  negotiation selected and that initialized successfully are recorded in
+  `$INFERENCE_HOME/offline-weights-registry/` (one JSON per canonical model, atomic
+  file-locked writes, versioned tolerant format). Recorded artefact identities are
+  provider-attested only — the registry never computes identities from local files;
+  packages loaded with `download_files_without_hash=True` are not registered.
+  Mutually exclusive with `OFFLINE_MODE` — enabling both fails at model load.
+- `AutoModel.list_offline_models()` and `AutoModel.verify_offline_model(model_id,
+  check_hashes=False)` maintenance classmethods over the
+  registry. Listing/verification results are structured dataclasses
+  (`OfflineModelStatus` / `OfflinePackageStatus` / `OfflineArtefactVerification`
+  in `inference_models.weights_providers.offline_registry`).
+- Locally compiled TensorRT packages (`inference-compiler`) are installed as regular
+  files (previously symlinks that post-`0.32.0` discovery silently rejected) and are
+  appended to the offline-weights registry, so they load in `OFFLINE_MODE` without a
+  prior online load. Loading them still requires
+  `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True`.
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
+- Mage-VL (`mage-vl`, VLM task, HF backend). Microsoft's codec-native streaming VLM
+  (Mage-ViT encoder + Qwen3-4B backbone). Prompts over images like the other VLMs
+  here, and additionally over a video file: rather than sampling frames uniformly,
+  the codec's per-macroblock bitcost selects the informative patches and packs them
+  into canvases. Two engines are supported: `hevc` (default, CPU, via the
+  `cv-preinfer` binary from `codec-video-prep`) and `dcvc-rt` (the neural codec
+  bundled in the model package). On a 30s 960x540 h264 clip, `hevc` prepares 16
+  canvases in ~1.8s against ~25s for `dcvc-rt` on its pytorch fallback path.
+  Video prompting's extra dependencies are not wired into the extras. See
+  `requirements/requirements.magevl.txt` for why they need `--no-deps`.
+
+### Changed
+
+- The SAM3 Video workflow block now converts NumPy concept frames from BGR to RGB.
+- Point-prompted outputs from the SAM3 Interactive and SAM3 Video workflow blocks
+  now use `class_id=-1` and `class_name="foreground"`. SAM3 Interactive previously
+  used `class_id=0`. If a downstream step filters for `class_id == 0`, update the
+  filter.
+
+### Fixed
+
+- RF-DETR TensorRT execution plans now fall back from Triton preprocessing and
+  postprocessing to their reference implementations when recoverable JIT
+  compilation or launch failures occur. Runtime diagnostics include a categorized,
+  conservative suggested action. Runtime recovery requires both
+  `allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`;
+  disabling either flag surfaces a `ModelRuntimeError` instead of applying runtime
+  fallback.
+- NumPy and tensor visualization blocks now wrap negative class IDs during
+  palette lookup instead of failing.
+- Raise the `bitsandbytes` ceiling to `<0.51.0` and move the lock to `0.50.1`.
+  Versions below `0.48` ship no `libbitsandbytes_cuda130.so`, so every 4-bit load
+  fails with `Configured CUDA binary not found` against a CUDA 13 torch build.
+  That is what both the plain PyPI wheel and the `torch-cu130` extra resolve to
+  (that extra has no `[tool.uv.sources]` index mapping, so it does not pin a
+  CUDA-specific torch). Five models quantize to 4-bit by default on CUDA, so this
+  took out Qwen2.5-VL, SmolVLM, PaliGemma, Gemma 4 and Florence-2 alike. The GPU
+  image was unaffected. It syncs `--extra torch-cu124`. `0.50.1` adds cuda130/132
+  and retains every CUDA version this repo targets.
+
+- SAM2 Video and SAM3 Tracker Video models now accept labeled point prompts.
+  They can also combine point and box prompts in one conditioning frame.
+- `Qwen38HF` model class for the Qwen3.8 family (registered as `("qwen3_8", "vlm", BackendType.HF)`).
+  Qwen3.8 reuses the `qwen3_5` architecture (`Qwen3_5ForConditionalGeneration`), so the class is a
+  thin subclass of `Qwen35HF` with its own generation defaults
+  (`INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS` / `INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE`).
+  Requires `transformers>=5.8.0` at runtime.
+
+---
 ## `0.35.2`
 
 ### Fixed

@@ -13,6 +13,13 @@ from inference_cli.lib.exceptions import DockerConnectionErrorException
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import read_env_file
 
+DEFAULT_BIND_ADDRESS = "127.0.0.1"
+LOOPBACK_BIND_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
+SECURITY_DOCS_URL = (
+    "https://docs.roboflow.com/deployment/self-hosted/inference-server/"
+    "configuration/security"
+)
+
 
 def ensure_docker_is_running() -> None:
     try:
@@ -218,6 +225,7 @@ def start_inference_container(
     development: bool = False,
     use_local_images: bool = False,
     volumes: Optional[Dict[str, dict]] = None,
+    bind_address: Optional[str] = None,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -243,6 +251,8 @@ def start_inference_container(
         privileged = True
         docker_run_kwargs = {"runtime": "nvidia"}
 
+    bind_address = resolve_bind_address(bind_address=bind_address, is_jetson=is_jetson)
+
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -255,9 +265,10 @@ def start_inference_container(
     )
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
-    ports = {str(port): port}
+    announce_bind_address(bind_address=bind_address, port=port)
+    ports = {str(port): (bind_address, port)}
     if development:
-        ports["9002"] = 9002
+        ports["9002"] = (bind_address, 9002)
     docker_client = docker.from_env()
     docker_client.containers.run(
         image=image,
@@ -289,6 +300,31 @@ def start_inference_container(
         network_mode="bridge",
         ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
+    )
+
+
+def resolve_bind_address(bind_address: Optional[str], is_jetson: bool) -> str:
+    if bind_address is not None:
+        return bind_address
+    # Jetson images run on headless edge devices that are almost always driven from another
+    # machine on the LAN, so loopback-only would break their default use case.
+    return "0.0.0.0" if is_jetson else DEFAULT_BIND_ADDRESS
+
+
+def announce_bind_address(bind_address: str, port: int) -> None:
+    if bind_address in LOOPBACK_BIND_ADDRESSES:
+        print(
+            f"Inference server will only accept connections from this machine "
+            f"({bind_address}:{port}). Use --bind-address 0.0.0.0 to expose it to your "
+            f"network - see {SECURITY_DOCS_URL} first."
+        )
+        return None
+    print(
+        f"WARNING: the inference server is being published on {bind_address}:{port}, so it will accept "
+        f"connections from other machines. The server requires no authentication by default and executes "
+        f"Workflows Custom Python blocks, which is remote code execution for anyone who can reach the port. "
+        f"Set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own auth in front of the server) and "
+        f"set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False unless you need it. See {SECURITY_DOCS_URL}"
     )
 
 

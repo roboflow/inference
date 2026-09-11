@@ -1,6 +1,6 @@
 from threading import BoundedSemaphore, Event
 from time import perf_counter, time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import orjson
 from redis import Redis
@@ -17,6 +17,11 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.roboflow_api import ModelEndpointType
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
+
+if TYPE_CHECKING:
+    from inference_models.utils.content_addressed_artifact_cache import (
+        ContentAddressedArtifactCache,
+    )
 
 
 class ResultsChecker:
@@ -96,8 +101,21 @@ class DispatchModelManager(ModelManager):
         model_registry: ModelRegistry,
         checker: ResultsChecker,
         models: Optional[dict] = None,
+        content_addressed_artifact_cache: Optional[
+            "ContentAddressedArtifactCache"
+        ] = None,
     ):
-        super().__init__(model_registry, models)
+        if content_addressed_artifact_cache is None:
+            from inference_models.utils.content_addressed_artifact_cache import (
+                NullContentAddressedArtifactCache,
+            )
+
+            content_addressed_artifact_cache = NullContentAddressedArtifactCache()
+        super().__init__(
+            model_registry,
+            models,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
+        )
         self.checker = checker
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):

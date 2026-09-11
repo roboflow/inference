@@ -71,7 +71,9 @@ def test_iter_yields_seven_tuple_in_documented_field_order() -> None:
         assert mask is None  # 1: mask (always None for object detection)
         assert torch.equal(class_id, detections.class_id[i])  # 2: class_id
         assert torch.equal(confidence, detections.confidence[i])  # 3: confidence
-        assert tracker_id == detections.bboxes_metadata[i]["tracker_id"]  # 4: tracker_id
+        assert (
+            tracker_id == detections.bboxes_metadata[i]["tracker_id"]
+        )  # 4: tracker_id
         assert data == detections.bboxes_metadata[i]  # 5: per-detection data dict
         assert metadata == detections.image_metadata  # 6: per-image metadata dict
 

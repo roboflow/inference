@@ -74,6 +74,8 @@ Install additional backends and specialized models using extras:
 | `onnx-cu12`        | ONNX Runtime + CUDA 12.x     | GPU inference with CUDA 12.x                                                    |
 | `onnx-jp6-cu126`   | ONNX Runtime for Jetson      | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
 | `trt10`            | TensorRT 10                  | Maximum GPU performance, production                                             |
+| **Capability Extras** |                           |                                                                                 |
+| `model-blob-cache` | S3 client for the shared model blob cache | Fleets caching model files in an S3-compatible bucket (see [Environment Variables](../how-to/environment-variables.md#shared-s3-compatible-blob-cache)) |
 
 ## 💻 Basic Installation
 

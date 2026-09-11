@@ -651,3 +651,45 @@ def test_trt_cudagraph_cache_eviction(
     no_graph = model.forward(batch_5, disable_cuda_graphs=True)
     replay = model.forward(batch_5)
     assert torch.allclose(no_graph, replay, atol=1e-6)
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_cudagraph_capture_does_not_break_concurrent_default_stream_work(
+    yolov8n_640_t4_trt_package: str,
+    dog_image_numpy: np.ndarray,
+) -> None:
+    import threading
+
+    from inference_models import AutoModel
+    from inference_models.models.common.trt import TRTCudaGraphCache
+
+    device = torch.device("cuda:0")
+    model = AutoModel.from_pretrained(
+        model_id_or_path=yolov8n_640_t4_trt_package,
+        device=device,
+        trt_cuda_graph_cache=TRTCudaGraphCache(capacity=16),
+    )
+    pre_processed_single, _ = model.pre_process(dog_image_numpy)
+
+    stop = threading.Event()
+    errors = []
+
+    def hammer_default_stream() -> None:
+        buffer = torch.ones((512, 512), device=device)
+        try:
+            while not stop.is_set():
+                (buffer * 2).sum().item()
+        except Exception as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=hammer_default_stream)
+    worker.start()
+    try:
+        for batch_size in [1, 2, 3, 4, 5, 6, 7, 8]:
+            model.forward(pre_processed_single.repeat(batch_size, 1, 1, 1))
+    finally:
+        stop.set()
+        worker.join()
+
+    assert not errors

@@ -1,8 +1,5 @@
 import os
 import platform
-import sys
-import threading
-import types
 import uuid
 import warnings
 from typing import Optional
@@ -14,6 +11,7 @@ from inference.core.utils.regions import (
     get_roboflow_region,
     resolve_roboflow_service_url,
 )
+from inference.core.utils.secure_gateway import normalize_secure_gateway_configuration
 from inference.core.warnings import (
     InferenceConfigurationWarning,
     InferenceDeprecationWarning,
@@ -88,6 +86,41 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
     os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
 )
 
+# Connection boundary for the PostgreSQL Workflow sink, which opens an outbound
+# connection to a host taken from the workflow definition. When False, a host
+# that resolves to a non-global address (loopback, private/RFC1918,
+# link-local/metadata 169.254.169.254, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP so a second DNS resolution cannot
+# rebind it; Unix-socket paths and multi-host lists are rejected too. Default is
+# True (permissive: any destination) to preserve behaviour. The hosted platform
+# sets this to False so tenant workflows cannot reach internal services.
+ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+)
+# Optional comma-separated denylist of destinations the PostgreSQL Workflow sink
+# may never connect to (IP literals or hostnames). Enforced regardless of the
+# non-global setting above: the raw host and every resolved IP are checked
+# against it. Default None (empty denylist).
+POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES.split(",")
+    )
+# Optional comma-separated allowlist of destinations the PostgreSQL Workflow sink
+# may connect to (IP literals or hostnames). When set, ONLY these are permitted:
+# a destination is allowed if the raw host matches or every resolved IP matches;
+# anything else is rejected. Enforced regardless of the non-global setting above.
+# Default None (no allowlist, i.e. any destination subject to the other checks).
+POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = os.getenv(
+    "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES"
+)
+if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
+    POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
+        POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
+    )
+
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
@@ -122,6 +155,12 @@ API_DEBUG = os.getenv("API_DEBUG", False)
 # API key, default is None
 API_KEY_ENV_NAMES = ["ROBOFLOW_API_KEY", "API_KEY"]
 API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1], None)
+
+# Allow reading the API key from the `Authorization: Bearer <api_key>` request
+# header. The header is a last-resort channel: an explicit `api_key` query
+# parameter or JSON-body field always takes precedence, so disabling this flag
+# only removes the header fallback. Default is True.
+ALLOW_API_KEY_FROM_HEADERS = str2bool(os.getenv("ALLOW_API_KEY_FROM_HEADERS", True))
 
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
@@ -273,7 +312,10 @@ QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
 QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 
+QWEN_3_8_ENABLED = str2bool(os.getenv("QWEN_3_8_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
+ACTION_RECOGNITION_ENABLED = str2bool(os.getenv("ACTION_RECOGNITION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
@@ -305,6 +347,19 @@ ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
 ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
+# Largest clip this deployment will pull from a URL. -1 removes the cap.
+MAX_VIDEO_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_VIDEO_DOWNLOAD_SIZE_MB", "512"))
+# Seconds to wait for the connection, and then for each chunk, when a clip is
+# pulled from a URL. The body streams to disk in chunks, so this bounds each
+# wait rather than the whole download, which the size cap bounds. -1 removes it.
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(
+    os.getenv("VIDEO_DOWNLOAD_TIMEOUT_SECONDS", "60")
+)
+# Longest clip one action recognition request will classify. Every window of
+# a clip is a model call, so this bounds the time one request can hold the
+# server, which the size cap alone does not. -1 removes the limit.
+MAX_VIDEO_DURATION_SECONDS = float(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
+
 MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
     os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
 )
@@ -355,60 +410,21 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
-# Offline mode is latched on the first import of either configuration package.
-# The private marker carries the latch into normal child processes, so changing
-# the public OFFLINE_MODE variable alone cannot enable offline-only paths in a
-# spawned worker. The marker is trusted internal process state; code able to
-# rewrite it is already able to monkeypatch this module's authorization state.
-_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
-_OFFLINE_MODE_PROCESS_STATE_MODULE = "_roboflow_inference_process_state"
-_offline_mode_process_state = sys.modules.get(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-if _offline_mode_process_state is None:
-    _candidate_process_state = types.ModuleType(_OFFLINE_MODE_PROCESS_STATE_MODULE)
-    _candidate_process_state.lock = threading.Lock()
-    _offline_mode_process_state = sys.modules.setdefault(
-        _OFFLINE_MODE_PROCESS_STATE_MODULE,
-        _candidate_process_state,
-    )
-if not hasattr(_offline_mode_process_state, "lock"):
-    _offline_mode_process_state.lock = threading.Lock()
-if hasattr(os, "register_at_fork") and not getattr(
-    _offline_mode_process_state, "at_fork_registered", False
-):
-    _offline_mode_process_state.at_fork_registered = True
+# OFFLINE_MODE is decided once per process by inference_models._offline (the
+# single owner), which `import inference` triggers as its first statement.
+# The private marker env carries the latch into spawned child processes;
+# inference_models.configuration warns when the public variable is mutated
+# at runtime.
+from inference_models.configuration import OFFLINE_MODE
 
-    def _reset_offline_mode_lock_after_fork() -> None:
-        _offline_mode_process_state.lock = threading.Lock()
-
-    os.register_at_fork(after_in_child=_reset_offline_mode_lock_after_fork)
-with _offline_mode_process_state.lock:
-    if not hasattr(_offline_mode_process_state, "offline_mode"):
-        _inherited_offline_mode = os.getenv(_OFFLINE_MODE_PROCESS_LATCH_ENV)
-        _latched_offline_mode = (
-            str2bool(os.getenv("OFFLINE_MODE", False))
-            if _inherited_offline_mode is None
-            else str2bool(_inherited_offline_mode)
-        )
-        _offline_mode_process_state.offline_mode = _latched_offline_mode
-OFFLINE_MODE = bool(_offline_mode_process_state.offline_mode)
-os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 if OFFLINE_MODE:
+    # Republish the dependency offline switches on (re)import of this module,
+    # so a worker that sanitized its environment and re-imported env.py cannot
+    # end up offline-latched with the library switches missing.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["YOLO_OFFLINE"] = "True"
-try:
-    _requested_offline_mode = str2bool(os.getenv("OFFLINE_MODE", False))
-except Exception:
-    # The process-wide state has already been established.  A malformed
-    # runtime mutation must not crash a module reload or spawned worker.
-    _requested_offline_mode = None
-if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
-    warnings.warn(
-        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
-        "being ignored; restart the process to change offline mode.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
-    )
+
 if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
     "true",
     "1",
@@ -424,27 +440,6 @@ if OFFLINE_MODE and os.getenv("VLLM_PROXY_ENABLED", "").strip().lower() in {
         "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
         "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
     )
-if OFFLINE_MODE and USE_INFERENCE_MODELS:
-    from inference_models import configuration as inference_models_configuration
-
-    inference_models_offline_contract = getattr(
-        inference_models_configuration,
-        "OFFLINE_MODE_CONTRACT_VERSION",
-        0,
-    )
-    if (
-        getattr(inference_models_configuration, "OFFLINE_MODE", None) is not True
-        or not isinstance(inference_models_offline_contract, int)
-        or isinstance(inference_models_offline_contract, bool)
-        or inference_models_offline_contract < 3
-    ):
-        raise RuntimeError(
-            "The installed inference-models package does not support the "
-            "required process-wide OFFLINE_MODE and trusted-cache contract. "
-            "Install the matching inference-models release before starting an "
-            "offline server."
-        )
-
 if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
     warnings.warn(
         "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
@@ -581,10 +576,12 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # Secure gateway address for air-gapped deployments.
 # Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
-# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# May be a bare host[:port] (HTTPS with a migration warning) or
 # scheme-qualified, e.g. https://gateway.local, for TLS gateways.
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
@@ -597,6 +594,21 @@ if SECURE_GATEWAY:
     # secure gateway - with the default VERSION_CHECK_MODE=once it runs
     # synchronously at import and can stall startup until the TCP timeout.
     DISABLE_VERSION_CHECK = True
+
+# Opt-in `GET /secure-gateway/health` route that probes the configured
+# SECURE_GATEWAY's own /health endpoint (served identically by the legacy
+# license server and the secure gateway). Disabled by default - operators
+# enable it explicitly on deployments that want proxy diagnostics.
+SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED = str2bool(
+    os.getenv("SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", "False")
+)
+
+# Timeout (seconds) for that probe. Deliberately short: the probe exists to
+# fail fast, while ROBOFLOW_API_REQUEST_TIMEOUT (120s) is sized for model
+# downloads through the gateway.
+SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT = float(
+    os.getenv("SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", "5")
+)
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -638,6 +650,19 @@ if (
         "MODELS_CACHE_AUTH_ENABLED cannot verify model access while OFFLINE_MODE "
         "is enabled. Set ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS=True only for a "
         "trusted single-tenant deployment, or disable one of these modes."
+    )
+
+# Local paths have no Roboflow identity for per-model authorization. Offline
+# deployments already require an explicit authorization bypass above.
+if (
+    MODELS_CACHE_AUTH_ENABLED
+    and not OFFLINE_MODE
+    and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+):
+    raise ValueError(
+        "MODELS_CACHE_AUTH_ENABLED cannot authorize local model paths. "
+        "Disable ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES "
+        "when per-model authorization is required."
     )
 
 # Models cache auth cache ttl, default is 15 minutes
@@ -852,6 +877,10 @@ DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
     os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
 )
 WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+# Enable only on trusted deployments that need MJPEG cameras on private networks.
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES", "False")
+)
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
@@ -904,6 +933,30 @@ WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted").lower()
+
+# Channel used by Workflow blocks to send the API key when executing remotely:
+# "legacy" (query/body only), "both" (default - legacy channels plus an
+# `Authorization: Bearer` header; safe with every server version, including
+# hosted targets that do not read the header yet), or "header" (header only -
+# requires the remote server to run inference release 1.5.0 or newer).
+# NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
+# directly (bypassing the SDK) and are not affected by this flag.
+WORKFLOWS_REMOTE_API_KEY_TRANSPORT = os.getenv(
+    "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "both"
+).lower()
+# Allowed values duplicated on purpose - inference.core.env must not import
+# inference_sdk. KEEP IN SYNC with the ApiKeyTransport enum in
+# inference_sdk/http/entities.py.
+_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS = ("legacy", "both", "header")
+if (
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT
+    not in _ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS
+):
+    raise ValueError(
+        f"Invalid WORKFLOWS_REMOTE_API_KEY_TRANSPORT: "
+        f"{WORKFLOWS_REMOTE_API_KEY_TRANSPORT!r}. Expected one of: "
+        f"{list(_ALLOWED_WORKFLOWS_REMOTE_API_KEY_TRANSPORTS)}."
+    )
 if OFFLINE_MODE and WORKFLOWS_STEP_EXECUTION_MODE == "remote":
     warnings.warn(
         "WORKFLOWS_STEP_EXECUTION_MODE=remote is not available while OFFLINE_MODE "
@@ -938,34 +991,35 @@ WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
 WORKFLOWS_MAX_INNER_WORKFLOW_COUNT = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_COUNT", "32")
 )
+WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET = os.getenv(
+    "WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET",
+    "https://serverless.roboflow.com",
+)
+WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT = float(
+    os.getenv("WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT", "300.0")
+)
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
 )
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
 )
-# Enables the Roboflow-managed (rf_key) API key option in the SpaceXAI block.
-# Off by default until the platform-side xAI proxy (apiproxy/xai) is deployed;
-# with the flag off users must provide their own xAI API key.
-WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED = str2bool(
-    os.getenv("WORKFLOWS_SPACEXAI_MANAGED_KEY_ENABLED", False)
-)
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )
 
 # Modal configuration for Custom Python Blocks
-WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
-    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
-).lower()  # "local" or "modal"
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = (
+    os.getenv("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local").strip().lower()
+)  # "local" or "modal"
+if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE not in {"local", "modal"}:
+    raise ValueError("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE must be local or modal")
 if OFFLINE_MODE and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-    warnings.warn(
-        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal is not available while "
-        "OFFLINE_MODE is enabled. Forcing local custom Python execution.",
-        InferenceConfigurationWarning,
-        stacklevel=1,
+    raise RuntimeError(
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal cannot run in OFFLINE_MODE. "
+        "Disable offline mode to retain sandbox isolation, or explicitly configure "
+        "local execution only for trusted custom Python workflows."
     )
-    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = "local"
 
 # JPEG quality used when serializing images for the webexec round-trip.
 # Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
@@ -982,15 +1036,52 @@ WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
 WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
 )
-# Set slightly above the server's 700s execution budget (modal_app.py Executor
-# timeout) so that when a block hits the server limit, the server's error frame
-# arrives before the client read times out. Equal values race and surface an
-# ambiguous "connection lost after send" instead of the real server error.
+# Set above the Modal ``timeout`` (700s) that bounds a single input in
+# modal_app.py. NOTE: there is no server-side per-execution timeout that sends
+# an error frame at 700s — when Modal kills the input the connection simply
+# dies, so this value only decides how long the client waits before reporting
+# that death. Keeping it above 700s avoids racing the (much more common) case
+# of a block that finishes just under the Modal budget.
 WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
 )
 
+# When a reconnect lands on a container that does not know this executor's
+# custom-Python session, runtime state built by earlier frames is gone.
+# With this ENABLED the executor fails loudly instead of silently continuing
+# with reset globals.
+#
+# Defaults to False, deliberately. The check cannot tell a stateful block from
+# a stateless one: it arms on ANY successful execution, on an executor cached
+# per workspace. Container-local Python state also cannot survive a long run by
+# construction — a websocket connection is one Modal input capped at 700s, the
+# server closes at WEBEXEC_WS_MAX_CONNECTION_SECONDS, namespaces are keyed by
+# code hash, and reconnects have no container affinity. So enabling it by
+# default imposes a scheduled hard failure on the stateless majority to detect
+# a condition the platform guarantees for the stateful minority. Set it True to
+# opt into the loud diagnostic where blocks genuinely rely on cross-frame
+# globals and a failed run is preferable to a silently reset one.
+# str2bool, like every other boolean in this file: it raises on a value that
+# is neither "true" nor "false", so a typo ("1", "yes", "True ") fails at boot
+# instead of silently resolving to False and disabling this safety net.
+WEBEXEC_WS_FAIL_ON_SESSION_LOSS = str2bool(
+    os.getenv("WEBEXEC_WS_FAIL_ON_SESSION_LOSS", False)
+)
+
 WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+# How long an idle websocket connection keeps heartbeating before the client
+# deliberately releases it (closing the socket lets the Modal container scale
+# down instead of staying warm — and billed — for the whole connection cap).
+# Releasing also discards the custom-Python session: runtime state mutated by
+# earlier frames is gone after this much inactivity.
+# Set to 0 (or any non-positive value) to disable idle release entirely, matching
+# the convention of WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS below.
+# Must stay well BELOW the server's WEBEXEC_WS_MAX_CONNECTION_SECONDS (600):
+# connection age is >= client idle time by construction, so a value at or above
+# the cap can never fire and the release path is dead code.
+WEBEXEC_WS_IDLE_RELEASE_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_RELEASE_SECONDS", "120")
+)
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
@@ -1040,9 +1131,14 @@ if OFFLINE_MODE and (
         "to workspaces without API connectivity."
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+ALLOW_UNSAFE_GSTREAMER_PIPELINES = str2bool(
+    os.getenv("ALLOW_UNSAFE_GSTREAMER_PIPELINES", "False")
+)
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
-RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
+RUNS_ON_JETSON = str2bool(
+    os.getenv("RUNS_ON_JETSON", os.getenv("RUNNING_ON_JETSON", "False"))
+)
 
 # Opt-out from the GStreamer-based legacy video sources (e.g. the Jetson RTSP
 # producer) — when True, plain (non-tensor) source references always decode
@@ -1169,6 +1265,14 @@ try:
     )
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Upper bound on managed pipeline processes. STREAM_MANAGER_MAX_RAM_MB is unset by default,
+# so without this the stream API can be made to spawn processes until the host runs out of
+# memory. Never lower than the number of processes the manager pre-loads on start.
+STREAM_MANAGER_MAX_ACTIVE_PIPELINES: int = max(
+    int(os.getenv("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", "8")),
+    STREAM_API_PRELOADED_PROCESSES,
+)
 
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
@@ -1376,6 +1480,15 @@ if HTTP_API_THREADPOOL_WORKERS:
 else:
     HTTP_API_THREADPOOL_WORKERS = None
 
+# Exact operator-approved OpenAI-compatible base URLs, ignoring trailing slashes.
+# "*" allows any destination by default for compatibility; empty blocks all.
+OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = {
+    url.rstrip("/")
+    for url in safe_split_value(
+        os.getenv("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", "*"), strip=True
+    )
+}
+
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
 WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
@@ -1459,6 +1572,16 @@ DEFAULT_ADAPTIVE_MODE_BACKPRESSURE = str2bool(
     )
 )
 
+
+# Diagnostic mode for the tensor visualisation painters' overlap resolver:
+# before the winner-color gather, synchronise and verify that every scatter
+# index and every resolved owner is in range, raising a detailed Python error
+# (routed to the sv fallback) instead of letting an out-of-range index become
+# an asynchronous CUDA device assert that kills the process with SIGABRT and
+# no traceback. Costs one device sync per overlapping frame — off by default.
+WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS = str2bool(
+    os.getenv("WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS", "False")
+)
 
 WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
     "WORKFLOWS_IMAGE_TENSOR_DEVICE"

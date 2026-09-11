@@ -24,13 +24,13 @@ def test_telemetry_endpoints_are_wrapped_with_secure_gateway():
 
     # then
     assert settings.api_usage_endpoint_url.startswith(
-        "http://gateway.local:8080/proxy?url="
+        "https://gateway.local:8080/proxy?url="
     )
     assert settings.api_plan_endpoint_url.startswith(
-        "http://gateway.local:8080/proxy?url="
+        "https://gateway.local:8080/proxy?url="
     )
     assert settings.webrtc_plans_endpoint_url.startswith(
-        "http://gateway.local:8080/proxy?url="
+        "https://gateway.local:8080/proxy?url="
     )
 
 

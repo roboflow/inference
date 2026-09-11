@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     GOOGLE_VISION_API_KEY,
     ROBOFLOW_API_KEY,
+    apply_auth_mode,
 )
 
 GOOGLE_VISION_OCR_WORKFLOW = {
@@ -59,11 +60,13 @@ GOOGLE_VISION_OCR_WORKFLOW = {
 def test_workflow_with_google_api_ocr(
     object_detection_service_url: str,
     license_plate_image: str,
+    auth_mode: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(

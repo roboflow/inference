@@ -19,10 +19,13 @@ from typing import (
 import cv2
 import numpy as np
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from torchvision.io import ImageReadMode, decode_image, read_file
 from typing_extensions import Annotated, Literal
 
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionPrediction,
+)
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,

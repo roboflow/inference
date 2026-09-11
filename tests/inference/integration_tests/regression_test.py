@@ -16,6 +16,11 @@ from tests.common import (
     assert_classification_predictions_match,
     assert_localized_predictions_match,
 )
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    api_key_query_fragments,
+    without_api_key_in_header_mode,
+)
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.02
@@ -46,27 +51,28 @@ def model_add(test, port=9001, api_key="", base_url="http://localhost"):
 
 
 def legacy_infer_with_image_url(
-    test, port=9001, api_key="", base_url="http://localhost"
+    test, port=9001, api_key="", base_url="http://localhost", auth_mode="legacy"
 ):
     return (
         requests.post(
             f"{base_url}:{port}/{test['project']}/{test['version']}?"
             + "&".join(
-                [
-                    f"api_key={api_key}",
+                api_key_query_fragments(auth_mode, api_key)
+                + [
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
                     f"image={test['image_url']}",
                     f'format={test.get("format", "json")}',
                 ]
-            )
+            ),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "url",
     )
 
 
 def legacy_infer_with_base64_image(
-    test, port=9001, api_key="", base_url="http://localhost"
+    test, port=9001, api_key="", base_url="http://localhost", auth_mode="legacy"
 ):
     buffered = BytesIO()
     test["pil_image"].save(buffered, quality=100, format="PNG")
@@ -78,22 +84,25 @@ def legacy_infer_with_base64_image(
         requests.post(
             f"{base_url}:{port}/{test['project']}/{test['version']}?"
             + "&".join(
-                [
-                    f"api_key={api_key}",
+                api_key_query_fragments(auth_mode, api_key)
+                + [
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
                     f'format={test.get("format", "json")}',
                 ]
             ),
             data=img_str,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                **api_key_auth_headers(auth_mode, api_key),
+            },
         ),
         "base64",
     )
 
 
 def legacy_infer_with_multipart_form_image(
-    test, port=9001, api_key="", base_url="http://localhost"
+    test, port=9001, api_key="", base_url="http://localhost", auth_mode="legacy"
 ):
     buffered = BytesIO()
     test["pil_image"].save(buffered, quality=100, format="JPEG")
@@ -104,22 +113,25 @@ def legacy_infer_with_multipart_form_image(
         requests.post(
             f"{base_url}:{port}/{test['project']}/{test['version']}?"
             + "&".join(
-                [
-                    f"api_key={api_key}",
+                api_key_query_fragments(auth_mode, api_key)
+                + [
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
                     f"format={test.get('format', 'json')}",
                 ]
             ),
             data=m,
-            headers={"Content-Type": m.content_type},
+            headers={
+                "Content-Type": m.content_type,
+                **api_key_auth_headers(auth_mode, api_key),
+            },
         ),
         "multipart_form",
     )
 
 
 def infer_request_with_image_url(
-    test, port=9001, api_key="", base_url="http://localhost"
+    test, port=9001, api_key="", base_url="http://localhost", auth_mode="legacy"
 ):
     payload = {
         "model_id": f"{test['project']}/{test['version']}",
@@ -135,14 +147,15 @@ def infer_request_with_image_url(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "url",
     )
 
 
 def infer_request_with_base64_image(
-    test, port=9001, api_key="", base_url="http://localhost"
+    test, port=9001, api_key="", base_url="http://localhost", auth_mode="legacy"
 ):
     buffered = BytesIO()
     test["pil_image"].save(buffered, quality=100, format="PNG")
@@ -162,7 +175,8 @@ def infer_request_with_base64_image(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "base64",
     )
@@ -171,7 +185,9 @@ def infer_request_with_base64_image(
 def compare_prediction_response(
     response: dict,
     expected_response: dict,
-    prediction_type: Literal["object_detection", "instance_segmentation", "classification"] = "object_detection",
+    prediction_type: Literal[
+        "object_detection", "instance_segmentation", "classification"
+    ] = "object_detection",
 ):
     # note that these casts do type checking internally via pydantic
     if prediction_type == "object_detection":
@@ -199,7 +215,11 @@ def compare_prediction_response(
         )
 
 
-TESTS_FILE = "tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "tests_inference_models.json"
+TESTS_FILE = (
+    "tests.json"
+    if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true"
+    else "tests_inference_models.json"
+)
 with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r") as f:
     TESTS = json.load(f)
 
@@ -216,7 +236,7 @@ is_parallel_server = bool_env(os.getenv("IS_PARALLEL_SERVER", False))
 DETECTION_TEST_PARAMS = []
 for test in TESTS:
     if test["description"] == "YOLACT Instance Segmentation" and is_parallel_server:
-        continue # Skip YOLACT tests for parallel server
+        continue  # Skip YOLACT tests for parallel server
     if "expected_response" in test:
         if not SKIP_YOLOV8_TEST or "YOLOv8" not in test["description"]:
             for res_func in INFER_RESPONSE_FUNCTIONS:
@@ -224,7 +244,7 @@ for test in TESTS:
 
 
 @pytest.mark.parametrize("test,res_function", DETECTION_TEST_PARAMS)
-def test_detection(test, res_function, clean_loaded_models_fixture):
+def test_detection(test, res_function, auth_mode, clean_loaded_models_fixture):
     try:
         try:
             pil_image = Image.open(
@@ -235,7 +255,10 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
             raise ValueError(f"Unable to load image from URL: {test['image_url']}")
 
         response, image_type = res_function(
-            test, port, api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY")
+            test,
+            port,
+            api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY"),
+            auth_mode=auth_mode,
         )
         try:
             response.raise_for_status()
@@ -281,7 +304,7 @@ VISUALIZATION_TEST_PARAMS = [
     reason="Skipping visualisation test",
 )
 @pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
-def test_visualization(test, res_function, clean_loaded_models_fixture):
+def test_visualization(test, res_function, auth_mode, clean_loaded_models_fixture):
     test = deepcopy(test)
     try:
         try:
@@ -294,7 +317,10 @@ def test_visualization(test, res_function, clean_loaded_models_fixture):
 
         test["format"] = "image"
         response, _image_type = res_function(
-            test, port, api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY")
+            test,
+            port,
+            api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY"),
+            auth_mode=auth_mode,
         )
         try:
             response.raise_for_status()

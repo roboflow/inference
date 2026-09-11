@@ -20,6 +20,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     empty_predictions_passthrough,
+    resolve_overlap_winners,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -154,6 +155,19 @@ def gpu_draw_boxes(
     total_px = int((heights * widths).sum())
     if total_px == 0:
         return scene_chw
+    # Every band that contributes pixels must lie inside the frame — the
+    # clips above guarantee it for any input geometry (negative, inverted,
+    # off-frame, degenerate), so a violation here means broken host-side
+    # geometry that would become an out-of-range device scatter. O(n) on
+    # host, and raising routes the frame to the block's sv fallback.
+    active = (heights > 0) & (widths > 0)
+    if (
+        int(rect_r1[active].min(initial=0)) < 0
+        or int(rect_r2[active].max(initial=0)) >= height
+        or int(rect_c1[active].min(initial=0)) < 0
+        or int(rect_c2[active].max(initial=0)) >= width
+    ):
+        raise ValueError("bounding-box band escaped the frame after clipping")
 
     # Pairwise overlap test on the expanded bounds: disjoint borders make
     # every pixel's winner its own box, so owner resolution can be skipped.
@@ -244,11 +258,13 @@ def gpu_draw_boxes(
 
     colors_dev = colors_flat_t.view(n, 3).to(torch.uint8)
     if boxes_overlap:
-        # include_self=False: uninitialized cells never participate, and
-        # every gathered position below was scattered to.
-        owner = torch.empty(height * width, dtype=torch.int32, device=device)
-        owner.scatter_reduce_(0, flat, pixel_box, reduce="amax", include_self=False)
-        winner_colors = colors_dev[owner[flat].long()]  # (P, 3) uint8
+        # Later-box-wins ownership, provably in [0, n) for any duplication
+        # pattern (see resolve_overlap_winners for why the previous
+        # empty + include_self=False formulation was retired).
+        winners = resolve_overlap_winners(
+            flat, pixel_box, num_cells=height * width, num_candidates=n
+        )
+        winner_colors = colors_dev[winners]  # (P, 3) uint8
     else:
         winner_colors = colors_dev[pixel_box.long()]
     # .view (not .reshape): guarantees the write lands in the caller's storage

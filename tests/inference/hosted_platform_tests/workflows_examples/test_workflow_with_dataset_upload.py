@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 ACTIVE_LEARNING_WORKFLOW = {
@@ -83,12 +84,14 @@ def test_detection_plus_classification_workflow(
     target_project: str,
     dogs_image: np.ndarray,
     license_plate_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
     random_image_1 = (np.random.random((640, 480, 3)) * 255).astype(np.uint8)
     random_image_2 = (np.random.random((640, 480, 3)) * 255).astype(np.uint8)
 

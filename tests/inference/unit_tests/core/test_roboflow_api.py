@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional, Type
+from typing import Any, List, Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -75,15 +75,19 @@ class TestException(Exception):
 
 
 def _assert_request_query_seen(requests_mock: Mocker, expected_query: str) -> None:
-    """Assert a request with ``expected_query`` appears in mock history.
+    """Assert the call under test carried ``expected_query``.
 
-    Prefer this over ``last_request.query``: background threads (for example the
-    usage-tracking sender started when other suites import ``usage_collector``)
-    can issue empty-query POSTs that overwrite ``last_request`` between the call
-    under test and the assertion.
+    Equality against the most recent request that carried a query string - not
+    membership in the whole history, which would let an unrelated earlier
+    request satisfy the assertion while the call under test silently dropped its
+    api key. Plain ``last_request`` is not reliable either: background threads
+    (a usage-tracking sender started when another suite imports
+    ``usage_collector``) issue query-less POSTs that can land between the call
+    and the assertion.
     """
-    queries = [request.query for request in requests_mock.request_history]
-    assert expected_query in queries, queries
+    queried = [request for request in requests_mock.request_history if request.query]
+    assert queried, "No request carrying a query string was recorded"
+    assert queried[-1].query == expected_query, [request.query for request in queried]
 
 
 @pytest.mark.parametrize("workspace_id", ["workspace", "my-workspace", "my_workspace"])
@@ -411,7 +415,7 @@ def test_get_roboflow_workspace_when_wrong_api_key_used(requests_mock: Mocker) -
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 @pytest.mark.asyncio
@@ -511,7 +515,7 @@ def test_get_roboflow_workspace_when_response_parsing_error_occurs(
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 @pytest.mark.asyncio
@@ -564,7 +568,7 @@ def test_get_roboflow_workspace_when_workspace_id_is_invalid(
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 @pytest.mark.asyncio
@@ -616,7 +620,7 @@ def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) ->
     result = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
     assert result == "my_workspace"
 
 
@@ -801,7 +805,7 @@ def test_get_roboflow_dataset_type_when_wrong_key_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_dataset_type_when_project_not_found_used(
@@ -822,7 +826,7 @@ def test_get_roboflow_dataset_type_when_project_not_found_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -859,7 +863,7 @@ def test_get_roboflow_dataset_type_when_response_parsing_error_occurs(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_dataset_type_when_project_is_empty(
@@ -877,7 +881,7 @@ def test_get_roboflow_dataset_type_when_project_is_empty(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
     assert result == "object-detection"
 
 
@@ -896,7 +900,7 @@ def test_get_roboflow_dataset_type_when_response_is_valid(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
     assert result == "classification"
 
 
@@ -920,7 +924,7 @@ def test_get_roboflow_model_type_when_wrong_api_key_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_model_type_when_wrong_project_used(
@@ -943,7 +947,7 @@ def test_get_roboflow_model_type_when_wrong_project_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 def test_get_roboflow_model_type_when_wrong_version_used(
@@ -966,7 +970,7 @@ def test_get_roboflow_model_type_when_wrong_version_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&nocache=true")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -1363,6 +1367,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": 2.3,
             "taskType": "object-detection",
         },
     }
@@ -1383,6 +1388,8 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": 2.3,
     }
 
 
@@ -1398,6 +1405,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
             "modelId": "rfdetr-nano",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1418,6 +1426,8 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
     assert result == {
         "modelType": "rfdetr",
         "taskType": "object-detection",
+        "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": None,
     }
 
 
@@ -1435,6 +1445,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1462,6 +1473,8 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1480,6 +1493,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1513,6 +1527,8 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1531,6 +1547,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1554,6 +1571,8 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1572,6 +1591,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1592,6 +1612,8 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
+        "modelVariant": None,
+        "modelLatencyMs": None,
     }
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
@@ -1799,7 +1821,7 @@ def test_register_image_at_roboflow_when_valid_response_returned_and_no_tags_use
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&batch=my-batch"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&batch=my-batch")
     assert requests_mock.last_request.text.fields["name"] == "local_id.jpg"
     assert requests_mock.last_request.text.fields["file"] == (
         "imageToUpload",
@@ -1828,7 +1850,7 @@ def test_register_image_at_roboflow_when_duplicate_response_returned(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&batch=my-batch"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&batch=my-batch")
     assert requests_mock.last_request.text.fields["name"] == "local_id.jpg"
     assert requests_mock.last_request.text.fields["file"] == (
         "imageToUpload",
@@ -1858,7 +1880,7 @@ def test_register_image_at_roboflow_when_error_response_returned(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&batch=my-batch"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&batch=my-batch")
     assert requests_mock.last_request.text.fields["name"] == "local_id.jpg"
     assert requests_mock.last_request.text.fields["file"] == (
         "imageToUpload",
@@ -1888,7 +1910,7 @@ def test_register_image_at_roboflow_when_lack_of_success_reported(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key&batch=my-batch"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key&batch=my-batch")
     assert requests_mock.last_request.text.fields["name"] == "local_id.jpg"
     assert requests_mock.last_request.text.fields["file"] == (
         "imageToUpload",
@@ -2191,7 +2213,7 @@ def test_update_image_metadata_at_roboflow_when_successful_response_expected(
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert requests_mock.last_request.json() == {
         "metadata": {"color": "red", "score": 0.8},
         "addTags": ["auto"],
@@ -2218,7 +2240,7 @@ def test_update_image_metadata_at_roboflow_when_wrong_image_id_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_update_image_metadata_does_not_make_request_in_offline_mode(
@@ -2263,7 +2285,7 @@ def test_batch_update_image_metadata_at_roboflow_when_successful_response_expect
     )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert requests_mock.last_request.json() == {"updates": updates}
     assert result == {"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"}
 
@@ -2286,7 +2308,7 @@ def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_batch_update_image_metadata_does_not_make_request_in_offline_mode(
@@ -2447,7 +2469,7 @@ def test_get_roboflow_labeling_batches_when_wrong_api_key_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_batches_when_wrong_dataset_used(
@@ -2468,7 +2490,7 @@ def test_get_roboflow_labeling_batches_when_wrong_dataset_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_batches_when_wrong_workspace_used(
@@ -2489,7 +2511,7 @@ def test_get_roboflow_labeling_batches_when_wrong_workspace_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_batches_when_http_error_occurred(
@@ -2510,7 +2532,7 @@ def test_get_roboflow_labeling_batches_when_http_error_occurred(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_batches_when_malformed_response_returned(
@@ -2531,7 +2553,7 @@ def test_get_roboflow_labeling_batches_when_malformed_response_returned(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_batches_when_valid_response_returned(
@@ -2570,7 +2592,7 @@ def test_get_roboflow_labeling_batches_when_valid_response_returned(
 
     # then
     assert result == expected_result
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -2607,7 +2629,7 @@ def test_get_roboflow_labeling_jobs_when_wrong_api_key_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_jobs_when_wrong_dataset_used(
@@ -2628,7 +2650,7 @@ def test_get_roboflow_labeling_jobs_when_wrong_dataset_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_jobs_when_wrong_workspace_used(
@@ -2649,7 +2671,7 @@ def test_get_roboflow_labeling_jobs_when_wrong_workspace_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_jobs_when_http_error_occurred(
@@ -2670,7 +2692,7 @@ def test_get_roboflow_labeling_jobs_when_http_error_occurred(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_jobs_when_malformed_response_returned(
@@ -2691,7 +2713,7 @@ def test_get_roboflow_labeling_jobs_when_malformed_response_returned(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_labeling_jobs_when_valid_response_returned(
@@ -2734,7 +2756,7 @@ def test_get_roboflow_labeling_jobs_when_valid_response_returned(
 
     # then
     assert result == expected_result
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -2771,9 +2793,7 @@ def test_get_roboflow_active_learning_configuration_when_wrong_api_key_used(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_not_found_returned(
@@ -2794,9 +2814,7 @@ def test_get_roboflow_active_learning_configuration_when_not_found_returned(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_internal_error_returned(
@@ -2817,9 +2835,7 @@ def test_get_roboflow_active_learning_configuration_when_internal_error_returned
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_roboflow_active_learning_configuration_when_malformed_response_returned(
@@ -2840,9 +2856,7 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -4533,9 +4547,7 @@ def test_get_workflow_specification_when_wrong_api_key_used_and_no_cache_allowed
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_wrong_api_key_used_and_ephemeral_cache_miss_detected(
@@ -4557,9 +4569,7 @@ def test_get_workflow_specification_when_wrong_api_key_used_and_ephemeral_cache_
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_not_found_returned_and_cache_disabled(
@@ -4581,9 +4591,7 @@ def test_get_workflow_specification_when_not_found_returned_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_miss_detected(
@@ -4605,9 +4613,7 @@ def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_internal_error_returned_and_cache_disabled(
@@ -4629,9 +4635,7 @@ def test_get_workflow_specification_when_internal_error_returned_and_cache_disab
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_cache_miss_detected(
@@ -4654,9 +4658,7 @@ def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_c
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 
 
@@ -4679,9 +4681,7 @@ def test_get_workflow_specification_when_malformed_response_returned_and_cache_d
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_malformed_response_returned_and_ephemeral_cache_miss_detected(
@@ -4704,9 +4704,7 @@ def test_get_workflow_specification_when_malformed_response_returned_and_ephemer
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
 
 
@@ -4729,9 +4727,7 @@ def test_get_workflow_specification_when_config_not_provided_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_config_not_provided_and_ephemeral_cache_miss_detected(
@@ -4786,9 +4782,7 @@ def test_get_workflow_specification_when_config_not_parsable_and_cache_disabled(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
 
 
 def test_get_workflow_specification_when_valid_response_given_and_cache_disabled(
@@ -4818,9 +4812,7 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
     )
 
     # then
-    assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
-    ), "API key must be given in query"
+    _assert_request_query_seen(requests_mock, "api_key=my_api_key")
     assert result == {
         "version": "1.0",
         "inputs": [{"type": "InferenceImage", "name": "image"}],
@@ -4841,6 +4833,21 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
         ],
         "id": "Har3FW34j1Rjc4p8IX4B",
     }
+
+
+def _requests_for_workflow(requests_mock: Mocker, workflow_id: str) -> List[Any]:
+    """The requests this test made, ignoring anything else on the transport.
+
+    requests_mock intercepts the whole process, and the usage collector's sender
+    thread outlives whichever test first started it and posts on an interval. So
+    ``call_count`` is not a count of what the test under it did, and asserting on
+    it fails whenever that timer happens to land inside this test.
+    """
+    return [
+        request
+        for request in requests_mock.request_history
+        if f"workflows/{workflow_id}" in request.url
+    ]
 
 
 def test_get_workflow_specification_when_valid_response_given_on_consecutive_requests(
@@ -4877,9 +4884,10 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     )
 
     # then
-    assert requests_mock.call_count == 1, "Expected remote API to be called only once"
+    workflow_requests = _requests_for_workflow(requests_mock, "some_workflow")
+    assert len(workflow_requests) == 1, "Expected remote API to be called only once"
     assert (
-        requests_mock.last_request.query == "api_key=my_api_key"
+        workflow_requests[-1].query == "api_key=my_api_key"
     ), "API key must be given in query"
     assert (
         result_1
@@ -4936,11 +4944,13 @@ def test_get_workflow_specification_with_workflow_version_id(
     )
 
     # then
+    workflow_requests = _requests_for_workflow(requests_mock, "some_workflow")
+    assert workflow_requests, "Expected a workflow specification request"
     assert (
-        "workflow_version=1771122946631" in requests_mock.last_request.query
+        "workflow_version=1771122946631" in workflow_requests[-1].query
     ), "Workflow version must be given in query"
     assert (
-        "api_key=my_api_key" in requests_mock.last_request.query
+        "api_key=my_api_key" in workflow_requests[-1].query
     ), "API key must be given in query"
     assert result == {
         "version": "1.0",
@@ -5001,7 +5011,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
 
     # then
     assert (
-        requests_mock.call_count == 2
+        len(_requests_for_workflow(requests_mock, "some_workflow")) == 2
     ), "Expected two API calls since versioned and unversioned use separate cache keys"
     assert len(ephemeral_cache.cache) == 2, "Expected two cache entries"
 
@@ -5501,7 +5511,7 @@ def test_get_workflow_specification_returns_when_ephemeral_cache_set_fails(
 # when LICENSE_SERVER is configured (air-gapped deployment support).
 
 SECURE_GATEWAY_HOST = "gateway.local"
-PROXY_PREFIX = f"http://{SECURE_GATEWAY_HOST}/proxy?url="
+PROXY_PREFIX = f"https://{SECURE_GATEWAY_HOST}/proxy?url="
 
 
 @mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)

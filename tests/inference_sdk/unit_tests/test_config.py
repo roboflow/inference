@@ -1,7 +1,11 @@
 import json
 import threading
 
-from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
+from inference_sdk.config import (
+    RemoteProcessingTimeCollector,
+    outbound_service_secret,
+    remote_processing_times,
+)
 
 
 def test_collector_add_and_drain() -> None:
@@ -173,6 +177,30 @@ def test_collector_tracks_remote_model_ids() -> None:
 
     # then
     assert collector.snapshot_model_ids() == {"model-a/1", "model-b/2"}
+
+
+def test_outbound_service_secret_default_is_none() -> None:
+    # when
+    value = outbound_service_secret.get()
+
+    # then
+    assert value is None
+
+
+def test_outbound_service_secret_set_and_reset() -> None:
+    # given
+    token = outbound_service_secret.set("some-secret")
+
+    try:
+        # when
+        retrieved = outbound_service_secret.get()
+
+        # then
+        assert retrieved == "some-secret"
+    finally:
+        outbound_service_secret.reset(token)
+
+    assert outbound_service_secret.get() is None
 
 
 def test_collector_tracks_remote_cold_start_metadata() -> None:

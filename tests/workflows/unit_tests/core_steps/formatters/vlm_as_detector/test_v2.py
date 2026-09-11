@@ -8,6 +8,8 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     BlockManifest,
     VLMAsDetectorBlockV2,
 )
+from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
+from inference.core.workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -253,6 +255,12 @@ def test_run_method_for_openai_structured_empty_detections_output() -> None:
     assert result["error_status"] is False
     assert isinstance(result["predictions"], sv.Detections)
     assert len(result["predictions"]) == 0
+    # Empty detections must still carry image dimensions in metadata so the
+    # numpy serialiser emits real width/height (matching the tensor-native path).
+    assert result["predictions"].metadata[IMAGE_DIMENSIONS_KEY] == [192, 168]
+    serialized = serialise_sv_detections(result["predictions"])
+    assert serialized["image"] == {"width": 168, "height": 192}
+    assert serialized["predictions"] == []
 
 
 def test_run_method_for_openai_legacy_detections_output() -> None:
@@ -355,6 +363,246 @@ def test_run_method_for_spacexai_unknown_label_gets_class_id_minus_one() -> None
 
     assert result["error_status"] is False
     assert np.allclose(result["predictions"].class_id, np.array([-1]))
+
+
+def test_run_method_for_anthropic_claude_box_2d_output_with_resize() -> None:
+    # given - original 4000x3000 image is uploaded at 2212x1659 (Claude's
+    # high-resolution tier resize), so absolute pixel coordinates must be
+    # rescaled back onto the original image
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((3000, 4000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [553, 415, 1106, 830], "label": "cat"},
+  {"box_2d": [1106, 830, 2500, 1800], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="anthropic-claude",
+        task_type="object-detection",
+    )
+
+    # then - second box exceeds the 2212x1659 upload and is clamped before scaling
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, 1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [
+                    553 * 4000 / 2212,
+                    415 * 3000 / 1659,
+                    1106 * 4000 / 2212,
+                    830 * 3000 / 1659,
+                ],
+                [1106 * 4000 / 2212, 830 * 3000 / 1659, 4000, 3000],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
+
+
+def test_run_method_for_anthropic_claude_legacy_detections_output() -> None:
+    # given - v1-v4 Claude blocks emit the normalized {"detections": [...]}
+    # contract, which must keep parsing through the legacy path
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+{"detections": [
+  {"x_min": 0.1, "y_min": 0.2, "x_max": 0.5, "y_max": 0.6, "class_name": "cat", "confidence": 0.9}
+]}
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="anthropic-claude",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat"]
+    assert np.allclose(result["predictions"].class_id, np.array([0]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[17, 38, 84, 115]]),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([0.9]))
+
+
+@pytest.mark.parametrize("model_type", ["zai", "zai-flash"])
+def test_manifest_parsing_for_zai_model_types(model_type: str) -> None:
+    # given
+    raw_manifest = {
+        "type": "roboflow_core/vlm_as_detector@v2",
+        "name": "parser",
+        "image": "$inputs.image",
+        "vlm_output": "$steps.vlm.output",
+        "classes": ["cat", "dog"],
+        "model_type": model_type,
+        "task_type": "object-detection",
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.model_type == model_type
+
+
+def test_run_method_for_zai_box_2d_output() -> None:
+    # given - the Z.ai GLM block prompts for the same box_2d contract as
+    # Qwen: [x_min, y_min, x_max, y_max] integers normalized to 0-1000
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [100, 200, 500, 1000], "label": "cat"},
+  {"box_2d": [0, 0, 500, 500], "label": "unicorn"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "unicorn"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, -1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [64, 96, 320, 480],
+                [0, 0, 320, 240],
+            ]
+        ),
+        atol=1.0,
+    )
+    assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
+
+
+def test_run_method_for_zai_flash_xyxy_bbox_2d_output() -> None:
+    # given - the GLM 5.3 Flash prompt pins bbox_2d entries as
+    # [x_min, y_min, x_max, y_max] integers normalized to 0-1000
+    # (the Qwen contract)
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"bbox_2d": [200, 100, 1000, 500], "label": "cat"},
+  {"bbox_2d": [0, 0, 500, 500], "label": "unicorn"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["cat", "unicorn"]
+    assert np.allclose(result["predictions"].class_id, np.array([0, -1]))
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array(
+            [
+                [128, 48, 640, 240],
+                [0, 0, 320, 240],
+            ]
+        ),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_zai_flash_recovers_array_from_prose_wrapped_output() -> None:
+    # given - GLM sometimes wraps the JSON array in extra text that breaks
+    # whole-string parsing; the zai paths recover the outermost [...] block
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        "Here are the detected objects: "
+        '[{"bbox_2d": [200, 100, 1000, 500], "label": "cat"}] '
+        "Let me know if you need anything else."
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["cat"]
+    assert np.allclose(
+        result["predictions"].xyxy, np.array([[128, 48, 640, 240]]), atol=1.0
+    )
+
+
+def test_run_method_for_zai_unexpected_shape_sets_error_status() -> None:
+    # given - neither a JSON list nor a {"detections": [...]} object
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='{"objects": []}',
+        classes=["cat"],
+        model_type="zai",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
 
 
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
@@ -652,3 +900,168 @@ def test_formatter_for_florence2_ocr() -> None:
     assert "root_parent_dimensions" in result["predictions"].data
     assert "parent_id" in result["predictions"].data
     assert "root_parent_id" in result["predictions"].data
+
+
+def test_run_method_for_qwen_output_with_only_closing_fence() -> None:
+    # given - Qwen 3.8 Max: bare list + lone closing fence
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        "[\n"
+        '\t{"bbox_2d": [46, 571, 997, 931], "label": "trailer"},\n'
+        '\t{"bbox_2d": [100, 200, 300, 400], "label": "bombcart"}\n'
+        "]\n"
+        "```"
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["trailer", "bombcart"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == [
+        "trailer",
+        "bombcart",
+    ]
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[46, 571, 997, 931], [100, 200, 300, 400]]),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_zai_flash_json_lines_output() -> None:
+    # given - GLM 5.3 Flash: JSON Lines, no enclosing array
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        '{"bbox_2d": [618, 129, 644, 176], "label": "car"}\n'
+        '{"bbox_2d": [656, 223, 679, 276], "label": "car"}\n'
+        '{"bbox_2d": [641, 330, 682, 371], "label": "bus"}'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["car", "bus", "truck"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["car", "car", "bus"]
+    assert result["predictions"].class_id.tolist() == [0, 0, 1]
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[618, 129, 644, 176], [656, 223, 679, 276], [641, 330, 682, 371]]),
+        atol=1.0,
+    )
+
+
+def test_run_method_for_truncated_output_sets_error_status() -> None:
+    # given - output cut at max_tokens
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='```json\n[\n  {"box_2d": [1, 2, 3',
+        classes=["cat"],
+        model_type="qwen",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_method_for_zai_flash_single_detection_object() -> None:
+    # given - GLM 5.3 Flash: one detection emitted without the enclosing list
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output='{"bbox_2d": [147, 0, 432, 690], "label": "gun"}',
+        classes=["gun"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].data["class_name"].tolist() == ["gun"]
+    assert np.allclose(
+        result["predictions"].xyxy, np.array([[147, 0, 432, 690]]), atol=1.0
+    )
+
+
+def test_run_method_for_zai_flash_list_missing_opening_bracket() -> None:
+    # given - GLM 5.3 Flash: `{...}, {...}]` with the opening bracket dropped
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = (
+        '{"bbox_2d": [419, 587, 459, 856], "label": "blue player"}, '
+        '{"bbox_2d": [607, 104, 681, 326], "label": "basket"}]'
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["blue player", "basket"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["predictions"].class_id.tolist() == [0, 1]
+
+
+def test_run_method_for_zai_flash_repeated_empty_arrays() -> None:
+    # given - GLM 5.3 Flash: "[]\n[]" for an image with no matches
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output="[]\n[]",
+        classes=["car"],
+        model_type="zai-flash",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert len(result["predictions"]) == 0

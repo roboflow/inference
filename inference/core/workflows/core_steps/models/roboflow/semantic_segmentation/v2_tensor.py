@@ -85,6 +85,7 @@ from inference.core.env import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -144,7 +145,8 @@ BACKGROUND_CLASS_ID = 0
 
 # `image_metadata` key under which the dense per-pixel confidence map is carried
 # for numpy parity (numpy `v2.py` stores `conf_array` on the sv.Detections under
-# `result["confidence_mask"]`). The serialiser never emits it into `predictions`,
+# `result["confidence_mask"]`, as a per-detection object array sharing one map).
+# The serialiser never emits it into `predictions`,
 # but it survives for consumers reading the prediction's `image_metadata`.
 CONFIDENCE_MASK_KEY = "confidence_mask"
 
@@ -369,6 +371,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,

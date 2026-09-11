@@ -39,6 +39,18 @@ def test_model_manager_decorator_records_request_metadata_for_warm_model() -> No
     assert ids.get_ids() == {"some/1"}
 
 
+def test_model_manager_decorator_exposes_owned_artifact_cache() -> None:
+    artifact_cache = MagicMock()
+    model_manager = ModelManager(
+        model_registry=MagicMock(),
+        content_addressed_artifact_cache=artifact_cache,
+    )
+
+    decorator = ModelManagerDecorator(model_manager)
+
+    assert decorator.content_addressed_artifact_cache is artifact_cache
+
+
 def test_fixed_size_cache_records_request_metadata_for_warm_model() -> None:
     model_manager = ModelManager(model_registry=MagicMock())
     model_manager._models = {"sam3/sam3_interactive": MagicMock()}

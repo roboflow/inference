@@ -1,22 +1,29 @@
+import math
 from copy import deepcopy
 
 import cv2
 import numpy as np
 import pytest
 import supervision as sv
-from supervision.config import ORIENTED_BOX_COORDINATES
 from pycocotools import mask as mask_utils
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_rle_sv_detections,
 )
 from inference.core.workflows.core_steps.common.utils import (
+    ANTHROPIC_DETECTION_MAX_EDGE_PIXELS,
+    ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS,
+    ANTHROPIC_IMAGE_TILE_PIXELS,
     DETECTION_MAX_EDGE_PIXELS,
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_sv_detections,
     attach_prediction_type_info,
     attach_prediction_type_info_to_sv_detections_batch,
+    compute_anthropic_upload_dimensions,
     convert_inference_detections_batch_to_sv_detections,
+    count_anthropic_image_tokens,
+    empty_detections_with_image_metadata,
     filter_out_unwanted_classes_from_sv_detections_batch,
     grab_batch_parameters,
     grab_non_batch_parameters,
@@ -26,6 +33,7 @@ from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
     SCALING_RELATIVE_TO_PARENT_KEY,
     SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
@@ -36,6 +44,24 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+
+
+def test_empty_detections_with_image_metadata_keeps_empty_field_contract() -> None:
+    # given / when
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+    )
+    result = empty_detections_with_image_metadata(image=image)
+
+    # then - image dimensions travel in metadata (zero rows means `data` is
+    # invisible to the serialiser), while the fields `sv.Detections.empty()`
+    # populates stay empty arrays rather than becoming `None`; consumers such as
+    # `DetectionsPropertyExtract` call `.tolist()` on them unconditionally.
+    assert len(result) == 0
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert result.confidence.tolist() == []
+    assert result.class_id.tolist() == []
 
 
 def test_attach_prediction_type_info_for_non_empty_predictions() -> None:
@@ -1633,4 +1659,63 @@ def test_scale_dimensions_to_max_edge_preserves_invariants(
     )
     assert scale_dimensions_to_max_edge(
         width=scaled_width, height=scaled_height, max_edge=DETECTION_MAX_EDGE_PIXELS
+    ) == (scaled_width, scaled_height)
+
+
+@pytest.mark.parametrize(
+    "width, height, expected",
+    [
+        pytest.param(1000, 800, (1000, 800), id="within-budget-noop"),
+        pytest.param(1932, 1932, (1932, 1932), id="square-at-token-budget-noop"),
+        pytest.param(4000, 3000, (2212, 1659), id="landscape-downscale"),
+        pytest.param(3000, 4000, (1659, 2212), id="portrait-mirrors-landscape"),
+        pytest.param(8000, 200, (2576, 64), id="wide-capped-by-max-edge"),
+        pytest.param(200, 8000, (64, 2576), id="tall-capped-by-max-edge"),
+    ],
+)
+def test_compute_anthropic_upload_dimensions(
+    width: int, height: int, expected: tuple
+) -> None:
+    # when
+    result = compute_anthropic_upload_dimensions(width=width, height=height)
+
+    # then
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "width, height",
+    [
+        (2899, 2841),
+        (1920, 2560),
+        (5000, 1200),
+        (16000, 9000),
+    ],
+)
+def test_compute_anthropic_upload_dimensions_preserves_invariants(
+    width: int, height: int
+) -> None:
+    # when
+    scaled_width, scaled_height = compute_anthropic_upload_dimensions(
+        width=width, height=height
+    )
+
+    # then
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+    assert math.ceil(scaled_width / tile) * tile <= ANTHROPIC_DETECTION_MAX_EDGE_PIXELS
+    assert math.ceil(scaled_height / tile) * tile <= ANTHROPIC_DETECTION_MAX_EDGE_PIXELS
+    assert (
+        count_anthropic_image_tokens(scaled_width, scaled_height)
+        <= ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS
+    )
+    assert scaled_width <= width and scaled_height <= height
+    # aspect ratio preserved within the error introduced by rounding one edge
+    original_ratio = width / height
+    scaled_ratio = scaled_width / scaled_height
+    assert abs(scaled_ratio - original_ratio) <= original_ratio / min(
+        scaled_width, scaled_height
+    )
+    # stable: already-fitting dimensions are returned unchanged
+    assert compute_anthropic_upload_dimensions(
+        width=scaled_width, height=scaled_height
     ) == (scaled_width, scaled_height)

@@ -14,6 +14,7 @@ from inference.core.entities.requests.inference import (
 from inference.core.env import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -22,6 +23,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
@@ -253,6 +255,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -370,11 +373,22 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             data={
                 "class_name": np.array(class_name_list),
                 DETECTION_ID_KEY: detection_ids,
+                IMAGE_DIMENSIONS_KEY: np.array(
+                    [list(mask_array.shape[:2])] * len(class_id_list)
+                ),
                 RLE_MASK_KEY_IN_SV_DETECTIONS: np.array(rle_list, dtype=object),
             },
         )
 
         if conf_array is not None:
-            result["confidence_mask"] = conf_array
+            # sv.Detections data fields must have one entry per detection:
+            # filtering indexes every field with a length-N boolean mask, and a
+            # bare (H, W) map here fails with "boolean index did not match
+            # indexed array along axis 0". Share the single map across an
+            # object array of length N instead of copying it per class.
+            confidence_maps = np.empty(len(class_id_list), dtype=object)
+            for idx in range(len(class_id_list)):
+                confidence_maps[idx] = conf_array
+            result["confidence_mask"] = confidence_maps
 
         return result
