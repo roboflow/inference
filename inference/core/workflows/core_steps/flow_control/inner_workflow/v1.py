@@ -5,6 +5,7 @@ from datetime import date, datetime
 from enum import Enum
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
+from urllib.parse import urlsplit
 
 import numpy as np
 import requests
@@ -66,6 +67,9 @@ It serializes the bound child inputs and submits the child workflow to the confi
 server in a background task. Set `remote_target` on the block to point at a dedicated deployment or
 local inference server. When omitted, the target defaults to `https://serverless.roboflow.com` and
 can be changed by the runtime with `WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET`.
+The parent API key is forwarded only to that runtime-configured target. Other per-block targets
+receive no inherited credentials; configure the runtime target to authorize credential forwarding
+to a dedicated deployment. Redirects are never followed.
 """
 
 
@@ -102,7 +106,8 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description=(
             "Base URL of the inference server that will execute the workflow in "
-            "`remote_dispatch` mode. When omitted, the runtime-configured default is used."
+            "`remote_dispatch` mode. When omitted, the runtime-configured default is used. "
+            "Only that runtime-configured target receives the parent API key."
         ),
         examples=[
             "https://serverless.roboflow.com",
@@ -239,14 +244,13 @@ class InnerWorkflowBlockV1(WorkflowBlock):
         if self._disable_sinks:
             return {}
 
-        target_url = (remote_target or self._remote_target).strip()
-        if not target_url:
-            raise ValueError(
-                "inner_workflow dispatch requires a non-empty dispatch target URL."
-            )
+        target_url = normalize_workflow_remote_target(
+            remote_target or self._remote_target
+        )
+        trusted_target = normalize_workflow_remote_target(self._remote_target)
         url, payload = prepare_workflow_dispatch_request(
             remote_target=target_url,
-            api_key=self._api_key,
+            api_key=self._api_key if target_url == trusted_target else None,
             parameter_bindings=parameter_bindings,
             workflow_definition=workflow_definition,
             workflow_workspace_id=workflow_workspace_id,
@@ -268,6 +272,24 @@ class InnerWorkflowBlockV1(WorkflowBlock):
             # than lose work.
             request_handler()
         return {}
+
+
+def normalize_workflow_remote_target(target: str) -> str:
+    target = target.strip().rstrip("/")
+    parsed = urlsplit(target)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "Workflow dispatch target must be an HTTP(S) base URL without "
+            "credentials, query parameters, or fragments."
+        )
+    return target
 
 
 def prepare_workflow_dispatch_request(
@@ -333,8 +355,11 @@ def execute_workflow_dispatch_request(url: str, payload: Dict[str, Any]) -> None
         response = requests.post(
             url,
             json=payload,
+            allow_redirects=False,
             timeout=WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
         )
+        if 300 <= response.status_code < 400:
+            raise requests.HTTPError("Workflow dispatch redirects are not allowed.")
         response.raise_for_status()
     except Exception as error:
         logger.warning("Could not dispatch inner workflow to %s. Error: %s", url, error)

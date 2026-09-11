@@ -1,12 +1,17 @@
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
+import requests
 
 from inference.core.workflows.core_steps.flow_control.inner_workflow.v1 import (
     BlockManifest,
     InnerWorkflowBlockV1,
+    execute_workflow_dispatch_request,
+    logger,
+    normalize_workflow_remote_target,
     prepare_workflow_dispatch_request,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -143,3 +148,60 @@ def test_dispatch_is_submitted_to_background_executor() -> None:
         "https://dedicated.example.com/workspace/workflows/slow-workflow"
     )
     assert submitted_request.keywords["payload"]["inputs"] == {"message": "hello"}
+
+
+def test_dispatch_forwards_credentials_only_to_runtime_target() -> None:
+    for configured_target, override, expected_key in [
+        ("https://serverless.roboflow.com", None, "secret"),
+        ("https://dedicated.example.com/", " https://dedicated.example.com ", "secret"),
+        ("https://serverless.roboflow.com", "https://receiver.example.com", None),
+        ("https://serverless.roboflow.com", "http://serverless.roboflow.com", None),
+        (
+            "https://serverless.roboflow.com",
+            "https://serverless.roboflow.com.evil.example",
+            None,
+        ),
+    ]:
+        executor = MagicMock()
+        block = InnerWorkflowBlockV1(
+            api_key="secret",
+            background_tasks=None,
+            thread_pool_executor=executor,
+            inner_workflow_remote_target=configured_target,
+        )
+        block.run(
+            execution_mode="remote_dispatch",
+            remote_target=override,
+            parameter_bindings={},
+            workflow_definition=None,
+            workflow_workspace_id="workspace",
+            workflow_id="child",
+            workflow_version_id=None,
+        )
+        payload = executor.submit.call_args.args[0].keywords["payload"]
+        assert payload["api_key"] == expected_key
+
+
+def test_dispatch_rejects_ambiguous_target_urls() -> None:
+    for target in [
+        "file:///tmp/workflow",
+        "https:///missing-host",
+        "https://user:password@example.com",
+        "https://example.com?redirect=elsewhere",
+        "https://example.com#fragment",
+    ]:
+        with pytest.raises(ValueError, match="HTTP"):
+            normalize_workflow_remote_target(target)
+
+
+def test_dispatch_does_not_follow_redirects() -> None:
+    response = MagicMock(status_code=307)
+    payload = {"api_key": "secret", "inputs": {}}
+    with patch.object(requests, "post", return_value=response) as post:
+        with patch.object(logger, "warning") as warning:
+            execute_workflow_dispatch_request(
+                "https://trusted.example/workflows/run", payload
+            )
+    assert post.call_args.kwargs["allow_redirects"] is False
+    warning.assert_called_once()
+    response.raise_for_status.assert_not_called()
