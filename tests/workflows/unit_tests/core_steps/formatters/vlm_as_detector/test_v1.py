@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
     BlockManifest,
     VLMAsDetectorBlockV1,
@@ -234,6 +237,37 @@ def test_formatter_for_florence2_object_detection() -> None:
     assert "root_parent_dimensions" in result["predictions"].data
     assert "parent_id" in result["predictions"].data
     assert "root_parent_id" in result["predictions"].data
+
+
+def test_formatter_for_florence2_empty_object_detection_keeps_image_dimensions() -> (
+    None
+):
+    # given
+    block = VLMAsDetectorBlockV1()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = '{"bboxes": [], "labels": []}'
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="florence-2",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    predictions = result["predictions"]
+    assert len(predictions) == 0
+    assert predictions.metadata["image_dimensions"] == [192, 168]
+    assert serialise_sv_detections(predictions)["image"] == {
+        "width": 168,
+        "height": 192,
+    }, "Empty Florence results must not serialise as null dimensions"
 
 
 def test_formatter_for_florence2_open_vocabulary_object_detection() -> None:
