@@ -310,6 +310,15 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["rf_key:account", "xxx-xxx", "$inputs.google_api_key"],
         private=True,
     )
+    zero_data_retention: bool = Field(
+        default=False,
+        title="Zero Data Retention",
+        description=(
+            "Use a key whose Google project already has ZDR enabled. Rejects explicit "
+            "context caching and Search/Maps grounding. Gemini generateContent has no "
+            "per-request ZDR switch; retention is controlled by the key project."
+        ),
+    )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
@@ -478,6 +487,7 @@ class GoogleGeminiBlockV5(WorkflowBlock):
         google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        zero_data_retention: bool = False,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gemini_prompting(
@@ -494,6 +504,7 @@ class GoogleGeminiBlockV5(WorkflowBlock):
             thinking_level=thinking_level,
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
+            zero_data_retention=zero_data_retention,
         )
         return [
             {
@@ -520,6 +531,7 @@ def run_gemini_prompting(
     thinking_level: Optional[str],
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
+    zero_data_retention: bool = False,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -553,6 +565,7 @@ def run_gemini_prompting(
         gemini_prompts=gemini_prompts,
         model_version=model_version,
         max_concurrent_requests=max_concurrent_requests,
+        zero_data_retention=zero_data_retention,
     )
 
 
@@ -562,6 +575,7 @@ def execute_gemini_requests(
     gemini_prompts: List[dict],
     model_version: str,
     max_concurrent_requests: Optional[int],
+    zero_data_retention: bool = False,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     tasks = [
         partial(
@@ -570,6 +584,7 @@ def execute_gemini_requests(
             google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
+            zero_data_retention=zero_data_retention,
         )
         for prompt in gemini_prompts
     ]
@@ -588,6 +603,7 @@ def execute_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Route to proxied or direct execution based on API key format."""
     if google_api_key.startswith(("rf_key:account", "rf_key:user:")):
@@ -596,12 +612,35 @@ def execute_gemini_request(
             google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
+            zero_data_retention=zero_data_retention,
         )
     else:
         return _execute_direct_gemini_request(
             google_api_key=google_api_key,
             prompt=prompt,
             model_version=model_version,
+            zero_data_retention=zero_data_retention,
+        )
+
+
+def validate_zdr_prompt(prompt: dict) -> None:
+    # generateContent has no per-request ZDR flag. The project must already
+    # have ZDR enabled; reject features that retain data despite that setting.
+    if prompt.get("cachedContent") or prompt.get("cached_content"):
+        raise ValueError(
+            "Explicit context caching is incompatible with zero data retention."
+        )
+    grounding_tools = {
+        "google_search",
+        "googleSearch",
+        "google_search_retrieval",
+        "googleSearchRetrieval",
+        "google_maps",
+        "googleMaps",
+    }
+    if any(grounding_tools.intersection(tool) for tool in prompt.get("tools", [])):
+        raise ValueError(
+            "Search/Maps grounding is incompatible with zero data retention."
         )
 
 
@@ -610,8 +649,12 @@ def _execute_proxied_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Gemini request via Roboflow proxy."""
+    if zero_data_retention:
+        validate_zdr_prompt(prompt)
+
     payload = {
         "model": model_version,
         "google_api_key": google_api_key,
@@ -643,8 +686,12 @@ def _execute_direct_gemini_request(
     google_api_key: str,
     prompt: dict,
     model_version: str,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Gemini request directly to Google API."""
+    if zero_data_retention:
+        validate_zdr_prompt(prompt)
+
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
         headers={

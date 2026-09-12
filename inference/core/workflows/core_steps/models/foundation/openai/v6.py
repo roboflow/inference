@@ -440,6 +440,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
     )
+    zero_data_retention: bool = Field(
+        default=False,
+        title="Zero Data Retention",
+        description=(
+            "Use a key whose OpenAI organization/project already has ZDR enabled. "
+            "Disables response storage (store=false). This does not enable ZDR on the key."
+        ),
+    )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
@@ -587,6 +595,7 @@ class OpenAIBlockV6(WorkflowBlock):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        zero_data_retention: bool = False,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
@@ -603,6 +612,7 @@ class OpenAIBlockV6(WorkflowBlock):
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
+            zero_data_retention=zero_data_retention,
         )
         return [
             {
@@ -629,6 +639,7 @@ def run_openai_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    zero_data_retention: bool = False,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -688,6 +699,7 @@ def run_openai_prompting(
         max_tokens=max_tokens,
         temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
+        zero_data_retention=zero_data_retention,
     )
 
 
@@ -751,6 +763,7 @@ def execute_openai_requests(
     max_tokens: Optional[int],
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
+    zero_data_retention: bool = False,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Execute prepared OpenAI request payloads in parallel.
 
@@ -782,6 +795,7 @@ def execute_openai_requests(
             reasoning_effort=reasoning_effort,
             max_tokens=max_tokens,
             temperature=temperature,
+            zero_data_retention=zero_data_retention,
         )
         for prompt in openai_prompts
     ]
@@ -805,6 +819,7 @@ def _execute_proxied_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
     payload = {
@@ -812,6 +827,9 @@ def _execute_proxied_openai_request(
         "input": input_content,
         "openai_api_key": openai_api_key,
     }
+
+    if zero_data_retention:
+        payload["store"] = False
 
     if instructions is not None:
         payload["instructions"] = instructions
@@ -912,6 +930,7 @@ def _execute_direct_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request directly."""
     client = _get_openai_client(openai_api_key)
@@ -920,6 +939,9 @@ def _execute_direct_openai_request(
         "model": model_version,
         "input": input_content,
     }
+
+    if zero_data_retention:
+        request_params["store"] = False
 
     if instructions is not None:
         request_params["instructions"] = instructions
@@ -992,6 +1014,7 @@ def execute_openai_request(
     max_tokens: Optional[int],
     temperature: Optional[float],
     text_format: Optional[dict] = None,
+    zero_data_retention: bool = False,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute a single OpenAI request, routing to direct or proxied mode.
 
@@ -1030,6 +1053,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            zero_data_retention=zero_data_retention,
         )
     else:
         return _execute_direct_openai_request(
@@ -1041,6 +1065,7 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
             text_format=text_format,
+            zero_data_retention=zero_data_retention,
         )
 
 
