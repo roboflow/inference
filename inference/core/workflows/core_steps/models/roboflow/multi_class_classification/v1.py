@@ -200,7 +200,13 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
             source="workflow-execution",
             active_learning_target_dataset=active_learning_target_dataset,
         )
-        self._model_manager.add_model(
+        # Use async model loading to prevent thread pool starvation (#2448)
+        from inference.core.workflows.execution_engine.v1.executor.models import (
+            ensure_model_loaded,
+        )
+
+        ensure_model_loaded(
+            model_manager=self._model_manager,
             model_id=model_id,
             api_key=self._api_key,
         )
