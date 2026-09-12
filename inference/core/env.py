@@ -1251,6 +1251,45 @@ MEMORY_FREE_THRESHOLD = float(
     os.getenv("MEMORY_FREE_THRESHOLD", "0.0")
 )  # percentage of free memory, 0 disables memory pressure detection
 
+# Model pre-warming configuration (#2448)
+# Comma-separated list of models to pre-load at startup and pin in memory
+# Example: "yolov8n/1,yolov8s/2" will load and pin these models
+# Pre-warmed models won't be evicted, eliminating cold starts
+MODEL_PREWARM_LIST = safe_split_value(os.getenv("MODEL_PREWARM_LIST", ""))
+
+# Maximum parallel model loads during pre-warming (default: 4)
+MODEL_PREWARM_MAX_PARALLEL = int(os.getenv("MODEL_PREWARM_MAX_PARALLEL", "4"))
+
+# Number of retries for failed pre-warm loads (default: 2)
+MODEL_PREWARM_RETRY_COUNT = int(os.getenv("MODEL_PREWARM_RETRY_COUNT", "2"))
+
+# Delay between pre-warm retries in seconds (default: 5.0)
+MODEL_PREWARM_RETRY_DELAY = float(os.getenv("MODEL_PREWARM_RETRY_DELAY", "5.0"))
+
+# Whether to gate readiness on successful pre-warming (default: True)
+# If True, server won't be "ready" until all required models load
+MODEL_PREWARM_GATE_READINESS = str2bool(
+    os.getenv("MODEL_PREWARM_GATE_READINESS", "True")
+)
+
+# Eviction protection configuration (#2448)
+# Protect models used within this window from eviction (seconds, default: 300 = 5min)
+# This prevents the evict→reload cycle for models in active rotation
+EVICTION_PROTECTION_WINDOW_SECONDS = float(
+    os.getenv("EVICTION_PROTECTION_WINDOW_SECONDS", "300.0")
+)
+
+# Usage count threshold for "high frequency" protection (default: 10)
+EVICTION_PROTECTION_HIGH_FREQUENCY_THRESHOLD = int(
+    os.getenv("EVICTION_PROTECTION_HIGH_FREQUENCY_THRESHOLD", "10")
+)
+
+# Enable eviction protection (default: True)
+# Disabling this reverts to pure LRU eviction
+EVICTION_PROTECTION_ENABLED = str2bool(
+    os.getenv("EVICTION_PROTECTION_ENABLED", "True")
+)
+
 # Stream manager configuration
 try:
     STREAM_MANAGER_MAX_RAM_MB: Optional[float] = abs(
