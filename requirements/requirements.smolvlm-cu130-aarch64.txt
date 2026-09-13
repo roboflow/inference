@@ -1,0 +1,5 @@
+# ARM SBSA / CUDA 13 reader profile only; do not apply to Jetson L4T or CPU builds.
+# 0.48 introduced CUDA 13; 0.48.1 also contains the 0.48.0 int8 regression fix.
+# Install with --no-deps --require-hashes to preserve the base Torch/Transformers stack.
+bitsandbytes==0.48.1 \
+    --hash=sha256:b7f440aee5ec8cb1d028b0d3b2d71e97c302766dc605232293f4a0f7e48b5c75

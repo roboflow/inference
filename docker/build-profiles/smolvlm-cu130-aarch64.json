@@ -1,0 +1,23 @@
+{
+  "schema": "roboflow.private-reader-build-profile.v1",
+  "platform": "linux/arm64",
+  "environment": "Linux SBSA, not Jetson L4T",
+  "base_image": "registry.dgxstation.roboflow.one/onprem-poc/inference-gpu@sha256:7b58dc4adfd0fcb9e07ec16892ea8fb873dde896710a2aa230ab4443bcb9035c",
+  "torch": "2.9.0a0+50eac811a6.nv25.09",
+  "torch_cuda": "13.0",
+  "requirement_file": "requirements/requirements.smolvlm-cu130-aarch64.txt",
+  "install_flags": ["--no-deps", "--require-hashes", "--no-cache-dir"],
+  "replacement": {
+    "package": "bitsandbytes",
+    "before": "0.47.0",
+    "after": "0.48.1",
+    "wheel": "bitsandbytes-0.48.1-py3-none-manylinux_2_24_aarch64.whl",
+    "wheel_sha256": "b7f440aee5ec8cb1d028b0d3b2d71e97c302766dc605232293f4a0f7e48b5c75",
+    "required_native_library": "bitsandbytes/libbitsandbytes_cuda130.so",
+    "native_library_sha256": "b0757f543dd1a8c9492e9fb04997cc68e4309f4c129758c4dd61698566df5ad1",
+    "elf_machine": 183
+  },
+  "preserve": ["parent runtime configuration", "other installed dependencies", "model artifacts", "4-bit NF4 defaults"],
+  "acceptance": ["exact wheel and ELF hashes", "native CUDA NF4 quantize/dequantize", "same-model full prediction"],
+  "shared_promotion": false
+}
