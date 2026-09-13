@@ -18,12 +18,11 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
-    ResizeMode,
-    parse_inference_config,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.smolvlm.inference_config import parse_smolvlm_inference_config
 
 
 def _get_smolvlm_attn_implementation(device: torch.device) -> str:
@@ -70,16 +69,7 @@ class SmolVLMHF:
         )
         inference_config = None
         if os.path.exists(inference_config_path):
-            inference_config = parse_inference_config(
-                config_path=inference_config_path,
-                allowed_resize_modes={
-                    ResizeMode.STRETCH_TO,
-                    ResizeMode.LETTERBOX,
-                    ResizeMode.CENTER_CROP,
-                    ResizeMode.LETTERBOX_REFLECT_EDGES,
-                    ResizeMode.FIT_LONGER_EDGE,
-                },
-            )
+            inference_config = parse_smolvlm_inference_config(inference_config_path)
         attn_implementation = _get_smolvlm_attn_implementation(device=device)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if (
