@@ -9,13 +9,10 @@ editable-install finder serves direct children such as
 package is a stub (verified 2026-09-08), so stub parents alone are not
 isolation.
 
-Deviation from the plan text (recorded 2026-09-08): the child's `PYTHONPATH`
-is `<scratch tree>` **plus** `<repo>/inference_models`. `inference_models` and
-`inference_sdk` are allowed dependencies of workflows and the probe is
-specified to run with both installed, but in this checkout `inference_models`
-is importable only through that path entry - the venv's editable install
-resolves it from a different checkout. Setting `PYTHONPATH` to the scratch
-tree alone would silently swap in the other checkout's copy.
+The scratch tree also contains this checkout's `inference_sdk`, an allowed
+workflow dependency. The child's `PYTHONPATH` includes `<repo>/inference_models`
+for the other allowed package. Neither package needs an editable installation,
+and the repository root is not added to the child's search path.
 """
 
 import argparse
@@ -156,6 +153,10 @@ def assert_only_copied_modules_loaded():
 
 
 def import_everything():
+    import inference_sdk
+    assert _inside_copy(inference_sdk.__file__), (
+        f"SDK must come from the isolated checkout: {inference_sdk.__file__}"
+    )
     import inference
     # Directory containment on resolved paths, not a string prefix: on macOS
     # `tempfile.mkdtemp` hands back `/var/...` while the child resolves the
@@ -362,6 +363,11 @@ def build_tree(target: Path) -> None:
     shutil.copytree(
         MODULE,
         target / "inference" / "core" / "workflows",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    shutil.copytree(
+        REPO_ROOT / "inference_sdk",
+        target / "inference_sdk",
         ignore=shutil.ignore_patterns("__pycache__"),
     )
 
