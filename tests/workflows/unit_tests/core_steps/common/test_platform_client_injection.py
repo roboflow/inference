@@ -25,13 +25,17 @@ PROXY_BLOCKS = [
     (".models.foundation.openai.v4", "OpenAIBlockV4"),
     (".models.foundation.openai.v5", "OpenAIBlockV5"),
     (".models.foundation.openai.v6", "OpenAIBlockV6"),
+    (".models.foundation.openai.v7", "OpenAIBlockV7"),
     (".models.foundation.google_gemini.v3", "GoogleGeminiBlockV3"),
     (".models.foundation.google_gemini.v4", "GoogleGeminiBlockV4"),
     (".models.foundation.google_gemini.v5", "GoogleGeminiBlockV5"),
+    (".models.foundation.google_gemini.v6", "GoogleGeminiBlockV6"),
     (".models.foundation.anthropic_claude.v3", "AnthropicClaudeBlockV3"),
     (".models.foundation.anthropic_claude.v4", "AnthropicClaudeBlockV4"),
+    (".models.foundation.anthropic_claude.v5", "AnthropicClaudeBlockV5"),
     (".models.foundation.spacexai.v1", "SpaceXAIBlockV1"),
     (".models.foundation.spacexai.v2", "SpaceXAIBlockV2"),
+    (".models.foundation.spacexai.v3", "SpaceXAIBlockV3"),
     (".models.foundation.google_vision_ocr.v1", "GoogleVisionOCRBlockV1"),
     (".models.foundation.google_vision_ocr.v1_tensor", "GoogleVisionOCRBlockV1"),
     (".sinks.email_notification.v2", "EmailNotificationBlockV2"),
@@ -40,6 +44,7 @@ PROXY_BLOCKS = [
     (".models.foundation.qwen_vlm.v1", "QwenVlmBlockV1"),
     (".models.foundation.qwen_vlm.v2", "QwenVlmBlockV2"),
     (".models.foundation.qwen_vlm.v3", "QwenVlmBlockV3"),
+    (".models.foundation.qwen_vlm.v4", "QwenVlmBlockV4"),
 ]
 WORKFLOWS_ROOT = (
     pathlib.Path(__file__).resolve().parents[5] / "inference" / "core" / "workflows"
@@ -159,3 +164,72 @@ def test_no_workflows_module_imports_the_roboflow_api_client_at_all() -> None:
                     if alias.name.startswith("inference.core.roboflow_api"):
                         offenders.append(f"{path}:{node.lineno}")
     assert not offenders, offenders
+
+
+@pytest.mark.parametrize(
+    "module_suffix,class_name,model_version",
+    [
+        (".models.foundation.openai.v7", "OpenAIBlockV7", "gpt-5.1"),
+        (
+            ".models.foundation.anthropic_claude.v5",
+            "AnthropicClaudeBlockV5",
+            "claude-sonnet-4-5",
+        ),
+        (
+            ".models.foundation.google_gemini.v6",
+            "GoogleGeminiBlockV6",
+            "gemini-2.5-flash",
+        ),
+        (".models.foundation.spacexai.v3", "SpaceXAIBlockV3", "grok-4"),
+    ],
+)
+def test_new_vlm_blocks_forward_managed_keys_through_the_injected_client(
+    module_suffix, class_name, model_version
+):
+    import numpy as np
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    client = RecordingPlatformClient(
+        post_response={
+            "content": [{"type": "text", "text": "ok"}],
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "ok"}]}
+            ],
+            "candidates": [{"content": {"parts": [{"text": "ok"}]}}],
+        }
+    )
+    block = _load(module_suffix, class_name)(
+        api_key="workspace-key", platform_client=client
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((8, 8, 3), dtype=np.uint8),
+    )
+    kwargs = {
+        name: (
+            parameter.default
+            if parameter.default is not inspect.Parameter.empty
+            else None
+        )
+        for name, parameter in inspect.signature(block.run).parameters.items()
+    }
+    kwargs.update(
+        images=Batch.init(content=[image], indices=[(0,)]),
+        task_type="caption",
+        model_version=model_version,
+        api_key="rf_key:account:managed-key",
+        max_concurrent_requests=1,
+    )
+    if "max_image_size" in kwargs:
+        kwargs["max_image_size"] = 512
+    if "image_detail" in kwargs:
+        kwargs["image_detail"] = "auto"
+    result = block.run(**kwargs)
+    assert result[0]["output"] == "ok"
+    assert len(client.posts) == 1
+    assert client.posts[0]["api_key"] == "workspace-key"

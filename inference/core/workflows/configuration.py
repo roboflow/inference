@@ -4,7 +4,7 @@ Every value the module used to take from `inference.core.env` is a field of
 `WorkflowsConfiguration`, which the host builds from its own already-resolved
 settings and installs once per process with `configure_process`.
 
-The configuration is PROCESS-WIDE in its entirety. Every one of the 67 values
+The configuration is PROCESS-WIDE in its entirety. Every configuration value
 is read from a module constant frozen at import - `core_steps/loader.py`
 branches on the tensor flag while it is being imported, `offline.py:34` reads
 `SECURE_GATEWAY`, `block_assembler.py:100` reads the custom-Python
@@ -78,6 +78,9 @@ class RemoteExecutionConfiguration:
     hosted_core_model_url: str = "https://infer.roboflow.com"
     max_step_batch_size: int = 1
     max_step_concurrent_requests: int = 8
+    inner_workflow_remote_target: str = "https://serverless.roboflow.com"
+    inner_workflow_remote_dispatch_request_timeout: float = 300.0
+    openai_compatible_allowed_base_urls: Tuple[str, ...] = ("*",)
 
 
 @dataclass(frozen=True)

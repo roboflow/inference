@@ -74,6 +74,16 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = (
     _CONFIGURATION.remote.max_step_concurrent_requests
 )
 
+WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET = (
+    _CONFIGURATION.remote.inner_workflow_remote_target
+)
+WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT = (
+    _CONFIGURATION.remote.inner_workflow_remote_dispatch_request_timeout
+)
+OPENAI_COMPATIBLE_ALLOWED_BASE_URLS = set(
+    _CONFIGURATION.remote.openai_compatible_allowed_base_urls
+)
+
 # --- platform / deployment ---
 API_BASE_URL = _CONFIGURATION.platform.api_base_url
 OFFLINE_MODE = _CONFIGURATION.platform.offline_mode

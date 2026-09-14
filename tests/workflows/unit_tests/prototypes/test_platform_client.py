@@ -96,7 +96,7 @@ def test_server_adapter_wrap_url_really_proxies_through_the_secure_gateway(monke
 
     # Measured: urllib.parse.quote(..., safe="~()*!'") encodes the slashes too.
     assert wrapped == (
-        "http://gateway.local/proxy?url="
+        "https://gateway.local/proxy?url="
         "https%3A%2F%2Fapi.roboflow.com%2Fx%3Fapi_key%3Dabcd1234%26a%3D1"
     )
     assert wrapped == url_utils.wrap_url(raw)

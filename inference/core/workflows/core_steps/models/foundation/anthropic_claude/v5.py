@@ -28,11 +28,6 @@ import requests
 from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import post_to_roboflow_api
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.token_usage import (
     TOKEN_OUTPUT_DEFINITIONS,
     parse_responses_api_usage,
@@ -51,6 +46,9 @@ from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
     build_thinking_config,
     resolve_temperature,
+)
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -77,6 +75,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     is_workflow_selector,
     third_party_model,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference.core.workflows.utils.images import (
+    downscale_image_keeping_aspect_ratio,
+    encode_image_to_jpeg_bytes,
+    load_image,
 )
 
 CLAUDE_MODELS = [
@@ -506,15 +513,15 @@ class AnthropicClaudeBlockV5(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -542,6 +549,7 @@ class AnthropicClaudeBlockV5(WorkflowBlock):
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_claude_prompting(
+            platform_client=self._platform_client,
             roboflow_api_key=self._api_key,
             images=inference_images,
             task_type=task_type,
@@ -614,6 +622,7 @@ def detection_upload_dimensions(
 
 def run_claude_prompting(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -647,6 +656,7 @@ def run_claude_prompting(
         )
         prompts.append(generated_prompt)
     return execute_claude_requests(
+        platform_client=platform_client,
         roboflow_api_key=roboflow_api_key,
         anthropic_api_key=anthropic_api_key,
         prompts=prompts,
@@ -728,6 +738,7 @@ def _encode_image_to_jpeg_bytes_with_quality(
 
 def execute_claude_requests(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     prompts: List[Tuple[Optional[str], List[dict]]],
     model_version: str,
@@ -740,6 +751,7 @@ def execute_claude_requests(
     tasks = [
         partial(
             execute_claude_request,
+            platform_client=platform_client,
             roboflow_api_key=roboflow_api_key,
             anthropic_api_key=anthropic_api_key,
             system_prompt=prompt[0],
@@ -764,6 +776,7 @@ def execute_claude_requests(
 
 def execute_claude_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     system_prompt: Optional[str],
     messages: List[dict],
@@ -776,6 +789,7 @@ def execute_claude_request(
     """Route to proxied or direct execution based on API key format."""
     if anthropic_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_claude_request(
+            platform_client=platform_client,
             roboflow_api_key=roboflow_api_key,
             anthropic_api_key=anthropic_api_key,
             system_prompt=system_prompt,
@@ -801,6 +815,7 @@ def execute_claude_request(
 
 def _execute_proxied_claude_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     system_prompt: Optional[str],
     messages: List[dict],
@@ -844,7 +859,7 @@ def _execute_proxied_claude_request(
     endpoint = "apiproxy/anthropic"
 
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,

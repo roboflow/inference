@@ -10,10 +10,12 @@ helper below is kept for the formatter blocks that still import it.
 """
 
 import json
+import logging
 from typing import Any, List, Tuple
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
+
+logger = logging.getLogger(__name__)
 
 _NAMED_BOX_FIELDS = ("x_min", "y_min", "x_max", "y_max")
 

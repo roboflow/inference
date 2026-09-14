@@ -2,6 +2,7 @@ import ast
 import dataclasses
 import json
 import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-# Module level on purpose (round-5 defect 1, D5 rule): the facade binds its 67
+# Module level on purpose (round-5 defect 1, D5 rule): the facade binds its
 # constants at its FIRST import from whatever the registry holds at that
 # instant. Importing it here, at collection time, right after `inference.core`
 # has installed the server configuration, guarantees the values compared below
@@ -102,6 +103,18 @@ FIELDS = [
         "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS",
         lambda c: c.remote.max_step_concurrent_requests,
     ),
+    (
+        "WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET",
+        lambda c: c.remote.inner_workflow_remote_target,
+    ),
+    (
+        "WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT",
+        lambda c: c.remote.inner_workflow_remote_dispatch_request_timeout,
+    ),
+    (
+        "OPENAI_COMPATIBLE_ALLOWED_BASE_URLS",
+        lambda c: set(c.remote.openai_compatible_allowed_base_urls),
+    ),
     ("API_BASE_URL", lambda c: c.platform.api_base_url),
     ("OFFLINE_MODE", lambda c: c.platform.offline_mode),
     ("SECURE_GATEWAY", lambda c: c.platform.secure_gateway),
@@ -181,7 +194,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 67, len(tabled)
+    assert len(tabled) == 70, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -238,6 +251,27 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
     actual = reader(build_configuration_from_env())
     assert actual == expected, name
     assert type(actual) is type(expected), (name, type(actual), type(expected))
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET", "https://deployment.example/v1"),
+        ("WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT", 12.5),
+        ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", set()),
+        ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {"https://approved.example/v1"}),
+    ],
+)
+def test_server_configuration_preserves_new_remote_settings(monkeypatch, name, value):
+    monkeypatch.setattr(env, name, value)
+    configuration = build_configuration_from_env()
+    assert dict(FIELDS)[name](configuration) == value
+    monkeypatch.setattr(
+        "inference.core.workflows.configuration.get_configuration",
+        lambda: configuration,
+    )
+    facade = runpy.run_path(workflows_environment.__file__)
+    assert facade[name] == value
 
 
 def test_the_facade_equals_env_field_by_field() -> None:

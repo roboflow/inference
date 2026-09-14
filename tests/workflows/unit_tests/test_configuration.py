@@ -12,7 +12,7 @@ from typing import List
 import pytest
 
 # The facade is imported HERE, at collection time, on purpose (round-5 defect 1):
-# it binds its 67 constants from `get_configuration()` at its FIRST import, and the
+# it binds its constants from `get_configuration()` at its FIRST import, and the
 # autouse fixture below resets the registry before every test. If a test body
 # performed the first import, the facade would freeze standalone defaults, the
 # fixture would restore only `_CONFIGURATION`, and the server/facade parity test
@@ -69,7 +69,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 67, total_fields
+    assert total_fields == 70, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -109,6 +109,12 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
     assert configuration.remote.hosted_core_model_url == "https://infer.roboflow.com"
     assert configuration.remote.max_step_batch_size == 1
     assert configuration.remote.max_step_concurrent_requests == 8
+    assert (
+        configuration.remote.inner_workflow_remote_target
+        == "https://serverless.roboflow.com"
+    )
+    assert configuration.remote.inner_workflow_remote_dispatch_request_timeout == 300.0
+    assert configuration.remote.openai_compatible_allowed_base_urls == ("*",)
     assert configuration.platform.api_base_url == "https://api.roboflow.com"
     assert configuration.platform.offline_mode is False
     assert configuration.platform.secure_gateway is None
@@ -564,7 +570,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 67, sorted(exported)
+    assert len(exported) == 70, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)

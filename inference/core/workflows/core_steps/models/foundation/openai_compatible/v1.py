@@ -8,13 +8,13 @@ from httpx import URL
 from openai import DefaultHttpxClient, OpenAI
 from pydantic import ConfigDict, Field
 
-from inference.core.env import OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from inference.core.workflows.environment import OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,

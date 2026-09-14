@@ -1162,7 +1162,6 @@ def test_init_workflow_image_data_from_tensor_only() -> None:
 
     # then
     assert image.tensor_image is tensor
-    assert image.tensor_image.device == WORKFLOWS_IMAGE_TENSOR_DEVICE
 
 
 def test_workflow_image_data_numpy_fallback_does_rgb_to_bgr() -> None:

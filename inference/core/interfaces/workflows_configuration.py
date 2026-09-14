@@ -74,6 +74,11 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             hosted_core_model_url=env.HOSTED_CORE_MODEL_URL,
             max_step_batch_size=env.WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_step_concurrent_requests=env.WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            inner_workflow_remote_target=env.WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
+            inner_workflow_remote_dispatch_request_timeout=env.WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
+            openai_compatible_allowed_base_urls=tuple(
+                sorted(env.OPENAI_COMPATIBLE_ALLOWED_BASE_URLS)
+            ),
         ),
         platform=PlatformConfiguration(
             api_base_url=env.API_BASE_URL,
