@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- RF-DETR Triton preprocessing now rejects request shapes that would create
+  unbounded pinned-host and CUDA staging buffers, falling back to the base
+  preprocessor when compatibility fallback is enabled.
+
 ---
 
 ## `0.37.0`

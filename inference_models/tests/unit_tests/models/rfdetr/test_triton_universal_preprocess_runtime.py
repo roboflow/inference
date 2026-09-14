@@ -271,6 +271,69 @@ def test_supported_uint8_request_is_compatible_when_triton_is_available(
     assert compatibility.supported
 
 
+@pytest.mark.parametrize(
+    ("shape", "max_dimension", "max_pixels"),
+    [
+        ((9, 8, 3), 8, 1_000),
+        ((8, 9, 3), 10, 64),
+    ],
+)
+def test_uint8_request_exceeding_source_budget_is_incompatible(
+    monkeypatch,
+    shape,
+    max_dimension: int,
+    max_pixels: int,
+) -> None:
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "TRITON_AVAILABLE",
+        True,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+        max_dimension,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+        max_pixels,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros(shape, dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert not compatibility.supported
+    assert "exceed the Triton preprocessing budget" in compatibility.reason
+
+
+def test_float_request_is_not_subject_to_uint8_staging_budget(monkeypatch) -> None:
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "TRITON_AVAILABLE",
+        True,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+        1,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+        1,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=torch.zeros((3, 8, 9), dtype=torch.float32),
+        pre_processing_overrides=None,
+    )
+
+    assert compatibility.supported
+
+
 def test_uint8_request_reports_missing_triton(monkeypatch) -> None:
     monkeypatch.setattr(
         "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
