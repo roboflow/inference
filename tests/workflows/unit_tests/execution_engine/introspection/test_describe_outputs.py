@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Any
 
 import pytest
 
@@ -156,3 +157,69 @@ def test_handle_describe_workflow_outputs_when_invalid_step_oncountered() -> Non
     # when
     with pytest.raises(WorkflowDefinitionError):
         _ = describe_workflow_outputs(definition=definition)
+
+
+@pytest.mark.parametrize(
+    "property_name, property_value",
+    [
+        ("steps", None),
+        ("steps", {"type": "ObjectDetectionModel", "name": "general_detection"}),
+        ("steps", ["general_detection"]),
+        ("steps", [{"type": "ObjectDetectionModel", "name": ["general_detection"]}]),
+        ("steps", [{"type": ["ObjectDetectionModel"], "name": "general_detection"}]),
+        ("outputs", None),
+        (
+            "outputs",
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ),
+        ("outputs", ["$steps.general_detection.predictions"]),
+        (
+            "outputs",
+            [
+                {
+                    "type": "JsonField",
+                    "name": ["detections"],
+                    "selector": "$steps.general_detection.predictions",
+                }
+            ],
+        ),
+        (
+            "outputs",
+            [
+                {
+                    "type": "JsonField",
+                    "name": "detections",
+                    "selector": ["$steps.general_detection.predictions"],
+                }
+            ],
+        ),
+        (
+            "outputs",
+            [
+                {
+                    "type": "JsonField",
+                    "name": "detections",
+                    "selector": {"$steps.general_detection": "predictions"},
+                }
+            ],
+        ),
+    ],
+)
+def test_handle_describe_workflow_outputs_when_definition_structure_is_malformed(
+    property_name: str,
+    property_value: Any,
+) -> None:
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    definition[property_name] = property_value
+
+    # when
+    with pytest.raises(WorkflowDefinitionError) as error:
+        _ = describe_workflow_outputs(definition=definition)
+
+    # then
+    assert error.value.context == "describing_workflow_outputs"

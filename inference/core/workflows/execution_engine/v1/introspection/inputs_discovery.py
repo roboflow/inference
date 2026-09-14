@@ -1,11 +1,11 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND
+from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND, Kind
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
@@ -57,6 +57,8 @@ INPUT_TYPE_TO_SELECTED_ELEMENT = {
         "any_data",
     },
 }
+# mirrors `kind` of Workflow inputs - see `WorkflowInput` entity
+DECLARED_KIND_ADAPTER = TypeAdapter(List[Union[str, Kind]])
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,17 @@ def map_block_class2all_aliases(
 def retrieve_input_selectors_details(
     inputs: List[dict],
 ) -> Dict[str, InputMetadata]:
+    if not isinstance(inputs, list) or not all(
+        isinstance(input_element, dict)
+        and isinstance(input_element.get("name"), str)
+        and isinstance(input_element.get("type"), str)
+        for input_element in inputs
+    ):
+        raise WorkflowDefinitionError(
+            public_message="Workflow definition invalid - `inputs` must be a list of objects "
+            "with `name` and `type` defined as strings.",
+            context="describing_workflow_inputs",
+        )
     unique_names = {input_element["name"] for input_element in inputs}
     if len(unique_names) != len(inputs):
         raise WorkflowDefinitionError(
@@ -154,8 +167,11 @@ def retrieve_input_selectors_details(
     for input_element in inputs:
         input_selector = construct_input_selector(input_name=input_element["name"])
         declared_kind = input_element.get("kind")
-        if declared_kind:
-            declared_kind = set(declared_kind)
+        if declared_kind is not None:
+            declared_kind = retrieve_declared_kind_names(
+                input_name=input_element["name"],
+                declared_kind=declared_kind,
+            )
         result[input_selector] = InputMetadata(
             name=input_element["name"],
             selector=input_selector,
@@ -165,16 +181,34 @@ def retrieve_input_selectors_details(
     return result
 
 
+def retrieve_declared_kind_names(input_name: str, declared_kind: Any) -> Set[str]:
+    try:
+        kinds = DECLARED_KIND_ADAPTER.validate_python(declared_kind)
+    except ValidationError as error:
+        raise WorkflowDefinitionError(
+            public_message=f"Workflow definition invalid - input `{input_name}` declares malformed `kind`. "
+            "Expected list of kind names or kind definitions with `name` property.",
+            inner_error=error,
+            context="describing_workflow_inputs",
+        )
+    return {kind if isinstance(kind, str) else kind.name for kind in kinds}
+
+
 def search_input_selectors_in_steps(
     steps: List[dict],
     input_selectors_details: Dict[str, InputMetadata],
     block_type_to_manifest: Dict[str, Type[WorkflowBlockManifest]],
     block_type_to_metadata: Dict[str, BlockManifestMetadata],
 ) -> List[SelectorSearchResult]:
+    if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+        raise WorkflowDefinitionError(
+            public_message="Workflow definition invalid - `steps` must be a list of objects.",
+            context="describing_workflow_inputs",
+        )
     result = []
     for step in steps:
         step_type = step["type"]
-        if step_type not in block_type_to_metadata:
+        if not isinstance(step_type, str) or step_type not in block_type_to_metadata:
             raise WorkflowDefinitionError(
                 public_message=f"Workflow definition invalid - used step of type `{step_type}` which is not available "
                 f"in this installation of Workflows Execution Engine.",
@@ -248,6 +282,13 @@ def grab_input_selectors_defined_for_step(
     property_name: str,
     selector_definition: SelectorDefinition,
 ) -> List[str]:
+    if not hasattr(block_manifest, property_name):
+        raise WorkflowDefinitionError(
+            public_message=f"Workflow definition invalid - step `{block_manifest.name}` of type "
+            f"`{block_manifest.type}` does not expose property `{property_name}` declared in its "
+            "block schema. This block is not supported in this installation of Workflows Execution Engine.",
+            context="describing_workflow_inputs",
+        )
     list_allowed = selector_definition.is_list_element
     dict_allowed = selector_definition.is_dict_element
     detected_input_selectors = []

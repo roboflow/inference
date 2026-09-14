@@ -2111,6 +2111,66 @@ def test_describe_workflow_interface_still_requires_api_key(monkeypatch) -> None
     assert "API key is missing" in response.json()["message"]
 
 
+def _workflow_specification_with_dataset_upload_v1(image_kind: dict) -> dict:
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image", "kind": [image_kind]}],
+        "steps": [
+            {
+                "type": "roboflow_core/roboflow_dataset_upload@v1",
+                "name": "data_collection",
+                "image": "$inputs.image",
+                "target_project": "my_project",
+                "usage_quota_name": "my_quota",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "message",
+                "selector": "$steps.data_collection.message",
+            }
+        ],
+    }
+
+
+def test_describe_workflow_interface_when_kinds_are_serialised_and_step_property_aliased(
+    monkeypatch,
+) -> None:
+    interface, _ = _build_plain_interface(monkeypatch)
+    specification = _workflow_specification_with_dataset_upload_v1(
+        image_kind={"name": "image", "description": "Image in workflows"},
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/workflows/describe_interface",
+            headers={"Authorization": "Bearer header-key"},
+            json={"specification": specification},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["inputs"] == {"image": ["image"]}
+    assert response.json()["outputs"] == {"message": ["string"]}
+
+
+def test_describe_workflow_interface_when_input_kind_is_malformed(monkeypatch) -> None:
+    interface, _ = _build_plain_interface(monkeypatch)
+    specification = _workflow_specification_with_dataset_upload_v1(
+        image_kind={"description": "Kind definition without name"},
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/workflows/describe_interface",
+            headers={"Authorization": "Bearer header-key"},
+            json={"specification": specification},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_type"] == "WorkflowDefinitionError"
+
+
 # --- GET /secure-gateway/health -------------------------------------------
 # Opt-in route (SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED, default False) that
 # probes the configured proxy. The probe itself is unit-tested in

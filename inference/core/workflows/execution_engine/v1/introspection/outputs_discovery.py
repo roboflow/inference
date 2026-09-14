@@ -53,11 +53,20 @@ def describe_workflow_outputs(
 
 
 def map_step_name_to_block_type(workflow_steps: List[dict]) -> Dict[str, str]:
+    if not isinstance(workflow_steps, list):
+        raise WorkflowDefinitionError(
+            public_message="Workflow definition invalid - `steps` must be a list.",
+            context="describing_workflow_outputs",
+        )
     result = {}
     for step in workflow_steps:
-        if "name" not in step or "type" not in step:
+        if (
+            not isinstance(step, dict)
+            or not isinstance(step.get("name"), str)
+            or not isinstance(step.get("type"), str)
+        ):
             raise WorkflowDefinitionError(
-                public_message="Workflow definition invalid - step without `name` or `type` defined found.",
+                public_message="Workflow definition invalid - step without `name` or `type` defined as string found.",
                 context="describing_workflow_outputs",
             )
         result[step["name"]] = step["type"]
@@ -65,7 +74,9 @@ def map_step_name_to_block_type(workflow_steps: List[dict]) -> Dict[str, str]:
 
 
 def extract_step_name_and_selected_property(selector: str) -> Tuple[str, str]:
-    if not is_step_output_selector(selector_or_value=selector):
+    if not isinstance(selector, str) or not is_step_output_selector(
+        selector_or_value=selector
+    ):
         raise WorkflowDefinitionError(
             public_message="Workflow definition invalid - output does not contain step selector.",
             context="describing_workflow_outputs",
@@ -103,6 +114,15 @@ def determine_workflow_outputs_kinds(
     step_name_to_block_type: Dict[str, str],
     block_output_map: Dict[str, Dict[str, List[str]]],
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
+    if not isinstance(outputs_definitions, list) or not all(
+        isinstance(output, dict) and isinstance(output.get("name"), str)
+        for output in outputs_definitions
+    ):
+        raise WorkflowDefinitionError(
+            public_message="Workflow definition invalid - `outputs` must be a list of objects "
+            "with `name` defined as string.",
+            context="describing_workflow_outputs",
+        )
     workflow_response_definition = {}
     for output in outputs_definitions:
         output_name = output["name"]
