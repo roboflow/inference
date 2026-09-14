@@ -1,10 +1,7 @@
 """The loader must follow the INSTALLED configuration's tensor flag.
 
-The exhaustive before/after identity proof is
-`scripts/verify_loader_registration_parity.py` (a one-shot migration gate, run
-in Task 5.3). What must keep holding forever is the mechanism: the flag the
-loader branches on comes from the configuration, and each mode registers its
-own variant of a block that has both.
+The flag the loader branches on comes from the configuration, and each mode
+registers its own variant of a block that has both.
 """
 
 import json
