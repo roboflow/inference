@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
@@ -315,6 +316,7 @@ def _pre_process_numpy(
             inference_size=target_size,
         )
         pil = Image.fromarray(np.ascontiguousarray(intermediate_image))
+        swap_channels = False
     else:
         original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
         image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -327,9 +329,8 @@ def _pre_process_numpy(
         size_after_pre_processing = ImageDimensions(
             width=image.shape[1], height=image.shape[0]
         )
-        if input_color_mode != network_input.color_mode:
-            image = image[:, :, ::-1]
         pil = Image.fromarray(np.ascontiguousarray(image))
+        swap_channels = input_color_mode != network_input.color_mode
         meta = _build_metadata(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
@@ -338,6 +339,10 @@ def _pre_process_numpy(
         )
 
     resized = TF.resize(pil, (target_size.height, target_size.width), antialias=True)
+    if swap_channels:
+        # PIL resizes each channel on its own, so swapping after the resize is
+        # exact and runs on the small image instead of a strided full-size copy.
+        resized = cv2.cvtColor(np.asarray(resized), cv2.COLOR_BGR2RGB)
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
