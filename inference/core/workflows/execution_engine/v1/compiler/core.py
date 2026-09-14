@@ -65,7 +65,7 @@ COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
     cache_size=256,
     hash_functions=[
         (
-            "workflow_definition",
+            "raw_workflow_definition",
             partial(json.dumps, sort_keys=True),
         ),
         ("execution_engine_version", lambda version: str(version)),
@@ -121,15 +121,21 @@ def compile_workflow_graph(
 ) -> GraphCompilationResult:
     if init_parameters is None:
         init_parameters = {}
+    raw_workflow_definition: Dict[str, Any] = (
+        normalize_inner_workflow_references_in_definition(
+            workflow_definition=workflow_definition,
+            init_parameters=init_parameters,
+        )
+    )
     key = COMPILATION_CACHE.get_hash_key(
-        workflow_definition=workflow_definition,
+        raw_workflow_definition=raw_workflow_definition,
         execution_engine_version=execution_engine_version,
     )
     cached_value = COMPILATION_CACHE.get(key=key)
     if cached_value is not None:
         dynamic_blocks_definitions = (
             collect_dynamic_blocks_definitions_from_workflow_definition(
-                workflow_definition=workflow_definition,
+                workflow_definition=raw_workflow_definition,
             )
         )
         ensure_dynamic_blocks_allowed(
@@ -137,12 +143,6 @@ def compile_workflow_graph(
         )
         return cached_value
 
-    raw_workflow_definition: Dict[str, Any] = (
-        normalize_inner_workflow_references_in_definition(
-            workflow_definition=workflow_definition,
-            init_parameters=init_parameters,
-        )
-    )
     dynamic_blocks_definitions = (
         apply_collected_dynamic_blocks_definitions_to_workflow_root(
             workflow_definition=raw_workflow_definition,
