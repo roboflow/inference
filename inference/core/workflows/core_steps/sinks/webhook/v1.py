@@ -6,7 +6,6 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -30,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     TOP_CLASS_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
@@ -369,7 +369,7 @@ class WebhookSinkBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):

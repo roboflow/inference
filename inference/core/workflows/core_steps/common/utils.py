@@ -21,13 +21,6 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD, ORIENTED_BOX_COORDINATES
 
-from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.sam2 import Sam2InferenceRequest
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
     validate_keypoints_padding,
@@ -71,29 +64,31 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     wrap_with_context_snapshot,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
 
 T = TypeVar("T")
 
 
 def load_core_model(
-    model_manager: ModelManager,
-    inference_request: Union[
-        DoctrOCRInferenceRequest,
-        EasyOCRInferenceRequest,
-        ClipCompareRequest,
-        YOLOWorldInferenceRequest,
-        Sam2InferenceRequest,
-    ],
+    model_manager: ModelsProvider,
     core_model: str,
+    version_id: Optional[str],
+    api_key: Optional[str],
 ) -> str:
-    version_id_field = f"{core_model}_version_id"
-    core_model_id = (
-        f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
-    )
+    """Register a Roboflow core model and return the id it was registered under.
+
+    Takes the version id and api key directly rather than a request object, so
+    `inference.core.workflows` does not import the server's HTTP request
+    classes just to read two attributes off them.
+    """
+    core_model_id = f"{core_model}/{version_id}"
     model_manager.add_model(
         core_model_id,
-        inference_request.api_key,
-        endpoint_type=ModelEndpointType.CORE_MODEL,
+        api_key,
+        endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
     )
     return core_model_id
 

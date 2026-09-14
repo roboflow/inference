@@ -9,7 +9,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
@@ -19,6 +18,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
     get_gemini_detection_class_name,
     scale_confidence,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,

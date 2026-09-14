@@ -1,6 +1,5 @@
 from typing import Any, Optional
 
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
     DETECTIONS_IN_OUT_PARAM,
 )
@@ -20,6 +19,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
     AREA_KEY_IN_SV_DETECTIONS,

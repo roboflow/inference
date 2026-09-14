@@ -88,7 +88,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
 ) -> dict:
-    block = OpenAIBlockV7(model_manager=None, api_key="rf-key")
+    block = OpenAIBlockV7(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
         mock_execute.return_value = [(raw_output, 11, 3)]
         results = block.run(

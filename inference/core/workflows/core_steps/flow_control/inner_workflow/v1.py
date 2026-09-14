@@ -12,7 +12,7 @@ import requests
 from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT,
     WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,

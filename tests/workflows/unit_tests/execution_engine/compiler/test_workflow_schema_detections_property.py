@@ -1,6 +1,6 @@
 """Regression tests for workflow schema containing DetectionsProperty enum.
 
-Ensures the schema returned by get_workflow_schema_description() includes
+Ensures the schema returned by get_workflow_schema() includes
 area_px and area_converted in the DetectionsProperty enum (used by
 DetectionsPropertyExtract and other UQL operations).
 """
@@ -21,11 +21,10 @@ def clear_schema_cache():
 def test_workflow_schema_includes_area_px_and_area_converted_in_detections_property():
     """DetectionsProperty enum in schema must include area_px and area_converted."""
     from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
-        get_workflow_schema_description,
+        get_workflow_schema,
     )
 
-    desc = get_workflow_schema_description()
-    schema = desc.schema
+    schema = get_workflow_schema()
     defs = schema.get("$defs", schema.get("definitions", {}))
 
     detections_property_schema = defs.get("DetectionsProperty")

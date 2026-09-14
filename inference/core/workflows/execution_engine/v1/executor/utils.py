@@ -2,7 +2,7 @@ import contextvars
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
 
-from inference.core.env import WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT
+from inference.core.workflows.environment import WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import Batch
 
