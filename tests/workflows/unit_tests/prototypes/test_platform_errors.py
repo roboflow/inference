@@ -5,6 +5,14 @@ re-exports them - one class object, so nothing observable changes.
 subclass of RoboflowAPIUnsuccessfulRequestError; 403 -> RoboflowAPIForbiddenError;
 any other 4xx/5xx -> RoboflowAPIUnsuccessfulRequestError), and blocks catch
 them - so identity, not just name, has to survive.
+
+The general "no workflows module imports the server exceptions" scan that used
+to live here is subsumed by the centralized zero-violations decontamination
+lint (`tests/workflows/unit_tests/test_decontamination_lint.py`), which scans
+every `inference.*` import under `inference/core/workflows`. The stronger,
+module-specific `test_the_module_imports_only_typing` below stays: it asserts
+`platform_errors.py` imports NOTHING but `typing`, which the general lint does
+not check.
 """
 
 import ast
@@ -148,19 +156,3 @@ def test_a_generic_unsuccessful_request_is_still_unmapped() -> None:
         )
         is None
     )
-
-
-def test_no_workflows_module_imports_the_server_exceptions() -> None:
-    workflows_root = (
-        pathlib.Path(__file__).resolve().parents[4] / "inference" / "core" / "workflows"
-    )
-    offenders = []
-    for path in workflows_root.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "inference.core.exceptions"
-            ):
-                offenders.append(f"{path}:{node.lineno}")
-    assert not offenders, offenders

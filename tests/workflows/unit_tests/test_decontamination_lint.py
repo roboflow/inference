@@ -1,37 +1,25 @@
 """Locks in Workflows decontamination progress.
 
-`inference/core/workflows` must stop importing the `inference` server package
-(it stays in place - see DECONTAMINATION.PLAN.MD). The remaining violations
-are listed in `decontamination_baseline.txt`; this test fails if a new one
-appears, and also if a listed one disappears without the baseline being
-updated - so the list can only shrink.
+`inference/core/workflows` must not import the `inference` server package (it
+stays in place - see DECONTAMINATION.PLAN.MD). This scans every `*.py` under
+`inference/core/workflows` for `inference.*` imports outside
+`inference.core.workflows` itself, including relative imports and
+function-local imports, and asserts there are none left.
 
 This test is necessary but not sufficient: the string scan only sees
 single-line quoted `from|import inference...` literals, so a triple-quoted
 multi-line code template is invisible to it, and so is
 `importlib.import_module(<computed name>)`. The Phase 13 isolation probe is
 the backstop for what this lint misses.
-
-Create the baseline the first time, and regenerate it after removing
-violations, with the same command:
-    UPDATE_DECONTAMINATION_BASELINE=1 pytest \
-        tests/workflows/unit_tests/test_decontamination_lint.py
-
-Once a baseline exists, the regeneration path REFUSES to write when new
-violations are present, so it cannot be used to bless a regression. Never
-delete the baseline to "reset" it - regenerating from a missing baseline
-recreates it from whatever is present, silently absorbing any regression.
 """
 
 import ast
-import os
 import re
 from pathlib import Path
-from typing import Optional, Set, Tuple
+from typing import Set, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS_ROOT = REPO_ROOT / "inference" / "core" / "workflows"
-BASELINE_PATH = Path(__file__).parent / "decontamination_baseline.txt"
 
 # `inference_models` and `inference_sdk` are separately published
 # distributions, not part of the server package - they are allowed.
@@ -65,7 +53,7 @@ def _resolve_relative(module: str, level: int, path: Path) -> str:
 
     A `from ...core.env import X` inside workflows climbs out of the package
     and is exactly as contaminating as the absolute form, so it must resolve
-    to the same string the baseline records.
+    to the same string as an absolute-form violation.
     """
     pkg_parts = path.relative_to(REPO_ROOT).with_suffix("").parts[:-1]
     base = pkg_parts[: len(pkg_parts) - (level - 1)] if level > 1 else pkg_parts
@@ -102,86 +90,9 @@ def collect_violations() -> Set[Tuple[str, str]]:
     return violations
 
 
-def _updating() -> bool:
-    return os.getenv("UPDATE_DECONTAMINATION_BASELINE", "").strip().lower() in {
-        "1",
-        "true",
-    }
-
-
-def _read_baseline() -> Optional[Set[Tuple[str, str]]]:
-    # `None` (absent) is distinct from an empty set (nothing left to remove):
-    # an absent baseline must be creatable, an empty one must be enforced.
-    if not BASELINE_PATH.exists():
-        return None
-    declared_count: Optional[int] = None
-    entries = set()
-    for line in BASELINE_PATH.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("#"):
-            count_match = re.match(r"#\s*Count:\s*(\d+)", line)
-            if count_match:
-                declared_count = int(count_match.group(1))
-            continue
-        fields = line.split("\t")
-        assert (
-            len(fields) == 2
-        ), f"Malformed baseline row (expected 'path<TAB>module'): {line!r}"
-        path, module = fields
-        entries.add((path, module))
-    if declared_count is not None and not _updating():
-        assert declared_count == len(entries), (
-            f"{BASELINE_PATH} header declares Count: {declared_count} but "
-            f"{len(entries)} rows were parsed - regenerate with "
-            "UPDATE_DECONTAMINATION_BASELINE=1"
-        )
-    return entries
-
-
-def _write_baseline(violations: Set[Tuple[str, str]]) -> None:
-    lines = [f"{path}\t{module}" for path, module in sorted(violations)]
-    header = (
-        "# Remaining `inference.*` imports inside inference/core/workflows.\n"
-        "# This list may only shrink. See DECONTAMINATION.PLAN.MD.\n"
-        f"# Count: {len(lines)}\n"
-    )
-    BASELINE_PATH.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
-
-
-def test_no_new_inference_imports_in_workflows() -> None:
-    actual = collect_violations()
-    baseline = _read_baseline()
-    updating = _updating()
-    if baseline is None:
-        # First run: nothing to compare against, so creation is the only
-        # sensible action - but only when asked for explicitly, so a deleted
-        # baseline cannot be silently re-blessed by an ordinary test run.
-        assert updating, (
-            f"{BASELINE_PATH} is missing. Create it with "
-            "UPDATE_DECONTAMINATION_BASELINE=1 and commit it."
-        )
-        _write_baseline(actual)
-        return
-    added = sorted(actual - baseline)
-    removed = sorted(baseline - actual)
-    if updating:
-        # Regeneration is for recording progress, never for absorbing a
-        # regression - refuse to write while anything new is present.
-        assert not added, (
-            "Refusing to regenerate the baseline: these are NEW violations, "
-            "not resolved ones:\n  " + "\n  ".join(f"{p} -> {m}" for p, m in added)
-        )
-        _write_baseline(actual)
-        return
-    assert (
-        not added
-    ), "New `inference.*` imports inside inference/core/workflows:\n  " + "\n  ".join(
-        f"{p} -> {m}" for p, m in added
-    )
-    assert not removed, (
-        "These baseline entries are gone - good. Regenerate the baseline with "
-        "UPDATE_DECONTAMINATION_BASELINE=1 and commit it:\n  "
-        + "\n  ".join(f"{p} -> {m}" for p, m in removed)
+def test_no_inference_imports_in_workflows() -> None:
+    violations = collect_violations()
+    assert not violations, (
+        "`inference.core.workflows` must not import the `inference` server "
+        "package:\n  " + "\n  ".join(f"{p} -> {m}" for p, m in sorted(violations))
     )

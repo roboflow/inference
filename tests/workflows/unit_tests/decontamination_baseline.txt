@@ -1,4 +1,0 @@
-# Remaining `inference.*` imports inside inference/core/workflows.
-# This list may only shrink. See DECONTAMINATION.PLAN.MD.
-# Count: 0
-

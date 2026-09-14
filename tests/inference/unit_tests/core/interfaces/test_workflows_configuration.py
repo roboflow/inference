@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 import cv2
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
 # Module level on purpose (round-5 defect 1, D5 rule): the facade binds its
 # constants at its FIRST import from whatever the registry holds at that
@@ -26,9 +25,6 @@ from inference.core.interfaces.workflows_configuration import (
     server_workflows_configuration,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from tests.inference.unit_tests.core.interfaces.http.test_http_api import (
-    _build_plain_interface,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 WORKFLOW_SPECIFICATION = {"version": "1.0", "inputs": [], "steps": [], "outputs": []}
@@ -170,11 +166,6 @@ FIELDS = [
     ("INFERENCE_DEBUG_OUTPUT_DIR", lambda c: c.debug.output_dir),
 ]
 
-ROOTS = {
-    "inference/core/interfaces/http/http_api.py": 2,
-    "inference/core/interfaces/stream/inference_pipeline.py": 1,
-    "inference_cli/lib/workflows/local_image_adapter.py": 1,
-}
 CONFIGURATION_KEY = "workflows_core.configuration"
 
 
@@ -218,26 +209,6 @@ def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
             ):
                 requested.update(alias.name for alias in node.names)
     assert requested <= exported, sorted(requested - exported)
-
-
-def test_every_symbol_still_imported_from_env_is_in_the_field_table() -> None:
-    # Vacuous once Task 5.7 lands; until then it proves nothing is left behind.
-    workflows_root = REPO_ROOT / "inference" / "core" / "workflows"
-    deferred = (
-        workflows_root / "core_steps" / "sinks" / "roboflow",
-        workflows_root / "core_steps" / "integrations" / "roboflow",
-    )
-    remaining = set()
-    for path in sorted(workflows_root.rglob("*.py")):
-        if "__pycache__" in str(path) or any(d in path.parents for d in deferred):
-            continue
-        tree = ast.parse(path.read_bytes().decode("utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "inference.core.env":
-                remaining.update(alias.name for alias in node.names)
-    assert remaining <= {name for name, _ in FIELDS}, sorted(
-        remaining - {name for name, _ in FIELDS}
-    )
 
 
 # --------------------------------------------------------------------------
@@ -334,217 +305,12 @@ def test_importing_inference_core_installs_before_any_workflows_module_loads() -
 
 
 # --------------------------------------------------------------------------
-# Composition-root wiring - AST-precise, not "the string appears somewhere"
+# Composition-root wiring - caller overrides
+#
+# The default binding at each root is asserted against a REAL engine in
+# `test_image_codec_binding.py`; what is left here is the `setdefault`
+# contract, with the engine mocked.
 # --------------------------------------------------------------------------
-
-
-def _init_parameter_dicts_reaching_engine_init(source: str):
-    """For every `ExecutionEngine.init(...)` call, return the set of literal
-    init-parameter keys its `init_parameters=` argument carries.
-
-    Resolves the argument to a Name, then collects every `{...}` literal
-    assigned to that name - DIRECTLY, or as the first argument of a helper
-    call such as Phase 9's `install_workflows_platform_bindings({...})`
-    (round-3 defect 1: under R-U both HTTP literals are already wrapped) -
-    and every `name["key"] = ...` / `name.setdefault("key", ...)` in the same
-    enclosing function. Round-1 defect 7: a substring search anywhere in the
-    file passes even when one of the two HTTP roots is missing the key, or
-    when the key only appears in a comment.
-    """
-    tree = ast.parse(source)
-    parents = {}
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            parents[child] = node
-
-    def enclosing_function(node):
-        while node in parents:
-            node = parents[node]
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
-                return node
-        return None
-
-    def literal_of(value):
-        if isinstance(value, ast.Dict):
-            return value
-        if (
-            isinstance(value, ast.Call)
-            and value.args
-            and isinstance(value.args[0], ast.Dict)
-        ):
-            return value.args[0]
-        return None
-
-    results = []
-    for node in ast.walk(tree):
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "init"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "ExecutionEngine"
-        ):
-            continue
-        argument = next(
-            (kw.value for kw in node.keywords if kw.arg == "init_parameters"), None
-        )
-        assert isinstance(argument, ast.Name), ast.dump(node)
-        scope = enclosing_function(node)
-        keys = set()
-        for inner in ast.walk(scope):
-            if isinstance(inner, ast.Assign):
-                literal = literal_of(inner.value)
-                for target in inner.targets:
-                    if (
-                        isinstance(target, ast.Name)
-                        and target.id == argument.id
-                        and literal is not None
-                    ):
-                        keys.update(
-                            k.value for k in literal.keys if isinstance(k, ast.Constant)
-                        )
-                    if (
-                        isinstance(target, ast.Subscript)
-                        and isinstance(target.value, ast.Name)
-                        and target.value.id == argument.id
-                        and isinstance(target.slice, ast.Constant)
-                    ):
-                        keys.add(target.slice.value)
-            if (
-                isinstance(inner, ast.Call)
-                and isinstance(inner.func, ast.Attribute)
-                and inner.func.attr == "setdefault"
-                and isinstance(inner.func.value, ast.Name)
-                and inner.func.value.id == argument.id
-                and inner.args
-                and isinstance(inner.args[0], ast.Constant)
-            ):
-                keys.add(inner.args[0].value)
-        results.append(keys)
-    return results
-
-
-def test_the_root_scanner_reads_a_wrapped_and_a_plain_literal_alike() -> None:
-    """Round-3 defect 1: under R-U Phase 9 has already wrapped both HTTP
-    literals in `install_workflows_platform_bindings({...})`
-    (DECONTAMINATION.PLAN.PHASE-9.MD Task 9.3 Step 10), and the round-2 scanner
-    returned `[set(), set()]` for that shape. Five synthetic roots: plain
-    literal, wrapped literal, subscript assignment, `setdefault`, and a wrapped
-    literal WITHOUT the key - which must still be reported missing."""
-    source = (
-        "def plain():\n"
-        "    params = {'workflows_core.configuration': 1}\n"
-        "    ExecutionEngine.init(workflow_definition={}, init_parameters=params)\n"
-        "def wrapped():\n"
-        "    params = install_workflows_platform_bindings({\n"
-        "        'workflows_core.api_key': 1,\n"
-        "        'workflows_core.configuration': 1,\n"
-        "    })\n"
-        "    ExecutionEngine.init(workflow_definition={}, init_parameters=params)\n"
-        "def assigned(params):\n"
-        "    params['workflows_core.configuration'] = 1\n"
-        "    ExecutionEngine.init(workflow_definition={}, init_parameters=params)\n"
-        "def defaulted(params):\n"
-        "    params.setdefault('workflows_core.configuration', 1)\n"
-        "    ExecutionEngine.init(workflow_definition={}, init_parameters=params)\n"
-        "def missing():\n"
-        "    params = install_workflows_platform_bindings({'workflows_core.api_key': 1})\n"
-        "    ExecutionEngine.init(workflow_definition={}, init_parameters=params)\n"
-    )
-    per_call = _init_parameter_dicts_reaching_engine_init(source)
-    assert [CONFIGURATION_KEY in keys for keys in per_call] == [
-        True,
-        True,
-        True,
-        True,
-        False,
-    ]
-
-
-@pytest.mark.parametrize("relative, expected_calls", sorted(ROOTS.items()))
-def test_every_engine_call_at_every_root_carries_the_configuration(
-    relative, expected_calls
-) -> None:
-    source = (REPO_ROOT / relative).read_text(encoding="utf-8")
-    per_call_keys = _init_parameter_dicts_reaching_engine_init(source)
-    assert len(per_call_keys) == expected_calls, relative
-    for keys in per_call_keys:
-        assert CONFIGURATION_KEY in keys, (relative, sorted(keys))
-
-
-def test_http_run_route_binds_the_server_configuration(monkeypatch) -> None:
-    """Execution proof for HTTP root #1 (`http_api.py:1597`).
-
-    Round-2 defect 2: the AST test alone accepts
-    `"workflows_core.configuration": None`. This drives the real route with
-    `_build_plain_interface` + `TestClient` - the harness
-    `tests/inference/unit_tests/core/interfaces/http/test_http_api.py:1766`
-    already provides - and asserts the captured object's IDENTITY.
-    """
-    import inference.core.interfaces.http.http_api as http_api
-
-    interface, _ = _build_plain_interface(monkeypatch)
-    engine = MagicMock()
-    engine.run.return_value = []
-    execution_engine_mock = MagicMock()
-    execution_engine_mock.init.return_value = engine
-    monkeypatch.setattr(http_api, "ExecutionEngine", execution_engine_mock)
-
-    with TestClient(interface.app) as client:
-        response = client.post(
-            "/workflows/run",
-            headers={"Authorization": "Bearer header-key"},
-            json={"specification": WORKFLOW_SPECIFICATION, "inputs": {}},
-        )
-
-    assert response.status_code == 200, response.text
-    init_parameters = execution_engine_mock.init.call_args.kwargs["init_parameters"]
-    assert init_parameters[CONFIGURATION_KEY] is server_workflows_configuration()
-
-
-def test_http_validate_route_binds_the_server_configuration(monkeypatch) -> None:
-    """Execution proof for HTTP root #2 (`http_api.py:2546`)."""
-    import inference.core.interfaces.http.http_api as http_api
-
-    interface, _ = _build_plain_interface(monkeypatch)
-    execution_engine_mock = MagicMock()
-    monkeypatch.setattr(http_api, "ExecutionEngine", execution_engine_mock)
-
-    with TestClient(interface.app) as client:
-        response = client.post(
-            "/workflows/validate?api_key=some-key", json=WORKFLOW_SPECIFICATION
-        )
-
-    assert response.status_code == 200, response.text
-    init_parameters = execution_engine_mock.init.call_args.kwargs["init_parameters"]
-    assert init_parameters[CONFIGURATION_KEY] is server_workflows_configuration()
-
-
-def test_the_pipeline_binds_the_server_configuration(monkeypatch) -> None:
-    """Execution proof for the pipeline root (`inference_pipeline.py:751`).
-
-    Round-2 defect 2: the round-1 test patched `inference_pipeline.ExecutionEngine`,
-    which does not exist - the name is imported INSIDE `init_with_workflow`
-    (`inference_pipeline.py:704`), so the test died with `AttributeError`
-    before reaching its assertion. Patching `init` on the DEFINING class works
-    regardless of where the name is imported.
-    """
-    from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-
-    execution_engine_init = MagicMock(return_value=MagicMock())
-    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
-    monkeypatch.setattr(
-        InferencePipeline, "init_with_custom_logic", MagicMock(return_value=MagicMock())
-    )
-
-    InferencePipeline.init_with_workflow(
-        video_reference="video.mp4",
-        workflow_specification={"version": "1.0"},
-        model_manager=MagicMock(),
-    )
-
-    init_parameters = execution_engine_init.call_args.kwargs["init_parameters"]
-    assert init_parameters[CONFIGURATION_KEY] is server_workflows_configuration()
 
 
 def test_the_pipeline_preserves_a_caller_supplied_configuration(monkeypatch) -> None:
@@ -600,14 +366,6 @@ def _run_cli_root(tmp_path, monkeypatch, init_params=None) -> dict:
         workflows_execution_engine_init_params=init_params,
     )
     return captured
-
-
-def test_the_cli_root_binds_the_server_configuration(tmp_path, monkeypatch) -> None:
-    captured = _run_cli_root(tmp_path, monkeypatch)
-    assert (
-        captured["init_parameters"][CONFIGURATION_KEY]
-        is server_workflows_configuration()
-    )
 
 
 def test_the_cli_root_preserves_a_caller_supplied_configuration(

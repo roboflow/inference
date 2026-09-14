@@ -4,19 +4,20 @@ Round-1 Defect 7 / round-2 Defect 2 / round-3 Defect 2: counting installer calls
 anywhere in a file accepts a call placed AFTER `ExecutionEngine.init`, or inside
 a nested function that is never reached, and proves nothing about the
 dictionary that actually reaches the engine; and a root test that replaces the
-engine proves nothing about image behaviour. So this file has two halves:
-
-* STRUCTURE - an AST test that resolves each `ExecutionEngine.init` call to its
-  innermost enclosing function, scans that function WITHOUT descending into
-  nested functions, and requires a `bind_image_codec(<X>)` call earlier in it
-  whose argument is the very Name passed as `init_parameters=`.
-* EXECUTION - every root runs the REAL `ExecutionEngine.init` (the fixture only
-  records the `init_parameters` object on its way through), compiles a
-  model-free workflow, and runs it: the HTTP run route on a base64 input and on
-  URL inputs that the server's URL policy must accept / refuse, the validate
-  route through compilation, the pipeline root through the `on_video_frame`
-  callable it hands to `init_with_custom_logic`, and the CLI root end to end
-  including a caller override and a conflicting override.
+engine proves nothing about image behaviour. So every root here runs the REAL
+`ExecutionEngine.init` (the fixture only records the `init_parameters` object
+on its way through), compiles a model-free workflow, and runs it: the HTTP run
+route on a base64 input and on URL inputs that the server's URL policy must
+accept / refuse, the validate route through compilation, the pipeline root
+through the `on_video_frame` callable it hands to `init_with_custom_logic`, and
+the CLI root end to end including a caller override and a conflicting
+override. The AST structural half that used to duplicate this coverage (a
+scope-scanning search for a `bind_image_codec(...)` call preceding each
+`ExecutionEngine.init`) is redundant with these runtime proofs, which assert
+the SAME identity by actually running the root. The same capture also proves
+the OTHER services each root binds - configuration, execution observer,
+platform client/cache/resolvers, models provider and step error handler -
+reach the engine as the objects the server owns.
 
 Fixtures reused from the repository:
 `tests/inference/unit_tests/core/interfaces/http/test_http_api.py`
@@ -25,11 +26,9 @@ from `tests/inference/unit_tests/core/interfaces/stream/test_interface_pipeline.
 and the real CLI function `_run_workflow_for_single_image_with_inference`.
 """
 
-import ast
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -39,9 +38,27 @@ import pytest
 from fastapi.testclient import TestClient
 from requests_mock import Mocker
 
+from inference.core.cache import cache as server_cache
+from inference.core.interfaces.roboflow_platform_client import (
+    SERVER_PLATFORM_CLIENT,
+    SERVER_WORKSPACE_RESOLVER,
+    default_inner_workflow_spec_resolver,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
 from inference.core.interfaces.workflows_image_codec import (
     GUARDED_IMAGE_CODEC,
     install_guarded_image_codec,
+)
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
 )
 from inference.core.utils import image_utils
 from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
@@ -56,13 +73,6 @@ from tests.inference.unit_tests.core.interfaces.http.test_http_api import (
     _build_plain_interface,
 )
 
-# tests/inference/unit_tests/core/interfaces/<this file> -> five levels up is the repo root
-REPO_ROOT = Path(__file__).resolve().parents[5]
-COMPOSITION_ROOTS = [
-    "inference/core/interfaces/http/http_api.py",
-    "inference/core/interfaces/stream/inference_pipeline.py",
-    "inference_cli/lib/workflows/local_image_adapter.py",
-]
 CODEC_INIT_PARAMETER = "workflows_core.image_codec"
 ALLOWED_HOST = "cdn.allowed.example.com"
 DENIED_HOST = "metadata.internal.example.com"
@@ -104,10 +114,11 @@ def forwarded_engine_init(monkeypatch) -> dict:
     all resolve.
     """
     real_init = ExecutionEngine.init  # bound classmethod, captured before patching
-    captured = {"init_parameters": [], "engines": []}
+    captured = {"init_parameters": [], "engines": [], "step_error_handlers": []}
 
     def _forwarding_init(**kwargs):
         captured["init_parameters"].append(kwargs["init_parameters"])
+        captured["step_error_handlers"].append(kwargs.get("step_error_handler"))
         engine = real_init(**kwargs)
         captured["engines"].append(engine)
         return engine
@@ -139,154 +150,42 @@ def _fetches_of(requests_mock: Mocker, url: str) -> list:
     return [r.url for r in requests_mock.request_history if r.url == url]
 
 
-def _assert_one_object_on_both_paths(captured: dict, expected) -> None:
+def _assert_bound_services(captured: dict, expected_codec, model_manager) -> None:
     assert len(captured["init_parameters"]) == 1, "expected exactly one engine init"
+    init_parameters = captured["init_parameters"][0]
     # Path A: the SAME dict object the root handed to the engine carries the codec...
-    assert captured["init_parameters"][0][CODEC_INIT_PARAMETER] is expected
+    assert init_parameters[CODEC_INIT_PARAMETER] is expected_codec
     # ...and the engine really rebound its image deserializer to that object...
     engine = captured["engines"][0]
     bound = engine._engine._compiled_workflow.kinds_deserializers[IMAGE_KIND.name]
-    assert bound.keywords == {"image_codec": expected}
+    assert bound.keywords == {"image_codec": expected_codec}
     # ...while Path B (the process registry) holds the identical object.
-    assert get_image_codec() is expected
+    assert get_image_codec() is expected_codec
 
-
-# --------------------------------------------------------------------------
-# Structure: the binding must precede the engine and target the SAME dict
-# --------------------------------------------------------------------------
-
-
-def _parent_map(tree: ast.AST) -> dict:
-    parents = {}
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            parents[child] = node
-    return parents
-
-
-def _enclosing_function(node, parents):
-    current = parents.get(node)
-    while current is not None:
-        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            return current
-        current = parents.get(current)
-    return None
-
-
-def _nodes_in_scope(scope):
-    """Nodes belonging to `scope`, NOT descending into nested functions.
-
-    `ast.walk` would happily accept a binding buried in an uncalled inner
-    helper; this generator stops at every function/lambda boundary.
-    """
-    stack = list(ast.iter_child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        yield node
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            continue
-        stack.extend(ast.iter_child_nodes(node))
-
-
-def _engine_init_calls(tree: ast.AST) -> list:
-    return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "init"
-        and getattr(node.func.value, "id", None) == "ExecutionEngine"
-    ]
-
-
-def _bind_calls_in_scope(scope) -> list:
-    return [
-        node
-        for node in _nodes_in_scope(scope)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "bind_image_codec"
-    ]
-
-
-@pytest.mark.parametrize("relative", COMPOSITION_ROOTS)
-def test_each_engine_init_is_preceded_by_a_binding_of_its_own_parameters(
-    relative: str,
-) -> None:
-    tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-    parents = _parent_map(tree)
-    engine_inits = _engine_init_calls(tree)
-    assert engine_inits, relative
-
-    for call in engine_inits:
-        scope = _enclosing_function(call, parents)
-        assert scope is not None, (relative, call.lineno)
-
-        init_parameters_kwarg = next(
-            (k for k in call.keywords if k.arg == "init_parameters"), None
-        )
-        assert init_parameters_kwarg is not None, (relative, call.lineno)
-        assert isinstance(init_parameters_kwarg.value, ast.Name), (
-            f"{relative}:{call.lineno} - init_parameters must be a named dict so "
-            f"the binding can be matched against it"
-        )
-        parameters_name = init_parameters_kwarg.value.id
-
-        matching = [
-            bind
-            for bind in _bind_calls_in_scope(scope)
-            if bind.lineno < call.lineno
-            and bind.args
-            and isinstance(bind.args[0], ast.Name)
-            and bind.args[0].id == parameters_name
-        ]
-        assert matching, (
-            f"{relative}:{call.lineno} - no bind_image_codec({parameters_name}) "
-            f"before ExecutionEngine.init inside {scope.name}"
-        )
-
-
-@pytest.mark.parametrize("relative", COMPOSITION_ROOTS)
-def test_every_composition_root_imports_the_binder(relative: str) -> None:
-    tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-    imported = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        and node.module == "inference.core.interfaces.workflows_image_codec"
-        for alias in node.names
-    }
-    assert "bind_image_codec" in imported, (relative, sorted(imported))
-
-
-def test_the_scope_scan_rejects_a_binding_hidden_in_a_nested_function() -> None:
-    # Guards the guard (round-2 Defect 2): `ast.walk` accepted this shape.
-    source = (
-        "def root():\n"
-        "    def never_called():\n"
-        "        bind_image_codec(params)\n"
-        "    params = {}\n"
-        "    ExecutionEngine.init(init_parameters=params)\n"
+    # The other services this root owns, in the dictionary that reached the
+    # engine: the provider must wrap the manager the root was called with, and
+    # every platform object must be the server's singleton, not a copy.
+    provider = init_parameters["workflows_core.model_manager"]
+    assert isinstance(provider, ModelManagerModelsProvider)
+    assert provider._model_manager is model_manager
+    assert (
+        init_parameters["workflows_core.configuration"]
+        is server_workflows_configuration()
     )
-    tree = ast.parse(source)
-    scope = tree.body[0]
-    assert _bind_calls_in_scope(scope) == []
-    assert [
-        n
-        for n in ast.walk(scope)
-        if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Name)
-        and n.func.id == "bind_image_codec"
-    ]
-
-
-def test_http_api_binds_at_both_engine_entry_points() -> None:
-    tree = ast.parse(
-        (REPO_ROOT / "inference/core/interfaces/http/http_api.py").read_text(
-            encoding="utf-8"
-        )
+    assert isinstance(
+        init_parameters["workflows_core.execution_observer"],
+        UsageTrackingExecutionObserver,
     )
-    assert len(_engine_init_calls(tree)) == 2
+    # Literal, not `workflows_platform_bindings()`: deriving the expectation
+    # from production makes a dropped key disappear from both sides.
+    for key, value in {
+        "workflows_core.cache": server_cache,
+        "workflows_core.platform_client": SERVER_PLATFORM_CLIENT,
+        "workflows_core.workspace_resolver": SERVER_WORKSPACE_RESOLVER,
+        "workflows_core.inner_workflow_spec_resolver": default_inner_workflow_spec_resolver,
+    }.items():
+        assert init_parameters[key] is value, key
+    assert captured["step_error_handlers"][0] == resolve_step_error_handler()
 
 
 # --------------------------------------------------------------------------
@@ -297,7 +196,7 @@ def test_http_api_binds_at_both_engine_entry_points() -> None:
 def test_http_run_route_runs_a_real_engine_and_loads_the_input_through_the_bound_codec(
     monkeypatch, forwarded_engine_init
 ) -> None:
-    interface, _ = _build_plain_interface(monkeypatch)
+    interface, manager = _build_plain_interface(monkeypatch)
     payload = _png_base64()
 
     # `ServerImageCodec.decode_string` calls the MODULE attribute, so a spy
@@ -315,7 +214,7 @@ def test_http_run_route_runs_a_real_engine_and_loads_the_input_through_the_bound
         )
 
     assert response.status_code == 200, response.text
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
     server_decoder.assert_called_once()
     assert server_decoder.call_args.kwargs["value"] == payload
     blurred = _decode_serialised_image(response.json()["outputs"][0]["blurred"])
@@ -333,7 +232,7 @@ def test_http_run_route_refuses_a_deny_listed_url_input_through_the_bound_codec(
     # The SSRF deny-list is the server's; Path A must reach it for a URL that
     # arrives as a workflow input. The engine is real, the request is refused
     # before any transport, and the refusal surfaces as a client error.
-    interface, _ = _build_plain_interface(monkeypatch)
+    interface, manager = _build_plain_interface(monkeypatch)
 
     with TestClient(interface.app) as client:
         response = client.post(
@@ -347,7 +246,7 @@ def test_http_run_route_refuses_a_deny_listed_url_input_through_the_bound_codec(
 
     assert response.status_code == 400, response.text
     assert "blacklisted" in response.text
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
 
 
 @mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
@@ -368,7 +267,7 @@ def test_http_run_route_fetches_an_allow_listed_url_input_through_the_bound_code
     # `TestClient` speaks httpx, so `requests_mock` does not intercept it.
     url = f"https://{ALLOWED_HOST}/image.png"
     requests_mock.get(url, content=_png_bytes())
-    interface, _ = _build_plain_interface(monkeypatch)
+    interface, manager = _build_plain_interface(monkeypatch)
 
     with TestClient(interface.app) as client:
         response = client.post(
@@ -379,7 +278,7 @@ def test_http_run_route_fetches_an_allow_listed_url_input_through_the_bound_code
 
     assert response.status_code == 200, response.text
     assert _fetches_of(requests_mock, url) == [url]
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
     blurred = _decode_serialised_image(response.json()["outputs"][0]["blurred"])
     assert blurred.shape == (16, 24, 3)
 
@@ -387,7 +286,7 @@ def test_http_run_route_fetches_an_allow_listed_url_input_through_the_bound_code
 def test_http_validate_route_compiles_a_real_engine_with_the_guarded_codec(
     monkeypatch, forwarded_engine_init
 ) -> None:
-    interface, _ = _build_plain_interface(monkeypatch)
+    interface, manager = _build_plain_interface(monkeypatch)
 
     with TestClient(interface.app) as client:
         response = client.post(
@@ -396,7 +295,7 @@ def test_http_validate_route_compiles_a_real_engine_with_the_guarded_codec(
 
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok"}
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
 
 
 # --------------------------------------------------------------------------
@@ -417,14 +316,15 @@ def test_pipeline_root_runs_a_real_engine_with_the_guarded_codec(
         InferencePipeline, "init_with_custom_logic", init_with_custom_logic
     )
 
+    manager = MagicMock()
     InferencePipeline.init_with_workflow(
         video_reference="video.mp4",
         workflow_specification=BLUR_WORKFLOW,
-        model_manager=MagicMock(),
+        model_manager=manager,
         image_input_name="image",
     )
 
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
     on_video_frame = init_with_custom_logic.call_args.kwargs["on_video_frame"]
     frame = VideoFrame(
         image=np.zeros((16, 24, 3), dtype=np.uint8),
@@ -440,7 +340,7 @@ def test_pipeline_root_runs_a_real_engine_with_the_guarded_codec(
 # --------------------------------------------------------------------------
 
 
-def _run_cli_root(tmp_path, init_params=None) -> dict:
+def _run_cli_root(tmp_path, model_manager, init_params=None) -> dict:
     from inference_cli.lib.workflows import local_image_adapter
 
     image_path = str(tmp_path / "frame.png")
@@ -448,7 +348,7 @@ def _run_cli_root(tmp_path, init_params=None) -> dict:
     # A real executor: the engine runs its steps on the executor it is given.
     with ThreadPoolExecutor(max_workers=1) as executor:
         return local_image_adapter._run_workflow_for_single_image_with_inference(
-            model_manager=MagicMock(),
+            model_manager=model_manager,
             image_path=image_path,
             workflow_specification=BLUR_WORKFLOW,
             workflow_id=None,
@@ -464,8 +364,9 @@ def _run_cli_root(tmp_path, init_params=None) -> dict:
 def test_cli_root_runs_a_real_engine_with_the_guarded_codec(
     tmp_path, forwarded_engine_init
 ) -> None:
-    result = _run_cli_root(tmp_path)
-    _assert_one_object_on_both_paths(forwarded_engine_init, GUARDED_IMAGE_CODEC)
+    manager = MagicMock()
+    result = _run_cli_root(tmp_path, manager)
+    _assert_bound_services(forwarded_engine_init, GUARDED_IMAGE_CODEC, manager)
     assert _decode_serialised_image(result["blurred"]).shape == (16, 24, 3)
 
 
@@ -476,9 +377,12 @@ def test_cli_override_moves_both_paths_together(
     # the dict is built, so a codec written before that point would change
     # Path A only. Binding after the merge keeps the two paths identical, and
     # the real engine still compiles and runs with the override.
+    manager = MagicMock()
     override = WorkflowsLocalImageCodec()
-    result = _run_cli_root(tmp_path, init_params={CODEC_INIT_PARAMETER: override})
-    _assert_one_object_on_both_paths(forwarded_engine_init, override)
+    result = _run_cli_root(
+        tmp_path, manager, init_params={CODEC_INIT_PARAMETER: override}
+    )
+    _assert_bound_services(forwarded_engine_init, override, manager)
     assert _decode_serialised_image(result["blurred"]).shape == (16, 24, 3)
 
 
@@ -488,7 +392,9 @@ def test_cli_override_conflicting_with_an_install_is_refused_before_the_engine_s
     install_guarded_image_codec()
     with pytest.raises(WorkflowEnvironmentConfigurationError):
         _run_cli_root(
-            tmp_path, init_params={CODEC_INIT_PARAMETER: WorkflowsLocalImageCodec()}
+            tmp_path,
+            MagicMock(),
+            init_params={CODEC_INIT_PARAMETER: WorkflowsLocalImageCodec()},
         )
     assert (
         forwarded_engine_init["init_parameters"] == []

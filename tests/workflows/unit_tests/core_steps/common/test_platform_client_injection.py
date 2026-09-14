@@ -5,13 +5,16 @@
 falls back to the offline default that refuses every call. The Qwen blocks are
 here because they override both the constructor and the declaration of the
 OpenRouter base.
+
+The package-wide "no workflows module imports the Roboflow proxy helper" checks
+that used to live here are subsumed by the centralized zero-violations
+decontamination lint (`tests/workflows/unit_tests/test_decontamination_lint.py`),
+which scans every `inference.*` import under `inference/core/workflows`, not
+just this one module.
 """
 
-import ast
 import importlib
 import inspect
-import pathlib
-from functools import partial
 
 import pytest
 
@@ -46,9 +49,6 @@ PROXY_BLOCKS = [
     (".models.foundation.qwen_vlm.v3", "QwenVlmBlockV3"),
     (".models.foundation.qwen_vlm.v4", "QwenVlmBlockV4"),
 ]
-WORKFLOWS_ROOT = (
-    pathlib.Path(__file__).resolve().parents[5] / "inference" / "core" / "workflows"
-)
 
 
 def _load(module_suffix: str, class_name: str):
@@ -73,43 +73,6 @@ def test_block_stores_the_injected_client(module_suffix, class_name):
     assert block_class(**kwargs)._platform_client is sentinel
 
 
-def test_no_workflows_module_imports_the_roboflow_proxy_helper() -> None:
-    """Symbol-specific: 16 files still legitimately import other names from
-    `roboflow_api` until Tasks 9.5-9.6 (the 14 header users and the two engine
-    files). Only `post_to_roboflow_api` is gone.
-    """
-    offenders = []
-    for path in WORKFLOWS_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "inference.core.roboflow_api"
-            ):
-                if any(a.name == "post_to_roboflow_api" for a in node.names):
-                    offenders.append(f"{path}:{node.lineno}")
-    assert not offenders, offenders
-
-
-def test_concurrent_blocks_keep_their_own_clients() -> None:
-    """The client travels inside the `partial`, not in shared state:
-    `common/utils.run_in_parallel` hands the partials to a thread pool."""
-    from inference.core.workflows.core_steps.common.utils import run_in_parallel
-
-    def helper(roboflow_api_key, platform_client):
-        return platform_client
-
-    a, b = RecordingPlatformClient(), RecordingPlatformClient()
-    results = run_in_parallel(
-        tasks=[
-            partial(helper, roboflow_api_key="a", platform_client=a),
-            partial(helper, roboflow_api_key="b", platform_client=b),
-        ],
-        max_workers=2,
-    )
-    assert results == [a, b]
-
-
 def test_openai_managed_key_path_uses_the_injected_client() -> None:
     """The whole chain: block -> partial -> thread pool ->
     `_execute_proxied_openai_request` -> `platform_client.post`."""
@@ -130,40 +93,6 @@ def test_openai_managed_key_path_uses_the_injected_client() -> None:
     )
     assert client.posts, "the managed-key path never reached the injected client"
     assert result
-
-
-def test_qwen_forwards_the_client_to_the_openrouter_base() -> None:
-    from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
-        QwenVlmBlockV1,
-    )
-
-    sentinel = RecordingPlatformClient()
-    block = QwenVlmBlockV1(
-        model_manager=None,
-        api_key=None,
-        step_execution_mode=None,
-        platform_client=sentinel,
-    )
-    assert block._platform_client is sentinel
-
-
-def test_no_workflows_module_imports_the_roboflow_api_client_at_all() -> None:
-    """True from Task 9.6 onward: the last two importers were
-    `block_scaffolding.py` and `reference_resolution.py`."""
-    offenders = []
-    for path in WORKFLOWS_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "inference.core.roboflow_api"
-            ):
-                offenders.append(f"{path}:{node.lineno}")
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name.startswith("inference.core.roboflow_api"):
-                        offenders.append(f"{path}:{node.lineno}")
-    assert not offenders, offenders
 
 
 @pytest.mark.parametrize(

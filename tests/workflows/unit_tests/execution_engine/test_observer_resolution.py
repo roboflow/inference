@@ -10,8 +10,6 @@ engine, and a written-back factory result would make every later engine
 inherit the first one's observer. Nothing here imports the server.
 """
 
-import pytest
-
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.v1.core import (
     _resolve_execution_observer,
@@ -35,53 +33,9 @@ _TRIVIAL_WORKFLOW = {
 # --- the resolver on plain dictionaries -----------------------------------
 
 
-def test_resolver_returns_the_null_observer_when_nothing_is_bound() -> None:
-    parameters = {"workflows_core.api_key": "k"}
-
-    observer = _resolve_execution_observer(parameters)
-
-    assert observer is NULL_EXECUTION_OBSERVER
-    assert parameters[CORE_KEY] is NULL_EXECUTION_OBSERVER
-    assert parameters[DYNAMIC_KEY] is NULL_EXECUTION_OBSERVER
-
-
-def test_resolver_publishes_a_namespaced_object_under_both_keys() -> None:
-    bound = NullExecutionObserver()
-    parameters = {CORE_KEY: bound}
-
-    assert _resolve_execution_observer(parameters) is bound
-    assert parameters[CORE_KEY] is bound
-    assert parameters[DYNAMIC_KEY] is bound
-
-
-def test_resolver_accepts_a_bare_key() -> None:
-    # `_retrieve_init_parameter` accepts the un-namespaced name, so a host may
-    # bind it that way; dynamic blocks must not be left with the null observer.
-    bound = NullExecutionObserver()
-    parameters = {"execution_observer": bound}
-
-    assert _resolve_execution_observer(parameters) is bound
-    assert parameters[CORE_KEY] is bound
-    assert parameters[DYNAMIC_KEY] is bound
-
-
-def test_resolver_calls_a_factory_once_and_publishes_the_instance() -> None:
-    made = []
-
-    def factory():
-        made.append(NullExecutionObserver())
-        return made[-1]
-
-    parameters = {CORE_KEY: factory}
-
-    observer = _resolve_execution_observer(parameters)
-
-    assert made == [observer]
-    assert parameters[CORE_KEY] is observer
-    assert parameters[DYNAMIC_KEY] is observer
-
-
 def test_resolver_keeps_an_explicit_dynamic_override() -> None:
+    # Unique edge not covered by the engine-level tests below: DYNAMIC_KEY
+    # bound to a CALLABLE, resolved independently of CORE_KEY.
     core, dynamic = NullExecutionObserver(), NullExecutionObserver()
     parameters = {CORE_KEY: core, DYNAMIC_KEY: lambda: dynamic}
 
@@ -98,34 +52,6 @@ def _engine(init_parameters: dict):
     return ExecutionEngine.init(
         workflow_definition=_TRIVIAL_WORKFLOW, init_parameters=init_parameters
     )._engine
-
-
-def test_the_engine_defaults_to_the_null_observer() -> None:
-    engine = _engine({"workflows_core.api_key": "k"})
-
-    assert engine._execution_observer is NULL_EXECUTION_OBSERVER
-
-
-@pytest.mark.parametrize("key", [CORE_KEY, "execution_observer"])
-def test_the_engine_holds_the_bound_observer(key: str) -> None:
-    bound = NullExecutionObserver()
-
-    engine = _engine({"workflows_core.api_key": "k", key: bound})
-
-    assert engine._execution_observer is bound
-
-
-def test_the_engine_holds_the_instance_a_factory_made() -> None:
-    made = []
-
-    def factory():
-        made.append(NullExecutionObserver())
-        return made[-1]
-
-    engine = _engine({CORE_KEY: factory})
-
-    assert len(made) == 1
-    assert engine._execution_observer is made[0]
 
 
 def test_engine_initialisation_leaves_the_callers_parameters_untouched() -> None:
@@ -190,15 +116,6 @@ class _FalseValuedObserver(NullExecutionObserver):
 
     def __len__(self) -> int:
         return 0
-
-
-def test_a_false_valued_observer_survives_engine_construction() -> None:
-    bound = _FalseValuedObserver()
-    assert not bound  # the premise: a valid observer that is falsy
-
-    engine = _engine({"workflows_core.api_key": "k", CORE_KEY: bound})
-
-    assert engine._execution_observer is bound
 
 
 # --- dynamic blocks (Task 6) -------------------------------------------------

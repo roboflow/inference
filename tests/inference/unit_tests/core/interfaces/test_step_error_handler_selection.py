@@ -1,6 +1,3 @@
-import ast
-from pathlib import Path
-
 import pytest
 
 from inference.core.exceptions import FeatureDeprecatedError
@@ -16,13 +13,9 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.v1 import core as ee_core
 
-# tests/inference/unit_tests/core/interfaces/<this file> -> five levels up is the repo root
-REPO_ROOT = Path(__file__).resolve().parents[5]
-COMPOSITION_ROOTS = [
-    "inference/core/interfaces/http/http_api.py",
-    "inference/core/interfaces/stream/inference_pipeline.py",
-    "inference_cli/lib/workflows/local_image_adapter.py",
-]
+# The handler each composition root passes is asserted at runtime in
+# `test_image_codec_binding.py` (server/CLI roots) and
+# `test_direct_caller_bindings.py` (the two scripts).
 
 
 def test_server_default_is_the_extended_handler(monkeypatch) -> None:
@@ -66,24 +59,3 @@ def test_direct_engine_default_maps_nothing_while_server_handler_maps_deprecatio
         resolve_step_error_handler()("step-id", error)
     assert captured.value.status_code == 410
     assert captured.value.inner_error is error
-
-
-def test_every_server_composition_root_passes_a_handler() -> None:
-    # The default argument is bound at definition time inside workflows, so
-    # the server must pass its choice explicitly at every ExecutionEngine.init.
-    for relative in COMPOSITION_ROOTS:
-        tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-        calls = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "init"
-            and getattr(node.func.value, "id", None) == "ExecutionEngine"
-        ]
-        assert calls, relative
-        for call in calls:
-            assert any(k.arg == "step_error_handler" for k in call.keywords), (
-                relative,
-                call.lineno,
-            )

@@ -1,7 +1,8 @@
 """No module Phase 5 owns may import `inference.core.env`.
 
-This is narrower and louder than the decontamination lint, whose baseline
-tolerates whatever is listed. It reuses the lint's own `collect_violations()`
+This is narrower and louder than the decontamination lint, which rejects every
+server dependency across the owned tree. It reuses the lint's own
+`collect_violations()`
 so relative imports (`from ...core.env import X`), function-local imports and
 the exec'd-string form are all handled by the one implementation that already
 gets them right - and so a mere docstring mention of the module name is NOT a

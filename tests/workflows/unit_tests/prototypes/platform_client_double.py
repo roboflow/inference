@@ -83,11 +83,3 @@ class RecordingPlatformClient:
         self.weights_calls.clear()
         self.wrapped.clear()
         self.post_mock.reset_mock(return_value=True, side_effect=True)
-
-    def set_post_response(self, value: Any) -> None:
-        """An exception instance is raised by `post`; anything else is returned."""
-        if isinstance(value, BaseException):
-            self.post_mock.side_effect = value
-        else:
-            self.post_mock.side_effect = None
-            self.post_mock.return_value = value

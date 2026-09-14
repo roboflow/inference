@@ -1,6 +1,8 @@
 """The two direct Python callers must install the server's workflow services.
 
-`test_workflows_composition_roots.py` pins the provider binding structurally.
+`test_workflows_composition_roots.py` pins the inventory of engine
+construction sites; the four server/CLI roots are driven in
+`test_image_codec_binding.py`.
 This drives the callers' own code - model loading, video decode, the platform
 fetch and `ExecutionEngine.init` stubbed - captures the arguments that actually
 reach the engine, and then uses the dictionary the caller built: a real model
@@ -10,8 +12,9 @@ decontamination broke.
 
 Per-service depth belongs to the neighbouring files: usage rows to
 `test_workflows_observer_row_parity.py`, the URL/local-file denial matrix to
-`test_image_codec_local_file_paths.py` and `test_image_codec_binding.py`, the
-platform objects to `test_workflows_platform_bindings.py`. Here it is identity
+`test_image_codec_local_file_paths.py` and `test_image_codec_binding.py`,
+caller overrides of the platform bindings to
+`test_workflows_platform_bindings.py`. Here it is identity
 of what is bound, plus one execution through each path it enables.
 """
 
