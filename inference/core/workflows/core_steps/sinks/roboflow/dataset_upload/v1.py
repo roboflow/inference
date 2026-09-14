@@ -156,7 +156,9 @@ class BlockManifest(WorkflowBlockManifest):
         title="Input Image",
         description="Image(s) to upload to the Roboflow dataset. Can be a single image or batch of images from workflow inputs or processing steps. Images are resized if they exceed max_image_size and compressed before uploading. Supports batch processing.",
         examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("image", "images"),
+        # The field name must be the first choice - the JSON schema property takes
+        # the first alias and Execution Engine reads selectors from the manifest by it.
+        validation_alias=AliasChoices("images", "image"),
     )
     predictions: Optional[
         Selector(
