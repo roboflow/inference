@@ -1,7 +1,11 @@
-"""Every composition root must bind the adapter, not the raw manager.
+"""Every composition root, and every direct Python caller this repo maintains,
+must bind the adapter, not the raw manager.
 
 Round-1 defect 8: a name-occurrence check passes on an unused import while all
 four raw-manager assignments stay unchanged.
+
+The two script callers are inventoried here and driven for real in
+`test_direct_caller_bindings.py`.
 """
 
 import ast
@@ -16,6 +20,8 @@ ROOTS = {
     "inference/core/interfaces/http/http_api.py": 2,
     "inference/core/interfaces/stream/inference_pipeline.py": 1,
     "inference_cli/lib/workflows/local_image_adapter.py": 1,
+    "development/stream_interface/benchmark_engine_throughput.py": 1,
+    "examples/run_perspective_correction.py": 1,
 }
 KEY = "workflows_core.model_manager"
 ADAPTER = "ModelManagerModelsProvider"
@@ -82,7 +88,7 @@ def test_every_binding_wraps_the_manager_in_the_adapter() -> None:
         assert engine_inits == expected_engine_inits, (relative, engine_inits)
         assert len(values) == engine_inits, (relative, len(values), engine_inits)
         total += len(values)
-    assert total == 4, total
+    assert total == 6, total
 
 
 def test_a_step_constructed_through_the_engine_receives_the_adapter() -> None:
