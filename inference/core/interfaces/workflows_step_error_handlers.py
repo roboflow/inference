@@ -264,10 +264,12 @@ def resolve_step_error_handler(
 ) -> Union[str, Callable[[str, Exception], None]]:
     """Pick the handler the server passes to ``ExecutionEngine.init``.
 
-    The engine's own default is bound at function-definition time, so the
-    server must pass its choice explicitly at every composition root. Unknown
-    names are returned unchanged: the engine raises
-    ``WorkflowEnvironmentConfigurationError`` for them, exactly as before.
+    Composition roots pass the resolved handler explicitly. Direct Python
+    callers that hand a raw ``ModelManager`` to the engine also receive this
+    handler transparently through the ``__workflows_bind__`` compatibility
+    contract, so no additional wiring is required for the standard case.
+    Unknown names are returned unchanged: the engine raises
+    ``WorkflowEnvironmentConfigurationError`` for them.
     """
     name = name or os.getenv(
         "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"

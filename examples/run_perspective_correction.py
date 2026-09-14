@@ -1,15 +1,31 @@
 """Perspective-correction demo, and the reference for what a direct Python
-caller has to bind.
+caller may bind.
+
+Two supported wirings, permanent. Pick either:
+
+1. Pass a raw `ModelManager` (or `ModelManagerDecorator`) as
+   `workflows_core.model_manager`. `ExecutionEngine.init` invokes the
+   manager's `__workflows_bind__` hook, which installs the historical server
+   bindings (platform client / cache / workspace / inner-workflow resolver,
+   image codec, usage-tracking observer, process configuration and the
+   server's step-error handler). Explicit keys the caller already set
+   survive.
+
+2. Pass an explicit `ModelManagerModelsProvider` (or any other
+   `ModelsProvider` implementation) as `workflows_core.model_manager` and
+   bind the rest of the services yourself. Suits standalone / custom-host
+   integrations that keep provider object identity.
+
+This applies to passing a manager INTO the engine, not to direct
+construction of individual workflow block classes. The script below uses
+form (2); form (1) works without any of the extra `workflows_core.*` calls
+made here.
 
 The Execution Engine takes the server's capabilities as explicit
-`workflows_core.*` init parameters instead of reaching for them itself, and its
-standalone defaults refuse or no-op whatever is missing. A script that calls
-`ExecutionEngine.init` therefore installs the same services the HTTP, stream and
-CLI roots install:
+`workflows_core.*` init parameters instead of reaching for them itself. Its
+standalone defaults refuse or no-op whatever is missing; the services below
+restore them for a caller who is wiring things by hand:
 
-* `ModelManagerModelsProvider(model_manager)` - blocks call the provider port
-  (`run_object_detection`, `run_instance_segmentation`, ...), which a raw
-  `ModelManager` does not implement. Passing the manager itself now fails.
 * `install_workflows_platform_bindings` - Roboflow-managed VLM and notification
   proxy calls, workflows referenced by ID, workspace identity for authenticated
   Modal execution, and the shared cache behind sink cooldown/dedup. Unbound, the
@@ -24,9 +40,6 @@ CLI roots install:
   engine's own default is the mapping-free legacy handler.
 * `server_workflows_configuration()` - the object the rest of the process uses,
   so a mis-wire is reported instead of silently diverging.
-
-`workflows_core.api_key` still authenticates the calls a block makes, but an API
-key alone no longer supplies any of the above.
 
 The usage categories are separate scopes, not substitutes: `request` (one HTTP
 handler call), `workflows` (one observed engine run, with workflow identity, FPS

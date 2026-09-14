@@ -1,12 +1,11 @@
 """Step error handlers owned by the Workflows engine.
 
-The engine ships only the mapping-free default below. A direct
-``ExecutionEngine.init(...)`` caller that wants the Roboflow exception mappings
-(``FeatureDeprecatedError`` to HTTP 410, model-access and remote-execution
-status codes) must pass the server handler explicitly via ``step_error_handler``
--- it lives in ``inference.core.interfaces.workflows_step_error_handlers`` and
-is selected by ``resolve_step_error_handler()``, which every server composition
-root already does.
+The engine ships only the mapping-free default below. Raw-manager callers
+(``ExecutionEngine.init`` with a ``ModelManager``) receive the server handler
+transparently via the ``__workflows_bind__`` host hook; no explicit wiring is
+needed. Standalone or provider-only callers may pass an explicit handler via
+``step_error_handler``; the server handler lives in
+``inference.core.interfaces.workflows_step_error_handlers``.
 """
 
 

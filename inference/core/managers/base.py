@@ -94,6 +94,32 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
+    def __workflows_bind__(
+        self,
+        init_parameters: Dict[str, Any],
+        step_error_handler: Any,
+    ) -> Any:
+        """Class-level Workflows compatibility hook for a raw ModelManager.
+
+        `ExecutionEngine.init` invokes this when its effective
+        `model_manager` is a raw `ModelManager` (or a subclass such as
+        `ModelManagerDecorator`); it wraps `self` with
+        `ModelManagerModelsProvider` and installs the historical server
+        services into the engine's private `init_parameters`, returning the
+        effective `step_error_handler`. The server helper is imported lazily
+        so `inference/core/workflows` does not gain a reverse import of this
+        module.
+        """
+        from inference.core.interfaces.workflows_models_provider import (
+            bind_model_manager_to_workflows,
+        )
+
+        return bind_model_manager_to_workflows(
+            model_manager=self,
+            init_parameters=init_parameters,
+            step_error_handler=step_error_handler,
+        )
+
     def add_model(
         self,
         model_id: str,

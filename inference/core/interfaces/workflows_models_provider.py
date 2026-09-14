@@ -19,8 +19,9 @@ model id exists only on the validated request; they register in the position
 the blocks used (build -> register -> infer).
 
 Bound at the four composition roots as
-`init_parameters["workflows_core.model_manager"]`, and by the test fixtures
-that used to inject a raw manager (Task 11.7 Step 6b).
+`init_parameters["workflows_core.model_manager"]`, and installed by
+`bind_model_manager_to_workflows` when a raw `ModelManager` is handed to
+`ExecutionEngine.init` (the permanent raw-manager compatibility path).
 
 Phase 12 note: a second implementation backed by `inference_sdk`
 (`InferenceHTTPClientModelsProvider`) would satisfy the same port for REMOTE
@@ -629,3 +630,88 @@ class ModelManagerModelsProvider:
             )
             for response in responses
         ]
+
+
+def bind_model_manager_to_workflows(
+    *,
+    model_manager: ModelManager,
+    init_parameters: Dict[str, Any],
+    step_error_handler: Any,
+) -> Any:
+    """Install the server's `workflows_core.*` bindings for a raw ModelManager.
+
+    Invoked from `ModelManager.__workflows_bind__` on the engine's PRIVATE
+    `init_parameters` copy and returns the effective `step_error_handler`.
+
+    Contract:
+    * `workflows_core.model_manager` is always overwritten with a fresh
+      `ModelManagerModelsProvider`; the returned provider has no
+      `__workflows_bind__`, so reusing this manager across engines cannot
+      double-wrap it.
+    * A bare `model_manager` is left untouched (it may belong to a plugin).
+    * `install_workflows_platform_bindings` / `setdefault`-style fills only
+      keys the caller did not set, preserving explicit and dynamic-block
+      overrides.
+    * A bare `execution_observer` is respected: only when NEITHER the
+      namespaced key NOR the bare name is set do we install the usage-tracking
+      observer, so `_resolve_execution_observer` still sees the caller's bare
+      binding.
+    * `workflows_core.configuration` is validated (when the caller supplied
+      one) BEFORE `bind_image_codec` touches the process-global codec
+      registry, so a mismatched configuration cannot leave a partially
+      installed codec behind. Bare / plugin-namespaced `configuration` is not
+      the core configuration and is deliberately left untouched.
+    * Step-error handler: `OMITTED_STEP_ERROR_HANDLER` resolves to the
+      server default; a known name resolves through `SERVER_STEP_ERROR_HANDLERS`;
+      any other string, callable or explicit `None` retains its identity.
+    """
+    from inference.core.interfaces.roboflow_platform_client import (
+        install_workflows_platform_bindings,
+    )
+    from inference.core.interfaces.workflows_configuration import (
+        server_workflows_configuration,
+    )
+    from inference.core.interfaces.workflows_execution_observer import (
+        UsageTrackingExecutionObserver,
+    )
+    from inference.core.interfaces.workflows_image_codec import bind_image_codec
+    from inference.core.interfaces.workflows_step_error_handlers import (
+        SERVER_STEP_ERROR_HANDLERS,
+        resolve_step_error_handler,
+    )
+    from inference.core.workflows.configuration import (
+        ensure_process_configuration_matches,
+    )
+    from inference.core.workflows.execution_engine.v1.core import (
+        OMITTED_STEP_ERROR_HANDLER,
+    )
+
+    init_parameters["workflows_core.model_manager"] = ModelManagerModelsProvider(
+        model_manager
+    )
+    install_workflows_platform_bindings(init_parameters)
+    # Validate the caller's configuration BEFORE touching the process-wide
+    # codec registry: `bind_image_codec` calls `set_image_codec`, and a
+    # subsequent configuration mismatch would leave the codec installed.
+    # V1.init still runs its own post-hook validation so an arbitrary host
+    # hook cannot bypass the assertion.
+    if "workflows_core.configuration" in init_parameters:
+        ensure_process_configuration_matches(
+            init_parameters["workflows_core.configuration"]
+        )
+    bind_image_codec(init_parameters)
+    if (
+        "workflows_core.execution_observer" not in init_parameters
+        and "execution_observer" not in init_parameters
+    ):
+        init_parameters["workflows_core.execution_observer"] = (
+            UsageTrackingExecutionObserver()
+        )
+    init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
+    if step_error_handler is OMITTED_STEP_ERROR_HANDLER:
+        return resolve_step_error_handler()
+    if isinstance(step_error_handler, str):
+        return SERVER_STEP_ERROR_HANDLERS.get(step_error_handler, step_error_handler)
+    return step_error_handler

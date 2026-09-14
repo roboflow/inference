@@ -74,6 +74,25 @@ REGISTERED_STEP_ERROR_HANDLERS = {
     "legacy": legacy_step_error_handler,
 }
 
+
+class _OmittedStepErrorHandler:
+    """Sentinel type: caller did not pass a ``step_error_handler`` argument.
+
+    Distinct from ``None`` (explicit "no handler"), any string or callable.
+    A host bind hook uses it to distinguish "omitted" from "explicit" and
+    substitute its own default; if no hook fires it collapses to
+    ``DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER``.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "OMITTED_STEP_ERROR_HANDLER"
+
+
+OMITTED_STEP_ERROR_HANDLER = _OmittedStepErrorHandler()
+
+
 # The ONLY key the process-consistency check looks at. Deliberately NOT
 # `_retrieve_init_parameter`, which falls back to the BARE name and invokes
 # callables: a plugin's own `configuration` init parameter - bare, or under
@@ -403,8 +422,8 @@ class ExecutionEngineV1(BaseExecutionEngine):
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
         step_error_handler: Optional[
-            Union[str, Callable[[str, Exception], None]]
-        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
+            Union[str, Callable[[str, Exception], None], _OmittedStepErrorHandler]
+        ] = OMITTED_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
     ) -> "ExecutionEngineV1":
         # The engine mutates this dict (dynamic-block mirrors below) and the
@@ -412,6 +431,32 @@ class ExecutionEngineV1(BaseExecutionEngine):
         # reuses its dictionary across engines never sees, or re-supplies, a
         # value this engine derived.
         init_parameters = dict(init_parameters or {})
+        # Raw-ModelManager compatibility: if the effective model_manager
+        # exposes a class-level ``__workflows_bind__``, let the host fill the
+        # missing ``workflows_core.*`` services into the private dictionary
+        # BEFORE configuration validation, dynamic-block mirroring, observer
+        # resolution, compilation and preloading. Namespaced key wins over
+        # the bare name (including an explicit ``None`` - disables the hook);
+        # lookup is on the TYPE (walks MRO) so a permissive ``MagicMock`` or
+        # instance-only attribute does not opt in. Callable values are NOT
+        # invoked: block-initializer semantics stay unchanged.
+        if "workflows_core.model_manager" in init_parameters:
+            effective_model_manager = init_parameters["workflows_core.model_manager"]
+        else:
+            effective_model_manager = init_parameters.get("model_manager")
+        bind_hook = (
+            getattr(type(effective_model_manager), "__workflows_bind__", None)
+            if effective_model_manager is not None
+            else None
+        )
+        if bind_hook is not None:
+            step_error_handler = bind_hook(
+                effective_model_manager, init_parameters, step_error_handler
+            )
+        # Sentinel collapse only after the hook had its chance. Explicit
+        # ``None``, callable, or string values retain their identity.
+        if isinstance(step_error_handler, _OmittedStepErrorHandler):
+            step_error_handler = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER
         # Before compilation, so a warm COMPILATION_CACHE (compiler/core.py:64)
         # cannot skip the check with it. The configuration is process-wide; a
         # per-engine object that differs anywhere means the process is

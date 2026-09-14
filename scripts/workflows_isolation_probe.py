@@ -241,7 +241,7 @@ SYNTHETIC_DETECTIONS = {
 
 def run_model_free_workflow():
     # Blur, then render a label with a packaged font - a real offline render,
-    # in both representations.
+    # in both representations. Init parameters are empty: the no-hook path.
     from inference.core.workflows.execution_engine.core import ExecutionEngine
     engine = ExecutionEngine.init(workflow_definition=MODEL_FREE_WORKFLOW, init_parameters={})
     runtime = {"image": _image_input(), "detections": SYNTHETIC_DETECTIONS}
@@ -252,6 +252,35 @@ def run_model_free_workflow():
     assert raw["labelled"].numpy_image.any(), "the label rendered nothing onto the zero canvas"
     serialised = engine.run(runtime_parameters=runtime, serialize_results=True)[0]
     assert "labelled" in serialised and "blurred" in serialised, serialised
+
+
+def run_workflow_with_host_hook():
+    # A tiny neutral host object with the class-level ``__workflows_bind__``
+    # contract must be honoured by the engine without pulling in any server
+    # module. Runs a workflow that does not need a `ModelsProvider`, so the
+    # hook can leave the binding as ``None`` and the workflow still executes.
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    class _NeutralHost:
+        received = None
+
+        def __workflows_bind__(self, init_parameters, step_error_handler):
+            _NeutralHost.received = {
+                "keys": sorted(init_parameters),
+                "handler": step_error_handler,
+            }
+            init_parameters["workflows_core.model_manager"] = None
+            return step_error_handler
+
+    host = _NeutralHost()
+    engine = ExecutionEngine.init(
+        workflow_definition=MODEL_FREE_WORKFLOW,
+        init_parameters={"workflows_core.model_manager": host},
+    )
+    runtime = {"image": _image_input(), "detections": SYNTHETIC_DETECTIONS}
+    result = engine.run(runtime_parameters=runtime, serialize_results=False)[0]
+    assert _NeutralHost.received is not None, "the class-level hook never fired"
+    assert result["labelled"].numpy_image.any(), "hook path did not reach block execution"
 
 
 def run_dynamic_block_workflow():
@@ -326,6 +355,7 @@ CHECKS = {
     "import_everything": import_everything,
     "load_blocks": load_blocks,
     "run_model_free_workflow": run_model_free_workflow,
+    "run_workflow_with_host_hook": run_workflow_with_host_hook,
     "run_dynamic_block_workflow": run_dynamic_block_workflow,
     "standalone_logging": standalone_logging,
     "fonts_offline": fonts_offline,  # deletes the assets - keep it after the render
@@ -349,6 +379,7 @@ EXPECTED_CHECKS = (
     "import_everything",
     "load_blocks",
     "run_model_free_workflow",
+    "run_workflow_with_host_hook",
     "run_dynamic_block_workflow",
     "standalone_logging",
     "fonts_offline",
