@@ -1,20 +1,25 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
 
 from inference.core import env
+from inference.core.entities.requests.inference import (
+    InferenceRequest,
+    ObjectDetectionInferenceRequest,
+)
 from inference.core.exceptions import ModelPackageSelectionError
 from inference.core.managers import base as base_module
 from inference.core.managers.active_learning import ActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.models.base import Model
 from inference_models.entities import ResolvedModelMetadata
 
 
-class PackageModel:
+class PackageModel(Model):
     task_type = "object-detection"
     batch_size = 1
     img_size_h = 32
@@ -29,7 +34,7 @@ class PackageModel:
             quantization="fp16" if backend == "trt" else "fp32",
         )
 
-    def infer_from_request(self, request):
+    def infer_from_request(self, request) -> Any:
         return {"backend": self.resolved_model.backend}
 
     def clear_cache(self, delete_from_disk=True):
@@ -52,12 +57,12 @@ def test_package_variants_coexist_without_changing_automatic_model():
         )
 
     assert set(manager.keys()) == {"project/1", "project/1:trt"}
-    assert manager.infer_from_request_sync("project/1", SimpleNamespace()) == {
-        "backend": "onnx"
-    }
-    assert manager.infer_from_request_sync("project/1:trt", SimpleNamespace()) == {
-        "backend": "trt"
-    }
+    assert manager.infer_from_request_sync(
+        "project/1", InferenceRequest(id="request-id", model_id="project/1")
+    ) == {"backend": "onnx"}
+    assert manager.infer_from_request_sync(
+        "project/1:trt", InferenceRequest(id="request-id", model_id="project/1")
+    ) == {"backend": "trt"}
     assert all(
         call.args[0] == "project/1" for call in registry.get_model.call_args_list
     )
@@ -77,9 +82,9 @@ def package_manager(monkeypatch):
 def test_explicit_first_load_does_not_bind_automatic_selection(package_manager):
     package_manager.add_model("project/1", "key", backend="trt", model_cache_key="trt")
     package_manager.add_model("project/1", "key")
-    assert package_manager.infer_from_request_sync("project/1", SimpleNamespace()) == {
-        "backend": "onnx"
-    }
+    assert package_manager.infer_from_request_sync(
+        "project/1", InferenceRequest(id="request-id", model_id="project/1")
+    ) == {"backend": "onnx"}
 
 
 def test_cached_variant_is_validated_without_reloading(package_manager):
@@ -129,14 +134,17 @@ def test_cache_handle_cannot_bypass_selection_validation(package_manager, as_ali
         )
 
 
-def test_active_learning_uses_public_identity_and_selected_model_for_task_type():
+def test_active_learning_uses_public_identity_and_selected_model_for_task_type(
+    monkeypatch,
+):
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", True)
     manager = ActiveLearningManager(
         model_registry=Mock(), cache=Mock(), content_addressed_artifact_cache=Mock()
     )
     manager._models["project/1:package:variant"] = PackageModel(
         "project/1", "key", backend="trt"
     )
-    request = SimpleNamespace(
+    request = ObjectDetectionInferenceRequest(
         model_id="project/1",
         backend="trt",
         api_key="key",
@@ -161,7 +169,7 @@ def test_active_request_finishes_on_its_instance_after_lru_eviction(package_mana
     started, finish = Event(), Event()
 
     class BlockingPackageModel(PackageModel):
-        def infer_from_request(self, request):
+        def infer_from_request(self, request) -> Any:
             if self.resolved_model.backend == "onnx":
                 started.set()
                 assert finish.wait(timeout=10)
@@ -174,7 +182,9 @@ def test_active_request_finishes_on_its_instance_after_lru_eviction(package_mana
     package_manager.add_model("project/1", "key")
     with ThreadPoolExecutor(max_workers=1) as executor:
         active = executor.submit(
-            package_manager.infer_from_request_sync, "project/1", SimpleNamespace()
+            package_manager.infer_from_request_sync,
+            "project/1",
+            InferenceRequest(id="request-id", model_id="project/1"),
         )
         try:
             assert started.wait(timeout=10)
@@ -183,7 +193,7 @@ def test_active_request_finishes_on_its_instance_after_lru_eviction(package_mana
             )
             assert set(package_manager.keys()) == {"trt"}
             assert package_manager.infer_from_request_sync(
-                "trt", SimpleNamespace()
+                "trt", InferenceRequest(id="request-id", model_id="project/1")
             ) == {"backend": "trt"}
         finally:
             finish.set()
