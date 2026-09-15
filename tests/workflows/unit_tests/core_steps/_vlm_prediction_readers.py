@@ -69,6 +69,13 @@ def detection_confidences(predictions: Any) -> List[float]:
     return predictions.confidence.detach().cpu().tolist()
 
 
+def detection_masks(predictions: Any) -> List[Any]:
+    """Per-instance dense boolean ``(H, W)`` masks as numpy arrays."""
+    if isinstance(predictions, sv.Detections):
+        return [] if predictions.mask is None else list(predictions.mask)
+    return list(predictions.mask.detach().cpu().numpy().astype(bool))
+
+
 def detection_inference_ids(predictions: Any) -> List[str]:
     """The inference id of every box - per-box data numpy-side, a single
     ``image_metadata`` entry tensor-side."""

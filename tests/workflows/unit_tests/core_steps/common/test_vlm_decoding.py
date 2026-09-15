@@ -12,17 +12,23 @@ from inference.core.workflows.core_steps.common.vlm_decoding import (
     CLASSIFICATION_TASKS,
     DETECTION_BOX_FORMATS,
     DETECTION_TASKS,
+    SEGMENTATION_TASKS,
     actual_vlm_prediction_outputs,
+    build_instance_segmentation_prompt,
     build_object_detection_prompt,
     create_classes_index,
     decode_classification,
+    decode_instance_segmentations,
     decode_object_detections,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
     extract_detection_entries,
     extract_json,
+    extract_segmentation_entries,
     get_detection_class_name,
     get_detection_confidence,
+    prediction_kinds_for_tasks,
+    read_polygon,
     scale_confidence,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -41,11 +47,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
     classification_top_class,
     detection_boxes,
+    detection_masks,
     is_detection_prediction,
 )
 
@@ -756,6 +764,7 @@ def test_describe_vlm_prediction_outputs() -> None:
         "error_status",
         "inference_id",
     ]
+    # Blocks that do not name their tasks keep the pre-segmentation union.
     assert outputs[0].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
@@ -769,6 +778,13 @@ def test_actual_outputs_narrow_to_detections(task_type: str) -> None:
     outputs = actual_vlm_prediction_outputs(task_type)
 
     assert outputs[0].kind == [OBJECT_DETECTION_PREDICTION_KIND]
+
+
+@pytest.mark.parametrize("task_type", sorted(SEGMENTATION_TASKS))
+def test_actual_outputs_narrow_to_segmentation(task_type: str) -> None:
+    outputs = actual_vlm_prediction_outputs(task_type)
+
+    assert outputs[0].kind == [INSTANCE_SEGMENTATION_PREDICTION_KIND]
 
 
 @pytest.mark.parametrize("task_type", sorted(CLASSIFICATION_TASKS))
@@ -792,10 +808,47 @@ def test_actual_outputs_keep_union_for_other_tasks() -> None:
     ]
 
 
+def test_segmentation_kind_is_declared_only_by_blocks_supporting_the_task() -> None:
+    with_segmentation = ["object-detection", "instance-segmentation", "classification"]
+    without_segmentation = ["object-detection", "classification", "ocr"]
+
+    assert describe_vlm_prediction_outputs(with_segmentation)[0].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert describe_vlm_prediction_outputs(without_segmentation)[0].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert actual_vlm_prediction_outputs("unconstrained", with_segmentation)[
+        0
+    ].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert actual_vlm_prediction_outputs("unconstrained", without_segmentation)[
+        0
+    ].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert prediction_kinds_for_tasks(["ocr", "caption"]) == []
+    assert prediction_kinds_for_tasks(["instance-segmentation"]) == [
+        INSTANCE_SEGMENTATION_PREDICTION_KIND
+    ]
+
+
 def test_actual_outputs_names_match_describe_outputs() -> None:
     declared = {output.name for output in describe_vlm_prediction_outputs()}
 
-    for task_type in ["object-detection", "classification", "unconstrained"]:
+    for task_type in [
+        "object-detection",
+        "instance-segmentation",
+        "classification",
+        "unconstrained",
+    ]:
         assert {
             output.name for output in actual_vlm_prediction_outputs(task_type)
         } == declared
@@ -1216,3 +1269,315 @@ def test_decode_classification_reports_error_when_parser_raises(
 
     assert error_status is True
     assert prediction is None
+
+
+# ---------------------------------------------------------------------------
+# Instance segmentation
+# ---------------------------------------------------------------------------
+
+# A rectangle spanning x 80..400, y 100..300 of the 800x400 image, so its
+# extent is EXPECTED_XYXY and its mask covers exactly that area.
+SEGMENTATION_POLYGON_FLAT = [80, 100, 400, 100, 400, 300, 80, 300]
+SEGMENTATION_ENTRY = {"label": "cat", "polygon": SEGMENTATION_POLYGON_FLAT}
+
+
+def _decode_segmentation(raw_output: str, **kwargs):
+    defaults = dict(
+        image=_build_image(),
+        classes=["cat", "dog"],
+        inference_id="inference-id",
+        upload_width=IMAGE_WIDTH,
+        upload_height=IMAGE_HEIGHT,
+    )
+    defaults.update(kwargs)
+    return decode_instance_segmentations(raw_output=raw_output, **defaults)
+
+
+def test_decode_instance_segmentations_produces_mask_and_extent_box() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps({"segmentations": [SEGMENTATION_ENTRY]})
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+    assert detections.class_id.tolist() == [0]
+    assert detections.data[CLASS_NAME_DATA_FIELD].tolist() == ["cat"]
+    assert detections.confidence.tolist() == [1.0]
+    assert detections.data[PREDICTION_TYPE_KEY].tolist() == ["instance-segmentation"]
+    assert detections.data[INFERENCE_ID_KEY].tolist() == ["inference-id"]
+    assert detections.data[IMAGE_DIMENSIONS_KEY].tolist() == [
+        [IMAGE_HEIGHT, IMAGE_WIDTH]
+    ]
+    mask = detections.mask[0]
+    assert mask.shape == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert mask.dtype == bool
+    assert mask[200, 240]  # inside
+    assert not mask[50, 50]  # outside
+    assert not mask[350, 600]
+    # Rasterised rectangle: cv2.fillPoly is inclusive of the edge, so the
+    # area is (width + 1) * (height + 1).
+    assert int(mask.sum()) == (400 - 80 + 1) * (300 - 100 + 1)
+
+
+def test_decode_instance_segmentations_rescales_from_upload_dimensions() -> None:
+    # Half-size upload: vertices come back in a 400x200 frame.
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": [40, 50, 200, 50, 200, 150, 40, 150]}]),
+        upload_width=400,
+        upload_height=200,
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+    assert detections.mask[0][200, 240]
+    assert not detections.mask[0][50, 50]
+
+
+@pytest.mark.parametrize(
+    "polygon",
+    [
+        SEGMENTATION_POLYGON_FLAT,
+        [[80, 100], [400, 100], [400, 300], [80, 300]],
+        [
+            {"x": 80, "y": 100},
+            {"x": 400, "y": 100},
+            {"x": 400, "y": 300},
+            {"x": 80, "y": 300},
+        ],
+        ["80", "100", "400", "100", "400", "300", "80", "300"],
+    ],
+)
+def test_decode_instance_segmentations_accepts_drifted_vertex_shapes(
+    polygon: list,
+) -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": polygon}])
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+
+
+@pytest.mark.parametrize("key", ["segmentation", "points", "mask"])
+def test_decode_instance_segmentations_reads_polygon_key_aliases(key: str) -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", key: SEGMENTATION_POLYGON_FLAT}])
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+
+
+def test_decode_instance_segmentations_clamps_out_of_range_vertices() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps(
+            [{"label": "cat", "polygon": [-50, -20, 900, -20, 900, 450, -50, 450]}]
+        )
+    )
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [[0.0, 0.0, IMAGE_WIDTH, IMAGE_HEIGHT]]
+
+
+def test_decode_instance_segmentations_skips_degenerate_entries() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps(
+            [
+                {"label": "cat", "polygon": [1, 2, 3, 4]},  # two vertices
+                {"label": "cat", "polygon": [1, 2, 3]},  # odd length
+                {"label": "cat", "polygon": [1, "x", 3, 4, 5, 6]},  # non-numeric
+                {"label": "cat"},  # no polygon
+                SEGMENTATION_ENTRY,
+            ]
+        )
+    )
+
+    assert error_status is False
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+
+
+@pytest.mark.parametrize(
+    "polygon",
+    [
+        [10, 10, 10, 10, 10, 10],  # repeated vertex
+        [10, 10, 50, 10, 90, 10],  # collinear
+        [-90, -90, -50, -90, -50, -50],  # entirely outside the frame
+    ],
+)
+def test_decode_instance_segmentations_skips_polygons_enclosing_no_area(
+    polygon: list,
+) -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": polygon}, SEGMENTATION_ENTRY])
+    )
+
+    assert error_status is False
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+    assert detections.mask.shape == (1, IMAGE_HEIGHT, IMAGE_WIDTH)
+
+
+def test_decode_instance_segmentations_reports_error_when_only_empty_polygons() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": [10, 10, 50, 10, 90, 10]}])
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
+def test_decode_instance_segmentations_reports_error_when_no_polygon_usable() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "box_2d": [80, 100, 400, 300]}])
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
+def test_decode_instance_segmentations_requires_upload_dimensions() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([SEGMENTATION_ENTRY]), upload_width=None, upload_height=None
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
+def test_decode_instance_segmentations_accepts_markdown_fenced_output() -> None:
+    raw_output = (
+        "```json\n" + json.dumps({"segmentations": [SEGMENTATION_ENTRY]}) + "\n```"
+    )
+
+    error_status, detections = _decode_segmentation(raw_output)
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+
+
+def test_decode_instance_segmentations_keeps_unknown_label_with_negative_class_id() -> (
+    None
+):
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "bird", "polygon": SEGMENTATION_POLYGON_FLAT}])
+    )
+
+    assert error_status is False
+    assert detections.class_id.tolist() == [-1]
+    assert detections.data[CLASS_NAME_DATA_FIELD].tolist() == ["bird"]
+
+
+def test_decode_instance_segmentations_returns_empty_detections_for_empty_list() -> (
+    None
+):
+    error_status, detections = _decode_segmentation('{"segmentations": []}')
+
+    assert error_status is False
+    assert len(detections) == 0
+    assert detections.mask.shape == (0, IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert detections.metadata[IMAGE_DIMENSIONS_KEY] == [IMAGE_HEIGHT, IMAGE_WIDTH]
+
+
+def test_decode_instance_segmentations_reports_error_for_unparsable_output() -> None:
+    error_status, detections = _decode_segmentation("I cannot help with that.")
+
+    assert error_status is True
+    assert detections is None
+
+
+def test_extract_segmentation_entries_accepts_wrappers_and_bare_entry() -> None:
+    assert extract_segmentation_entries([SEGMENTATION_ENTRY]) == [SEGMENTATION_ENTRY]
+    assert extract_segmentation_entries({"segmentations": [SEGMENTATION_ENTRY]}) == [
+        SEGMENTATION_ENTRY
+    ]
+    assert extract_segmentation_entries({"detections": [SEGMENTATION_ENTRY]}) == [
+        SEGMENTATION_ENTRY
+    ]
+    assert extract_segmentation_entries(SEGMENTATION_ENTRY) == [SEGMENTATION_ENTRY]
+    with pytest.raises(ValueError):
+        extract_segmentation_entries({"answer": "no"})
+    with pytest.raises(ValueError):
+        extract_segmentation_entries([1, 2, 3])
+
+
+def test_read_polygon_rejects_malformed_and_returns_vertices() -> None:
+    assert read_polygon({"polygon": [1, 2, 3]}) is None
+    assert read_polygon({"polygon": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}) is None
+    assert read_polygon({"polygon": "80,100,400,100,400,300"}) is None
+    assert read_polygon({}) is None
+    vertices = read_polygon(SEGMENTATION_ENTRY)
+    assert vertices.shape == (4, 2)
+    assert vertices.tolist() == [[80, 100], [400, 100], [400, 300], [80, 300]]
+
+
+def test_build_instance_segmentation_prompt_fills_placeholders() -> None:
+    prompt = build_instance_segmentation_prompt(
+        classes=["cat", "dog"], upload_width=640, upload_height=480
+    )
+
+    assert "640x480" in prompt
+    assert prompt.endswith("Only use these labels: cat, dog")
+    assert '"segmentations"' in prompt
+    assert (
+        "{"
+        not in prompt.replace('"polygon"', "")
+        .replace('"label"', "")
+        .replace('"segmentations"', "")
+        or "[x1, y1, x2, y2, ...]" in prompt
+    )
+
+
+def test_build_instance_segmentation_prompt_requires_upload_dimensions() -> None:
+    with pytest.raises(ValueError):
+        build_instance_segmentation_prompt(
+            classes=["cat"], upload_width=None, upload_height=None
+        )
+
+
+def test_decode_vlm_output_dispatches_to_segmentation() -> None:
+    error_status, predictions = decode_vlm_output(
+        task_type="instance-segmentation",
+        raw_output=json.dumps({"segmentations": [SEGMENTATION_ENTRY]}),
+        image=_build_image(),
+        classes=["cat"],
+        inference_id="inference-id",
+        upload_width=IMAGE_WIDTH,
+        upload_height=IMAGE_HEIGHT,
+    )
+
+    assert error_status is False
+    assert is_detection_prediction(predictions)
+    assert detection_boxes(predictions) == [EXPECTED_XYXY]
+    masks = detection_masks(predictions)
+    assert len(masks) == 1
+    assert masks[0].shape == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert masks[0][200, 240]
+
+
+def test_decode_vlm_output_requires_upload_dimensions_for_segmentation() -> None:
+    error_status, predictions = decode_vlm_output(
+        task_type="instance-segmentation",
+        raw_output=json.dumps([SEGMENTATION_ENTRY]),
+        image=_build_image(),
+        classes=["cat"],
+        inference_id="inference-id",
+    )
+
+    assert error_status is True
+    assert predictions is None
+
+
+def test_decode_vlm_output_requires_classes_for_segmentation() -> None:
+    error_status, predictions = decode_vlm_output(
+        task_type="instance-segmentation",
+        raw_output=json.dumps([SEGMENTATION_ENTRY]),
+        image=_build_image(),
+        classes=None,
+        inference_id="inference-id",
+        upload_width=IMAGE_WIDTH,
+        upload_height=IMAGE_HEIGHT,
+    )
+
+    assert error_status is True
+    assert predictions is None
