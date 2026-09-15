@@ -18,7 +18,12 @@ from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
     RoboflowAPINotAuthorizedError,
 )
-from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
+from inference.core.managers.base import (
+    Model,
+    ModelManager,
+    acquire_with_timeout,
+    model_load_options,
+)
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
@@ -59,6 +64,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -67,6 +76,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        from inference.core.managers.base import validate_public_model_id
+
+        validate_public_model_id(model_id, model_id_alias)
         if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
@@ -79,13 +91,19 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     f"API key {api_key} does not have access to model {model_id}"
                 )
 
-        queue_id = self._resolve_queue_id(
+        queue_id = model_cache_key or self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(queue_id)
         if queue_id in self:
+            self.validate_model_selection(
+                queue_id,
+                model_package_id=model_package_id,
+                backend=backend,
+                quantization=quantization,
+            )
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
             )
@@ -165,6 +183,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                **model_load_options(
+                    model_package_id, backend, quantization, model_cache_key
+                ),
             )
         except Exception as error:
             logger.debug(

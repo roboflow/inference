@@ -6,7 +6,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
-from inference.core.managers.base import Model, ModelManager
+from inference.core.managers.base import Model, ModelManager, model_load_options
 from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
@@ -63,6 +63,10 @@ class ModelManagerDecorator(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ):
         """Adds a model to the manager.
 
@@ -71,15 +75,25 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if model_id in self:
+        from inference.core.managers.base import validate_public_model_id
+
+        validate_public_model_id(model_id, model_id_alias)
+        cache_key = model_cache_key or model_id
+        if cache_key in self:
+            self.validate_model_selection(
+                cache_key,
+                model_package_id=model_package_id,
+                backend=backend,
+                quantization=quantization,
+            )
             self.model_manager.record_request_metadata(
-                model_id=model_id,
+                model_id=cache_key,
                 original_model_id=model_id,
                 model_id_alias=model_id_alias,
             )
             ids_collector = request_model_ids.get(None)
             if ids_collector is not None:
-                ids_collector.add(model_id)
+                ids_collector.add(cache_key)
             return
         self.model_manager.add_model(
             model_id,
@@ -88,7 +102,13 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+            **model_load_options(
+                model_package_id, backend, quantization, model_cache_key
+            ),
         )
+
+    def validate_model_selection(self, model_id: str, **selectors) -> None:
+        self.model_manager.validate_model_selection(model_id, **selectors)
 
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs
