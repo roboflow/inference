@@ -119,6 +119,12 @@ def test_adapter_blocks_non_global_ip_literal() -> None:
         adapter.get_connection("http://127.0.0.1:8080/secret")
 
 
+def test_adapter_allows_non_global_ip_literal_when_enabled() -> None:
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=True)
+    pool = adapter.get_connection("http://127.0.0.1:8080/webhook")
+    assert pool.host == "127.0.0.1"
+
+
 def test_adapter_blocks_hostname_resolving_to_non_global(monkeypatch) -> None:
     monkeypatch.setattr(
         url_input.socket, "getaddrinfo", _fake_getaddrinfo("169.254.169.254")

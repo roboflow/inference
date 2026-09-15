@@ -51,11 +51,16 @@ def _install_capturing_adapter(monkeypatch, response: _FakeResponse):
     the (request, kwargs) it receives and returns ``response``. Records both
     adapter and response close() calls on the returned holder.
     """
-    holder = {"request": None, "kwargs": None, "adapter_closed": False}
+    holder = {
+        "request": None,
+        "kwargs": None,
+        "adapter_closed": False,
+        "allow_non_global_addresses": None,
+    }
 
     class _FakeAdapter:
         def __init__(self, *, allow_non_global_addresses: bool) -> None:
-            self.allow_non_global_addresses = allow_non_global_addresses
+            holder["allow_non_global_addresses"] = allow_non_global_addresses
 
         def send(self, request, **kwargs):
             holder["request"] = request
@@ -136,6 +141,7 @@ def test_execute_request_forwards_payload_to_adapter(monkeypatch) -> None:
     # steer resolution outside the validating adapter.
     assert holder["kwargs"]["proxies"] == {}
     assert holder["kwargs"]["stream"] is True
+    assert holder["allow_non_global_addresses"] is False
     assert response.closed is True
     assert holder["adapter_closed"] is True
 
@@ -680,3 +686,26 @@ def test_sending_webhook_notification_asynchronously_in_thread_pool_executor() -
         "message": "Notification sent in the background task",
     }
     thread_pool_executor.submit.assert_called_once()
+
+
+def test_execute_request_forwards_allow_non_global_when_flag_enabled(
+    monkeypatch,
+) -> None:
+    response = _FakeResponse(status_code=200)
+    holder = _install_capturing_adapter(monkeypatch, response)
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
+
+    execute_request(
+        url="https://public.example/webhook",
+        method="POST",
+        query_parameters={},
+        headers={},
+        json_payload={},
+        form_data={},
+        multi_part_encoded_files={},
+        timeout=1,
+    )
+
+    assert holder["allow_non_global_addresses"] is True

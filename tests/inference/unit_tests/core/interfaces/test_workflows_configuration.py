@@ -63,6 +63,10 @@ FIELDS = [
         "WORKFLOW_DISABLED_BLOCK_PATTERNS",
         lambda c: list(c.engine.disabled_block_patterns),
     ),
+    (
+        "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES",
+        lambda c: c.engine.allow_webhook_sink_to_non_global_addresses,
+    ),
     ("ENABLE_TENSOR_DATA_REPRESENTATION", lambda c: c.tensor.representation_enabled),
     ("WORKFLOWS_IMAGE_TENSOR_DEVICE", lambda c: c.tensor.image_tensor_device),
     (
@@ -185,7 +189,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 70, len(tabled)
+    assert len(tabled) == 71, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:

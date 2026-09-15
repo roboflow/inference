@@ -69,7 +69,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 70, total_fields
+    assert total_fields == 71, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -85,6 +85,7 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
     assert configuration.engine.blocks_write_directory is None
     assert configuration.engine.disabled_block_types == ()
     assert configuration.engine.disabled_block_patterns == ()
+    assert configuration.engine.allow_webhook_sink_to_non_global_addresses is False
     assert configuration.tensor.representation_enabled is False
     assert configuration.tensor.image_tensor_device is None
     assert configuration.tensor.visualisation_validate_owners is False
@@ -570,7 +571,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 70, sorted(exported)
+    assert len(exported) == 71, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)

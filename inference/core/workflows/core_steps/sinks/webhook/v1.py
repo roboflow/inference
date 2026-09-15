@@ -17,6 +17,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
     build_operations_chain,
 )
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
+from inference.core.workflows.environment import (
+    ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -68,7 +71,8 @@ for data exchange, notifications, or other integrations.
   CGNAT, reserved, and multicast targets are rejected.
 * HTTP redirects are rejected and reported as a failed notification; the
   `Location` header is not followed.
-* Private-network webhooks are not supported.
+* Private-network destinations require the host operator to set
+  `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=true`.
 
 ### Setting Query Parameters
 You can easily set query parameters for your request:
@@ -565,7 +569,9 @@ def _execute_request(
     # the body (the block does not consume it), and `allow_redirects` is not
     # honoured by an adapter's `send()` so a 3xx surfaces here.
     with contextlib.closing(
-        SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+        SSRFProtectedHTTPAdapter(
+            allow_non_global_addresses=ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
+        )
     ) as adapter:
         with contextlib.closing(
             adapter.send(

@@ -55,6 +55,7 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             blocks_write_directory=env.WORKFLOW_BLOCKS_WRITE_DIRECTORY,
             disabled_block_types=tuple(env.WORKFLOW_DISABLED_BLOCK_TYPES),
             disabled_block_patterns=tuple(env.WORKFLOW_DISABLED_BLOCK_PATTERNS),
+            allow_webhook_sink_to_non_global_addresses=env.ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
         ),
         tensor=TensorConfiguration(
             representation_enabled=env.ENABLE_TENSOR_DATA_REPRESENTATION,
