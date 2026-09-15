@@ -1397,6 +1397,36 @@ def test_decode_instance_segmentations_skips_degenerate_entries() -> None:
     assert detections.xyxy.tolist() == [EXPECTED_XYXY]
 
 
+@pytest.mark.parametrize(
+    "polygon",
+    [
+        [10, 10, 10, 10, 10, 10],  # repeated vertex
+        [10, 10, 50, 10, 90, 10],  # collinear
+        [-90, -90, -50, -90, -50, -50],  # entirely outside the frame
+    ],
+)
+def test_decode_instance_segmentations_skips_polygons_enclosing_no_area(
+    polygon: list,
+) -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": polygon}, SEGMENTATION_ENTRY])
+    )
+
+    assert error_status is False
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+    assert detections.mask.shape == (1, IMAGE_HEIGHT, IMAGE_WIDTH)
+
+
+def test_decode_instance_segmentations_reports_error_when_only_empty_polygons() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "cat", "polygon": [10, 10, 50, 10, 90, 10]}])
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
 def test_decode_instance_segmentations_reports_error_when_no_polygon_usable() -> None:
     error_status, detections = _decode_segmentation(
         json.dumps([{"label": "cat", "box_2d": [80, 100, 400, 300]}])
@@ -1446,6 +1476,7 @@ def test_decode_instance_segmentations_returns_empty_detections_for_empty_list()
     assert error_status is False
     assert len(detections) == 0
     assert detections.mask.shape == (0, IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert detections.metadata[IMAGE_DIMENSIONS_KEY] == [IMAGE_HEIGHT, IMAGE_WIDTH]
 
 
 def test_decode_instance_segmentations_reports_error_for_unparsable_output() -> None:
