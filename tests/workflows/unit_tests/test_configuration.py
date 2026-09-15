@@ -85,7 +85,7 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
     assert configuration.engine.blocks_write_directory is None
     assert configuration.engine.disabled_block_types == ()
     assert configuration.engine.disabled_block_patterns == ()
-    assert configuration.engine.allow_webhook_sink_to_non_global_addresses is False
+    assert configuration.engine.allow_webhook_sink_to_non_global_addresses is True
     assert configuration.tensor.representation_enabled is False
     assert configuration.tensor.image_tensor_device is None
     assert configuration.tensor.visualisation_validate_owners is False

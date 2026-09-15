@@ -66,13 +66,14 @@ for data exchange, notifications, or other integrations.
 ### Supported destinations
 
 * Only `http://` and `https://` URLs are accepted.
-* Destinations must resolve exclusively to public, globally routable unicast addresses.
-  Loopback, private (RFC1918), link-local (including cloud metadata endpoints),
-  CGNAT, reserved, and multicast targets are rejected.
+* Set `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=false` to require
+  destinations to resolve exclusively to public, globally routable unicast addresses.
+  This rejects loopback, private (RFC1918), link-local (including cloud metadata
+  endpoints), CGNAT, reserved, and multicast targets.
 * HTTP redirects are rejected and reported as a failed notification; the
   `Location` header is not followed.
-* Private-network destinations require the host operator to set
-  `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=true`.
+* Non-global destinations are allowed by default to preserve existing self-hosted
+  private-network webhooks.
 
 ### Setting Query Parameters
 You can easily set query parameters for your request:

@@ -118,6 +118,9 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
 def test_execute_request_forwards_payload_to_adapter(monkeypatch) -> None:
     response = _FakeResponse(status_code=200)
     holder = _install_capturing_adapter(monkeypatch, response)
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
 
     result = execute_request(
         url="https://public.example/webhook",
@@ -141,7 +144,7 @@ def test_execute_request_forwards_payload_to_adapter(monkeypatch) -> None:
     # steer resolution outside the validating adapter.
     assert holder["kwargs"]["proxies"] == {}
     assert holder["kwargs"]["stream"] is True
-    assert holder["allow_non_global_addresses"] is False
+    assert holder["allow_non_global_addresses"] is True
     assert response.closed is True
     assert holder["adapter_closed"] is True
 
@@ -192,7 +195,10 @@ def test_execute_request_rejects_unknown_method() -> None:
         "http://[::ffff:127.0.0.1]/x",
     ],
 )
-def test_execute_request_rejects_non_global_ip_literals(url) -> None:
+def test_execute_request_rejects_non_global_ip_literals(url, monkeypatch) -> None:
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
     ok, message = execute_request(
         url=url,
         method="POST",
@@ -214,6 +220,9 @@ def test_execute_request_rejects_non_global_ip_literals(url) -> None:
 def test_execute_request_rejects_public_hostname_that_resolves_privately(
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
     monkeypatch.setattr(
         url_input.socket, "getaddrinfo", _fake_getaddrinfo("169.254.169.254")
     )
@@ -688,13 +697,13 @@ def test_sending_webhook_notification_asynchronously_in_thread_pool_executor() -
     thread_pool_executor.submit.assert_called_once()
 
 
-def test_execute_request_forwards_allow_non_global_when_flag_enabled(
+def test_execute_request_forwards_deny_non_global_when_flag_disabled(
     monkeypatch,
 ) -> None:
     response = _FakeResponse(status_code=200)
     holder = _install_capturing_adapter(monkeypatch, response)
     monkeypatch.setattr(
-        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
     )
 
     execute_request(
@@ -708,4 +717,4 @@ def test_execute_request_forwards_allow_non_global_when_flag_enabled(
         timeout=1,
     )
 
-    assert holder["allow_non_global_addresses"] is True
+    assert holder["allow_non_global_addresses"] is False
