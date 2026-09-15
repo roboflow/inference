@@ -12,6 +12,7 @@ import docker
 from inference_cli.lib.exceptions import DockerConnectionErrorException
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import read_env_file
+from inference_cli.lib import podman_adapter
 
 DEFAULT_BIND_ADDRESS = "127.0.0.1"
 LOOPBACK_BIND_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
@@ -20,15 +21,72 @@ SECURITY_DOCS_URL = (
     "configuration/security"
 )
 
+CONTAINER_RUNTIME_DOCKER = "docker"
+CONTAINER_RUNTIME_PODMAN = "podman"
+CONTAINER_RUNTIME_ENV_VAR = "INFERENCE_CONTAINER_RUNTIME"
+_SUPPORTED_CONTAINER_RUNTIMES = (CONTAINER_RUNTIME_DOCKER, CONTAINER_RUNTIME_PODMAN)
 
-def ensure_docker_is_running() -> None:
+
+def detect_container_runtime() -> str:
+    """Pick the container runtime the CLI drives for this machine.
+
+    Order of precedence:
+
+    1. ``INFERENCE_CONTAINER_RUNTIME`` env var (``docker`` | ``podman``), for
+       explicit control and testing.
+    2. The Docker SDK endpoint that ``docker.from_env()`` connects to. It may
+       be the Podman compatibility socket, which is detected via the
+       ``version()`` components and treated as the podman runtime so GPU
+       requests take the CLI path (the compatibility API ignores
+       ``DeviceRequest`` silently).
+    3. ``podman`` binary on PATH when no Docker endpoint answers.
+
+    Raises:
+        DockerConnectionErrorException: when neither runtime is usable.
+    """
+    override = os.getenv(CONTAINER_RUNTIME_ENV_VAR, "").strip().lower()
+    if override:
+        if override not in _SUPPORTED_CONTAINER_RUNTIMES:
+            raise DockerConnectionErrorException(
+                f"{CONTAINER_RUNTIME_ENV_VAR}={override!r} is not supported. "
+                f"Expected one of: {', '.join(_SUPPORTED_CONTAINER_RUNTIMES)}."
+            )
+        return override
     try:
-        _ = docker.from_env()
-    except docker.errors.DockerException as e:
-        raise DockerConnectionErrorException(
-            "Error connecting to Docker daemon. Is docker installed and running? "
-            "See https://www.docker.com/get-started/ for installation instructions."
-        ) from e
+        client = docker.from_env()
+        if _docker_endpoint_is_podman(client):
+            return CONTAINER_RUNTIME_PODMAN
+        return CONTAINER_RUNTIME_DOCKER
+    except docker.errors.DockerException:
+        if podman_adapter.podman_is_installed():
+            return CONTAINER_RUNTIME_PODMAN
+    raise DockerConnectionErrorException(
+        "Error connecting to Docker daemon and no podman binary was found. "
+        "Install and start Docker (https://www.docker.com/get-started/) or "
+        "podman (https://podman.io/getting-started/installation), or point "
+        "DOCKER_HOST at a running container engine."
+    )
+
+
+def _docker_endpoint_is_podman(client: "docker.DockerClient") -> bool:
+    try:
+        components = client.version().get("Components", [])
+    except docker.errors.DockerException:
+        return False
+    for component in components:
+        if "podman" in str(component.get("Name", "")).lower():
+            return True
+    return False
+
+
+def ensure_container_runtime_is_running() -> None:
+    """Validate that a usable container runtime is reachable."""
+    detect_container_runtime()
+
+
+# Kept as the historical entry point: podman hosts previously failed here
+# before the runtime probe existed.
+ensure_docker_is_running = ensure_container_runtime_is_running
 
 
 def ask_user_to_kill_container(container: Container) -> bool:
@@ -85,6 +143,8 @@ def kill_containers(containers: List[Container]) -> None:
 
 
 def find_running_inference_containers() -> List[Container]:
+    if detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        return podman_adapter.find_running_podman_inference_containers()
     docker_client = docker.from_env()
     containers = []
     for c in docker_client.containers.list():
@@ -237,11 +297,16 @@ def start_inference_container(
     if image is None:
         image = get_image()
 
+    runtime = detect_container_runtime()
+
     device_requests = None
     privileged = False
     docker_run_kwargs = {}
     is_gpu = "gpu" in image and "jetson" not in image
     is_jetson = "jetson" in image
+
+    if runtime == CONTAINER_RUNTIME_PODMAN and is_jetson:
+        raise podman_adapter.PodmanJetsonUnsupportedError()
 
     if is_gpu:
         device_requests = [
@@ -269,6 +334,18 @@ def start_inference_container(
     ports = {str(port): (bind_address, port)}
     if development:
         ports["9002"] = (bind_address, 9002)
+    if runtime == CONTAINER_RUNTIME_PODMAN:
+        podman_adapter.launch_inference_container_with_podman(
+            image=image,
+            development=development,
+            environment=environment,
+            bind_address=bind_address,
+            port=port,
+            volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}, **(volumes or {})},
+            labels=labels if isinstance(labels, dict) else None,
+            require_gpu=is_gpu,
+        )
+        return
     docker_client = docker.from_env()
     docker_client.containers.run(
         image=image,
@@ -394,6 +471,11 @@ Image: {image}
 
 
 def pull_image(image: str, use_local_images: bool = False) -> None:
+    if detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        podman_adapter.pull_image_with_podman(
+            image=image, use_local_images=use_local_images
+        )
+        return
     docker_client = docker.from_env()
     progress_tasks = {}
     try:

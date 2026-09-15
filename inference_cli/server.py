@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.container_adapter import (
-    ensure_docker_is_running,
+    ensure_container_runtime_is_running,
     stop_inference_containers,
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
@@ -109,7 +109,7 @@ def start(
 ) -> None:
 
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
@@ -166,7 +166,7 @@ def start(
 def status() -> None:
     typer.echo("Checking status of the inference server.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
@@ -182,7 +182,7 @@ def status() -> None:
 def stop() -> None:
     typer.echo("Terminating running inference containers.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
