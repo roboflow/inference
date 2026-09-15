@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- The RF-DETR numpy preprocessor swaps BGR to RGB after the PIL resize, on the
+  network-size image, instead of before it on the full-size input. Output is
+  bit-exact. On a 2048x1371 input `pre_process` drops from about 38ms to 22ms.
+
 ---
 
 ## `0.37.0`
