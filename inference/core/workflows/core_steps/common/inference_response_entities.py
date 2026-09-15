@@ -60,6 +60,13 @@ class InferenceResponse(BaseModel):
     )
 
 
+class ResolvedModel(BaseModel):
+    model_id: str
+    model_package_id: str
+    backend: str
+    quantization: str
+
+
 class CvInferenceResponse(InferenceResponse):
     """Computer Vision inference response.
 
@@ -68,6 +75,10 @@ class CvInferenceResponse(InferenceResponse):
     """
 
     image: Union[List[InferenceResponseImage], InferenceResponseImage]
+    resolved_model: Optional[ResolvedModel] = Field(
+        default=None,
+        description="The model package that produced this result. Present when USE_INFERENCE_MODELS is enabled and the loaded model has package metadata. Quantization describes the package, not every runtime operation.",
+    )
 
 
 class WithVisualizationResponse(BaseModel):
