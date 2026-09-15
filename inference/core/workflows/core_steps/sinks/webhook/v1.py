@@ -1,4 +1,6 @@
+import contextlib
 import logging
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from datetime import datetime
@@ -38,6 +40,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.url_input import SSRFProtectedHTTPAdapter
 
 LONG_DESCRIPTION = """
 The **Webhook Sink** block enables sending a data from Workflow into external APIs 
@@ -45,17 +48,27 @@ by sending HTTP requests containing workflow results.
 
 ## How This Block Works
 
-It supports multiple HTTP methods 
+It supports multiple HTTP methods
 (GET, POST, PUT) and can be configured to send:
 
 * JSON payloads
 
 * query parameters
 
-* multipart-encoded files 
+* multipart-encoded files
 
-This block is designed to provide flexibility for integrating workflows with remote systems 
+This block is designed to provide flexibility for integrating workflows with remote systems
 for data exchange, notifications, or other integrations.
+
+### Supported destinations
+
+* Only `http://` and `https://` URLs are accepted.
+* Destinations must resolve exclusively to public, globally routable unicast addresses.
+  Loopback, private (RFC1918), link-local (including cloud metadata endpoints),
+  CGNAT, reserved, and multicast targets are rejected.
+* HTTP redirects are rejected and reported as a failed notification; the
+  `Location` header is not followed.
+* Private-network webhooks are not supported.
 
 ### Setting Query Parameters
 You can easily set query parameters for your request:
@@ -514,7 +527,7 @@ def execute_request(
         )
 
 
-METHOD_TO_HANDLER = {"GET": requests.get, "POST": requests.post, "PUT": requests.put}
+ALLOWED_METHODS = ("GET", "POST", "PUT")
 
 
 def _execute_request(
@@ -527,16 +540,41 @@ def _execute_request(
     multi_part_encoded_files: Dict[str, Any],
     timeout: int,
 ) -> None:
-    handler = METHOD_TO_HANDLER.get(method)
-    if handler is None:
+    if method not in ALLOWED_METHODS:
         raise ValueError(f"Handler for HTTP method `{method}` not registered")
-    response = handler(
-        url,
+    # Reject a backslash in the raw authority before Requests normalises it.
+    # `urlsplit` accepts \ in the netloc, but urllib3 later interprets it as a
+    # path separator, which can smuggle a target past a scheme/host review.
+    if "\\" in urllib.parse.urlsplit(url).netloc:
+        raise ValueError("Webhook URL authority contains a backslash")
+    request = requests.Request(
+        method=method,
+        url=url,
         params=query_parameters,
         headers=headers,
         json=json_payload,
         files=multi_part_encoded_files,
         data=form_data,
-        timeout=timeout,
-    )
-    response.raise_for_status()
+    ).prepare()
+    parsed = urllib.parse.urlsplit(request.url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Webhook requires an HTTP(S) URL with a valid host")
+    # `proxies={}` and calling the adapter directly keep DNS resolution inside
+    # SSRFProtectedHTTPAdapter; environment HTTP(S) proxies must not steer the
+    # destination outside the validating adapter. `stream=True` avoids reading
+    # the body (the block does not consume it), and `allow_redirects` is not
+    # honoured by an adapter's `send()` so a 3xx surfaces here.
+    with contextlib.closing(
+        SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    ) as adapter:
+        with contextlib.closing(
+            adapter.send(
+                request,
+                stream=True,
+                timeout=timeout,
+                proxies={},
+            )
+        ) as response:
+            if 300 <= response.status_code < 400:
+                raise requests.HTTPError("Webhook redirects are not allowed")
+            response.raise_for_status()
