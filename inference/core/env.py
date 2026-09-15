@@ -97,6 +97,12 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
 ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
     os.getenv("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
 )
+# Self-hosted compatibility flag for the Webhook Workflow sink. Defaults to
+# permissive to preserve existing private/LAN webhooks. Hosted deployments set
+# this to False so tenant workflows can only reach publicly-routable addresses.
+ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+)
 # Optional comma-separated denylist of destinations the PostgreSQL Workflow sink
 # may never connect to (IP literals or hostnames). Enforced regardless of the
 # non-global setting above: the raw host and every resolved IP are checked

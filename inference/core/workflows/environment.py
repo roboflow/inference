@@ -40,6 +40,9 @@ ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES = (
 WORKFLOW_BLOCKS_WRITE_DIRECTORY = _CONFIGURATION.engine.blocks_write_directory
 WORKFLOW_DISABLED_BLOCK_TYPES = list(_CONFIGURATION.engine.disabled_block_types)
 WORKFLOW_DISABLED_BLOCK_PATTERNS = list(_CONFIGURATION.engine.disabled_block_patterns)
+ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = (
+    _CONFIGURATION.engine.allow_webhook_sink_to_non_global_addresses
+)
 
 # --- tensor representation ---
 ENABLE_TENSOR_DATA_REPRESENTATION = _CONFIGURATION.tensor.representation_enabled

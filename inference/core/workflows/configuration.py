@@ -49,6 +49,7 @@ class EngineConfiguration:
     # facade re-materialises the `list` the call sites see today.
     disabled_block_types: Tuple[str, ...] = ()
     disabled_block_patterns: Tuple[str, ...] = ()
+    allow_webhook_sink_to_non_global_addresses: bool = True
 
 
 @dataclass(frozen=True)
