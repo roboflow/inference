@@ -110,6 +110,13 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools~=83.0.0"
 
+# Pillow-SIMD (x86-64 only), beside Pillow under /opt so the wheel stays the `PIL` package.
+ARG TARGETARCH
+RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
+      pip3 install --no-cache-dir --no-deps --target /opt/pillow_simd "pillow-simd @ git+https://github.com/uploadcare/pillow-simd.git@633de896bd7b493e03396d31e1a30f04a7a5ea80" && \
+      python3 docker/scripts/verify_pillow_simd.py; \
+    fi
+
 WORKDIR /notebooks
 COPY examples/notebooks .
 
