@@ -3,8 +3,15 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
+from pydantic import BaseModel, Field, ValidationError, field_serializer
 
+from inference.core.workflows.core_steps.common.inference_response_entities import (  # noqa: F401
+    CvInferenceResponse,
+    InferenceResponse,
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    WithVisualizationResponse,
+)
 from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
     InstanceSegmentationBasePrediction,
     InstanceSegmentationPrediction,
@@ -151,72 +158,6 @@ class MultiLabelClassificationPrediction(BaseModel):
     class_id: int = Field(description="Numeric ID associated with the class label")
 
 
-class InferenceResponseImage(BaseModel):
-    """Inference response image information.
-
-    Attributes:
-        width (int): The original width of the image used in inference.
-        height (int): The original height of the image used in inference.
-    """
-
-    width: int = Field(description="The original width of the image used in inference")
-    height: int = Field(
-        description="The original height of the image used in inference"
-    )
-
-
-class InferenceResponse(BaseModel):
-    """Base inference response.
-
-    Attributes:
-        inference_id (Optional[str]): Unique identifier of inference
-        frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
-        time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
-    """
-
-    model_config = ConfigDict(protected_namespaces=())
-    inference_id: Optional[str] = Field(
-        description="Unique identifier of inference", default=None
-    )
-    frame_id: Optional[int] = Field(
-        default=None,
-        description="The frame id of the image used in inference if the input was a video",
-    )
-    time: Optional[float] = Field(
-        default=None,
-        description="The time in seconds it took to produce the predictions including image preprocessing",
-    )
-
-
-class CvInferenceResponse(InferenceResponse):
-    """Computer Vision inference response.
-
-    Attributes:
-        image (Union[List[inference.core.entities.responses.inference.InferenceResponseImage], inference.core.entities.responses.inference.InferenceResponseImage]): Image(s) used in inference.
-    """
-
-    image: Union[List[InferenceResponseImage], InferenceResponseImage]
-
-
-class WithVisualizationResponse(BaseModel):
-    """Response with visualization.
-
-    Attributes:
-        visualization (Optional[Any]): Base64 encoded string containing prediction visualization image data.
-    """
-
-    visualization: Optional[Any] = Field(
-        default=None,
-        description="Base64 encoded string containing prediction visualization image data",
-    )
-
-    @field_serializer("visualization", when_used="json")
-    def serialize_visualisation(self, visualization: Optional[Any]) -> Optional[str]:
-        if visualization is None:
-            return None
-        return base64.b64encode(visualization).decode("utf-8")
-
-
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Object Detection inference response.
 
@@ -243,23 +184,6 @@ class KeypointsDetectionInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):
     predictions: List[KeypointsPrediction]
-
-
-class InstanceSegmentationInferenceResponse(
-    CvInferenceResponse, WithVisualizationResponse
-):
-    """Instance Segmentation inference response.
-
-    Attributes:
-        predictions (List[Union[
-            inference.core.entities.responses.inference.InstanceSegmentationPrediction,
-            inference.core.entities.responses.inference.InstanceSegmentationRLEPrediction
-        ]]): List of instance segmentation predictions.
-    """
-
-    predictions: List[
-        Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
-    ]
 
 
 # Dataclass twins used on the workflow-local fast path in

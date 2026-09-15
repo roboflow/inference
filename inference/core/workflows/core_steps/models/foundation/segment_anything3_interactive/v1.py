@@ -358,7 +358,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [e.to_dict() for e in predictions]
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -426,7 +428,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [e.to_dict() for e in predictions]
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -511,7 +515,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             )
             predictions.append(prediction)
 
-        predictions = [e.to_dict() for e in predictions]
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
