@@ -1,11 +1,12 @@
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference.core.entities.requests.model_selection import ModelSelectionRequest
 
 
-class AddModelRequest(BaseModel):
+class AddModelRequest(ModelSelectionRequest):
     """Request to add a model to the inference server.
 
     Attributes:
@@ -20,7 +21,7 @@ class AddModelRequest(BaseModel):
     api_key: Optional[str] = ApiKey
 
 
-class ClearModelRequest(BaseModel):
+class ClearModelRequest(ModelSelectionRequest):
     """Request to clear a model from the inference server.
 
     Attributes:
@@ -29,3 +30,4 @@ class ClearModelRequest(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
     model_id: str = ModelID
+    api_key: Optional[str] = ApiKey

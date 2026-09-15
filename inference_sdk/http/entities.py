@@ -1,3 +1,5 @@
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -141,6 +143,9 @@ class InferenceConfiguration:
         stroke_width: The stroke width for the inference.
     """
 
+    model_package_id: Optional[str] = None
+    backend: Optional[str] = None
+    quantization: Optional[str] = None
     confidence_threshold: Optional[Confidence] = None
     keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
@@ -184,6 +189,12 @@ class InferenceConfiguration:
     api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
 
     def __post_init__(self) -> None:
+        if self.model_package_id is not None and (
+            self.backend is not None or self.quantization is not None
+        ):
+            raise InvalidParameterError(
+                "model_package_id cannot be combined with backend or quantization."
+            )
         # Normalise the transport to the enum so the client can rely on
         # identity checks. NOTE: this field configures the credential CHANNEL
         # only - it is deliberately absent from every to_*_parameters()
@@ -199,6 +210,13 @@ class InferenceConfiguration:
                 f"Invalid api_key_transport: {self.api_key_transport}. Expected "
                 f"one of: {[transport.value for transport in ApiKeyTransport]}."
             )
+
+    def to_model_selection_parameters(self) -> Dict[str, str]:
+        return {
+            name: value
+            for name in ("model_package_id", "backend", "quantization")
+            if (value := getattr(self, name)) is not None
+        }
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -274,6 +292,9 @@ class InferenceConfiguration:
             Dict[str, Any]: The object detection parameters.
         """
         parameters_specs = [
+            ("model_package_id", "model_package_id"),
+            ("backend", "backend"),
+            ("quantization", "quantization"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -316,6 +337,9 @@ class InferenceConfiguration:
         """
         parameters = self.to_object_detection_parameters()
         parameters_specs = [
+            ("model_package_id", "model_package_id"),
+            ("backend", "backend"),
+            ("quantization", "quantization"),
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
             ("response_mask_format", "response_mask_format"),
@@ -331,6 +355,9 @@ class InferenceConfiguration:
             Dict[str, Any]: The classification parameters.
         """
         parameters_specs = [
+            ("model_package_id", "model_package_id"),
+            ("backend", "backend"),
+            ("quantization", "quantization"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -359,6 +386,9 @@ class InferenceConfiguration:
             Dict[str, Any]: The legacy call parameters.
         """
         parameters_specs = [
+            ("model_package_id", "model_package_id"),
+            ("backend", "backend"),
+            ("quantization", "quantization"),
             ("confidence_threshold", "confidence"),
             ("keypoint_confidence_threshold", "keypoint_confidence"),
             ("format", "format"),
@@ -405,3 +435,18 @@ def get_non_empty_attributes(
         for internal_name, external_name in specification
     }
     return remove_empty_values(dictionary=attributes)
+
+
+def model_selection_cache_key(
+    model_id: str, selectors: dict, api_key: Optional[str] = None
+) -> str:
+    if not selectors:
+        return model_id
+    digest = hashlib.sha256(
+        json.dumps(
+            {"selectors": selectors, "api_key": api_key},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return f"{model_id}:package:{digest}"
