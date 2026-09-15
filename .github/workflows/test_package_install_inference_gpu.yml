@@ -75,7 +75,10 @@ jobs:
           export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
           export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
           export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
-          pip install ./dist/inference_gpu-*-py3-none-any.whl
+          pip install --find-links dist/ ./dist/inference_gpu-*-py3-none-any.whl ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[enterprise]"
+          # Dependencies were resolved above; now replace any same-version
+          # build-environment installs with the exact checkout artifacts.
+          pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |

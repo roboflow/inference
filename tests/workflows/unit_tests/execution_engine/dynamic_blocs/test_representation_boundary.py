@@ -21,10 +21,10 @@ pytest.importorskip("inference_models")
 
 from pycocotools import mask as mask_utils
 
-from inference.core.workflows.core_steps.common.utils import (
+from roboflow_workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.execution_engine.constants import (
+from roboflow_workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
@@ -44,20 +44,20 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_ID_KEY,
     TRACKER_ID_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
     representation_boundary,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicInputDefinition,
     ManifestDescription,
     SelectorType,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     RepresentationBoundaryError,
     convert_kwargs_to_legacy,
     native_detections_to_sv,
@@ -742,23 +742,23 @@ def test_convert_kwargs_empty_batch_passes_through_preserving_type() -> None:
 # Step 3: OUT direction (legacy -> native) + result walker + round trips      #
 # --------------------------------------------------------------------------- #
 
-from inference.core.workflows.core_steps.common.serializers_tensor import (
+from roboflow_workflows.core_steps.common.serializers_tensor import (
     serialise_native_classification,
     serialise_sv_detections,
 )
-from inference.core.workflows.core_steps.common.tensor_native import (
+from roboflow_workflows.core_steps.common.tensor_native import (
     native_detections_to_root_coordinates,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicOutputDefinition,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     classification_dict_to_native,
     convert_block_result_to_native,
     sv_detections_to_native,
     sv_detections_to_native_key_point_prediction,
 )
-from inference.core.workflows.execution_engine.v1.entities import FlowControl
+from roboflow_workflows.execution_engine.v1.entities import FlowControl
 
 
 def _manifest_with_outputs(outputs: dict) -> ManifestDescription:

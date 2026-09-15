@@ -109,8 +109,17 @@ RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src
 
 WORKDIR /app/
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
+COPY workflows workflows
+# Build & install roboflow-workflows from source. Torch 2.4.1/torchvision 0.19.1
+# (Jetson-specific wheels) already satisfy workflows' torch/torchvision
+# constraints so pip does NOT re-resolve them; the install pulls in the
+# pure-Python runtime deps (openai/anthropic/boto3/…) plus fonts + metadata.
+RUN python -m pip install uv \
+    && python workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && python -m pip install --find-links /wheels /wheels/roboflow_workflows-*.whl
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk

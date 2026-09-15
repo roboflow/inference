@@ -56,6 +56,21 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             disabled_block_types=tuple(env.WORKFLOW_DISABLED_BLOCK_TYPES),
             disabled_block_patterns=tuple(env.WORKFLOW_DISABLED_BLOCK_PATTERNS),
             allow_webhook_sink_to_non_global_addresses=env.ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+            allow_postgresql_sink_to_non_global_addresses=env.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+            # env.py leaves these as None when unset / as `set` when the env
+            # var is present. Copy as sorted tuple for frozen equality;
+            # the workflows environment facade reconstructs a `set` for the
+            # sink's containment checks. Empty set stays a `()` tuple.
+            postgresql_sink_blacklisted_addresses=(
+                None
+                if env.POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is None
+                else tuple(sorted(env.POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES))
+            ),
+            postgresql_sink_whitelisted_addresses=(
+                None
+                if env.POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is None
+                else tuple(sorted(env.POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES))
+            ),
         ),
         tensor=TensorConfiguration(
             representation_enabled=env.ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -86,6 +101,7 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             offline_mode=env.OFFLINE_MODE,
             secure_gateway=env.SECURE_GATEWAY,
             gcp_serverless=env.GCP_SERVERLESS,
+            lambda_runtime=env.LAMBDA,
         ),
         fonts=FontsConfiguration(
             allow_download=env.ALLOW_WORKFLOWS_FONTS_DOWNLOAD,

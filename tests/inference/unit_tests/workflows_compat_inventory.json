@@ -1,0 +1,3162 @@
+{
+  "generated_from_revision": "1a9ce2c4218ef0d68c4ae3c1076a3ff3c5095387",
+  "canonical_root_of_core_and_enterprise": "roboflow_workflows",
+  "legacy_core_root": "inference.core.workflows",
+  "legacy_enterprise_root": "inference.enterprise.workflows",
+  "legacy_enterprise_blocks_root": "inference.enterprise.workflows.enterprise_blocks",
+  "packages": [
+    {
+      "legacy": "inference.core.workflows",
+      "canonical": "roboflow_workflows"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps",
+      "canonical": "roboflow_workflows.core_steps"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics",
+      "canonical": "roboflow_workflows.core_steps.analytics"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.data_aggregator",
+      "canonical": "roboflow_workflows.core_steps.analytics.data_aggregator"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.detection_event_log",
+      "canonical": "roboflow_workflows.core_steps.analytics.detection_event_log"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.line_counter",
+      "canonical": "roboflow_workflows.core_steps.analytics.line_counter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.overlap",
+      "canonical": "roboflow_workflows.core_steps.analytics.overlap"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.path_deviation",
+      "canonical": "roboflow_workflows.core_steps.analytics.path_deviation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.velocity",
+      "canonical": "roboflow_workflows.core_steps.analytics.velocity"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache",
+      "canonical": "roboflow_workflows.core_steps.cache"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.cache_get",
+      "canonical": "roboflow_workflows.core_steps.cache.cache_get"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.cache_set",
+      "canonical": "roboflow_workflows.core_steps.cache.cache_set"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv",
+      "canonical": "roboflow_workflows.core_steps.classical_cv"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.auto_rotate_on_edges"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.background_subtraction",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.background_subtraction"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.camera_focus",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.camera_focus"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contours",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contours"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_enhancement",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_enhancement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_equalization",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_equalization"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.convert_grayscale",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.convert_grayscale"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.distance_measurement",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.distance_measurement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.dominant_color",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.dominant_color"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_blur",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_blur"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_preprocessing",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_preprocessing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_area_measurement",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_area_measurement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_edge_snap",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_edge_snap"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.morphological_transformation",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.morphological_transformation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.motion_detection",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.motion_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.pixel_color_count",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.pixel_color_count"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.sift",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.sift"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.sift_comparison",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.sift_comparison"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.size_measurement",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.size_measurement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.template_matching",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.template_matching"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.threshold",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.threshold"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common",
+      "canonical": "roboflow_workflows.core_steps.common"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language",
+      "canonical": "roboflow_workflows.core_steps.common.query_language"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.entities",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.evaluation_engine",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.evaluation_engine"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.evaluation_engine.detection",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.evaluation_engine.detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.introspection",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.introspection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.booleans",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.booleans"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.classification_results",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.classification_results"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.detection",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.detections",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.detections"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.dictionaries",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.dictionaries"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.frame_metadata",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.frame_metadata"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.generic",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.generic"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.images",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.images"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.numbers",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.numbers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.sequences",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.sequences"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.strings",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.strings"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.timestamps",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.timestamps"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control",
+      "canonical": "roboflow_workflows.core_steps.flow_control"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.continue_if",
+      "canonical": "roboflow_workflows.core_steps.flow_control.continue_if"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.delta_filter",
+      "canonical": "roboflow_workflows.core_steps.flow_control.delta_filter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.inner_workflow",
+      "canonical": "roboflow_workflows.core_steps.flow_control.inner_workflow"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.rate_limiter",
+      "canonical": "roboflow_workflows.core_steps.flow_control.rate_limiter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.switch_case",
+      "canonical": "roboflow_workflows.core_steps.flow_control.switch_case"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters",
+      "canonical": "roboflow_workflows.core_steps.formatters"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.csv",
+      "canonical": "roboflow_workflows.core_steps.formatters.csv"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.current_time",
+      "canonical": "roboflow_workflows.core_steps.formatters.current_time"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.expression",
+      "canonical": "roboflow_workflows.core_steps.formatters.expression"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.first_non_empty_or_default",
+      "canonical": "roboflow_workflows.core_steps.formatters.first_non_empty_or_default"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.json_parser",
+      "canonical": "roboflow_workflows.core_steps.formatters.json_parser"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.property_definition",
+      "canonical": "roboflow_workflows.core_steps.formatters.property_definition"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.string_template",
+      "canonical": "roboflow_workflows.core_steps.formatters.string_template"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_classifier",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_classifier"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion",
+      "canonical": "roboflow_workflows.core_steps.fusion"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.buffer",
+      "canonical": "roboflow_workflows.core_steps.fusion.buffer"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_classes_replacement",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_classes_replacement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_consensus",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_consensus"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_difference",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_difference"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_list_rollup",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_list_rollup"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_stitch",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_stitch"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.dimension_collapse",
+      "canonical": "roboflow_workflows.core_steps.fusion.dimension_collapse"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.frame_delay",
+      "canonical": "roboflow_workflows.core_steps.fusion.frame_delay"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.image_stack",
+      "canonical": "roboflow_workflows.core_steps.fusion.image_stack"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.overlap_analysis",
+      "canonical": "roboflow_workflows.core_steps.fusion.overlap_analysis"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.math",
+      "canonical": "roboflow_workflows.core_steps.math"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.math.cosine_similarity",
+      "canonical": "roboflow_workflows.core_steps.math.cosine_similarity"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models",
+      "canonical": "roboflow_workflows.core_steps.models"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation",
+      "canonical": "roboflow_workflows.core_steps.models.foundation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip_comparison",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip_comparison"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.cog_vlm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.cog_vlm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.cosmos3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.cosmos3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.depth_estimation",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.depth_estimation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.easy_ocr",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.easy_ocr"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.flex",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.flex"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.flex.inpainting",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.flex.inpainting"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.florence2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.florence2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.gaze",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.gaze"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.glm_ocr",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.glm_ocr"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemma",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemma"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_vision_ocr",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_vision_ocr"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.kimi_openrouter",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.kimi_openrouter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.llama_vision",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.llama_vision"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.lmm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.lmm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.lmm_classifier",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.lmm_classifier"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.meta_vlm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.meta_vlm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.moondream2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.moondream2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.ocr",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.ocr"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai_compatible",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai_compatible"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openrouter",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openrouter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.perception_encoder",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.perception_encoder"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.pp_ocr",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.pp_ocr"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5_openrouter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5vl",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5vl"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_6_openrouter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3vl",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3vl"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen_vlm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen_vlm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.seg_preview",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.seg_preview"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2_video",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2_video"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_3d",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_3d"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_video",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_video"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything_common",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything_common"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.smolvlm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.smolvlm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.spacexai",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.spacexai"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.image_gen"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.yolo_world",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.yolo_world"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.zai_vlm",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.zai_vlm"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.action_recognition",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.action_recognition"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.semantic_segmentation",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.semantic_segmentation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party",
+      "canonical": "roboflow_workflows.core_steps.models.third_party"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.barcode_detection",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.barcode_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.qr_code_detection",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.qr_code_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling",
+      "canonical": "roboflow_workflows.core_steps.sampling"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_changes",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_changes"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_outliers",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_outliers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.secrets_providers",
+      "canonical": "roboflow_workflows.core_steps.secrets_providers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.secrets_providers.environment_secrets_store",
+      "canonical": "roboflow_workflows.core_steps.secrets_providers.environment_secrets_store"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks",
+      "canonical": "roboflow_workflows.core_steps.sinks"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.email_notification",
+      "canonical": "roboflow_workflows.core_steps.sinks.email_notification"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.local_file",
+      "canonical": "roboflow_workflows.core_steps.sinks.local_file"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.onvif_movement",
+      "canonical": "roboflow_workflows.core_steps.sinks.onvif_movement"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.s3",
+      "canonical": "roboflow_workflows.core_steps.sinks.s3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.slack",
+      "canonical": "roboflow_workflows.core_steps.sinks.slack"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.slack.notification",
+      "canonical": "roboflow_workflows.core_steps.sinks.slack.notification"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.twilio",
+      "canonical": "roboflow_workflows.core_steps.sinks.twilio"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.twilio.sms",
+      "canonical": "roboflow_workflows.core_steps.sinks.twilio.sms"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.webhook",
+      "canonical": "roboflow_workflows.core_steps.sinks.webhook"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers",
+      "canonical": "roboflow_workflows.core_steps.trackers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.botsort",
+      "canonical": "roboflow_workflows.core_steps.trackers.botsort"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.bytetrack",
+      "canonical": "roboflow_workflows.core_steps.trackers.bytetrack"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.ocsort",
+      "canonical": "roboflow_workflows.core_steps.trackers.ocsort"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.sort",
+      "canonical": "roboflow_workflows.core_steps.trackers.sort"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations",
+      "canonical": "roboflow_workflows.core_steps.transformations"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.absolute_static_crop",
+      "canonical": "roboflow_workflows.core_steps.transformations.absolute_static_crop"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.bounding_rect",
+      "canonical": "roboflow_workflows.core_steps.transformations.bounding_rect"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.camera_calibration",
+      "canonical": "roboflow_workflows.core_steps.transformations.camera_calibration"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detection_offset",
+      "canonical": "roboflow_workflows.core_steps.transformations.detection_offset"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_combine",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_combine"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_filter",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_filter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_merge",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_merge"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_transformation",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_transformation"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_crop",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_crop"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_zones",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_zones"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.geotag_detection",
+      "canonical": "roboflow_workflows.core_steps.transformations.geotag_detection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.image_slicer",
+      "canonical": "roboflow_workflows.core_steps.transformations.image_slicer"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.per_class_confidence_filter",
+      "canonical": "roboflow_workflows.core_steps.transformations.per_class_confidence_filter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.perspective_correction",
+      "canonical": "roboflow_workflows.core_steps.transformations.perspective_correction"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.qr_code_generator",
+      "canonical": "roboflow_workflows.core_steps.transformations.qr_code_generator"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.relative_static_crop",
+      "canonical": "roboflow_workflows.core_steps.transformations.relative_static_crop"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stabilize_detections",
+      "canonical": "roboflow_workflows.core_steps.transformations.stabilize_detections"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_images",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_images"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_ocr_detections",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_ocr_detections"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.track_class_lock",
+      "canonical": "roboflow_workflows.core_steps.transformations.track_class_lock"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations",
+      "canonical": "roboflow_workflows.core_steps.visualizations"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.background_color",
+      "canonical": "roboflow_workflows.core_steps.visualizations.background_color"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.blur",
+      "canonical": "roboflow_workflows.core_steps.visualizations.blur"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.bounding_box",
+      "canonical": "roboflow_workflows.core_steps.visualizations.bounding_box"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.circle",
+      "canonical": "roboflow_workflows.core_steps.visualizations.circle"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.classification_label",
+      "canonical": "roboflow_workflows.core_steps.visualizations.classification_label"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.color",
+      "canonical": "roboflow_workflows.core_steps.visualizations.color"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.annotators",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.annotators"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.fonts",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.fonts"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.corner",
+      "canonical": "roboflow_workflows.core_steps.visualizations.corner"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.crop",
+      "canonical": "roboflow_workflows.core_steps.visualizations.crop"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.dot",
+      "canonical": "roboflow_workflows.core_steps.visualizations.dot"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.ellipse",
+      "canonical": "roboflow_workflows.core_steps.visualizations.ellipse"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.grid",
+      "canonical": "roboflow_workflows.core_steps.visualizations.grid"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.halo",
+      "canonical": "roboflow_workflows.core_steps.visualizations.halo"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.heatmap",
+      "canonical": "roboflow_workflows.core_steps.visualizations.heatmap"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.icon",
+      "canonical": "roboflow_workflows.core_steps.visualizations.icon"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.keypoint",
+      "canonical": "roboflow_workflows.core_steps.visualizations.keypoint"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.label",
+      "canonical": "roboflow_workflows.core_steps.visualizations.label"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.line_zone",
+      "canonical": "roboflow_workflows.core_steps.visualizations.line_zone"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.mask",
+      "canonical": "roboflow_workflows.core_steps.visualizations.mask"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.model_comparison",
+      "canonical": "roboflow_workflows.core_steps.visualizations.model_comparison"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.pixelate",
+      "canonical": "roboflow_workflows.core_steps.visualizations.pixelate"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon_zone",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon_zone"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.reference_path",
+      "canonical": "roboflow_workflows.core_steps.visualizations.reference_path"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.rich_label",
+      "canonical": "roboflow_workflows.core_steps.visualizations.rich_label"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.text_display",
+      "canonical": "roboflow_workflows.core_steps.visualizations.text_display"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.trace",
+      "canonical": "roboflow_workflows.core_steps.visualizations.trace"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.triangle",
+      "canonical": "roboflow_workflows.core_steps.visualizations.triangle"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks",
+      "canonical": "roboflow_workflows.enterprise_blocks"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.PLC_modbus"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.PLCethernetIP"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.event_writer",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.event_writer"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.microsoft_sql_server",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.mqtt_writer"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.opc_writer"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.plc",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.plc"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.postgresql",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.postgresql"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine",
+      "canonical": "roboflow_workflows.execution_engine"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.entities",
+      "canonical": "roboflow_workflows.execution_engine.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection",
+      "canonical": "roboflow_workflows.execution_engine.introspection"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.profiling",
+      "canonical": "roboflow_workflows.execution_engine.profiling"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1",
+      "canonical": "roboflow_workflows.execution_engine.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.debugger",
+      "canonical": "roboflow_workflows.execution_engine.v1.debugger"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes",
+      "canonical": "roboflow_workflows.prototypes"
+    },
+    {
+      "legacy": "inference.core.workflows.utils",
+      "canonical": "roboflow_workflows.utils"
+    }
+  ],
+  "modules": [
+    {
+      "legacy": "inference.core.workflows.configuration",
+      "canonical": "roboflow_workflows.configuration"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics._zone_geometry",
+      "canonical": "roboflow_workflows.core_steps.analytics._zone_geometry"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.data_aggregator.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.data_aggregator.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.detection_event_log.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.detection_event_log.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.detection_event_log.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.detection_event_log.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.line_counter.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.line_counter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.line_counter.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.line_counter.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.line_counter.v2",
+      "canonical": "roboflow_workflows.core_steps.analytics.line_counter.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.line_counter.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.line_counter.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.overlap.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.overlap.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.overlap.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.overlap.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.path_deviation.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.path_deviation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.path_deviation.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.path_deviation.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.path_deviation.v2",
+      "canonical": "roboflow_workflows.core_steps.analytics.path_deviation.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.path_deviation.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.path_deviation.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v2",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v3",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.time_in_zone.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.time_in_zone.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.velocity.v1",
+      "canonical": "roboflow_workflows.core_steps.analytics.velocity.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.analytics.velocity.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.analytics.velocity.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.cache_get.v1",
+      "canonical": "roboflow_workflows.core_steps.cache.cache_get.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.cache_set.v1",
+      "canonical": "roboflow_workflows.core_steps.cache.cache_set.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.common",
+      "canonical": "roboflow_workflows.core_steps.cache.common"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.cache.memory_cache",
+      "canonical": "roboflow_workflows.core_steps.cache.memory_cache"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.auto_rotate_on_edges.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.auto_rotate_on_edges.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.background_subtraction.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.background_subtraction.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.camera_focus.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.camera_focus.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.camera_focus.v2",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.camera_focus.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contours.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contours.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_enhancement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_enhancement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_equalization.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.contrast_equalization.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.convert_grayscale.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.convert_grayscale.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.distance_measurement.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.distance_measurement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.distance_measurement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.distance_measurement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.dominant_color.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.dominant_color.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.dominant_color.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.dominant_color.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_blur.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_blur.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_blur.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_blur.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_preprocessing.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.image_preprocessing.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_area_measurement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_edge_snap.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.morphological_transformation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.morphological_transformation.v2",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.morphological_transformation.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.motion_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.motion_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.motion_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.motion_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.pixel_color_count.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.pixel_color_count.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.sift.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.sift.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.sift_comparison.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.sift_comparison.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.sift_comparison.v2",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.sift_comparison.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.size_measurement.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.size_measurement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.size_measurement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.size_measurement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.template_matching.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.template_matching.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.template_matching.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.template_matching.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.threshold.v1",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.threshold.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.classical_cv.threshold.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.classical_cv.threshold.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.deserializers",
+      "canonical": "roboflow_workflows.core_steps.common.deserializers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.deserializers_tensor",
+      "canonical": "roboflow_workflows.core_steps.common.deserializers_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.entities",
+      "canonical": "roboflow_workflows.core_steps.common.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.inference_response_entities",
+      "canonical": "roboflow_workflows.core_steps.common.inference_response_entities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.keypoints",
+      "canonical": "roboflow_workflows.core_steps.common.keypoints"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.openrouter",
+      "canonical": "roboflow_workflows.core_steps.common.openrouter"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.operators",
+      "canonical": "roboflow_workflows.core_steps.common.operators"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.entities.enums",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.entities.enums"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.entities.introspection",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.entities.introspection"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.entities.operations",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.entities.operations"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.entities.types",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.entities.types"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.errors",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.errors"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.evaluation_engine.core",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.evaluation_engine.core"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.evaluation_engine.detection.geometry",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.evaluation_engine.detection.geometry"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.introspection.core",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.introspection.core"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.booleans.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.booleans.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.classification_results.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.classification_results.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.core",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.core"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.detection.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.detection.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.detections.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.detections.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.dictionaries.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.frame_metadata.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.frame_metadata.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.generic.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.generic.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.images.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.images.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.numbers.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.numbers.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.sequences.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.sequences.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.strings.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.strings.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.timestamps.base",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.timestamps.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.query_language.operations.utils",
+      "canonical": "roboflow_workflows.core_steps.common.query_language.operations.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.reasoning",
+      "canonical": "roboflow_workflows.core_steps.common.reasoning"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.rle_compact",
+      "canonical": "roboflow_workflows.core_steps.common.rle_compact"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.segmentation_entities",
+      "canonical": "roboflow_workflows.core_steps.common.segmentation_entities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.serializers",
+      "canonical": "roboflow_workflows.core_steps.common.serializers"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.serializers_tensor",
+      "canonical": "roboflow_workflows.core_steps.common.serializers_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.tensor_native",
+      "canonical": "roboflow_workflows.core_steps.common.tensor_native"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.token_usage",
+      "canonical": "roboflow_workflows.core_steps.common.token_usage"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.utils",
+      "canonical": "roboflow_workflows.core_steps.common.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.utils_tensor",
+      "canonical": "roboflow_workflows.core_steps.common.utils_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.classification",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.classification"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.detection_formats",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.detection_formats"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.detections",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.detections"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.json_extraction",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.json_extraction"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.outputs",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.outputs"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.tensor_native",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.tensor_native"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.utils",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_json",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_json"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlms",
+      "canonical": "roboflow_workflows.core_steps.common.vlms"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.continue_if.v1",
+      "canonical": "roboflow_workflows.core_steps.flow_control.continue_if.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.delta_filter.v1",
+      "canonical": "roboflow_workflows.core_steps.flow_control.delta_filter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.inner_workflow.v1",
+      "canonical": "roboflow_workflows.core_steps.flow_control.inner_workflow.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.rate_limiter.v1",
+      "canonical": "roboflow_workflows.core_steps.flow_control.rate_limiter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.flow_control.switch_case.v1",
+      "canonical": "roboflow_workflows.core_steps.flow_control.switch_case.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.csv.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.csv.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.current_time.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.current_time.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.expression.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.expression.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.first_non_empty_or_default.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.json_parser.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.json_parser.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.property_definition.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.property_definition.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.string_template.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.string_template.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_classifier.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_classifier.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_classifier.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_classifier.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.anthropic_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.anthropic_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.muse_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.muse_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.qwen_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.v1",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.v2",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.formatters.vlm_as_detector.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.formatters.vlm_as_detector.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.buffer.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.buffer.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_classes_replacement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_classes_replacement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_consensus.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_consensus.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_consensus.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_consensus.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_difference.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_difference.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_difference.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_difference.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_list_rollup.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_list_rollup.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_list_rollup.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_list_rollup.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_stitch.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_stitch.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.detections_stitch.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.detections_stitch.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.dimension_collapse.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.dimension_collapse.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.frame_delay.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.frame_delay.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.frame_delay.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.frame_delay.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.image_stack.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.image_stack.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.overlap_analysis.v1",
+      "canonical": "roboflow_workflows.core_steps.fusion.overlap_analysis.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.fusion.overlap_analysis.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.fusion.overlap_analysis.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.loader",
+      "canonical": "roboflow_workflows.core_steps.loader"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.math.cosine_similarity.v1",
+      "canonical": "roboflow_workflows.core_steps.math.cosine_similarity.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.math.cosine_similarity.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.math.cosine_similarity.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.model_capabilities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v5",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip_comparison.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip_comparison.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip_comparison.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip_comparison.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip_comparison.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip_comparison.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.clip_comparison.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.clip_comparison.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.cog_vlm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.cog_vlm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.cosmos3.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.cosmos3.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.depth_estimation.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.depth_estimation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.depth_estimation.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.depth_estimation.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.easy_ocr.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.easy_ocr.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.easy_ocr.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.easy_ocr.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.florence2.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.florence2.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.florence2.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.florence2.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.florence2.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.florence2.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.florence2.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.florence2.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.gaze.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.gaze.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.glm_ocr.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.glm_ocr.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v4",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v5",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v5"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemini.v6",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemini.v6"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemma.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemma.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemma.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemma.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemma.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemma.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_gemma.v4",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_gemma.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.llama_vision.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.llama_vision.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.llama_vision.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.llama_vision.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.lmm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.lmm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.lmm_classifier.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.meta_vlm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.meta_vlm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.meta_vlm.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.meta_vlm.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.meta_vlm.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.meta_vlm.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.moondream2.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.moondream2.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.moondream2.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.moondream2.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.ocr.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.ocr.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.ocr.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.ocr.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v4",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v5",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v5"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v6",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v6"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai.v7",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai.v7"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openai_compatible.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openrouter.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openrouter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openrouter.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openrouter.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.openrouter.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.openrouter.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.perception_encoder.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.perception_encoder.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.perception_encoder.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.perception_encoder.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.pp_ocr.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.pp_ocr.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.pp_ocr.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.pp_ocr.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5_openrouter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3_6_openrouter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3vl.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3vl.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen3vl.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen3vl.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen_vlm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen_vlm.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen_vlm.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen_vlm.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen_vlm.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.qwen_vlm.v4",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.qwen_vlm.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.seg_preview.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.seg_preview.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.seg_preview.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.seg_preview.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_3d.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything_common.prompts"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.segment_anything_common.visual_prompt"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.smolvlm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.smolvlm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.smolvlm.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.smolvlm.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.spacexai.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.spacexai.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.spacexai.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.spacexai.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.spacexai.v3",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.spacexai.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.image_gen.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.yolo_world.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.yolo_world.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.yolo_world.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.yolo_world.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.zai_vlm.v1",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.zai_vlm.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.foundation.zai_vlm.v2",
+      "canonical": "roboflow_workflows.core_steps.models.foundation.zai_vlm.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.action_recognition.entities",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.action_recognition.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.action_recognition.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v4"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.instance_segmentation.v4_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v3",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.object_detection.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.object_detection.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.barcode_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.barcode_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.barcode_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.barcode_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_changes.v1",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_changes.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_changes.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_changes.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_outliers.v1",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_outliers.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sampling.identify_outliers.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.sampling.identify_outliers.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1",
+      "canonical": "roboflow_workflows.core_steps.secrets_providers.environment_secrets_store.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.email_notification.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.email_notification.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.email_notification.v2",
+      "canonical": "roboflow_workflows.core_steps.sinks.email_notification.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.local_file.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.local_file.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.noop",
+      "canonical": "roboflow_workflows.core_steps.sinks.noop"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.onvif_movement.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.onvif_movement.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.onvif_movement.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.sinks.onvif_movement.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.s3.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.s3.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.slack.notification.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.slack.notification.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.twilio.sms.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.twilio.sms.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.twilio.sms.v2",
+      "canonical": "roboflow_workflows.core_steps.sinks.twilio.sms.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.sinks.webhook.v1",
+      "canonical": "roboflow_workflows.core_steps.sinks.webhook.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers._base",
+      "canonical": "roboflow_workflows.core_steps.trackers._base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers._base_tensor",
+      "canonical": "roboflow_workflows.core_steps.trackers._base_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.botsort.v1",
+      "canonical": "roboflow_workflows.core_steps.trackers.botsort.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.botsort.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.trackers.botsort.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.bytetrack.v1",
+      "canonical": "roboflow_workflows.core_steps.trackers.bytetrack.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.bytetrack.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.trackers.bytetrack.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.ocsort.v1",
+      "canonical": "roboflow_workflows.core_steps.trackers.ocsort.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.ocsort.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.trackers.ocsort.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.sort.v1",
+      "canonical": "roboflow_workflows.core_steps.trackers.sort.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.trackers.sort.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.trackers.sort.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.absolute_static_crop.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.absolute_static_crop.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.absolute_static_crop.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.absolute_static_crop.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.bounding_rect.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.bounding_rect.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.bounding_rect.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.bounding_rect.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v2",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v3",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v3"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.byte_tracker.v3_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.byte_tracker.v3_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.camera_calibration.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.camera_calibration.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detection_offset.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.detection_offset.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detection_offset.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.detection_offset.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_combine.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_combine.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_combine.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_combine.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_filter.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_filter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_merge.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_merge.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_merge.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_merge.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.detections_transformation.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.detections_transformation.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_crop.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_crop.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_crop.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_crop.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_zones.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_zones.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.dynamic_zones.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.geotag_detection.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.geotag_detection.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.geotag_detection.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.geotag_detection.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.image_slicer.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.image_slicer.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.image_slicer.v2",
+      "canonical": "roboflow_workflows.core_steps.transformations.image_slicer.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.per_class_confidence_filter.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.per_class_confidence_filter.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.perspective_correction.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.perspective_correction.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.perspective_correction.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.perspective_correction.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.qr_code_generator.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.qr_code_generator.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.relative_static_crop.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.relative_static_crop.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stabilize_detections.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.stabilize_detections.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stabilize_detections.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.stabilize_detections.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_images.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_images.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.stitch_ocr_detections.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.track_class_lock.v1",
+      "canonical": "roboflow_workflows.core_steps.transformations.track_class_lock.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.transformations.track_class_lock.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.transformations.track_class_lock.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.background_color.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.background_color.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.background_color.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.background_color.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.blur.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.blur.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.blur.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.blur.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.bounding_box.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.bounding_box.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.bounding_box.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.circle.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.circle.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.circle.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.circle.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.classification_label.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.classification_label.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.classification_label.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.color.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.color.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.color.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.color.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.annotators.background_color",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.annotators.background_color"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.annotators.halo",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.annotators.halo"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.annotators.model_comparison",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.annotators.model_comparison"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.annotators.polygon",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.annotators.polygon"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.base",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.base"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.base_colorable",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.base_colorable"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.base_colorable_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.base_colorable_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.base_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.base_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.fonts.downloader",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.fonts.downloader"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.fonts.registry",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.fonts.registry"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.fonts.schema",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.fonts.schema"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.label_text",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.label_text"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.common.utils",
+      "canonical": "roboflow_workflows.core_steps.visualizations.common.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.corner.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.corner.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.corner.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.corner.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.crop.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.crop.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.crop.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.crop.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.dot.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.dot.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.dot.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.dot.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.ellipse.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.ellipse.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.ellipse.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.ellipse.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.grid.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.grid.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.halo.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.halo.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.halo.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.halo.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.halo.v2",
+      "canonical": "roboflow_workflows.core_steps.visualizations.halo.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.halo.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.halo.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.heatmap.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.heatmap.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.heatmap.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.heatmap.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.icon.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.icon.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.icon.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.icon.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.keypoint.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.keypoint.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.keypoint.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.keypoint.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.label.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.label.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.label.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.label.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.label.v2",
+      "canonical": "roboflow_workflows.core_steps.visualizations.label.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.label.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.label.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.line_zone.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.line_zone.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.mask.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.mask.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.mask.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.mask.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.model_comparison.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.model_comparison.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.model_comparison.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.model_comparison.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.pixelate.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.pixelate.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.pixelate.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.pixelate.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon.v2",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon.v2"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon.v2_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon.v2_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.polygon_zone.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.polygon_zone.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.reference_path.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.reference_path.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.rich_label.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.rich_label.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.rich_label.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.rich_label.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.text_display.utils",
+      "canonical": "roboflow_workflows.core_steps.visualizations.text_display.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.text_display.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.text_display.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.trace.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.trace.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.trace.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.trace.v1_tensor"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.triangle.v1",
+      "canonical": "roboflow_workflows.core_steps.visualizations.triangle.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.visualizations.triangle.v1_tensor",
+      "canonical": "roboflow_workflows.core_steps.visualizations.triangle.v1_tensor"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.loader",
+      "canonical": "roboflow_workflows.enterprise_blocks.loader"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.PLC_modbus.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.PLCethernetIP.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.event_writer.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.event_writer.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.microsoft_sql_server.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.opc_writer.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.plc.client",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.plc.client"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.plc.direct",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.plc.direct"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.plc.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.plc.v1"
+    },
+    {
+      "legacy": "inference.enterprise.workflows.enterprise_blocks.sinks.postgresql.v1",
+      "canonical": "roboflow_workflows.enterprise_blocks.sinks.postgresql.v1"
+    },
+    {
+      "legacy": "inference.core.workflows.environment",
+      "canonical": "roboflow_workflows.environment"
+    },
+    {
+      "legacy": "inference.core.workflows.errors",
+      "canonical": "roboflow_workflows.errors"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.constants",
+      "canonical": "roboflow_workflows.execution_engine.constants"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.core",
+      "canonical": "roboflow_workflows.execution_engine.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.entities.base",
+      "canonical": "roboflow_workflows.execution_engine.entities.base"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.entities.engine",
+      "canonical": "roboflow_workflows.execution_engine.entities.engine"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.entities.tensor_native_types",
+      "canonical": "roboflow_workflows.execution_engine.entities.tensor_native_types"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.entities.types",
+      "canonical": "roboflow_workflows.execution_engine.entities.types"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.blocks_loader",
+      "canonical": "roboflow_workflows.execution_engine.introspection.blocks_loader"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.connections_discovery",
+      "canonical": "roboflow_workflows.execution_engine.introspection.connections_discovery"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.entities",
+      "canonical": "roboflow_workflows.execution_engine.introspection.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.schema_parser",
+      "canonical": "roboflow_workflows.execution_engine.introspection.schema_parser"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.selectors_parser",
+      "canonical": "roboflow_workflows.execution_engine.introspection.selectors_parser"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.introspection.utils",
+      "canonical": "roboflow_workflows.execution_engine.introspection.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.profiling.core",
+      "canonical": "roboflow_workflows.execution_engine.profiling.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.cache",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.cache"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.core",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.entities",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.graph_constructor",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.graph_constructor"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.graph_traversal",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.graph_traversal"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.reference_type_checker",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.reference_type_checker"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.steps_initialiser",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.steps_initialiser"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.syntactic_parser",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.syntactic_parser"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.utils",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.compiler.validator",
+      "canonical": "roboflow_workflows.execution_engine.v1.compiler.validator"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.core",
+      "canonical": "roboflow_workflows.execution_engine.v1.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.debugger.core",
+      "canonical": "roboflow_workflows.execution_engine.v1.debugger.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.block_scaffolding"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.debug_logs"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.entities",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug",
+      "canonical": "roboflow_workflows.execution_engine.v1.dynamic_blocks.workflow_debug"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.entities",
+      "canonical": "roboflow_workflows.execution_engine.v1.entities"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.core",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.core"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager.branching_manager",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager.branching_manager"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager.execution_cache",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager.execution_cache"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager.manager"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.execution_data_manager.step_input_assembler",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.execution_data_manager.step_input_assembler"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.flow_coordinator",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.flow_coordinator"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.output_constructor",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.output_constructor"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.runtime_input_assembler"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.runtime_input_validator",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.runtime_input_validator"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.executor.utils",
+      "canonical": "roboflow_workflows.execution_engine.v1.executor.utils"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.compiler_bridge"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.composition",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.composition"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.constants",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.constants"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.errors",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.errors"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.inline",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.inline"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution",
+      "canonical": "roboflow_workflows.execution_engine.v1.inner_workflow.reference_resolution"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection.inputs_discovery",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection.inputs_discovery"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection.kinds_schemas",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection.kinds_schemas"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection.kinds_schemas_register",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection.kinds_schemas_register"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection.outputs_discovery",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection.outputs_discovery"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.introspection.types_discovery",
+      "canonical": "roboflow_workflows.execution_engine.v1.introspection.types_discovery"
+    },
+    {
+      "legacy": "inference.core.workflows.execution_engine.v1.step_error_handlers",
+      "canonical": "roboflow_workflows.execution_engine.v1.step_error_handlers"
+    },
+    {
+      "legacy": "inference.core.workflows.offline",
+      "canonical": "roboflow_workflows.offline"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.background_tasks",
+      "canonical": "roboflow_workflows.prototypes.background_tasks"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.block",
+      "canonical": "roboflow_workflows.prototypes.block"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.cache",
+      "canonical": "roboflow_workflows.prototypes.cache"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.image_codec",
+      "canonical": "roboflow_workflows.prototypes.image_codec"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.models_provider",
+      "canonical": "roboflow_workflows.prototypes.models_provider"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.observer",
+      "canonical": "roboflow_workflows.prototypes.observer"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.platform_client",
+      "canonical": "roboflow_workflows.prototypes.platform_client"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.platform_errors",
+      "canonical": "roboflow_workflows.prototypes.platform_errors"
+    },
+    {
+      "legacy": "inference.core.workflows.prototypes.workspace_resolver",
+      "canonical": "roboflow_workflows.prototypes.workspace_resolver"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.action_recognition",
+      "canonical": "roboflow_workflows.utils.action_recognition"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.image_encoding",
+      "canonical": "roboflow_workflows.utils.image_encoding"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.images",
+      "canonical": "roboflow_workflows.utils.images"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.in_memory_cache",
+      "canonical": "roboflow_workflows.utils.in_memory_cache"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.lru_cache",
+      "canonical": "roboflow_workflows.utils.lru_cache"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.text",
+      "canonical": "roboflow_workflows.utils.text"
+    },
+    {
+      "legacy": "inference.core.workflows.utils.url_input",
+      "canonical": "roboflow_workflows.utils.url_input"
+    },
+    {
+      "legacy": "inference.core.workflows.warnings",
+      "canonical": "roboflow_workflows.warnings"
+    }
+  ],
+  "empty_legacy_roots": [
+    "inference.enterprise.workflows"
+  ]
+}
