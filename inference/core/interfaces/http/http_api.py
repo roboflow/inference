@@ -68,6 +68,11 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
     ensure_wire_safe_mask_format,
 )
+from inference.core.entities.requests.model_selection import (
+    ModelSelectionRequest,
+    model_selection_cache_key,
+    model_selection_kwargs,
+)
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
@@ -391,6 +396,7 @@ from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
 )
+from inference_sdk.http.utils.model_selection import MODEL_SELECTION_HEADER
 
 if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
@@ -1557,7 +1563,7 @@ class HttpInterface(BaseInterface):
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
             **kwargs,
-        ) -> InferenceResponse:
+        ) -> Response:
             """Processes an inference request by calling the appropriate model.
 
             Args:
@@ -1573,6 +1579,8 @@ class HttpInterface(BaseInterface):
                 inference_request.api_key = api_key
             ensure_wire_safe_mask_format(inference_request)
             requested_model_id = inference_request.model_id
+            if requested_model_id is None:
+                raise HTTPException(status_code=422, detail="model_id is required.")
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=requested_model_id
             )
@@ -1581,12 +1589,25 @@ class HttpInterface(BaseInterface):
                 if de_aliased_model_id != requested_model_id
                 else None
             )
+            selectors = model_selection_kwargs(inference_request)
+            if selectors and isinstance(inference_request, LMMInferenceRequest):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Model package selection is not supported for LMM requests.",
+                )
+            cache_key = model_selection_cache_key(
+                de_aliased_model_id, selectors, inference_request.api_key
+            )
+            selection_args = (
+                {**selectors, "model_cache_key": cache_key} if selectors else {}
+            )
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
                 model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
+                **selection_args,
             )
             inference_model_id = (
                 requested_model_id
@@ -1594,11 +1615,14 @@ class HttpInterface(BaseInterface):
                 else de_aliased_model_id
             )
             resp = self.model_manager.infer_from_request_sync(
-                inference_model_id,
+                cache_key if selectors else inference_model_id,
                 inference_request,
                 **kwargs,
             )
-            return orjson_response(resp)
+            response = orjson_response(resp)
+            if selectors:
+                response.headers[MODEL_SELECTION_HEADER] = "applied"
+            return response
 
         def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,
@@ -1943,6 +1967,7 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             def model_add(
                 request: AddModelRequest,
+                response: Response,
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1962,12 +1987,26 @@ class HttpInterface(BaseInterface):
                     model_id=request.model_id
                 )
                 logger.info(f"Loading model: {de_aliased_model_id}")
+                selectors = model_selection_kwargs(request)
+                selection_args = (
+                    {
+                        **selectors,
+                        "model_cache_key": model_selection_cache_key(
+                            de_aliased_model_id, selectors, request.api_key
+                        ),
+                    }
+                    if selectors
+                    else {}
+                )
                 self.model_manager.add_model(
                     de_aliased_model_id,
                     request.api_key,
                     countinference=countinference,
                     service_secret=service_secret,
+                    **selection_args,
                 )
+                if selectors:
+                    response.headers[MODEL_SELECTION_HEADER] = "applied"
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -1993,7 +2032,13 @@ class HttpInterface(BaseInterface):
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
-                self.model_manager.remove(de_aliased_model_id)
+                self.model_manager.remove(
+                    model_selection_cache_key(
+                        de_aliased_model_id,
+                        model_selection_kwargs(request),
+                        api_key_override(request.api_key),
+                    )
+                )
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -4621,6 +4666,9 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
+                model_package_id: Optional[str] = Query(None, min_length=1),
+                backend: Optional[str] = Query(None, min_length=1),
+                quantization: Optional[str] = Query(None, min_length=1),
                 confidence: Confidence = Query(
                     0.4,
                     description=(
@@ -4815,15 +4863,34 @@ class HttpInterface(BaseInterface):
                 logger.debug(
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
+                try:
+                    selection = ModelSelectionRequest(
+                        model_package_id=model_package_id,
+                        backend=backend,
+                        quantization=quantization,
+                    )
+                except ValidationError as error:
+                    raise HTTPException(status_code=422, detail=str(error)) from error
+                selectors = model_selection_kwargs(selection)
+                cache_key = model_selection_cache_key(model_id, selectors, api_key)
+                selection_args = (
+                    {**selectors, "model_cache_key": cache_key} if selectors else {}
+                )
                 self.model_manager.add_model(
                     request_model_id,
                     api_key,
                     model_id_alias=model_id,
+                    **selection_args,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
 
-                task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
+                task_type = self.model_manager.get_task_type(cache_key, api_key=api_key)
+                if selectors and task_type == "action-recognition":
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Model package selection is not supported for action recognition requests.",
+                    )
                 if task_type == "action-recognition":
                     # The payload is a clip, so none of the image-shaped
                     # arguments below apply to it. The `image` query parameter
@@ -4850,7 +4917,7 @@ class HttpInterface(BaseInterface):
                     logger.debug("Response ready.")
                     return orjson_response(inference_response)
                 inference_request_type = ObjectDetectionInferenceRequest
-                args = dict()
+                args: Dict[str, Any] = {}
                 if task_type == "instance-segmentation":
                     inference_request_type = InstanceSegmentationInferenceRequest
                     args = {
@@ -4889,10 +4956,11 @@ class HttpInterface(BaseInterface):
                     source_info=source_info,
                     usage_billable=countinference,
                     disable_model_monitoring=disable_model_monitoring,
+                    **selectors,
                     **args,
                 )
                 inference_response = self.model_manager.infer_from_request_sync(
-                    inference_request.model_id,
+                    cache_key,
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
@@ -4902,9 +4970,15 @@ class HttpInterface(BaseInterface):
                     return Response(
                         content=inference_response.visualization,
                         media_type="image/jpeg",
+                        headers=(
+                            {MODEL_SELECTION_HEADER: "applied"} if selectors else None
+                        ),
                     )
                 else:
-                    return orjson_response(inference_response)
+                    response = orjson_response(inference_response)
+                    if selectors:
+                        response.headers[MODEL_SELECTION_HEADER] = "applied"
+                    return response
 
         if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatibility

@@ -41,6 +41,7 @@ from inference_sdk.http.entities import (
     RegisteredModels,
     ServerInfo,
     VideoReference,
+    model_selection_cache_key,
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
@@ -81,6 +82,7 @@ from inference_sdk.http.utils.loaders import (
     load_stream_inference_input,
     uri_is_http_link,
 )
+from inference_sdk.http.utils.model_selection import ensure_model_selection_applied
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     combine_clip_embeddings,
@@ -908,15 +910,20 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = self.list_loaded_models()
+        cache_key = model_selection_cache_key(
+            de_aliased_model_id,
+            self.__inference_configuration.to_model_selection_parameters(),
+            self.__api_key,
+        )
         matching_model = filter_model_descriptions(
             descriptions=registered_models.models,
-            model_id=de_aliased_model_id,
+            model_id=cache_key,
         )
         if matching_model is None and allow_loading is True:
             registered_models = self.load_model(model_id=de_aliased_model_id)
             matching_model = filter_model_descriptions(
                 descriptions=registered_models.models,
-                model_id=de_aliased_model_id,
+                model_id=cache_key,
             )
         if matching_model is not None:
             return matching_model
@@ -944,9 +951,14 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = await self.list_loaded_models_async()
+        cache_key = model_selection_cache_key(
+            de_aliased_model_id,
+            self.__inference_configuration.to_model_selection_parameters(),
+            self.__api_key,
+        )
         matching_model = filter_model_descriptions(
             descriptions=registered_models.models,
-            model_id=de_aliased_model_id,
+            model_id=cache_key,
         )
         if matching_model is None and allow_loading is True:
             registered_models = await self.load_model_async(
@@ -954,7 +966,7 @@ class InferenceHTTPClient:
             )
             matching_model = filter_model_descriptions(
                 descriptions=registered_models.models,
-                model_id=de_aliased_model_id,
+                model_id=cache_key,
             )
         if matching_model is not None:
             return matching_model
@@ -1032,11 +1044,16 @@ class InferenceHTTPClient:
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
+                **self.__inference_configuration.to_model_selection_parameters(),
                 **self.__legacy_api_key_payload(),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
+        ensure_model_selection_applied(
+            response.headers,
+            self.__inference_configuration.to_model_selection_parameters(),
+        )
         response_payload = response.json()
         if set_as_default:
             self.__selected_model = de_aliased_model_id
@@ -1064,6 +1081,7 @@ class InferenceHTTPClient:
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         payload = {
             "model_id": de_aliased_model_id,
+            **self.__inference_configuration.to_model_selection_parameters(),
             **self.__legacy_api_key_payload(),
         }
         async with aiohttp.ClientSession() as session:
@@ -1073,6 +1091,10 @@ class InferenceHTTPClient:
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
+                ensure_model_selection_applied(
+                    response.headers,
+                    self.__inference_configuration.to_model_selection_parameters(),
+                )
                 response_payload = await response.json()
         if set_as_default:
             self.__selected_model = de_aliased_model_id
@@ -1095,10 +1117,15 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        cache_key = model_selection_cache_key(
+            de_aliased_model_id,
+            self.__inference_configuration.to_model_selection_parameters(),
+            self.__api_key,
+        )
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
-                "model_id": de_aliased_model_id,
+                "model_id": cache_key,
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
@@ -1115,11 +1142,16 @@ class InferenceHTTPClient:
     async def unload_model_async(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        cache_key = model_selection_cache_key(
+            de_aliased_model_id,
+            self.__inference_configuration.to_model_selection_parameters(),
+            self.__api_key,
+        )
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/remove",
                 json={
-                    "model_id": de_aliased_model_id,
+                    "model_id": cache_key,
                 },
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:

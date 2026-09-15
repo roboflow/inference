@@ -6,6 +6,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference.core.entities.requests.model_selection import ModelSelectionRequest
 from inference_sdk.http.entities import Confidence
 
 
@@ -74,7 +75,7 @@ class InferenceRequestImage(BaseModel):
     )
 
 
-class CVInferenceRequest(InferenceRequest):
+class CVInferenceRequest(InferenceRequest, ModelSelectionRequest):
     """Computer Vision inference request.
 
     Attributes:
