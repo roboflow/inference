@@ -663,13 +663,13 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             *cls._describe_raw_outputs(),
-            *describe_vlm_prediction_outputs(),
+            *describe_vlm_prediction_outputs(SUPPORTED_TASK_TYPES),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
         return [
             *self._describe_raw_outputs(),
-            *actual_vlm_prediction_outputs(self.task_type),
+            *actual_vlm_prediction_outputs(self.task_type, SUPPORTED_TASK_TYPES),
         ]
 
     @classmethod

@@ -41,11 +41,12 @@ from inference.core.workflows.core_steps.common.vlm_decoding.json_extraction imp
 from inference.core.workflows.core_steps.common.vlm_decoding.outputs import (
     CLASSIFICATION_TASKS,
     DETECTION_TASKS,
-    PREDICTION_KINDS_UNION,
+    LEGACY_PREDICTION_KINDS_UNION,
     SEGMENTATION_TASKS,
     actual_vlm_prediction_outputs,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
+    prediction_kinds_for_tasks,
 )
 from inference.core.workflows.core_steps.common.vlm_decoding.segmentation import (
     INSTANCE_SEGMENTATION_PROMPT_TEMPLATE,
@@ -72,8 +73,8 @@ __all__ = [
     "INSTANCE_SEGMENTATION_PROMPT_TEMPLATE",
     "LABEL_KEYS",
     "NAMED_0_1000_PROMPT_TEMPLATE",
+    "LEGACY_PREDICTION_KINDS_UNION",
     "NAMED_BOX_FIELDS",
-    "PREDICTION_KINDS_UNION",
     "SEGMENTATION_TASKS",
     "XYXY_0_1000_PROMPT_TEMPLATE",
     "XYXY_ABSOLUTE_PROMPT_TEMPLATE",
@@ -101,6 +102,7 @@ __all__ = [
     "get_detection_confidence",
     "parse_multi_class_classification_results",
     "parse_multi_label_classification_results",
+    "prediction_kinds_for_tasks",
     "read_polygon",
     "scale_confidence",
     "tensor_native_carriers_enabled",

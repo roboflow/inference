@@ -27,6 +27,7 @@ from inference.core.workflows.core_steps.common.vlm_decoding import (
     extract_segmentation_entries,
     get_detection_class_name,
     get_detection_confidence,
+    prediction_kinds_for_tasks,
     read_polygon,
     scale_confidence,
 )
@@ -763,9 +764,9 @@ def test_describe_vlm_prediction_outputs() -> None:
         "error_status",
         "inference_id",
     ]
+    # Blocks that do not name their tasks keep the pre-segmentation union.
     assert outputs[0].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
-        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs[1].kind == [BOOLEAN_KIND]
@@ -803,8 +804,39 @@ def test_actual_outputs_keep_union_for_other_tasks() -> None:
     ]
     assert outputs[0].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+
+
+def test_segmentation_kind_is_declared_only_by_blocks_supporting_the_task() -> None:
+    with_segmentation = ["object-detection", "instance-segmentation", "classification"]
+    without_segmentation = ["object-detection", "classification", "ocr"]
+
+    assert describe_vlm_prediction_outputs(with_segmentation)[0].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert describe_vlm_prediction_outputs(without_segmentation)[0].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert actual_vlm_prediction_outputs("unconstrained", with_segmentation)[
+        0
+    ].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert actual_vlm_prediction_outputs("unconstrained", without_segmentation)[
+        0
+    ].kind == [
+        OBJECT_DETECTION_PREDICTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
+    ]
+    assert prediction_kinds_for_tasks(["ocr", "caption"]) == []
+    assert prediction_kinds_for_tasks(["instance-segmentation"]) == [
+        INSTANCE_SEGMENTATION_PREDICTION_KIND
     ]
 
 

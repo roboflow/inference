@@ -28,7 +28,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
@@ -120,7 +119,6 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
-        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs["error_status"] == [BOOLEAN_KIND]
@@ -176,7 +174,6 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
-        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert [output.name for output in BlockManifest.describe_outputs()] == list(outputs)
