@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- The RF-DETR numpy preprocessor resizes through Pillow-SIMD when a build is
+  present under `INFERENCE_MODELS_PILLOW_SIMD_PATH` (default `/opt/pillow_simd`),
+  loaded beside standard Pillow under its own package name. Standard Pillow
+  stays in use when the directory is absent or the build does not load.
+
 ---
 
 ## `0.37.0`

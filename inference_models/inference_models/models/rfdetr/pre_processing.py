@@ -18,7 +18,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-from PIL import Image
 
 from inference_models import PreProcessingOverrides
 from inference_models.entities import ColorFormat, ImageDimensions
@@ -48,6 +47,11 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
 )
 from inference_models.utils.environment import get_integer_from_env
+
+try:
+    from inference_models.models.common.pillow_simd import Image
+except ImportError:  # no build under the path, or one that does not load on this host
+    from PIL import Image
 
 
 def resolve_rfdetr_preprocessor_max_workers(max_workers: Optional[int] = None) -> int:
@@ -337,7 +341,11 @@ def _pre_process_numpy(
             static_crop_offset=static_crop_offset,
         )
 
-    resized = TF.resize(pil, (target_size.height, target_size.width), antialias=True)
+    # Called on the image, not through torchvision: a Pillow-SIMD image is not
+    # a `PIL.Image.Image` instance, and the result is the same PIL bilinear resize.
+    resized = np.array(
+        pil.resize((target_size.width, target_size.height), Image.BILINEAR)
+    )
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
