@@ -1,10 +1,12 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 
 import pytest
+from packaging.version import Version
 
 from inference_models.entities import ResolvedModelMetadata
 from inference_models.models.auto_loaders import (
+    auto_negotiation,
     auto_resolution_cache,
     core,
     model_cache_paths,
@@ -16,6 +18,22 @@ from inference_models.weights_providers.entities import (
     ONNXPackageDetails,
     Quantization,
 )
+
+
+@pytest.fixture(autouse=True)
+def available_onnx_backend(monkeypatch):
+    runtime = replace(
+        core.x_ray_runtime_environment(),
+        onnxruntime_version=Version("1.20.1"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+    )
+    monkeypatch.setattr(core, "x_ray_runtime_environment", lambda: runtime)
+    monkeypatch.setattr(auto_negotiation, "x_ray_runtime_environment", lambda: runtime)
+    monkeypatch.setattr(
+        auto_negotiation,
+        "get_selected_onnx_execution_providers",
+        lambda: ["CPUExecutionProvider"],
+    )
 
 
 @pytest.mark.parametrize("cache_has_backend", [True, False])
@@ -60,7 +78,7 @@ def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
 
     monkeypatch.setattr(core, "get_model_from_provider", unavailable_provider)
 
-    class LegacyMetadataCache(auto_resolution_cache.BaseAutoLoadMetadataCache):
+    class PartialMetadataCache(auto_resolution_cache.BaseAutoLoadMetadataCache):
         def retrieve(self, auto_negotiation_hash):
             entry = super().retrieve(auto_negotiation_hash)
             if entry is not None and not cache_has_backend:
@@ -71,7 +89,7 @@ def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
         "alias/1",
         backend="onnx",
         device="cpu",
-        auto_resolution_cache=LegacyMetadataCache(file_lock_acquire_timeout=1),
+        auto_resolution_cache=PartialMetadataCache(file_lock_acquire_timeout=1),
     )
     assert second is not first
     second_metadata = getattr(second, "resolved_model", None)

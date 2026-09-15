@@ -4,9 +4,10 @@ When `USE_INFERENCE_MODELS=true`, standard computer vision HTTP responses includ
 `resolved_model` if the loaded model has package metadata. The metadata identifies
 the model instance that produced that result.
 
-This requires an `inference-models` release or source installation that provides
-resolved package metadata. Older library versions still load, but responses omit
-the field. Deploy that library version before the updated HTTP server.
+Install an `inference-models` release that provides resolved package metadata.
+Pin the server dependency to that release before you deploy the updated server.
+For source-based testing, install this repository's `inference_models/` package
+into the server environment.
 
 ```json
 {

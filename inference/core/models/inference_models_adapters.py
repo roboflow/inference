@@ -6,7 +6,7 @@ from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Deque, List, Optional, Tuple, Union
+from typing import Any, Deque, List, Optional, Tuple, Union
 from uuid import uuid4
 from weakref import finalize
 
@@ -28,6 +28,7 @@ from inference.core.entities.responses.action_recognition import (
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
+    CvInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
     InferenceResponseImageDC,
@@ -45,6 +46,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
     Point,
     PointDC,
+    ResolvedModel,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
@@ -56,6 +58,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
+    USE_INFERENCE_MODELS,
     VALID_INFERENCE_MODELS_BACKENDS,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
@@ -102,6 +105,7 @@ from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
+from inference_models.entities import ResolvedModelMetadata
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -255,16 +259,38 @@ def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
     return height, width
 
 
-if TYPE_CHECKING:
-    from inference_models.entities import ResolvedModelMetadata
-
-
 class InferenceModelsAdapter(Model):
     _model: Any
 
     @property
-    def resolved_model(self) -> Optional["ResolvedModelMetadata"]:
+    def resolved_model(self) -> Optional[ResolvedModelMetadata]:
         return getattr(self._model, "resolved_model", None)
+
+    def infer_from_request(
+        self, request: InferenceRequest
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
+        responses = super().infer_from_request(request)
+        self._attach_resolved_model_metadata(responses)
+        return responses
+
+    def _attach_resolved_model_metadata(self, responses: Any) -> None:
+        if not USE_INFERENCE_MODELS:
+            return
+        metadata = self.resolved_model
+        if metadata is None:
+            return
+        resolved_model = ResolvedModel(
+            model_id=metadata.model_id,
+            model_package_id=metadata.model_package_id,
+            backend=metadata.backend,
+            quantization=metadata.quantization,
+        )
+        responses = responses if isinstance(responses, list) else [responses]
+        for response in responses:
+            if isinstance(
+                response, (CvInferenceResponse, InstanceSegmentationInferenceResponseDC)
+            ):
+                response.resolved_model = resolved_model
 
 
 class InferenceModelsObjectDetectionAdapter(InferenceModelsAdapter):
@@ -1520,6 +1546,7 @@ class InferenceModelsClassificationAdapter(InferenceModelsAdapter):
         if not isinstance(request.image, list):
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
 

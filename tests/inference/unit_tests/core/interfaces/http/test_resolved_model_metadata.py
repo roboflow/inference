@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Optional
 from unittest.mock import AsyncMock
 
 import numpy as np
@@ -12,7 +13,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.interfaces.http import http_api
 from inference.core.managers import base as manager_module
 from inference.core.managers.base import ModelManager
-from inference.core.models.base import Model
+from inference.core.models import inference_models_adapters as adapters
 from inference.core.registries.base import ModelRegistry
 from inference_models.entities import ResolvedModelMetadata
 from inference_models.utils.content_addressed_artifact_cache import (
@@ -20,28 +21,33 @@ from inference_models.utils.content_addressed_artifact_cache import (
 )
 from inference_sdk import InferenceHTTPClient
 
+RESOLVED_MODEL = ResolvedModelMetadata(
+    model_id="canonical/1",
+    model_package_id="onnxpackage",
+    backend="onnx",
+    quantization="fp32",
+)
 
-class PackageModel(Model):
+
+class PackageModel(adapters.InferenceModelsAdapter):
     task_type = "object-detection"
     model_id = "test/1"
-    resolved_model = ResolvedModelMetadata(
-        model_id="canonical/1",
-        model_package_id="onnxpackage",
-        backend="onnx",
-        quantization="fp32",
-    )
 
-    def infer_from_request(self, request):
+    def __init__(self, metadata: Optional[ResolvedModelMetadata] = RESOLVED_MODEL):
+        self._model = SimpleNamespace()
+        if metadata is not None:
+            self._model.resolved_model = metadata
+
+    def infer(self, image, **kwargs):
         response = ObjectDetectionInferenceResponse(
             image=InferenceResponseImage(width=640, height=480), predictions=[]
         )
-        images = getattr(request, "image", None)
-        if isinstance(images, list):
-            return [response.model_copy() for _ in images]
-        return response
+        images = image if isinstance(image, list) else [image]
+        return [response.model_copy() for _ in images]
 
 
 def build_client(monkeypatch, flag=True, model=None, registry=None):
+    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(manager_module, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(manager_module, "MODELS_CACHE_AUTH_ENABLED", False)
     monkeypatch.setattr(manager_module, "DISABLE_INFERENCE_CACHE", True)
@@ -133,7 +139,10 @@ def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
     )
 
     assert response.status_code == 200, response.text
-    assert response.json() == {
+    payload = response.json()
+    assert payload.pop("time") >= 0
+    payload.pop("inference_id")
+    assert payload == {
         "image": {"width": 640, "height": 480},
         "predictions": [],
     }
@@ -173,12 +182,13 @@ def test_sdk_preserves_http_package_metadata(monkeypatch, requests_mock, api_ver
 
 
 def test_http_response_keeps_serving_package_when_model_is_replaced(monkeypatch):
-    replacement = PackageModel()
-    replacement.resolved_model = ResolvedModelMetadata(
-        model_id="canonical/1",
-        model_package_id="trtpackage",
-        backend="trt",
-        quantization="fp16",
+    replacement = PackageModel(
+        ResolvedModelMetadata(
+            model_id="canonical/1",
+            model_package_id="trtpackage",
+            backend="trt",
+            quantization="fp16",
+        )
     )
     registry = SimpleNamespace(
         get_model=lambda *args, **kwargs: lambda **kwargs: replacement
@@ -205,12 +215,10 @@ def test_http_response_keeps_serving_package_when_model_is_replaced(monkeypatch)
     assert second.json()["resolved_model"]["model_package_id"] == "trtpackage"
 
 
-def test_http_inference_omits_metadata_with_an_older_model_library(monkeypatch):
-    from inference_models import entities as model_entities
-
-    monkeypatch.delattr(model_entities, "ResolvedModelMetadata")
-    monkeypatch.setattr(PackageModel, "resolved_model", None)
-    client, _ = build_client(monkeypatch)
+def test_http_inference_omits_metadata_for_a_model_without_package_identity(
+    monkeypatch,
+):
+    client, _ = build_client(monkeypatch, model=PackageModel(metadata=None))
 
     response = client.post(
         "/infer/object_detection",
@@ -222,3 +230,76 @@ def test_http_inference_omits_metadata_with_an_older_model_library(monkeypatch):
 
     assert response.status_code == 200, response.text
     assert "resolved_model" not in response.json()
+
+
+def test_direct_adapter_response_reports_its_package(monkeypatch):
+    from inference.core.entities.requests.inference import (
+        InferenceRequestImage,
+        ObjectDetectionInferenceRequest,
+    )
+
+    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", True)
+    response = PackageModel().infer_from_request(
+        ObjectDetectionInferenceRequest(
+            id="direct-request",
+            model_id="test/1",
+            image=InferenceRequestImage(type="base64", value="image"),
+        )
+    )
+
+    assert isinstance(response, ObjectDetectionInferenceResponse)
+    assert response.resolved_model is not None
+    assert response.resolved_model.model_package_id == "onnxpackage"
+
+
+def test_classification_adapter_reports_package_with_predictions(monkeypatch):
+    import base64
+
+    import cv2
+    import torch
+
+    from inference.core.entities.requests.inference import (
+        ClassificationInferenceRequest,
+        InferenceRequestImage,
+    )
+    from inference.core.entities.responses.inference import (
+        ClassificationInferenceResponse,
+    )
+    from inference_models import ClassificationPrediction
+
+    class ClassificationBackend:
+        class_names = ["cat", "dog"]
+        resolved_model = RESOLVED_MODEL
+
+        def pre_process(self, images, **kwargs):
+            return np.stack(images)
+
+        def forward(self, images, **kwargs):
+            return torch.tensor([[0.9, 0.1]] * len(images))
+
+        def post_process(self, predictions, **kwargs):
+            return ClassificationPrediction(
+                class_id=predictions.argmax(dim=-1), confidence=predictions
+            )
+
+    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(
+        adapters.AutoModel, "from_pretrained", lambda **kwargs: ClassificationBackend()
+    )
+    model = adapters.InferenceModelsClassificationAdapter("test/1", api_key="test")
+    _, image = cv2.imencode(".png", np.zeros((4, 5, 3), dtype=np.uint8))
+
+    response = model.infer_from_request(
+        ClassificationInferenceRequest(
+            id="classification-request",
+            model_id="test/1",
+            image=InferenceRequestImage(
+                type="base64", value=base64.b64encode(image).decode()
+            ),
+        )
+    )
+
+    assert isinstance(response, ClassificationInferenceResponse)
+    assert response.top == "cat"
+    assert response.resolved_model is not None
+    assert response.resolved_model.model_package_id == "onnxpackage"
