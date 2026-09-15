@@ -9,16 +9,9 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 from twilio.rest import Client
 
-from inference.core.exceptions import (
-    RoboflowAPIForbiddenError,
-    RoboflowAPIUnsuccessfulRequestError,
-)
-from inference.core.roboflow_api import post_to_roboflow_api
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -39,6 +32,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
@@ -47,6 +41,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference.core.workflows.prototypes.platform_errors import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 LONG_DESCRIPTION = """
 The **Twilio SMS/MMS Notification** block allows users to send text and multimedia messages as part of a workflow.
@@ -337,10 +340,11 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         api_key: Optional[str],
         disable_sinks: bool = False,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
@@ -348,10 +352,17 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
         self._disable_sinks = disable_sinks
         self._last_notification_fired: Optional[datetime] = None
         self._clients: Dict[str, Client] = {}
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor", "api_key", "disable_sinks"]
+        return [
+            "background_tasks",
+            "thread_pool_executor",
+            "api_key",
+            "disable_sinks",
+            "platform_client",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -404,6 +415,7 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
             send_sms_handler = partial(
                 send_sms_via_roboflow_proxy,
                 roboflow_api_key=self._api_key,
+                platform_client=self._platform_client,
                 receiver_number=receiver_number,
                 message=message,
                 message_parameters=message_parameters,
@@ -662,6 +674,7 @@ def serialize_media_for_api(
 
 def send_sms_via_roboflow_proxy(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     receiver_number: str,
     message: str,
     message_parameters: Dict[str, Any],
@@ -724,7 +737,7 @@ def send_sms_via_roboflow_proxy(
 
         endpoint = "apiproxy/twilio"
 
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,

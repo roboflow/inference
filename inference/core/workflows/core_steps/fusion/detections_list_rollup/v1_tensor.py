@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
@@ -5,7 +6,6 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_key_points,
     instance_mask_to_numpy,
@@ -47,6 +47,8 @@ from inference.core.workflows.prototypes.block import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 LONG_DESCRIPTION = """
 Rolls up dimensionality from children to parent detections

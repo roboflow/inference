@@ -7,9 +7,9 @@ returned keys to exactly equal its declared actual outputs (see
 even for tasks that decode nothing - it is simply ``None`` at runtime.
 """
 
+import logging
 from typing import Any, List, Optional, Tuple
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.vlm_decoding.classification import (
     decode_classification,
 )
@@ -29,6 +29,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
 )
+
+logger = logging.getLogger(__name__)
 
 DETECTION_TASKS = {"object-detection"}
 CLASSIFICATION_TASKS = {"classification", "multi-label-classification"}

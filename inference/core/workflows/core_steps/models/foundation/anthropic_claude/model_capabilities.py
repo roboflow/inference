@@ -8,10 +8,11 @@ behaviour. Keep it in sync with ``TEMPERATURE_SUPPORTED_MODELS`` in the
 Roboflow API proxy (``app/functions/services/anthropicProxy``).
 """
 
+import logging
 import re
 from typing import Dict, FrozenSet, Optional, Set
 
-from inference.core import logger
+logger = logging.getLogger(__name__)
 
 _MODELS_WITH_LEGACY_CONTROLS: FrozenSet[str] = frozenset(
     {

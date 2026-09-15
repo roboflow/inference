@@ -6,22 +6,18 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.lru_cache import LRUCache
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    post_process_ocr_result,
+)
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    post_process_ocr_result,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -44,6 +40,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference.core.workflows.utils.lru_cache import LRUCache
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
@@ -170,9 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             roboflow_platform_model(
                 model_id=f"easy_ocr/{version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -180,7 +179,7 @@ class BlockManifest(WorkflowBlockManifest):
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -236,24 +235,23 @@ class EasyOCRBlockV1(WorkflowBlock):
 
         predictions = []
         for single_image in images:
-
-            inference_request = EasyOCRInferenceRequest(
-                easy_ocr_version_id=version,
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
-                language_codes=language_codes,
-                quantize=quantize,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
                 core_model="easy_ocr",
+                version_id=version,
+                api_key=self._api_key,
             )
-            result = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
+            predictions.append(
+                self._model_manager.run_easy_ocr(
+                    model_id=model_id,
+                    version_id=version,
+                    image=image,
+                    api_key=self._api_key,
+                    language_codes=language_codes,
+                    quantize=quantize,
+                )
             )
-
-            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
 
         return post_process_ocr_result(
             predictions=predictions,

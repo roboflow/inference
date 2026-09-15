@@ -1,6 +1,5 @@
 from typing import Any, List, Union
 
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     ClassificationProperty,
 )
@@ -11,6 +10,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference_models import (
     ClassificationPrediction,

@@ -21,6 +21,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
+from tests.workflows.unit_tests.execution_engine.dynamic_blocs.test_workspace_resolver import (
+    StubResolver,
+)
 
 
 class _FakeModalExecutor:
@@ -135,9 +138,9 @@ def run_function(self, a, b) -> BlockResult:
     execution_result = workflow_block_instance.run(a=3, b=5)
 
     # then
-    assert workflow_block_class.get_init_parameters() == [
-        "api_key"
-    ], "Expected api_key parameter defined"
+    assert {"api_key", "workspace_resolver", "execution_observer"} <= set(
+        workflow_block_class.get_init_parameters()
+    ), "Expected api_key, workspace_resolver and execution_observer parameters defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"
@@ -171,9 +174,9 @@ def run_function(self, a, b) -> BlockResult:
     execution_result = workflow_block_instance.run(a=3, b=5)
 
     # then
-    assert workflow_block_class.get_init_parameters() == [
-        "api_key"
-    ], "Expected api_key parameters defined"
+    assert {"api_key", "workspace_resolver", "execution_observer"} <= set(
+        workflow_block_class.get_init_parameters()
+    ), "Expected api_key, workspace_resolver and execution_observer parameters defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"
@@ -651,11 +654,13 @@ def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result(
     ), mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
     ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
-    ), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor_instance
     ):
-        result = block_class().run(predictions=_native_od_fixture())
+        stub = StubResolver("test-workspace")
+        result = block_class(workspace_resolver=stub).run(
+            predictions=_native_od_fixture()
+        )
+    assert stub.calls == [None]
 
     # then - inputs leg: executor received sv (the `_type='sv_detections'` arm
     # territory), not native objects
@@ -705,11 +710,11 @@ def test_run_wrapper_modal_arm_is_passthrough_when_flag_off(
     ), mock.patch.object(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
     ), mock.patch.object(
-        block_scaffolding, "get_roboflow_workspace", return_value="test-workspace"
-    ), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor_instance
     ):
-        result = block_class().run(predictions=legacy_input)
+        stub = StubResolver("test-workspace")
+        result = block_class(workspace_resolver=stub).run(predictions=legacy_input)
+    assert stub.calls == [None]
 
     # then - flag-off byte-parity: both legs are is-identity
     sent_inputs = executor_instance.execute_remote.call_args.kwargs["inputs"]

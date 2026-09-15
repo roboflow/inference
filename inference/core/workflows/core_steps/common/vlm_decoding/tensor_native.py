@@ -38,7 +38,7 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
 )

@@ -1,3 +1,4 @@
+import logging
 import traceback
 from collections import defaultdict
 from concurrent.futures import Future
@@ -8,14 +9,13 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core import logger
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_to_root_coordinates,
 )
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
@@ -53,6 +53,8 @@ from inference_models.models.base.keypoints_detection import (
     KeyPoints as NativeKeyPoints,
 )
 from inference_models.models.base.object_detection import Detections as NativeDetections
+
+logger = logging.getLogger(__name__)
 
 
 def construct_workflow_output(

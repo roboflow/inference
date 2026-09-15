@@ -17,10 +17,10 @@ import cv2
 import torch
 from pydantic import ConfigDict
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,

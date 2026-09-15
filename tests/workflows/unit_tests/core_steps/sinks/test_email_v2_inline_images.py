@@ -15,6 +15,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def test_format_email_message_html_with_single_inline_image() -> None:
@@ -207,6 +217,7 @@ def test_v2_smtp_mode_with_inline_image(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -263,6 +274,7 @@ def test_v2_smtp_mode_with_inline_and_attachment_images(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -313,6 +325,7 @@ def test_v2_smtp_html_support_without_images(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -371,6 +384,7 @@ def test_v2_smtp_mode_with_multiple_inline_images(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -419,6 +433,7 @@ def test_v2_smtp_mode_preserves_html_formatting(
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_roboflow_key",
+        platform_client=platform_client,
     )
 
     # when

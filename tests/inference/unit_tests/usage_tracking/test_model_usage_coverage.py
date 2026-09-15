@@ -91,11 +91,14 @@ MODELS_DECORATING_INFER_FROM_REQUEST = [
 
 # Video trackers load ``AutoModel`` in the block and never go through
 # ModelManager, so the block's tracked entrypoint must emit the model-category
-# row. SAM3 tracks ``_tracked_run`` so that ``run()`` can first swap in the
-# visual model id the decorator should attribute usage to.
-# Tensor-native siblings (v1_tensor.py) are not decorated; they currently
-# emit no model-category row under ENABLE_TENSOR_DATA_REPRESENTATION.
-BLOCKS_DECORATING_RUN = [
+# row. It does so through the workflows `ExecutionObserver` rather than the
+# decorator - workflows no longer imports usage tracking - so the check is that
+# the method routes through `observe_model_run` and that the block declares the
+# observer as an init parameter. SAM3 tracks `_tracked_run` so that `run()` can
+# first swap in the visual model id the row should be attributed to.
+# Tensor-native siblings (v1_tensor.py) are not observed; they currently emit
+# no model-category row under ENABLE_TENSOR_DATA_REPRESENTATION.
+BLOCKS_OBSERVING_MODEL_RUN = [
     (
         "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1",
         "SegmentAnything2VideoBlockV1",
@@ -184,9 +187,64 @@ def test_model_infer_from_request_is_usage_collected(module_path, class_name):
     _assert_method_is_usage_collected(module_path, class_name, "infer_from_request")
 
 
-@pytest.mark.parametrize("module_path, class_name, method_name", BLOCKS_DECORATING_RUN)
-def test_video_block_run_is_usage_collected(module_path, class_name, method_name):
-    _assert_method_is_usage_collected(module_path, class_name, method_name)
+def _class_method_calls_observe_model_run(
+    source: str, class_name: str, method_name: str
+) -> bool:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef) or item.name != method_name:
+                continue
+            return any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "observe_model_run"
+                for call in ast.walk(item)
+            )
+    return False
+
+
+def _class_declares_observer_init_parameter(source: str, class_name: str) -> bool:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef):
+                continue
+            if item.name != "get_init_parameters":
+                continue
+            return any(
+                isinstance(constant, ast.Constant)
+                and constant.value == "execution_observer"
+                for constant in ast.walk(item)
+            )
+    return False
+
+
+@pytest.mark.parametrize(
+    "module_path, class_name, method_name", BLOCKS_OBSERVING_MODEL_RUN
+)
+def test_video_block_run_reports_a_model_row(module_path, class_name, method_name):
+    source_path = _module_source_path(module_path)
+    source = source_path.read_text()
+
+    assert _class_method_calls_observe_model_run(source, class_name, method_name), (
+        f"{class_name}.{method_name}() in {source_path} must route through "
+        "self._execution_observer.observe_model_run(...)"
+    )
+    assert _class_declares_observer_init_parameter(source, class_name), (
+        f"{class_name} in {source_path} must declare 'execution_observer' in "
+        "get_init_parameters(), or it will be handed the null observer"
+    )
+
+
+def test_observer_detection_helper_rejects_an_unobserved_method():
+    source = "class Fake:\n    def run(self, images, model_id):\n        return None\n"
+
+    assert not _class_method_calls_observe_model_run(source, "Fake", "run")
 
 
 def test_detection_helper_rejects_undecorated_function():

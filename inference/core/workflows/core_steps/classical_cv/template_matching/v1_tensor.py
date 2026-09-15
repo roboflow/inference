@@ -7,10 +7,10 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,

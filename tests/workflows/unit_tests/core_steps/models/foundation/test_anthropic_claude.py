@@ -36,6 +36,16 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     execute_claude_request as execute_claude_request_v4,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def test_claude_step_validation_when_input_is_valid() -> None:
@@ -863,6 +873,7 @@ def test_direct_request_keeps_legacy_controls_for_legacy_model(
         # when - thinking off, temperature on
         execute_request(
             roboflow_api_key=None,
+            platform_client=platform_client,
             anthropic_api_key="sk-ant-test",
             system_prompt=None,
             messages=[{"role": "user", "content": "Hello"}],
@@ -877,6 +888,7 @@ def test_direct_request_keeps_legacy_controls_for_legacy_model(
         # when - thinking on with an explicit budget
         execute_request(
             roboflow_api_key=None,
+            platform_client=platform_client,
             anthropic_api_key="sk-ant-test",
             system_prompt=None,
             messages=[{"role": "user", "content": "Think"}],
@@ -914,6 +926,7 @@ def test_direct_request_translates_controls_for_new_generation_model(
         # when - temperature configured, thinking off
         execute_request(
             roboflow_api_key=None,
+            platform_client=platform_client,
             anthropic_api_key="sk-ant-test",
             system_prompt=None,
             messages=[{"role": "user", "content": "Hello"}],
@@ -928,6 +941,7 @@ def test_direct_request_translates_controls_for_new_generation_model(
         # when - thinking on with a budget the model cannot take
         execute_request(
             roboflow_api_key=None,
+            platform_client=platform_client,
             anthropic_api_key="sk-ant-test",
             system_prompt=None,
             messages=[{"role": "user", "content": "Think"}],
@@ -964,36 +978,36 @@ PROXY_RESPONSE = {
 def test_proxied_request_keeps_legacy_controls_for_legacy_model(
     execute_request: Any, module: str
 ) -> None:
-    with patch(
-        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.post_to_roboflow_api",
-        return_value=PROXY_RESPONSE,
-    ) as post_mock:
-        # when
-        execute_request(
-            roboflow_api_key="rf-key",
-            anthropic_api_key="rf_key:account",
-            system_prompt="sys",
-            messages=[{"role": "user", "content": "Hello"}],
-            model_version=LEGACY_MODEL,
-            max_tokens=100,
-            temperature=0.4,
-            extended_thinking=None,
-            thinking_budget_tokens=None,
-        )
-        plain_payload = post_mock.call_args.kwargs["payload"]
+    post_mock = platform_client.post_mock
+    post_mock.return_value = PROXY_RESPONSE
+    # when
+    execute_request(
+        roboflow_api_key="rf-key",
+        platform_client=platform_client,
+        anthropic_api_key="rf_key:account",
+        system_prompt="sys",
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=LEGACY_MODEL,
+        max_tokens=100,
+        temperature=0.4,
+        extended_thinking=None,
+        thinking_budget_tokens=None,
+    )
+    plain_payload = post_mock.call_args.kwargs["payload"]
 
-        execute_request(
-            roboflow_api_key="rf-key",
-            anthropic_api_key="rf_key:account",
-            system_prompt=None,
-            messages=[{"role": "user", "content": "Think"}],
-            model_version=LEGACY_MODEL,
-            max_tokens=None,
-            temperature=0.4,
-            extended_thinking=True,
-            thinking_budget_tokens=None,
-        )
-        thinking_payload = post_mock.call_args.kwargs["payload"]
+    execute_request(
+        roboflow_api_key="rf-key",
+        platform_client=platform_client,
+        anthropic_api_key="rf_key:account",
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Think"}],
+        model_version=LEGACY_MODEL,
+        max_tokens=None,
+        temperature=0.4,
+        extended_thinking=True,
+        thinking_budget_tokens=None,
+    )
+    thinking_payload = post_mock.call_args.kwargs["payload"]
 
     # then
     assert plain_payload["model"] == LEGACY_MODEL
@@ -1015,36 +1029,36 @@ def test_proxied_request_keeps_legacy_controls_for_legacy_model(
 def test_proxied_request_translates_controls_for_new_generation_model(
     execute_request: Any, module: str
 ) -> None:
-    with patch(
-        f"inference.core.workflows.core_steps.models.foundation.anthropic_claude.{module}.post_to_roboflow_api",
-        return_value=PROXY_RESPONSE,
-    ) as post_mock:
-        # when
-        execute_request(
-            roboflow_api_key="rf-key",
-            anthropic_api_key="rf_key:account",
-            system_prompt=None,
-            messages=[{"role": "user", "content": "Hello"}],
-            model_version=NEW_GENERATION_MODEL,
-            max_tokens=100,
-            temperature=0.4,
-            extended_thinking=None,
-            thinking_budget_tokens=None,
-        )
-        plain_payload = post_mock.call_args.kwargs["payload"]
+    post_mock = platform_client.post_mock
+    post_mock.return_value = PROXY_RESPONSE
+    # when
+    execute_request(
+        roboflow_api_key="rf-key",
+        platform_client=platform_client,
+        anthropic_api_key="rf_key:account",
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Hello"}],
+        model_version=NEW_GENERATION_MODEL,
+        max_tokens=100,
+        temperature=0.4,
+        extended_thinking=None,
+        thinking_budget_tokens=None,
+    )
+    plain_payload = post_mock.call_args.kwargs["payload"]
 
-        execute_request(
-            roboflow_api_key="rf-key",
-            anthropic_api_key="rf_key:account",
-            system_prompt=None,
-            messages=[{"role": "user", "content": "Think"}],
-            model_version=NEW_GENERATION_MODEL,
-            max_tokens=None,
-            temperature=None,
-            extended_thinking=True,
-            thinking_budget_tokens=5000,
-        )
-        thinking_payload = post_mock.call_args.kwargs["payload"]
+    execute_request(
+        roboflow_api_key="rf-key",
+        platform_client=platform_client,
+        anthropic_api_key="rf_key:account",
+        system_prompt=None,
+        messages=[{"role": "user", "content": "Think"}],
+        model_version=NEW_GENERATION_MODEL,
+        max_tokens=None,
+        temperature=None,
+        extended_thinking=True,
+        thinking_budget_tokens=5000,
+    )
+    thinking_payload = post_mock.call_args.kwargs["payload"]
 
     # then
     assert plain_payload["model"] == NEW_GENERATION_MODEL
