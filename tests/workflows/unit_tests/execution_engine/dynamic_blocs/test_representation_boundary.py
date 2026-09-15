@@ -378,6 +378,35 @@ def test_native_detections_to_sv_handles_plain_and_empty_detections() -> None:
     assert len(converted_empty) == 0
 
 
+def test_sv_detections_to_native_keeps_image_dimensions_for_empty_detections() -> None:
+    # given - a zero-row result carrying the image dimensions in metadata, the
+    # shape empty_detections_with_image_metadata() produces (issue #2974)
+    empty = sv.Detections.empty()
+    empty.metadata[IMAGE_DIMENSIONS_KEY] = [480, 640]
+
+    # when
+    result = sv_detections_to_native(sv_detections=empty)
+
+    # then
+    assert result.xyxy.shape[0] == 0
+    assert result.image_metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+
+
+def test_sv_detections_to_native_reads_array_image_dimensions_for_empty_detections() -> (
+    None
+):
+    # given
+    empty = sv.Detections.empty()
+    empty.metadata[IMAGE_DIMENSIONS_KEY] = np.array([480, 640])
+
+    # when
+    result = sv_detections_to_native(sv_detections=empty)
+
+    # then - plain ints, like the row-based rebuild emits
+    assert result.image_metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert all(isinstance(v, int) for v in result.image_metadata[IMAGE_DIMENSIONS_KEY])
+
+
 def test_convert_kwargs_is_identity_when_tensor_representation_off() -> None:
     # given
     kwargs = {"predictions": _native_object_detections(), "threshold": 0.5}
