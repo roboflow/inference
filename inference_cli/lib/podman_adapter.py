@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from inference_cli.lib.exceptions import CLIError
 from inference_cli.lib.logger import CLI_LOGGER
@@ -29,6 +29,14 @@ class PodmanContainer:
             text=True,
         )
 
+    def logs(self, tail: int = 10) -> bytes:
+        result = subprocess.run(
+            ["podman", "logs", "--tail", str(tail), self.id],
+            check=True,
+            capture_output=True,
+        )
+        return result.stdout + result.stderr
+
 
 class _PodmanImage:
     def __init__(self, tags: List[str]) -> None:
@@ -43,6 +51,15 @@ def find_running_podman_inference_containers() -> List[PodmanContainer]:
     """Return running podman containers whose image tag marks them as an
     inference server, matching the same rule the docker path applies
     (image tag prefix ``roboflow/roboflow-inference-server``)."""
+    return find_running_podman_containers(
+        predicate=lambda image: _is_inference_server_image(image)
+    )
+
+
+def find_running_podman_containers(
+    predicate,
+) -> List[PodmanContainer]:
+    """Return running podman containers whose image satisfies ``predicate``."""
     output = subprocess.run(
         ["podman", "ps", "--all", "--format", "{{json .}}"],
         check=True,
@@ -57,7 +74,7 @@ def find_running_podman_inference_containers() -> List[PodmanContainer]:
         if str(row.get("State", "")).lower() != "running":
             continue
         image_name = row.get("Image", "")
-        if not _is_inference_server_image(image_name):
+        if not predicate(image_name):
             continue
         containers.append(_as_container(row))
     return containers
@@ -129,10 +146,10 @@ def _cdi_search_directories() -> List[Path]:
         "XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")
     )
     return [
-        Path(data_home) / "containers" / "cdi",
-        Path("/etc/containers/cdi"),
-        Path("/run/cdi"),
+        Path("/etc/cdi"),
         Path("/var/run/cdi"),
+        Path("/run/cdi"),
+        Path(data_home) / "containers" / "cdi",
     ]
 
 
@@ -194,7 +211,16 @@ def build_podman_launch_command(
     command = ["podman", "run", "--detach"]
     command += ["--memory", "4g", "--memory-swap", "6g", "--cpu-shares", "1024"]
     command += ["--security-opt", "no-new-privileges"]
-    command += ["--cap-drop", "ALL", "--cap-add", "NET_BIND_SERVICE"]
+    cap_add = ["NET_BIND_SERVICE"]
+    if device_requests:
+        # Mirror the docker launch path, which adds SYS_ADMIN for GPU images.
+        cap_add.append("SYS_ADMIN")
+        # Device groups from the host must stay visible inside the container on
+        # rootless podman, or CDI-provided device nodes can be inaccessible.
+        command += ["--group-add", "keep-groups"]
+    command += ["--cap-drop", "ALL"]
+    for cap in cap_add:
+        command += ["--cap-add", cap]
     command += ["--read-only", "--network", "bridge", "--ipc", "private"]
     for entry in environment + extra_environment:
         command += ["-e", entry]
@@ -213,10 +239,47 @@ def build_podman_launch_command(
         if cdi_spec is None:
             raise PodmanGPUNotConfiguredError(image=image)
         spec_path, device = cdi_spec
+        _warn_if_selinux_devices_denied()
         CLI_LOGGER.info(f"Attaching GPUs via CDI spec {spec_path} ({device}).")
         command += ["--device", device]
         return command, "cdi"
     return command, "none"
+
+
+def _warn_if_selinux_devices_denied() -> None:
+    """SELinux enforcing with container_use_devices off can deny rootless
+    CDI device injection at container creation. Warn instead of failing: the
+    boolean is not the only path (typed policy may allow it), and podman
+    surfaces a hard error at creation if the mount is truly denied."""
+    getenforce = shutil.which("getenforce")
+    if getenforce is None:
+        return None
+    try:
+        enforcing = (
+            subprocess.run(
+                [getenforce], check=True, capture_output=True, text=True
+            ).stdout.strip()
+            == "Enforcing"
+        )
+        if not enforcing:
+            return None
+        getsebool = shutil.which("getsebool")
+        if getsebool is None:
+            return None
+        bool_out = subprocess.run(
+            [getsebool, "container_use_devices"],
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    if "off" in bool_out:
+        CLI_LOGGER.warn(
+            "SELinux is enforcing and the container_use_devices boolean is off. "
+            "Rootless podman may refuse CDI GPU devices. If startup fails with a "
+            "permission error, enable it (sudo setsebool -P container_use_devices 1) "
+            "or see the podman NVIDIA GPU guide."
+        )
 
 
 class PodmanGPUNotConfiguredError(CLIError):
@@ -248,13 +311,15 @@ def launch_inference_container_with_podman(
     bind_address: str,
     port: int,
     volumes: Dict[str, dict],
-    labels: Optional[Dict[str, str]] = None,
+    labels: Optional[Union[Dict[str, str], List[str]]] = None,
     require_gpu: bool = False,
     require_jetson: bool = False,
 ) -> None:
     if require_jetson:
         raise PodmanJetsonUnsupportedError()
     device_requests = ["nvidia.com/gpu=all"] if require_gpu else None
+    if isinstance(labels, dict):
+        labels = [f"{key}={value}" for key, value in labels.items()]
     command, _ = build_podman_launch_command(
         image=image,
         development=development,
@@ -263,7 +328,7 @@ def launch_inference_container_with_podman(
         bind_address=bind_address,
         port=port,
         volumes=volumes,
-        labels=[f"{k}={v}" for k, v in (labels or {}).items()],
+        labels=labels,
         device_requests=device_requests,
     )
     subprocess.run(command, check=True)

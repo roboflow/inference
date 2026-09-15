@@ -51,6 +51,22 @@ def detect_container_runtime() -> str:
                 f"{CONTAINER_RUNTIME_ENV_VAR}={override!r} is not supported. "
                 f"Expected one of: {', '.join(_SUPPORTED_CONTAINER_RUNTIMES)}."
             )
+        if override == CONTAINER_RUNTIME_PODMAN and not podman_adapter.podman_is_installed():
+            raise DockerConnectionErrorException(
+                f"{CONTAINER_RUNTIME_ENV_VAR}=podman was requested but the podman "
+                "binary was not found on PATH. Install podman "
+                "(https://podman.io/getting-started/installation) or unset the "
+                "override."
+            )
+        if override == CONTAINER_RUNTIME_DOCKER:
+            try:
+                docker.from_env().ping()
+            except docker.errors.DockerException as error:
+                raise DockerConnectionErrorException(
+                    f"{CONTAINER_RUNTIME_ENV_VAR}=docker was requested but the "
+                    "Docker daemon is not reachable. Start Docker or unset the "
+                    "override to auto-detect the runtime."
+                ) from error
         return override
     try:
         client = docker.from_env()

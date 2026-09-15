@@ -46,7 +46,7 @@ class TestDetectContainerRuntime:
         with mock.patch.dict(
             container_adapter.os.environ,
             {container_adapter.CONTAINER_RUNTIME_ENV_VAR: "podman"},
-        ):
+        ), mock.patch.object(podman_adapter, "podman_is_installed", return_value=True):
             assert (
                 container_adapter.detect_container_runtime()
                 == container_adapter.CONTAINER_RUNTIME_PODMAN
@@ -59,6 +59,28 @@ class TestDetectContainerRuntime:
         ):
             with pytest.raises(DockerConnectionErrorException):
                 container_adapter.detect_container_runtime()
+
+    def test_podman_override_requires_binary(self) -> None:
+        with mock.patch.dict(
+            container_adapter.os.environ,
+            {container_adapter.CONTAINER_RUNTIME_ENV_VAR: "podman"},
+        ), mock.patch.object(
+            podman_adapter, "podman_is_installed", return_value=False
+        ):
+            with pytest.raises(DockerConnectionErrorException):
+                container_adapter.detect_container_runtime()
+
+    def test_docker_override_requires_daemon(self) -> None:
+        with mock.patch.dict(
+            container_adapter.os.environ,
+            {container_adapter.CONTAINER_RUNTIME_ENV_VAR: "docker"},
+        ), mock.patch("docker.from_env") as from_env_mock:
+            import docker as real_docker
+
+            from_env_mock.side_effect = real_docker.errors.DockerException()
+            with pytest.raises(DockerConnectionErrorException):
+                container_adapter.detect_container_runtime()
+
 
     @mock.patch.object(container_adapter, "docker")
     def test_plain_docker_endpoint_returns_docker(self, docker_mock: MagicMock) -> None:
@@ -102,6 +124,38 @@ class TestDetectContainerRuntime:
         from_env_mock.side_effect = real_docker.errors.DockerException()
         with pytest.raises(DockerConnectionErrorException):
             container_adapter.detect_container_runtime()
+
+
+class TestGpuLaunchExtras:
+    def test_gpu_command_adds_sys_admin_and_keep_groups(self) -> None:
+        with mock.patch.object(
+            podman_adapter, "find_cdi_spec", return_value=(mock.MagicMock(), "nvidia.com/gpu=all")
+        ), mock.patch.object(
+            podman_adapter, "_warn_if_selinux_devices_denied", return_value=None
+        ):
+            command, _ = build_podman_launch_command(
+                image="roboflow/roboflow-inference-server-gpu:latest",
+                development=False,
+                environment=["PORT=9001"],
+                extra_environment=[],
+                bind_address="127.0.0.1",
+                port=9001,
+                volumes={},
+                device_requests=["nvidia.com/gpu=all"],
+            )
+        assert "--cap-add" in command and "SYS_ADMIN" in command
+        assert "keep-groups" in command
+
+
+class TestPodmanContainerLogs:
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_logs_returns_combined_streams(self, run_mock: MagicMock) -> None:
+        run_mock.return_value = MagicMock(stdout=b"ok", stderr=b"")
+        container = podman_adapter.PodmanContainer(id="c1", attrs={}, image_tags=[])
+        assert container.logs(tail=10) == b"ok"
+        run_mock.assert_called_once_with(
+            ["podman", "logs", "--tail", "10", "c1"], check=True, capture_output=True
+        )
 
 
 class TestFindRunningPodmanInferenceContainers:
@@ -149,6 +203,10 @@ class TestFindRunningPodmanInferenceContainers:
 
 
 class TestFindCdiSpec:
+    def test_default_search_directories_include_etc_cdi(self) -> None:
+        directories = [str(d) for d in podman_adapter._cdi_search_directories()]
+        assert "/etc/cdi" in directories
+
     def test_nvidia_kind_spec_yields_all_devices(self, tmp_path) -> None:
         spec = tmp_path / "nvidia.yaml"
         spec.write_text('---\ncdiVersion: "0.7.0"\nkind: nvidia.com/gpu\ndevices: []\n')
