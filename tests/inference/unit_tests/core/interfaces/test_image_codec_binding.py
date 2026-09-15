@@ -27,8 +27,12 @@ and the real CLI function `_run_workflow_for_single_image_with_inference`.
 """
 
 import base64
+import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -585,3 +589,83 @@ def test_reference_born_image_outside_any_engine_uses_the_process_codec(
     ), mock.patch.object(connectionpool.HTTPSConnectionPool, "_new_conn", _blocked):
         assert reference_image.numpy_image.shape == (16, 24, 3)
     assert recorder.calls == [("fetch_url", "https://cdn.example.com/other.jpg")]
+
+
+@pytest.mark.parametrize("tensor_mode", ["False", "True"])
+def test_direct_image_loading_works_in_a_fresh_process(tmp_path, tensor_mode) -> None:
+    # No engine, ModelManager, or codec fixture in the child: this is the public
+    # import-and-use contract, which a pre-installed test codec would conceal.
+    image_path = tmp_path / "image.png"
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    image[:, :, 2] = 200
+    assert cv2.imwrite(str(image_path), image)
+    script = """
+import sys
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata, WorkflowImageData,
+)
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
+
+assert ENABLE_TENSOR_DATA_REPRESENTATION is (sys.argv[2] == "True")
+assert "inference.core.interfaces.workflows_image_codec" not in sys.modules
+
+def make_image(reference):
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        image_reference=reference,
+    )
+
+image = make_image(sys.argv[1])
+assert image.numpy_image.shape == (16, 24, 3)
+assert np.all(image.numpy_image[:, :, 2] == 200)
+assert image.base64_image
+assert image.parent_metadata.origin_coordinates.origin_width == 24
+assert image.tensor_image.shape == (3, 16, 24)
+assert int(image.tensor_image[0, 0, 0]) == 200
+
+from inference.core.exceptions import InputImageLoadError, InvalidImageTypeDeclared
+from inference.core.utils import image_utils
+
+with patch.object(image_utils, "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", False):
+    with pytest.raises(InputImageLoadError):
+        _ = make_image(sys.argv[1]).numpy_image
+
+with patch.object(image_utils, "ALLOW_URL_INPUT", False):
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = make_image("https://example.com/image.png").numpy_image
+
+with patch.object(image_utils, "OFFLINE_MODE", True):
+    with pytest.raises(InputImageLoadError):
+        _ = make_image("https://example.com/image.png").numpy_image
+"""
+    repo_root = Path(__file__).resolve().parents[5]
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", script, str(image_path), tensor_mode],
+        cwd=repo_root,
+        env={
+            **os.environ,
+            "DISABLE_VERSION_CHECK": "True",
+            "OFFLINE_MODE": "False",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": os.pathsep.join(
+                [
+                    str(repo_root),
+                    str(repo_root / "inference_models"),
+                    os.environ.get("PYTHONPATH", ""),
+                ]
+            ),
+            "USE_INFERENCE_MODELS": "True",
+            "ENABLE_TENSOR_DATA_REPRESENTATION": tensor_mode,
+            "WORKFLOWS_IMAGE_TENSOR_DEVICE": "cpu",
+            "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM": "True",
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
