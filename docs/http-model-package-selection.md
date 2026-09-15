@@ -1,8 +1,8 @@
 # Select a model package over HTTP
 
 Model package selection requires a server with `USE_INFERENCE_MODELS=true`.
-The server also needs an `inference-models` build that exposes the resolved package descriptor.
-Older library builds remain importable, but explicit selection fails without that descriptor.
+The server requires the `inference-models` release that exposes the resolved package descriptor and an updated dependency pin.
+Before that release, a Docker build with the updated library source can validate the change.
 A request can specify `model_package_id`, or `backend`, `quantization`, or both.
 The server rejects a package ID combined with either other selector.
 A successful request uses a package that satisfies all explicit selectors.
