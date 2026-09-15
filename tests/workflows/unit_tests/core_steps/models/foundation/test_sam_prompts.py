@@ -32,7 +32,7 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything_comm
 # tests/workflows/unit_tests/core_steps/models/foundation/<file> -> parents[6] is the repo root
 PROMPTS_MODULE = (
     Path(__file__).resolve().parents[6]
-    / "inference/core/workflows/core_steps/models/foundation/segment_anything_common/prompts.py"
+    / "workflows/roboflow_workflows/core_steps/models/foundation/segment_anything_common/prompts.py"
 )
 IMAGE = {"type": "base64", "value": "aGVsbG8="}
 BOX = dict(x=5.0, y=6.0, width=4.0, height=8.0)

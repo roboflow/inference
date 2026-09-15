@@ -37,6 +37,19 @@ RUN pip3 install \
     "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
+# Build & install roboflow-workflows from source. The wheel installs every
+# missing runtime dep (openai/anthropic/boto3/…) and embeds font assets. Torch
+# / torchvision are already at the CUDA-pinned +cu124 wheels, satisfy
+# workflows' constraints, and pip's resolver keeps them in place.
+COPY workflows workflows
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels /wheels/roboflow_workflows-*.whl \
+    && rm -rf ~/.cache/pip
+
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
 WORKDIR /app
@@ -64,8 +77,6 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     && rm -rf /usr/lib/python3/dist-packages/h11-*.egg-info
 
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli

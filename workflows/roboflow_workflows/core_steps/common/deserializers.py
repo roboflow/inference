@@ -1,0 +1,705 @@
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
+
+import cv2
+import numpy as np
+import pybase64
+import supervision as sv
+from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.utils import (
+    add_inference_keypoints_to_sv_detections,
+    filter_out_invalid_polygons,
+)
+from roboflow_workflows.errors import RuntimeInputError
+from roboflow_workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_INFERENCE_RESPONSE,
+    AREA_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    NEAREST_TARGET_DISTANCE_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PARENT_ORIGIN_KEY,
+    PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY_IN_INFERENCE_RESPONSE,
+    POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_ORIGIN_KEY,
+    SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SPEED_KEY_IN_SV_DETECTIONS,
+    TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
+)
+from roboflow_workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
+    ImageParentMetadata,
+    ParentOrigin,
+    VideoMetadata,
+    WorkflowImageData,
+)
+from roboflow_workflows.prototypes.image_codec import ImageCodec, get_image_codec
+
+AnyNumber = Union[int, float]
+
+
+def deserialize_image_kind(
+    parameter: str,
+    image: Any,
+    prevent_local_images_loading: bool = False,
+    *,
+    image_codec: Optional[ImageCodec] = None,
+) -> WorkflowImageData:
+    if isinstance(image, WorkflowImageData):
+        return image
+
+    is_image_dict = isinstance(image, dict)
+
+    parent_id = image.get(PARENT_ID_KEY, parameter) if is_image_dict else parameter
+    parent_origin = image.get(PARENT_ORIGIN_KEY) if is_image_dict else None
+    parent_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=parent_id,
+        parent_origin=parent_origin,
+    )
+
+    root_parent_id = image.get(ROOT_PARENT_ID_KEY) if is_image_dict else None
+    root_parent_origin = image.get(ROOT_PARENT_ORIGIN_KEY) if is_image_dict else None
+    workflow_root_ancestor_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=root_parent_id,
+        parent_origin=root_parent_origin,
+    )
+
+    video_metadata = None
+    if is_image_dict and "video_metadata" in image:
+        video_metadata = deserialize_video_metadata_kind(
+            parameter=parameter, video_metadata=image["video_metadata"]
+        )
+    if is_image_dict and isinstance(image.get("value"), np.ndarray):
+        image = image["value"]
+    if isinstance(image, np.ndarray):
+        return WorkflowImageData(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+            numpy_image=image,
+            video_metadata=video_metadata,
+        )
+    try:
+        if is_image_dict:
+            image = image["value"]
+        if isinstance(image, str):
+            # Path A: the engine binds its own codec here (see
+            # ExecutionEngineV1.init); out-of-engine callers such as
+            # modal/modal_app.py fall back to the process registry.
+            codec = image_codec if image_codec is not None else get_image_codec()
+            base64_image = None
+            image_reference = None
+            if image.startswith("http://") or image.startswith("https://"):
+                image_reference = image
+                image = codec.fetch_url(image)
+            elif not prevent_local_images_loading and os.path.exists(image):
+                # prevent_local_images_loading is introduced to eliminate
+                # server vulnerability - namely it prevents local server
+                # file system from being exploited.
+                image_reference = image
+                codec.ensure_local_file_load_allowed(image)
+                image = cv2.imread(image)
+            else:
+                base64_image = image
+                image = codec.decode_string(image)[0]
+            return WorkflowImageData(
+                parent_metadata=parent_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                numpy_image=image,
+                base64_image=base64_image,
+                image_reference=image_reference,
+                video_metadata=video_metadata,
+            )
+    except Exception as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as `WorkflowImage` "
+            f"that is invalid. Failed on input validation. Details: {error}",
+            context="workflow_execution | runtime_input_validation",
+        ) from error
+    raise RuntimeInputError(
+        public_message=f"Detected runtime parameter `{parameter}` defined as `WorkflowImage` "
+        f"with type {type(image)} that is invalid. Workflows accept only np.arrays, `WorkflowImageData` "
+        f"and dicts with keys `type` and `value` compatible with `inference` (or list of them).",
+        context="workflow_execution | runtime_input_validation",
+    )
+
+
+def _parse_optional_parent_metadata(
+    parameter: str,
+    parent_id: Optional[str],
+    parent_origin: Optional[Any],
+) -> Optional[ImageParentMetadata]:
+    if not parent_id:
+        return None
+
+    if not parent_origin:
+        return ImageParentMetadata(parent_id=parent_id)
+
+    parsed_origin = deserialize_parent_origin(parameter, parent_origin)
+    return ImageParentMetadata(
+        parent_id=parent_id,
+        origin_coordinates=parsed_origin.to_origin_coordinates_system(),
+    )
+
+
+def deserialize_parent_origin(parameter: str, parent_origin: Any) -> ParentOrigin:
+    if isinstance(parent_origin, ParentOrigin):
+        return parent_origin
+    if not isinstance(parent_origin, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`ParentOrigin`, but provided value is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return ParentOrigin.model_validate(parent_origin)
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`ParentOrigin`, but provided value is malformed. "
+            f"See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def deserialize_video_metadata_kind(
+    parameter: str,
+    video_metadata: Any,
+) -> VideoMetadata:
+    if isinstance(video_metadata, VideoMetadata):
+        return video_metadata
+    if not isinstance(video_metadata, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`WorkflowVideoMetadata`, but provided value is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return VideoMetadata.model_validate(video_metadata)
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`WorkflowVideoMetadata`, but provided value is malformed. "
+            f"See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def deserialize_action_recognition_prediction_kind(
+    parameter: str,
+    value: Any,
+) -> List[ActionRecognitionPrediction]:
+    if not isinstance(value, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"list, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if not all(isinstance(entry, dict) for entry in value):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            "a list of action recognitions, but at least one entry "
+            "is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return [ActionRecognitionPrediction.model_validate(entry) for entry in value]
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            "a list of action recognitions, but the provided value "
+            "is malformed. See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def deserialize_detections_kind(
+    parameter: str,
+    detections: Any,
+) -> sv.Detections:
+    if isinstance(detections, sv.Detections):
+        return detections
+    if not isinstance(detections, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"detections, but invalid type of data found.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "predictions" not in detections or "image" not in detections:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"detections, but dictionary misses required keys.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    parsed_detections = sv.Detections.from_inference(detections)
+    if len(parsed_detections) == 0:
+        return parsed_detections
+    height, width = detections["image"]["height"], detections["image"]["width"]
+    image_metadata = np.array([[height, width]] * len(parsed_detections))
+    parsed_detections.data[IMAGE_DIMENSIONS_KEY] = image_metadata
+    raw_predictions = detections["predictions"]
+    if len(parsed_detections) != len(raw_predictions):
+        raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+    detection_ids = [
+        detection.get(DETECTION_ID_KEY, str(uuid4())) for detection in raw_predictions
+    ]
+    parsed_detections.data[DETECTION_ID_KEY] = np.array(detection_ids)
+
+    parent_ids = [
+        detection.get(PARENT_ID_KEY, parameter) for detection in raw_predictions
+    ]
+    parsed_detections[PARENT_ID_KEY] = np.array(parent_ids)
+
+    _attach_parent_coordinates_and_dimensions(
+        parameter=parameter,
+        raw_detections=raw_predictions,
+        parsed_detections=parsed_detections,
+        origin_key=PARENT_ORIGIN_KEY,
+        coordinates_key=PARENT_COORDINATES_KEY,
+        dimensions_key=PARENT_DIMENSIONS_KEY,
+    )
+
+    root_parent_ids = [
+        detection.get(ROOT_PARENT_ID_KEY, parameter) for detection in raw_predictions
+    ]
+    if root_parent_ids:
+        parsed_detections.data[ROOT_PARENT_ID_KEY] = np.array(root_parent_ids)
+
+        _attach_parent_coordinates_and_dimensions(
+            parameter=parameter,
+            raw_detections=raw_predictions,
+            parsed_detections=parsed_detections,
+            origin_key=ROOT_PARENT_ORIGIN_KEY,
+            coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+            dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+        )
+
+    optional_elements_keys = [
+        (PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE, PATH_DEVIATION_KEY_IN_SV_DETECTIONS),
+        (TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE, TIME_IN_ZONE_KEY_IN_SV_DETECTIONS),
+        (POLYGON_KEY_IN_INFERENCE_RESPONSE, POLYGON_KEY_IN_SV_DETECTIONS),
+        (
+            BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+        ),
+        (DETECTED_CODE_KEY, DETECTED_CODE_KEY),
+        (SPEED_KEY_IN_INFERENCE_RESPONSE, SPEED_KEY_IN_SV_DETECTIONS),
+        (SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE, SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS),
+        (
+            SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+            SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+        ),
+        (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
+        (AREA_KEY_IN_INFERENCE_RESPONSE, AREA_KEY_IN_SV_DETECTIONS),
+        (AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE, AREA_CONVERTED_KEY_IN_SV_DETECTIONS),
+        (NEAREST_TARGET_DISTANCE_KEY, NEAREST_TARGET_DISTANCE_KEY),
+    ]
+    for raw_detection_key, parsed_detection_key in optional_elements_keys:
+        parsed_detections = _attach_optional_detection_element(
+            raw_detections=raw_predictions,
+            parsed_detections=parsed_detections,
+            raw_detection_key=raw_detection_key,
+            parsed_detection_key=parsed_detection_key,
+        )
+    return _attach_optional_key_points_detections(
+        raw_detections=raw_predictions,
+        parsed_detections=parsed_detections,
+    )
+
+
+def deserialize_rle_detections_kind(
+    parameter: str,
+    detections: Any,
+) -> sv.Detections:
+    parsed_detections = deserialize_detections_kind(
+        parameter=parameter,
+        detections=detections,
+    )
+    if len(parsed_detections) == 0:
+        return parsed_detections
+
+    if isinstance(detections, dict) and "predictions" in detections:
+        rle_masks_list = []
+        for pred in detections["predictions"]:
+            rle = pred.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+            if rle is not None:
+                rle_masks_list.append(rle)
+
+        if rle_masks_list and len(rle_masks_list) == len(parsed_detections):
+            parsed_detections[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                rle_masks_list, dtype=object
+            )
+
+    return parsed_detections
+
+
+def _attach_parent_coordinates_and_dimensions(
+    parameter: str,
+    raw_detections: List[dict],
+    parsed_detections: sv.Detections,
+    origin_key: str,
+    coordinates_key: str,
+    dimensions_key: str,
+) -> None:
+    coordinates = []
+    dimensions = []
+    for detection in raw_detections:
+        parent_origin = detection.get(origin_key)
+        if parent_origin:
+            parsed_origin = deserialize_parent_origin(parameter, parent_origin)
+            coordinates.append([parsed_origin.offset_x, parsed_origin.offset_y])
+            dimensions.append([parsed_origin.height, parsed_origin.width])
+        else:
+            return
+    if coordinates and dimensions:
+        parsed_detections.data[coordinates_key] = np.array(coordinates)
+        parsed_detections.data[dimensions_key] = np.array(dimensions)
+
+
+def _attach_optional_detection_element(
+    raw_detections: List[dict],
+    parsed_detections: sv.Detections,
+    raw_detection_key: str,
+    parsed_detection_key: str,
+) -> sv.Detections:
+    if raw_detection_key not in raw_detections[0]:
+        return parsed_detections
+    result = []
+    for detection in raw_detections:
+        result.append(detection[raw_detection_key])
+    parsed_detections.data[parsed_detection_key] = np.array(result)
+    return parsed_detections
+
+
+def _attach_optional_key_points_detections(
+    raw_detections: List[dict],
+    parsed_detections: sv.Detections,
+) -> sv.Detections:
+    if KEYPOINTS_KEY_IN_INFERENCE_RESPONSE not in raw_detections[0]:
+        return parsed_detections
+    return add_inference_keypoints_to_sv_detections(
+        inference_prediction=raw_detections,
+        detections=parsed_detections,
+    )
+
+
+def deserialize_numpy_array(parameter: str, raw_array: Any) -> np.ndarray:
+    if isinstance(raw_array, np.ndarray):
+        return raw_array
+    if not isinstance(raw_array, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"numpy array value, but invalid type of data found (`{type(raw_array).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return np.array(raw_array)
+
+
+def deserialize_optional_string_kind(parameter: str, value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    return deserialize_string_kind(parameter=parameter, value=value)
+
+
+def deserialize_string_kind(parameter: str, value: Any) -> str:
+    if not isinstance(value, str):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"string value, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_float_zero_to_one_kind(parameter: str, value: Any) -> float:
+    value = deserialize_float_kind(parameter=parameter, value=value)
+    if not (0.0 <= value <= 1.0):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"float value in range [0.0, 1.0], but value out of range detected.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_float_kind(parameter: str, value: Any) -> float:
+    if not isinstance(value, float) and not isinstance(value, int):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"float value, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return float(value)
+
+
+def deserialize_list_of_values_kind(parameter: str, value: Any) -> list:
+    if not isinstance(value, list) and not isinstance(value, tuple):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"list, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if not isinstance(value, list):
+        return list(value)
+    return value
+
+
+def deserialize_boolean_kind(parameter: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"boolean value, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_integer_kind(parameter: str, value: Any) -> int:
+    if not isinstance(value, int):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"integer value, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+REQUIRED_CLASSIFICATION_PREDICTION_KEYS = {
+    "image",
+    "predictions",
+}
+
+
+def deserialize_classification_prediction_kind(parameter: str, value: Any) -> dict:
+    value = deserialize_dictionary_kind(parameter=parameter, value=value)
+    if any(k not in value for k in REQUIRED_CLASSIFICATION_PREDICTION_KEYS):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"classification prediction value, but found that one of required keys "
+            f"({list(REQUIRED_CLASSIFICATION_PREDICTION_KEYS)}) "
+            f"is missing.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "predicted_classes" not in value and (
+        "top" not in value or "confidence" not in value
+    ):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"classification prediction value, but found that passed value misses "
+            f"prediction details.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "prediction_type" not in value:
+        value["prediction_type"] = "classification"
+    if "inference_id" not in value:
+        value["inference_id"] = str(uuid4())
+    if "parent_id" not in value:
+        value["parent_id"] = parameter
+    if "root_parent_id" not in value:
+        value["root_parent_id"] = parameter
+    return value
+
+
+def deserialize_dictionary_kind(parameter: str, value: Any) -> dict:
+    if not isinstance(value, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"dict value, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_point_kind(parameter: str, value: Any) -> Tuple[AnyNumber, AnyNumber]:
+    if not isinstance(value, list) and not isinstance(value, tuple):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"point coordinates, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if len(value) < 2:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"point coordinates, but missing point coordinates detected.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    value = tuple(value[:2])
+    if any(not _is_number(e) for e in value):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"point coordinates, but at least one of the coordinate is not number",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_labeled_points_kind(parameter: str, value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"list of labeled points, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    result = []
+    for raw_point in value:
+        if isinstance(raw_point, dict):
+            if "x" not in raw_point or "y" not in raw_point:
+                raise RuntimeInputError(
+                    public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                    f"list of labeled points, but at least one point misses `x` or `y` coordinate.",
+                    context="workflow_execution | runtime_input_validation",
+                )
+            x, y = raw_point["x"], raw_point["y"]
+            positive = raw_point.get("positive", True)
+        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
+            x, y = raw_point[0], raw_point[1]
+            positive = raw_point[2] if len(raw_point) == 3 else True
+        else:
+            raise RuntimeInputError(
+                public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                f"list of labeled points, but at least one element is neither a dict with "
+                f"`x` and `y` keys nor a sequence of (x, y) or (x, y, positive).",
+                context="workflow_execution | runtime_input_validation",
+            )
+        if not _is_number(x) or not _is_number(y):
+            raise RuntimeInputError(
+                public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                f"list of labeled points, but at least one point coordinate is not a number.",
+                context="workflow_execution | runtime_input_validation",
+            )
+        result.append({"x": x, "y": y, "positive": bool(positive)})
+    return result
+
+
+def deserialize_zone_kind(
+    parameter: str, value: Any
+) -> List[List[Tuple[AnyNumber, AnyNumber]]]:
+    if not isinstance(value, list) or len(value) < 3:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"zone coordinates, but defined zone is not a list with at least 3 points coordinates.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if any(
+        (not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2
+        for e in value
+    ):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"zone coordinates, but defined zone contains at least one element which is not a point with"
+            f"exactly two coordinates (x, y).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if any(not _is_number(e[0]) or not _is_number(e[1]) for e in value):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"zone coordinates, but defined zone contains at least one element which is not a point with"
+            f"exactly two coordinates (x, y) being numbers.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return value
+
+
+def deserialize_rgb_color_kind(
+    parameter: str, value: Any
+) -> Union[Tuple[int, int, int], str]:
+    if (
+        not isinstance(value, list)
+        and not isinstance(value, tuple)
+        and not isinstance(value, str)
+    ):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"RGB color, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if isinstance(value, str):
+        return value
+    if len(value) < 3:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"RGB color, but not all colors defined.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return tuple(value[:3])
+
+
+def deserialize_bytes_kind(parameter: str, value: Any) -> bytes:
+    if not isinstance(value, str) and not isinstance(value, bytes):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"bytes string, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if isinstance(value, bytes):
+        return value
+    return pybase64.b64decode(value)
+
+
+def deserialize_timestamp(parameter: str, value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"datetime, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return datetime.fromisoformat(value)
+    except Exception as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"datetime, but could not decode input data: {error}.",
+            context="workflow_execution | runtime_input_validation",
+        ) from error
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int) or isinstance(value, float)

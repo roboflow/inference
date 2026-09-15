@@ -57,7 +57,10 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`
-          pip install "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
+          pip install --find-links dist/ "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]" ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[enterprise]"
+          # Dependencies were resolved above; now replace any same-version
+          # build-environment installs with the exact checkout artifacts.
+          pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |

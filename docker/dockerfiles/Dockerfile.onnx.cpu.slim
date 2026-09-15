@@ -39,14 +39,25 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
+# Build & install roboflow-workflows from source. The wheel pulls in every
+# runtime dep (openai/anthropic/boto3/…) that source-only images cannot get
+# from `requirements/*.txt`, and embeds the checksum-verified font assets so
+# no download runs at container start.
+COPY workflows workflows
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels /wheels/roboflow_workflows-*.whl \
+    && rm -rf ~/.cache/pip
+
 FROM scratch
 COPY --from=base / /
 
 WORKDIR /app
 
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
