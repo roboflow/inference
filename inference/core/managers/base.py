@@ -10,6 +10,10 @@ from inference.core.cache import model_monitoring as model_monitoring_cache_modu
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.requests.model_selection import (
+    ModelSelectionRequest,
+    model_selection_kwargs,
+)
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
@@ -25,6 +29,7 @@ from inference.core.env import (
 from inference.core.exceptions import (
     InferenceModelNotFound,
     ModelManagerLockAcquisitionError,
+    ModelPackageSelectionError,
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
@@ -128,6 +133,10 @@ class ModelManager:
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+        model_cache_key: Optional[str] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -136,6 +145,26 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        validate_public_model_id(model_id, model_id_alias)
+        selectors = {
+            name: value
+            for name, value in (
+                ("model_package_id", model_package_id),
+                ("backend", backend),
+                ("quantization", quantization),
+            )
+            if value is not None
+        }
+        if selectors and not USE_INFERENCE_MODELS:
+            raise ModelPackageSelectionError(
+                "Model package selection requires USE_INFERENCE_MODELS=true."
+            )
+        if model_package_id is not None and (
+            backend is not None or quantization is not None
+        ):
+            raise ModelPackageSelectionError(
+                "model_package_id cannot be combined with backend or quantization."
+            )
         if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
@@ -151,7 +180,8 @@ class ModelManager:
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
-        resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        lookup_identifier = model_id if model_id_alias is None else model_id_alias
+        resolved_identifier = model_cache_key or lookup_identifier
         self.record_request_metadata(
             model_id=resolved_identifier,
             original_model_id=model_id,
@@ -168,6 +198,7 @@ class ModelManager:
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
             if resolved_identifier in self._models:
+                self.validate_model_selection(resolved_identifier, **selectors)
                 logger.debug(
                     f"ModelManager - model with model_id={resolved_identifier} is already loaded."
                 )
@@ -178,13 +209,14 @@ class ModelManager:
                     t_load_start = time.perf_counter()
                     vram_before = _get_cuda_memory_allocated()
                     model_class = self.model_registry.get_model(
-                        resolved_identifier,
+                        lookup_identifier,
                         api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
 
                     extra_init_kwargs = {}
+                    extra_init_kwargs.update(selectors)
                     if USE_INFERENCE_MODELS:
                         extra_init_kwargs["torchscript_state_global_lock"] = (
                             self.torchscript_state_global_lock
@@ -199,8 +231,9 @@ class ModelManager:
                         service_secret=service_secret,
                         **extra_init_kwargs,
                     )
+                    self._validate_loaded_model_selection(model, selectors)
                     bind_usage_model_descriptor(
-                        model, model_id, resolved_identifier, model_id_alias
+                        model, model_id, lookup_identifier, model_id_alias
                     )
                     vram_after = _get_cuda_memory_allocated()
                     if vram_before is not None and vram_after is not None:
@@ -248,6 +281,59 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
+
+    def validate_model_selection(
+        self,
+        model_id: str,
+        model_package_id: Optional[str] = None,
+        backend: Optional[str] = None,
+        quantization: Optional[str] = None,
+    ) -> None:
+        selectors = {
+            name: value
+            for name, value in (
+                ("model_package_id", model_package_id),
+                ("backend", backend),
+                ("quantization", quantization),
+            )
+            if value is not None
+        }
+        if selectors:
+            self._validate_loaded_model_selection(
+                self._get_model_reference(model_id), selectors
+            )
+
+    @staticmethod
+    def _validate_loaded_model_selection(
+        model: Model, selectors: Dict[str, str]
+    ) -> None:
+        if not selectors:
+            return
+        if not USE_INFERENCE_MODELS:
+            raise ModelPackageSelectionError(
+                "Model package selection requires USE_INFERENCE_MODELS=true."
+            )
+        resolved = getattr(model, "resolved_model", None)
+        if resolved is None:
+            raise ModelPackageSelectionError(
+                "This model does not support explicit package selection."
+            )
+        from inference.core.env import (
+            DISABLED_INFERENCE_MODELS_BACKENDS,
+            VALID_INFERENCE_MODELS_BACKENDS,
+        )
+
+        if resolved.backend not in (
+            VALID_INFERENCE_MODELS_BACKENDS - DISABLED_INFERENCE_MODELS_BACKENDS
+        ):
+            raise ModelPackageSelectionError(
+                "The resolved model package uses a backend disabled on this server."
+            )
+        for name, expected in selectors.items():
+            if getattr(resolved, name, None) != expected:
+                raise ModelPackageSelectionError(
+                    f"The loaded model does not satisfy the requested {name}."
+                )
 
     def load_action_recognition_model(
         self, model_id: str, api_key: Optional[str] = None, **kwargs
@@ -518,12 +604,20 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ModelSelectionRequest):
+            self._validate_loaded_model_selection(
+                model, model_selection_kwargs(request)
+            )
         return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
+        if isinstance(request, ModelSelectionRequest):
+            self._validate_loaded_model_selection(
+                model, model_selection_kwargs(request)
+            )
         return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
@@ -849,6 +943,34 @@ def _get_cuda_memory_allocated() -> Optional[int]:
     except Exception:
         pass
     return None
+
+
+def validate_public_model_id(
+    model_id: str, model_id_alias: Optional[str] = None
+) -> None:
+    if any(":package:" in value for value in (model_id, model_id_alias) if value):
+        raise ModelPackageSelectionError(
+            "Cache handles cannot be used for inference or model loading. "
+            "Use the public model_id with package selection parameters."
+        )
+
+
+def model_load_options(
+    model_package_id: Optional[str],
+    backend: Optional[str],
+    quantization: Optional[str],
+    model_cache_key: Optional[str],
+) -> Dict[str, str]:
+    return {
+        name: value
+        for name, value in (
+            ("model_package_id", model_package_id),
+            ("backend", backend),
+            ("quantization", quantization),
+            ("model_cache_key", model_cache_key),
+        )
+        if value is not None
+    }
 
 
 def try_releasing_cuda_memory() -> None:
