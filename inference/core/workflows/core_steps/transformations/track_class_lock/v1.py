@@ -1,3 +1,4 @@
+import heapq
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Type, Union
@@ -51,6 +52,14 @@ MAX_STATE_TTL: int = 1_000_000
 # instead of O(new_ids * lost_tracks). The most-recently-lost tracks (the most
 # plausible re-attachment targets) are kept.
 MAX_REATTACH_CANDIDATES: int = 256
+# Upper bound on distinct classes for which a single track keeps voting state.
+# Class names come from the input detections, so without a cap one repeated
+# tracker id carrying a fresh class name per detection grows that track's
+# vote/confidence/class-id tables without limit (bypassing the per-video track
+# cap and TTL, which key on tracker id) and makes the per-detection ranking
+# cost grow with every detection. A real object flickers between a handful of
+# classes; once the cap is reached, votes for further NEW classes are ignored.
+MAX_CLASSES_PER_TRACK: int = 256
 LONG_DESCRIPTION = """
 Lock the class label of each tracked object by majority voting, eliminating class
 flicker in video workflows where a model alternates between similar classes for the
@@ -79,7 +88,8 @@ in the image's video metadata:
    Set reattach_window to 0 to disable re-attachment.
 5. State for tracks unseen for state_ttl frames is purged. Retained per-video
    track state is additionally capped, evicting least-recently-seen tracks, so
-   state stays bounded under high tracker-id turnover.
+   state stays bounded under high tracker-id turnover. Each track keeps voting
+   state for a bounded number of distinct classes.
 
 Each detection is annotated with a boolean `class_locked` flag in detections.data.
 
@@ -324,14 +334,15 @@ class TrackClassLockBlockV1(WorkflowBlock):
 
             if st["locked"] is None:
                 # pre-lock: cumulative voting (any order)
-                if qualifying:
+                if qualifying and _class_admissible(st, cname):
                     st["votes"][cname] += 1
                     st["conf_sum"][cname] += conf
                     if dets.class_id is not None:
-                        st["class_ids"][cname] = int(dets.class_id[i])
+                        _record_class_id(st, cname, int(dets.class_id[i]))
                 if st["votes"]:
-                    ranked = sorted(
-                        st["votes"].items(), key=lambda kv: kv[1], reverse=True
+                    # only the top two tallies matter; O(k) instead of a full sort
+                    ranked = heapq.nlargest(
+                        2, st["votes"].items(), key=lambda kv: kv[1]
                     )
                     top_c, top_v = ranked[0]
                     runner_v = ranked[1][1] if len(ranked) > 1 else 0
@@ -350,7 +361,7 @@ class TrackClassLockBlockV1(WorkflowBlock):
                         st["streak"] = 1
                         st["streak_conf"] = conf
                         if dets.class_id is not None:
-                            st["class_ids"][cname] = int(dets.class_id[i])
+                            _record_class_id(st, cname, int(dets.class_id[i]))
                     if st["streak"] >= switch_after:
                         new = st["challenger"]
                         st["locked"] = new
@@ -379,6 +390,32 @@ class TrackClassLockBlockV1(WorkflowBlock):
         _enforce_track_cap(tracks)
 
         return {OUTPUT_KEY: dets}
+
+
+def _class_admissible(st: dict, cname: str) -> bool:
+    """Whether a vote for ``cname`` may be counted for this track.
+
+    Votes for classes already tallied are always counted; a NEW class is only
+    admitted while the track holds fewer than ``MAX_CLASSES_PER_TRACK``
+    classes, bounding per-track state against inputs that carry a fresh class
+    name per detection.
+    """
+    return cname in st["votes"] or len(st["votes"]) < MAX_CLASSES_PER_TRACK
+
+
+def _record_class_id(st: dict, cname: str, class_id: int) -> None:
+    """Remember the numeric class id for ``cname`` with bounded table size.
+
+    ``class_ids`` is also written for post-lock challengers, so it can outgrow
+    the vote table; before admitting a new name at the cap, drop ids no longer
+    referenced by any vote, the lock or the current challenger.
+    """
+    class_ids = st["class_ids"]
+    if cname not in class_ids and len(class_ids) >= MAX_CLASSES_PER_TRACK:
+        referenced = set(st["votes"]) | {st["locked"], st["challenger"], cname}
+        for stale in [k for k in class_ids if k not in referenced]:
+            del class_ids[stale]
+    class_ids[cname] = class_id
 
 
 def _eligible_inheritance_candidates(
