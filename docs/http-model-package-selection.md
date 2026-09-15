@@ -28,7 +28,7 @@ The SDK requires a server acknowledgment for explicit selection.
 It raises an error if an older server silently ignores the selectors.
 HTTP success responses include `X-Roboflow-Model-Selection: applied` for selected inference and model loading.
 
-Each distinct selector combination and client credential uses a separate cache entry.
+Each model ID, selector combination, and client credential identifies a separate cache entry.
 Each entry counts toward the existing LRU limit.
 The registry exposes its cache handle as `model_id`.
 Two selector combinations can load separate instances of the same package.
@@ -36,6 +36,6 @@ Requests without selectors retain their existing automatic selection and cache e
 Registration of a preferred package does not replace a resident instance.
 
 `unload_model()` removes the entry for the active configuration.
-`/model/remove` accepts the original model ID with the same selectors, or the registry handle without selectors.
+`/model/remove` accepts the original model ID with the same selectors and credential, or the registry handle without selectors.
 An active request retains its model reference until inference completes.
 Concurrent package loads still require sufficient device memory.

@@ -304,3 +304,9 @@ def test_exact_package_cannot_be_combined_with_other_selectors() -> None:
     for selector in selectors:
         with pytest.raises(InvalidParameterError, match="model_package_id"):
             InferenceConfiguration(model_package_id="package-1", **selector)
+
+
+def test_positional_configuration_preserves_confidence_threshold() -> None:
+    configuration = InferenceConfiguration(0.5)
+    assert configuration.confidence_threshold == 0.5
+    assert configuration.to_model_selection_parameters() == {}

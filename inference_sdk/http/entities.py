@@ -143,9 +143,6 @@ class InferenceConfiguration:
         stroke_width: The stroke width for the inference.
     """
 
-    model_package_id: Optional[str] = None
-    backend: Optional[str] = None
-    quantization: Optional[str] = None
     confidence_threshold: Optional[Confidence] = None
     keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
@@ -188,6 +185,9 @@ class InferenceConfiguration:
     # and emits a one-time recommendation to move to the header transport.
     # Pass "legacy" explicitly to keep the old behaviour silently.
     api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
+    model_package_id: Optional[str] = None
+    backend: Optional[str] = None
+    quantization: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.model_package_id is not None and (
@@ -338,9 +338,6 @@ class InferenceConfiguration:
         """
         parameters = self.to_object_detection_parameters()
         parameters_specs = [
-            ("model_package_id", "model_package_id"),
-            ("backend", "backend"),
-            ("quantization", "quantization"),
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
             ("response_mask_format", "response_mask_format"),
