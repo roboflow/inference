@@ -621,9 +621,10 @@ class BlockManifest(WorkflowBlockManifest):
             self.task_type == INSTANCE_SEGMENTATION_TASK
             and "model_version" not in self.model_fields_set
         ):
-            # The block-wide default predates the task and cannot segment;
-            # only an omitted `model_version` is overridden, an explicit
-            # choice (a literal or a selector) is always honoured.
+            # The block-wide default predates the task and was never
+            # benchmarked for it; only an omitted `model_version` is
+            # overridden, an explicit choice (a literal or a selector) is
+            # always honoured.
             self.model_version = INSTANCE_SEGMENTATION_DEFAULT_MODEL
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(

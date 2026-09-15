@@ -63,6 +63,8 @@ INSTANCE_SEGMENTATION_PROMPT_TEMPLATE = (
 POLYGON_KEYS = ("polygon", "segmentation", "points", "mask")
 SEGMENTATIONS_WRAPPER_KEY = "segmentations"
 MINIMUM_POLYGON_VERTICES = 3
+MINIMUM_POLYGON_AREA = 1.0
+"""Smallest enclosed area (in original-image px²) a polygon must have."""
 
 
 def build_instance_segmentation_prompt(
@@ -158,6 +160,7 @@ def build_instance_segmentations(
 
     Every polygon is rasterised into a dense ``(H, W)`` boolean mask at the
     original image resolution and its bounding box is the polygon extent.
+    Polygons enclosing no area are skipped like malformed ones.
 
     Args:
         parsed_data: JSON payload extracted from the VLM output.
@@ -189,7 +192,11 @@ def build_instance_segmentations(
     scale_x = image_width / upload_width
     scale_y = image_height / upload_height
 
-    xyxy, masks, class_id, class_name = [], [], [], []
+    # Rasterise straight into the final stack: one full-resolution mask per
+    # instance is the price of the dense kind (the instance-segmentation model
+    # block pays it too), so at least never hold a second copy.
+    stack = np.zeros((len(entries), image_height, image_width), dtype=bool)
+    xyxy, class_id, class_name = [], [], []
     for entry in entries:
         polygon = read_polygon(entry)
         if polygon is None:
@@ -201,11 +208,24 @@ def build_instance_segmentations(
         polygon[:, 0] = np.clip(polygon[:, 0], 0.0, upload_width) * scale_x
         polygon[:, 1] = np.clip(polygon[:, 1], 0.0, upload_height) * scale_y
         vertices = polygon.round().astype(int)
-        masks.append(
-            sv.polygon_to_mask(
-                vertices, resolution_wh=(image_width, image_height)
-            ).astype(bool)
-        )
+        if _polygon_area(vertices) < MINIMUM_POLYGON_AREA:
+            # Collinear, repeated or clipped-away vertices enclose no area;
+            # `fillPoly` would still paint them as a one-pixel line and the
+            # serialiser would then drop the instance silently, so drop it
+            # here where it can be logged.
+            logger.warning(
+                "Skipping VLM segmentation entry whose polygon encloses no area: %r",
+                entry,
+            )
+            continue
+        mask = sv.polygon_to_mask(vertices, resolution_wh=(image_width, image_height))
+        if not mask.any():
+            logger.warning(
+                "Skipping VLM segmentation entry whose polygon covers no pixels: %r",
+                entry,
+            )
+            continue
+        stack[len(xyxy)] = mask
         x_min, y_min = vertices.min(axis=0)
         x_max, y_max = vertices.max(axis=0)
         xyxy.append([x_min, y_min, x_max, y_max])
@@ -235,18 +255,24 @@ def build_instance_segmentations(
         # The prompt asks for no confidence; downstream filters see 1.0.
         confidence=np.ones(count) if count else np.empty(0),
         class_id=np.array(class_id).astype(int) if count else np.empty(0),
-        mask=(
-            np.stack(masks)
-            if count
-            else np.empty((0, image_height, image_width), dtype=bool)
-        ),
+        mask=stack[:count],
         tracker_id=None,
         data=data,
     )
+    if count == 0:
+        # Per-row data is empty, so keep the frame size where
+        # `empty_detections_with_image_metadata` keeps it.
+        detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,
     )
+
+
+def _polygon_area(vertices: np.ndarray) -> float:
+    """Shoelace area of an ``(N, 2)`` vertex array."""
+    x, y = vertices[:, 0], vertices[:, 1]
+    return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2.0)
 
 
 def extract_segmentation_entries(parsed: Any) -> List[dict]:
