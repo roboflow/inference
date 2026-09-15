@@ -1,6 +1,8 @@
 # Select a model package over HTTP
 
 Model package selection requires a server with `USE_INFERENCE_MODELS=true`.
+The server also needs an `inference-models` build that exposes the resolved package descriptor.
+Older library builds remain importable, but explicit selection fails without that descriptor.
 A request can specify `model_package_id`, or `backend`, `quantization`, or both.
 The server rejects a package ID combined with either other selector.
 A successful request uses a package that satisfies all explicit selectors.
@@ -24,7 +26,7 @@ with client.use_configuration(InferenceConfiguration(model_package_id="PACKAGE_I
 ```
 
 The configuration applies to synchronous and asynchronous SDK calls.
-The SDK requires a server acknowledgment for explicit selection.
+For inference and model loading, the SDK requires a server acknowledgment for explicit selection.
 It raises an error if an older server silently ignores the selectors.
 HTTP success responses include `X-Roboflow-Model-Selection: applied` for selected inference and model loading.
 
