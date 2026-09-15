@@ -26,6 +26,7 @@ from inference_models.configuration import (
     OFFLINE_MODE_WARM_UP,
     ROBOFLOW_API_KEY,
 )
+from inference_models.entities import ResolvedModelMetadata
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
@@ -1671,6 +1672,10 @@ class AutoModel:
                 - TextImageEmbeddingModel: For vision-language embeddings (CLIP, etc.)
                 - OpenVocabularyObjectDetectionModel: For open-vocabulary detection
 
+            Models loaded from registered packages expose `resolved_model` with the
+            canonical model ID, package ID, backend, and package quantization.
+            Direct local-path loads do not infer a package ID.
+
         Raises:
             UnauthorizedModelAccessError: If API key is invalid or model access is denied.
             ModelPackageNotFoundError: If no compatible model package is found for your
@@ -2419,6 +2424,16 @@ def attempt_loading_model_with_auto_load_cache(
                 model_init_kwargs=model_init_kwargs,
             ),
         )
+        if (
+            cache_entry.canonical_model_id is not None
+            and cache_entry.backend_type is not None
+        ):
+            model.resolved_model = ResolvedModelMetadata(
+                model_id=cache_entry.canonical_model_id,
+                model_package_id=cache_entry.model_package_id,
+                backend=cache_entry.backend_type.value,
+                quantization=package_config.quantization or Quantization.UNKNOWN.value,
+            )
         if point_model_directory:
             point_model_directory(model_package_cache_dir)
         verbose_info(
@@ -3215,6 +3230,12 @@ def initialize_model(
             model_class=model_class,
             model_init_kwargs=model_init_kwargs,
         ),
+    )
+    model.resolved_model = ResolvedModelMetadata(
+        model_id=model_id,
+        model_package_id=model_package.package_id,
+        backend=model_package.backend.value,
+        quantization=quantization,
     )
     if OFFLINE_MODE:
         # Read-only leg: nothing was downloaded and the manifest is not

@@ -518,12 +518,18 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
-        return model.infer_from_request(request)
+        return self._infer_from_model(model, request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
+        return self._infer_from_model(model, request)
+
+    @staticmethod
+    def _infer_from_model(
+        model: Model, request: InferenceRequest
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
         return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:

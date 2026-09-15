@@ -6,7 +6,7 @@ from inspect import Parameter, signature
 from io import BytesIO
 from threading import local
 from time import perf_counter
-from typing import Any, Deque, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Deque, List, Optional, Tuple, Union
 from uuid import uuid4
 from weakref import finalize
 
@@ -255,7 +255,19 @@ def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
     return height, width
 
 
-class InferenceModelsObjectDetectionAdapter(Model):
+if TYPE_CHECKING:
+    from inference_models.entities import ResolvedModelMetadata
+
+
+class InferenceModelsAdapter(Model):
+    _model: Any
+
+    @property
+    def resolved_model(self) -> Optional["ResolvedModelMetadata"]:
+        return getattr(self._model, "resolved_model", None)
+
+
+class InferenceModelsObjectDetectionAdapter(InferenceModelsAdapter):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -421,7 +433,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         )
 
 
-class InferenceModelsInstanceSegmentationAdapter(Model):
+class InferenceModelsInstanceSegmentationAdapter(InferenceModelsAdapter):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1134,7 +1146,7 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
     return segments
 
 
-class InferenceModelsKeyPointsDetectionAdapter(Model):
+class InferenceModelsKeyPointsDetectionAdapter(InferenceModelsAdapter):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1355,7 +1367,7 @@ def model_keypoints_to_response(
     return results
 
 
-class InferenceModelsClassificationAdapter(Model):
+class InferenceModelsClassificationAdapter(InferenceModelsAdapter):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1695,7 +1707,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     return buffered.getvalue()
 
 
-class InferenceModelsSemanticSegmentationAdapter(Model):
+class InferenceModelsSemanticSegmentationAdapter(InferenceModelsAdapter):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1853,7 +1865,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         )
 
 
-class InferenceModelsDepthEstimationAdapter(Model):
+class InferenceModelsDepthEstimationAdapter(InferenceModelsAdapter):
     """Serves any `inference_models` DepthEstimationModel (e.g. YOLO26-depth)
     behind the depth-estimation contract shared with the DepthAnything
     adapters: per-image min-max-normalized depth plus a viridis
@@ -1976,7 +1988,7 @@ class InferenceModelsDepthEstimationAdapter(Model):
         pass
 
 
-class InferenceModelsActionRecognitionAdapter(Model):
+class InferenceModelsActionRecognitionAdapter(InferenceModelsAdapter):
     """Serves a clip to an action recognition model, one window at a time.
 
     The model declares how a clip is cut and sampled, so a caller never states
