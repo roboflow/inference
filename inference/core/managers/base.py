@@ -518,21 +518,13 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
-        return self._infer_from_model(model, request)
+        return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
-        return self._infer_from_model(model, request)
-
-    @staticmethod
-    def _infer_from_model(
-        model: Model, request: InferenceRequest
-    ) -> Union[List[InferenceResponse], InferenceResponse]:
-        response = model.infer_from_request(request)
-        attach_resolved_model_metadata(model, response)
-        return response
+        return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         with start_span(
@@ -872,28 +864,3 @@ def try_releasing_cuda_memory() -> None:
         pass
     except Exception as error:
         logger.warning(f"Attempted to purge CUDA memory but failed with error: {error}")
-
-
-def attach_resolved_model_metadata(model: Model, response: Any) -> None:
-    if not USE_INFERENCE_MODELS:
-        return
-    from inference.core.entities.responses.inference import (
-        CvInferenceResponse,
-        InstanceSegmentationInferenceResponseDC,
-        ResolvedModel,
-    )
-
-    metadata = getattr(model, "resolved_model", None)
-    fields = {
-        name: getattr(metadata, name, None)
-        for name in ("model_id", "model_package_id", "backend", "quantization")
-    }
-    if not all(isinstance(value, str) for value in fields.values()):
-        return
-    resolved_model = ResolvedModel.model_validate(fields)
-    responses = response if isinstance(response, list) else [response]
-    for item in responses:
-        if isinstance(
-            item, (CvInferenceResponse, InstanceSegmentationInferenceResponseDC)
-        ):
-            item.resolved_model = resolved_model
