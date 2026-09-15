@@ -6,9 +6,9 @@ import requests
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.inference_response_dc import (
-    InferenceResponseImageDC,
-    InstanceSegmentationInferenceResponseDC,
+from inference.core.workflows.core_steps.common.inference_response_entities import (
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
 )
 from inference.core.workflows.core_steps.common.segmentation_entities import (
     InstanceSegmentationPrediction,
@@ -262,13 +262,15 @@ class SegPreviewBlockV1(WorkflowBlock):
 
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
-            final_inference_prediction = InstanceSegmentationInferenceResponseDC(
+            final_inference_prediction = InstanceSegmentationInferenceResponse(
                 predictions=class_predictions,
-                image=InferenceResponseImageDC(width=image_width, height=image_height),
+                image=InferenceResponseImage(width=image_width, height=image_height),
             )
             predictions.append(final_inference_prediction)
 
-        predictions = [e.to_dict() for e in predictions]
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -300,7 +302,7 @@ def convert_segmentation_response_to_inference_instances_seg_response(
     threshold: float,
     text_prompt: Optional[str] = None,
     specific_class_id: Optional[int] = None,
-) -> InstanceSegmentationInferenceResponseDC:
+) -> InstanceSegmentationInferenceResponse:
     image_width = image.numpy_image.shape[1]
     image_height = image.numpy_image.shape[0]
     predictions = []
@@ -350,7 +352,7 @@ def convert_segmentation_response_to_inference_instances_seg_response(
                     }
                 )
             )
-    return InstanceSegmentationInferenceResponseDC(
+    return InstanceSegmentationInferenceResponse(
         predictions=predictions,
-        image=InferenceResponseImageDC(width=image_width, height=image_height),
+        image=InferenceResponseImage(width=image_width, height=image_height),
     )

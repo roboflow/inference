@@ -6,30 +6,31 @@
 per name. The blocks build them from remote responses as well as from their own
 arithmetic, so they keep pydantic coercion and validation - the interactive
 parser's string confidence becomes a float, a malformed mask is a
-`ValidationError` (round-6 defect 1). The two response-level DTOs are plain
-dataclasses (`inference_response_dc.py`), because every constructor call site
-passes locals; their `to_dict()` is pinned to the pydantic dump here. The
-tables below are frozen from the classes as they stood before the move.
+`ValidationError` (round-6 defect 1). The five response-level DTOs
+(`InferenceResponseImage`, `InferenceResponse`, `CvInferenceResponse`,
+`WithVisualizationResponse`, `InstanceSegmentationInferenceResponse`) also
+live in workflows and the server re-exports them; the workflow blocks build
+them from locals and dump them with
+`model_dump(by_alias=True, exclude_none=True)`.
 """
 
 import ast
+import base64
 from pathlib import Path
 from typing import List, Union
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.entities.responses import inference as server_inference
 from inference.core.entities.responses import sam2 as server_sam2
+from inference.core.workflows.core_steps.common import (
+    inference_response_entities as local_response,
+)
 from inference.core.workflows.core_steps.common import segmentation_entities as local
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.inference_response_dc import (
-    InferenceResponseImageDC,
-    InstanceSegmentationInferenceResponseDC,
-)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive import (
     v1 as interactive_v1,
 )
@@ -43,6 +44,10 @@ from inference.core.workflows.execution_engine.entities.base import (
 ENTITIES_MODULE = (
     Path(__file__).resolve().parents[5]
     / "inference/core/workflows/core_steps/common/segmentation_entities.py"
+)
+RESPONSE_ENTITIES_MODULE = (
+    Path(__file__).resolve().parents[5]
+    / "inference/core/workflows/core_steps/common/inference_response_entities.py"
 )
 _POINTS = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
 PAIRS = [
@@ -60,6 +65,17 @@ PAIRS = [
         server_inference.InstanceSegmentationRLEPrediction,
     ),
     (local.Sam2SegmentationPrediction, server_sam2.Sam2SegmentationPrediction),
+    (local_response.InferenceResponseImage, server_inference.InferenceResponseImage),
+    (local_response.InferenceResponse, server_inference.InferenceResponse),
+    (local_response.CvInferenceResponse, server_inference.CvInferenceResponse),
+    (
+        local_response.WithVisualizationResponse,
+        server_inference.WithVisualizationResponse,
+    ),
+    (
+        local_response.InstanceSegmentationInferenceResponse,
+        server_inference.InstanceSegmentationInferenceResponse,
+    ),
 ]
 
 
@@ -73,6 +89,14 @@ def test_server_module_re_exports_the_workflows_class(local_cls, server_cls) -> 
 def test_server_classes_still_derive_from_and_hold_the_workflows_classes() -> None:
     assert issubclass(server_inference.Point3D, local.Point)
     assert issubclass(server_inference.Keypoint, local.Point)
+    assert issubclass(
+        server_inference.ObjectDetectionInferenceResponse,
+        local_response.CvInferenceResponse,
+    )
+    assert issubclass(
+        server_inference.ObjectDetectionInferenceResponse,
+        local_response.WithVisualizationResponse,
+    )
     assert (
         server_inference.InstanceSegmentationInferenceResponse.model_fields[
             "predictions"
@@ -100,6 +124,21 @@ def test_entities_module_imports_nothing_from_the_server() -> None:
         if isinstance(node, ast.ImportFrom) and node.module
     )
     assert imported == ["pydantic", "typing", "uuid"], imported
+
+
+def test_response_entities_module_imports_nothing_from_the_server() -> None:
+    assert RESPONSE_ENTITIES_MODULE.is_file(), RESPONSE_ENTITIES_MODULE
+    tree = ast.parse(RESPONSE_ENTITIES_MODULE.read_text(encoding="utf-8"))
+    imported = sorted(
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    )
+    assert imported == [
+        "inference.core.workflows.core_steps.common.segmentation_entities",
+        "pydantic",
+        "typing",
+    ], imported
 
 
 # --- the remote parser, through the function and through BOTH remote branches ---
@@ -356,7 +395,7 @@ def test_moved_prediction_classes_validate_as_before_the_move(
     assert outcome == expected
 
 
-# --- the two response-level dataclasses ---
+# --- response-level Pydantic models: dump, optional fields, serialization ---
 
 
 def _prediction():
@@ -391,12 +430,11 @@ def _rle_prediction():
     )
 
 
-def test_image_dict_matches_pydantic() -> None:
-    assert InferenceResponseImageDC(width=640, height=480).to_dict() == (
-        server_inference.InferenceResponseImage(width=640, height=480).model_dump(
-            by_alias=True, exclude_none=True
-        )
+def test_image_response_dump_uses_by_alias_exclude_none() -> None:
+    dumped = local_response.InferenceResponseImage(width=640, height=480).model_dump(
+        by_alias=True, exclude_none=True
     )
+    assert dumped == {"width": 640, "height": 480}
 
 
 @pytest.mark.parametrize(
@@ -404,54 +442,61 @@ def test_image_dict_matches_pydantic() -> None:
     [[], [_prediction()], [_rle_prediction()], [_prediction(), _rle_prediction()]],
     ids=["empty", "polygon", "rle", "mixed"],
 )
-def test_response_dict_matches_pydantic(predictions) -> None:
-    dc = InstanceSegmentationInferenceResponseDC(
-        image=InferenceResponseImageDC(width=640, height=480), predictions=predictions
-    )
-    pydantic = server_inference.InstanceSegmentationInferenceResponse(
-        image=server_inference.InferenceResponseImage(width=640, height=480),
+def test_response_dump_omits_optional_fields_when_none(predictions) -> None:
+    dumped = local_response.InstanceSegmentationInferenceResponse(
+        image=local_response.InferenceResponseImage(width=640, height=480),
         predictions=predictions,
-    )
-    assert dc.to_dict() == pydantic.model_dump(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
+    assert dumped["image"] == {"width": 640, "height": 480}
+    assert "inference_id" not in dumped
+    assert "frame_id" not in dumped
+    assert "time" not in dumped
+    assert "visualization" not in dumped
+    assert len(dumped["predictions"]) == len(predictions)
 
 
-def test_response_with_optionals_matches_pydantic() -> None:
-    dc = InstanceSegmentationInferenceResponseDC(
-        image=InferenceResponseImageDC(width=1, height=1),
+def test_response_dump_carries_optionals_when_set() -> None:
+    dumped = local_response.InstanceSegmentationInferenceResponse(
+        image=local_response.InferenceResponseImage(width=1, height=1),
         predictions=[_prediction()],
         inference_id="i",
         frame_id=3,
         time=0.5,
-    )
-    pydantic = server_inference.InstanceSegmentationInferenceResponse(
-        image=server_inference.InferenceResponseImage(width=1, height=1),
-        predictions=[_prediction()],
-        inference_id="i",
-        frame_id=3,
-        time=0.5,
-    )
-    assert dc.to_dict() == pydantic.model_dump(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
+    assert dumped["inference_id"] == "i"
+    assert dumped["frame_id"] == 3
+    assert dumped["time"] == 0.5
 
 
-@pytest.mark.parametrize("predictions", [[], [_prediction()]], ids=["empty", "polygon"])
-def test_response_converts_through_supervision_identically(predictions) -> None:
-    """`sv.Detections.from_inference` subscripts its argument after trying
-    `.dict()`/`.json()`; the dataclass must be passed as `to_dict()`."""
-    from_local = sv.Detections.from_inference(
-        InstanceSegmentationInferenceResponseDC(
-            image=InferenceResponseImageDC(width=640, height=480),
-            predictions=predictions,
-        ).to_dict()
+def test_response_visualization_is_base64_encoded_on_json_dump() -> None:
+    payload = b"\x00\x01\x02\x03"
+    response = local_response.InstanceSegmentationInferenceResponse(
+        image=local_response.InferenceResponseImage(width=1, height=1),
+        predictions=[],
+        visualization=payload,
     )
-    from_pydantic = sv.Detections.from_inference(
-        server_inference.InstanceSegmentationInferenceResponse(
-            image=server_inference.InferenceResponseImage(width=640, height=480),
-            predictions=predictions,
-        )
+    # model_dump() keeps the raw bytes; the JSON serializer encodes them.
+    assert response.model_dump()["visualization"] == payload
+    encoded = response.model_dump_json()
+    import json
+
+    assert json.loads(encoded)["visualization"] == base64.b64encode(payload).decode(
+        "utf-8"
     )
-    assert len(from_local) == len(from_pydantic)
-    assert np.array_equal(from_local.xyxy, from_pydantic.xyxy)
-    assert (from_local.mask is None) == (from_pydantic.mask is None)
-    if from_local.mask is not None:
-        assert np.array_equal(from_local.mask, from_pydantic.mask)
-    assert sorted(from_local.data) == sorted(from_pydantic.data)
+
+
+def test_cv_response_accepts_list_of_images() -> None:
+    """CvInferenceResponse.image is Union[List[InferenceResponseImage], InferenceResponseImage].
+    The list form is exercised by multi-image responses in the server code."""
+    response = local_response.InstanceSegmentationInferenceResponse(
+        image=[
+            local_response.InferenceResponseImage(width=10, height=20),
+            local_response.InferenceResponseImage(width=30, height=40),
+        ],
+        predictions=[],
+    )
+    dumped = response.model_dump(by_alias=True, exclude_none=True)
+    assert dumped["image"] == [
+        {"width": 10, "height": 20},
+        {"width": 30, "height": 40},
+    ]

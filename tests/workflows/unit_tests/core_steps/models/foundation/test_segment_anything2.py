@@ -171,7 +171,9 @@ def test_convert_sam2_response_produces_the_same_dict_as_the_pydantic_form() -> 
         prompt_detection_ids=["d1"],
         threshold=0.1,
     )
-    produced = result.to_dict()
+    assert type(result) is InstanceSegmentationInferenceResponse
+    assert type(result.image) is InferenceResponseImage
+    produced = result.model_dump(by_alias=True, exclude_none=True)
     expected = InstanceSegmentationInferenceResponse(
         image=InferenceResponseImage(width=10, height=20),
         predictions=[
