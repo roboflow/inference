@@ -1,0 +1,132 @@
+from dataclasses import asdict
+from types import SimpleNamespace
+
+import pytest
+
+from inference_models.entities import ResolvedModelMetadata
+from inference_models.models.auto_loaders import (
+    auto_resolution_cache,
+    core,
+    model_cache_paths,
+)
+from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.weights_providers.entities import (
+    ModelMetadata,
+    ModelPackageMetadata,
+    ONNXPackageDetails,
+    Quantization,
+)
+
+
+@pytest.mark.parametrize("cache_has_backend", [True, False])
+def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
+    tmp_path, monkeypatch, cache_has_backend
+):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    monkeypatch.setattr(auto_resolution_cache, "INFERENCE_HOME", str(tmp_path))
+    package = ModelPackageMetadata(
+        package_id="onnxpackage",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+        onnx_package_details=ONNXPackageDetails(opset=17),
+        trusted_source=True,
+    )
+    metadata = ModelMetadata(
+        model_id="canonical/1",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=[package],
+    )
+    monkeypatch.setattr(core, "get_model_from_provider", lambda **kwargs: metadata)
+    model_class = SimpleNamespace(
+        from_pretrained=lambda *args, **kwargs: SimpleNamespace()
+    )
+    monkeypatch.setattr(core, "resolve_model_class", lambda **kwargs: model_class)
+
+    first = core.AutoModel.from_pretrained("alias/1", backend="onnx", device="cpu")
+
+    first_metadata = getattr(first, "resolved_model", None)
+    assert isinstance(first_metadata, ResolvedModelMetadata)
+    assert asdict(first_metadata) == {
+        "model_id": "canonical/1",
+        "model_package_id": "onnxpackage",
+        "backend": "onnx",
+        "quantization": "fp32",
+    }
+
+    def unavailable_provider(**kwargs):
+        raise AssertionError("A cached load must not fetch model metadata")
+
+    monkeypatch.setattr(core, "get_model_from_provider", unavailable_provider)
+
+    class LegacyMetadataCache(auto_resolution_cache.BaseAutoLoadMetadataCache):
+        def retrieve(self, auto_negotiation_hash):
+            entry = super().retrieve(auto_negotiation_hash)
+            if entry is not None and not cache_has_backend:
+                return entry.model_copy(update={"backend_type": None})
+            return entry
+
+    second = core.AutoModel.from_pretrained(
+        "alias/1",
+        backend="onnx",
+        device="cpu",
+        auto_resolution_cache=LegacyMetadataCache(file_lock_acquire_timeout=1),
+    )
+    assert second is not first
+    second_metadata = getattr(second, "resolved_model", None)
+    if cache_has_backend:
+        assert second_metadata == first_metadata
+    else:
+        assert second_metadata is None
+
+
+def test_auto_model_reports_the_successful_fallback_package(tmp_path, monkeypatch):
+    monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
+    monkeypatch.setattr(auto_resolution_cache, "INFERENCE_HOME", str(tmp_path))
+    packages = [
+        ModelPackageMetadata(
+            package_id=package_id,
+            backend=BackendType.ONNX,
+            quantization=quantization,
+            package_artefacts=[],
+            onnx_package_details=ONNXPackageDetails(opset=17),
+            trusted_source=True,
+        )
+        for package_id, quantization in [
+            ("brokenfp16", Quantization.FP16),
+            ("workingfp32", Quantization.FP32),
+        ]
+    ]
+    metadata = ModelMetadata(
+        model_id="canonical/1",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=packages,
+    )
+    monkeypatch.setattr(core, "get_model_from_provider", lambda **kwargs: metadata)
+    attempted_packages = []
+
+    def load_package(package_path, **kwargs):
+        package_id = package_path.rsplit("/", 1)[-1]
+        attempted_packages.append(package_id)
+        if package_id == "brokenfp16":
+            raise RuntimeError("Unsupported package")
+        return SimpleNamespace()
+
+    model_class = SimpleNamespace(from_pretrained=load_package)
+    monkeypatch.setattr(core, "resolve_model_class", lambda **kwargs: model_class)
+
+    model = core.AutoModel.from_pretrained(
+        "alias/1", backend="onnx", quantization=["fp16", "fp32"], device="cpu"
+    )
+
+    assert attempted_packages == ["brokenfp16", "workingfp32"]
+    resolved_model = getattr(model, "resolved_model", None)
+    assert isinstance(resolved_model, ResolvedModelMetadata)
+    assert asdict(resolved_model) == {
+        "model_id": "canonical/1",
+        "model_package_id": "workingfp32",
+        "backend": "onnx",
+        "quantization": "fp32",
+    }
