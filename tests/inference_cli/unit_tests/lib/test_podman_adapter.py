@@ -271,7 +271,11 @@ class TestBuildPodmanLaunchCommand:
     def test_security_hardening_translated(self) -> None:
         command, mode = build_podman_launch_command(**self._args())
         assert mode == "none"
+        assert command[0] == "podman" and command[1] == "run"
+        assert command[-1] == self._args()["image"]
         assert "--read-only" in command
+        idx = command.index("--security-opt")
+        assert "label=disable" in command[idx + 1 :]
         assert "--security-opt" in command
         assert "no-new-privileges" in command
         assert "--cap-drop" in command and "ALL" in command

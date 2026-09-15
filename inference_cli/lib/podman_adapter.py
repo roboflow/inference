@@ -211,6 +211,11 @@ def build_podman_launch_command(
     command = ["podman", "run", "--detach"]
     command += ["--memory", "4g", "--memory-swap", "6g", "--cpu-shares", "1024"]
     command += ["--security-opt", "no-new-privileges"]
+    if volumes:
+        # SELinux enforcing denies container writes to bind mounts unless the
+        # mount is relabelled or labelling is turned off for the container;
+        # the docker path relies on docker relabelling bind mounts itself.
+        command += ["--security-opt", "label=disable"]
     cap_add = ["NET_BIND_SERVICE"]
     if device_requests:
         # Mirror the docker launch path, which adds SYS_ADMIN for GPU images.
@@ -242,8 +247,8 @@ def build_podman_launch_command(
         _warn_if_selinux_devices_denied()
         CLI_LOGGER.info(f"Attaching GPUs via CDI spec {spec_path} ({device}).")
         command += ["--device", device]
-        return command, "cdi"
-    return command, "none"
+        return command + [image], "cdi"
+    return command + [image], "none"
 
 
 def _warn_if_selinux_devices_denied() -> None:
