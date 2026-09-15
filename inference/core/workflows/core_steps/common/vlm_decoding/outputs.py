@@ -16,6 +16,9 @@ from inference.core.workflows.core_steps.common.vlm_decoding.classification impo
 from inference.core.workflows.core_steps.common.vlm_decoding.detections import (
     decode_object_detections,
 )
+from inference.core.workflows.core_steps.common.vlm_decoding.segmentation import (
+    decode_instance_segmentations,
+)
 from inference.core.workflows.core_steps.common.vlm_decoding.tensor_native import (
     to_tensor_native_predictions,
 )
@@ -27,13 +30,22 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
 )
 
 logger = logging.getLogger(__name__)
 
 DETECTION_TASKS = {"object-detection"}
+SEGMENTATION_TASKS = {"instance-segmentation"}
 CLASSIFICATION_TASKS = {"classification", "multi-label-classification"}
+
+PREDICTION_KINDS_UNION = [
+    OBJECT_DETECTION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+]
+"""Every kind ``predictions`` may carry, for tasks that decode nothing."""
 
 
 def describe_vlm_prediction_outputs() -> List[OutputDefinition]:
@@ -44,10 +56,7 @@ def describe_vlm_prediction_outputs() -> List[OutputDefinition]:
         every kind a task may produce.
     """
     return [
-        OutputDefinition(
-            name="predictions",
-            kind=[OBJECT_DETECTION_PREDICTION_KIND, CLASSIFICATION_PREDICTION_KIND],
-        ),
+        OutputDefinition(name="predictions", kind=list(PREDICTION_KINDS_UNION)),
         OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
         OutputDefinition(name="inference_id", kind=[INFERENCE_ID_KIND]),
     ]
@@ -66,13 +75,12 @@ def actual_vlm_prediction_outputs(task_type: str) -> List[OutputDefinition]:
     """
     if task_type in DETECTION_TASKS:
         prediction_kind = [OBJECT_DETECTION_PREDICTION_KIND]
+    elif task_type in SEGMENTATION_TASKS:
+        prediction_kind = [INSTANCE_SEGMENTATION_PREDICTION_KIND]
     elif task_type in CLASSIFICATION_TASKS:
         prediction_kind = [CLASSIFICATION_PREDICTION_KIND]
     else:
-        prediction_kind = [
-            OBJECT_DETECTION_PREDICTION_KIND,
-            CLASSIFICATION_PREDICTION_KIND,
-        ]
+        prediction_kind = list(PREDICTION_KINDS_UNION)
     return [
         OutputDefinition(name="predictions", kind=prediction_kind),
         OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
@@ -99,8 +107,9 @@ def decode_vlm_output(
         classes: Class names, required for both decoding task families.
         inference_id: Identifier attached to the prediction.
         box_format: Registered box coordinate format, detection tasks only.
-        upload_width: Width of the image as uploaded, for absolute formats.
-        upload_height: Height of the image as uploaded, for absolute formats.
+        upload_width: Width of the image as uploaded, for absolute formats
+            and for segmentation (whose polygons are always absolute).
+        upload_height: Height of the image as uploaded, same requirement.
 
     Returns:
         Tuple of ``(error_status, predictions)``. Tasks outside the decoding
@@ -121,6 +130,22 @@ def decode_vlm_output(
         error_status, predictions = decode_object_detections(
             raw_output=raw_output,
             box_format=box_format,
+            image=image,
+            classes=classes,
+            inference_id=inference_id,
+            upload_width=upload_width,
+            upload_height=upload_height,
+        )
+    elif task_type in SEGMENTATION_TASKS:
+        if classes is None or not upload_width or not upload_height:
+            logger.warning(
+                "Could not decode VLM instance-segmentation output for task %s - "
+                "a class list and the upload dimensions are both required.",
+                task_type,
+            )
+            return True, None
+        error_status, predictions = decode_instance_segmentations(
+            raw_output=raw_output,
             image=image,
             classes=classes,
             inference_id=inference_id,

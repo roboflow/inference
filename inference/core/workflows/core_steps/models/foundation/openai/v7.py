@@ -8,6 +8,12 @@ Classifier" formatter step is needed.
 The per-model detection prompt styles are unchanged from v6; each style maps
 onto one of the shared box coordinate contracts (see
 ``DETECTION_BOX_FORMATS_BY_STYLE``), which is what decoding keys off.
+
+Adds the ``instance-segmentation`` task: one absolute-pixel polygon per
+instance, enforced via structured outputs and decoded into masked
+``predictions``. The image is sent at its original resolution for this task -
+pre-downscaling the upload measurably hurt mask quality on GPT-6 Astra, the
+model the task defaults to.
 """
 
 import base64
@@ -38,6 +44,7 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.core_steps.common.vlm_decoding import (
     actual_vlm_prediction_outputs,
+    build_instance_segmentation_prompt,
     build_object_detection_prompt,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
@@ -326,6 +333,52 @@ STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT = {
     }
 }
 
+INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
+
+INSTANCE_SEGMENTATION_DEFAULT_MODEL = "gpt-6-astra"
+"""Model the segmentation task runs on when the manifest names none.
+
+Picked from a polygon-format sweep on the vlm-exam mask ground truth: Astra
+traces instances well enough to be useful (0.85 mask AP@50 on the
+scoreable images), which the older generations were not benchmarked for.
+"""
+
+STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT = {
+    "format": {
+        "type": "json_schema",
+        "name": "segmentations",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "segmentations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "polygon": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                            },
+                        },
+                        "required": ["label", "polygon"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["segmentations"],
+            "additionalProperties": False,
+        },
+    }
+}
+"""Structured-output schema for the segmentation prompt.
+
+The polygon is a flat integer list; its length is left unconstrained because
+strict mode cannot express "even and at least six", so short or odd lists are
+rejected at decode time instead.
+"""
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -336,6 +389,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "caption",
     "detailed-caption",
     "object-detection",
+    INSTANCE_SEGMENTATION_TASK,
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
@@ -373,16 +427,26 @@ filtering is not meaningful for these formats.
 Images are downscaled so that their longest edge does not exceed
 {DETECTION_MAX_EDGE_PIXELS}px and are sent as lossless PNG for this task.
 
+The `instance-segmentation` task asks for one outline polygon per instance of
+the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
+pixel coordinates of the uploaded image, enforced via structured outputs - and
+decodes it into masked predictions (`instance_segmentation_prediction` kind).
+The image is sent at its original resolution as JPEG for this task, since
+downscaling the upload measurably hurt mask quality. Unless a `model_version`
+is set explicitly, this task runs on `{INSTANCE_SEGMENTATION_DEFAULT_MODEL}`,
+the model it was benchmarked with. Like the absolute-coordinate detection
+formats, it provides no confidence scores (`1.0` is assigned).
+
 ## Version Differences
 
 This version (v7) decodes the model answer inside the block, adding
 `predictions`, `error_status` and `inference_id` outputs next to the raw
 `output` string:
 
-* `predictions` holds object detections for the `object-detection` task and a
-classification prediction for the `classification` /
-`multi-label-classification` tasks - the kind of the output follows the
-selected task type.
+* `predictions` holds object detections for the `object-detection` task,
+masked detections for the `instance-segmentation` task and a classification
+prediction for the `classification` / `multi-label-classification` tasks -
+the kind of the output follows the selected task type.
 * `predictions` is `None` for every other task (unconstrained prompting, OCR,
 captioning, structured answering, visual question answering).
 * `error_status` is `True` when the answer could not be decoded.
@@ -406,6 +470,7 @@ TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
     "object-detection",
+    INSTANCE_SEGMENTATION_TASK,
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -530,7 +595,8 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="auto",
         description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity. "
-        "Not applied to the `object-detection` task, which always sends the image without the detail hint.",
+        "Not applied to the `object-detection` task, which always sends the image without the detail hint. "
+        "For `instance-segmentation`, 'high' is worth the tokens on images with small objects.",
         examples=["auto", "high", "low"],
     )
     max_tokens: Optional[int] = Field(
@@ -555,6 +621,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
+        if (
+            self.task_type == INSTANCE_SEGMENTATION_TASK
+            and "model_version" not in self.model_fields_set
+        ):
+            # The block-wide default predates the task and cannot segment;
+            # only an omitted `model_version` is overridden, an explicit
+            # choice (a literal or a selector) is always honoured.
+            self.model_version = INSTANCE_SEGMENTATION_DEFAULT_MODEL
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
@@ -706,11 +780,12 @@ def detection_upload_dimensions(
     task_type: TaskType,
     box_format: str,
 ) -> Tuple[Optional[int], Optional[int]]:
-    """Resolve the dimensions the detection upload path resized an image to.
+    """Resolve the dimensions the upload path sent an image at.
 
-    The absolute-pixel contract returns coordinates of the uploaded image, so
-    decoding has to repeat the downscale ``encode_image_for_task`` applied.
-    The normalized contract is resolution independent and needs nothing.
+    The absolute-pixel contracts return coordinates of the uploaded image, so
+    decoding has to repeat what ``encode_image_for_task`` did: the detection
+    downscale, or nothing for segmentation, which uploads the original. The
+    normalized detection contract is resolution independent and needs nothing.
 
     Args:
         image: Workflow image passed to the block.
@@ -721,6 +796,9 @@ def detection_upload_dimensions(
         Tuple of the uploaded ``(width, height)``, or ``(None, None)`` when
         the format does not need them.
     """
+    if task_type == INSTANCE_SEGMENTATION_TASK:
+        height, width = image.numpy_image.shape[:2]
+        return width, height
     if task_type != "object-detection" or box_format != ABSOLUTE_BOX_FORMAT:
         return None, None
     height, width = image.numpy_image.shape[:2]
@@ -813,7 +891,9 @@ def encode_image_for_task(
     The `object-detection` task mirrors the preprocessing used for detection
     benchmarks: the image is downscaled so its longest edge does not exceed
     ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio preserved, never upscaled) and
-    encoded as lossless PNG. All other tasks send the image unchanged as JPEG.
+    encoded as lossless PNG. All other tasks - `instance-segmentation`
+    deliberately included, see the module docstring - send the image unchanged
+    as JPEG.
 
     Args:
         image: BGR image to be encoded.
@@ -1537,6 +1617,55 @@ def prepare_object_detection_prompt(
     return prompt
 
 
+def prepare_instance_segmentation_prompt(
+    base64_image: str,
+    classes: List[str],
+    image_width: int,
+    image_height: int,
+    image_detail: str,
+    **kwargs,
+) -> dict:
+    """Build the instance-segmentation request.
+
+    One contract for every model: the shared absolute-pixel polygon prompt
+    (``build_instance_segmentation_prompt``) with the ``{"segmentations":
+    [...]}`` wrapper enforced via structured outputs. The image is the
+    original-resolution JPEG, so the prompted frame is the original frame.
+
+    Args:
+        base64_image: Base64-encoded JPEG of the original image.
+        classes: Class names the model may use as labels.
+        image_width: Width of the encoded image in pixels.
+        image_height: Height of the encoded image in pixels.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``input`` and structured-output ``text`` keys.
+    """
+    prompt_text = build_instance_segmentation_prompt(
+        classes=classes,
+        upload_width=image_width,
+        upload_height=image_height,
+    )
+    return {
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": image_detail,
+                    },
+                    {"type": "input_text", "text": prompt_text},
+                ],
+            }
+        ],
+        "text": STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
+    }
+
+
 def _get_openai_client(api_key: str):
     client = _openai_client_cache.get(api_key)
     if client is None:
@@ -1555,6 +1684,7 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
+    INSTANCE_SEGMENTATION_TASK: prepare_instance_segmentation_prompt,
 }
 
 _openai_client_cache = {}
