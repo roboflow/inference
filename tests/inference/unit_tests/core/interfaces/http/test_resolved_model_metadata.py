@@ -1,3 +1,4 @@
+import runpy
 from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import AsyncMock
@@ -6,6 +7,7 @@ import numpy as np
 import pytest
 from starlette.testclient import TestClient
 
+from inference.core import env
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
@@ -14,7 +16,10 @@ from inference.core.interfaces.http import http_api
 from inference.core.managers import base as manager_module
 from inference.core.managers.base import ModelManager
 from inference.core.models import inference_models_adapters as adapters
+from inference.core.registries import roboflow as registry_module
 from inference.core.registries.base import ModelRegistry
+from inference.models import utils as model_utils
+from inference.models.yolov8.yolov8_object_detection import YOLOv8ObjectDetection
 from inference_models.entities import ResolvedModelMetadata
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
@@ -46,8 +51,7 @@ class PackageModel(adapters.InferenceModelsAdapter):
         return [response.model_copy() for _ in images]
 
 
-def build_client(monkeypatch, flag=True, model=None, registry=None):
-    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", flag)
+def build_client(monkeypatch, flag=True, model=None, registry=None, preload=True):
     monkeypatch.setattr(manager_module, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(manager_module, "MODELS_CACHE_AUTH_ENABLED", False)
     monkeypatch.setattr(manager_module, "DISABLE_INFERENCE_CACHE", True)
@@ -67,7 +71,7 @@ def build_client(monkeypatch, flag=True, model=None, registry=None):
     )
     manager = ModelManager(
         model_registry=registry or ModelRegistry({}),
-        models={"test/1": model or PackageModel()},
+        models={"test/1": model or PackageModel()} if preload else {},
         content_addressed_artifact_cache=NullContentAddressedArtifactCache(),
     )
     return TestClient(http_api.HttpInterface(model_manager=manager).app), manager
@@ -128,7 +132,25 @@ def test_http_batch_reports_package_for_each_image(monkeypatch):
 
 
 def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
-    client, _ = build_client(monkeypatch, flag=False)
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
+    model_types = runpy.run_path(model_utils.__file__)["ROBOFLOW_MODEL_TYPES"]
+    monkeypatch.setattr(
+        registry_module,
+        "get_model_type",
+        lambda *args, **kwargs: ("object-detection", "yolov8"),
+    )
+
+    def initialize_legacy_model(self, model_id, **kwargs):
+        self.model_id = model_id
+
+    monkeypatch.setattr(YOLOv8ObjectDetection, "__init__", initialize_legacy_model)
+    monkeypatch.setattr(YOLOv8ObjectDetection, "infer", PackageModel.infer)
+    client, manager = build_client(
+        monkeypatch,
+        flag=False,
+        registry=registry_module.RoboflowModelRegistry(model_types),
+        preload=False,
+    )
 
     response = client.post(
         "/infer/object_detection",
@@ -139,6 +161,7 @@ def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
     )
 
     assert response.status_code == 200, response.text
+    assert isinstance(manager.models()["test/1"], YOLOv8ObjectDetection)
     payload = response.json()
     assert payload.pop("time") >= 0
     payload.pop("inference_id")
@@ -232,13 +255,13 @@ def test_http_inference_omits_metadata_for_a_model_without_package_identity(
     assert "resolved_model" not in response.json()
 
 
-def test_direct_adapter_response_reports_its_package(monkeypatch):
+def test_direct_adapter_response_reports_its_package_with_flag_disabled(monkeypatch):
     from inference.core.entities.requests.inference import (
         InferenceRequestImage,
         ObjectDetectionInferenceRequest,
     )
 
-    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
     response = PackageModel().infer_from_request(
         ObjectDetectionInferenceRequest(
             id="direct-request",
@@ -282,7 +305,6 @@ def test_classification_adapter_reports_package_with_predictions(monkeypatch):
                 class_id=predictions.argmax(dim=-1), confidence=predictions
             )
 
-    monkeypatch.setattr(adapters, "USE_INFERENCE_MODELS", True)
     monkeypatch.setattr(
         adapters.AutoModel, "from_pretrained", lambda **kwargs: ClassificationBackend()
     )

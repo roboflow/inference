@@ -58,7 +58,6 @@ from inference.core.env import (
     GCP_SERVERLESS,
     MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
-    USE_INFERENCE_MODELS,
     VALID_INFERENCE_MODELS_BACKENDS,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
@@ -274,8 +273,6 @@ class InferenceModelsAdapter(Model):
         return responses
 
     def _attach_resolved_model_metadata(self, responses: Any) -> None:
-        if not USE_INFERENCE_MODELS:
-            return
         metadata = self.resolved_model
         if metadata is None:
             return
