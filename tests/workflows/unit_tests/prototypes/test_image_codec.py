@@ -20,6 +20,7 @@ from inference.core.workflows.prototypes.image_codec import (
     WorkflowsLocalImageCodec,
     get_image_codec,
     reset_image_codec,
+    set_default_image_codec_factory,
     set_image_codec,
 )
 from inference.core.workflows.utils.image_encoding import (
@@ -260,6 +261,43 @@ def test_default_load_image_promotes_grayscale_to_bgr() -> None:
 
 def test_registry_returns_the_refusing_default_until_a_host_installs_one() -> None:
     assert isinstance(get_image_codec(), WorkflowsLocalImageCodec)
+
+
+def test_host_default_is_resolved_lazily_and_keeps_the_codec_fixed() -> None:
+    codec = WorkflowsLocalImageCodec()
+    calls = []
+
+    def factory():
+        calls.append(True)
+        return codec
+
+    set_default_image_codec_factory(factory)
+    assert calls == []
+    assert get_image_codec() is codec
+    assert get_image_codec() is codec
+    assert calls == [True]
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        set_image_codec(WorkflowsLocalImageCodec())
+
+
+@pytest.mark.parametrize("install_during_resolution", [False, True])
+def test_explicit_codec_takes_precedence_over_host_default(
+    install_during_resolution,
+) -> None:
+    explicit_codec = WorkflowsLocalImageCodec()
+    calls = []
+
+    def factory():
+        calls.append(True)
+        # Exercise an explicit installation interleaved with host resolution.
+        set_image_codec(explicit_codec)
+        return WorkflowsLocalImageCodec()
+
+    set_default_image_codec_factory(factory)
+    if not install_during_resolution:
+        set_image_codec(explicit_codec)
+    assert get_image_codec() is explicit_codec
+    assert calls == ([True] if install_during_resolution else [])
 
 
 def test_installing_a_codec_makes_it_the_process_codec() -> None:
