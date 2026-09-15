@@ -7,7 +7,6 @@ import torch
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.detection.compact_mask import CompactMask
 
-from inference.core.env import WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS
 from inference.core.workflows.core_steps.common.rle_compact import (
     instances_rle_to_compact_mask,
 )
@@ -17,6 +16,9 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativePrediction,
     read_host_mirror,
     split_key_point_prediction,
+)
+from inference.core.workflows.environment import (
+    WORKFLOWS_TENSOR_VISUALISATION_VALIDATE_OWNERS,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,

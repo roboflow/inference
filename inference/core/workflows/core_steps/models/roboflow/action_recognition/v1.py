@@ -1,5 +1,6 @@
 """Stateful action recognition workflow block."""
 
+import logging
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -9,13 +10,11 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core import logger
-from inference.core.managers.base import ModelManager
-from inference.core.models.action_recognition import merge_window_segments
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
 )
+from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
     Batch,
@@ -44,6 +43,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.utils.action_recognition import merge_window_segments
 from inference_models.models.base.action_recognition import WHOLE_VIDEO_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
@@ -52,6 +53,8 @@ from inference_models.models.base.action_recognition import (
     VideoSampling,
     effective_max_frame_side,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_FPS = 30.0
 # A crop step mints a video identifier per detection per frame, so the
@@ -227,13 +230,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        model_manager: Optional[ModelsProvider] = None,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._model_manager = model_manager
         self._model = None
         self._current_model_id: Optional[str] = None
         self._video_bookkeeping: "OrderedDict[str, _ActionRecognitionBookkeeping]" = (
@@ -243,7 +246,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode", "model_manager"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -251,13 +254,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _get_model(self, model_id: str):
         if self._model is None or self._current_model_id != model_id:
-            # Imported here so loading the block does not pull the adapters
-            # module, and so both surfaces load a model id identically.
-            from inference.core.models.inference_models_adapters import (
-                load_action_recognition_model,
-            )
-
-            self._model = load_action_recognition_model(
+            if self._model_manager is None:
+                raise WorkflowEnvironmentConfigurationError(
+                    public_message=(
+                        "This block loads its model through the Workflows models "
+                        "provider. Supply `workflows_core.model_manager` in the "
+                        "workflow init parameters."
+                    ),
+                    context="workflow_execution | step_execution | model_loading",
+                )
+            self._model = self._model_manager.load_action_recognition_model(
                 model_id=model_id, api_key=self._api_key
             )
             self._current_model_id = model_id

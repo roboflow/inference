@@ -7,10 +7,23 @@ the proxied and direct execution paths.
 
 from unittest.mock import MagicMock, Mock, patch
 
+import pytest
+
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     _execute_direct_claude_request,
     _execute_proxied_claude_request,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
+
 
 _CLAUDE_OK = {
     "stop_reason": "end_turn",
@@ -18,13 +31,13 @@ _CLAUDE_OK = {
 }
 
 
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.anthropic_claude.v4.post_to_roboflow_api"
-)
-def test_proxied_request_returns_usage_and_none_when_omitted(mock_post: Mock) -> None:
+def test_proxied_request_returns_usage_and_none_when_omitted() -> None:
+    mock_post = platform_client.post_mock
+
     def call():
         return _execute_proxied_claude_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             anthropic_api_key="rf_key:account",
             system_prompt=None,
             messages=[],

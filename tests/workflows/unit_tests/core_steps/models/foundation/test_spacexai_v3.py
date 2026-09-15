@@ -82,7 +82,7 @@ def _kinds(outputs, name):
 
 
 def _block() -> SpaceXAIBlockV3:
-    return SpaceXAIBlockV3(model_manager=MagicMock(), api_key="rf_abc")
+    return SpaceXAIBlockV3(api_key="rf_abc")
 
 
 def test_manifest_parses_new_type():

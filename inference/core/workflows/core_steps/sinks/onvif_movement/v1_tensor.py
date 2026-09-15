@@ -1,6 +1,7 @@
 import asyncio
 import concurrent
 import importlib
+import logging
 import os
 import threading
 import time
@@ -14,8 +15,6 @@ from onvif import ONVIFCamera, ONVIFService
 from pydantic import ConfigDict, Field, PositiveInt
 from simple_pid import PID
 
-from inference.core import logger
-from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
     take_prediction_by_mask,
@@ -48,8 +47,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.text import experimental
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2

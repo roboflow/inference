@@ -6,7 +6,6 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
     split_key_point_prediction,
@@ -14,6 +13,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
 from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     BoxPromptMetadata,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,

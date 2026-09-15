@@ -1,3 +1,4 @@
+import logging
 from copy import copy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
@@ -6,7 +7,6 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
@@ -70,6 +70,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_SECRET_LENGTH_TO_REVEAL_PREFIX = 8
 MIN_POLYGON_POINT_COUNT = 3

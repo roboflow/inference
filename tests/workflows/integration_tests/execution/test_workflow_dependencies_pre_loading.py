@@ -39,6 +39,7 @@ OBJECT_DETECTION_WORKFLOW_WITH_STATIC_MODEL_ID = {
 
 def test_pre_loading_of_dependencies_when_static_model_id_used(
     model_manager: ModelManager,
+    raw_model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
 ) -> None:
@@ -62,7 +63,7 @@ def test_pre_loading_of_dependencies_when_static_model_id_used(
         "yolov8n-640" in model_manager
     ), "Expected declared model to be pre-loaded into model manager at init"
     assert (
-        len(model_manager.models()) == 1
+        len(raw_model_manager.models()) == 1
     ), "Expected exactly the declared model to be registered at init"
 
     # when
@@ -110,6 +111,7 @@ OBJECT_DETECTION_WORKFLOW_WITH_INPUT_FED_MODEL_ID = {
 
 def test_pre_loading_of_dependencies_when_model_id_fed_by_input_parameter(
     model_manager: ModelManager,
+    raw_model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
 ) -> None:
@@ -130,7 +132,7 @@ def test_pre_loading_of_dependencies_when_model_id_fed_by_input_parameter(
 
     # then - nothing can be pre-loaded at init, dependency awaits first run
     assert (
-        len(model_manager.models()) == 0
+        len(raw_model_manager.models()) == 0
     ), "Expected no model to be registered at init when model id is input-fed"
     assert [
         dependency.metadata.model_id

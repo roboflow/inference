@@ -6,13 +6,13 @@ Sub-classes may override ``_tracker_update`` when the underlying tracker needs
 extra per-frame context (e.g. a video frame for camera motion compensation).
 """
 
+import logging
 from abc import abstractmethod
 from collections import deque
 from typing import Any, Dict, List, Type
 
 import supervision as sv
 
-from inference.core import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -28,6 +28,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_KEY: str = "tracked_detections"
 

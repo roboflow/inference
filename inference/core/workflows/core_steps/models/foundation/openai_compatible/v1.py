@@ -1,4 +1,5 @@
 import base64
+import logging
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
@@ -7,15 +8,13 @@ from httpx import URL
 from openai import DefaultHttpxClient, OpenAI
 from pydantic import ConfigDict, Field
 
-from inference.core.env import OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
-from inference.core.logger import logger
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from inference.core.workflows.environment import OPENAI_COMPATIBLE_ALLOWED_BASE_URLS
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -35,6 +34,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
+
+logger = logging.getLogger(__name__)
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 
