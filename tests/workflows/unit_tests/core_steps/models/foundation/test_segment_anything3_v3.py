@@ -249,10 +249,11 @@ _POLYGON_RUN_KWARGS = dict(
 
 
 def test_v3_local_polygon_path_converts_through_supervision() -> None:
-    """Drives `run_locally` with a stubbed provider so the changed
-    `_convert_polygon_response_to_inference_format(...).to_dict()` ->
-    `sv.Detections.from_inference` path actually executes. Before Task 11.4
-    Step 8 this raised `TypeError: … object is not subscriptable`."""
+    """Drives `run_locally` with a stubbed model provider; confirms that
+    `_convert_polygon_response_to_inference_format` returns a Pydantic
+    `InstanceSegmentationInferenceResponse`, which the block serialises with
+    `model_dump(by_alias=True, exclude_none=True)` before passing to
+    `sv.Detections.from_inference`."""
     model_manager = MagicMock()
     model_manager.run_sam3_segmentation.return_value = [_sam3_polygon_response()]
     block = SegmentAnything3BlockV3(
@@ -272,8 +273,11 @@ def test_v3_local_polygon_path_converts_through_supervision() -> None:
 
 
 def test_v3_remote_polygon_path_converts_through_supervision() -> None:
-    """The REMOTE branch converts `_convert_polygon_json_response_to_inference_format(...)`
-    through the same `to_dict()` seam (`v3.py:517`)."""
+    """The REMOTE branch converts the JSON payload via
+    `_convert_polygon_json_response_to_inference_format`, producing a Pydantic
+    `InstanceSegmentationInferenceResponse` that is serialised with
+    `model_dump(by_alias=True, exclude_none=True)` before `sv.Detections.from_inference`.
+    """
     import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as v3_module
 
     with patch.object(v3_module, "InferenceHTTPClient") as client_cls:
@@ -310,47 +314,3 @@ def test_v3_proxy_polygon_path_converts_through_supervision() -> None:
         )
     assert len(result[0]["predictions"]) == 1
     assert result[0]["predictions"].xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
-
-
-def test_v3_polygon_dataclass_matches_the_pydantic_form_through_supervision() -> None:
-    """Explains the contract the block tests rely on: the response dataclass,
-    passed as a dict, produces the same Detections the pydantic response did."""
-    from inference.core.entities.responses.inference import (
-        InferenceResponseImage,
-        InstanceSegmentationInferenceResponse,
-        InstanceSegmentationPrediction,
-        Point,
-    )
-    from inference.core.workflows.core_steps.common.inference_response_dc import (
-        InferenceResponseImageDC,
-        InstanceSegmentationInferenceResponseDC,
-    )
-
-    polygon = [(0.0, 0.0), (8.0, 0.0), (8.0, 6.0), (0.0, 6.0)]
-    prediction = InstanceSegmentationPrediction(
-        **{
-            "x": 4.0,
-            "y": 3.0,
-            "width": 8.0,
-            "height": 6.0,
-            "confidence": 0.75,
-            "class": "cat",
-            "class_id": 2,
-            "detection_id": "fixed",
-            "points": [Point(x=px, y=py) for px, py in polygon],
-        }
-    )
-    local = InstanceSegmentationInferenceResponseDC(
-        image=InferenceResponseImageDC(width=20, height=10), predictions=[prediction]
-    )
-    pydantic = InstanceSegmentationInferenceResponse(
-        image=InferenceResponseImage(width=20, height=10), predictions=[prediction]
-    )
-    from_local = sv.Detections.from_inference(local.to_dict())
-    from_pydantic = sv.Detections.from_inference(pydantic)
-    assert np.array_equal(from_local.xyxy, from_pydantic.xyxy)
-    assert np.array_equal(from_local.class_id, from_pydantic.class_id)
-    assert np.array_equal(from_local.confidence, from_pydantic.confidence)
-    assert (from_local.mask is None) == (from_pydantic.mask is None)
-    if from_local.mask is not None:
-        assert np.array_equal(from_local.mask, from_pydantic.mask)
