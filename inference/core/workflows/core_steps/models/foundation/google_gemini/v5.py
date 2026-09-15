@@ -624,7 +624,7 @@ def _execute_proxied_gemini_request(
     model_version: str,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Execute Gemini request via Roboflow proxy."""
-    from inference.core.roboflow_proxy_context import proxy_context_fields
+    from inference.core.workflows.roboflow_proxy_context import proxy_context_fields
 
     payload = {
         "model": model_version,

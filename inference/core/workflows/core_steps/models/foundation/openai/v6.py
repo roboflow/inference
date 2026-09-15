@@ -817,7 +817,7 @@ def _execute_proxied_openai_request(
     text_format: Optional[dict] = None,
 ) -> Tuple[str, Optional[int], Optional[int]]:
     """Executes OpenAI request via Roboflow proxy."""
-    from inference.core.roboflow_proxy_context import proxy_context_fields
+    from inference.core.workflows.roboflow_proxy_context import proxy_context_fields
 
     payload = {
         "model": model_version,

@@ -1657,7 +1657,9 @@ class HttpInterface(BaseInterface):
                 debug_ctx = register_debug_session()
             else:
                 debug_ctx = nullcontext()
-            from inference.core.roboflow_proxy_context import autolabel_proxy_context
+            from inference.core.workflows.roboflow_proxy_context import (
+                autolabel_proxy_context,
+            )
 
             with debug_ctx as debug_session:
                 try:
