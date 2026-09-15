@@ -136,6 +136,7 @@ def test_get_actual_outputs_narrows_predictions_kind_per_task():
     assert _kinds(classification, "predictions") == ["classification_prediction"]
     assert _kinds(unconstrained, "predictions") == [
         "object_detection_prediction",
+        "instance_segmentation_prediction",
         "classification_prediction",
     ]
 

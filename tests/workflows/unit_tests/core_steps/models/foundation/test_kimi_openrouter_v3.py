@@ -21,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
@@ -111,6 +112,7 @@ def test_describe_outputs_declares_union_prediction_kind() -> None:
 
     assert outputs["predictions"].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert {"predictions", "error_status", "inference_id"}.issubset(outputs)
@@ -132,7 +134,11 @@ def test_describe_outputs_declares_union_prediction_kind() -> None:
         (
             "unconstrained",
             {"prompt": "describe"},
-            [OBJECT_DETECTION_PREDICTION_KIND, CLASSIFICATION_PREDICTION_KIND],
+            [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND,
+            ],
         ),
     ],
 )
