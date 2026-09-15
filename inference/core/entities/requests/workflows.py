@@ -47,6 +47,17 @@ class WorkflowInferenceRequest(BaseModel):
         default=False,
         description="Run the workflow with sink writes and outbound notifications/uploads disabled.",
     )
+    # Optional Auto Label context. When the Roboflow API key is folder-scoped,
+    # /apiproxy/openai and /apiproxy/gemini require these so billing stays on the
+    # folder key instead of failing the dataset-less owner check.
+    job_id: Optional[str] = Field(
+        default=None,
+        description="Hosted Auto Label job id; forwarded to managed provider proxies",
+    )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Roboflow project/dataset id; forwarded to managed provider proxies",
+    )
 
 
 class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):

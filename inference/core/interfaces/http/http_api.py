@@ -1657,13 +1657,19 @@ class HttpInterface(BaseInterface):
                 debug_ctx = register_debug_session()
             else:
                 debug_ctx = nullcontext()
+            from inference.core.roboflow_proxy_context import autolabel_proxy_context
+
             with debug_ctx as debug_session:
                 try:
-                    workflow_results = execution_engine.run(
-                        runtime_parameters=workflow_request.inputs,
-                        serialize_results=True,
-                        _is_preview=is_preview,
-                    )
+                    with autolabel_proxy_context(
+                        job_id=getattr(workflow_request, "job_id", None),
+                        project_id=getattr(workflow_request, "project_id", None),
+                    ):
+                        workflow_results = execution_engine.run(
+                            runtime_parameters=workflow_request.inputs,
+                            serialize_results=True,
+                            _is_preview=is_preview,
+                        )
                 except Exception as error:
                     # The error response is built outside this route (see
                     # `with_route_exceptions`), after the session ContextVars
