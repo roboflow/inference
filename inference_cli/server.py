@@ -7,6 +7,8 @@ from inference_cli.lib import check_inference_server_status, start_inference_con
 from inference_cli.lib.container_adapter import (
     ensure_container_runtime_is_running,
     stop_inference_containers,
+    CONTAINER_RUNTIME_PODMAN,
+    detect_container_runtime,
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
 
@@ -113,6 +115,16 @@ def start(
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
+
+    if tunnel and detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        # Fail before the inference container launches: the tunnel image is
+        # only driven through the Docker SDK.
+        typer.echo(
+            "The tunnel image is only launched through Docker; the podman "
+            "runtime path for it is not implemented yet. Start the tunnel "
+            "manually or run the server on a Docker host."
+        )
+        raise typer.Exit(code=1)
 
     if tunnel and bind_address != "0.0.0.0":
         typer.echo(
