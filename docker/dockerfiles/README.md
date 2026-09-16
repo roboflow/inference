@@ -47,6 +47,26 @@ nvJPEG/torchvision path for progressive JPEG. A successful image build or
 framework import alone does not qualify hardware decode or TensorRT model
 execution; run these device checks and a representative TensorRT model too.
 
+For an RF-DETR package compiled on the target GPU, mount this repository's
+`docker/scripts/verify_jetson_rfdetr_trt_runtime.py` into the container and run:
+
+```bash
+RUNS_ON_JETSON=true ENABLE_TENSOR_DATA_REPRESENTATION=true \
+  python3 /tmp/verify_jetson_rfdetr_trt_runtime.py \
+  --model-package /path/to/package --video-source /path/to/video.h264 \
+  --frames 10 --expected-class dog
+```
+
+The package contains `engine.plan`, `inference_config.json`, `trt_config.json`
+and `class_names.txt`. Use a clip containing the expected class, or omit
+`--expected-class` for a source without known labels. This test uses the
+production `VideoSource`, requires the Jetson producer, disables model-stage
+fallback, and verifies CUDA tensors through preprocessing, TensorRT and
+postprocessing. Only final class IDs are copied to the CPU for assertions.
+Hardware decoder tensors are RGB; pass `input_color_format="rgb"` when using
+the model directly. Tensor inputs do not imply RGB in RF-DETR's default
+preprocessing contract.
+
 The `roboflow/l46-ml` image is based on the `l4t-ml` image from the [jetson-containers](https://github.com/dusty-nv/jetson-containers/tree/master/packages/l4t/l4t-ml) repository. The image is built on a Jetson with support for GPU acceleration using common ML tools.
 
 To build the image, run the following command:
