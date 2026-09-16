@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import pytest
+from pydantic import ValidationError
 
 from inference.core.entities.requests.workflows import DescribeInterfaceRequest
 from inference.core.interfaces.http.handlers.workflows import (
@@ -88,6 +89,40 @@ def test_handle_describe_workflow_interface_when_output_selects_input() -> None:
 
     # then
     assert result.outputs["input_image"] == ["image"]
+
+
+@pytest.mark.parametrize("selector", ["$inputs.other.image", "$inputs_typo.image"])
+def test_handle_describe_workflow_outputs_when_input_selector_is_malformed(
+    selector: str,
+) -> None:
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    definition["outputs"] = [
+        {"type": "JsonField", "name": "input_image", "selector": selector}
+    ]
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        describe_workflow_outputs(definition=definition)
+
+
+def test_handle_describe_workflow_outputs_when_selected_input_has_invalid_dimensionality() -> (
+    None
+):
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    definition["inputs"][0]["dimensionality"] = 0
+    definition["outputs"] = [
+        {"type": "JsonField", "name": "input_image", "selector": "$inputs.image"}
+    ]
+
+    # when
+    with pytest.raises(WorkflowDefinitionError) as error:
+        describe_workflow_outputs(definition=definition)
+
+    # then
+    assert isinstance(error.value.inner_error, ValidationError)
+    assert error.value.context == "describing_workflow_outputs"
 
 
 def test_handle_describe_workflow_outputs_when_specification_without_steps_provided() -> (

@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, Union
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from roboflow_workflows.errors import WorkflowDefinitionError
 from roboflow_workflows.execution_engine.entities.base import (
@@ -12,6 +12,7 @@ from roboflow_workflows.execution_engine.introspection.blocks_loader import (
 )
 from roboflow_workflows.execution_engine.introspection.entities import BlocksDescription
 from roboflow_workflows.execution_engine.v1.compiler.utils import (
+    construct_input_selector,
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
     is_input_selector,
@@ -113,8 +114,18 @@ def determine_workflow_outputs_kinds(
         for output in outputs_definitions
     ):
         for input_definition in inputs_definitions:
-            input_manifest = TypeAdapter(InputType).validate_python(input_definition)
-            input_kinds[input_manifest.name] = [
+            try:
+                input_manifest = TypeAdapter(InputType).validate_python(
+                    input_definition
+                )
+            except ValidationError as error:
+                raise WorkflowDefinitionError(
+                    public_message="Workflow definition invalid - input misconfigured. See details in inner error.",
+                    inner_error=error,
+                    context="describing_workflow_outputs",
+                )
+            input_selector = construct_input_selector(input_name=input_manifest.name)
+            input_kinds[input_selector] = [
                 kind.name if hasattr(kind, "name") else kind
                 for kind in input_manifest.kind
             ]
@@ -123,13 +134,12 @@ def determine_workflow_outputs_kinds(
         output_name = output["name"]
         selector = output["selector"]
         if is_input_selector(selector_or_value=selector):
-            input_name = get_last_chunk_of_selector(selector=selector)
-            if input_name not in input_kinds:
+            if selector not in input_kinds:
                 raise WorkflowDefinitionError(
-                    public_message=f"Could not find input referred in outputs (`{input_name}`) within Workflow inputs.",
+                    public_message=f"Could not find input referred in outputs (`{selector}`) within Workflow inputs.",
                     context="describing_workflow_outputs",
                 )
-            workflow_response_definition[output_name] = input_kinds[input_name]
+            workflow_response_definition[output_name] = input_kinds[selector]
             continue
         step_name, selected_property = extract_step_name_and_selected_property(
             selector=selector,
