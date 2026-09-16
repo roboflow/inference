@@ -581,6 +581,10 @@ def infer_from_trt_engine(
     """
     if stream is None:
         stream = torch.cuda.current_stream(device)
+    else:
+        # input may still be in-flight on the caller's stream (e.g. `.repeat()`
+        # on the default stream) - order the inference stream after it
+        stream.wait_stream(torch.cuda.current_stream(device))
     with torch.cuda.stream(stream):
         pre_processed_images.record_stream(stream)
         results = _infer_from_trt_engine(
@@ -740,6 +744,7 @@ def _execute_trt_engine(
         else:
             trt_cuda_graph_state = trt_cuda_graph_cache[cache_key]
             stream = trt_cuda_graph_state.cuda_stream
+            stream.wait_stream(torch.cuda.current_stream(device))
             consumer_done = trt_cuda_graph_state.consumer_done_event
             if consumer_done is not None:
                 stream.wait_event(consumer_done)
@@ -833,6 +838,7 @@ def _capture_cuda_graph(
     graph_context = engine.create_execution_context()
 
     stream = torch.cuda.Stream(device=device)
+    stream.wait_stream(torch.cuda.current_stream(device))
     input_ready = getattr(pre_processed_images, "_trt_ready_event", None)
     if use_pre_processed_images_as_input_buffer:
         input_buffer = pre_processed_images

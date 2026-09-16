@@ -594,3 +594,42 @@ def test_trt_per_class_confidence_filters_detections(
     )
     predictions = model(coins_counting_image_numpy, confidence="best")
     assert 1 not in predictions[0].class_id.cpu().tolist()
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_post_process_waits_for_forward_output(
+    yolo_nas_coin_counting_trt_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    from inference_models.models.yolonas.yolonas_object_detection_trt import (
+        YOLONasForObjectDetectionTRT,
+    )
+
+    model = YOLONasForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=yolo_nas_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+    )
+    images = [coins_counting_image_torch, coins_counting_image_torch.flip(-1)]
+    expected = []
+    for image in images:
+        torch.cuda.synchronize()
+        expected.append(model(image)[0])
+
+    for _ in range(5):
+        for image, expected_detections in zip(images, expected):
+            pre_processed, meta = model.pre_process(image)
+            # keep the default stream busy, so forward()'s output is still
+            # being written when post_process() starts reading it
+            torch.cuda._sleep(10**9)
+
+            predictions = model.post_process(model.forward(pre_processed), meta)
+
+            assert torch.allclose(
+                predictions[0].xyxy.cpu(), expected_detections.xyxy.cpu()
+            )
+            assert torch.allclose(
+                predictions[0].confidence.cpu(),
+                expected_detections.confidence.cpu(),
+                atol=1e-4,
+            )

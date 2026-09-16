@@ -254,7 +254,12 @@ class YOLONasForObjectDetectionTRT(
                     stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
                 )
-                return torch.cat(results, dim=-1)
+                # keep the concat on the inference stream and sync, so the
+                # post-processing stream never reads a half-written tensor
+                with torch.cuda.stream(self._inference_stream):
+                    results = torch.cat(results, dim=-1)
+                self._inference_stream.synchronize()
+                return results
 
     def post_process(
         self,

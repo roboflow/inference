@@ -693,3 +693,39 @@ def test_trt_cudagraph_capture_does_not_break_concurrent_default_stream_work(
         worker.join()
 
     assert not errors
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_cudagraph_forward_waits_for_input_in_flight_on_caller_stream(
+    yolov8n_640_t4_trt_package: str,
+    dog_image_numpy: np.ndarray,
+) -> None:
+    from inference_models import AutoModel
+    from inference_models.models.common.trt import TRTCudaGraphCache
+
+    device = torch.device("cuda:0")
+    model = AutoModel.from_pretrained(
+        model_id_or_path=yolov8n_640_t4_trt_package,
+        device=device,
+        trt_cuda_graph_cache=TRTCudaGraphCache(capacity=16),
+    )
+    inputs = [
+        model.pre_process(dog_image_numpy)[0],
+        model.pre_process(np.ascontiguousarray(dog_image_numpy[:, ::-1]))[0],
+    ]
+    expected = []
+    for pre_processed in inputs:
+        torch.cuda.synchronize()
+        expected.append(model.forward(pre_processed.repeat(2, 1, 1, 1)).clone())
+
+    for _ in range(5):
+        for pre_processed, expected_output in zip(inputs, expected):
+            # keep the caller's (default) stream busy, so the batch below is
+            # still being written when the TRT stream starts consuming it
+            torch.cuda._sleep(10**9)
+            batch = pre_processed.repeat(2, 1, 1, 1)
+
+            output = model.forward(batch)
+
+            assert torch.allclose(expected_output, output, atol=1e-6)
