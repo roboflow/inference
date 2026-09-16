@@ -54,7 +54,7 @@ create_models_wheel:
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
 create_isolation_wheels: create_workflows_wheel create_models_wheel
 	python -m pip install --upgrade pip
-	python -m pip install setuptools wheel twine requests
+	python -m pip install setuptools wheel requests
 	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	rm -rf build/*
