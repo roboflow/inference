@@ -1,0 +1,47 @@
+name: Publish roboflow-workflows to PyPI
+on:
+  #release:
+  #  types: [created]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the built wheel to PyPI (false = build-only smoke test)"
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 10
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: 🛞 Build roboflow-workflows wheel
+        run: make create_workflows_wheel
+      - name: 📤 Upload built wheel as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: roboflow-workflows-wheel
+          path: dist/roboflow_workflows-*.whl
+      - name: 🚀 Publish roboflow-workflows to PyPI
+        # Release-triggered runs always publish. Manual dispatches publish
+        # only when the operator explicitly opts in — default is build-only
+        # so smoke-testing the packaging never accidentally re-tags PyPI.
+        if: ${{ github.event_name == 'release' || github.event.inputs.publish == 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
