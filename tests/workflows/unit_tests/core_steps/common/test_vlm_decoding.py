@@ -1,6 +1,7 @@
 """Unit tests for the shared VLM decoding package."""
 
 import json
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -31,6 +32,9 @@ from inference.core.workflows.core_steps.common.vlm_decoding import (
     prediction_kinds_for_tasks,
     read_polygon,
     scale_confidence,
+)
+from inference.core.workflows.core_steps.common.vlm_decoding import (
+    segmentation as segmentation_decoding,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -1450,6 +1454,68 @@ def test_decode_instance_segmentations_reports_error_when_no_polygon_usable() ->
 
     assert error_status is True
     assert detections is None
+
+
+# A hexagon inside the 800x400 frame, clear of SEGMENTATION_POLYGON_FLAT.
+HEXAGON_POLYGON_FLAT = [500, 50, 700, 50, 750, 150, 700, 250, 500, 250, 450, 150]
+
+
+@mock.patch.object(
+    segmentation_decoding, "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 5
+)
+def test_decode_instance_segmentations_skips_polygons_above_vertex_limit() -> None:
+    error_status, detections = _decode_segmentation(
+        json.dumps(
+            [{"label": "dog", "polygon": HEXAGON_POLYGON_FLAT}, SEGMENTATION_ENTRY]
+        )
+    )
+
+    assert error_status is False
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+    assert detections.data[CLASS_NAME_DATA_FIELD].tolist() == ["cat"]
+
+
+@mock.patch.object(
+    segmentation_decoding, "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 4
+)
+def test_decode_instance_segmentations_keeps_polygon_at_vertex_limit() -> None:
+    error_status, detections = _decode_segmentation(json.dumps([SEGMENTATION_ENTRY]))
+
+    assert error_status is False
+    assert detections.xyxy.tolist() == [EXPECTED_XYXY]
+
+
+@mock.patch.object(
+    segmentation_decoding, "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 5
+)
+def test_decode_instance_segmentations_reports_error_when_all_polygons_above_vertex_limit() -> (
+    None
+):
+    error_status, detections = _decode_segmentation(
+        json.dumps([{"label": "dog", "polygon": HEXAGON_POLYGON_FLAT}])
+    )
+
+    assert error_status is True
+    assert detections is None
+
+
+@mock.patch.object(
+    segmentation_decoding, "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 5
+)
+def test_decode_instance_segmentations_does_not_log_oversized_polygon(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger=segmentation_decoding.logger.name):
+        _decode_segmentation(
+            json.dumps(
+                [{"label": "dog", "polygon": HEXAGON_POLYGON_FLAT}, SEGMENTATION_ENTRY]
+            )
+        )
+
+    assert "6 vertices, above the limit of 5" in caplog.text
+    assert "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES" in caplog.text
+    assert "750" not in caplog.text
 
 
 def test_decode_instance_segmentations_requires_upload_dimensions() -> None:

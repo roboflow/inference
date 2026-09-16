@@ -26,6 +26,7 @@ import supervision as sv
 from pycocotools import mask as mask_utils
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core.env import WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -165,8 +166,9 @@ def build_instance_segmentations(
 ) -> sv.Detections:
     """Build RLE-masked ``sv.Detections`` from an already-parsed JSON payload.
 
-    Every entry is validated first (well-formed polygon, non-zero enclosed
-    area); the survivors are encoded polygon -> COCO RLE at the original image
+    Every entry is validated first (well-formed polygon, at most
+    ``WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES`` vertices, non-zero
+    enclosed area); the survivors are encoded polygon -> COCO RLE at the original image
     resolution without rasterising a dense mask, and their bounding box is
     taken from the RLE (``toBbox``) so box and mask always agree.
 
@@ -211,6 +213,19 @@ def build_instance_segmentations(
             logger.warning(
                 "Skipping VLM segmentation entry without a well-formed polygon: %r",
                 entry,
+            )
+            continue
+        if len(polygon) > WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES:
+            # The RLE encoder allocates memory proportional to the outline
+            # length, so an oversized answer is dropped before encoding. The
+            # entry itself is not logged - it is the oversized payload.
+            logger.warning(
+                "Skipping VLM segmentation entry labelled %r: its polygon has "
+                "%d vertices, above the limit of %d set by "
+                "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES",
+                get_detection_class_name(entry),
+                len(polygon),
+                WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES,
             )
             continue
         polygon[:, 0] = np.clip(polygon[:, 0], 0.0, upload_width) * scale_x
