@@ -33,6 +33,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.models.common.runtime_timing import RuntimeTiming
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -398,6 +399,13 @@ class RFDetrForObjectDetectionTRT(
         self._runtime_diagnostics_enabled = get_boolean_from_env(
             "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS", default=False
         )
+        self._runtime_timing = (
+            RuntimeTiming(lambda: torch.cuda.Event(enable_timing=True))
+            if get_boolean_from_env(
+                "INFERENCE_MODELS_PERFORMANCE_DIAGNOSTICS", default=False
+            )
+            else None
+        )
         self.last_inference_diagnostics = None
         self.recommended_parameters = recommended_parameters
 
@@ -495,6 +503,14 @@ class RFDetrForObjectDetectionTRT(
 
         return metadata
 
+    @property
+    def runtime_performance_diagnostics(self):
+        return (
+            self._runtime_timing.snapshot()
+            if self._runtime_timing
+            else {"enabled": False}
+        )
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -510,13 +526,22 @@ class RFDetrForObjectDetectionTRT(
             Per-image object detections.
         """
         kwargs.pop("independent_stage_execution", None)
-        pre_processed_images, pre_processing_meta = self.pre_process(
-            images=images,
-            independent_stage_execution=False,
-            **kwargs,
-        )
-        model_results = self.forward(pre_processed_images, **kwargs)
-        detections = self.post_process(model_results, pre_processing_meta, **kwargs)
+        timing = self._runtime_timing
+        if timing:
+            timing.begin(images)
+        succeeded = False
+        try:
+            pre_processed_images, pre_processing_meta = self.pre_process(
+                images=images,
+                independent_stage_execution=False,
+                **kwargs,
+            )
+            model_results = self.forward(pre_processed_images, **kwargs)
+            detections = self.post_process(model_results, pre_processing_meta, **kwargs)
+            succeeded = True
+        finally:
+            if timing:
+                timing.finish(succeeded)
         if self._runtime_diagnostics_enabled:
             # Capture in the inference thread: stage selections are thread-local.
             # Reading tensor devices does not synchronize or copy image pixels.
@@ -572,6 +597,8 @@ class RFDetrForObjectDetectionTRT(
             ModelRuntimeError: If the selected implementation is incompatible.
         """
         stream = self._scheduler.preprocess_stream()
+        if self._runtime_timing:
+            self._runtime_timing.mark("preprocess", stream)
         request = PreprocessRequest(
             images=images,
             input_color_format=input_color_format,
@@ -659,6 +686,8 @@ class RFDetrForObjectDetectionTRT(
             independent_stage_execution=independent_stage_execution,
         )
 
+        if self._runtime_timing:
+            self._runtime_timing.mark("preprocess", stream, end=True)
         return pre_processed_images, result.metadata
 
     def forward(
@@ -684,6 +713,8 @@ class RFDetrForObjectDetectionTRT(
             stream: torch.cuda.Stream,
         ) -> Tuple[torch.Tensor, torch.Tensor]:
             with use_cuda_context(context=self._cuda_context):
+                if self._runtime_timing:
+                    self._runtime_timing.mark("trt", stream)
                 context = self._execution_stage_context(current_stream=stream)
                 request = EngineExecutionRequest(
                     pre_processed_images=pre_processed_images,
@@ -701,6 +732,8 @@ class RFDetrForObjectDetectionTRT(
                     context=context,
                 )
 
+                if self._runtime_timing:
+                    self._runtime_timing.mark("trt", stream, end=True)
                 return model_results
 
         self._record_static_stage_execution(stage="scheduler")
@@ -740,6 +773,8 @@ class RFDetrForObjectDetectionTRT(
         threshold = confidence_filter.get_threshold(self.class_names)
 
         def execute_postprocess(stream: torch.cuda.Stream) -> List[Detections]:
+            if self._runtime_timing:
+                self._runtime_timing.mark("postprocess", stream)
             bboxes, logits = model_results
             request = PostprocessRequest(
                 bboxes=bboxes,
@@ -818,6 +853,8 @@ class RFDetrForObjectDetectionTRT(
                     selection.fallback_reason,
                 )
 
+            if self._runtime_timing:
+                self._runtime_timing.mark("postprocess", stream, end=True)
             return results
 
         self._record_static_stage_execution(stage="scheduler")
