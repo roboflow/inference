@@ -7,12 +7,15 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from inference.enterprise.workflows.enterprise_blocks.sinks import kafka_common
+from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import (
+    derive_msk_region,
+    msk_token_callback,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_consumer import v1
 from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
     BlockManifest,
     KafkaConsumerBlockV1,
-    _derive_msk_region,
-    _msk_token_callback,
 )
 
 BOOTSTRAP = "broker-1:9092,broker-2:9092"
@@ -944,7 +947,7 @@ class FailingTokenProvider:
 @pytest.fixture
 def msk_signer():
     FakeTokenProvider.calls = []
-    with patch.object(v1, "MSKAuthTokenProvider", FakeTokenProvider):
+    with patch.object(kafka_common, "MSKAuthTokenProvider", FakeTokenProvider):
         yield FakeTokenProvider
 
 
@@ -1023,7 +1026,7 @@ def test_aws_msk_ignores_username_and_password(broker: FakeBroker, msk_signer) -
 
 def test_msk_token_callback_converts_expiry_to_seconds(msk_signer) -> None:
     failures: List[BaseException] = []
-    callback = _msk_token_callback("eu-west-1", failures)
+    callback = msk_token_callback("eu-west-1", failures)
 
     token, expiry = callback("ignored-config")
 
@@ -1034,7 +1037,7 @@ def test_msk_token_callback_converts_expiry_to_seconds(msk_signer) -> None:
 
 def test_msk_token_callback_success_clears_earlier_failure(msk_signer) -> None:
     failures: List[BaseException] = [RuntimeError("earlier blip")]
-    callback = _msk_token_callback("eu-west-1", failures)
+    callback = msk_token_callback("eu-west-1", failures)
 
     callback("")
 
@@ -1064,10 +1067,18 @@ def test_transient_token_refresh_failure_is_reported_once_then_recovers(
     assert len(broker.consumers) == 1
 
 
+def test_pop_auth_failure_message_tolerates_a_concurrent_clear() -> None:
+    # the refresh callback may clear the list on librdkafka's thread at any moment
+    assert kafka_common.pop_auth_failure_message([]) is None
+    failures: List[BaseException] = [RuntimeError("blip")]
+    assert "blip" in kafka_common.pop_auth_failure_message(failures)
+    assert failures == []
+
+
 def test_msk_token_callback_records_and_reraises_failures() -> None:
     failures: List[BaseException] = []
-    with patch.object(v1, "MSKAuthTokenProvider", FailingTokenProvider):
-        callback = _msk_token_callback("eu-west-1", failures)
+    with patch.object(kafka_common, "MSKAuthTokenProvider", FailingTokenProvider):
+        callback = msk_token_callback("eu-west-1", failures)
 
         with pytest.raises(Exception):
             callback("")
@@ -1083,9 +1094,9 @@ def test_aws_msk_signer_failure_reports_missing_credentials_and_retries(
     block = KafkaConsumerBlockV1()
 
     # when
-    with patch.object(v1, "MSKAuthTokenProvider", FailingTokenProvider):
+    with patch.object(kafka_common, "MSKAuthTokenProvider", FailingTokenProvider):
         failed = run(block, bootstrap_servers=MSK_BOOTSTRAP, provider="AWS MSK")
-    with patch.object(v1, "MSKAuthTokenProvider", FakeTokenProvider):
+    with patch.object(kafka_common, "MSKAuthTokenProvider", FakeTokenProvider):
         recovered = run(block, bootstrap_servers=MSK_BOOTSTRAP, provider="AWS MSK")
 
     # then
@@ -1100,7 +1111,7 @@ def test_aws_msk_signer_failure_reports_missing_credentials_and_retries(
 
 def test_aws_msk_requires_signer_package(broker: FakeBroker) -> None:
     broker.produce(TOPIC, "A")
-    with patch.object(v1, "MSKAuthTokenProvider", None):
+    with patch.object(kafka_common, "MSKAuthTokenProvider", None):
         result = run(
             KafkaConsumerBlockV1(), bootstrap_servers=MSK_BOOTSTRAP, provider="AWS MSK"
         )
@@ -1125,7 +1136,7 @@ def test_aws_msk_requires_signer_package(broker: FakeBroker) -> None:
     ],
 )
 def test_derive_msk_region(servers: str, expected: Optional[str]) -> None:
-    assert _derive_msk_region(servers) == expected
+    assert derive_msk_region(servers) == expected
 
 
 # --------------------------------------------------------------------------------------
@@ -1242,7 +1253,7 @@ def test_changed_connection_parameters_are_rejected(
     run(block)
 
     # when
-    with patch.object(v1, "MSKAuthTokenProvider", FakeTokenProvider):
+    with patch.object(kafka_common, "MSKAuthTokenProvider", FakeTokenProvider):
         result = run(block, **change)
 
     # then

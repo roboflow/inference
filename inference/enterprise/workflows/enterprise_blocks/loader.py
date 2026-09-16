@@ -7,6 +7,9 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.event_writer.v1 impo
 from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
     KafkaConsumerBlockV1,
 )
+from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_producer.v1 import (
+    KafkaProducerSinkBlockV1,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
     MicrosoftSQLServerSinkBlockV1,
 )
@@ -43,4 +46,5 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         PostgreSQLSinkBlockV1,
         EventWriterSinkBlockV1,
         KafkaConsumerBlockV1,
+        KafkaProducerSinkBlockV1,
     ]

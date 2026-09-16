@@ -1,12 +1,9 @@
 import json
 import logging
-import math
-import re
 import threading
 import time
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     Literal,
@@ -42,25 +39,29 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import (
+    GROUP_ID_PREFIX,
+    LIBRDKAFKA_LOG_LEVEL,
+    PROVIDER_AWS_MSK,
+    PROVIDER_SELF_HOSTED,
+    ConfigurationError,
+    build_connection_config,
+    coerce_non_negative_int,
+    coerce_timeout,
+    describe_error,
+    is_selector,
+    pop_auth_failure_message,
+    preflight_token,
+    time_remaining,
+)
 
 try:
     import confluent_kafka
 except ImportError:  # pragma: no cover - exercised only on images without the wheel
     confluent_kafka = None
 
-try:
-    from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
-except ImportError:  # pragma: no cover - exercised only on images without the wheel
-    MSKAuthTokenProvider = None
-
 logger = logging.getLogger(__name__)
 
-PROVIDER_SELF_HOSTED = "Self-hosted"
-PROVIDER_AWS_MSK = "AWS MSK"
-PROVIDERS = (PROVIDER_SELF_HOSTED, PROVIDER_AWS_MSK)
-MSK_HOST_PATTERN = re.compile(
-    r"\.kafka(?:-serverless)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$", re.IGNORECASE
-)
 MAX_MESSAGES_PER_RUN = 1000
 MODE_POINTER = "pointer"
 MODE_LATEST = "latest"
@@ -156,10 +157,6 @@ connection is opened once and reused for every frame.
 This block is not available on the Roboflow hosted platform. Self-hosted servers enable
 enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
-
-
-def _is_selector(value: Any) -> bool:
-    return isinstance(value, str) and value.startswith("$")
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -299,7 +296,7 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("offset", "partition", mode="before")
     @classmethod
     def validate_non_negative_integer(cls, value: Any, info: Any) -> Any:
-        if value is None or _is_selector(value):
+        if value is None or is_selector(value):
             return value
         if isinstance(value, bool) or type(value) is not int or value < 0:
             raise ValueError(f"{info.field_name} must be a non-negative integer")
@@ -308,7 +305,7 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("poll_timeout", "connect_timeout", mode="before")
     @classmethod
     def validate_timeout(cls, value: Any, info: Any) -> Any:
-        if _is_selector(value):
+        if is_selector(value):
             return value
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{info.field_name} must be a number of seconds")
@@ -361,10 +358,6 @@ class _Record(NamedTuple):
     payload: Dict[str, Any]
 
 
-class _ConfigurationError(ValueError):
-    """User-facing configuration problem detected before touching the broker."""
-
-
 def _outputs(
     record: Optional[_Record],
     is_new: bool = False,
@@ -380,124 +373,6 @@ def _outputs(
         "error_status": error_message is not None,
         "error_message": error_message,
     }
-
-
-def _derive_msk_region(bootstrap_servers: str) -> Optional[str]:
-    for entry in str(bootstrap_servers).split(","):
-        host = entry.strip()
-        if not host:
-            continue
-        if host.count(":") == 1:
-            host = host.rsplit(":", 1)[0]
-        match = MSK_HOST_PATTERN.search(host)
-        if match:
-            return match.group(1).lower()
-    return None
-
-
-def _msk_token_callback(
-    region: str, failures: List[BaseException]
-) -> Callable[[str], Tuple[str, float]]:
-    def callback(_config: str) -> Tuple[str, float]:
-        try:
-            token, expiry_ms = MSKAuthTokenProvider.generate_auth_token(region)
-        except Exception as error:
-            # keep only the latest failure; a later success clears it so a transient
-            # refresh error never poisons subsequent runs
-            failures[:] = [error]
-            raise
-        failures.clear()
-        # the signer reports expiry in epoch milliseconds; librdkafka wants seconds
-        return token, expiry_ms / 1000
-
-    return callback
-
-
-def _build_connection_config(
-    provider: str,
-    bootstrap_servers: str,
-    username: Optional[str],
-    password: Optional[str],
-    aws_region: Optional[str],
-    ssl_ca_location: Optional[str],
-    auth_failures: List[BaseException],
-) -> Dict[str, Any]:
-    if provider == PROVIDER_SELF_HOSTED:
-        if (username is None) != (password is None):
-            raise _ConfigurationError(
-                "Set both username and password for SASL authentication, or neither for "
-                "an unauthenticated plaintext listener."
-            )
-        if username is None:
-            config: Dict[str, Any] = {"security.protocol": "PLAINTEXT"}
-        else:
-            config = {
-                "security.protocol": "SASL_SSL",
-                "sasl.mechanisms": "SCRAM-SHA-512",
-                "sasl.username": str(username),
-                "sasl.password": str(password),
-            }
-    elif provider == PROVIDER_AWS_MSK:
-        if MSKAuthTokenProvider is None:
-            raise _ConfigurationError(
-                "AWS MSK provider requires the aws-msk-iam-sasl-signer-python package."
-            )
-        region = str(aws_region).strip() if aws_region else None
-        if not region:
-            region = _derive_msk_region(bootstrap_servers)
-        if not region:
-            raise _ConfigurationError(
-                "Could not derive the AWS region from bootstrap_servers; set aws_region."
-            )
-        config = {
-            "security.protocol": "SASL_SSL",
-            "sasl.mechanisms": "OAUTHBEARER",
-            "oauth_cb": _msk_token_callback(region, auth_failures),
-        }
-    else:
-        raise _ConfigurationError(
-            f"Unknown provider {provider!r}; expected one of {', '.join(PROVIDERS)}."
-        )
-    if ssl_ca_location:
-        config["ssl.ca.location"] = str(ssl_ca_location)
-    return config
-
-
-def _remaining(deadline: float, what: str) -> float:
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise TimeoutError(f"timed out {what}")
-    return remaining
-
-
-def _coerce_non_negative_int(value: Any, name: str) -> int:
-    # selector-supplied values arrive uncoerced (numeric strings, floats from JSON)
-    if isinstance(value, bool):
-        raise _ConfigurationError(f"{name} must be a non-negative integer.")
-    if isinstance(value, float):
-        if not value.is_integer():
-            raise _ConfigurationError(f"{name} must be a non-negative integer.")
-        value = int(value)
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise _ConfigurationError(f"{name} must be a non-negative integer.")
-    if number < 0:
-        raise _ConfigurationError(f"{name} must be a non-negative integer.")
-    return number
-
-
-def _coerce_timeout(value: Any, name: str, allow_zero: bool) -> float:
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError, OverflowError):
-        seconds = math.nan
-    lower_ok = seconds >= 0 if allow_zero else seconds > 0
-    if not math.isfinite(seconds) or not lower_ok or seconds > threading.TIMEOUT_MAX:
-        raise _ConfigurationError(
-            f"Invalid {name}: {value!r}. It must be a finite number of seconds."
-        )
-    return seconds
 
 
 def _decode(message: Any) -> _Record:
@@ -618,29 +493,27 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                 "Kafka Consumer requires the confluent-kafka package in the runtime."
             )
         try:
-            poll_timeout = _coerce_timeout(
-                poll_timeout, "poll_timeout", allow_zero=True
-            )
-            connect_timeout = _coerce_timeout(
+            poll_timeout = coerce_timeout(poll_timeout, "poll_timeout", allow_zero=True)
+            connect_timeout = coerce_timeout(
                 connect_timeout, "connect_timeout", allow_zero=False
             )
             if read_mode not in READ_MODES:
-                raise _ConfigurationError(
+                raise ConfigurationError(
                     f"Unknown read_mode {read_mode!r}; expected one of "
                     f"{', '.join(READ_MODES)}."
                 )
             pointer: Optional[Tuple[int, int]] = None
             if offset is not None:
                 pointer = (
-                    _coerce_non_negative_int(partition, "partition"),
-                    _coerce_non_negative_int(offset, "offset"),
+                    coerce_non_negative_int(partition, "partition"),
+                    coerce_non_negative_int(offset, "offset"),
                 )
             bootstrap_servers = str(bootstrap_servers).strip()
             topic = str(topic).strip()
             if not bootstrap_servers or not topic:
-                raise _ConfigurationError("bootstrap_servers and topic must be set.")
+                raise ConfigurationError("bootstrap_servers and topic must be set.")
             auth_failures: List[BaseException] = []
-            connection_config = _build_connection_config(
+            connection_config = build_connection_config(
                 provider=provider,
                 bootstrap_servers=bootstrap_servers,
                 username=username,
@@ -649,7 +522,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                 ssl_ca_location=ssl_ca_location,
                 auth_failures=auth_failures,
             )
-        except _ConfigurationError as error:
+        except ConfigurationError as error:
             return self._failure(str(error))
         identity = (
             bootstrap_servers,
@@ -677,11 +550,11 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                     key_filter=key_filter,
                     skip_positioning=applies_pointer,
                 )
-            except _ConfigurationError as error:
+            except ConfigurationError as error:
                 return self._failure(str(error))
             except Exception as error:
                 return self._failure(
-                    f"Kafka broker not reachable ({self._describe_error(error)}). "
+                    f"Kafka broker not reachable ({describe_error(error)}). "
                     "Raise 'connect_timeout' if the broker needs longer to connect."
                 )
             self._reposition_timeout = connect_timeout
@@ -710,7 +583,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
     ) -> None:
         if self._consumer is not None:
             if identity != self._connection_identity:
-                raise _ConfigurationError(
+                raise ConfigurationError(
                     "Kafka connection parameters (bootstrap servers, topic, provider or "
                     "credentials) changed between runs; this block reads only from the "
                     "connection configured on its first run."
@@ -720,29 +593,24 @@ class KafkaConsumerBlockV1(WorkflowBlock):
             "bootstrap.servers": bootstrap_servers,
             # unique group per instance so every pipeline sees every message;
             # assign() below means the group is never used for rebalancing
-            "group.id": f"roboflow-inference-{uuid4()}",
+            "group.id": f"{GROUP_ID_PREFIX}{uuid4()}",
             "enable.auto.commit": False,
             "auto.offset.reset": "latest",
-            # only warnings and errors from librdkafka itself
-            "log_level": 4,
+            "log_level": LIBRDKAFKA_LOG_LEVEL,
             **connection_config,
         }
         self._auth_failures = auth_failures
-        token_callback = connection_config.get("oauth_cb")
-        if token_callback is not None:
-            # librdkafka blocks the constructor for 10s when the token callback fails;
-            # sign once up front so missing AWS credentials fail fast with a clear cause
-            try:
-                token_callback("")
-            except Exception:
-                self._raise_on_auth_failure()
-                raise
+        try:
+            preflight_token(connection_config)
+        except Exception:
+            self._raise_on_auth_failure()
+            raise
         consumer = confluent_kafka.Consumer(config)
         # one budget for the whole first run: metadata plus every watermark lookup
         deadline = time.monotonic() + connect_timeout
         try:
             metadata = consumer.list_topics(
-                topic, timeout=_remaining(deadline, "fetching topic metadata")
+                topic, timeout=time_remaining(deadline, "fetching topic metadata")
             )
             self._raise_on_auth_failure()
             topic_metadata = metadata.topics.get(topic)
@@ -752,12 +620,12 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                     if topic_metadata is not None
                     else "not found"
                 )
-                raise _ConfigurationError(
+                raise ConfigurationError(
                     f"Kafka topic {topic!r} is not available ({detail})."
                 )
             partitions = sorted(topic_metadata.partitions)
             if not partitions:
-                raise _ConfigurationError(f"Kafka topic {topic!r} has no partitions.")
+                raise ConfigurationError(f"Kafka topic {topic!r} has no partitions.")
             window = self._scan_window(key_filter, len(partitions))
             positions, targets = [], {}
             if not skip_positioning:
@@ -767,7 +635,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                         topic,
                         p,
                         window,
-                        _remaining(
+                        time_remaining(
                             deadline, f"locating the newest record on partition {p}"
                         ),
                     )
@@ -795,33 +663,12 @@ class KafkaConsumerBlockV1(WorkflowBlock):
         self._sequence_pointer = None
 
     def _pop_auth_failure_message(self) -> Optional[str]:
-        if not self._auth_failures:
-            return None
-        # report once; librdkafka keeps retrying the refresh in the background
-        error = self._auth_failures.pop()
-        self._auth_failures.clear()
-        return (
-            "AWS MSK IAM authentication failed: "
-            f"{self._describe_auth_error(error)}. Check that AWS credentials are "
-            "available on this machine and that the identity may connect to the cluster."
-        )
+        return pop_auth_failure_message(self._auth_failures)
 
     def _raise_on_auth_failure(self) -> None:
         message = self._pop_auth_failure_message()
         if message is not None:
-            raise _ConfigurationError(message)
-
-    @classmethod
-    def _describe_auth_error(cls, error: BaseException) -> str:
-        text = cls._describe_error(error)
-        # botocore surfaces an empty credential chain either as NoCredentialsError or,
-        # via the MSK signer, as an AttributeError on the missing credentials object
-        if "access_key" in text or error.__class__.__name__ in (
-            "NoCredentialsError",
-            "PartialCredentialsError",
-        ):
-            return "no AWS credentials were found on this machine"
-        return text
+            raise ConfigurationError(message)
 
     @staticmethod
     def _scan_window(key_filter: Optional[str], partitions: int) -> int:
@@ -855,11 +702,6 @@ class KafkaConsumerBlockV1(WorkflowBlock):
         )
         return confluent_kafka.TopicPartition(topic, partition, high)
 
-    @staticmethod
-    def _describe_error(error: BaseException) -> str:
-        text = str(error).strip()
-        return text or error.__class__.__name__
-
     def _failure(self, message: str) -> BlockResult:
         logger.error("Kafka Consumer failure: %s", message)
         return _outputs(self._last, is_new=False, error_message=message)
@@ -892,7 +734,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
         try:
             low, high = consumer.get_watermark_offsets(
                 confluent_kafka.TopicPartition(self._topic, partition),
-                timeout=_remaining(deadline, "locating the pointed record"),
+                timeout=time_remaining(deadline, "locating the pointed record"),
             )
             if offset >= high:
                 return self._failure(
@@ -913,7 +755,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                         consumer,
                         self._topic,
                         other,
-                        _remaining(deadline, f"positioning partition {other}"),
+                        time_remaining(deadline, f"positioning partition {other}"),
                     )
                     for other in sorted(self._partitions)
                     if other != partition
@@ -946,16 +788,16 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                         f"offset {message.offset()}."
                     )
                 return self._accept(message)
-        except _ConfigurationError as error:
+        except ConfigurationError as error:
             return self._failure(str(error))
         except Exception as error:
             try:
                 self._raise_on_auth_failure()
-            except _ConfigurationError as auth_error:
+            except ConfigurationError as auth_error:
                 return self._failure(str(auth_error))
             return self._failure(
                 f"Failed to read offset {offset} from partition {partition}: "
-                f"{self._describe_error(error)}"
+                f"{describe_error(error)}"
             )
 
     def _accept(self, message: Any, error_message: Optional[str] = None) -> BlockResult:
@@ -1035,14 +877,14 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                     consumer, poll_timeout, key_filter, catch_up_deadline
                 )
             error_message = self._pop_auth_failure_message() or error_message
-        except _ConfigurationError as error:
+        except ConfigurationError as error:
             return self._failure(str(error))
         except Exception as error:
             try:
                 self._raise_on_auth_failure()
-            except _ConfigurationError as auth_error:
+            except ConfigurationError as auth_error:
                 return self._failure(str(auth_error))
-            return self._failure(f"Failed to poll Kafka: {self._describe_error(error)}")
+            return self._failure(f"Failed to poll Kafka: {describe_error(error)}")
         if message is not None:
             return self._accept(message, error_message)
         return _outputs(self._last, is_new=False, error_message=error_message)
@@ -1100,7 +942,9 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                 self._topic,
                 p,
                 window,
-                _remaining(deadline, f"locating the newest record on partition {p}"),
+                time_remaining(
+                    deadline, f"locating the newest record on partition {p}"
+                ),
             )
             positions.append(position)
             if target is not None:
@@ -1149,14 +993,14 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                 catch_up_deadline = time.monotonic() + self._reposition_timeout
                 timeout = 0
             error_message = self._pop_auth_failure_message() or error_message
-        except _ConfigurationError as error:
+        except ConfigurationError as error:
             return self._failure(str(error))
         except Exception as error:
             try:
                 self._raise_on_auth_failure()
-            except _ConfigurationError as auth_error:
+            except ConfigurationError as auth_error:
                 return self._failure(str(auth_error))
-            return self._failure(f"Failed to poll Kafka: {self._describe_error(error)}")
+            return self._failure(f"Failed to poll Kafka: {describe_error(error)}")
         if newest is not None:
             return self._accept(newest, error_message)
         return _outputs(self._last, is_new=False, error_message=error_message)
