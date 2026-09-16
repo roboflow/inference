@@ -26,6 +26,7 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.pre_processing import (
+    pre_process_network_input,
     resolve_rfdetr_preprocessor_max_workers,
 )
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
@@ -414,3 +415,43 @@ def test_preprocessor_worker_limit_rejects_non_positive_environment_value(
 def test_universal_runtime_requires_cuda_device() -> None:
     with pytest.raises(ModelRuntimeError, match="requires a CUDA target"):
         UniversalFastPreprocessRuntime(device=torch.device("cpu"))
+
+
+@pytest.mark.parametrize("tensor_input", [False, True])
+@pytest.mark.parametrize("dataset_size", [32, 64, 128])
+def test_workspace_stretch_and_auto_orient_preserve_decoded_pixel_contract(
+    tensor_input, dataset_size
+) -> None:
+    image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
+    if tensor_input:
+        image = torch.from_numpy(image).permute(2, 0, 1)
+    network = _network_input()
+    workspace_network = network.model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(
+                height=dataset_size, width=dataset_size
+            )
+        }
+    )
+    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+    )
+    assert compatibility.supported, compatibility.reasons
+    expected, expected_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+    actual, actual_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert actual_metadata == expected_metadata
