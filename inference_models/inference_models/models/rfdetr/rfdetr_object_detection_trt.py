@@ -1,4 +1,5 @@
 import threading
+import time
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
@@ -80,6 +81,7 @@ from inference_models.models.rfdetr.optimization.selection import (
 from inference_models.models.rfdetr.pre_processing import (
     resolve_rfdetr_preprocessor_max_workers,
 )
+from inference_models.utils.environment import get_boolean_from_env
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -393,6 +395,10 @@ class RFDetrForObjectDetectionTRT(
                 self.postprocessor_implementation_id,
             )
         self._thread_local_storage = threading.local()
+        self._runtime_diagnostics_enabled = get_boolean_from_env(
+            "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS", default=False
+        )
+        self.last_inference_diagnostics = None
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -510,7 +516,33 @@ class RFDetrForObjectDetectionTRT(
             **kwargs,
         )
         model_results = self.forward(pre_processed_images, **kwargs)
-        return self.post_process(model_results, pre_processing_meta, **kwargs)
+        detections = self.post_process(model_results, pre_processing_meta, **kwargs)
+        if self._runtime_diagnostics_enabled:
+            # Capture in the inference thread: stage selections are thread-local.
+            # Reading tensor devices does not synchronize or copy image pixels.
+            # Publish one complete snapshot atomically for read-only observers.
+            input_images = images if isinstance(images, list) else [images]
+            self.last_inference_diagnostics = {
+                "completed_at": time.time(),
+                "input_devices": [
+                    str(getattr(image, "device", "cpu")) for image in input_images
+                ],
+                "preprocess_device": str(pre_processed_images.device),
+                "forward_devices": [str(output.device) for output in model_results],
+                "postprocess_devices": [
+                    str(tensor.device)
+                    for detection in detections
+                    for tensor in (
+                        detection.xyxy,
+                        detection.class_id,
+                        detection.confidence,
+                    )
+                ],
+                "execution": self.optimization_runtime_metadata.get(
+                    "last_execution", {}
+                ),
+            }
+        return detections
 
     def pre_process(
         self,
