@@ -410,7 +410,7 @@ RUN test "$(python3 -c "import importlib.metadata as m; print(m.version('bitsand
 WORKDIR /build/inference
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-    python -m pip install --break-system-packages wheel twine requests && \
+    python -m pip install --break-system-packages setuptools wheel requests && \
     rm -f dist/* && \
     make create_workflows_wheel && \
     rm -rf build/* && \
@@ -521,6 +521,8 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl \
+        /opt/wheels/inference_cli-*.whl \
+        /opt/wheels/inference_sdk-*.whl \
         /opt/wheels/roboflow_workflows-*.whl && \
     # OpenCV comes from the validated media runtime. Remove Python wheel copies
     # so every process resolves the same CUDA-enabled implementation.

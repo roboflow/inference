@@ -89,7 +89,7 @@ create_wheels_for_gpu_notebook: create_workflows_wheel
 
 create_inference_cli_whl:
 	${PYTHON} -m pip install --upgrade pip
-	${PYTHON} -m pip install setuptools wheel twine requests
+	${PYTHON} -m pip install setuptools wheel requests
 	rm -f dist/*
 	rm -rf build/*
 	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel

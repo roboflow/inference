@@ -129,9 +129,10 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 COPY .release .release
 COPY requirements requirements
 COPY Makefile Makefile
+COPY README.md LICENSE LICENSE.core ./
 
 RUN make create_inference_cli_whl PYTHON=python3.12
-RUN python -m pip install dist/inference_cli*.whl
+RUN python -m pip install dist/inference_cli*.whl dist/inference_sdk*.whl
 
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \
