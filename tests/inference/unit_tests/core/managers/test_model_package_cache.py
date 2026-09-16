@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -16,7 +17,6 @@ from inference.core.managers.active_learning import ActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.models.base import Model
-from inference_models.entities import ResolvedModelMetadata
 
 
 class PackageModel(Model):
@@ -27,7 +27,7 @@ class PackageModel(Model):
 
     def __init__(self, model_id, api_key, backend=None, **kwargs):
         self.model_id = model_id
-        self.resolved_model = ResolvedModelMetadata(
+        self.resolved_model = SimpleNamespace(
             model_id=model_id,
             model_package_id=f"{backend or 'onnx'}-package",
             backend=backend or "onnx",
