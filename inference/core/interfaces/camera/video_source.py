@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
@@ -98,21 +99,41 @@ RESTART_ELIGIBLE_STATES = {
 }
 
 
-
 class SourceFrameAccounting:
     """Bounded source-local counts; layer snapshots are not cross-thread atomic."""
 
-    EVENTS = {"FRAME_CAPTURED": "captured", "FRAME_ENQUEUED": "enqueued",
-              "FRAME_CONSUMED": "returned", "FRAME_RETRIEVE_FAILED": "retrieve_failed"}
-    CAUSES = {"EAGER queue purge", "desired source FPS subsampling", "FPS limiter",
-              "DROP_OLDEST strategy", "DROP_LATEST strategy", "ADAPTIVE strategy",
-              "Buffering not allowed at the moment", "shutdown queue purge"}
+    EVENTS = {
+        "FRAME_CAPTURED": "captured",
+        "FRAME_ENQUEUED": "enqueued",
+        "FRAME_CONSUMED": "returned",
+        "FRAME_RETRIEVE_FAILED": "retrieve_failed",
+    }
+    CAUSES = {
+        "EAGER queue purge",
+        "desired source FPS subsampling",
+        "FPS limiter",
+        "DROP_OLDEST strategy",
+        "DROP_LATEST strategy",
+        "ADAPTIVE strategy",
+        "Buffering not allowed at the moment",
+        "shutdown queue purge",
+    }
 
     def __init__(self):
         self._lock = Lock()
+        self._generation = uuid.uuid4().hex
         self._counts = {name: 0 for name in self.EVENTS.values()}
         self._last_ids = {}
         self._drops = {}
+
+    def new_generation(self):
+        """Rotate decoder epoch before a newly initialized producer starts capture.
+
+        Lifetime counters remain cumulative, but comparisons across this boundary
+        must be rejected even when totals have not decreased.
+        """
+        with self._lock:
+            self._generation = uuid.uuid4().hex
 
     def __call__(self, update):
         event = update.event_type
@@ -125,13 +146,22 @@ class SourceFrameAccounting:
                     self._last_ids[key] = frame_id
             elif event == "FRAME_DROPPED":
                 cause = update.payload.get("cause")
-                cause = cause if isinstance(cause, str) and cause in self.CAUSES else "other"
+                cause = (
+                    cause
+                    if isinstance(cause, str) and cause in self.CAUSES
+                    else "other"
+                )
                 self._drops[cause] = self._drops.get(cause, 0) + 1
 
     def snapshot(self):
         with self._lock:
-            return {"sampled_at": time.time(), "counts": dict(self._counts),
-                    "last_frame_ids": dict(self._last_ids), "dropped_by_cause": dict(self._drops)}
+            return {
+                "sampled_at": time.time(),
+                "generation": self._generation,
+                "counts": dict(self._counts),
+                "last_frame_ids": dict(self._last_ids),
+                "dropped_by_cause": dict(self._drops),
+            }
 
 
 class BufferFillingStrategy(str, Enum):
@@ -530,9 +560,13 @@ class VideoSource:
         self._frames_buffer = frames_buffer
         self._status_update_handlers = list(status_update_handlers)
         self._frame_accounting = None
-        if any(os.getenv(flag, "false").lower() == "true" for flag in (
-            "ENABLE_RUNTIME_DIAGNOSTICS", "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS"
-        )):
+        if any(
+            os.getenv(flag, "false").lower() == "true"
+            for flag in (
+                "ENABLE_RUNTIME_DIAGNOSTICS",
+                "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS",
+            )
+        ):
             self._frame_accounting = SourceFrameAccounting()
             self._status_update_handlers.append(self._frame_accounting)
             # The consumer emits capture/fill events through the same source-local list.
@@ -560,20 +594,27 @@ class VideoSource:
         # Queue snapshot is separately locked; a frame can be in retrieve/dispatch
         # between these observations. Do not fabricate an exact conservation sum.
         with self._frames_buffer.mutex:
-            pending = [frame.frame_id for frame in self._frames_buffer.queue
-                       if isinstance(frame, VideoFrame)]
-        result.update(queue_pending=len(pending),
-                      queue_first_frame_id=pending[0] if pending else None,
-                      queue_last_frame_id=pending[-1] if pending else None,
-                      queue_capacity=self._frames_buffer.maxsize,
-                      source_frame_counter=self._video_consumer._frame_counter,
-                      scope="source-local lifetime counters; queue/native/model snapshots are asynchronous; in-flight frames remain possible")
+            pending = [
+                frame.frame_id
+                for frame in self._frames_buffer.queue
+                if isinstance(frame, VideoFrame)
+            ]
+        result.update(
+            queue_pending=len(pending),
+            queue_first_frame_id=pending[0] if pending else None,
+            queue_last_frame_id=pending[-1] if pending else None,
+            queue_capacity=self._frames_buffer.maxsize,
+            source_frame_counter=self._video_consumer._frame_counter,
+            scope="source-local lifetime counters; queue/native/model snapshots are asynchronous; in-flight frames remain possible",
+        )
         return result
 
     def record_frame_dropped(self, frame: VideoFrame, cause: str) -> None:
         send_frame_drop_update(
-            frame_timestamp=frame.frame_timestamp, frame_id=frame.frame_id,
-            source_id=frame.source_id, cause=cause,
+            frame_timestamp=frame.frame_timestamp,
+            frame_id=frame.frame_id,
+            source_id=frame.source_id,
+            cause=cause,
             status_update_handlers=self._status_update_handlers,
         )
 
@@ -766,8 +807,11 @@ class VideoSource:
             on_successful_read=self._video_consumer.notify_frame_consumed,
             timeout=timeout,
             purge=self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER,
-            on_discard=lambda frame: self.record_frame_dropped(frame, "EAGER queue purge")
-            if isinstance(frame, VideoFrame) else None,
+            on_discard=lambda frame: (
+                self.record_frame_dropped(frame, "EAGER queue purge")
+                if isinstance(frame, VideoFrame)
+                else None
+            ),
         )
         if video_frame == POISON_PILL:
             raise EndOfStreamError(
@@ -848,6 +892,8 @@ class VideoSource:
                 )
                 self._video = CV2VideoFrameProducer(self._stream_reference)
                 self._initialise_selected_video()
+            if self._frame_accounting is not None:
+                self._frame_accounting.new_generation()
             self._video_consumer.reset(source_properties=self._source_properties)
             if self._source_properties.is_file:
                 self._set_file_mode_consumption_strategies()
@@ -909,11 +955,17 @@ class VideoSource:
         previous_state = self._state
         self._change_state(target_state=StreamState.TERMINATING)
         if purge_frames_buffer:
+
             def report_shutdown_discard(frame):
                 if isinstance(frame, VideoFrame):
                     self.record_frame_dropped(frame, "shutdown queue purge")
-            last = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True,
-                                  on_discard=report_shutdown_discard)
+
+            last = get_from_queue(
+                queue=self._frames_buffer,
+                timeout=0.0,
+                purge=True,
+                on_discard=report_shutdown_discard,
+            )
             report_shutdown_discard(last)
         if self._stream_consumption_thread is not None:
             self._interrupt_video()
@@ -1193,8 +1245,10 @@ class VideoConsumer:
 
         if self._video_fps_should_be_sub_sampled():
             send_frame_drop_update(
-                frame_timestamp=frame_timestamp, frame_id=self._frame_counter,
-                source_id=source_id, cause="desired source FPS subsampling",
+                frame_timestamp=frame_timestamp,
+                frame_id=self._frame_counter,
+                source_id=source_id,
+                cause="desired source FPS subsampling",
                 status_update_handlers=self._status_update_handlers,
             )
             return True
@@ -1530,7 +1584,8 @@ def decode_video_frame_to_buffer(
     if not success:
         if accounting_handlers:
             send_video_source_status_update(
-                severity=UpdateSeverity.DEBUG, event_type="FRAME_RETRIEVE_FAILED",
+                severity=UpdateSeverity.DEBUG,
+                event_type="FRAME_RETRIEVE_FAILED",
                 payload={"frame_id": frame_id, "source_id": source_id},
                 status_update_handlers=accounting_handlers,
             )
@@ -1548,7 +1603,8 @@ def decode_video_frame_to_buffer(
     buffer.put(video_frame)
     if accounting_handlers:
         send_video_source_status_update(
-            severity=UpdateSeverity.DEBUG, event_type="FRAME_ENQUEUED",
+            severity=UpdateSeverity.DEBUG,
+            event_type="FRAME_ENQUEUED",
             payload={"frame_id": frame_id, "source_id": source_id},
             status_update_handlers=accounting_handlers,
         )
