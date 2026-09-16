@@ -1,5 +1,3 @@
-import hashlib
-import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -77,6 +75,7 @@ class RegisteredModels(DataClassJsonMixin):
     """
 
     models: List[ModelDescription]
+    selected_model_id: Optional[str] = None
 
 
 class HTTPClientMode(str, Enum):
@@ -434,18 +433,3 @@ def get_non_empty_attributes(
         for internal_name, external_name in specification
     }
     return remove_empty_values(dictionary=attributes)
-
-
-def model_selection_cache_key(
-    model_id: str, selectors: dict, api_key: Optional[str] = None
-) -> str:
-    if not selectors:
-        return model_id
-    digest = hashlib.sha256(
-        json.dumps(
-            {"selectors": selectors, "api_key": api_key},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
-    return f"{model_id}:package:{digest}"

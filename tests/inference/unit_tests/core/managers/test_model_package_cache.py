@@ -11,7 +11,10 @@ from inference.core.entities.requests.inference import (
     InferenceRequest,
     ObjectDetectionInferenceRequest,
 )
-from inference.core.exceptions import ModelPackageSelectionError
+from inference.core.exceptions import (
+    ModelPackageNotFoundError,
+    ModelPackageSelectionError,
+)
 from inference.core.managers import base as base_module
 from inference.core.managers.active_learning import ActiveLearningManager
 from inference.core.managers.base import ModelManager
@@ -126,7 +129,7 @@ def test_removing_variant_leaves_automatic_model(package_manager):
 def test_cache_handle_cannot_bypass_selection_validation(package_manager, as_alias):
     handle = "project/1:package:secret"
     package_manager.add_model("project/1", "key", backend="trt", model_cache_key=handle)
-    with pytest.raises(ModelPackageSelectionError, match="Cache handles"):
+    with pytest.raises(ModelPackageNotFoundError):
         package_manager.add_model(
             "project/1" if as_alias else handle,
             "different-key",

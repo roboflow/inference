@@ -41,7 +41,6 @@ from inference_sdk.http.entities import (
     RegisteredModels,
     ServerInfo,
     VideoReference,
-    model_selection_cache_key,
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
@@ -295,6 +294,9 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+        self.__model_selection_ids: Dict[
+            Tuple[str, Tuple[Tuple[str, str], ...]], str
+        ] = {}
         self.__webrtc_client: Optional["WebRTCClient"] = None
         self.__webrtc_client_transport: Optional[ApiKeyTransport] = None
         self.__webrtc_transport_stickiness_warned = False
@@ -910,20 +912,35 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = self.list_loaded_models()
-        cache_key = model_selection_cache_key(
-            de_aliased_model_id,
-            self.__inference_configuration.to_model_selection_parameters(),
-            self.__api_key,
+        selectors = self.__inference_configuration.to_model_selection_parameters()
+        selection_key = (de_aliased_model_id, tuple(sorted(selectors.items())))
+        cache_key = (
+            self.__model_selection_ids.get(selection_key)
+            if selectors
+            else de_aliased_model_id
         )
-        matching_model = filter_model_descriptions(
-            descriptions=registered_models.models,
-            model_id=cache_key,
+        matching_model = (
+            filter_model_descriptions(
+                descriptions=registered_models.models,
+                model_id=cache_key,
+            )
+            if cache_key is not None
+            else None
         )
         if matching_model is None and allow_loading is True:
             registered_models = self.load_model(model_id=de_aliased_model_id)
-            matching_model = filter_model_descriptions(
-                descriptions=registered_models.models,
-                model_id=cache_key,
+            cache_key = (
+                registered_models.selected_model_id
+                if selectors
+                else de_aliased_model_id
+            )
+            matching_model = (
+                filter_model_descriptions(
+                    descriptions=registered_models.models,
+                    model_id=cache_key,
+                )
+                if cache_key is not None
+                else None
             )
         if matching_model is not None:
             return matching_model
@@ -951,22 +968,37 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = await self.list_loaded_models_async()
-        cache_key = model_selection_cache_key(
-            de_aliased_model_id,
-            self.__inference_configuration.to_model_selection_parameters(),
-            self.__api_key,
+        selectors = self.__inference_configuration.to_model_selection_parameters()
+        selection_key = (de_aliased_model_id, tuple(sorted(selectors.items())))
+        cache_key = (
+            self.__model_selection_ids.get(selection_key)
+            if selectors
+            else de_aliased_model_id
         )
-        matching_model = filter_model_descriptions(
-            descriptions=registered_models.models,
-            model_id=cache_key,
+        matching_model = (
+            filter_model_descriptions(
+                descriptions=registered_models.models,
+                model_id=cache_key,
+            )
+            if cache_key is not None
+            else None
         )
         if matching_model is None and allow_loading is True:
             registered_models = await self.load_model_async(
                 model_id=de_aliased_model_id
             )
-            matching_model = filter_model_descriptions(
-                descriptions=registered_models.models,
-                model_id=cache_key,
+            cache_key = (
+                registered_models.selected_model_id
+                if selectors
+                else de_aliased_model_id
+            )
+            matching_model = (
+                filter_model_descriptions(
+                    descriptions=registered_models.models,
+                    model_id=cache_key,
+                )
+                if cache_key is not None
+                else None
             )
         if matching_model is not None:
             return matching_model
@@ -1040,11 +1072,12 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        selectors = self.__inference_configuration.to_model_selection_parameters()
         response = requests.post(
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
-                **self.__inference_configuration.to_model_selection_parameters(),
+                **selectors,
                 **self.__legacy_api_key_payload(),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
@@ -1052,12 +1085,15 @@ class InferenceHTTPClient:
         response.raise_for_status()
         ensure_model_selection_applied(
             response.headers,
-            self.__inference_configuration.to_model_selection_parameters(),
+            selectors,
         )
         response_payload = response.json()
+        registered_models = self.__remember_model_selection(
+            de_aliased_model_id, selectors, response_payload
+        )
         if set_as_default:
             self.__selected_model = de_aliased_model_id
-        return RegisteredModels.from_dict(response_payload)
+        return registered_models
 
     @wrap_errors_async
     async def load_model_async(
@@ -1079,9 +1115,10 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        selectors = self.__inference_configuration.to_model_selection_parameters()
         payload = {
             "model_id": de_aliased_model_id,
-            **self.__inference_configuration.to_model_selection_parameters(),
+            **selectors,
             **self.__legacy_api_key_payload(),
         }
         async with aiohttp.ClientSession() as session:
@@ -1093,12 +1130,29 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 ensure_model_selection_applied(
                     response.headers,
-                    self.__inference_configuration.to_model_selection_parameters(),
+                    selectors,
                 )
                 response_payload = await response.json()
+        registered_models = self.__remember_model_selection(
+            de_aliased_model_id, selectors, response_payload
+        )
         if set_as_default:
             self.__selected_model = de_aliased_model_id
-        return RegisteredModels.from_dict(response_payload)
+        return registered_models
+
+    def __remember_model_selection(
+        self, model_id: str, selectors: Dict[str, str], response_payload: dict
+    ) -> RegisteredModels:
+        registered_models = RegisteredModels.from_dict(response_payload)
+        if selectors:
+            if not registered_models.selected_model_id:
+                raise InvalidParameterError(
+                    "The server did not return the selected model ID. Upgrade the inference server to use model selection."
+                )
+            self.__model_selection_ids[(model_id, tuple(sorted(selectors.items())))] = (
+                registered_models.selected_model_id
+            )
+        return registered_models
 
     @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
@@ -1117,20 +1171,21 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
-        cache_key = model_selection_cache_key(
-            de_aliased_model_id,
-            self.__inference_configuration.to_model_selection_parameters(),
-            self.__api_key,
-        )
+        selectors = self.__inference_configuration.to_model_selection_parameters()
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
-                "model_id": cache_key,
+                "model_id": de_aliased_model_id,
+                **selectors,
+                **(self.__legacy_api_key_payload() if selectors else {}),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
         response_payload = response.json()
+        self.__model_selection_ids.pop(
+            (de_aliased_model_id, tuple(sorted(selectors.items()))), None
+        )
         if (
             de_aliased_model_id == self.__selected_model
             or model_id == self.__selected_model
@@ -1142,21 +1197,22 @@ class InferenceHTTPClient:
     async def unload_model_async(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
-        cache_key = model_selection_cache_key(
-            de_aliased_model_id,
-            self.__inference_configuration.to_model_selection_parameters(),
-            self.__api_key,
-        )
+        selectors = self.__inference_configuration.to_model_selection_parameters()
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/remove",
                 json={
-                    "model_id": cache_key,
+                    "model_id": de_aliased_model_id,
+                    **selectors,
+                    **(self.__legacy_api_key_payload() if selectors else {}),
                 },
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
+        self.__model_selection_ids.pop(
+            (de_aliased_model_id, tuple(sorted(selectors.items()))), None
+        )
         if (
             de_aliased_model_id == self.__selected_model
             or model_id == self.__selected_model
@@ -1174,6 +1230,7 @@ class InferenceHTTPClient:
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
+        self.__model_selection_ids.clear()
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors_async
@@ -1187,6 +1244,7 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 response_payload = await response.json()
         self.__selected_model = None
+        self.__model_selection_ids.clear()
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors

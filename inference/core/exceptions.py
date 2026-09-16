@@ -42,6 +42,10 @@ class ModelPackageSelectionError(Exception):
     pass
 
 
+class ModelPackageNotFoundError(Exception):
+    pass
+
+
 class InvalidEnvironmentVariableError(Exception):
     """Raised when an environment variable is invalid.
 

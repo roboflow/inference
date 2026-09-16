@@ -38,6 +38,7 @@ from inference.core.constants import (
     MODEL_ID_HEADER,
     MODEL_LOAD_DETAILS_HEADER,
     MODEL_LOAD_TIME_HEADER,
+    MODEL_SELECTION_HEADER,
     PROCESSING_TIME_HEADER,
     TRACE_ID_HEADER,
     WORKFLOW_ID_HEADER,
@@ -144,6 +145,7 @@ from inference.core.entities.responses.sam3 import (
 )
 from inference.core.entities.responses.secure_gateway import SecureGatewayHealthResponse
 from inference.core.entities.responses.server_state import (
+    ModelLoadResponse,
     ModelsDescriptions,
     ServerVersionInfo,
 )
@@ -396,7 +398,6 @@ from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
 )
-from inference_sdk.http.utils.model_selection import MODEL_SELECTION_HEADER
 
 if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
@@ -759,6 +760,7 @@ class HttpInterface(BaseInterface):
                     MODEL_LOAD_TIME_HEADER,
                     MODEL_LOAD_DETAILS_HEADER,
                     MODEL_ID_HEADER,
+                    MODEL_SELECTION_HEADER,
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
                     TRACE_ID_HEADER,
@@ -1960,7 +1962,7 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/model/add",
-                response_model=ModelsDescriptions,
+                response_model=ModelLoadResponse,
                 summary="Load a model",
                 description="Load the model with the given model ID",
             )
@@ -1988,12 +1990,13 @@ class HttpInterface(BaseInterface):
                 )
                 logger.info(f"Loading model: {de_aliased_model_id}")
                 selectors = model_selection_kwargs(request)
+                cache_key = model_selection_cache_key(
+                    de_aliased_model_id, selectors, request.api_key
+                )
                 selection_args = (
                     {
                         **selectors,
-                        "model_cache_key": model_selection_cache_key(
-                            de_aliased_model_id, selectors, request.api_key
-                        ),
+                        "model_cache_key": cache_key,
                     }
                     if selectors
                     else {}
@@ -2008,8 +2011,13 @@ class HttpInterface(BaseInterface):
                 if selectors:
                     response.headers[MODEL_SELECTION_HEADER] = "applied"
                 models_descriptions = self.model_manager.describe_models()
-                return ModelsDescriptions.from_models_descriptions(
+                descriptions = ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
+                )
+
+                return ModelLoadResponse(
+                    **descriptions.model_dump(),
+                    selected_model_id=cache_key if selectors else None,
                 )
 
             @app.post(

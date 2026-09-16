@@ -29,6 +29,7 @@ from inference.core.env import (
 from inference.core.exceptions import (
     InferenceModelNotFound,
     ModelManagerLockAcquisitionError,
+    ModelPackageNotFoundError,
     ModelPackageSelectionError,
     RoboflowAPINotAuthorizedError,
 )
@@ -55,6 +56,11 @@ from inference.core.telemetry import (
     start_span,
 )
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
+from inference_models.errors import (
+    NoModelPackagesAvailableError,
+    UnknownBackendTypeError,
+    UnknownQuantizationError,
+)
 
 if TYPE_CHECKING:
     from inference_models.utils.content_addressed_artifact_cache import (
@@ -280,6 +286,18 @@ class ModelManager:
             except Exception as error:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
+                if selectors and isinstance(error, NoModelPackagesAvailableError):
+                    if model_package_id is not None:
+                        raise ModelPackageNotFoundError() from error
+                    raise ModelPackageSelectionError(
+                        "No model package satisfies the requested selection on this server."
+                    ) from error
+                if backend is not None and isinstance(error, UnknownBackendTypeError):
+                    raise ModelPackageSelectionError("Unknown backend.") from error
+                if quantization is not None and isinstance(
+                    error, UnknownQuantizationError
+                ):
+                    raise ModelPackageSelectionError("Unknown quantization.") from error
                 raise error
 
     def validate_model_selection(
@@ -949,10 +967,7 @@ def validate_public_model_id(
     model_id: str, model_id_alias: Optional[str] = None
 ) -> None:
     if any(":package:" in value for value in (model_id, model_id_alias) if value):
-        raise ModelPackageSelectionError(
-            "Cache handles cannot be used for inference or model loading. "
-            "Use the public model_id with package selection parameters."
-        )
+        raise ModelPackageNotFoundError()
 
 
 def model_load_options(

@@ -143,6 +143,13 @@ class ModelsDescriptions(BaseModel):
         )
 
 
+class ModelLoadResponse(ModelsDescriptions):
+    selected_model_id: Optional[str] = Field(
+        default=None,
+        description="Opaque identifier of the loaded entry for an explicit package selection.",
+    )
+
+
 def _get_gpu_memory_stats() -> tuple:
     try:
         import torch
