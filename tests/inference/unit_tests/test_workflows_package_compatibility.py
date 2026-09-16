@@ -398,7 +398,7 @@ def test_subprocess_legacy_first_then_canonical_shares_identity() -> None:
 def test_subprocess_empty_enterprise_packages_do_not_bootstrap_server() -> None:
     result = _run_subprocess(
         """
-        import importlib, sys
+        import importlib.util, sys
         spec = importlib.util.find_spec(
             "inference.enterprise.workflows.enterprise_blocks.sinks.postgresql"
         )
