@@ -252,6 +252,8 @@ def _build_model(
     registry.register(base_stage)
     registry.register(selected_stage)
     model = model_class.__new__(model_class)
+    # This fixture bypasses __init__; mirror its default-disabled timing state.
+    model._runtime_timing = None
     model._implementation_registry = registry
     model._rfdetr_execution_plan = SimpleNamespace(
         allow_compatibility_fallback=allow_compatibility_fallback,
