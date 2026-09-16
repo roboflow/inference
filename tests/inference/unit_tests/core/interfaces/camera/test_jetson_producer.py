@@ -168,11 +168,11 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "rtsps://camera.example.test:7441/live?token=secret"
     )
 
-    # Explicit video-only chain: the media=video caps filter pins rtspsrc's
+    # Video-only RTP chain: the media=video caps filter pins rtspsrc's
     # delayed link to the video stream (first-pad-wins would otherwise let an
     # audio-first camera wire audio into the chain), so an audio-muxing camera
-    # cannot poison the pipeline. The decoder's NV12 NVMM output feeds the
-    # appsink directly (the bridge converts NV12->RGB in CUDA) — no nvvidconv
+    # cannot poison the pipeline. The decoder's negotiated NVMM output feeds
+    # the appsink directly (the bridge converts to RGB in CUDA) — no nvvidconv
     # VIC pass, and the queue buffers compressed data before the depayloader
     # instead of leaking decoded frames.
     assert pipeline.startswith(
@@ -180,12 +180,12 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "protocols=tcp latency=200 ! application/x-rtp,media=video ! queue ! "
     )
     assert "application/x-rtp,media=video" in pipeline
-    assert (
-        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
-    )
+    assert 'decodebin caps="video/x-raw(memory:NVMM)"' in pipeline
+    assert "rtph264depay" not in pipeline
+    assert "rtph265depay" not in pipeline
     assert "uridecodebin" not in pipeline
     assert "nvvidconv" not in pipeline
-    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
+    assert 'decodebin caps="video/x-raw(memory:NVMM)" ! appsink' in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "max-buffers=4 drop=false sync=false" in pipeline
     assert "leaky" not in pipeline
@@ -227,7 +227,7 @@ def test_tensor_rtsps_pipeline_keeps_nvmm_at_named_appsink() -> None:
         output_tensor=True,
     )
 
-    assert "video/x-raw(memory:NVMM),format=NV12" in pipeline
+    assert 'decodebin caps="video/x-raw(memory:NVMM)" ! appsink' in pipeline
     assert "appsink name=rf_tensor_sink" in pipeline
     assert "videoconvert" not in pipeline
     assert "video/x-raw,format=BGR" not in pipeline
@@ -246,8 +246,7 @@ def test_rtsps_source_requires_rtsp_and_nvidia_decode_elements() -> None:
         "rtph265depay",
         "rtspsrc",
     } <= elements
-    # The explicit rtspsrc chain does not autoplug, so the uridecodebin stack
-    # is no longer part of the RTSP requirements.
+    # RTP autoplugging uses decodebin, without the URI source stack.
     assert "uridecodebin" not in elements
     assert "videoconvert" not in elements
 
@@ -299,3 +298,26 @@ def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources() -> None:
         "nvv4l2decoder",
         "v4l2src",
     } <= elements
+
+
+def test_rtsp_default_routes_each_source_codec_from_rtp_caps(monkeypatch) -> None:
+    monkeypatch.delenv("ROBOFLOW_RTSP_VIDEO_CODEC", raising=False)
+    for source in ("rtsp://fixture/h264", "rtsp://fixture/h265"):
+        pipeline = build_gstreamer_pipeline(source)
+        assert 'decodebin caps="video/x-raw(memory:NVMM)"' in pipeline
+        assert "application/x-rtp,media=video ! queue ! decodebin" in pipeline
+        assert "nvvidconv" not in pipeline
+        assert "decodebin" in required_gstreamer_elements(source)
+
+
+def test_explicit_h264_override_keeps_legacy_decoder_tuning(monkeypatch) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "h264")
+    monkeypatch.setattr(
+        "inference.core.interfaces.camera.jetson_producer._nvv4l2decoder_max_performance_fragment",
+        lambda: "enable-max-performance=1 ",
+    )
+    pipeline = build_gstreamer_pipeline("rtsp://fixture/h264")
+    assert (
+        "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
+    )
+    assert "decodebin" not in pipeline

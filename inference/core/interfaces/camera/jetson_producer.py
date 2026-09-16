@@ -46,7 +46,7 @@ _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265")
+_RTSP_VIDEO_CODECS = ("auto", "h264", "h265")
 
 _COMMON_ELEMENTS = (
     "appsink",
@@ -171,11 +171,11 @@ def required_gstreamer_elements(
             ]
         )
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
-        # (no uridecodebin autoplugging), so only those elements are required.
+        # Auto mode chooses the depayloader/parser from each RTP source's caps;
+        # explicit codec overrides retain the direct NVIDIA decoder chain.
         return tuple(
             elements
-            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + ["decodebin", "h264parse", "h265parse", "nvv4l2decoder"]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
@@ -270,14 +270,28 @@ def build_gstreamer_pipeline(
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
         codec = _rtsp_video_codec()
+        if codec == "auto":
+            # Each RTSP subscription negotiates its own encoding-name (H264 or
+            # H265). Keep the video-only RTP filter so audio cannot autoplug,
+            # and require NVMM output so no host-pixel conversion is added.
+            # Leave format negotiation to NVIDIA; the bridge supports NV12/RGBA.
+            # The constructor boosts NVIDIA decoder ranks; first-frame hardware
+            # validation still rejects software-only decoding. Unlike a global
+            # forced codec, this supports mixed H264/H265 sources in one process.
+            decode_chain = 'decodebin caps="video/x-raw(memory:NVMM)" ! '
+        else:
+            # Retain the explicit deployment override and legacy decoder tuning.
+            decode_chain = (
+                f"rtp{codec}depay ! {codec}parse ! "
+                f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "
+                "video/x-raw(memory:NVMM),format=NV12 ! "
+            )
         return (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
             "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
-            f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "
-            "video/x-raw(memory:NVMM),format=NV12 ! "
+            f"{decode_chain}"
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
             "wait-on-eos=false"
         )
