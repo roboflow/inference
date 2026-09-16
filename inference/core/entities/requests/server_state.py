@@ -3,10 +3,10 @@ from typing import Optional
 from pydantic import ConfigDict
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
-from inference.core.entities.requests.model_selection import ModelSelectionRequest
+from inference.core.entities.requests.inference import InferenceRequest
 
 
-class AddModelRequest(ModelSelectionRequest):
+class AddModelRequest(InferenceRequest):
     """Request to add a model to the inference server.
 
     Attributes:
@@ -21,7 +21,7 @@ class AddModelRequest(ModelSelectionRequest):
     api_key: Optional[str] = ApiKey
 
 
-class ClearModelRequest(ModelSelectionRequest):
+class ClearModelRequest(InferenceRequest):
     """Request to clear a model from the inference server.
 
     Attributes:

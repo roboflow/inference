@@ -76,6 +76,10 @@ class ModelDescriptionEntity(BaseModel):
 
 
 class ModelsDescriptions(BaseModel):
+    selected_model_id: Optional[str] = Field(
+        default=None,
+        description="Opaque identifier of the loaded entry for an explicit package selection.",
+    )
     models: List[ModelDescriptionEntity] = Field(
         description="List of models that are loaded by model manager.",
     )
@@ -141,13 +145,6 @@ class ModelsDescriptions(BaseModel):
             torch_cuda_allocator_cache=allocator_cache,
             non_torch_gpu_memory=non_torch_memory,
         )
-
-
-class ModelLoadResponse(ModelsDescriptions):
-    selected_model_id: Optional[str] = Field(
-        default=None,
-        description="Opaque identifier of the loaded entry for an explicit package selection.",
-    )
 
 
 def _get_gpu_memory_stats() -> tuple:

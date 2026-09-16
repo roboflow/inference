@@ -1,12 +1,19 @@
 from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+    validator,
+)
 from pydantic.json_schema import SkipJsonSchema
 
-from inference.core import logger
+from inference.core import env, logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
-from inference.core.entities.requests.model_selection import ModelSelectionRequest
+from inference.core.entities.requests.model_selection import model_selection_kwargs
 from inference_sdk.http.entities import Confidence
 
 
@@ -54,6 +61,35 @@ class InferenceRequest(BaseRequest):
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
+    model_package_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Exact model package ID. Cannot be combined with backend or quantization.",
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package backend, such as trt or onnx.",
+    )
+    quantization: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package quantization, such as fp16 or fp32.",
+    )
+
+    @model_validator(mode="after")
+    def validate_model_selection(self):
+        if self.model_package_id is not None and (
+            self.backend is not None or self.quantization is not None
+        ):
+            raise ValueError(
+                "model_package_id cannot be combined with backend or quantization."
+            )
+        if model_selection_kwargs(self) and not env.USE_INFERENCE_MODELS:
+            raise ValueError(
+                "Model package selection requires USE_INFERENCE_MODELS=true."
+            )
+        return self
 
 
 class InferenceRequestImage(BaseModel):
@@ -75,7 +111,7 @@ class InferenceRequestImage(BaseModel):
     )
 
 
-class CVInferenceRequest(InferenceRequest, ModelSelectionRequest):
+class CVInferenceRequest(InferenceRequest):
     """Computer Vision inference request.
 
     Attributes:
@@ -134,6 +170,14 @@ class DepthEstimationRequest(InferenceRequest):
         "another order of magnitude smaller - fine for visualization/thresholding, "
         "lossy for geometric use).",
     )
+
+    @model_validator(mode="after")
+    def reject_model_selection(self):
+        if model_selection_kwargs(self):
+            raise ValueError(
+                "Model package selection is not supported for depth estimation requests."
+            )
+        return self
 
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):

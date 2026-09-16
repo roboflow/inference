@@ -11,7 +11,6 @@ from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.requests.model_selection import (
-    ModelSelectionRequest,
     model_selection_kwargs,
 )
 from inference.core.entities.responses.inference import InferenceResponse
@@ -622,7 +621,7 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
-        if isinstance(request, ModelSelectionRequest):
+        if isinstance(request, InferenceRequest):
             self._validate_loaded_model_selection(
                 model, model_selection_kwargs(request)
             )
@@ -632,7 +631,7 @@ class ModelManager:
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
-        if isinstance(request, ModelSelectionRequest):
+        if isinstance(request, InferenceRequest):
             self._validate_loaded_model_selection(
                 model, model_selection_kwargs(request)
             )

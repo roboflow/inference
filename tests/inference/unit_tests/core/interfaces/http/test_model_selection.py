@@ -14,6 +14,7 @@ def client(monkeypatch):
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
     interface = http_api.HttpInterface(model_manager=MagicMock())
     with TestClient(interface.app) as client:
         yield client
@@ -49,6 +50,29 @@ def test_http_rejects_selection_when_flag_is_disabled(client, monkeypatch, path)
     )
     assert response.status_code == 422
     assert "USE_INFERENCE_MODELS" in response.text
+
+
+@pytest.mark.parametrize(
+    "path", ["/infer/depth-estimation", "/infer/depth-estimation/project/1"]
+)
+@pytest.mark.parametrize(
+    "selectors",
+    [{"backend": "trt"}, {"quantization": "fp16"}, {"model_package_id": "engine-1"}],
+)
+def test_depth_rejects_model_package_selection(client, monkeypatch, path, selectors):
+    from inference.core import env
+
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", True)
+    response = client.post(
+        path,
+        json={
+            "model_id": "project/1",
+            "image": {"type": "url", "value": "https://example.com/image.jpg"},
+            **selectors,
+        },
+    )
+    assert response.status_code == 422
+    assert "not supported for depth estimation" in response.text
 
 
 @pytest.fixture

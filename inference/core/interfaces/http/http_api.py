@@ -70,7 +70,6 @@ from inference.core.entities.requests.inference import (
     ensure_wire_safe_mask_format,
 )
 from inference.core.entities.requests.model_selection import (
-    ModelSelectionRequest,
     model_selection_cache_key,
     model_selection_kwargs,
 )
@@ -145,7 +144,6 @@ from inference.core.entities.responses.sam3 import (
 )
 from inference.core.entities.responses.secure_gateway import SecureGatewayHealthResponse
 from inference.core.entities.responses.server_state import (
-    ModelLoadResponse,
     ModelsDescriptions,
     ServerVersionInfo,
 )
@@ -1574,7 +1572,7 @@ class HttpInterface(BaseInterface):
                 service_secret (Optional[str]): The service secret.
 
             Returns:
-                InferenceResponse: The response containing the inference results.
+                Response: The HTTP response containing serialized inference results.
             """
             api_key = api_key_fallback(api_key)
             if api_key is not None:
@@ -1962,7 +1960,7 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/model/add",
-                response_model=ModelLoadResponse,
+                response_model=ModelsDescriptions,
                 summary="Load a model",
                 description="Load the model with the given model ID",
             )
@@ -2015,10 +2013,8 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
-                return ModelLoadResponse(
-                    **descriptions.model_dump(),
-                    selected_model_id=cache_key if selectors else None,
-                )
+                descriptions.selected_model_id = cache_key if selectors else None
+                return descriptions
 
             @app.post(
                 "/model/remove",
@@ -4872,7 +4868,9 @@ class HttpInterface(BaseInterface):
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 try:
-                    selection = ModelSelectionRequest(
+                    selection = InferenceRequest(
+                        id=str(uuid4()),
+                        model_id=request_model_id,
                         model_package_id=model_package_id,
                         backend=backend,
                         quantization=quantization,
