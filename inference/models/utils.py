@@ -74,7 +74,14 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 )
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
+from inference.models.anomaly_detection.model import (
+    FoundADAnomalyDetection,
+    PatchCoreAnomalyDetection,
+)
+
 ROBOFLOW_MODEL_TYPES = {
+    ("classification", "patchcore"): PatchCoreAnomalyDetection,
+    ("classification", "foundad"): FoundADAnomalyDetection,
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
     ("classification", "dinov3"): DinoV3Classification,

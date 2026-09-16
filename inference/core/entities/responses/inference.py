@@ -440,6 +440,20 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     )
 
 
+class AnomalyDetectionResponse(ClassificationInferenceResponse):
+    anomaly_score: float = Field(
+        description="Raw anomaly score; larger means more anomalous"
+    )
+    anomaly_threshold: float = Field(
+        description="Decision threshold fitted on validation images"
+    )
+    is_anomalous: bool
+    anomaly_map: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Raw local anomaly evidence in original image coordinates",
+    )
+
+
 class MultiLabelClassificationInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):

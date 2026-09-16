@@ -68,6 +68,7 @@ setuptools.setup(
         ]
     ),
     extras_require={
+        "anomaly": read_requirements("requirements/requirements.anomaly.txt"),
         "sam": read_requirements("requirements/requirements.sam.txt"),
         "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
     },

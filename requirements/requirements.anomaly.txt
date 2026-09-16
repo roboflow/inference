@@ -1,0 +1,3 @@
+# Install the runtime wheel built from roboflow-train/train/anomaly_runtime.
+# This optional extra is ready for the coordinated runtime release.
+roboflow-anomaly==0.1.0
