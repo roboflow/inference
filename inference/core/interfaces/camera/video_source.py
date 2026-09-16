@@ -23,6 +23,7 @@ from inference.core.env import (
     DISABLE_GSTREAMER_VIDEO_SOURCES,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     RUNS_ON_JETSON,
+    VIDEO_SOURCE_ALLOW_CPU_FALLBACK,
 )
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
@@ -230,6 +231,10 @@ def _build_default_producer(
     # reprs embed the full launch string carrying the same URL.
     display_reference = sanitize_source_reference(str(stream_reference))
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        if not VIDEO_SOURCE_ALLOW_CPU_FALLBACK:
+            raise RuntimeError(
+                "GPU video decoding is required but tensor media is disabled"
+            )
         logger.debug(
             "Using legacy decoder for source " f"reference: {display_reference}"
         )
@@ -248,7 +253,12 @@ def _build_default_producer(
         )
     except (
         Exception
-    ) as error:  # noqa: BLE001 - decoder selection must never break startup
+    ) as error:  # noqa: BLE001 - default deployments retain decoder fallback
+        if not VIDEO_SOURCE_ALLOW_CPU_FALLBACK:
+            raise RuntimeError(
+                "Required hardware decoder construction failed: "
+                + redact_credentials_in_text(repr(error))
+            ) from None
         logger.warning(
             "Initialising a hardware decoder for source reference "
             f"{display_reference} raised: "
@@ -268,6 +278,11 @@ def _build_default_producer(
             require_cuda_tensor=output_tensor,
         ).items()
     }
+    if not VIDEO_SOURCE_ALLOW_CPU_FALLBACK:
+        raise RuntimeError(
+            "No required hardware decoder is available: "
+            + redact_credentials_in_text(str(probe_reasons))
+        )
     logger.warning(
         "No hardware decoder is "
         f"usable for source reference {display_reference} "
@@ -746,7 +761,8 @@ class VideoSource:
                 self._initialise_selected_video()
             except Exception as hardware_error:
                 can_fall_back_to_cv2 = (
-                    uses_default_producer
+                    VIDEO_SOURCE_ALLOW_CPU_FALLBACK
+                    and uses_default_producer
                     and type(self._video) is not CV2VideoFrameProducer
                 )
                 if not can_fall_back_to_cv2:

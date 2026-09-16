@@ -1917,3 +1917,46 @@ def test_consume_video_emits_poison_pill_on_consume_error() -> None:
     assert source._state is StreamState.ERROR
     with pytest.raises(EndOfStreamError):
         source.read_frame(timeout=0.0)
+
+
+@pytest.mark.parametrize("failure", ["construction", "unavailable", "disabled"])
+def test_strict_decoder_policy_never_constructs_cpu_producer(failure):
+    with patch.object(
+        video_source, "VIDEO_SOURCE_ALLOW_CPU_FALLBACK", False
+    ), patch.object(
+        video_source, "ENABLE_TENSOR_DATA_REPRESENTATION", failure != "disabled"
+    ), patch(
+        "inference.core.interfaces.camera.discoverability.build_hw_producer"
+    ) as build, patch(
+        "inference.core.interfaces.camera.discoverability.available_producers",
+        return_value={},
+    ), patch.object(
+        video_source, "CV2VideoFrameProducer"
+    ) as cpu:
+        build.return_value = None
+        if failure == "construction":
+            build.side_effect = RuntimeError("hardware unavailable")
+        with pytest.raises(RuntimeError):
+            _build_default_producer(
+                "rtsp://camera.example.test/live", output_tensor=True
+            )
+        cpu.assert_not_called()
+
+
+def test_strict_decoder_initialization_failure_releases_without_cpu_fallback():
+    hardware = MagicMock()
+    hardware.isOpened.return_value = True
+    hardware.discover_source_properties.side_effect = TimeoutError("no GPU frame")
+    with patch.object(
+        video_source, "VIDEO_SOURCE_ALLOW_CPU_FALLBACK", False
+    ), patch.object(
+        video_source, "_build_default_producer", return_value=hardware
+    ), patch.object(
+        video_source, "CV2VideoFrameProducer"
+    ) as cpu:
+        source = VideoSource.init(video_reference="rtsp://camera.example.test/live")
+        with pytest.raises(TimeoutError, match="no GPU frame"):
+            source.start()
+        cpu.assert_not_called()
+        hardware.release.assert_called_once_with()
+        assert source._state is StreamState.ERROR
