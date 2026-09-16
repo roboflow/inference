@@ -1,3 +1,4 @@
+import logging
 from copy import copy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
@@ -6,7 +7,6 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
@@ -70,6 +70,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImageData,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_SECRET_LENGTH_TO_REVEAL_PREFIX = 8
 MIN_POLYGON_POINT_COUNT = 3
@@ -251,10 +253,16 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     }  # TODO: this breaks the contract of
     # standard inference, but to fix that problem, we would need sv.Detections to provide
     # detection-level metadata.
+    if image_dimensions is None:
+        # Zero-row detections carry image dimensions in ``metadata`` (not per-row
+        # ``data``, which the loop above never iterates). Producers that return
+        # empty detections with ``metadata={IMAGE_DIMENSIONS_KEY: [h, w]}`` get
+        # the same ``image.width`` / ``image.height`` as the tensor-native path.
+        image_dimensions = detections.metadata.get(IMAGE_DIMENSIONS_KEY)
     if image_dimensions is not None:
         image_metadata = {
-            "width": image_dimensions[1].item(),
-            "height": image_dimensions[0].item(),
+            "width": int(image_dimensions[1]),
+            "height": int(image_dimensions[0]),
         }
     return {"image": image_metadata, "predictions": serialized_detections}
 

@@ -30,6 +30,17 @@ from inference.core.workflows.core_steps.models.foundation.openai.v5 import (
     prepare_vqa_prompt,
 )
 from inference.core.workflows.prototypes.block import third_party_model
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
+
 
 PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
 JPEG_MAGIC_BYTES = b"\xff\xd8\xff"
@@ -393,6 +404,7 @@ def test_execute_openai_request_routes_to_proxy_for_rf_key_account() -> None:
         # when
         result = execute_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="rf_key:account",
             instructions="test",
             input_content=[],
@@ -414,6 +426,7 @@ def test_execute_openai_request_rejects_managed_key_without_roboflow_key() -> No
         with pytest.raises(ValueError, match="Roboflow API key is required"):
             execute_openai_request(
                 roboflow_api_key=None,
+                platform_client=platform_client,
                 openai_api_key="rf_key:account",
                 instructions="test",
                 input_content=[],
@@ -436,6 +449,7 @@ def test_execute_openai_request_routes_to_direct_for_regular_api_key() -> None:
         # when
         result = execute_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="sk-test-key",
             instructions="test",
             input_content=[],
@@ -506,16 +520,13 @@ def test_direct_request_with_invalid_reasoning_effort_for_gpt_5_1_raises_error(
     assert 'does not support reasoning effort "minimal"' in str(exc_info.value)
 
 
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.openai.v5.post_to_roboflow_api"
-)
-def test_proxied_request_with_invalid_reasoning_effort_for_gpt_5_raises_error(
-    mock_post: Mock,
-) -> None:
+def test_proxied_request_with_invalid_reasoning_effort_for_gpt_5_raises_error() -> None:
+    mock_post = platform_client.post_mock
     # when/then
     with pytest.raises(ValueError) as exc_info:
         _execute_proxied_openai_request(
             roboflow_api_key="rf_api_key",
+            platform_client=platform_client,
             openai_api_key="rf_key:account",
             instructions="test",
             input_content=[{"role": "user", "content": []}],
@@ -587,11 +598,9 @@ def test_direct_request_omits_text_format_when_not_provided(
     assert "text" not in call_kwargs
 
 
-@patch(
-    "inference.core.workflows.core_steps.models.foundation.openai.v5.post_to_roboflow_api"
-)
-def test_proxied_request_forwards_text_format(mock_post: Mock) -> None:
+def test_proxied_request_forwards_text_format() -> None:
     # given
+    mock_post = platform_client.post_mock
     mock_post.return_value = {
         "status": "completed",
         "output": [
@@ -605,6 +614,7 @@ def test_proxied_request_forwards_text_format(mock_post: Mock) -> None:
     # when
     _execute_proxied_openai_request(
         roboflow_api_key="rf_api_key",
+        platform_client=platform_client,
         openai_api_key="rf_key:account",
         instructions=None,
         input_content=[{"role": "user", "content": []}],

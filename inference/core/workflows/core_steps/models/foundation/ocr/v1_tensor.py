@@ -2,7 +2,12 @@ from typing import Dict, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    attach_native_detection_metadata,
+    native_detections_from_inference_predictions,
+)
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -10,13 +15,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    attach_native_detection_metadata,
-    native_detections_from_inference_predictions,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -40,6 +38,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -118,9 +120,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             roboflow_platform_model(
                 model_id="doctr/default",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -129,7 +129,7 @@ class OCRModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -166,7 +166,7 @@ class OCRModelBlockV1(WorkflowBlock):
         self._model_manager.add_model(
             doctr_model_id,
             self._api_key,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
+            endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
         )
         predictions = []
         for single_image in images:

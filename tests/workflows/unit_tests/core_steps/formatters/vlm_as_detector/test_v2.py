@@ -8,6 +8,8 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     BlockManifest,
     VLMAsDetectorBlockV2,
 )
+from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
+from inference.core.workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -253,6 +255,12 @@ def test_run_method_for_openai_structured_empty_detections_output() -> None:
     assert result["error_status"] is False
     assert isinstance(result["predictions"], sv.Detections)
     assert len(result["predictions"]) == 0
+    # Empty detections must still carry image dimensions in metadata so the
+    # numpy serialiser emits real width/height (matching the tensor-native path).
+    assert result["predictions"].metadata[IMAGE_DIMENSIONS_KEY] == [192, 168]
+    serialized = serialise_sv_detections(result["predictions"])
+    assert serialized["image"] == {"width": 168, "height": 192}
+    assert serialized["predictions"] == []
 
 
 def test_run_method_for_openai_legacy_detections_output() -> None:

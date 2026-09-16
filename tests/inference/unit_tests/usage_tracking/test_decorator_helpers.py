@@ -986,3 +986,28 @@ def test_source_info_falls_back_to_the_request_scope():
 
 def test_source_info_still_ignores_the_external_placeholder():
     assert get_source_info_from_kwargs({"source_info": "external"}) is None
+
+
+@pytest.mark.parametrize(
+    "latency", [2.3, None, 0, -1, float("inf"), float("nan"), True, "2.3"]
+)
+def test_nas_latency_survives_binding_and_map_eviction(latency):
+    clear_recorded_model_descriptors()
+    model = SimpleNamespace(model_id="workspace/nas-child")
+    record_model_descriptor(
+        model.model_id,
+        architecture="rfdetr",
+        variant="rfdetr-nas",
+        task_type="object-detection",
+        latency_ms=latency,
+    )
+    direct = get_model_resource_details_from_kwargs({"model_id": model.model_id})
+    bind_usage_model_descriptor(model, model.model_id)
+    clear_recorded_model_descriptors()
+    bound = get_model_resource_details_from_kwargs({"self": model})
+    assert bound == direct
+    if latency == 2.3:
+        assert bound["model_latency_ms"] == 2.3
+        assert isinstance(bound["model_latency_ms"], float)
+    else:
+        assert "model_latency_ms" not in bound

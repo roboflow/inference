@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.interfaces.roboflow_platform_client import (
+    workflows_platform_bindings,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -191,6 +194,7 @@ def test_workflow_with_google_ocr_without_api_key_via_proxy(
 ) -> None:
     # given
     workflow_init_parameters = {
+        **workflows_platform_bindings(),
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,

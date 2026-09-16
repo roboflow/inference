@@ -1,7 +1,7 @@
 """Tensor-native sibling of `roboflow_core/roboflow_semantic_segmentation_model@v1`.
 
-Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via
-`SemanticSegmentationInferenceRequest` + `infer_from_request_sync`; REMOTE: via the
+Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via the models port's
+`run_semantic_segmentation` / `run_instance_segmentation`; REMOTE: via the
 HTTP client) and converts each *dense* per-pixel response into an ``sv.Detections``
 carrying one COCO-RLE mask per class (under ``data['rle_mask']``). Under
 ENABLE_TENSOR_DATA_REPRESENTATION this sibling must instead emit a native
@@ -87,7 +87,11 @@ import numpy as np
 import torch
 from pydantic import ConfigDict
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
+from inference.core.workflows.environment import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -95,11 +99,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    build_native_image_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -129,6 +128,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
@@ -223,7 +223,7 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -530,7 +530,7 @@ def _build_instance_detections_from_inference_response(
 ) -> InstanceDetections:
     """Standard inference semantic-seg response (a single ``dict``, matching numpy
     ``v1.py``'s ``_convert_to_sv_detections`` input - produced identically by v1's
-    LOCAL ``infer_from_request_sync`` dump and its REMOTE HTTP client) ->
+    LOCAL ``run_semantic_segmentation`` dump and its REMOTE HTTP client) ->
     one RLE instance per present non-background/non-ignore class.
 
     Response shape (see numpy ``v1.py``):

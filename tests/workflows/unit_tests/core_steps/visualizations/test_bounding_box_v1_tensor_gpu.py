@@ -397,6 +397,8 @@ def test_gpu_fallback_warns_once_then_stays_quiet(monkeypatch, caplog) -> None:
     # (see inference/core/logger.py), so its records never reach the root
     # logger pytest's caplog handler is attached to. Attach the caplog
     # handler directly to the module logger.
+    # Capture once regardless of handlers installed on ancestor loggers.
+    monkeypatch.setattr(bounding_box_v1_tensor.logger, "propagate", False)
     bounding_box_v1_tensor.logger.addHandler(caplog.handler)
     try:
         with caplog.at_level(

@@ -1,4 +1,7 @@
 import atexit
+import hashlib
+import hmac
+import json
 import logging
 import math
 import multiprocessing.util
@@ -81,7 +84,7 @@ class OPCUAConnectionManager:
     Thread-safe connection manager for OPC UA clients with connection pooling
     and circuit breaker pattern.
 
-    Maintains a pool of connections keyed by (url, user_name) to avoid creating
+    Maintains a pool isolated by (url, user_name, password) to avoid creating
     new connections for every write operation. Uses circuit breaker to fail fast
     when servers are unreachable.
     """
@@ -120,6 +123,7 @@ class OPCUAConnectionManager:
 
     def _reset_process_local_state(self) -> None:
         """Start from an empty pool owned by the current process."""
+        self._credential_key = os.urandom(32)
         self._connections: Dict[str, Client] = {}
         self._connection_locks: Dict[str, threading.Lock] = {}
         self._connection_metadata: Dict[str, dict] = {}
@@ -327,9 +331,12 @@ class OPCUAConnectionManager:
                 logger.debug(f"OPC UA Connection Manager ThreadLoop stop error: {exc}")
             self._tloop = None
 
-    def _get_connection_key(self, url: str, user_name: Optional[str]) -> str:
-        """Generate a unique key for connection pooling."""
-        return f"{url}|{user_name or ''}"
+    def _get_connection_key(
+        self, url: str, user_name: Optional[str], password: Optional[str] = None
+    ) -> str:
+        """Bind pooled sessions to the exact credentials without password-bearing keys."""
+        context = json.dumps([url, user_name, password], ensure_ascii=True).encode()
+        return hmac.new(self._credential_key, context, hashlib.sha256).hexdigest()
 
     def _get_connection_lock(self, key: str) -> threading.Lock:
         """Get or create a lock for a specific connection."""
@@ -539,7 +546,7 @@ class OPCUAConnectionManager:
                 f"SHUTTING DOWN: Connection manager is closing, refusing new session to {url}."
             )
 
-        key = self._get_connection_key(url, user_name)
+        key = self._get_connection_key(url, user_name, password)
         lock = self._get_connection_lock(key)
 
         with lock:
@@ -667,7 +674,12 @@ class OPCUAConnectionManager:
             )
 
     def release_connection(
-        self, url: str, user_name: Optional[str], force_close: bool = False
+        self,
+        url: str,
+        user_name: Optional[str],
+        force_close: bool = False,
+        *,
+        password: Optional[str],
     ) -> None:
         """
         Release a connection back to the pool.
@@ -681,15 +693,18 @@ class OPCUAConnectionManager:
         Args:
             url: OPC UA server URL
             user_name: Optional username used for the connection
+            password: Exact password used for this pooled connection
             force_close: If True, close the connection instead of keeping it
         """
         if not force_close:
             # Connection stays in pool for reuse
             return
 
-        self.invalidate_connection(url=url, user_name=user_name)
+        self.invalidate_connection(url=url, user_name=user_name, password=password)
 
-    def invalidate_connection(self, url: str, user_name: Optional[str]) -> None:
+    def invalidate_connection(
+        self, url: str, user_name: Optional[str], password: Optional[str]
+    ) -> None:
         """
         Invalidate a connection, forcing it to be recreated on next use.
 
@@ -699,8 +714,9 @@ class OPCUAConnectionManager:
         Args:
             url: OPC UA server URL
             user_name: Optional username used for the connection
+            password: Exact password used for this pooled connection
         """
-        key = self._get_connection_key(url, user_name)
+        key = self._get_connection_key(url, user_name, password)
         lock = self._get_connection_lock(key)
 
         with lock:
@@ -1364,7 +1380,7 @@ def opc_connect_and_write_value(
             logger.warning(
                 f"OPC Writer error (invalidating connection): {type(exc).__name__}: {exc}"
             )
-            connection_manager.invalidate_connection(url, user_name)
+            connection_manager.invalidate_connection(url, user_name, password)
         else:
             # User configuration errors - connection is fine, just log the error
             logger.error(f"OPC Writer configuration error: {type(exc).__name__}: {exc}")

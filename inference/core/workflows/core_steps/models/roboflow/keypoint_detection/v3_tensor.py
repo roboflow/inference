@@ -22,7 +22,7 @@ The ``predictions`` output value is the full tuple ``(KeyPoints, Detections)`` s
 ``KeyPoints`` component stays available to downstream tensor-native consumers; only the
 serialiser unwraps the tuple back to the bbox ``Detections``.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns
   ``Tuple[List[KeyPoints], List[Detections]]`` from the adapter. ``class_filter`` is
   applied here natively (the adapter/model does NOT read it on this path) - the slice
   is applied to the tuple so the ``KeyPoints`` and bbox ``Detections`` stay aligned.
@@ -38,7 +38,16 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 import torch
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.keypoints import (
+    validate_keypoints_padding,
+)
+from inference.core.workflows.core_steps.common.tensor_native import (
+    attach_native_detection_metadata,
+    native_detections_from_inference_predictions,
+    take_prediction_by_mask,
+)
+from inference.core.workflows.environment import (
     HOSTED_DETECT_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -46,13 +55,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.tensor_native import (
-    attach_native_detection_metadata,
-    native_detections_from_inference_predictions,
-    take_prediction_by_mask,
 )
 from inference.core.workflows.execution_engine.constants import (
     CONFIDENCE_KEY,
@@ -95,6 +97,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
@@ -274,7 +277,7 @@ class RoboflowKeypointDetectionModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -394,9 +397,9 @@ class RoboflowKeypointDetectionModelBlockV3(WorkflowBlock):
             )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
         # `key_points_classes` (List[List[str]], indexed by *object* class id) is only
-        # exposed on the inference_models adapter - reach the adapter directly through
-        # the manager's item access (the same handle that backs `get_class_names`).
-        key_points_classes = self._model_manager[model_id].key_points_classes
+        # exposed on the inference_models adapter - reach it through the provider's
+        # first-class accessor (the same handle that backs `get_class_names`).
+        key_points_classes = self._model_manager.get_keypoints_classes(model_id)
         results: List[dict] = []
         for image, key_points, detections in zip(
             images, keypoints_batch, detections_batch
@@ -646,6 +649,7 @@ def _native_key_points_from_inference_predictions(
         object_class_ids.append(int(detection_dict.get("class_id", 0)))
     number_of_instances = len(detection_dicts)
     max_key_points = max((len(xy) for xy in per_instance_xy), default=0)
+    validate_keypoints_padding(number_of_instances, max_key_points)
     xy_tensor = torch.zeros(
         (number_of_instances, max_key_points, 2), dtype=torch.float32, device=device
     )

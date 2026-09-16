@@ -1,4 +1,6 @@
+from dataclasses import asdict
 from datetime import datetime, timedelta
+from threading import Event, Thread
 from typing import Optional
 from unittest.mock import MagicMock
 
@@ -293,3 +295,51 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
     assert (
         result.sources_metadata[0] == "METADATA"
     ), "Metadata must match mocked video source response"
+
+
+def test_completion_statistics_are_atomic_detached_snapshots() -> None:
+    watchdog = BasePipelineWatchDog()
+    sources = [MagicMock(source_id=i) for i in range(3)]
+    watchdog.register_video_sources(sources)
+    initial = watchdog.get_report().completion_statistics
+    frames = [
+        VideoFrame(
+            image=np.zeros((1, 1, 3)),
+            source_id=i,
+            frame_id=12 + i,
+            frame_timestamp=datetime.now(),
+        )
+        for i in range(2)
+    ]
+    start = Event()
+
+    def complete_batches():
+        start.wait()
+        for _ in range(1000):
+            watchdog.on_model_prediction_completed(frames)
+
+    writer = Thread(target=complete_batches)
+    writer.start()
+    start.set()
+    try:
+        for _ in range(100):
+            snapshot = watchdog.get_report().completion_statistics
+            first, second, idle = snapshot.sources
+            assert first.completed_frames == second.completed_frames
+            assert (
+                first.last_completed_at_monotonic == second.last_completed_at_monotonic
+            )
+            if first.completed_frames:
+                assert (
+                    first.last_completed_at_monotonic <= snapshot.sampled_at_monotonic
+                )
+            assert idle.completed_frames == 0
+            assert idle.last_frame_id is None
+    finally:
+        writer.join(timeout=3)
+    assert not writer.is_alive()
+    final = watchdog.get_report().completion_statistics
+    assert [s.completed_frames for s in final.sources] == [1000, 1000, 0]
+    assert [s.last_frame_id for s in final.sources] == [12, 13, None]
+    assert [s.completed_frames for s in initial.sources] == [0, 0, 0]
+    assert asdict(final)["sources"][0]["completed_frames"] == 1000

@@ -27,15 +27,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
@@ -47,6 +38,12 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -73,6 +70,11 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
     third_party_model,
+)
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -273,7 +275,7 @@ _DEFAULT_UNCONSTRAINED_SYSTEM_PROMPT = (
 
 
 def _coerce_native_response(response: Any) -> Tuple[str, str]:
-    """Normalize a native Qwen prediction.response into (output, thinking).
+    """Normalize a native Qwen prediction["response"] into (output, thinking).
 
     When ``enable_thinking`` is on, some Qwen variants return a
     ``{"thinking": "...", "answer": "..."}`` dict; split that into the two
@@ -780,16 +782,21 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        super().__init__(model_manager=model_manager, api_key=api_key)
+        super().__init__(
+            model_manager=model_manager,
+            api_key=api_key,
+            platform_client=platform_client,
+        )
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -939,21 +946,15 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
         self._model_manager.add_model(model_id=model_id, api_key=self._roboflow_api_key)
         outputs: List[Dict[str, str]] = []
         for image in inference_images:
-            request_kwargs: Dict[str, Any] = dict(
-                api_key=self._roboflow_api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_id,
                 image=image,
-                source="workflow-execution",
                 prompt=combined_prompt,
+                api_key=self._roboflow_api_key,
                 enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
-            if max_new_tokens is not None:
-                request_kwargs["max_new_tokens"] = max_new_tokens
-            request = LMMInferenceRequest(**request_kwargs)
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_id, request=request
-            )
-            output, thinking = _coerce_native_response(prediction.response)
+            output, thinking = _coerce_native_response(prediction["response"])
             outputs.append({"output": output, "thinking": thinking})
         return outputs
 

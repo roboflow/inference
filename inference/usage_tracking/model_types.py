@@ -11,6 +11,7 @@ pathological stream of distinct ids cannot grow the process forever, and newer
 ids still get a chance to be labeled.
 """
 
+import math
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -35,6 +36,7 @@ class ModelDescriptor:
     architecture: str
     variant: Optional[str] = None
     task_type: Optional[str] = None
+    latency_ms: Optional[float] = None
 
 
 # Servers load a bounded number of models, but the map is keyed by caller-supplied
@@ -50,6 +52,7 @@ def record_model_descriptor(
     architecture: Optional[str],
     variant: Optional[str] = None,
     task_type: Optional[str] = None,
+    latency_ms: Optional[float] = None,
 ) -> None:
     """Remember the architecture / variant / task resolved for a model id.
 
@@ -67,6 +70,7 @@ def record_model_descriptor(
         architecture=str(architecture),
         variant=str(variant) if variant else None,
         task_type=str(task_type) if task_type else None,
+        latency_ms=normalize_model_latency_ms(latency_ms),
     )
     if model_id in _MODEL_DESCRIPTORS:
         _MODEL_DESCRIPTORS.move_to_end(model_id)
@@ -116,9 +120,16 @@ def bind_usage_model_descriptor(model: Any, *model_ids: Optional[str]) -> None:
     if recorded:
         model.model_architecture = recorded.architecture
         model.model_variant = recorded.variant
+        model.model_latency_ms = recorded.latency_ms
         if recorded.task_type and not getattr(model, "task_type", None):
             model.task_type = recorded.task_type
 
 
 def clear_recorded_model_descriptors() -> None:
     _MODEL_DESCRIPTORS.clear()
+
+
+def normalize_model_latency_ms(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) and value > 0 else None

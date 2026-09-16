@@ -31,6 +31,9 @@ import torch
 
 from inference.core.workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 import (
     KEYPOINT_POINT_OPTION,
+    MAX_DETECTIONS_PER_SET,
+    MAX_MATCHED_PAIRS,
+    MAX_MATCHED_PAIRS_WITH_MASKS,
     OUTPUT_KEY_MATCHED_QUERY_DETECTIONS,
     OUTPUT_KEY_MATCHED_TARGET_DETECTIONS,
     OUTPUT_KEY_QUERY_PREDICTIONS,
@@ -91,6 +94,27 @@ class DetectionsNearestNeighborBlockV1(WorkflowBlock):
         # keypoint payloads used below.
         _, query_detections = split_key_point_prediction(query_predictions)
         _, target_detections = split_key_point_prediction(target_predictions)
+
+        num_query_detections = int(query_detections.xyxy.shape[0])
+        num_target_detections = int(target_detections.xyxy.shape[0])
+        if num_query_detections > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`query_predictions` contains {num_query_detections} detections, "
+                f"exceeding the {MAX_DETECTIONS_PER_SET}-detection limit for "
+                "`roboflow_core/detections_nearest_neighbor@v1`, which performs a "
+                "full pairwise comparison between the query and target sets. Reduce "
+                "the number of query detections (e.g. filter or limit them "
+                "upstream) before using this block."
+            )
+        if num_target_detections > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`target_predictions` contains {num_target_detections} "
+                f"detections, exceeding the {MAX_DETECTIONS_PER_SET}-detection "
+                "limit for `roboflow_core/detections_nearest_neighbor@v1`, which "
+                "performs a full pairwise comparison between the query and target "
+                "sets. Reduce the number of target detections (e.g. filter or "
+                "limit them upstream) before using this block."
+            )
 
         query_points = resolve_anchor_points(
             detections=query_detections,
@@ -304,6 +328,39 @@ def match_query_to_targets(
     # A tie duplicates the query row once per tied target; `torch.nonzero` is
     # row-major like `np.where`, keeping the two paired outputs index-aligned.
     tie_mask = valid & (filled <= (min_per_row[:, None] + TIE_EPSILON_PX))
+
+    # Counted directly off the boolean mask, before `torch.nonzero`/`.tolist()`
+    # materialize any index list: widespread co-located ties can produce far
+    # more matched pairs than either input set's size alone would suggest (up
+    # to num_query * num_target), and those pairs get sliced out of the input
+    # predictions (masks included) via `take_prediction_by_indices` in `run()`.
+    num_matched_pairs = int(tie_mask.sum().item())
+    # A matched instance segmentation row carries a full-resolution mask, far
+    # larger than a plain bbox/keypoint row, so a masked match is held to a
+    # much smaller pair budget than the general case.
+    has_masks = (
+        getattr(query_detections, "mask", None) is not None
+        or getattr(target_detections, "mask", None) is not None
+    )
+    matched_pairs_limit = (
+        MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    )
+    if num_matched_pairs > matched_pairs_limit:
+        mask_note = (
+            " (a stricter limit applies because query and/or target "
+            "predictions carry instance segmentation masks)"
+            if has_masks
+            else ""
+        )
+        raise ValueError(
+            f"`roboflow_core/detections_nearest_neighbor@v1` would produce "
+            f"{num_matched_pairs} matched query-target pairs, exceeding the "
+            f"{matched_pairs_limit} limit{mask_note}. This usually means many "
+            "query/target detections share the same (or a near-identical) "
+            "anchor point, producing widespread ties. Reduce the number of "
+            "detections or increase separation between anchor points before "
+            "using this block."
+        )
 
     # The only device->host hops: the batched minima and the tie indices.
     matched_pairs = torch.nonzero(tie_mask, as_tuple=False).cpu().tolist()

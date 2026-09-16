@@ -2,22 +2,19 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -41,6 +38,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     is_workflow_selector,
     roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
@@ -147,16 +148,14 @@ class BlockManifest(WorkflowBlockManifest):
                     model_id=self.version,
                     model_id_resolver=lambda version: f"yolo_world/{version}",
                     model_registration_kwargs={
-                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
                     },
                 )
             ]
         return [
             roboflow_platform_model(
                 model_id=f"yolo_world/{self.version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -165,7 +164,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -216,22 +215,23 @@ class YoloWorldModelBlockV1(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = YOLOWorldInferenceRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                yolo_world_version_id=version,
-                confidence=confidence,
-                text=class_names,
-                api_key=self._api_key,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             yolo_world_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
                 core_model="yolo_world",
+                version_id=version,
+                api_key=self._api_key,
             )
-            prediction = self._model_manager.infer_from_request_sync(
-                yolo_world_model_id, inference_request
+            predictions.append(
+                self._model_manager.run_yolo_world(
+                    model_id=yolo_world_model_id,
+                    version_id=version,
+                    image=image,
+                    text=class_names,
+                    api_key=self._api_key,
+                    confidence=confidence,
+                )
             )
-            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
         return self._post_process_result(
             images=images,
             predictions=predictions,
