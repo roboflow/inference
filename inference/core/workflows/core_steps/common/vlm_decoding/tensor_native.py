@@ -72,9 +72,7 @@ try:
         ClassificationPrediction,
         MultiLabelClassificationPrediction,
     )
-    from inference_models.models.base.instance_segmentation import (
-        InstanceDetections,
-    )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
     from inference_models.models.base.object_detection import Detections
     from inference_models.models.base.types import InstancesRLEMasks
 
