@@ -104,7 +104,6 @@ from inference_models.configuration import (
     MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
-from inference_models.entities import ResolvedModelMetadata
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -262,7 +261,7 @@ class InferenceModelsAdapter(Model):
     _model: Any
 
     @property
-    def resolved_model(self) -> Optional[ResolvedModelMetadata]:
+    def resolved_model(self) -> Any:
         return getattr(self._model, "resolved_model", None)
 
     def infer_from_request(

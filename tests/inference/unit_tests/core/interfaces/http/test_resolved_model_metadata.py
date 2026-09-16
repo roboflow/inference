@@ -20,13 +20,12 @@ from inference.core.registries import roboflow as registry_module
 from inference.core.registries.base import ModelRegistry
 from inference.models import utils as model_utils
 from inference.models.yolov8.yolov8_object_detection import YOLOv8ObjectDetection
-from inference_models.entities import ResolvedModelMetadata
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
 )
 from inference_sdk import InferenceHTTPClient
 
-RESOLVED_MODEL = ResolvedModelMetadata(
+RESOLVED_MODEL = SimpleNamespace(
     model_id="canonical/1",
     model_package_id="onnxpackage",
     backend="onnx",
@@ -38,7 +37,7 @@ class PackageModel(adapters.InferenceModelsAdapter):
     task_type = "object-detection"
     model_id = "test/1"
 
-    def __init__(self, metadata: Optional[ResolvedModelMetadata] = RESOLVED_MODEL):
+    def __init__(self, metadata: Optional[SimpleNamespace] = RESOLVED_MODEL):
         self._model = SimpleNamespace()
         if metadata is not None:
             self._model.resolved_model = metadata
@@ -206,7 +205,7 @@ def test_sdk_preserves_http_package_metadata(monkeypatch, requests_mock, api_ver
 
 def test_http_response_keeps_serving_package_when_model_is_replaced(monkeypatch):
     replacement = PackageModel(
-        ResolvedModelMetadata(
+        SimpleNamespace(
             model_id="canonical/1",
             model_package_id="trtpackage",
             backend="trt",
