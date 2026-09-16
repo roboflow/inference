@@ -129,3 +129,11 @@ def test_source_accounting_is_opt_in_and_does_not_mix_shared_handlers(monkeypatc
     monkeypatch.setenv('INFERENCE_MODELS_RUNTIME_DIAGNOSTICS','false')
     disabled,_=create()
     assert disabled.frame_accounting is None
+
+
+def test_generic_discard_callback_reports_none_items_too():
+    queue = Queue()
+    queue.put(None); queue.put(1)
+    discarded=[]
+    assert get_queue(queue,purge=True,on_discard=discarded.append)==1
+    assert discarded==[None]

@@ -1425,17 +1425,20 @@ def get_from_queue(
     purge, never the final returned item; selection order is unchanged.
     """
     result = None
+    has_result = False
     if queue.empty() or not purge:
         try:
             result = queue.get(timeout=timeout)
+            has_result = True
             queue.task_done()
             on_successful_read()
         except Empty:
             pass
     while not queue.empty() and purge:
-        if result is not None and on_discard is not None:
+        if has_result and on_discard is not None:
             on_discard(result)
         result = queue.get()
+        has_result = True
         queue.task_done()
         on_successful_read()
     return result
