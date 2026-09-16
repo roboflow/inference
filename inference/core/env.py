@@ -721,8 +721,20 @@ INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
 
-# Enable the builder, default is False
+# Enable the Workflows builder UI (mounts the /build router in http_api.py),
+# default is False. The `inference server start --dev` CLI command sets this
+# to "True" for the container it launches (see
+# inference_cli/lib/container_adapter.py::prepare_container_environment); it
+# is otherwise off for a manually-run server (docker run / docker compose)
+# unless set explicitly. The landing page only links to /build once it has
+# confirmed the route responds, so this flag does not need to be flipped just
+# to keep that link from 404ing.
 ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+# Origin allowed to make cross-origin calls into the builder API/CORS
+# middleware (see http_api.py) and embedded into editor.html for the builder
+# UI to call back out to. Defaults to this deployment's Roboflow app URL
+# (e.g. https://app.roboflow.com for the public platform); override only if
+# you are serving the builder UI from a different origin.
 BUILDER_ORIGIN = os.getenv(
     "BUILDER_ORIGIN",
     resolve_roboflow_service_url("app", region=ROBOFLOW_REGION, project=PROJECT),
