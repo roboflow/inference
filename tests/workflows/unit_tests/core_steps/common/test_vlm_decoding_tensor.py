@@ -54,6 +54,10 @@ from inference_models.models.base.classification import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
+    detection_masks,
+)
 
 pytestmark = pytest.mark.skipif(
     not ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -348,16 +352,23 @@ def test_decode_vlm_output_returns_instance_detections_for_segmentation() -> Non
 
     assert error_status is False
     assert isinstance(predictions, InstanceDetections)
+    # Boxes come from the RLE (`toBbox`), i.e. the pixels the mask covers, not
+    # the polygon extents: the triangle's hypotenuse boundary is not painted.
     assert predictions.xyxy.tolist() == [
         [80.0, 100.0, 400.0, 300.0],
-        [500.0, 50.0, 600.0, 150.0],
+        [501.0, 50.0, 600.0, 149.0],
     ]
     assert predictions.class_id.tolist() == [0, -1]
     assert predictions.confidence.tolist() == [1.0, 1.0]
-    assert predictions.mask.shape == (2, IMAGE_HEIGHT, IMAGE_WIDTH)
-    assert predictions.mask.dtype.is_floating_point is False
-    assert bool(predictions.mask[0, 200, 240])
-    assert not bool(predictions.mask[0, 50, 50])
+    # RLE carrier, never a dense (N, H, W) tensor.
+    assert isinstance(predictions.mask, InstancesRLEMasks)
+    assert predictions.mask.image_size == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert len(predictions.mask.masks) == 2
+    assert all(isinstance(counts, bytes) for counts in predictions.mask.masks)
+    masks = detection_masks(predictions)
+    assert masks[0].shape == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert bool(masks[0][200, 240])
+    assert not bool(masks[0][50, 50])
     assert predictions.image_metadata[PREDICTION_TYPE_KEY] == "instance-segmentation"
     assert predictions.image_metadata[CLASS_NAMES_KEY] == {0: "cat", -1: "bird"}
     assert predictions.image_metadata[INFERENCE_ID_KEY] == "inference-id"
@@ -390,6 +401,7 @@ def test_decode_vlm_output_returns_empty_instance_detections_for_empty_answer() 
     assert error_status is False
     assert isinstance(predictions, InstanceDetections)
     assert len(predictions) == 0
-    assert predictions.mask.shape == (0, IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert isinstance(predictions.mask, InstancesRLEMasks)
+    assert predictions.mask.masks == []
     assert predictions.bboxes_metadata is None
     assert predictions.image_metadata[CLASS_NAMES_KEY] == {0: "cat", 1: "dog"}

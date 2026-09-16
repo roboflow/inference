@@ -54,6 +54,7 @@ from inference.core.workflows.core_steps.common.vlm_decoding.segmentation import
     build_instance_segmentations,
     decode_instance_segmentations,
     extract_segmentation_entries,
+    polygon_to_rle,
     read_polygon,
 )
 from inference.core.workflows.core_steps.common.vlm_decoding.tensor_native import (
@@ -102,6 +103,7 @@ __all__ = [
     "get_detection_confidence",
     "parse_multi_class_classification_results",
     "parse_multi_label_classification_results",
+    "polygon_to_rle",
     "prediction_kinds_for_tasks",
     "read_polygon",
     "scale_confidence",

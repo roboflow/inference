@@ -6,10 +6,15 @@ contract that scored best for GPT-6 Astra on the vlm-exam mask ground truth
 (absolute pixels of the ORIGINAL image beat 0-1 floats on cost and 0-1000 ints
 on small objects, and pre-downscaling the upload cost mask AP - hence no
 ``DETECTION_MAX_EDGE_PIXELS`` resize on this path). Decoding mirrors
-``detections.py``: entries are read leniently, vertices are scaled back onto
-the original image, and each polygon is rasterised into a dense mask so the
-result carries the ``instance_segmentation_prediction`` kind that the
-visualization, crop and upload blocks already consume.
+``detections.py``: entries are read leniently and vertices are scaled back
+onto the original image. Each polygon is then encoded straight to COCO RLE
+(``pycocotools.frPyObjects``) - no dense mask is ever materialised, so memory
+stays proportional to the run count however many instances the model returns
+- and the result carries ``mask=None`` plus ``data["rle_mask"]``, the
+RLE-first contract of ``segment_anything3@v3`` / ``instance_segmentation@v4``
+that the visualization, crop, upload blocks and the Auto Label worker already
+consume (they decode lazily, one instance at a time, only where pixels are
+needed).
 """
 
 import logging
@@ -18,6 +23,7 @@ from uuid import uuid4
 
 import numpy as np
 import supervision as sv
+from pycocotools import mask as mask_utils
 from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
@@ -39,6 +45,7 @@ from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     PREDICTION_TYPE_KEY,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -106,7 +113,7 @@ def decode_instance_segmentations(
     upload_width: Optional[int] = None,
     upload_height: Optional[int] = None,
 ) -> Tuple[bool, Optional[sv.Detections]]:
-    """Decode a raw VLM answer into masked detections in original-image pixels.
+    """Decode a raw VLM answer into RLE-masked detections in original-image pixels.
 
     Never raises: any failure is reported through ``error_status`` and
     logged, so a malformed model answer cannot take down a workflow run.
@@ -156,11 +163,12 @@ def build_instance_segmentations(
     upload_width: Optional[int] = None,
     upload_height: Optional[int] = None,
 ) -> sv.Detections:
-    """Build masked ``sv.Detections`` from an already-parsed JSON payload.
+    """Build RLE-masked ``sv.Detections`` from an already-parsed JSON payload.
 
-    Every polygon is rasterised into a dense ``(H, W)`` boolean mask at the
-    original image resolution and its bounding box is the polygon extent.
-    Polygons enclosing no area are skipped like malformed ones.
+    Every entry is validated first (well-formed polygon, non-zero enclosed
+    area); the survivors are encoded polygon -> COCO RLE at the original image
+    resolution without rasterising a dense mask, and their bounding box is
+    taken from the RLE (``toBbox``) so box and mask always agree.
 
     Args:
         parsed_data: JSON payload extracted from the VLM output.
@@ -171,7 +179,9 @@ def build_instance_segmentations(
         upload_height: Height of the image as uploaded.
 
     Returns:
-        Detections with masks in the original image's coordinate space.
+        Detections with ``mask=None`` and one COCO RLE (``{"size", "counts"}``,
+        ``counts`` as bytes) per instance under ``data["rle_mask"]``, in the
+        original image's coordinate space.
 
     Raises:
         ValueError: If the payload shape is not recognised, the upload
@@ -192,11 +202,9 @@ def build_instance_segmentations(
     scale_x = image_width / upload_width
     scale_y = image_height / upload_height
 
-    # Rasterise straight into the final stack: one full-resolution mask per
-    # instance is the price of the dense kind (the instance-segmentation model
-    # block pays it too), so at least never hold a second copy.
-    stack = np.zeros((len(entries), image_height, image_width), dtype=bool)
-    xyxy, class_id, class_name = [], [], []
+    # Validate every entry before encoding anything, so nothing is allocated
+    # for entries that end up skipped.
+    valid: List[tuple] = []
     for entry in entries:
         polygon = read_polygon(entry)
         if polygon is None:
@@ -207,39 +215,48 @@ def build_instance_segmentations(
             continue
         polygon[:, 0] = np.clip(polygon[:, 0], 0.0, upload_width) * scale_x
         polygon[:, 1] = np.clip(polygon[:, 1], 0.0, upload_height) * scale_y
-        vertices = polygon.round().astype(int)
+        vertices = polygon.round()
         if _polygon_area(vertices) < MINIMUM_POLYGON_AREA:
-            # Collinear, repeated or clipped-away vertices enclose no area;
-            # `fillPoly` would still paint them as a one-pixel line and the
-            # serialiser would then drop the instance silently, so drop it
-            # here where it can be logged.
+            # Collinear, repeated or clipped-away vertices enclose no area; the
+            # serialiser would drop such an instance silently, so drop it here
+            # where it can be logged.
             logger.warning(
                 "Skipping VLM segmentation entry whose polygon encloses no area: %r",
                 entry,
             )
             continue
-        mask = sv.polygon_to_mask(vertices, resolution_wh=(image_width, image_height))
-        if not mask.any():
-            logger.warning(
-                "Skipping VLM segmentation entry whose polygon covers no pixels: %r",
-                entry,
-            )
-            continue
-        stack[len(xyxy)] = mask
-        x_min, y_min = vertices.min(axis=0)
-        x_max, y_max = vertices.max(axis=0)
-        xyxy.append([x_min, y_min, x_max, y_max])
-        label = get_detection_class_name(entry)
-        class_id.append(class_name2id.get(label, -1))
-        class_name.append(label)
+        valid.append((entry, vertices))
 
-    if entries and not xyxy:
+    if entries and not valid:
         # Every entry was skipped: the model answered in a shape other than
         # the prompted one. An empty prediction would be indistinguishable
         # from "nothing found", so fail and let the caller surface
         # `error_status=True`.
         raise ValueError(
             f"none of {len(entries)} segmentation entries carried a usable polygon"
+        )
+
+    xyxy, rle_masks, class_id, class_name = [], [], [], []
+    for entry, vertices in valid:
+        rle = polygon_to_rle(
+            vertices, image_width=image_width, image_height=image_height
+        )
+        if mask_utils.area(rle) == 0:
+            logger.warning(
+                "Skipping VLM segmentation entry whose polygon covers no pixels: %r",
+                entry,
+            )
+            continue
+        x, y, w, h = mask_utils.toBbox(rle)
+        xyxy.append([x, y, x + w, y + h])
+        rle_masks.append(rle)
+        label = get_detection_class_name(entry)
+        class_id.append(class_name2id.get(label, -1))
+        class_name.append(label)
+
+    if valid and not xyxy:
+        raise ValueError(
+            f"none of {len(entries)} segmentation entries covered any pixels"
         )
 
     count = len(xyxy)
@@ -249,13 +266,14 @@ def build_instance_segmentations(
         INFERENCE_ID_KEY: np.array([inference_id] * count),
         DETECTION_ID_KEY: np.array([str(uuid4()) for _ in range(count)]),
         PREDICTION_TYPE_KEY: np.array([PREDICTION_TYPE] * count),
+        RLE_MASK_KEY_IN_SV_DETECTIONS: np.array(rle_masks, dtype=object),
     }
     detections = sv.Detections(
         xyxy=np.array(xyxy, dtype=float) if count else np.empty((0, 4)),
         # The prompt asks for no confidence; downstream filters see 1.0.
         confidence=np.ones(count) if count else np.empty(0),
         class_id=np.array(class_id).astype(int) if count else np.empty(0),
-        mask=stack[:count],
+        mask=None,
         tracker_id=None,
         data=data,
     )
@@ -267,6 +285,21 @@ def build_instance_segmentations(
         detections=detections,
         image=image,
     )
+
+
+def polygon_to_rle(vertices: np.ndarray, image_width: int, image_height: int) -> dict:
+    """Encode one ``(N, 2)`` pixel polygon as a COCO RLE without rasterising it.
+
+    Args:
+        vertices: Polygon vertices in original-image pixels.
+        image_width: Original image width.
+        image_height: Original image height.
+
+    Returns:
+        ``{"size": [height, width], "counts": bytes}`` as pycocotools emits it.
+    """
+    flat = [vertices.astype(float).ravel().tolist()]
+    return mask_utils.frPyObjects(flat, image_height, image_width)[0]
 
 
 def _polygon_area(vertices: np.ndarray) -> float:
