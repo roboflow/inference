@@ -9,6 +9,7 @@ Run it manually inside a Jetson image, e.g.:
 """
 
 import gc
+import io
 import os
 import shutil
 import subprocess
@@ -28,6 +29,32 @@ from inference.core.interfaces.camera.jetson_tensor_bridge import (
 )
 
 _BUNDLED_FIXTURE_DIRECTORY = Path("/opt/roboflow/test-fixtures")
+
+
+def _validate_torchvision_cuda_jpeg() -> None:
+    """Exercise nvJPEG on-device; a successful import does not test its runtime.
+
+    Use 4:4:4 so CPU/GPU chroma upsampling differences cannot mask an actual
+    decoder error. Cover baseline and progressive JPEG separately from the
+    Jetson GStreamer hardware decoder, which only accepts baseline JPEG.
+    """
+    from PIL import Image
+    from torchvision.io import decode_jpeg
+
+    pixels = np.random.default_rng(7).integers(0, 256, (96, 128, 3), dtype=np.uint8)
+    for progressive in (False, True):
+        buffer = io.BytesIO()
+        Image.fromarray(pixels).save(
+            buffer, format="JPEG", subsampling=0, progressive=progressive
+        )
+        encoded = torch.frombuffer(bytearray(buffer.getvalue()), dtype=torch.uint8)
+        expected = decode_jpeg(encoded)
+        actual = decode_jpeg(encoded, device="cuda")
+        assert actual.is_cuda
+        assert actual.dtype == torch.uint8 and actual.shape == expected.shape
+        error = (actual.cpu().float() - expected.float()).abs()
+        assert error.mean().item() < 1, error.mean().item()
+        assert error.max().item() <= 3, error.max().item()
 
 
 def _run_gstreamer(*arguments: str) -> None:
@@ -457,6 +484,7 @@ def _validate_live_rtsp_source(url: str) -> None:
 
 def main() -> None:
     assert torch.cuda.is_available()
+    _validate_torchvision_cuda_jpeg()
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         h264_path = root / "test.h264"
