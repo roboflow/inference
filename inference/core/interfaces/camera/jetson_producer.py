@@ -2,6 +2,7 @@
 
 import ctypes
 import ctypes.util
+import json
 import os
 import subprocess
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
 from urllib.parse import unquote, urlparse
 
+from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     FrameImage,
     SourceProperties,
@@ -74,6 +76,23 @@ _SOFTWARE_DECODER_ELEMENTS = (
     "jpegdec",
     "libde265dec",
     "openh264dec",
+)
+_STARTUP_DIAGNOSTIC_COUNTERS = (
+    "frames",
+    "descriptor_maps",
+    "nvmm_frames",
+    "conversion_kernels",
+    "host_pixel_maps",
+    "host_to_device_copies",
+    "device_to_host_copies",
+    "array_flatten_copies",
+    "frames_dropped_by_consumer",
+    "unique_buffer_fds",
+    "egl_cache_hits",
+    "egl_cache_misses",
+    "last_nvbuf_memory_type",
+    "last_egl_frame_type",
+    "last_egl_color_format",
 )
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
@@ -440,7 +459,12 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def discover_source_properties(self) -> SourceProperties:
         if self._cached_source_properties is not None:
             return self._cached_source_properties
-        if not self.grab():
+        try:
+            has_frame = self.grab()
+        except TimeoutError as error:
+            self._log_first_frame_timeout(error)
+            raise
+        if not has_frame:
             raise RuntimeError("Jetson pipeline did not produce source metadata")
         self._prerolled_frame_pending = True
         frame_info = self._native_pipeline.frame_info()
@@ -474,6 +498,48 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         )
         self._cached_source_properties = properties
         return properties
+
+    def _log_first_frame_timeout(self, error: TimeoutError) -> None:
+        # Capture before VideoSource releases the native producer. Never include
+        # source URIs, pipeline descriptions, exception messages, or pixels.
+        if getattr(self, "_startup_timeout_reported", False) or not any(
+            os.getenv(flag, "false").lower() == "true"
+            for flag in (
+                "ENABLE_RUNTIME_DIAGNOSTICS",
+                "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS",
+            )
+        ):
+            return
+        self._startup_timeout_reported = True
+        snapshot = {"exception_type": type(error).__name__}
+        try:
+            counters = self._native_pipeline.stats()
+            snapshot["counters"] = {
+                key: counters[key]
+                for key in _STARTUP_DIAGNOSTIC_COUNTERS
+                if isinstance(counters.get(key), int)
+                and not isinstance(counters[key], bool)
+                and 0 <= counters[key] <= (1 << 64) - 1
+            }
+        except Exception as diagnostic_error:
+            snapshot["counters_error_type"] = type(diagnostic_error).__name__
+        try:
+            snapshot["decoder_factories"] = [
+                factory
+                for factory in ("nvv4l2decoder", "nvjpegdec")
+                + _SOFTWARE_DECODER_ELEMENTS
+                if self._native_pipeline.has_factory(factory)
+            ]
+        except Exception as diagnostic_error:
+            snapshot["factories_error_type"] = type(diagnostic_error).__name__
+        try:
+            logger.warning(
+                "Jetson first-frame timeout diagnostics: "
+                + json.dumps(snapshot, sort_keys=True)
+            )
+        except Exception:
+            # Optional observability must not replace the original timeout.
+            pass
 
     def interrupt(self) -> None:
         if self._closed or self._eos:

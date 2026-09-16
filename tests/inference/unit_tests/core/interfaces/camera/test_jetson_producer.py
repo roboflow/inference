@@ -321,3 +321,77 @@ def test_explicit_h264_override_keeps_legacy_decoder_tuning(monkeypatch) -> None
         "rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1" in pipeline
     )
     assert "decodebin" not in pipeline
+
+
+def test_first_frame_timeout_diagnostics_are_safe_and_pre_release(monkeypatch):
+    import json
+    from unittest.mock import Mock
+    from inference.core.interfaces.camera import jetson_producer
+
+    monkeypatch.setenv("ENABLE_RUNTIME_DIAGNOSTICS", "true")
+    native = _NativePipeline(factories={"nvv4l2decoder"})
+    error = TimeoutError("rtsp://user:private-password@camera?token=private-token")
+    native.grab = Mock(side_effect=error)
+    native.stats = Mock(
+        return_value={
+            "frames": 0,
+            "descriptor_maps": 0,
+            "host_pixel_maps": 0,
+            "host_to_device_copies": True,
+            "nvmm_frames": "private-token",
+            "private-token": 1,
+            "conversion_kernels": -1,
+        }
+    )
+    native.close = Mock()
+    logged = Mock()
+    monkeypatch.setattr(jetson_producer.logger, "warning", logged)
+    producer = _native_producer(native, source_ref=str(error))
+    for _ in range(2):
+        with pytest.raises(TimeoutError) as caught:
+            producer.discover_source_properties()
+        assert caught.value is error
+    logged.assert_called_once()
+    payload = json.loads(logged.call_args.args[0].split(": ", 1)[1])
+    assert payload == {
+        "exception_type": "TimeoutError",
+        "decoder_factories": ["nvv4l2decoder"],
+        "counters": {"frames": 0, "descriptor_maps": 0, "host_pixel_maps": 0},
+    }
+    assert "private" not in logged.call_args.args[0]
+    native.close.assert_not_called()
+    producer.release()
+    native.close.assert_called_once()
+
+
+def test_first_frame_diagnostics_disabled_does_not_query_native(monkeypatch):
+    from unittest.mock import Mock
+
+    monkeypatch.delenv("ENABLE_RUNTIME_DIAGNOSTICS", raising=False)
+    monkeypatch.delenv("INFERENCE_MODELS_RUNTIME_DIAGNOSTICS", raising=False)
+    native = _NativePipeline()
+    native.grab = Mock(side_effect=TimeoutError("secret"))
+    native.stats = Mock()
+    producer = _native_producer(native)
+    with pytest.raises(TimeoutError):
+        producer.discover_source_properties()
+    native.stats.assert_not_called()
+    assert not native.factory_queries
+
+
+def test_first_frame_diagnostic_failure_preserves_original_timeout(monkeypatch):
+    from unittest.mock import Mock
+    from inference.core.interfaces.camera import jetson_producer
+
+    monkeypatch.setenv("ENABLE_RUNTIME_DIAGNOSTICS", "true")
+    native = _NativePipeline()
+    error = TimeoutError("original-private-message")
+    native.grab = Mock(side_effect=error)
+    native.stats = Mock(side_effect=RuntimeError("private-stats-message"))
+    native.has_factory = Mock(side_effect=RuntimeError("private-factory-message"))
+    logged = Mock(side_effect=RuntimeError("logging unavailable"))
+    monkeypatch.setattr(jetson_producer.logger, "warning", logged)
+    with pytest.raises(TimeoutError) as caught:
+        _native_producer(native).discover_source_properties()
+    assert caught.value is error
+    assert "private" not in logged.call_args.args[0]
