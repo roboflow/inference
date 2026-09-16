@@ -17,10 +17,10 @@ format, and reproduces the output of the deprecated tensor formatter blocks
 * detections carry ``image_metadata`` with the ``class_id -> name`` map,
   prediction type, dimensions, inference id and the parent/root lineage, plus
   per-box ``detection_id``/``class`` on ``bboxes_metadata``;
-* masked detections (the ``instance-segmentation`` task) become
-  ``InstanceDetections`` with the same metadata and a dense ``(N, H, W)``
-  boolean mask tensor - the carrier the tensor-mode serializer registered for
-  ``instance_segmentation_prediction`` expects;
+* RLE-masked detections (the ``instance-segmentation`` task, ``mask=None`` +
+  ``data["rle_mask"]``) become ``InstanceDetections`` with the same metadata
+  and an ``InstancesRLEMasks`` carrier - what the tensor-mode serializer
+  registered for the instance-segmentation kinds expects, and no dense mask;
 * classification carries the dense, ``class_id``-indexed confidence vector and
   is tagged ``CLASSIFICATION_STYLE_FORMATTER`` so
   ``serializers_tensor.serialise_native_classification`` reproduces the "D4 /
@@ -58,6 +58,7 @@ from inference.core.workflows.execution_engine.constants import (
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -75,6 +76,7 @@ try:
         InstanceDetections,
     )
     from inference_models.models.base.object_detection import Detections
+    from inference_models.models.base.types import InstancesRLEMasks
 
     TENSOR_NATIVE_CARRIERS_AVAILABLE = True
 except ImportError:
@@ -82,6 +84,7 @@ except ImportError:
     ClassificationPrediction = None
     MultiLabelClassificationPrediction = None
     InstanceDetections = None
+    InstancesRLEMasks = None
     Detections = None
     TENSOR_NATIVE_CARRIERS_AVAILABLE = False
 
@@ -123,7 +126,10 @@ def to_tensor_native_predictions(
     """
     if not tensor_native_carriers_enabled():
         return predictions
-    if isinstance(predictions, sv.Detections) and predictions.mask is not None:
+    if isinstance(predictions, sv.Detections) and (
+        predictions.mask is not None
+        or RLE_MASK_KEY_IN_SV_DETECTIONS in predictions.data
+    ):
         return native_instance_detections_from_sv_detections(
             detections=predictions,
             image=image,
@@ -184,8 +190,8 @@ def native_instance_detections_from_sv_detections(
     instance detections.
 
     Same tensors and metadata as :func:`native_detections_from_sv_detections`
-    plus the dense boolean mask stack, matching the dense carrier the
-    instance-segmentation model block builds from polygon responses.
+    plus the mask carrier: ``InstancesRLEMasks`` when the decoder handed back
+    RLE (the segmentation task's contract), else the dense boolean stack.
 
     Args:
         detections: Detections built by ``build_instance_segmentations``.
@@ -203,12 +209,17 @@ def native_instance_detections_from_sv_detections(
         prediction_type=INSTANCE_SEGMENTATION_PREDICTION_TYPE,
     )
     image_height, image_width = image._read_shape_without_materialization()
-    if len(detections) == 0:
-        mask = torch.zeros(
-            (0, image_height, image_width),
-            dtype=torch.bool,
-            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
-        )
+    rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    if rle_masks is not None or detections.mask is None:
+        counts = [
+            (
+                rle["counts"].encode("utf-8")
+                if isinstance(rle["counts"], str)
+                else rle["counts"]
+            )
+            for rle in (rle_masks if rle_masks is not None else [])
+        ]
+        mask = InstancesRLEMasks(image_size=(image_height, image_width), masks=counts)
     else:
         mask = torch.as_tensor(
             np.asarray(detections.mask),

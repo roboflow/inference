@@ -35,6 +35,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
     classification_inference_id,
@@ -142,6 +143,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
@@ -154,7 +156,13 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     "task_type, expected_kind",
     [
         ("object-detection", [OBJECT_DETECTION_PREDICTION_KIND]),
-        ("instance-segmentation", [INSTANCE_SEGMENTATION_PREDICTION_KIND]),
+        (
+            "instance-segmentation",
+            [
+                RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ],
+        ),
         ("classification", [CLASSIFICATION_PREDICTION_KIND]),
         ("multi-label-classification", [CLASSIFICATION_PREDICTION_KIND]),
     ],
@@ -199,6 +207,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]

@@ -32,6 +32,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     Kind,
 )
 
@@ -68,6 +69,9 @@ def prediction_kinds_for_tasks(task_types: Iterable[str]) -> List[Kind]:
     if task_types & DETECTION_TASKS:
         kinds.append(OBJECT_DETECTION_PREDICTION_KIND)
     if task_types & SEGMENTATION_TASKS:
+        # RLE first: it is what the decoder emits; the dense kind is kept so
+        # consumers declared on it still connect (they decode lazily).
+        kinds.append(RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND)
         kinds.append(INSTANCE_SEGMENTATION_PREDICTION_KIND)
     if task_types & CLASSIFICATION_TASKS:
         kinds.append(CLASSIFICATION_PREDICTION_KIND)
@@ -121,7 +125,10 @@ def actual_vlm_prediction_outputs(
     if task_type in DETECTION_TASKS:
         prediction_kind = [OBJECT_DETECTION_PREDICTION_KIND]
     elif task_type in SEGMENTATION_TASKS:
-        prediction_kind = [INSTANCE_SEGMENTATION_PREDICTION_KIND]
+        prediction_kind = [
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        ]
     elif task_type in CLASSIFICATION_TASKS:
         prediction_kind = [CLASSIFICATION_PREDICTION_KIND]
     else:

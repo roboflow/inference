@@ -10,10 +10,11 @@ onto one of the shared box coordinate contracts (see
 ``DETECTION_BOX_FORMATS_BY_STYLE``), which is what decoding keys off.
 
 Adds the ``instance-segmentation`` task: one absolute-pixel polygon per
-instance, enforced via structured outputs and decoded into masked
-``predictions``. The image is sent at its original resolution for this task -
-pre-downscaling the upload measurably hurt mask quality on GPT-6 Astra, the
-model the task defaults to.
+instance, enforced via structured outputs and decoded into RLE-masked
+``predictions`` (no dense mask is built - see ``vlm_decoding/segmentation``).
+The image is sent at its original resolution for this task - pre-downscaling
+the upload measurably hurt mask quality on GPT-6 Astra, the model the task
+defaults to.
 """
 
 import base64
@@ -430,7 +431,9 @@ Images are downscaled so that their longest edge does not exceed
 The `instance-segmentation` task asks for one outline polygon per instance of
 the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
 pixel coordinates of the uploaded image, enforced via structured outputs - and
-decodes it into masked predictions (`instance_segmentation_prediction` kind).
+decodes it into RLE-masked predictions (`rle_instance_segmentation_prediction`,
+also declared as `instance_segmentation_prediction`; consumers decode the RLE
+lazily, so no dense mask is held however many instances come back).
 The image is sent at its original resolution as JPEG for this task, since
 downscaling the upload measurably hurt mask quality. Unless a `model_version`
 is set explicitly, this task runs on `{INSTANCE_SEGMENTATION_DEFAULT_MODEL}`,
@@ -444,7 +447,7 @@ This version (v7) decodes the model answer inside the block, adding
 `output` string:
 
 * `predictions` holds object detections for the `object-detection` task,
-masked detections for the `instance-segmentation` task and a classification
+RLE-masked detections for the `instance-segmentation` task and a classification
 prediction for the `classification` / `multi-label-classification` tasks -
 the kind of the output follows the selected task type.
 * `predictions` is `None` for every other task (unconstrained prompting, OCR,

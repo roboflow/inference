@@ -27,6 +27,7 @@ from inference.core.workflows.core_steps.common.vlm_decoding import (
     extract_segmentation_entries,
     get_detection_class_name,
     get_detection_confidence,
+    polygon_to_rle,
     prediction_kinds_for_tasks,
     read_polygon,
     scale_confidence,
@@ -49,6 +50,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
     classification_top_class,
@@ -784,7 +786,10 @@ def test_actual_outputs_narrow_to_detections(task_type: str) -> None:
 def test_actual_outputs_narrow_to_segmentation(task_type: str) -> None:
     outputs = actual_vlm_prediction_outputs(task_type)
 
-    assert outputs[0].kind == [INSTANCE_SEGMENTATION_PREDICTION_KIND]
+    assert outputs[0].kind == [
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    ]
 
 
 @pytest.mark.parametrize("task_type", sorted(CLASSIFICATION_TASKS))
@@ -814,6 +819,7 @@ def test_segmentation_kind_is_declared_only_by_blocks_supporting_the_task() -> N
 
     assert describe_vlm_prediction_outputs(with_segmentation)[0].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
@@ -825,6 +831,7 @@ def test_segmentation_kind_is_declared_only_by_blocks_supporting_the_task() -> N
         0
     ].kind == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
@@ -836,7 +843,8 @@ def test_segmentation_kind_is_declared_only_by_blocks_supporting_the_task() -> N
     ]
     assert prediction_kinds_for_tasks(["ocr", "caption"]) == []
     assert prediction_kinds_for_tasks(["instance-segmentation"]) == [
-        INSTANCE_SEGMENTATION_PREDICTION_KIND
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
     ]
 
 
@@ -1308,15 +1316,22 @@ def test_decode_instance_segmentations_produces_mask_and_extent_box() -> None:
     assert detections.data[IMAGE_DIMENSIONS_KEY].tolist() == [
         [IMAGE_HEIGHT, IMAGE_WIDTH]
     ]
-    mask = detections.mask[0]
+    # RLE contract: no dense mask is materialised by the decoder.
+    assert detections.mask is None
+    rle = detections.data["rle_mask"][0]
+    assert rle["size"] == [IMAGE_HEIGHT, IMAGE_WIDTH]
+    assert isinstance(rle["counts"], bytes)
+    mask = detection_masks(detections)[0]
     assert mask.shape == (IMAGE_HEIGHT, IMAGE_WIDTH)
     assert mask.dtype == bool
     assert mask[200, 240]  # inside
     assert not mask[50, 50]  # outside
     assert not mask[350, 600]
-    # Rasterised rectangle: cv2.fillPoly is inclusive of the edge, so the
-    # area is (width + 1) * (height + 1).
-    assert int(mask.sum()) == (400 - 80 + 1) * (300 - 100 + 1)
+    # The 320x200 rectangle, give or take the edge pixels the COCO polygon
+    # rasteriser includes.
+    assert (
+        (400 - 80) * (300 - 100) <= int(mask.sum()) <= (400 - 80 + 1) * (300 - 100 + 1)
+    )
 
 
 def test_decode_instance_segmentations_rescales_from_upload_dimensions() -> None:
@@ -1329,8 +1344,9 @@ def test_decode_instance_segmentations_rescales_from_upload_dimensions() -> None
 
     assert error_status is False
     assert detections.xyxy.tolist() == [EXPECTED_XYXY]
-    assert detections.mask[0][200, 240]
-    assert not detections.mask[0][50, 50]
+    mask = detection_masks(detections)[0]
+    assert mask[200, 240]
+    assert not mask[50, 50]
 
 
 @pytest.mark.parametrize(
@@ -1415,7 +1431,7 @@ def test_decode_instance_segmentations_skips_polygons_enclosing_no_area(
     assert error_status is False
     assert len(detections) == 1
     assert detections.xyxy.tolist() == [EXPECTED_XYXY]
-    assert detections.mask.shape == (1, IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert len(detections.data["rle_mask"]) == 1
 
 
 def test_decode_instance_segmentations_reports_error_when_only_empty_polygons() -> None:
@@ -1475,7 +1491,8 @@ def test_decode_instance_segmentations_returns_empty_detections_for_empty_list()
 
     assert error_status is False
     assert len(detections) == 0
-    assert detections.mask.shape == (0, IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert detections.mask is None
+    assert len(detections.data["rle_mask"]) == 0
     assert detections.metadata[IMAGE_DIMENSIONS_KEY] == [IMAGE_HEIGHT, IMAGE_WIDTH]
 
 
@@ -1581,3 +1598,17 @@ def test_decode_vlm_output_requires_classes_for_segmentation() -> None:
 
     assert error_status is True
     assert predictions is None
+
+
+def test_polygon_to_rle_encodes_without_a_dense_mask() -> None:
+    from pycocotools import mask as mask_utils
+
+    vertices = np.array([[80, 100], [400, 100], [400, 300], [80, 300]], dtype=float)
+
+    rle = polygon_to_rle(vertices, image_width=IMAGE_WIDTH, image_height=IMAGE_HEIGHT)
+
+    assert rle["size"] == [IMAGE_HEIGHT, IMAGE_WIDTH]
+    assert isinstance(rle["counts"], bytes)
+    assert mask_utils.toBbox(rle).tolist() == [80.0, 100.0, 320.0, 200.0]
+    decoded = mask_utils.decode(rle).astype(bool)
+    assert decoded[200, 240] and not decoded[50, 50]
