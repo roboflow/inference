@@ -54,14 +54,14 @@ create_models_wheel:
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
 create_isolation_wheels: create_workflows_wheel create_models_wheel
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests
+	python -m pip install setuptools wheel twine requests
 	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	rm -rf build/*
 
 create_wheels: create_workflows_wheel create_models_wheel
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
+	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	rm -rf build/*
@@ -77,7 +77,7 @@ create_wheels: create_workflows_wheel create_models_wheel
 
 create_wheels_for_gpu_notebook: create_workflows_wheel
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests
+	python -m pip install setuptools wheel twine requests
 	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	rm -rf build/*
@@ -89,7 +89,7 @@ create_wheels_for_gpu_notebook: create_workflows_wheel
 
 create_inference_cli_whl:
 	${PYTHON} -m pip install --upgrade pip
-	${PYTHON} -m pip install wheel twine requests
+	${PYTHON} -m pip install setuptools wheel twine requests
 	rm -f dist/*
 	rm -rf build/*
 	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel
