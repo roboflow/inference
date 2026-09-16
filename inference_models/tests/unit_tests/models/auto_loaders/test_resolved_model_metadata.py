@@ -36,9 +36,11 @@ def available_onnx_backend(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("cache_has_backend", [True, False])
+@pytest.mark.parametrize(
+    "missing_cache_field", [None, "backend_type", "canonical_model_id"]
+)
 def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
-    tmp_path, monkeypatch, cache_has_backend
+    tmp_path, monkeypatch, missing_cache_field
 ):
     monkeypatch.setattr(model_cache_paths, "INFERENCE_HOME", str(tmp_path))
     monkeypatch.setattr(auto_resolution_cache, "INFERENCE_HOME", str(tmp_path))
@@ -73,16 +75,19 @@ def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
         "quantization": "fp32",
     }
 
-    def unavailable_provider(**kwargs):
-        raise AssertionError("A cached load must not fetch model metadata")
+    refreshed_metadata = []
 
-    monkeypatch.setattr(core, "get_model_from_provider", unavailable_provider)
+    def refresh_provider_metadata(**kwargs):
+        refreshed_metadata.append(kwargs)
+        return metadata
+
+    monkeypatch.setattr(core, "get_model_from_provider", refresh_provider_metadata)
 
     class PartialMetadataCache(auto_resolution_cache.BaseAutoLoadMetadataCache):
         def retrieve(self, auto_negotiation_hash):
             entry = super().retrieve(auto_negotiation_hash)
-            if entry is not None and not cache_has_backend:
-                return entry.model_copy(update={"backend_type": None})
+            if entry is not None and missing_cache_field is not None:
+                return entry.model_copy(update={missing_cache_field: None})
             return entry
 
     second = core.AutoModel.from_pretrained(
@@ -93,10 +98,12 @@ def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
     )
     assert second is not first
     second_metadata = getattr(second, "resolved_model", None)
-    if cache_has_backend:
-        assert second_metadata == first_metadata
-    else:
-        assert second_metadata is None
+    assert second_metadata == first_metadata
+    assert len(refreshed_metadata) == (0 if missing_cache_field is None else 1)
+
+    third = core.AutoModel.from_pretrained("alias/1", backend="onnx", device="cpu")
+    assert getattr(third, "resolved_model", None) == first_metadata
+    assert len(refreshed_metadata) == (0 if missing_cache_field is None else 1)
 
 
 def test_auto_model_reports_the_successful_fallback_package(tmp_path, monkeypatch):

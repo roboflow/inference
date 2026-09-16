@@ -2276,6 +2276,9 @@ def attempt_loading_model_with_auto_load_cache(
         )
         invalidate_cache_entry("cached requested-model identity does not match")
         return None
+    if cache_entry.backend_type is None:
+        invalidate_cache_entry("cached package backend is missing")
+        return None
     if not allow_untrusted_packages and cache_entry.trusted_source is not True:
         verbose_info(
             message=(

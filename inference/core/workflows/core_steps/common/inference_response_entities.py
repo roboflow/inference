@@ -61,6 +61,7 @@ class InferenceResponse(BaseModel):
 
 
 class ResolvedModel(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     model_id: str
     model_package_id: str
     backend: str

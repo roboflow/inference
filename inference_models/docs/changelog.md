@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- `AutoModel.from_pretrained` exposes `resolved_model` metadata for the loaded
+  package: canonical model ID, package ID, backend, and quantization. The public
+  `ResolvedModelMetadata` entity describes this metadata.
+
 ### Fixed
 
 - `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
