@@ -699,7 +699,7 @@ plan = RFDetrExecutionPlan(
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
-    rfdetr_execution_plan=plan,
+    execution_plan=plan,
 )
 ```
 
@@ -710,7 +710,7 @@ independent `forward()` call without relying on model-owned readiness state:
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
-    rfdetr_execution_plan=plan,
+    execution_plan=plan,
 )
 preprocessed, metadata = model.pre_process(image)
 raw_predictions = model.forward(preprocessed)
