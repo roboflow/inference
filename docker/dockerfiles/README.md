@@ -99,6 +99,21 @@ latest-call diagnostic, not per-stream attribution or a performance counter.
 It is disabled by default. It allocates a small metadata snapshot per completed call;
 no tensor copies does not mean zero CPU overhead.
 
+`INFERENCE_MODELS_PERFORMANCE_DIAGNOSTICS=true` additionally samples every tenth
+RF-DETR TensorRT call into a bounded history exposed as
+`RFDetrForObjectDetectionTRT.runtime_performance_diagnostics`. CUDA stream
+intervals are recorded without synchronization and include enqueue idle time, so
+they are not isolated kernel busy time. It is disabled by default.
+
+`ENABLE_RUNTIME_DIAGNOSTICS=true` (or `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true`)
+also enables per-source frame accounting (captured, enqueued, returned and dropped
+by cause) and a one-time sanitized first-frame timeout report from the Jetson
+producer. Neither includes pixels, source URLs or exception messages.
+
+`VIDEO_SOURCE_ALLOW_CPU_FALLBACK=false` makes video sources fail instead of
+silently falling back to the cv2 CPU decoder when tensor media is disabled or no
+hardware decoder can be constructed. It defaults to `true`.
+
 
 Jetson bridge drop counters distinguish layers. `frames_dropped_by_consumer`
 counts replacements in the native ready queue. `frames_discarded_before_retrieve`

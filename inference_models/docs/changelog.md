@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
+  `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` let a deployment that
+  has no explicit `RFDetrExecutionPlan` reject RF-DETR stage fallback. Both
+  default to `true`, so existing behavior is unchanged.
+- Opt-in RF-DETR TensorRT diagnostics, both disabled by default:
+  `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true` publishes the latest completed
+  call's stage devices and selections as
+  `RFDetrForObjectDetectionTRT.last_inference_diagnostics`;
+  `INFERENCE_MODELS_PERFORMANCE_DIAGNOSTICS=true` records sampled CUDA stream
+  and CPU wall stage intervals, without synchronization, in
+  `runtime_performance_diagnostics`.
+
+### Changed
+
+- The `triton-universal-v1` RF-DETR preprocessor now accepts `STRETCH_TO`
+  packages that carry dataset-version resize dimensions or auto-orient metadata.
+  Neither changes the decoded pixels on that path, so these packages no longer
+  fall back to the reference preprocessor.
+
 ### Fixed
 
 - `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
