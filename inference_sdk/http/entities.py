@@ -140,6 +140,14 @@ class InferenceConfiguration:
         max_detections: The maximum number of detections for the inference.
         iou_threshold: The intersection over union threshold for the inference.
         stroke_width: The stroke width for the inference.
+        model_package_id: Exact package ID. Cannot accompany backend or quantization.
+        backend: Required package backend, such as onnx or trt.
+        quantization: Required package quantization, such as fp32 or fp16.
+
+    Package selection requires USE_INFERENCE_MODELS=true on the server.
+    A successful inference satisfies every explicit selector. The SDK rejects
+    responses without the server's selection acknowledgment. These settings
+    also apply to model loading and unloading, for synchronous and asynchronous calls.
     """
 
     confidence_threshold: Optional[Confidence] = None

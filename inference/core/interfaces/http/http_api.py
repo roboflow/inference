@@ -432,6 +432,19 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+MODEL_SELECTION_RESPONSES: Dict[Union[int, str], Dict[str, Any]] = {
+    200: {
+        "headers": {
+            MODEL_SELECTION_HEADER: {
+                "description": (
+                    "Present when explicit model package selectors were applied. "
+                    "A successful response satisfies every explicit selector."
+                ),
+                "schema": {"type": "string", "enum": ["applied"]},
+            }
+        }
+    }
+}
 # Probe/health endpoints whose access-log lines are demoted to DEBUG.
 HEALTH_CHECK_LOG_PATHS = frozenset(
     {
@@ -1962,7 +1975,16 @@ class HttpInterface(BaseInterface):
                 "/model/add",
                 response_model=ModelsDescriptions,
                 summary="Load a model",
-                description="Load the model with the given model ID",
+                description=(
+                    "Load the model with the given model ID. Optional package selectors "
+                    "require USE_INFERENCE_MODELS=true. Each model ID, selector combination, "
+                    "and credential identifies a separate entry in the existing LRU cache. "
+                    "Explicit selections return selected_model_id, an opaque registry handle. "
+                    "Use the public model ID and selectors for inference and model loading. "
+                    "Requests without selectors keep their automatic selection and cache entry. "
+                    "Registering a preferred package does not replace a loaded model."
+                ),
+                responses=MODEL_SELECTION_RESPONSES,
             )
             @with_route_exceptions
             def model_add(
@@ -2020,7 +2042,13 @@ class HttpInterface(BaseInterface):
                 "/model/remove",
                 response_model=ModelsDescriptions,
                 summary="Remove a model",
-                description="Remove the model with the given model ID",
+                description=(
+                    "Remove the model with the given model ID. To remove a selected entry, "
+                    "supply its public model ID with the same selectors and credential used "
+                    "to load it, or supply its registry handle without selectors. "
+                    "Other entries remain loaded. Active inference requests retain their "
+                    "model reference until completion."
+                ),
             )
             @with_route_exceptions
             def model_remove(request: ClearModelRequest):
@@ -2080,6 +2108,7 @@ class HttpInterface(BaseInterface):
                 ],
                 summary="Object detection infer",
                 description="Run inference with the specified object detection model",
+                responses=MODEL_SELECTION_RESPONSES,
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
@@ -2115,6 +2144,7 @@ class HttpInterface(BaseInterface):
                 ],
                 summary="Instance segmentation infer",
                 description="Run inference with the specified instance segmentation model",
+                responses=MODEL_SELECTION_RESPONSES,
             )
             @with_route_exceptions
             @usage_collector("request")
@@ -2149,6 +2179,7 @@ class HttpInterface(BaseInterface):
                 ],
                 summary="Semantic segmentation infer",
                 description="Run inference with the specified semantic segmentation model",
+                responses=MODEL_SELECTION_RESPONSES,
             )
             @with_route_exceptions
             @usage_collector("request")
@@ -2186,6 +2217,7 @@ class HttpInterface(BaseInterface):
                 ],
                 summary="Classification infer",
                 description="Run inference with the specified classification model",
+                responses=MODEL_SELECTION_RESPONSES,
             )
             @with_route_exceptions
             @usage_collector("request")
@@ -2218,6 +2250,7 @@ class HttpInterface(BaseInterface):
                 response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
+                responses=MODEL_SELECTION_RESPONSES,
             )
             @with_route_exceptions
             @usage_collector("request")
@@ -4621,6 +4654,7 @@ class HttpInterface(BaseInterface):
             # Legacy object detection inference path for backwards compatibility
             @app.get(
                 "/{dataset_id}/{version_id:str}",
+                responses=MODEL_SELECTION_RESPONSES,
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -4637,6 +4671,7 @@ class HttpInterface(BaseInterface):
             )
             @app.post(
                 "/{dataset_id}/{version_id:str}",
+                responses=MODEL_SELECTION_RESPONSES,
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -4670,9 +4705,25 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
-                model_package_id: Optional[str] = Query(None, min_length=1),
-                backend: Optional[str] = Query(None, min_length=1),
-                quantization: Optional[str] = Query(None, min_length=1),
+                model_package_id: Optional[str] = Query(
+                    None,
+                    min_length=1,
+                    description=InferenceRequest.model_fields[
+                        "model_package_id"
+                    ].description,
+                ),
+                backend: Optional[str] = Query(
+                    None,
+                    min_length=1,
+                    description=InferenceRequest.model_fields["backend"].description,
+                ),
+                quantization: Optional[str] = Query(
+                    None,
+                    min_length=1,
+                    description=InferenceRequest.model_fields[
+                        "quantization"
+                    ].description,
+                ),
                 confidence: Confidence = Query(
                     0.4,
                     description=(
