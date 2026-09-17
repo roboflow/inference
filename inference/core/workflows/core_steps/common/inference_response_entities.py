@@ -63,18 +63,6 @@ class InferenceResponse(BaseModel):
     """
 
     model_config = ConfigDict(protected_namespaces=())
-    resolved_model: Optional[ResolvedModel] = Field(
-        default=None,
-        description="Package identity of the model instance that produced this result. Available when USE_INFERENCE_MODELS=true and the model has a single resolved package. Each batch result carries its own metadata. Models without package identity, including direct local-path loads and multi-package pipelines, omit it. Image-only responses do not contain this field.",
-        examples=[
-            {
-                "model_id": "project/3",
-                "model_package_id": "trtpackage",
-                "backend": "trt",
-                "quantization": "fp16",
-            }
-        ],
-    )
     inference_id: Optional[str] = Field(
         description="Unique identifier of inference", default=None
     )
@@ -85,6 +73,10 @@ class InferenceResponse(BaseModel):
     time: Optional[float] = Field(
         default=None,
         description="The time in seconds it took to produce the predictions including image preprocessing",
+    )
+    resolved_model: Optional[ResolvedModel] = Field(
+        default=None,
+        description="Package identity of the model instance that produced this result.",
     )
 
 

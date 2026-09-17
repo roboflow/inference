@@ -402,8 +402,7 @@ def test_openapi_documents_metadata_for_all_inference_response_types(monkeypatch
         "ActionRecognitionInferenceResponse",
     ):
         metadata = schemas[name]["properties"]["resolved_model"]
-        assert "USE_INFERENCE_MODELS=true" in metadata["description"]
-        assert metadata["examples"][0]["backend"] == "trt"
+        assert {"$ref": "#/components/schemas/ResolvedModel"} in metadata["anyOf"]
     assert (
         "Canonical model ID"
         in schemas["ResolvedModel"]["properties"]["model_id"]["description"]
