@@ -29,10 +29,12 @@ METADATA = {
 }
 
 
-@pytest.fixture
-def load_legacy_model(monkeypatch):
+@pytest.fixture(
+    params=[False, True], ids=["legacy-default", "inference-models-default"]
+)
+def load_legacy_model(monkeypatch, request):
     base_module = importlib.import_module("inference.core.models.base")
-    monkeypatch.setattr(base_module, "USE_INFERENCE_MODELS", False)
+    monkeypatch.setattr(base_module, "USE_INFERENCE_MODELS", request.param)
     imported_modules = []
 
     def load(module_name, class_name):
