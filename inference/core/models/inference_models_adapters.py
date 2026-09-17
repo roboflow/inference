@@ -2043,13 +2043,14 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 # counts the clip's.
                 infer_kwargs = {}
                 window_frame_limit = frame_count
-                if window.duration_seconds is not None:
-                    infer_kwargs["duration_seconds"] = window.duration_seconds
+                window_duration_seconds = getattr(window, "duration_seconds", None)
+                if window_duration_seconds is not None:
+                    infer_kwargs["duration_seconds"] = window_duration_seconds
                     window_frame_limit = min(
                         frame_count,
                         round(
                             window.frame_indices[0]
-                            + window.duration_seconds * source_fps
+                            + window_duration_seconds * source_fps
                         ),
                     )
                 if threshold is not None:

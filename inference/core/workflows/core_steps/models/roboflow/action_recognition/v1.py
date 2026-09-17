@@ -340,7 +340,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         requested_window_seconds = float(video_sampling.window_seconds)
         requested_stride_seconds = (
             requested_window_seconds
-            - video_sampling.overlap_frames / video_sampling.sample_fps
+            - getattr(video_sampling, "overlap_frames", 0) / video_sampling.sample_fps
             if stride_seconds is None
             else float(stride_seconds)
         )

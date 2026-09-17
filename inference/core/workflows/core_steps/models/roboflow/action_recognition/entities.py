@@ -7,7 +7,13 @@ the HTTP `ActionRecognitionInferenceResponse` must all see ONE class object.
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 
 class ActionRecognitionPrediction(BaseModel):
@@ -30,3 +36,11 @@ class ActionRecognitionPrediction(BaseModel):
             "a class list reports -1."
         )
     )
+
+    @model_serializer(mode="wrap")
+    def serialize_prediction(self, handler: SerializerFunctionWrapHandler) -> dict:
+        result = handler(self)
+        # Unscored models retain their existing response shape.
+        if self.confidence is None:
+            result.pop("confidence", None)
+        return result
