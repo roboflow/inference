@@ -1,6 +1,12 @@
+from __future__ import annotations
+
+import os
+import threading
+
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.stream_error_classifier import (
     build_source_connection_error_message,
+    capture_process_stderr,
     classify_stream_error_message,
     extract_stream_open_error,
     wrap_source_connection_error,
@@ -66,7 +72,9 @@ def test_classify_default() -> None:
 
 def test_classify_empty_message() -> None:
     assert classify_stream_error_message("") == StreamErrorCode.STREAM_CONNECTION_FAILED
-    assert classify_stream_error_message(None) == StreamErrorCode.STREAM_CONNECTION_FAILED
+    assert (
+        classify_stream_error_message(None) == StreamErrorCode.STREAM_CONNECTION_FAILED
+    )
 
 
 def test_classify_status_code_false_positives() -> None:
@@ -162,3 +170,60 @@ def test_wrap_source_connection_error_classifies_underlying_ffmpeg_error() -> No
         source_reference="rtsp://camera.example/stream",
     )
     assert error.code == StreamErrorCode.STREAM_TLS_HANDSHAKE
+
+
+def _run_all(threads: list[threading.Thread], timeout: float = 5.0) -> None:
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=timeout)
+    assert not any(thread.is_alive() for thread in threads)
+
+
+def test_capture_process_stderr_serialises_interleaved_opens() -> None:
+    before = os.fstat(2)
+    first_inside, second_inside, first_done = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    captured: dict[str, str] = {}
+
+    def first() -> None:
+        with capture_process_stderr() as chunks:
+            os.write(2, b"first: connection refused\n")
+            first_inside.set()
+            second_inside.wait(timeout=0.5)
+        first_done.set()
+        captured["first"] = "".join(chunks)
+
+    def second() -> None:
+        first_inside.wait()
+        with capture_process_stderr() as chunks:
+            os.write(2, b"second: 401 Unauthorized\n")
+            second_inside.set()
+            first_done.wait(timeout=2)
+        captured["second"] = "".join(chunks)
+
+    _run_all([threading.Thread(target=first), threading.Thread(target=second)])
+
+    assert captured == {
+        "first": "first: connection refused\n",
+        "second": "second: 401 Unauthorized\n",
+    }
+    after = os.fstat(2)
+    assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
+
+
+def test_capture_process_stderr_drains_output_larger_than_pipe_buffer() -> None:
+    payload = b"x" * (256 * 1024)
+    captured: list[str] = []
+
+    def writer() -> None:
+        with capture_process_stderr() as chunks:
+            os.write(2, payload)
+        captured.extend(chunks)
+
+    _run_all([threading.Thread(target=writer)])
+
+    assert len("".join(captured)) == len(payload)

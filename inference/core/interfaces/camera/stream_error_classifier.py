@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -31,23 +32,40 @@ _STREAM_OPEN_ERROR_HINTS = (
 )
 
 
+_capture_stderr_lock = threading.Lock()
+
+
+def _drain_pipe(read_fd: int, captured_chunks: list[str]) -> None:
+    with os.fdopen(read_fd, "rb", buffering=0) as pipe:
+        for chunk in iter(lambda: pipe.read(65536), b""):
+            captured_chunks.append(chunk.decode("utf-8", errors="replace"))
+
+
 @contextmanager
 def capture_process_stderr() -> Iterator[list[str]]:
-    """Capture OS stderr (fd 2) for native backends such as FFmpeg/GStreamer."""
-    read_fd, write_fd = os.pipe()
-    saved_stderr_fd = os.dup(2)
-    captured_chunks: list[str] = []
-    try:
-        os.dup2(write_fd, 2)
-        yield captured_chunks
-    finally:
-        os.dup2(saved_stderr_fd, 2)
-        os.close(saved_stderr_fd)
-        os.close(write_fd)
-        captured = os.read(read_fd, 65536)
-        os.close(read_fd)
-        if captured:
-            captured_chunks.append(captured.decode("utf-8", errors="replace"))
+    """Capture OS stderr (fd 2) for native backends such as FFmpeg/GStreamer.
+
+    fd 2 is process-wide, so captures are serialised: interleaved redirects
+    from concurrent opens would leave one thread blocked reading a pipe whose
+    write end another still holds. The pipe is drained on a thread so output
+    larger than the pipe buffer cannot block the writer either.
+    """
+    with _capture_stderr_lock:
+        read_fd, write_fd = os.pipe()
+        captured_chunks: list[str] = []
+        reader = threading.Thread(
+            target=_drain_pipe, args=(read_fd, captured_chunks), daemon=True
+        )
+        reader.start()
+        saved_stderr_fd = os.dup(2)
+        try:
+            os.dup2(write_fd, 2)
+            yield captured_chunks
+        finally:
+            os.dup2(saved_stderr_fd, 2)
+            os.close(saved_stderr_fd)
+            os.close(write_fd)
+            reader.join()
 
 
 def extract_stream_open_error(stderr: str) -> str:
