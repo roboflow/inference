@@ -53,7 +53,7 @@ def validate_inner_workflow_composition_from_raw_workflow_definition(
 
 def validate_parameter_bindings_against_child(
     *,
-    bindings: Dict[str, str],
+    bindings: Dict[str, Any],
     child_parsed: ParsedWorkflowDefinition,
     step_name: str,
 ) -> None:

@@ -455,6 +455,116 @@ def test_inline_inner_workflow_steps_expands_leaf_and_preserves_parent_inputs() 
     assert step["value"] == "$inputs.parent_msg"
 
 
+def _inline_with_scalar_echo_plugin(raw: dict) -> dict:
+    init_parameters = {"workflows_core.api_key": None}
+    with mock.patch.object(
+        blocks_loader,
+        "get_plugin_modules",
+        return_value=[_SCALAR_ONLY_ECHO_PLUGIN],
+    ):
+        blocks_loader.clear_caches()
+        try:
+            from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+                normalize_inner_workflow_references_in_definition,
+            )
+
+            normalized = normalize_inner_workflow_references_in_definition(
+                workflow_definition=copy.deepcopy(raw),
+                init_parameters=init_parameters,
+            )
+            available_blocks = load_workflow_blocks(
+                execution_engine_version=None,
+                profiler=None,
+            )
+            return inline_inner_workflow_steps(
+                copy.deepcopy(normalized),
+                available_blocks=available_blocks,
+                profiler=None,
+            )
+        finally:
+            blocks_loader.clear_caches()
+
+
+def _parent_binding_child_msg_to(value: object, child: dict | None = None) -> dict:
+    return {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [
+            {
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
+                "name": "child",
+                "workflow_definition": child
+                or _minimal_echo_inner_workflow_definition(),
+                "parameter_bindings": {"child_msg": value},
+            },
+        ],
+        "outputs": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [0.3, 7, True, False, None, ["a", "b"], {"nested": [1, 2]}, "plain-string"],
+)
+def test_inline_inner_workflow_steps_preserves_literal_binding_type(
+    literal: object,
+) -> None:
+    # given
+    raw = _parent_binding_child_msg_to(literal)
+
+    # when
+    inlined = _inline_with_scalar_echo_plugin(raw)
+
+    # then
+    value = inlined["steps"][0]["value"]
+    assert value == literal
+    assert type(value) is type(literal)
+
+
+def test_inline_inner_workflow_steps_stringifies_literal_embedded_in_larger_string() -> (
+    None
+):
+    # given
+    child = _minimal_echo_inner_workflow_definition()
+    child["steps"][0]["value"] = "prefix-$inputs.child_msg-suffix"
+    raw = _parent_binding_child_msg_to(42, child=child)
+
+    # when
+    inlined = _inline_with_scalar_echo_plugin(raw)
+
+    # then
+    assert inlined["steps"][0]["value"] == "prefix-42-suffix"
+
+
+def test_inline_inner_workflow_steps_does_not_alias_literal_binding_value() -> None:
+    # given
+    bound = ["a", "b"]
+    raw = _parent_binding_child_msg_to(bound)
+
+    # when
+    inlined = _inline_with_scalar_echo_plugin(raw)
+    inlined["steps"][0]["value"].append("mutated")
+
+    # then
+    assert bound == ["a", "b"]
+    assert raw["steps"][0]["parameter_bindings"]["child_msg"] == ["a", "b"]
+
+
+def test_inline_inner_workflow_steps_rejects_non_string_literal_as_child_output_selector() -> (
+    None
+):
+    # given
+    child = _minimal_echo_inner_workflow_definition()
+    child["outputs"] = [
+        {"type": "JsonField", "name": "echo", "selector": "$inputs.child_msg"},
+    ]
+    raw = _parent_binding_child_msg_to(0.3, child=child)
+
+    # when / then
+    with pytest.raises(InnerWorkflowInvalidStepEntryError):
+        _inline_with_scalar_echo_plugin(raw)
+
+
 def test_inline_inner_workflow_steps_raises_when_inlining_makes_no_progress() -> None:
     """``InnerWorkflowInliningStructureError`` when the outer graph still has inner steps but no leaf expands."""
     raw = {
