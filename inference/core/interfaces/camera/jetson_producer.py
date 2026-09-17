@@ -63,9 +63,7 @@ _URI_DECODE_ELEMENTS = (
     "nvv4l2decoder",
     "uridecodebin",
 )
-_RTSP_ELEMENTS = (
-    "rtspsrc",
-)
+_RTSP_ELEMENTS = ("rtspsrc",)
 _SRTP_ELEMENTS = ("capssetter", "srtpdec")
 _SOFTWARE_DECODER_ELEMENTS = (
     "avdec_h264",

@@ -296,9 +296,7 @@ def test_rtsp_tls_validation_flags_can_be_scoped_to_one_source(
         "rtsps://camera.example.test/self-signed",
         rtsp_tls_validation_flags=0,
     )
-    default_pipeline = build_gstreamer_pipeline(
-        "rtsps://camera.example.test/default"
-    )
+    default_pipeline = build_gstreamer_pipeline("rtsps://camera.example.test/default")
 
     assert "tls-validation-flags=0 ! " in self_signed_pipeline
     assert "tls-validation-flags=7 ! " in default_pipeline
