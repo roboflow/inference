@@ -53,6 +53,7 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import 
     pop_auth_failure_message,
     preflight_token,
     time_remaining,
+    wait_for_topic_metadata,
 )
 
 try:
@@ -609,20 +610,10 @@ class KafkaConsumerBlockV1(WorkflowBlock):
         # one budget for the whole first run: metadata plus every watermark lookup
         deadline = time.monotonic() + connect_timeout
         try:
-            metadata = consumer.list_topics(
-                topic, timeout=time_remaining(deadline, "fetching topic metadata")
-            )
+            # ride out the transient "unknown topic" replies a broker gives while a
+            # topic is still being created, as a stock consumer does
+            topic_metadata = wait_for_topic_metadata(consumer, topic, deadline)
             self._raise_on_auth_failure()
-            topic_metadata = metadata.topics.get(topic)
-            if topic_metadata is None or topic_metadata.error is not None:
-                detail = (
-                    str(topic_metadata.error)
-                    if topic_metadata is not None
-                    else "not found"
-                )
-                raise ConfigurationError(
-                    f"Kafka topic {topic!r} is not available ({detail})."
-                )
             partitions = sorted(topic_metadata.partitions)
             if not partitions:
                 raise ConfigurationError(f"Kafka topic {topic!r} has no partitions.")

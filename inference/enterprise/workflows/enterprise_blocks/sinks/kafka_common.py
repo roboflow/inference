@@ -138,6 +138,40 @@ def preflight_token(connection_config: Dict[str, Any]) -> None:
         token_callback("")
 
 
+# librdkafka error codes a broker returns while a topic is still being (auto-)created
+TRANSIENT_TOPIC_ERROR_CODES = (3, 5)  # UNKNOWN_TOPIC_OR_PART, LEADER_NOT_AVAILABLE
+TOPIC_METADATA_RETRY_INTERVAL = 0.2
+
+
+def is_transient_topic_error(error: Any) -> bool:
+    code = getattr(error, "code", None)
+    try:
+        return callable(code) and code() in TRANSIENT_TOPIC_ERROR_CODES
+    except Exception:
+        return False
+
+
+def wait_for_topic_metadata(client: Any, topic: str, deadline: float) -> Any:
+    """Return the topic's metadata, retrying until `deadline` while the broker reports
+    the topic as unknown or leaderless (what it says while auto-creation is in flight,
+    which a stock Kafka client also rides out). Raises ConfigurationError once the
+    deadline passes or the error is not transient."""
+    while True:
+        metadata = client.list_topics(
+            topic, timeout=time_remaining(deadline, "fetching topic metadata")
+        )
+        topic_metadata = metadata.topics.get(topic)
+        error = getattr(topic_metadata, "error", None) if topic_metadata else None
+        if topic_metadata is not None and error is None:
+            return topic_metadata
+        transient = topic_metadata is None or is_transient_topic_error(error)
+        if transient and deadline - time.monotonic() > TOPIC_METADATA_RETRY_INTERVAL:
+            time.sleep(TOPIC_METADATA_RETRY_INTERVAL)
+            continue
+        detail = str(error) if topic_metadata is not None else "not found"
+        raise ConfigurationError(f"Kafka topic {topic!r} is not available ({detail}).")
+
+
 def time_remaining(deadline: float, what: str) -> float:
     remaining = deadline - time.monotonic()
     if remaining <= 0:

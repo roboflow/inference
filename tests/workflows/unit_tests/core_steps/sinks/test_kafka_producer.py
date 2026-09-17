@@ -42,9 +42,23 @@ class FakeMessage:
         return self._offset
 
 
+class FakeKafkaError:
+    def __init__(self, code: int, text: str = "Broker: Unknown topic or partition"):
+        self._code = code
+        self._text = text
+
+    def code(self) -> int:
+        return self._code
+
+    def __str__(self) -> str:
+        return self._text
+
+
 class FakeBroker:
     def __init__(self):
         self.topics = {TOPIC}
+        self.creating_topic_replies = 0  # transient "unknown topic" replies to serve
+        self.metadata_calls = 0
         self.fail_connect: Optional[Exception] = None
         self.queue_full = False
         self.queue_capacity: Optional[int] = None  # None = unlimited
@@ -66,11 +80,18 @@ class FakeProducer:
         broker.producers.append(self)
 
     def list_topics(self, topic: str, timeout: float):
+        self.broker.metadata_calls += 1
         if self.broker.fail_connect is not None:
             raise self.broker.fail_connect
+        if self.broker.creating_topic_replies > 0:
+            # what a broker says while auto-creation of the topic is in flight
+            self.broker.creating_topic_replies -= 1
+            return SimpleNamespace(
+                topics={topic: SimpleNamespace(error=FakeKafkaError(3))}
+            )
         if topic not in self.broker.topics:
             return SimpleNamespace(
-                topics={topic: SimpleNamespace(error="Unknown topic or partition")}
+                topics={topic: SimpleNamespace(error=FakeKafkaError(3))}
             )
         return SimpleNamespace(topics={topic: SimpleNamespace(error=None)})
 
@@ -697,12 +718,50 @@ def test_unreachable_broker_reports_error_and_retries_next_run(
     assert broker.records == [broker.records[0]]  # only the recovered run published
 
 
-def test_missing_topic_is_reported(broker: FakeBroker) -> None:
-    result = run(block(), topic="does-not-exist")
+def test_missing_topic_is_reported_once_the_timeout_passes(broker: FakeBroker) -> None:
+    result = run(block(), topic="does-not-exist", timeout=0.5)
 
     assert result["error_status"] is True
     assert "does-not-exist" in result["message"]
     assert broker.records == []
+    assert broker.metadata_calls > 1  # kept asking until the budget ran out
+
+
+def test_topic_still_being_created_is_waited_for(broker: FakeBroker) -> None:
+    # given the broker answers "unknown topic" twice while auto-creating it
+    broker.creating_topic_replies = 2
+
+    result = run(block(), timeout=5.0)
+
+    assert result["error_status"] is False
+    assert broker.metadata_calls == 3
+    assert len(broker.records) == 1
+
+
+def test_non_transient_topic_error_fails_immediately(broker: FakeBroker) -> None:
+    class Denied(FakeKafkaError):
+        pass
+
+    broker.topics.discard(TOPIC)
+    original = FakeProducer.list_topics
+
+    def denied(self, topic, timeout):
+        self.broker.metadata_calls += 1
+        return SimpleNamespace(
+            topics={
+                topic: SimpleNamespace(error=Denied(29, "Topic authorization failed"))
+            }
+        )
+
+    FakeProducer.list_topics = denied
+    try:
+        result = run(block(), timeout=5.0)
+    finally:
+        FakeProducer.list_topics = original
+
+    assert result["error_status"] is True
+    assert "authorization failed" in result["message"]
+    assert broker.metadata_calls == 1
 
 
 @pytest.mark.parametrize(

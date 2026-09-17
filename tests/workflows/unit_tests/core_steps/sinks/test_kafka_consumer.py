@@ -68,10 +68,24 @@ class FakeMessage:
         return self._error
 
 
+class FakeKafkaError:
+    def __init__(self, code: int, text: str = "Broker: Unknown topic or partition"):
+        self._code = code
+        self._text = text
+
+    def code(self) -> int:
+        return self._code
+
+    def __str__(self) -> str:
+        return self._text
+
+
 class FakeBroker:
     """Per-partition append-only logs. A `None` slot is a record removed by compaction."""
 
     def __init__(self):
+        self.creating_topic_replies = 0
+        self.metadata_calls = 0
         self.logs: Dict[str, Dict[int, List[Optional[Tuple[Any, Any]]]]] = {}
         self.low_watermarks: Dict[Tuple[str, int], int] = {}
         self.fail_connect: Optional[Exception] = None
@@ -115,11 +129,17 @@ class FakeConsumer:
         broker.consumers.append(self)
 
     def list_topics(self, topic: str, timeout: float):
+        self.broker.metadata_calls += 1
         if self.broker.fail_connect is not None:
             raise self.broker.fail_connect
+        if self.broker.creating_topic_replies > 0:
+            self.broker.creating_topic_replies -= 1
+            return SimpleNamespace(
+                topics={topic: SimpleNamespace(partitions={}, error=FakeKafkaError(3))}
+            )
         if topic not in self.broker.logs:
             return SimpleNamespace(
-                topics={topic: SimpleNamespace(partitions={}, error="Unknown topic")}
+                topics={topic: SimpleNamespace(partitions={}, error=FakeKafkaError(3))}
             )
         return SimpleNamespace(
             topics={
@@ -1224,14 +1244,26 @@ def test_unreachable_broker_reports_error_and_retries_next_run(
     assert len(broker.consumers) == 2
 
 
-def test_missing_topic_is_reported(broker: FakeBroker) -> None:
+def test_missing_topic_is_reported_once_the_timeout_passes(broker: FakeBroker) -> None:
     broker.create_topic("another-topic")
 
-    result = run(KafkaConsumerBlockV1())
+    result = run(KafkaConsumerBlockV1(), connect_timeout=0.5)
 
     assert result["error_status"] is True
     assert TOPIC in result["error_message"]
     assert broker.consumers[0].closed is True
+    assert broker.metadata_calls > 1
+
+
+def test_topic_still_being_created_is_waited_for(broker: FakeBroker) -> None:
+    broker.produce(TOPIC, "A")
+    broker.creating_topic_replies = 2
+
+    result = run(KafkaConsumerBlockV1(), connect_timeout=5.0)
+
+    assert result["error_status"] is False
+    assert result["value"] == "A"
+    assert broker.metadata_calls == 3
 
 
 @pytest.mark.parametrize(

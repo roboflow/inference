@@ -39,7 +39,7 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import 
     is_selector,
     pop_auth_failure_message,
     preflight_token,
-    time_remaining,
+    wait_for_topic_metadata,
 )
 
 try:
@@ -581,21 +581,10 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
         }
         producer = confluent_kafka.Producer(config)
         try:
-            # fail fast on an unreachable broker or a missing topic
-            metadata = producer.list_topics(
-                topic, timeout=time_remaining(deadline, "fetching topic metadata")
-            )
+            # fail fast on an unreachable broker or a missing topic, but ride out the
+            # transient "unknown topic" replies a broker gives while auto-creating one
+            wait_for_topic_metadata(producer, topic, deadline)
             self._raise_on_auth_failure()
-            topic_metadata = metadata.topics.get(topic)
-            if topic_metadata is None or topic_metadata.error is not None:
-                detail = (
-                    str(topic_metadata.error)
-                    if topic_metadata is not None
-                    else "not found"
-                )
-                raise ConfigurationError(
-                    f"Kafka topic {topic!r} is not available ({detail})."
-                )
         except Exception:
             self._raise_on_auth_failure()
             raise
