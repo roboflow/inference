@@ -93,6 +93,7 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
         ),
         models=ModelsConfiguration(
             lmm_enabled=env.LMM_ENABLED,
+            vlm_segmentation_max_polygon_vertices=env.WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES,
             clip_version_id=env.CLIP_VERSION_ID,
             core_model_sam2_enabled=env.CORE_MODEL_SAM2_ENABLED,
             core_model_sam3_enabled=env.CORE_MODEL_SAM3_ENABLED,
