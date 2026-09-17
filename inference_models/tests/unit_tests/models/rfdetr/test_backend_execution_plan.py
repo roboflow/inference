@@ -1,7 +1,9 @@
 """Cross-backend selection, fallback and readiness without model downloads."""
 
+from contextlib import nullcontext
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -172,10 +174,35 @@ def test_non_cuda_gpu_declares_fallback_before_constructing_cuda_runtime():
     )
 
 
+def test_reference_adapter_records_caller_cuda_storage(monkeypatch):
+    from inference_models.models.rfdetr.optimization.preprocessors import common
+
+    image = MagicMock(spec=torch.Tensor)
+    image.device = torch.device("cuda:0")
+    stream = SimpleNamespace(device=image.device)
+    output = torch.zeros((1, 3, 32, 32))
+    monkeypatch.setattr(common, "use_cuda_stream", lambda _: nullcontext())
+    monkeypatch.setattr(
+        common, "pre_process_network_input", lambda **kwargs: (output, [])
+    )
+    cfg = config()
+    result = common.run_reference_preprocessor(
+        PreprocessRequest(
+            image, "rgb", cfg.image_pre_processing, cfg.network_input, None
+        ),
+        ExecutionContext("gpu", "cuda:0", current_stream=stream),
+        implementation_id="base",
+        max_workers=1,
+    )
+    image.record_stream.assert_called_once_with(stream)
+    assert result.tensor is output
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA runtime required")
 @pytest.mark.parametrize("backend", ["torch", "onnx"])
 @pytest.mark.parametrize("kind", ["numpy", "uint8-cuda", "float-cuda"])
-def test_cuda_preprocessing_parity_and_event_handoff(backend, kind):
+@pytest.mark.parametrize("preprocessor_id", ["base", "triton-universal-v1"])
+def test_cuda_preprocessing_parity_and_event_handoff(backend, kind, preprocessor_id):
     from inference_models.models.rfdetr.triton_preprocess import TRITON_AVAILABLE
 
     if not TRITON_AVAILABLE:
@@ -187,7 +214,7 @@ def test_cuda_preprocessing_parity_and_event_handoff(backend, kind):
         inference_config=cfg,
         backend=backend,
         execution_plan=RFDetrExecutionPlan(
-            preprocessor_id="triton-universal-v1", allow_compatibility_fallback=False
+            preprocessor_id=preprocessor_id, allow_compatibility_fallback=False
         ),
     )
     image = np.random.default_rng(11).integers(0, 256, (160, 200, 3), dtype=np.uint8)
@@ -213,7 +240,7 @@ def test_cuda_preprocessing_parity_and_event_handoff(backend, kind):
     assert meta == expected_meta
     assert (
         path.runtime_metadata["last_execution"]["preprocessor"]["effective_id"]
-        == "triton-universal-v1"
+        == preprocessor_id
     )
 
 

@@ -44,6 +44,16 @@ def run_reference_preprocessor(
             ),
         )
 
+    if stream is not None:
+        images = (
+            request.images if isinstance(request.images, list) else [request.images]
+        )
+        for image in images:
+            if isinstance(image, torch.Tensor) and image.device == stream.device:
+                # Reference tensor resizing also runs asynchronously on this stream.
+                # Keep caller-owned CUDA storage alive until preprocessing finishes.
+                image.record_stream(stream)
+
     with use_cuda_stream(stream):
         tensor, metadata = pre_process_network_input(
             images=request.images,
