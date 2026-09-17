@@ -6,6 +6,8 @@ observability. Please consider them internal details of implementation.
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime
+from threading import Lock
+from time import monotonic
 from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
 import supervision as sv
@@ -18,9 +20,11 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.entities import (
+    CompletionStatistics,
     LatencyMonitorReport,
     ModelActivityEvent,
     PipelineStateReport,
+    SourceCompletionStatistics,
 )
 
 T = TypeVar("T")
@@ -53,6 +57,10 @@ class PipelineWatchDog(ABC):
         self,
         frames: List[VideoFrame],
     ) -> None:
+        pass
+
+    def on_model_prediction_completed(self, frames: List[VideoFrame]) -> None:
+        """Called by dispatch after prediction futures resolve, before sink delivery."""
         pass
 
     @abstractmethod
@@ -210,9 +218,18 @@ class BasePipelineWatchDog(PipelineWatchDog):
         self._inference_throughput_monitor = sv.FPSMonitor()
         self._latency_monitors: Dict[Optional[int], LatencyMonitor] = {}
         self._stream_updates = deque(maxlen=MAX_UPDATES_CONTEXT)
+        self._completion_lock = Lock()
+        self._completion_statistics: Dict[Optional[int], SourceCompletionStatistics] = (
+            {}
+        )
 
     def register_video_sources(self, video_sources: List[VideoSource]) -> None:
         self._video_sources = video_sources
+        with self._completion_lock:
+            self._completion_statistics = {
+                source.source_id: SourceCompletionStatistics(source_id=source.source_id)
+                for source in video_sources
+            }
         for source in video_sources:
             self._latency_monitors[source.source_id] = LatencyMonitor(
                 source_id=source.source_id
@@ -238,6 +255,21 @@ class BasePipelineWatchDog(PipelineWatchDog):
             )
             self._inference_throughput_monitor.tick()
 
+    def on_model_prediction_completed(self, frames: List[VideoFrame]) -> None:
+        # The dispatch and manager status threads share only these new counters.
+        with self._completion_lock:
+            completed_at = monotonic()
+            for frame in frames:
+                previous = self._completion_statistics[frame.source_id]
+                self._completion_statistics[frame.source_id] = (
+                    SourceCompletionStatistics(
+                        source_id=frame.source_id,
+                        completed_frames=previous.completed_frames + 1,
+                        last_completed_at_monotonic=completed_at,
+                        last_frame_id=frame.frame_id,
+                    )
+                )
+
     def get_report(self) -> PipelineStateReport:
         sources_metadata = []
         if self._video_sources is not None:
@@ -249,11 +281,17 @@ class BasePipelineWatchDog(PipelineWatchDog):
             _inference_throughput_fps = self._inference_throughput_monitor.fps
         else:
             _inference_throughput_fps = self._inference_throughput_monitor()
+        with self._completion_lock:
+            completion_statistics = CompletionStatistics(
+                sampled_at_monotonic=monotonic(),
+                sources=list(self._completion_statistics.values()),
+            )
         return PipelineStateReport(
             video_source_status_updates=list(self._stream_updates),
             latency_reports=latency_reports,
             inference_throughput=_inference_throughput_fps,
             sources_metadata=sources_metadata,
+            completion_statistics=completion_statistics,
         )
 
 

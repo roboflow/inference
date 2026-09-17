@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: /inference_helpers/inference_sdk/#quickstart
+redirect_url: https://docs.roboflow.com/deployment/self-hosted/self-hosted#run-model-locally
 ---

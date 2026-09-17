@@ -6,9 +6,9 @@ compaction, box conversion, metadata rescaling, and clipping into one Triton
 kernel. A single device-to-host count handoff is required because the public
 ``Detections`` result contains variable-length tensors.
 
-The runtime exposes a side-effect-free compatibility check so the execution-plan
-selector can follow the implementation's declared fallback before launching work.
-Direct runtime calls remain strict, and execution failures never fall back.
+The runtime exposes side-effect-free request and runtime compatibility checks so
+the execution-plan selector can follow the implementation's declared fallback.
+Direct runtime calls remain strict and never select fallback themselves.
 """
 
 from __future__ import annotations
@@ -24,8 +24,9 @@ from inference_models import Detections
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.optimization.contracts import CompatibilityResult
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.triton_jit import classify_triton_jit_failure
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
-from inference_models.models.rfdetr.triton_jit_fallback import is_triton_jit_failure
 
 try:
     import triton
@@ -191,6 +192,20 @@ class FusedObjectDetectionPostprocessor:
             OrderedDict()
         )
         self._cache_lock = threading.Lock()
+        self._runtime_failure_reason: Optional[str] = None
+        self._runtime_failure_lock = threading.Lock()
+
+    def check_runtime_compatibility(self) -> CompatibilityResult:
+        """Report whether a previous execution disabled this runtime."""
+        with self._runtime_failure_lock:
+            failure_reason = self._runtime_failure_reason
+        if failure_reason is None:
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            "triton-fused-v1 is unavailable after a recoverable runtime failure: "
+            f"{failure_reason}"
+        )
 
     def postprocess(
         self,
@@ -276,16 +291,21 @@ class FusedObjectDetectionPostprocessor:
                     num_warps=8,
                 )
             except Exception as error:
-                if not is_triton_jit_failure(error):
+                diagnostic = classify_triton_jit_failure(error)
+                if diagnostic is None:
                     raise
-                raise ModelRuntimeError(
+                reason = (
+                    f"{type(error).__name__}: {error}. "
+                    f"Category: {diagnostic.category}. "
+                    f"Suggested action: {diagnostic.guidance}"
+                )
+                with self._runtime_failure_lock:
+                    if self._runtime_failure_reason is None:
+                        self._runtime_failure_reason = reason
+                raise RecoverableStageExecutionError(
                     message=(
                         "triton-fused-v1 failed to compile or launch its "
-                        f"postprocessing kernel: {type(error).__name__}: {error}"
-                    ),
-                    help_url=(
-                        "https://inference-models.roboflow.com/errors/"
-                        "models-runtime/#modelruntimeerror"
+                        f"postprocessing kernel: {reason}"
                     ),
                 ) from error
 

@@ -19,7 +19,7 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
-from inference_models.models.common.streams import get_cuda_stream
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -131,7 +131,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         **kwargs,
     ) -> torch.Tensor:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             pre_processed_images = self._preprocessor(
                 images, input_color_format, self._device
             )
@@ -149,7 +149,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         if not isinstance(texts, list):
             texts = [texts]
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             tokenized_batch = clip.tokenize(texts).to(self._device)
         if pre_process_stream is not None:
             pre_process_stream.synchronize()

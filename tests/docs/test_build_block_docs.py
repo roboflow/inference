@@ -7,7 +7,10 @@ These tests ensure that generated Markdown docs do not contain raw
 
 from jinja2 import Environment
 
-from development.docs.build_block_docs import _escape_jinja2_expressions
+from development.docs.build_block_docs import (
+    _escape_jinja2_expressions,
+    slugify_block_name,
+)
 
 jinja_env = Environment()
 
@@ -95,3 +98,49 @@ class TestEscapeJinja2Expressions:
         assert not _parses_as_jinja2(text)
         result = _escape_jinja2_expressions(text)
         assert _parses_as_jinja2(result)
+class TestSlugifyBlockName:
+    """Tests for ``slugify_block_name`` (issue #1909).
+
+    A block page's filename comes from its human-readable name, and every block
+    page cross-references every other block, so a name that slugifies into an
+    unusable filename breaks links across the whole site rather than on one page.
+    """
+
+    def test_parentheses_do_not_leak_into_the_slug(self):
+        """The reported bug.
+
+        ``PTZ Tracking (ONVIF)`` produced ``ptz_tracking(onvif)``, so the
+        generated link read ``[PTZ Tracking (ONVIF)](ptz_tracking(onvif).md)``.
+        A markdown link destination ends at the first unbalanced ``)``, so
+        mkdocs cut it short and resolved a page that does not exist.
+        """
+        assert slugify_block_name("PTZ Tracking (ONVIF)") == "ptz_tracking_onvif"
+
+    def test_square_brackets_do_not_leak_into_the_slug(self):
+        """Renaming the block to use square brackets would not have fixed it.
+
+        ``[`` opens a markdown link label, so ``ptz_tracking[onvif]`` is no more
+        usable as a destination than the parenthesised form.
+        """
+        assert slugify_block_name("PTZ Tracking [ONVIF]") == "ptz_tracking_onvif"
+
+    def test_dots_are_preserved(self):
+        """Guards against over-sanitising.
+
+        Dots are legal in a URL and several published pages depend on them, so
+        widening the substitution to every non-alphanumeric character would move
+        working page URLs while fixing the broken one.
+        """
+        assert slugify_block_name("Qwen2.5-VL") == "qwen2.5_vl"
+        assert slugify_block_name("Llama 3.2 Vision") == "llama3.2_vision"
+
+    def test_ordinary_names_are_unchanged(self):
+        assert slugify_block_name("Object Detection Model") == "object_detection_model"
+        assert slugify_block_name("Barcode Detection") == "barcode_detection"
+
+    def test_no_leading_or_trailing_underscores(self):
+        """A name that is entirely bracketed must not slugify to ``_foo_``."""
+        assert slugify_block_name("(Beta)") == "beta"
+
+    def test_repeated_brackets_collapse(self):
+        assert slugify_block_name("Thing ((Nested))") == "thing_nested"

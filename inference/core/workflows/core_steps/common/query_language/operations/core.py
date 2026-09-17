@@ -61,6 +61,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.sequen
     aggregate_sequence,
     get_sequence_elements_count,
     get_sequence_length,
+    join_sequence,
     sequence_apply,
     sequence_map,
 )
@@ -198,6 +199,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "StringMatches": string_matches,
     "SequenceLength": get_sequence_length,
     "SequenceElementsCount": get_sequence_elements_count,
+    "SequenceJoin": join_sequence,
     "ExtractImageProperty": extract_image_property,
     "ExtractFrameMetadata": extract_frame_metadata,
     "Multiply": multiply,

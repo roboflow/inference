@@ -1,3 +1,5 @@
+from contextvars import ContextVar
+
 from asgi_correlation_id import correlation_id
 
 from inference.core.managers.model_load_collector import (
@@ -12,6 +14,11 @@ from inference_sdk.config import (
     execution_id,
     remote_processing_times,
 )
+
+# A test-local ContextVar unrelated to billing or any of the hand-picked
+# variables run_in_parallel() used to copy one by one: the point of this test
+# is generic propagation of any ContextVar, not a curated list.
+_test_ctx_var: ContextVar[str] = ContextVar("test_ctx_var", default="default")
 
 
 def test_run_in_parallel_propagates_processing_time_collector() -> None:
@@ -187,3 +194,23 @@ def test_run_in_parallel_propagates_correlation_id() -> None:
 
     # then
     assert results == ["test-corr-id", "test-corr-id"]
+
+
+def test_run_in_parallel_propagates_arbitrary_context_var() -> None:
+    # given
+    token = _test_ctx_var.set("caller-value")
+
+    def task_that_reads_context() -> str:
+        return _test_ctx_var.get()
+
+    try:
+        # when
+        results = run_in_parallel(
+            tasks=[task_that_reads_context, task_that_reads_context],
+            max_workers=2,
+        )
+    finally:
+        _test_ctx_var.reset(token)
+
+    # then
+    assert results == ["caller-value", "caller-value"]

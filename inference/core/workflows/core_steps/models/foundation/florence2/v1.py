@@ -5,16 +5,15 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
     FLORENCE2_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -34,13 +33,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -355,12 +357,15 @@ class BlockManifest(BaseManifest):
         examples=["florence-2-base"],
     )
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
+
 
 class Florence2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -433,6 +438,9 @@ class Florence2BlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
@@ -547,22 +555,18 @@ class Florence2BlockV1(WorkflowBlock):
             else:
                 prompt = task_type + (single_prompt or "")
 
-            request = LMMInferenceRequest(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=prompt,
-            )
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
+                api_key=self._api_key,
             )
             if is_not_florence_task:
-                prediction_data = prediction.response[
-                    list(prediction.response.keys())[0]
+                prediction_data = prediction["response"][
+                    list(prediction["response"].keys())[0]
                 ]
             else:
-                prediction_data = prediction.response[task_type]
+                prediction_data = prediction["response"][task_type]
             if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
                 classes = prediction_data.get("labels", [])
             predictions.append(
@@ -633,7 +637,7 @@ def _prepare_grounding_bounding_box_from_detections(
 
 COORDINATES_EXTRACTION = {
     "first": lambda detections: detections.xyxy[0].tolist(),
-    "last": lambda detections: detections.xyxy[0].tolist(),
+    "last": lambda detections: detections.xyxy[-1].tolist(),
     "biggest": lambda detections: detections.xyxy[np.argmax(detections.area)].tolist(),
     "smallest": lambda detections: detections.xyxy[np.argmin(detections.area)].tolist(),
     "most-confident": lambda detections: detections.xyxy[

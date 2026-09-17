@@ -14,6 +14,7 @@ from inference.core.active_learning.core import (
     execute_sampling,
     is_prediction_registration_forbidden,
     prepare_image_to_registration,
+    prepare_image_to_registration_with_metadata,
     register_datapoint_at_roboflow,
     safe_register_image_at_roboflow,
 )
@@ -25,7 +26,8 @@ from inference.core.active_learning.entities import (
     StrategyLimit,
     StrategyLimitType,
 )
-from inference.core.exceptions import RoboflowAPIConnectionError
+from inference.core.exceptions import InvalidNumpyInput, RoboflowAPIConnectionError
+from inference.core.warnings import InferenceDeprecationWarning
 
 
 def test_execute_sampling() -> None:
@@ -62,33 +64,100 @@ def test_prepare_image_to_registration_when_desired_size_is_not_given(
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = prepare_image_to_registration(
-        image=image_as_numpy, desired_size=None, jpeg_compression_level=95
-    )
-    bytes_array = np.frombuffer(result[0], dtype=np.uint8)
+    with pytest.warns(
+        InferenceDeprecationWarning,
+        match="Use prepare_image_to_registration_with_metadata",
+    ):
+        result = prepare_image_to_registration(
+            image=image_as_numpy, desired_size=None, jpeg_compression_level=95
+        )
+    encoded_image, scaling_factor = result
+    bytes_array = np.frombuffer(encoded_image, dtype=np.uint8)
     decoded_result = cv2.imdecode(bytes_array, flags=cv2.IMREAD_UNCHANGED)
 
     # then
+    assert type(result) is tuple
+    assert len(result) == 2
     assert decoded_result.shape == image_as_numpy.shape
     assert np.allclose(decoded_result, image_as_numpy)
-    assert abs(result[1] - 1.0) < 1e-5
+    assert abs(scaling_factor - 1.0) < 1e-5
+
+
+def test_prepare_image_to_registration_with_metadata_when_desired_size_is_not_given(
+    image_as_numpy: np.ndarray,
+) -> None:
+    result = prepare_image_to_registration_with_metadata(
+        image=image_as_numpy,
+        desired_size=None,
+        jpeg_compression_level=95,
+    )
+
+    assert result.original_size_wh == (
+        image_as_numpy.shape[1],
+        image_as_numpy.shape[0],
+    )
+    assert result.final_size_wh == result.original_size_wh
+    assert abs(result.scale_x - 1.0) < 1e-5
+    assert abs(result.scale_y - 1.0) < 1e-5
 
 
 def test_prepare_image_to_registration_when_desired_size_given(
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = prepare_image_to_registration(
+    result = prepare_image_to_registration_with_metadata(
         image=image_as_numpy,
         desired_size=ImageDimensions(height=32, width=16),
         jpeg_compression_level=95,
     )
-    bytes_array = np.frombuffer(result[0], dtype=np.uint8)
+    bytes_array = np.frombuffer(result.encoded_image, dtype=np.uint8)
     decoded_result = cv2.imdecode(bytes_array, flags=cv2.IMREAD_UNCHANGED)
 
     # then
     assert decoded_result.shape == (16, 16, 3)
-    assert abs(result[1] - 1 / 8) < 1e-5
+    assert abs(result.scaling_factor - 1 / 8) < 1e-5
+    assert result.final_size_wh == (16, 16)
+    assert abs(result.scale_x - result.scale_y) < 1e-9
+
+
+def test_prepare_image_to_registration_reports_anisotropic_scales() -> None:
+    # Ultra-wide source: width-limited resize + int truncation ⇒ scale_x != scale_y
+    image = np.zeros((1080, 4000, 3), dtype=np.uint8)
+    result = prepare_image_to_registration_with_metadata(
+        image=image,
+        desired_size=ImageDimensions(height=2080, width=2080),
+        jpeg_compression_level=95,
+    )
+    assert result.original_size_wh == (4000, 1080)
+    assert result.final_size_wh == (2080, 561)
+    assert abs(result.scale_x - 2080 / 4000) < 1e-9
+    assert abs(result.scale_y - 561 / 1080) < 1e-9
+    assert abs(result.scale_x - result.scale_y) > 1e-4
+    # Historical single factor remains the height ratio for Active Learning BC
+    assert abs(result.scaling_factor - result.scale_y) < 1e-9
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        np.zeros((0, 10, 3), dtype=np.uint8),
+        np.zeros((10, 0, 3), dtype=np.uint8),
+    ],
+)
+def test_prepare_image_to_registration_rejects_empty_image_dimensions(
+    image: np.ndarray,
+) -> None:
+    with pytest.raises(InvalidNumpyInput) as error:
+        prepare_image_to_registration_with_metadata(
+            image=image,
+            desired_size=None,
+            jpeg_compression_level=95,
+        )
+
+    assert (
+        error.value.get_public_error_details()
+        == "Image width and height must both be greater than zero."
+    )
 
 
 @mock.patch.object(core, "ACTIVE_LEARNING_TAGS", None)

@@ -58,8 +58,12 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
     normalize_inner_workflow_references_in_definition,
+    workflow_definition_contains_unresolved_inner_workflow_reference,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+)
 
 COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
     cache_size=256,
@@ -71,6 +75,58 @@ COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
         ("execution_engine_version", lambda version: str(version)),
     ],
 )
+
+
+def _effective_workspace_resolver(
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
+):
+    """The resolver the GENERATED BLOCK will use, so compilation-time Modal
+    validation and runtime execution cannot disagree.
+
+    `ExecutionEngineV1.init` mirrors the effective value into
+    `dynamic_workflows_blocks.workspace_resolver`, preserving an explicit
+    override in that namespace; reading `workflows_core.*` here would consult a
+    different object (round-2 defect 5).
+    """
+    return init_parameters.get(
+        "dynamic_workflows_blocks.workspace_resolver",
+        init_parameters.get(
+            "workflows_core.workspace_resolver", NULL_WORKSPACE_RESOLVER
+        ),
+    )
+
+
+def _effective_dynamic_api_key(
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
+) -> Optional[str]:
+    """The api key the GENERATED BLOCK will hold (`steps_initialiser` prefers
+    `dynamic_workflows_blocks.api_key`, which the engine mirrors from
+    `workflows_core.api_key` unless a caller set it explicitly). Compile-time
+    Modal validation resolves the workspace with this key, so it names the
+    same sandbox the block later executes in (round-5 defect 2)."""
+    return init_parameters.get(
+        "dynamic_workflows_blocks.api_key",
+        init_parameters.get("workflows_core.api_key"),
+    )
+
+
+def _is_resolver_dependent(
+    workflow_definition: dict, dynamic_blocks_definitions: List[dict]
+) -> bool:
+    """True when compiling this definition consults an injected resolver.
+
+    Compilation resolves inner-workflow references and compiles dynamic blocks;
+    both consult resolvers, and `COMPILATION_CACHE` keys on neither them nor the
+    api key. Rather than invent a lifetime-safe context, such definitions simply
+    are not cached - they are the rare case, and the cache exists for the plain
+    ones. This also removes the authentication-context hazard for exactly the
+    definitions where it mattered.
+    """
+    if dynamic_blocks_definitions:
+        return True
+    return workflow_definition_contains_unresolved_inner_workflow_reference(
+        workflow_definition=workflow_definition
+    )
 
 
 @execution_phase(
@@ -121,19 +177,24 @@ def compile_workflow_graph(
 ) -> GraphCompilationResult:
     if init_parameters is None:
         init_parameters = {}
+    pre_resolution_dynamic_blocks_definitions = (
+        collect_dynamic_blocks_definitions_from_workflow_definition(
+            workflow_definition=workflow_definition,
+            warn_on_duplicates=False,
+        )
+    )
+    cacheable = not _is_resolver_dependent(
+        workflow_definition=workflow_definition,
+        dynamic_blocks_definitions=pre_resolution_dynamic_blocks_definitions,
+    )
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
     )
-    cached_value = COMPILATION_CACHE.get(key=key)
+    cached_value = COMPILATION_CACHE.get(key=key) if cacheable else None
     if cached_value is not None:
-        dynamic_blocks_definitions = (
-            collect_dynamic_blocks_definitions_from_workflow_definition(
-                workflow_definition=workflow_definition,
-            )
-        )
         ensure_dynamic_blocks_allowed(
-            dynamic_blocks_definitions=dynamic_blocks_definitions
+            dynamic_blocks_definitions=pre_resolution_dynamic_blocks_definitions
         )
         return cached_value
 
@@ -158,7 +219,8 @@ def compile_workflow_graph(
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=dynamic_blocks_definitions,
         profiler=profiler,
-        api_key=init_parameters.get("workflows_core.api_key", None),
+        api_key=_effective_dynamic_api_key(init_parameters),
+        workspace_resolver=_effective_workspace_resolver(init_parameters),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
     validate_inner_workflow_composition_from_raw_workflow_definition(
@@ -190,7 +252,8 @@ def compile_workflow_graph(
         kinds_serializers=kinds_serializers,
         kinds_deserializers=kinds_deserializers,
     )
-    COMPILATION_CACHE.cache(key=key, value=result)
+    if cacheable:
+        COMPILATION_CACHE.cache(key=key, value=result)
     return result
 
 

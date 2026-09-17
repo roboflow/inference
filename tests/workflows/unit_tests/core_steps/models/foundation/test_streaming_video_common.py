@@ -1,16 +1,25 @@
-"""Unit tests for the shared helpers in ``_streaming_video_common``."""
+"""Unit tests for the shared streaming video tracker helpers."""
 
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     BoxPromptMetadata,
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     build_obj_id_metadata_from_text,
     decide_prompt_vs_track,
     extract_box_prompts,
+    masks_to_sv_detections,
     normalise_class_names,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
 )
 
 
@@ -144,6 +153,28 @@ def test_build_obj_id_metadata_from_text_falls_back_for_multiple_classes():
         class_names=["person", "car"],
     )
     assert mapping[0].class_name == "foreground"
+
+
+def test_numpy_unknown_visual_object_uses_synthetic_foreground_class():
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=np.zeros((8, 8, 3), dtype=np.uint8),
+    )
+    masks = np.zeros((1, 8, 8), dtype=bool)
+    masks[0, 1:4, 1:4] = True
+
+    predictions = masks_to_sv_detections(
+        masks=masks,
+        obj_ids=np.array([7], dtype=np.int64),
+        image=image,
+        obj_id_metadata={},
+        threshold=0.0,
+        fallback_class_id=SYNTHETIC_POINT_PROMPT_CLASS_ID,
+        fallback_class_name=SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+    )
+
+    assert predictions.class_id.tolist() == [-1]
+    assert predictions.data["class_name"].tolist() == ["foreground"]
 
 
 def test_normalise_class_names_variants():

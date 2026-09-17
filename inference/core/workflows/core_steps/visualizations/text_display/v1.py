@@ -388,7 +388,11 @@ class TextDisplayVisualizationBlockV1(WorkflowBlock):
             text_parameters=text_parameters,
             text_parameters_operations=text_parameters_operations,
         )
-        output_image = image.numpy_image.copy() if copy_image else image.numpy_image
+        output_image = image.numpy_image
+        if copy_image:
+            output_image = output_image.copy()
+        else:
+            image.declare_numpy_image_mutated()
 
         text_color_bgr = str_to_color(text_color).as_bgr()
         bg_color_bgr = (

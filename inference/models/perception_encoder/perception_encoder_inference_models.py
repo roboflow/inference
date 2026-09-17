@@ -1,8 +1,9 @@
 from time import perf_counter
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Literal, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.perception_encoder import (
@@ -31,6 +32,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.perception_encoder.perception_encoder_pytorch import (
     PerceptionEncoderTorch,
@@ -75,6 +77,10 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        # Never let a telemetry lookup fail model construction.
+        inner = getattr(self._model, "model", None)
+        self.image_size = getattr(inner, "image_size", None)
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image."""
@@ -232,6 +238,34 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
         response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
+    def run_tensor_native_inference(
+        self, action: Literal["compare", "embed-image", "embed-text"], **kwargs
+    ) -> torch.Tensor:
+        if action == "embed-image":
+            return self._model.embed_images(**kwargs)
+        elif action == "embed-text":
+            return self._model.embed_text(**kwargs)
+        subject_type = kwargs.get("subject_type", "image")
+        prompt_type = kwargs.get("prompt_type", "text")
+        if subject_type == "image":
+            subject_embeddings = self._model.embed_images(
+                images=kwargs["subject"], **kwargs
+            )
+        else:
+            subject_embeddings = self._model.embed_text(
+                text=kwargs["subject"], **kwargs
+            )
+        if prompt_type == "image":
+            prompt_embeddings = self._model.embed_images(
+                images=kwargs["prompt"], **kwargs
+            )
+        else:
+            prompt_embeddings = self._model.embed_text(text=kwargs["prompt"], **kwargs)
+        subject_embeddings_norm = F.normalize(subject_embeddings, dim=1)
+        prompt_embeddings_norm = F.normalize(prompt_embeddings, dim=1)
+        return subject_embeddings_norm @ prompt_embeddings_norm.T
+
+    @usage_collector("model")
     def infer_from_request(
         self, request: PerceptionEncoderInferenceRequest
     ) -> PerceptionEncoderEmbeddingResponse:

@@ -730,3 +730,28 @@ def assert_correct_command_sent(
         + serialised_command
     )
     assert writer.get_content() == payload, message
+
+
+@pytest.mark.asyncio
+async def test_consume_result_preserves_missing_camera_placeholders() -> None:
+    client = StreamManagerClient.init(host="127.0.0.1", port=7070)
+    client._handle_command = AsyncMock(
+        return_value={
+            "response": {
+                "status": "success",
+                "outputs": [{"prediction": 1}, None],
+                "frames_metadata": [
+                    {
+                        "frame_timestamp": "2026-01-01T00:00:00",
+                        "frame_id": 2,
+                        "source_id": 0,
+                    },
+                    None,
+                ],
+            },
+        }
+    )
+    result = await client.consume_pipeline_result("pipeline", excluded_fields=[])
+    assert result.outputs == [{"prediction": 1}, None]
+    assert result.frames_metadata[0].source_id == 0
+    assert result.frames_metadata[1] is None

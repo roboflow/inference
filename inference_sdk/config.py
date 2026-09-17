@@ -4,9 +4,23 @@ import os
 import threading
 from typing import Iterable, Optional, Tuple
 
+from inference_sdk.regions import resolve_roboflow_service_url
 from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
+
+# Outbound billing-forwarding authority: the validated service secret to send
+# with every outgoing request while it is set, forcing `countinference=false`
+# regardless of the client's own configuration. `None` means no implicit
+# billing parameters - a caller who configured `InferenceConfiguration`
+# explicitly keeps full control. Set (and reset) by the usage decorator
+# (`inference.usage_tracking.collector`) only for a call it proved carries an
+# authenticated opt-out, and read at request-send time by
+# `InferenceConfiguration.to_billing_query_parameters()` so a bare
+# `InferenceHTTPClient` forwards it with no per-call code.
+outbound_service_secret: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "outbound_service_secret", default=None
+)
 
 
 class RemoteProcessingTimeCollector:
@@ -182,6 +196,8 @@ ALL_ROBOFLOW_API_URLS = {
     "https://infer.roboflow.com",
     "https://serverless.roboflow.com",
     "https://serverless.roboflow.one",
+    "https://serverless.roboflow.eu",
+    "https://serverless.roboflow-eu.one",
     "https://asyncinfer.roboflow.com",
     "https://asyncinfer.roboflow.one",
 }
@@ -203,10 +219,16 @@ WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
 )  # 256KB max buffered before backpressure
 
 # Roboflow API base URL for TURN config and other services
-RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", "https://api.roboflow.com")
+RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", resolve_roboflow_service_url("api"))
 
 
 class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
+
+    pass
+
+
+class InferenceSDKGuidanceWarning(Warning):
+    """Class used for recommendations on how to use the Inference SDK"""
 
     pass

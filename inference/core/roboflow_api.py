@@ -173,6 +173,7 @@ MODEL_TYPE_DEFAULTS = {
 }
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
+MODEL_VARIANT_KEY = "model_variant"
 
 NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
@@ -588,11 +589,15 @@ class ModelEndpointType(Enum):
 def get_roboflow_model_data(
     api_key: str,
     model_id: str,
-    endpoint_type: ModelEndpointType,
+    endpoint_type: Union[str, ModelEndpointType],
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> dict:
+    # Workflow blocks pass the plain string `core_model` so they do not have to
+    # import this enum (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE).
+    # `ModelEndpointType(member)` is the identity for real members.
+    endpoint_type = ModelEndpointType(endpoint_type)
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
     if not MODELS_CACHE_AUTH_ENABLED:
@@ -720,6 +725,8 @@ def get_model_metadata_from_inference_models_registry(
     api_data = {
         "modelType": model_metadata["modelArchitecture"],
         "taskType": model_metadata["taskType"],
+        "modelVariant": model_metadata.get("modelVariant"),
+        "modelLatencyMs": model_metadata.get("modelLatencyMs"),
     }
     cache.set(
         api_data_cache_key,

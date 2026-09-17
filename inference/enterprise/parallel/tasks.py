@@ -10,6 +10,7 @@ from redis import ConnectionPool, Redis
 import inference.enterprise.parallel.celeryconfig
 from inference.core.entities.requests.inference import (
     InferenceRequest,
+    ensure_wire_safe_mask_format,
     request_from_type,
 )
 from inference.core.entities.responses.inference import InferenceResponse
@@ -77,6 +78,7 @@ def postprocess(
             model_manager.add_model(request["model_id"], request["api_key"])
             model_type = model_manager.get_task_type(request["model_id"])
             request = request_from_type(model_type, request)
+            ensure_wire_safe_mask_format(request)
 
             outputs = load_outputs(shm_info_list, shms)
 

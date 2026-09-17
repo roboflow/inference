@@ -1,24 +1,42 @@
+import math
 from copy import deepcopy
 
+import cv2
 import numpy as np
 import pytest
 import supervision as sv
+from pycocotools import mask as mask_utils
+from supervision.config import ORIENTED_BOX_COORDINATES
 
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_rle_sv_detections,
+)
 from inference.core.workflows.core_steps.common.utils import (
+    ANTHROPIC_DETECTION_MAX_EDGE_PIXELS,
+    ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS,
+    ANTHROPIC_IMAGE_TILE_PIXELS,
+    DETECTION_MAX_EDGE_PIXELS,
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_sv_detections,
     attach_prediction_type_info,
     attach_prediction_type_info_to_sv_detections_batch,
+    compute_anthropic_upload_dimensions,
     convert_inference_detections_batch_to_sv_detections,
+    count_anthropic_image_tokens,
+    empty_detections_with_image_metadata,
     filter_out_unwanted_classes_from_sv_detections_batch,
     grab_batch_parameters,
     grab_non_batch_parameters,
     remove_unexpected_keys_from_dictionary,
+    scale_dimensions_to_max_edge,
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -26,6 +44,24 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+
+
+def test_empty_detections_with_image_metadata_keeps_empty_field_contract() -> None:
+    # given / when
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+    )
+    result = empty_detections_with_image_metadata(image=image)
+
+    # then - image dimensions travel in metadata (zero rows means `data` is
+    # invisible to the serialiser), while the fields `sv.Detections.empty()`
+    # populates stay empty arrays rather than becoming `None`; consumers such as
+    # `DetectionsPropertyExtract` call `.tolist()` on them unconditionally.
+    assert len(result) == 0
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert result.confidence.tolist() == []
+    assert result.class_id.tolist() == []
 
 
 def test_attach_prediction_type_info_for_non_empty_predictions() -> None:
@@ -476,6 +512,12 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
                     [[50, 125], [100, 125], [100, 225], [50, 225]],
                 ]
             ),
+            ORIENTED_BOX_COORDINATES: np.array(
+                [
+                    [[25.0, 50.0], [75.0, 50.0], [75.0, 150.0], [25.0, 150.0]],
+                    [[50.0, 125.0], [100.0, 125.0], [100.0, 225.0], [50.0, 225.0]],
+                ]
+            ),
         },
     )
 
@@ -572,6 +614,25 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
             ]
         ),
     ), "Expected polygon metadata to be shifted into root coordinates"
+    assert np.allclose(
+        result[ORIENTED_BOX_COORDINATES],
+        np.array(
+            [
+                [
+                    [50 + 25.0, 100 + 50.0],
+                    [50 + 75.0, 100 + 50.0],
+                    [50 + 75.0, 100 + 150.0],
+                    [50 + 25.0, 100 + 150.0],
+                ],
+                [
+                    [50 + 50.0, 100 + 125.0],
+                    [50 + 100.0, 100 + 125.0],
+                    [50 + 100.0, 100 + 225.0],
+                    [50 + 50.0, 100 + 225.0],
+                ],
+            ]
+        ),
+    ), "Expected oriented-box corners to be shifted into root coordinates"
 
 
 def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> None:
@@ -579,9 +640,16 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    scaled_mask = np.zeros((2, 400, 200), dtype=np.bool_)
-    scaled_mask[0, 160:241, 60:141] = True
-    scaled_mask[1, 340:381, 140:181] = True
+    scaled_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (200, 400),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     expected_mask = np.zeros((2, 1024, 512), dtype=np.bool_)
     expected_mask[:, 100:500, 50:250] = scaled_mask
     detections = sv.Detections(
@@ -987,9 +1055,16 @@ def test_scale_sv_detections_when_scale_makes_output_bigger() -> None:
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    expected_mask = np.zeros((2, 400, 200), dtype=np.bool_)
-    expected_mask[0, 160:241, 60:141] = True
-    expected_mask[1, 340:381, 140:181] = True
+    expected_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (200, 400),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
         mask=mask,
@@ -1108,9 +1183,16 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     mask = np.zeros((2, 200, 100), dtype=np.bool_)
     mask[0, 80:121, 30:71] = True
     mask[1, 170:191, 70:91] = True
-    expected_mask = np.zeros((2, 100, 50), dtype=np.bool_)
-    expected_mask[0, 40:61, 15:36] = True
-    expected_mask[1, 85:96, 35:46] = True
+    expected_mask = np.array(
+        [
+            cv2.resize(
+                detection_mask.astype(np.uint8),
+                (50, 100),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+            for detection_mask in mask
+        ]
+    )
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
         mask=mask,
@@ -1227,6 +1309,269 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     ), "Expected image dimensions to decrease 2x"
 
 
+def test_scale_sv_detections_preserves_edge_flush_mask_area_when_downscaling() -> None:
+    """Regression: Dataset Upload downscales >max_image_size images; masks flush
+    to the image edge must survive scale_sv_detections without collapsing."""
+    # given — 4096→2080 style downscale with a right-edge instance + speck
+    orig = 4096
+    target = 2080
+    scale = target / orig
+    mask = np.zeros((orig, orig), dtype=bool)
+    mask[400:1600, 3100:orig] = True
+    mask[820:828, 3088:3096] = True  # detached speck near left of instance
+    detections = sv.Detections(
+        xyxy=np.array([[3088, 400, orig - 1, 1600]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["sill"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig, orig]]),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(
+        detections=detections,
+        scale=(scale, scale),
+        target_size_wh=(target, target),
+    )
+
+    # then
+    assert result.mask is not None
+    assert result.mask.shape == (1, target, target)
+    assert np.allclose(result["image_dimensions"], np.array([[target, target]]))
+    # Main body should dominate; speck must not wipe the instance
+    assert result.mask[0].sum() > 200_000
+    # Right edge of canvas should still contain mask pixels
+    assert result.mask[0][:, -1].any()
+
+
+def test_scale_sv_detections_anisotropic_matches_exact_target_canvas() -> None:
+    """Aspect-preserving resize can make scale_x != scale_y after int truncation.
+    Annotations must land on the exact uploaded JPEG size, not round(dim * sy)."""
+    # 4000x1080 → max 2080x2080 → 2080 x 561 (scale_x=0.52, scale_y≈0.5194)
+    orig_w, orig_h = 4000, 1080
+    target_w, target_h = 2080, 561
+    scale_x = target_w / orig_w
+    scale_y = target_h / orig_h
+    assert abs(scale_x - scale_y) > 1e-4  # the bug case
+
+    mask = np.zeros((orig_h, orig_w), dtype=bool)
+    # Full-height strip flush to the right edge
+    mask[:, orig_w - 200 : orig_w] = True
+    detections = sv.Detections(
+        xyxy=np.array([[orig_w - 200, 0, orig_w - 1, orig_h - 1]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["edge"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig_h, orig_w]]),
+            POLYGON_KEY_IN_SV_DETECTIONS: np.array(
+                [
+                    [
+                        [orig_w - 200, 0],
+                        [orig_w - 1, 0],
+                        [orig_w - 1, orig_h - 1],
+                        [orig_w - 200, orig_h - 1],
+                    ]
+                ],
+                dtype=np.int32,
+            ),
+            SCALING_RELATIVE_TO_PARENT_KEY: np.array([0.5]),
+            SCALING_RELATIVE_TO_ROOT_PARENT_KEY: np.array([0.25]),
+        },
+    )
+
+    result = scale_sv_detections(
+        detections=detections,
+        scale=(scale_x, scale_y),
+        target_size_wh=(target_w, target_h),
+        update_scaling_metadata=False,
+    )
+
+    assert result.mask.shape == (1, target_h, target_w)
+    assert np.allclose(result["image_dimensions"], np.array([[target_h, target_w]]))
+    x1, y1, x2, y2 = result.xyxy[0]
+    assert x2 <= target_w
+    assert y2 <= target_h
+    # Right-edge instance must still touch the destination right edge
+    assert result.mask[0][:, -1].any()
+    assert x2 >= target_w - 2
+    # Height-only isotropic scale maps width to the wrong canvas size
+    isotropic_w = int(round(orig_w * scale_y))
+    assert isotropic_w != target_w
+    polygon = result.data[POLYGON_KEY_IN_SV_DETECTIONS][0]
+    assert polygon[:, 0].max() >= target_w - 2
+    assert np.array_equal(result[SCALING_RELATIVE_TO_PARENT_KEY], np.array([0.5]))
+    assert np.array_equal(result[SCALING_RELATIVE_TO_ROOT_PARENT_KEY], np.array([0.25]))
+
+
+def test_scale_sv_detections_rejects_anisotropic_scalar_metadata() -> None:
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 20, 20]], dtype=np.float64),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Anisotropic scaling cannot be represented",
+    ):
+        scale_sv_detections(
+            detections=detections,
+            scale=(0.5, 0.6),
+        )
+
+
+def test_scale_sv_detections_regenerates_rle_when_scale_changes_mask() -> None:
+    # given
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[20:40, 20:40] = True
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+            "rle_mask": np.array([{"size": [100, 100], "counts": "x"}], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert result.mask.shape == (1, 50, 50)
+    assert "rle_mask" in result.data
+    resized_rle = result.data["rle_mask"][0]
+    assert resized_rle["size"] == [50, 50]
+    assert isinstance(resized_rle["counts"], str)
+    decoded_mask = mask_utils.decode(
+        {
+            "size": resized_rle["size"],
+            "counts": resized_rle["counts"].encode("utf-8"),
+        }
+    ).astype(bool)
+    assert np.array_equal(decoded_mask, result.mask[0])
+
+
+def test_scale_sv_detections_passes_rle_only_masks_through_untouched() -> None:
+    # RLE-only predictions (mask=None) are intentionally not resized to avoid
+    # a decode/resize/re-encode cost on a path no stock workflow exercises -
+    # boxes scale, but the RLE stays sized to the source canvas. None entries
+    # (see convert_inference_detections_batch_to_sv_detections) must not crash.
+    # given
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:40, 20:40] = 1
+    rle_mask = mask_utils.encode(np.asfortranarray(mask))
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40], [50, 50, 70, 70]], dtype=np.float64),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["obj", "other"]),
+            "detection_id": np.array(["d1", "d2"]),
+            "image_dimensions": np.array([[100, 100], [100, 100]]),
+            "rle_mask": np.array([None, rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+
+    # then
+    assert result.mask is None
+    assert np.allclose(result.xyxy, np.array([[10, 10, 20, 20], [25, 25, 35, 35]]))
+    assert result.data["rle_mask"][0] is None, "None RLE entry must stay None"
+    # scale_sv_detections deep-copies its input, so compare by value
+    assert result.data["rle_mask"][1] == rle_mask, "RLE must be left untouched"
+
+
+def test_scale_sv_detections_preserves_empty_masks_and_matching_rles() -> None:
+    # given
+    masks = np.zeros((2, 4, 4), dtype=np.uint8)
+    masks[0, 3, 3] = 1
+    masks[1, 0:3, 0:3] = 1
+    rle_masks = np.array(
+        [mask_utils.encode(np.asfortranarray(mask)) for mask in masks],
+        dtype=object,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[3, 3, 4, 4], [0, 0, 3, 3]], dtype=np.float64),
+        mask=masks.astype(bool),
+        confidence=np.array([0.5, 0.9]),
+        class_id=np.array([0, 1]),
+        data={
+            "class_name": np.array(["thin", "body"]),
+            "detection_id": np.array(["thin-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": rle_masks,
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=0.5)
+    serialized_result = serialise_rle_sv_detections(detections=result)
+
+    # then
+    assert len(result) == 2
+    assert result.data["detection_id"].tolist() == ["thin-id", "body-id"]
+    assert len(result.data["rle_mask"]) == 2
+    assert [
+        prediction["detection_id"] for prediction in serialized_result["predictions"]
+    ] == ["thin-id", "body-id"]
+    serialized_mask_areas = []
+    for prediction in serialized_result["predictions"]:
+        serialized_mask = mask_utils.decode(
+            {
+                "size": prediction["rle_mask"]["size"],
+                "counts": prediction["rle_mask"]["counts"].encode("utf-8"),
+            }
+        )
+        serialized_mask_areas.append(int(serialized_mask.sum()))
+    assert serialized_mask_areas == [0, 4]
+
+
+def test_scale_sv_detections_keeps_rle_when_scale_is_noop() -> None:
+    """No-op scale (e.g. root-coordinates pass with scaling key == 1.0) must not
+    strip `rle_mask` - the RLE-kind output serializer requires it."""
+    # given
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[20:40, 20:40] = True
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 40, 40]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["obj"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[100, 100]]),
+            "rle_mask": np.array([{"size": [100, 100], "counts": "x"}], dtype=object),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(detections=detections, scale=1.0)
+
+    # then
+    assert "rle_mask" in result.data
+    assert result.mask.shape == (1, 100, 100)
+    assert np.array_equal(result.mask, detections.mask)
+
+
 def test_remove_unexpected_keys_from_dictionary_when_empty_dict_given() -> None:
     # when
     result = remove_unexpected_keys_from_dictionary(
@@ -1259,3 +1604,118 @@ def test_remove_unexpected_keys_from_dictionary_when_part_of_keys_are_not_expect
 
     # then
     assert result == {"a": 1}
+
+
+@pytest.mark.parametrize(
+    "width, height, max_edge, expected",
+    [
+        pytest.param(100, 50, 2048, (100, 50), id="below-limit-noop"),
+        pytest.param(2048, 1024, 2048, (2048, 1024), id="landscape-at-limit-noop"),
+        pytest.param(4096, 2048, 2048, (2048, 1024), id="landscape-downscale"),
+        pytest.param(1000, 4000, 2048, (512, 2048), id="portrait-downscale"),
+        pytest.param(4096, 4096, 2048, (2048, 2048), id="square-downscale"),
+        pytest.param(3000, 2000, 2048, (2048, 1365), id="rounds-down-1365.33"),
+        pytest.param(4097, 2048, 2048, (2048, 1024), id="rounds-up-1023.75"),
+        pytest.param(4096, 1021, 2048, (2048, 510), id="half-510.5-rounds-to-even-510"),
+        pytest.param(10000, 1, 2048, (2048, 1), id="wide-short-edge-clamps-to-1px"),
+        pytest.param(1, 10000, 2048, (1, 2048), id="tall-short-edge-clamps-to-1px"),
+        pytest.param(300, 200, 1, (1, 1), id="max-edge-of-1"),
+    ],
+)
+def test_scale_dimensions_to_max_edge(
+    width: int, height: int, max_edge: int, expected: tuple
+) -> None:
+    # when
+    result = scale_dimensions_to_max_edge(width=width, height=height, max_edge=max_edge)
+
+    # then
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "width, height",
+    [
+        (2899, 2841),
+        (1920, 2560),
+        (2164, 1868),
+    ],
+)
+def test_scale_dimensions_to_max_edge_preserves_invariants(
+    width: int, height: int
+) -> None:
+    # when
+    scaled_width, scaled_height = scale_dimensions_to_max_edge(
+        width=width, height=height, max_edge=DETECTION_MAX_EDGE_PIXELS
+    )
+
+    # then
+    assert max(scaled_width, scaled_height) <= DETECTION_MAX_EDGE_PIXELS
+    assert scaled_width >= 1 and scaled_height >= 1
+    # aspect ratio preserved within the error introduced by rounding one edge
+    original_ratio = width / height
+    scaled_ratio = scaled_width / scaled_height
+    assert abs(scaled_ratio - original_ratio) <= original_ratio / min(
+        scaled_width, scaled_height
+    )
+    assert scale_dimensions_to_max_edge(
+        width=scaled_width, height=scaled_height, max_edge=DETECTION_MAX_EDGE_PIXELS
+    ) == (scaled_width, scaled_height)
+
+
+@pytest.mark.parametrize(
+    "width, height, expected",
+    [
+        pytest.param(1000, 800, (1000, 800), id="within-budget-noop"),
+        pytest.param(1932, 1932, (1932, 1932), id="square-at-token-budget-noop"),
+        pytest.param(4000, 3000, (2212, 1659), id="landscape-downscale"),
+        pytest.param(3000, 4000, (1659, 2212), id="portrait-mirrors-landscape"),
+        pytest.param(8000, 200, (2576, 64), id="wide-capped-by-max-edge"),
+        pytest.param(200, 8000, (64, 2576), id="tall-capped-by-max-edge"),
+    ],
+)
+def test_compute_anthropic_upload_dimensions(
+    width: int, height: int, expected: tuple
+) -> None:
+    # when
+    result = compute_anthropic_upload_dimensions(width=width, height=height)
+
+    # then
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "width, height",
+    [
+        (2899, 2841),
+        (1920, 2560),
+        (5000, 1200),
+        (16000, 9000),
+    ],
+)
+def test_compute_anthropic_upload_dimensions_preserves_invariants(
+    width: int, height: int
+) -> None:
+    # when
+    scaled_width, scaled_height = compute_anthropic_upload_dimensions(
+        width=width, height=height
+    )
+
+    # then
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+    assert math.ceil(scaled_width / tile) * tile <= ANTHROPIC_DETECTION_MAX_EDGE_PIXELS
+    assert math.ceil(scaled_height / tile) * tile <= ANTHROPIC_DETECTION_MAX_EDGE_PIXELS
+    assert (
+        count_anthropic_image_tokens(scaled_width, scaled_height)
+        <= ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS
+    )
+    assert scaled_width <= width and scaled_height <= height
+    # aspect ratio preserved within the error introduced by rounding one edge
+    original_ratio = width / height
+    scaled_ratio = scaled_width / scaled_height
+    assert abs(scaled_ratio - original_ratio) <= original_ratio / min(
+        scaled_width, scaled_height
+    )
+    # stable: already-fitting dimensions are returned unchanged
+    assert compute_anthropic_upload_dimensions(
+        width=scaled_width, height=scaled_height
+    ) == (scaled_width, scaled_height)

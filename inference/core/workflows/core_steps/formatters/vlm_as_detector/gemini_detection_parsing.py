@@ -7,6 +7,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -37,7 +38,7 @@ def get_gemini_detection_class_name(detection: dict) -> str:
     return "unknown"
 
 
-def parse_gemini_detection_xyxy(
+def convert_gemini_detection_to_pixel_xyxy(
     detection: dict,
     image_height: int,
     image_width: int,
@@ -77,12 +78,12 @@ def parse_gemini_object_detection_response(
     image_height, image_width = image.numpy_image.shape[:2]
     detections = extract_gemini_detection_entries(parsed_data=parsed_data)
     if len(detections) == 0:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(image=image)
 
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in detections:
         xyxy.append(
-            parse_gemini_detection_xyxy(
+            convert_gemini_detection_to_pixel_xyxy(
                 detection=detection,
                 image_height=image_height,
                 image_width=image_width,

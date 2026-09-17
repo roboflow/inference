@@ -5,7 +5,7 @@ import re
 import urllib.parse
 from enum import Enum
 from io import BytesIO
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -158,6 +158,24 @@ def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]
     return value, ImageType(image_type.lower())
 
 
+def ensure_local_file_load_allowed() -> None:
+    """Raise unless this deployment permits reading images off the local disk.
+
+    The single owner of `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` on the read
+    path. Called by `load_image_with_known_type` below, and by the Workflows
+    image-codec adapter (`inference.core.interfaces.workflows_image_codec`),
+    which needs the permission without the load: Workflows keeps its own two
+    local decoders (`cv2.imread` and `torchvision.io.read_file` +
+    `decode_image`) whose EXIF behaviour must not change.
+    """
+    if not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
+        message = "Loading images from local filesystem is disabled."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+
+
 def load_image_with_known_type(
     value: Any,
     image_type: ImageType,
@@ -175,11 +193,8 @@ def load_image_with_known_type(
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
     """
-    if image_type is ImageType.FILE and not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
-        raise InputImageLoadError(
-            message="Loading images from local filesystem is disabled.",
-            public_message="Loading images from local filesystem is disabled.",
-        )
+    if image_type is ImageType.FILE:
+        ensure_local_file_load_allowed()
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
     image = loader(value, cv_imread_flags)
@@ -468,10 +483,19 @@ def _validate_url_destination(value: str) -> str:
     return prepared_url
 
 
-def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
+def _fetch_image_bytes_from_url(
+    prepared_url: str,
+    sink: Optional[Callable[[bytes], Any]] = None,
+    max_bytes: Optional[int] = None,
+    request_timeout: Optional[float] = None,
+) -> Optional[bytes]:
     """Dispatch URL fetching to the hardened per-hop validator or the legacy
     (redirect-following) path, based on VALIDATE_IMAGE_URL_REDIRECTS. Non-global
     address blocking is applied by both paths, independently.
+
+    ``sink`` and ``max_bytes`` pass through to the fetcher. A caller giving a
+    sink receives ``None`` and takes the body itself, chunk by chunk, which is
+    how a large payload reaches disk without a copy in memory.
     """
     if VALIDATE_IMAGE_URL_REDIRECTS:
         return fetch_url_content_validating_redirects(
@@ -479,11 +503,17 @@ def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
             allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
             max_redirects=MAX_IMAGE_URL_REDIRECTS,
             validate_redirect=_validate_url_destination,
+            sink=sink,
+            max_bytes=max_bytes,
+            request_timeout=request_timeout,
         )
     return fetch_url_content_legacy(
         url=prepared_url,
         allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
         max_redirects=MAX_IMAGE_URL_REDIRECTS,
+        sink=sink,
+        max_bytes=max_bytes,
+        request_timeout=request_timeout,
     )
 
 

@@ -226,3 +226,48 @@ def test_run_offsets_by_percentage_when_percent_units_selected() -> None:
     assert (
         y2 == 620
     ), "Bottom corner should be moved by 5% of detection height to the bottom"
+
+
+def test_run_offsets_by_percentage_when_percent_units_selected_tensor_native() -> None:
+    # given - the tensor-native mirror of the numpy percent-mode test above
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.transformations.detection_offset.v1_tensor import (
+        DetectionOffsetBlockV1 as TensorDetectionOffsetBlockV1,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    detections = NativeDetections(
+        xyxy=torch.tensor([[100.0, 200.0, 400.0, 600.0]], dtype=torch.float64),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.5], dtype=torch.float64),
+        image_metadata={
+            "class_names": {1: "truck"},
+            "image_dimensions": [640, 640],
+        },
+        bboxes_metadata=[
+            {"detection_id": "three", "class": "truck", "parent_id": "p3"}
+        ],
+    )
+    block = TensorDetectionOffsetBlockV1()
+
+    # when
+    result = block.run(
+        predictions=Batch(content=[detections], indices=[(0,)]),
+        offset_width=10,
+        offset_height=10,
+        units="Percent (%)",
+    )
+
+    # then
+    x1, y1, x2, y2 = result[0]["predictions"].xyxy[0].tolist()
+    assert x1 == 85, "Left corner should be moved by 5% of detection width to the left"
+    assert y1 == 180, "Top corner should be moved by 5% of detection height to the top"
+    assert (
+        x2 == 415
+    ), "Right corner should be moved by 5% of detection width to the right"
+    assert (
+        y2 == 620
+    ), "Bottom corner should be moved by 5% of detection height to the bottom"

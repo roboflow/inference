@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Type, Union
 
@@ -5,29 +6,10 @@ import requests
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core import logger
-from inference.core.entities.requests.sam2 import (
-    Box,
-    Point,
-    Sam2Prompt,
-    Sam2PromptSet,
-    Sam2SegmentationRequest,
-)
-from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
-from inference.core.env import (
-    API_BASE_URL,
-    CORE_MODEL_SAM3_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SAM3_EXEC_MODE,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import build_roboflow_api_headers
-from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.segmentation_entities import (
+    Sam2SegmentationPrediction,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -35,6 +17,28 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Box,
+    Point,
+    Sam2Prompt,
+    Sam2PromptSet,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.visual_prompt import (
+    SYNTHETIC_POINT_PROMPT_CLASS_ID,
+    SYNTHETIC_POINT_PROMPT_CLASS_NAME,
+    normalise_labeled_points,
+)
+from inference.core.workflows.environment import (
+    API_BASE_URL,
+    CORE_MODEL_SAM3_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -55,13 +59,22 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.offline import ensure_builtin_remote_execution_allowed
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+logger = logging.getLogger(__name__)
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -95,25 +108,7 @@ def _as_sam2_points(points: List[Any]) -> List[Point]:
         if isinstance(raw_point, Point):
             result.append(raw_point)
             continue
-        if isinstance(raw_point, dict):
-            if "x" not in raw_point or "y" not in raw_point:
-                raise ValueError(
-                    f"Each point prompt must define `x` and `y` coordinates - got: {raw_point}"
-                )
-            x, y = raw_point["x"], raw_point["y"]
-            positive = raw_point.get("positive", True)
-        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
-            x, y = raw_point[0], raw_point[1]
-            positive = raw_point[2] if len(raw_point) == 3 else True
-        else:
-            raise ValueError(
-                f"Invalid point prompt: {raw_point}. Expected dict with `x`, `y` and optional "
-                f"`positive` keys, or a sequence of (x, y) or (x, y, positive)."
-            )
-        if isinstance(x, bool) or isinstance(y, bool):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
-        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-            raise ValueError(f"Point coordinates must be numbers - got: {raw_point}")
+        x, y, positive = normalise_labeled_points([raw_point])[0]
         result.append(Point(x=float(x), y=float(y), positive=bool(positive)))
     return result
 
@@ -242,22 +237,31 @@ class BlockManifest(WorkflowBlockManifest):
         """Return list of model_id variants that can satisfy this block."""
         return [SAM3_INTERACTIVE_MODEL_ID]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if SAM3_EXEC_MODE == "remote":
+            # Proxy execution runs its own fixed SAM3 server-side; nothing to
+            # declare.
+            return []
+        return [roboflow_platform_model(model_id=SAM3_INTERACTIVE_MODEL_ID)]
+
 
 class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -328,17 +332,16 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 [],
             )
             for group in groups:
-                inference_request = Sam2SegmentationRequest(
-                    image=single_image.to_inference_format(numpy_preferred=True),
+                segmentation_response = self._model_manager.run_sam2_segmentation(
                     model_id=SAM3_INTERACTIVE_MODEL_ID,
+                    image=single_image.to_inference_format(numpy_preferred=True),
+                    prompts=[
+                        prompt.model_dump(exclude_none=True) for prompt in group.prompts
+                    ],
                     api_key=self._api_key,
-                    source="workflow-execution",
-                    prompts=Sam2PromptSet(prompts=group.prompts),
+                    request_model_id=SAM3_INTERACTIVE_MODEL_ID,
                     multimask_output=multimask_output,
-                )
-                segmentation_response = self._model_manager.infer_from_request_sync(
-                    SAM3_INTERACTIVE_MODEL_ID, inference_request
-                )
+                )[0]
                 segmentation_predictions.extend(segmentation_response.predictions)
                 class_ids.extend(group.class_ids)
                 class_names.extend(group.class_names)
@@ -380,6 +383,9 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
@@ -475,9 +481,13 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                         headers["X-Roboflow-Internal-Service-Secret"] = (
                             ROBOFLOW_INTERNAL_SERVICE_SECRET
                         )
-                    headers = build_roboflow_api_headers(explicit_headers=headers)
+                    headers = self._platform_client.build_api_headers(
+                        explicit_headers=headers
+                    )
                     response = requests.post(
-                        wrap_url(f"{endpoint}?api_key={self._api_key}"),
+                        self._platform_client.wrap_url(
+                            f"{endpoint}?api_key={self._api_key}"
+                        ),
                         json=payload,
                         headers=headers,
                         timeout=60,
@@ -556,8 +566,8 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             groups.append(
                 _PromptGroup(
                     prompts=[Sam2Prompt(points=_as_sam2_points(points))],
-                    class_ids=[0],
-                    class_names=["foreground"],
+                    class_ids=[SYNTHETIC_POINT_PROMPT_CLASS_ID],
+                    class_names=[SYNTHETIC_POINT_PROMPT_CLASS_NAME],
                     detection_ids=[None],
                 )
             )

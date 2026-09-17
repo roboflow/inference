@@ -2,17 +2,16 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import ClassificationInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
+from inference.core.workflows.environment import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
 from inference.core.workflows.execution_engine.constants import (
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -38,9 +37,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
+    roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -101,6 +104,20 @@ class BlockManifest(WorkflowBlockManifest):
     def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["multi-label-classification"]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        resources = [roboflow_platform_model(model_id=self.model_id)]
+        if self.disable_active_learning is True:
+            # Active learning literally disabled (the default) — the target
+            # project is dead configuration, not a dependency.
+            return resources
+        if self.active_learning_target_dataset is not None:
+            resources.append(
+                roboflow_platform_project(
+                    project_url=self.active_learning_target_dataset
+                )
+            )
+        return resources
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
@@ -122,7 +139,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -176,28 +193,19 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = ClassificationInferenceRequest(
-            api_key=self._api_key,
-            model_id=model_id,
-            image=inference_images,
-            confidence=confidence,
-            disable_active_learning=disable_active_learning,
-            source="workflow-execution",
-            active_learning_target_dataset=active_learning_target_dataset,
-        )
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request, confidence=confidence
+        predictions = self._model_manager.run_classification(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
+            confidence=confidence,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            inference_kwargs={"confidence": confidence},
         )
-        if isinstance(predictions, list):
-            predictions = [
-                e.dict(by_alias=True, exclude_none=True) for e in predictions
-            ]
-        else:
-            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             predictions=predictions,
             images=images,
@@ -224,6 +232,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,

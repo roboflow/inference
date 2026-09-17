@@ -1,9 +1,24 @@
 import threading
-from typing import Dict, Optional, Tuple
+from contextlib import nullcontext
+from typing import ContextManager, Dict, Optional, Tuple
 
 import torch
 
 _THREAD_LOCAL_STREAMS = threading.local()
+
+
+def use_cuda_stream(
+    stream: Optional[torch.cuda.Stream],
+) -> ContextManager[None]:
+    """Activate a CUDA stream, or do nothing when no stream is available.
+
+    Args:
+        stream: CUDA stream to activate, or None for non-CUDA devices.
+
+    Returns:
+        Context manager that activates the CUDA stream when available.
+    """
+    return torch.cuda.stream(stream) if stream is not None else nullcontext()
 
 
 def get_cuda_stream(device: torch.device, purpose: str) -> Optional[torch.cuda.Stream]:
@@ -37,12 +52,15 @@ def get_cuda_stream(device: torch.device, purpose: str) -> Optional[torch.cuda.S
 
     Examples:
         >>> import torch
-        >>> from inference_models.models.common.streams import get_cuda_stream
+        >>> from inference_models.models.common.streams import (
+        ...     get_cuda_stream,
+        ...     use_cuda_stream,
+        ... )
         >>>
         >>> stream = get_cuda_stream(
         ...     device=torch.device("cuda:0"), purpose="pre-processing"
         ... )
-        >>> with torch.cuda.stream(stream):
+        >>> with use_cuda_stream(stream):
         ...     pass  # enqueue torch work
         >>> if stream is not None:
         ...     stream.synchronize()

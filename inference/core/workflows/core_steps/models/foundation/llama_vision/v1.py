@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from openai import OpenAI
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -28,9 +28,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 MODEL_VERSION_MAPPING = {
     "11B (Free) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct:free",
@@ -144,7 +148,11 @@ class BlockManifest(WorkflowBlockManifest):
             "name": "Llama 3.2 Vision",
             "version": "v1",
             "deprecated": True,
-            "deprecation_message": "Use the Llama 3.2 Vision v2 block, which adds a Roboflow-managed API key option and user-selectable privacy controls.",
+            "deprecation_message": (
+                "OpenRouter no longer hosts Llama 3.2 Vision. Use the Meta block "
+                "(`roboflow_core/meta_vlm@v3`) for Muse Spark and Muse Glimmer; it "
+                "decodes detection and classification predictions in-block."
+            ),
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community",
@@ -297,18 +305,31 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector returned verbatim; the attached resolver
+            # performs the MODEL_VERSION_MAPPING lookup once the input value
+            # is substituted.
+            return [
+                third_party_model(
+                    provider="openrouter",
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: MODEL_VERSION_MAPPING[label],
+                )
+            ]
+        return [
+            third_party_model(
+                provider="openrouter",
+                model_id=MODEL_VERSION_MAPPING[self.model_version],
+            )
+        ]
+
 
 class LlamaVisionBlockV1(WorkflowBlock):
 
-    def __init__(
-        self,
-        model_manager: ModelManager,
-    ):
-        self._model_manager = model_manager
-
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager"]
+        return []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

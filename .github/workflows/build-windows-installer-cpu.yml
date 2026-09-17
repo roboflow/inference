@@ -27,28 +27,37 @@ jobs:
       - name: Determine Version
         id: determine_version
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.manual_version }}
+          GIT_REF: ${{ github.ref }}
         run: |
+          set -euo pipefail
           VERSION=""
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            if [ -n "${{ inputs.manual_version }}" ]; then
-              VERSION="${{ inputs.manual_version }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            if [ -n "$MANUAL_VERSION" ]; then
+              VERSION="$MANUAL_VERSION"
               VERSION=${VERSION#v}
               echo "Manual run detected. Using provided version: $VERSION"
             else
               echo "Error: For manual runs (workflow_dispatch), the 'manual_version' input is required."
               exit 1
             fi
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
+          elif [[ "$GIT_REF" == refs/tags/v* ]]; then
+            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/v!!')
+          elif [[ "$GIT_REF" == refs/tags/* ]]; then
+            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/!!')
           fi
 
+          if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9][A-Za-z0-9.+_-]{0,127}$ ]]; then
+            echo "Invalid installer version." >&2
+            exit 1
+          fi
           if [ -z "$VERSION" ]; then
             echo "Error: Could not determine installer version."
-            echo "  github.event_name: ${{ github.event_name }}"
-            echo "  github.ref: ${{ github.ref }}"
-            echo "  inputs.manual_version: ${{ inputs.manual_version }}"
+            echo "  github.event_name: $EVENT_NAME"
+            echo "  github.ref: $GIT_REF"
+            echo "  inputs.manual_version: $MANUAL_VERSION"
             exit 1
           fi
           echo "installer_version_out=$VERSION" >> "$GITHUB_OUTPUT"

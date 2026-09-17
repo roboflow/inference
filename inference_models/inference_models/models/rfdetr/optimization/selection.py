@@ -1,7 +1,6 @@
 """RF-DETR stage selection with declared compatibility fallback."""
 
-from dataclasses import dataclass
-from typing import Callable, Dict, Generic, Optional, TypeVar, cast
+from typing import Callable, Optional, TypeVar, cast
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -14,7 +13,11 @@ from inference_models.models.optimization.contracts import (
     InferenceStage,
     OptimizationStage,
 )
-from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.registry import (
+    ImplementationRegistry,
+    ImplementationSelection,
+)
 from inference_models.models.rfdetr.optimization.contracts import (
     Postprocessor,
     PostprocessRequest,
@@ -23,47 +26,6 @@ from inference_models.models.rfdetr.optimization.contracts import (
 )
 
 StageT = TypeVar("StageT", bound=InferenceStage)
-
-
-@dataclass(frozen=True)
-class ImplementationSelection(Generic[StageT]):
-    """Requested and effective RF-DETR stage selection."""
-
-    implementation: StageT
-    requested_id: str
-    fallback_reason: Optional[str] = None
-
-    @property
-    def effective_id(self) -> str:
-        """Return the implementation ID that will execute.
-
-        Returns:
-            Effective stage implementation ID.
-        """
-        return self.implementation.metadata.implementation_id
-
-    @property
-    def used_fallback(self) -> bool:
-        """Return whether selection followed the declared fallback.
-
-        Returns:
-            Whether compatibility resolution followed a declared fallback.
-        """
-        return self.fallback_reason is not None
-
-    def to_dict(self) -> Dict[str, Optional[str]]:
-        """Serialize requested and effective selection metadata.
-
-        Returns:
-            JSON-compatible selection metadata.
-        """
-        serialized = {
-            "requested_id": self.requested_id,
-            "effective_id": self.effective_id,
-            "fallback_reason": self.fallback_reason,
-        }
-
-        return serialized
 
 
 def resolve_preprocessor_for_model(
@@ -92,13 +54,15 @@ def resolve_preprocessor_for_model(
         ModelRuntimeError: If the requested implementation is incompatible and no
             permitted compatible fallback exists.
     """
+    static_selection = registry.resolve_selection(
+        stage=OptimizationStage.PREPROCESS,
+        requested_id=requested_id,
+        context=context,
+        allow_fallback=allow_fallback,
+    )
     implementation = cast(
         Preprocessor,
-        registry.resolve(
-            stage=OptimizationStage.PREPROCESS,
-            requested_id=requested_id,
-            context=context,
-        ),
+        static_selection.implementation,
     )
 
     def check(candidate: Preprocessor) -> CompatibilityResult:
@@ -109,11 +73,20 @@ def resolve_preprocessor_for_model(
 
         return result
 
+    compatibility = check(implementation)
+    if compatibility.supported:
+        selection = cast(
+            ImplementationSelection[Preprocessor],
+            static_selection,
+        )
+
+        return selection
+
     selection = _apply_declared_fallback(
         registry=registry,
         stage=OptimizationStage.PREPROCESS,
         implementation=implementation,
-        requested_id=requested_id,
+        requested_id=static_selection.requested_id,
         context=context,
         check_compatibility=check,
         allow_fallback=allow_fallback,
@@ -169,6 +142,81 @@ def resolve_preprocessor_for_request(
     return selection
 
 
+def resolve_preprocessor_runtime_fallback(
+    *,
+    registry: ImplementationRegistry,
+    selection: ImplementationSelection[Preprocessor],
+    request: PreprocessRequest,
+    context: ExecutionContext,
+    allow_fallback: bool,
+) -> ImplementationSelection[Preprocessor]:
+    """Resolve whether preprocessing must follow a runtime failure fallback.
+
+    Args:
+        registry: RF-DETR implementation registry.
+        selection: Request-compatible preprocessing selection.
+        request: Typed preprocessing request.
+        context: Runtime target and request context.
+        allow_fallback: Whether a recorded runtime failure may use the declared
+            fallback.
+
+    Returns:
+        Original selection when its runtime remains available, otherwise its
+        declared compatible fallback.
+
+    Raises:
+        RecoverableStageExecutionError: If execution failed and fallback is
+            unavailable or disabled.
+    """
+    implementation = selection.implementation
+    runtime_compatibility = implementation.check_runtime_compatibility(
+        request=request,
+        context=context,
+    )
+    if runtime_compatibility.supported:
+        return selection
+    if not allow_fallback:
+        raise RecoverableStageExecutionError(
+            message=(
+                "RF-DETR preprocess implementation cannot execute after a "
+                f"recoverable runtime failure: {runtime_compatibility.reason}. "
+                "Runtime failure fallback is disabled by the execution plan."
+            ),
+        )
+
+    def check(candidate: Preprocessor) -> CompatibilityResult:
+        request_compatibility = candidate.check_request_compatibility(
+            request=request,
+            context=context,
+        )
+        candidate_runtime_compatibility = candidate.check_runtime_compatibility(
+            request=request,
+            context=context,
+        )
+        if (
+            request_compatibility.supported
+            and candidate_runtime_compatibility.supported
+        ):
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            *request_compatibility.reasons,
+            *candidate_runtime_compatibility.reasons,
+        )
+
+    fallback_selection = _apply_declared_fallback(
+        registry=registry,
+        stage=OptimizationStage.PREPROCESS,
+        implementation=implementation,
+        requested_id=selection.requested_id,
+        context=context,
+        check_compatibility=check,
+        allow_fallback=allow_fallback,
+    )
+
+    return fallback_selection
+
+
 def resolve_postprocessor_for_request(
     *,
     registry: ImplementationRegistry,
@@ -214,6 +262,81 @@ def resolve_postprocessor_for_request(
     )
 
     return selection
+
+
+def resolve_postprocessor_runtime_fallback(
+    *,
+    registry: ImplementationRegistry,
+    selection: ImplementationSelection[Postprocessor],
+    request: PostprocessRequest,
+    context: ExecutionContext,
+    allow_fallback: bool,
+) -> ImplementationSelection[Postprocessor]:
+    """Resolve whether postprocessing must follow a runtime failure fallback.
+
+    Args:
+        registry: RF-DETR implementation registry.
+        selection: Request-compatible postprocessing selection.
+        request: Typed postprocessing request.
+        context: Runtime target and request context.
+        allow_fallback: Whether a recorded runtime failure may use the declared
+            fallback.
+
+    Returns:
+        Original selection when its runtime remains available, otherwise its
+        declared compatible fallback.
+
+    Raises:
+        RecoverableStageExecutionError: If execution failed and fallback is
+            unavailable or disabled.
+    """
+    implementation = selection.implementation
+    runtime_compatibility = implementation.check_runtime_compatibility(
+        request=request,
+        context=context,
+    )
+    if runtime_compatibility.supported:
+        return selection
+    if not allow_fallback:
+        raise RecoverableStageExecutionError(
+            message=(
+                "RF-DETR postprocess implementation cannot execute after a "
+                f"recoverable runtime failure: {runtime_compatibility.reason}. "
+                "Runtime failure fallback is disabled by the execution plan."
+            ),
+        )
+
+    def check(candidate: Postprocessor) -> CompatibilityResult:
+        request_compatibility = candidate.check_request_compatibility(
+            request=request,
+            context=context,
+        )
+        candidate_runtime_compatibility = candidate.check_runtime_compatibility(
+            request=request,
+            context=context,
+        )
+        if (
+            request_compatibility.supported
+            and candidate_runtime_compatibility.supported
+        ):
+            return CompatibilityResult.compatible()
+
+        return CompatibilityResult.incompatible(
+            *request_compatibility.reasons,
+            *candidate_runtime_compatibility.reasons,
+        )
+
+    fallback_selection = _apply_declared_fallback(
+        registry=registry,
+        stage=OptimizationStage.POSTPROCESS,
+        implementation=implementation,
+        requested_id=selection.requested_id,
+        context=context,
+        check_compatibility=check,
+        allow_fallback=allow_fallback,
+    )
+
+    return fallback_selection
 
 
 def _apply_declared_fallback(

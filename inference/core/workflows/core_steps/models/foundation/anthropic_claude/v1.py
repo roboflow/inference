@@ -8,12 +8,14 @@ import anthropic
 from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
+    resolve_temperature,
+)
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -33,8 +35,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
+)
+from inference.core.workflows.utils.images import (
+    downscale_image_keeping_aspect_ratio,
+    encode_image_to_jpeg_bytes,
+    load_image,
 )
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -194,7 +204,8 @@ class BlockManifest(WorkflowBlockManifest):
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
-        'random / "creative" the generations are.',
+        'random / "creative" the generations are. Ignored by models that no longer accept '
+        "sampling parameters (Claude Opus 4.7 and newer).",
         ge=0.0,
         le=2.0,
     )
@@ -249,20 +260,39 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector returned verbatim; the attached resolver
+            # performs the EXACT_MODELS_VERSIONS_MAPPING lookup once the input
+            # value is substituted.
+            return [
+                third_party_model(
+                    provider="anthropic",
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: EXACT_MODELS_VERSIONS_MAPPING[
+                        label
+                    ],
+                )
+            ]
+        return [
+            third_party_model(
+                provider="anthropic",
+                model_id=EXACT_MODELS_VERSIONS_MAPPING[self.model_version],
+            )
+        ]
+
 
 class AnthropicClaudeBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -409,6 +439,7 @@ def execute_claude_request(
     client = anthropic.Anthropic(api_key=api_key)
     if system_prompt is None:
         system_prompt = NOT_GIVEN
+    temperature = resolve_temperature(temperature, model_version=model_version)
     if temperature is None:
         temperature = NOT_GIVEN
     result = client.messages.create(

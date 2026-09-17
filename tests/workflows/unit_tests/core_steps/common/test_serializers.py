@@ -3,6 +3,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.serializers import (
@@ -192,6 +193,34 @@ def test_serialise_sv_detections() -> None:
             },
         ],
     }
+
+
+def test_serialise_sv_detections_empty_without_metadata_returns_none_dims() -> None:
+    # given — plain sv.Detections.empty() has no metadata, so the serialiser
+    # cannot recover image dimensions (the historical behaviour).
+    detections = sv.Detections.empty()
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {"image": {"width": None, "height": None}, "predictions": []}
+
+
+def test_serialise_sv_detections_empty_with_metadata_returns_real_dims() -> None:
+    # given — zero-row detections carrying IMAGE_DIMENSIONS_KEY in metadata
+    # (the contract producers use to pass image-level info past zero rows).
+    detections = sv.Detections(
+        xyxy=np.empty((0, 4), dtype=np.float32),
+        metadata={"image_dimensions": [480, 640]},
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then — the serialiser reads image dimensions from metadata as a fallback
+    # when the per-row loop never executes, matching the tensor-native path.
+    assert result == {"image": {"width": 640, "height": 480}, "predictions": []}
 
 
 def test_serialise_sv_detections_skips_padded_keypoint_slots() -> None:
@@ -533,26 +562,37 @@ def test_mask_to_polygon_when_mask_contains_standard_shape() -> None:
 
 
 def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
-    # given
+    # given — small speck first in image order, large instance second
     mask = np.zeros((128, 128), dtype=np.uint8)
-    mask[40:50, 50:60] = 255
-    mask[90:100, 100:110] = 255
+    mask[10:14, 10:14] = 255  # 4x4 speck
+    mask[40:80, 50:100] = 255  # large instance
 
     # when
     result = mask_to_polygon(mask=mask)
 
-    # then
-    assert np.allclose(
-        result,
-        np.array(
-            [
-                [100, 90],
-                [100, 99],
-                [109, 99],
-                [109, 90],
-            ]
-        ),
-    ) or np.allclose(result, np.array([[50, 40], [50, 49], [59, 49], [59, 40]]))
+    # then — must prefer largest contour, not findContours order (Dataset Upload bug)
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() >= 50 and xs.max() <= 99
+    assert ys.min() >= 40 and ys.max() <= 79
+    assert (xs.max() - xs.min()) >= 40
+    assert (ys.max() - ys.min()) >= 30
+
+
+def test_mask_to_polygon_when_mask_contains_hole() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[10:110, 20:100] = 255
+    mask[20:100, 30:90] = 0
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then — RETR_TREE returns both contours; the exterior must be selected
+    xs, ys = result[:, 0], result[:, 1]
+    assert xs.min() == 20
+    assert xs.max() == 99
+    assert ys.min() == 10
+    assert ys.max() == 109
 
 
 def test_serialise_image_with_parent_origin_when_crop() -> None:
@@ -622,6 +662,55 @@ def test_serialise_image_without_parent_origin_when_not_crop() -> None:
     assert "parent_origin" not in result
     assert "root_parent_id" not in result
     assert "root_parent_origin" not in result
+
+
+def test_serialise_sv_detections_prefers_largest_contour_after_downscale() -> None:
+    """Regression for Dataset Upload: after 4096→2080 scale, masks can contain a
+    tiny speck + the real instance. Serialising contours[0] produced annotations
+    that looked cut away at the edge (tiny polygon, full-size bbox)."""
+    from inference.core.workflows.core_steps.common.utils import scale_sv_detections
+
+    orig = 4096
+    target = 2080
+    scale = target / orig
+    mask = np.zeros((orig, orig), dtype=bool)
+    mask[400:1600, 3100:orig] = True
+    for y in range(400, 1600):
+        jag = int(80 * np.sin(y / 40.0) + 40)
+        mask[y, 3100 : 3100 + jag] = False
+    mask[820:828, 3088:3096] = True
+
+    detections = sv.Detections(
+        xyxy=np.array([[3088, 400, orig - 1, 1600]], dtype=np.float64),
+        mask=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["sill"]),
+            "detection_id": np.array(["d1"]),
+            "image_dimensions": np.array([[orig, orig]]),
+        },
+    )
+    scaled = scale_sv_detections(
+        detections=detections,
+        scale=(scale, scale),
+        target_size_wh=(target, target),
+    )
+
+    result = serialise_sv_detections(detections=scaled)
+
+    assert len(result["predictions"]) == 1
+    pred = result["predictions"][0]
+    points = pred["points"]
+    xs = [p["x"] for p in points]
+    ys = [p["y"] for p in points]
+    poly_w = max(xs) - min(xs)
+    poly_h = max(ys) - min(ys)
+    # Must not collapse to a ~4x8 speck while bbox stays ~500x600
+    assert poly_w > pred["width"] * 0.5
+    assert poly_h > pred["height"] * 0.5
+    assert max(xs) >= 2070  # still reaches the right edge
+    assert result["image"] == {"width": target, "height": target}
 
 
 def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
@@ -1112,6 +1201,48 @@ def test_serialise_rle_sv_detections() -> None:
     }
 
 
+def test_serialise_rle_sv_detections_preserves_detection_with_empty_dense_mask() -> (
+    None
+):
+    # given
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    masks[1, 0:2, 0:2] = True
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [0, 0, 2, 2]], dtype=np.float64),
+        mask=masks,
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["empty", "body"]),
+            "detection_id": np.array(["empty-id", "body-id"]),
+            "image_dimensions": np.array([[4, 4], [4, 4]]),
+            "rle_mask": np.array(
+                [
+                    {"size": [4, 4], "counts": "a"},
+                    {"size": [4, 4], "counts": "b"},
+                ],
+                dtype=object,
+            ),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert [prediction["detection_id"] for prediction in result["predictions"]] == [
+        "empty-id",
+        "body-id",
+    ]
+    assert [
+        prediction["rle_mask"]["counts"] for prediction in result["predictions"]
+    ] == [
+        "a",
+        "b",
+    ]
+    assert np.array_equal(detections.mask, masks)
+
+
 def test_serialise_rle_sv_detections_with_bytes_counts() -> None:
     # given - RLE mask with bytes counts (as returned by pycocotools)
     rle_mask = {"size": [192, 168], "counts": b"abc123"}
@@ -1218,3 +1349,458 @@ def test_serialise_rle_sv_detections_with_parent_origin() -> None:
             },
         ],
     }
+
+
+def test_serialise_native_classification_key_ordering_matches_numpy_path() -> None:
+    # given
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_native_classification,
+    )
+    from inference_models.models.base.classification import (
+        ClassificationPrediction,
+        MultiLabelClassificationPrediction,
+    )
+
+    base_metadata = {
+        "class_names": {0: "cat", 1: "dog"},
+        "prediction_type": "classification",
+        "image_dimensions": [480, 640],
+        "inference_id": "iid",
+        "parent_id": "p1",
+        "root_parent_id": "r1",
+    }
+
+    def single_label(metadata: dict) -> "ClassificationPrediction":
+        return ClassificationPrediction(
+            class_id=torch.tensor([1]),
+            confidence=torch.tensor([[0.25, 0.5]], dtype=torch.float32),
+            images_metadata=[metadata],
+        )
+
+    def multi_label(metadata: dict) -> "MultiLabelClassificationPrediction":
+        return MultiLabelClassificationPrediction(
+            class_ids=torch.tensor([0, 1]),
+            confidence=torch.tensor([0.5, 0.25], dtype=torch.float32),
+            image_metadata=metadata,
+        )
+
+    # when
+    single_label_result = serialise_native_classification(
+        single_label(dict(base_metadata))
+    )
+    multi_label_result = serialise_native_classification(
+        multi_label(dict(base_metadata))
+    )
+    single_label_timed_result = serialise_native_classification(
+        single_label({**base_metadata, "time": 0.0123})
+    )
+    multi_label_timed_result = serialise_native_classification(
+        multi_label({**base_metadata, "time": 0.0123})
+    )
+
+    # then - exact key order matters: orjson byte-parity with the numpy path depends on it
+    assert list(single_label_result.keys()) == [
+        "inference_id",
+        "image",
+        "predictions",
+        "top",
+        "confidence",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert [list(e.keys()) for e in single_label_result["predictions"]] == [
+        ["class", "class_id", "confidence"],
+        ["class", "class_id", "confidence"],
+    ]
+    assert single_label_result["predictions"][0] == {
+        "class": "dog",
+        "class_id": 1,
+        "confidence": 0.5,
+    }
+    assert list(multi_label_result.keys()) == [
+        "inference_id",
+        "image",
+        "predictions",
+        "predicted_classes",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert [list(e.keys()) for e in multi_label_result["predictions"].values()] == [
+        ["confidence", "class_id"],
+        ["confidence", "class_id"],
+    ]
+    assert list(single_label_timed_result.keys()) == [
+        "inference_id",
+        "time",
+        "image",
+        "predictions",
+        "top",
+        "confidence",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert single_label_timed_result["time"] == 0.0123
+    assert list(multi_label_timed_result.keys()) == [
+        "inference_id",
+        "time",
+        "image",
+        "predictions",
+        "predicted_classes",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert multi_label_timed_result["time"] == 0.0123
+
+
+def test_tensor_wildcard_serializer_dispatches_native_values_like_kind_serializers() -> (
+    None
+):
+    # given
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.classification import ClassificationPrediction
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.keypoints_detection import KeyPoints
+    from inference_models.models.base.object_detection import Detections
+    from inference_models.models.base.types import InstancesRLEMasks
+    from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+
+    od = Detections(
+        xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.5]),
+        image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+    dense_mask = torch.zeros((1, 15, 15), dtype=torch.bool)
+    dense_mask[0, 2:6, 3:9] = True
+    instance_dense = InstanceDetections(
+        xyxy=torch.tensor([[3.0, 2.0, 9.0, 6.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=dense_mask,
+        image_metadata={"class_names": {0: "cat"}, "image_dimensions": [15, 15]},
+        bboxes_metadata=[{"detection_id": "det-2"}],
+    )
+    rle = torch_mask_to_coco_rle(dense_mask[0])
+    instance_rle = InstanceDetections(
+        xyxy=torch.tensor([[3.0, 2.0, 9.0, 6.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=InstancesRLEMasks(image_size=(15, 15), masks=[rle["counts"]]),
+        image_metadata={"class_names": {0: "cat"}, "image_dimensions": [15, 15]},
+        bboxes_metadata=[{"detection_id": "det-3"}],
+    )
+    key_points = KeyPoints(
+        xy=torch.tensor([[[11.0, 11.0], [12.0, 13.0]]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.9, 0.8]]),
+    )
+    kp_tuple = (key_points, od)
+    classification = ClassificationPrediction(
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([[0.25, 0.5]], dtype=torch.float32),
+        images_metadata=[
+            {
+                "class_names": {0: "cat", 1: "dog"},
+                "prediction_type": "classification",
+                "image_dimensions": [480, 640],
+                "inference_id": "iid",
+            }
+        ],
+    )
+    bare_tensor = torch.tensor([[0.25, 0.5], [0.75, 1.0]])
+
+    # when
+    result = serializers_tensor.serialize_wildcard_kind(
+        value={
+            "od": od,
+            "nested": [instance_dense, {"deeper": instance_rle}],
+            "kp": kp_tuple,
+            "cls": classification,
+            "tensor": bare_tensor,
+            "untouched": "text",
+            "number": 42,
+            "none": None,
+            "plain_tuple": (1, 2),
+        }
+    )
+
+    # then
+    assert result["od"] == serializers_tensor.serialise_sv_detections(od)
+    assert result["nested"][0] == serializers_tensor.serialise_sv_detections(
+        instance_dense
+    )
+    assert result["nested"][1]["deeper"] == serializers_tensor.serialise_sv_detections(
+        instance_rle
+    )
+    assert result["kp"] == serializers_tensor.serialise_native_keypoint_detection(
+        prediction=kp_tuple
+    )
+    assert result["cls"] == serializers_tensor.serialise_native_classification(
+        prediction=classification
+    )
+    assert result["tensor"] == [[0.25, 0.5], [0.75, 1.0]]
+    assert result["untouched"] == "text"
+    assert result["number"] == 42
+    assert result["none"] is None
+    assert result["plain_tuple"] == (
+        1,
+        2,
+    ), "non-KP tuples are rebuilt element-wise with values intact"
+
+
+def test_tensor_wildcard_serializer_converts_tuples_element_wise() -> None:
+    # given - tuples must not smuggle a live tensor across the stream-manager
+    # process boundary (CUDA IPC is unsupported on Jetson/Tegra), so the
+    # wildcard serialiser converts tuple elements like list elements while
+    # preserving the container type (namedtuples rebuilt field-wise).
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from collections import namedtuple
+
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.keypoints_detection import KeyPoints
+    from inference_models.models.base.object_detection import Detections
+
+    def assert_no_torch_tensor(value) -> None:
+        assert not isinstance(value, torch.Tensor), f"live tensor survived: {value!r}"
+        if isinstance(value, dict):
+            for item in value.values():
+                assert_no_torch_tensor(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                assert_no_torch_tensor(item)
+
+    TensorRecord = namedtuple("TensorRecord", ["label", "payload"])
+    plain_tuple = (torch.tensor([1.0, 2.0]), torch.tensor([[3.0]]))
+    named = TensorRecord(label="foo", payload=torch.tensor([4.0, 5.0]))
+    nested = [{"inner": (torch.tensor([6.0]), "text", 7)}]
+    scalars = ("a", 1, 2.5, None)
+    key_points = KeyPoints(
+        xy=torch.tensor([[[11.0, 11.0], [12.0, 13.0]]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.9, 0.8]]),
+    )
+    kp_tuple = (
+        key_points,
+        Detections(
+            xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+            class_id=torch.tensor([1]),
+            confidence=torch.tensor([0.5]),
+            image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+            bboxes_metadata=[{"detection_id": "det-1"}],
+        ),
+    )
+
+    # when
+    plain_result = serializers_tensor.serialize_wildcard_kind(value=plain_tuple)
+    named_result = serializers_tensor.serialize_wildcard_kind(value=named)
+    nested_result = serializers_tensor.serialize_wildcard_kind(value=nested)
+    scalars_result = serializers_tensor.serialize_wildcard_kind(value=scalars)
+    kp_result = serializers_tensor.serialize_wildcard_kind(value=kp_tuple)
+
+    # then
+    assert type(plain_result) is tuple
+    assert plain_result == ([1.0, 2.0], [[3.0]])
+    assert_no_torch_tensor(plain_result)
+    assert type(named_result) is TensorRecord, "namedtuple type is preserved"
+    assert named_result.label == "foo"
+    assert named_result.payload == [4.0, 5.0]
+    assert_no_torch_tensor(named_result)
+    assert nested_result == [{"inner": ([6.0], "text", 7)}]
+    assert type(nested_result[0]["inner"]) is tuple
+    assert_no_torch_tensor(nested_result)
+    assert scalars_result == ("a", 1, 2.5, None), "scalar tuples keep their values"
+    assert kp_result == serializers_tensor.serialise_native_keypoint_detection(
+        prediction=kp_tuple
+    ), "the keypoint pair still routes to the kind serialiser, not element-wise"
+
+
+def test_tensor_wildcard_serializer_matches_numpy_wildcard_for_equivalent_prediction() -> (
+    None
+):
+    # given - the same logical OD prediction as sv (numpy path) and native (tensor path)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    sv_detections = sv.Detections(
+        xyxy=np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["det-1"]),
+            "image_dimensions": np.array([[100, 200]]),
+        },
+    )
+    native_detections = Detections(
+        xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.5]),
+        image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+
+    # when
+    numpy_result = serialize_wildcard_kind(value={"predictions": sv_detections})
+    tensor_result = serializers_tensor.serialize_wildcard_kind(
+        value={"predictions": native_detections}
+    )
+
+    # then
+    assert numpy_result == tensor_result
+
+
+def test_tensor_wildcard_serializer_keeps_numpy_behavior_for_legacy_values() -> None:
+    # given - sv.Detections + datetime + image reaching the tensor wildcard
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+
+    sv_detections = sv.Detections(
+        xyxy=np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["det-1"]),
+        },
+    )
+    timestamp = datetime.now()
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin"),
+        numpy_image=np.zeros((10, 10, 3), dtype=np.uint8),
+        # explicit metadata: without it, serialisation mints frame_timestamp
+        # per call, breaking the two-call comparison below
+        video_metadata=VideoMetadata(
+            video_identifier="vid",
+            frame_number=0,
+            frame_timestamp=timestamp,
+        ),
+    )
+
+    # when
+    result = serializers_tensor.serialize_wildcard_kind(
+        value={"sv": sv_detections, "ts": timestamp, "img": image}
+    )
+
+    # then
+    expected = serialize_wildcard_kind(
+        value={"sv": sv_detections, "ts": timestamp, "img": image}
+    )
+    assert result == expected
+
+
+def test_tensor_serialise_sv_detections_skips_padded_keypoint_slots() -> None:
+    # given the padded per-box keypoint rows the sv -> native conversion carries
+    # (detection 0 has 2 real keypoints, detection 1 has 1 real + 1 padding slot)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    native_detections = Detections(
+        xyxy=torch.tensor([[0.0, 0.0, 10.0, 10.0], [20.0, 20.0, 30.0, 30.0]]),
+        class_id=torch.tensor([0, 0]),
+        confidence=torch.tensor([0.5, 0.25]),
+        image_metadata={"class_names": {0: "obj"}, "image_dimensions": [192, 168]},
+        bboxes_metadata=[
+            {
+                "detection_id": "first",
+                "keypoints_class_id": np.array([0, 1], dtype=int),
+                "keypoints_class_name": np.array(["nose", "eye"], dtype=object),
+                "keypoints_confidence": np.array([0.5, 0.25], dtype=np.float32),
+                "keypoints_xy": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            },
+            {
+                "detection_id": "second",
+                "keypoints_class_id": np.array([0, 0], dtype=int),
+                "keypoints_class_name": np.array(["nose", ""], dtype=object),
+                "keypoints_confidence": np.array([0.75, 0.0], dtype=np.float32),
+                "keypoints_xy": np.array([[21.0, 22.0], [0.0, 0.0]], dtype=np.float32),
+            },
+        ],
+    )
+    sv_detections = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [20, 20, 30, 30]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.5, 0.25], dtype=np.float64),
+        data={
+            "class_name": np.array(["obj", "obj"]),
+            "detection_id": np.array(["first", "second"]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+            "keypoints_xy": np.array(
+                [[[1.0, 2.0], [3.0, 4.0]], [[21.0, 22.0], [0.0, 0.0]]],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.5, 0.25], [0.75, 0.0]], dtype=np.float32
+            ),
+            "keypoints_class_id": np.array([[0, 1], [0, 0]], dtype=int),
+            "keypoints_class_name": np.array(
+                [["nose", "eye"], ["nose", ""]], dtype=object
+            ),
+        },
+    )
+
+    # when
+    result = serializers_tensor.serialise_sv_detections(native_detections)
+
+    # then the padding slot must not surface as a fabricated keypoint
+    assert len(result["predictions"][0]["keypoints"]) == 2
+    assert len(result["predictions"][1]["keypoints"]) == 1
+    assert result["predictions"][1]["keypoints"][0]["class"] == "nose"
+    for prediction in result["predictions"]:
+        for keypoint in prediction["keypoints"]:
+            assert keypoint["class"] != "", "No empty-named padding keypoint may leak"
+    assert result == serialise_sv_detections(detections=sv_detections)
+
+
+def test_tensor_serialise_sv_detections_with_nearest_target_distance() -> None:
+    # given: one detection with a real match distance, one unmatched (None)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    native_detections = Detections(
+        xyxy=torch.tensor([[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]),
+        class_id=torch.tensor([1, 2]),
+        confidence=torch.tensor([0.25, 0.5]),
+        image_metadata={"class_names": {1: "cat", 2: "dog"}},
+        bboxes_metadata=[
+            {"detection_id": "first", "nearest_target_distance": 12.5},
+            {"detection_id": "second", "nearest_target_distance": None},
+        ],
+    )
+    sv_detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.25, 0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "nearest_target_distance": np.array([12.5, None], dtype=object),
+        },
+    )
+
+    # when
+    result = serializers_tensor.serialise_sv_detections(native_detections)
+
+    # then
+    predictions = result["predictions"]
+    assert predictions[0]["nearest_target_distance"] == 12.5
+    assert isinstance(predictions[0]["nearest_target_distance"], float)
+    assert predictions[1]["nearest_target_distance"] is None
+    assert result == serialise_sv_detections(detections=sv_detections)

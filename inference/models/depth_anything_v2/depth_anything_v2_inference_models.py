@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Union
 from uuid import uuid4
 
 import cv2
@@ -59,6 +59,13 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        return self._model(images, **kwargs)
 
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):

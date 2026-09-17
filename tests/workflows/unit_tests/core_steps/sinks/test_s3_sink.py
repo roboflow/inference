@@ -10,6 +10,7 @@ from inference.core.workflows.core_steps.sinks.s3.v1 import (
     NON_RETRYABLE_CLIENT_ERROR_CODES,
     BlockManifest,
     S3SinkBlockV1,
+    create_s3_client,
     deduct_csv_header,
     dump_json_inline,
     generate_s3_key,
@@ -258,6 +259,34 @@ def test_upload_content_to_s3_returns_error_on_unexpected_exception() -> None:
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.boto3.client")
+def test_create_s3_client_rejects_missing_credentials(mock_boto3_client) -> None:
+    with pytest.raises(ValueError):
+        create_s3_client(
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_region=None,
+        )
+
+    mock_boto3_client.assert_not_called()
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.boto3.client")
+def test_create_s3_client_passes_explicit_credentials(mock_boto3_client) -> None:
+    create_s3_client(
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="SECRET_TEST",
+        aws_region="us-east-1",
+    )
+
+    mock_boto3_client.assert_called_once_with(
+        "s3",
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="SECRET_TEST",
+        region_name="us-east-1",
+    )
 
 
 def test_deduct_csv_header_removes_first_line() -> None:
@@ -676,3 +705,34 @@ def test_upload_retry_uses_exponential_backoff(mock_sleep) -> None:
     assert all(
         sleep_delays[i] < sleep_delays[i + 1] for i in range(len(sleep_delays) - 1)
     ), f"Expected exponential backoff, got delays: {sleep_delays}"
+
+
+# ---------------------------------------------------------------------------
+# Credential isolation
+# ---------------------------------------------------------------------------
+
+
+@patch("botocore.client.BaseClient._make_api_call")
+def test_run_does_not_fall_back_to_server_aws_credentials(
+    mock_aws_api_call, monkeypatch
+) -> None:
+    # Simulates a server whose environment holds AWS credentials, as an EC2 or
+    # ECS deployment would. A workflow that omits credentials must fail rather
+    # than upload to a caller-chosen bucket as the server's identity.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "SERVER_AMBIENT_KEY")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "SERVER_AMBIENT_SECRET")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    block = S3SinkBlockV1()
+
+    with pytest.raises(ValueError):
+        block.run(
+            content="workflow output",
+            file_type="txt",
+            output_mode="separate_files",
+            bucket_name="caller-chosen-bucket",
+            s3_prefix="caller",
+            file_name_prefix="output",
+            max_entries_per_file=1024,
+        )
+
+    mock_aws_api_call.assert_not_called()

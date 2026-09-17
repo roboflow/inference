@@ -6,14 +6,11 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from inference_models.errors import ModelRuntimeError
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
-from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
+from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_ENV_NAME,
-    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_ENV_NAME,
-    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 
 
@@ -21,8 +18,8 @@ from inference_models.models.rfdetr.optimization.ids import (
 class RFDetrExecutionPlan(InferenceExecutionPlan):
     """Independent implementation selections for the RF-DETR inference path."""
 
-    preprocessor_id: str = RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
-    postprocessor_id: str = RFDETR_POSTPROCESSOR_TRITON_FUSED_V1
+    preprocessor_id: str = AUTO_IMPLEMENTATION_ID
+    postprocessor_id: str = AUTO_IMPLEMENTATION_ID
 
     @classmethod
     def resolve(
@@ -39,8 +36,6 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
         Returns:
             Immutable requested execution plan.
 
-        Raises:
-            ModelRuntimeError: If the plan requests an unsupported stage category.
         """
         if execution_plan is not None:
             plan = execution_plan
@@ -48,37 +43,12 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
             plan = cls(
                 preprocessor_id=os.getenv(
                     RFDETR_PREPROCESSOR_ENV_NAME,
-                    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+                    AUTO_IMPLEMENTATION_ID,
                 ),
                 postprocessor_id=os.getenv(
                     RFDETR_POSTPROCESSOR_ENV_NAME,
-                    RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
+                    AUTO_IMPLEMENTATION_ID,
                 ),
             )
-
-        plan._validate_supported_stage_categories()
 
         return plan
-
-    def _validate_supported_stage_categories(self) -> None:
-        unsupported = {
-            "buffer_strategy_id": self.buffer_strategy_id,
-            "scheduler_id": self.scheduler_id,
-            "engine_plugin_id": self.engine_plugin_id,
-        }
-        selected = [
-            f"{name}={value!r}"
-            for name, value in unsupported.items()
-            if value != BASE_IMPLEMENTATION_ID
-        ]
-        if selected:
-            raise ModelRuntimeError(
-                message=(
-                    "RF-DETR does not yet provide these execution-plan stages: "
-                    + ", ".join(selected)
-                ),
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )

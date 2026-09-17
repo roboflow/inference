@@ -7,11 +7,11 @@ from openai import OpenAI
 from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -30,9 +30,12 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -245,20 +248,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="openai", model_id=self.model_version)]
+
 
 class OpenAIBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

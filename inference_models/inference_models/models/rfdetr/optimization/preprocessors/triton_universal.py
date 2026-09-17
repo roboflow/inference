@@ -36,10 +36,7 @@ class TritonUniversalPreprocessor:
         implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(
-            device_kind="gpu",
-            device_families=("nvidia_jetson", "nvidia_discrete_gpu"),
-        ),
+        target=DeviceCompatibility(device_kind="gpu"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping(
@@ -131,6 +128,26 @@ class TritonUniversalPreprocessor:
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,
         )
+
+        return result
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check whether this implementation remains available after execution.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result carrying any recorded runtime failure reason.
+        """
+        del context
+        result = self._runtime.check_runtime_compatibility(images=request.images)
 
         return result
 

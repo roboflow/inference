@@ -27,13 +27,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
-# OpenRouter currently only ships one Llama 3.2 vision variant (the paid 11B).
-# The :free tier and the 90B variant that the v1 block listed have all been
-# removed from OpenRouter's catalog (verified against /api/v1/models on the
-# branch's E2E test). We only ship the variant that actually responds.
+# Deprecated: OpenRouter has no live Llama 3.2 Vision endpoints left.
 MODEL_VERSION_MAPPING = {
     "11B - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
 }
@@ -80,6 +80,12 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         json_schema_extra={
             "name": "Llama 3.2 Vision",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": (
+                "OpenRouter no longer hosts Llama 3.2 Vision. Use the Meta block "
+                "(`roboflow_core/meta_vlm@v3`) for Muse Spark and Muse Glimmer; it "
+                "decodes detection and classification predictions in-block."
+            ),
             "short_description": "Run Llama 3.2 Vision via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community License",
@@ -193,6 +199,25 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Friendly-label selector returned verbatim; the attached resolver
+            # performs the MODEL_VERSION_MAPPING lookup once the input value
+            # is substituted.
+            return [
+                third_party_model(
+                    provider="openrouter",
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: MODEL_VERSION_MAPPING[label],
+                )
+            ]
+        return [
+            third_party_model(
+                provider="openrouter",
+                model_id=MODEL_VERSION_MAPPING[self.model_version],
+            )
+        ]
 
 
 class LlamaVisionBlockV2(OpenRouterWorkflowBlockBase):

@@ -17,6 +17,16 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     _coerce_native_response,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 def _stub_image() -> WorkflowImageData:
@@ -166,6 +176,13 @@ def test_all_variants_have_valid_backend():
         assert info["model_id"], label
 
 
+def test_qwen3_8_native_variant_is_registered():
+    assert MODEL_VARIANTS["Qwen 3.8 VL 27B"] == {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Native prompt builder
 # ---------------------------------------------------------------------------
@@ -252,7 +269,8 @@ def test_run_dispatches_to_openrouter_for_openrouter_backend(mock_or):
     block = QwenVlmBlockV1(
         model_manager=MagicMock(),
         api_key="ws-key",
-        step_execution_mode=StepExecutionMode.LOCAL,  # ignored for openrouter path
+        step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,  # ignored for openrouter path
     )
 
     result = block.run(
@@ -273,12 +291,13 @@ def test_run_dispatches_to_local_native_when_step_mode_local():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "native local answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
     result = block.run(**_base_run_kwargs())
     assert result == [
@@ -287,9 +306,8 @@ def test_run_dispatches_to_local_native_when_step_mode_local():
     model_manager.add_model.assert_called_once_with(
         model_id="qwen3_5-2b", api_key="ws-key"
     )
-    assert model_manager.infer_from_request_sync.called
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is False
+    assert model_manager.run_lmm.called
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is False
 
 
 def test_run_local_native_with_enable_thinking_splits_response():
@@ -298,12 +316,13 @@ def test_run_local_native_with_enable_thinking_splits_response():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = {"thinking": "reasoning...", "answer": "42"}
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
     result = block.run(
         **_base_run_kwargs(
@@ -313,8 +332,7 @@ def test_run_local_native_with_enable_thinking_splits_response():
         )
     )
     assert result == [{"output": "42", "classes": None, "thinking": "reasoning..."}]
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is True
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is True
 
 
 def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model():
@@ -324,12 +342,13 @@ def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model(
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "ok"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
     block.run(
         **_base_run_kwargs(
@@ -339,8 +358,7 @@ def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model(
             enable_thinking=True,
         )
     )
-    request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
-    assert request.enable_thinking is False
+    assert model_manager.run_lmm.call_args.kwargs["enable_thinking"] is False
 
 
 @patch(
@@ -355,6 +373,7 @@ def test_run_dispatches_to_remote_native_when_step_mode_remote(mock_client_cls):
         model_manager=MagicMock(),
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.REMOTE,
+        platform_client=platform_client,
     )
     result = block.run(
         **_base_run_kwargs(
@@ -377,12 +396,13 @@ def test_run_dispatches_to_local_native_with_fine_tuned_model_id():
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "finetune answer"
-    model_manager.infer_from_request_sync.return_value = fake_prediction
+    model_manager.run_lmm.return_value = {"response": fake_prediction.response}
 
     block = QwenVlmBlockV1(
         model_manager=model_manager,
         api_key="ws-key",
         step_execution_mode=StepExecutionMode.LOCAL,
+        platform_client=platform_client,
     )
     result = block.run(
         **_base_run_kwargs(

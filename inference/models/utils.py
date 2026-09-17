@@ -23,6 +23,7 @@ from inference.core.env import (
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
     QWEN_3_5_ENABLED,
+    QWEN_3_8_ENABLED,
     QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
@@ -71,6 +72,7 @@ from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDe
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
 )
+from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
@@ -499,6 +501,9 @@ try:
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
         from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
             InferenceModelsCosmos3ReasonerAdapter,
         )
@@ -509,6 +514,21 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Roboflow fine-tunes carry the platform's model type as their
+            # architecture.
+            ("text-image-pairs", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Action recognition fine-tunes ship under the dash-less trainer
+            # slug; the hosted base keeps the dash and is wrapped for the task
+            # on load.
+            (
+                "action-recognition",
+                "cosmos3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
+            (
+                "action-recognition",
+                "cosmos-3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:
@@ -763,7 +783,9 @@ except:
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)
-    return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+    instance = ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+    bind_usage_model_descriptor(instance, model_id)
+    return instance
 
 
 def get_roboflow_model(*args, **kwargs):
@@ -889,6 +911,18 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen35ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ModelClass
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ModelClass
+            elif variant.startswith("qwen3_8"):
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3_8_vllm import (
+                        Qwen38VLLMProxy as _Qwen38ModelClass,
+                    )
+                else:
+                    from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                        InferenceModelsQwen38VLAdapter as _Qwen38ModelClass,
+                    )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen38ModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ModelClass
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
@@ -1223,6 +1257,35 @@ if USE_INFERENCE_MODELS:
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ExplicitModelClass
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ExplicitModelClass
+
+    if QWEN_3_8_ENABLED:
+        _Qwen38ExplicitModelClass = None
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3_8_vllm import (
+                Qwen38VLLMProxy as _Qwen38ExplicitModelClass,
+            )
+        else:
+            try:
+                from inference.models.qwen3_8vl.qwen3_8vl_inference_models import (
+                    InferenceModelsQwen38VLAdapter as _Qwen38ExplicitModelClass,
+                )
+            except ImportError:
+                # The HF adapter needs an inference_models release carrying
+                # Qwen38HF; older environments simply don't register qwen3_8.
+                warnings.warn(
+                    "qwen3_8 models disabled: installed inference_models has "
+                    "no Qwen38HF (upgrade inference-models to enable)."
+                )
+
+        if _Qwen38ExplicitModelClass is not None:
+            for variant in [
+                "qwen3_8-27b",
+            ]:
+                ROBOFLOW_MODEL_TYPES[("lmm", variant)] = _Qwen38ExplicitModelClass
+                ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
+                    _Qwen38ExplicitModelClass
+                )
+            ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_8")] = _Qwen38ExplicitModelClass
 
     if GLM_OCR_ENABLED:
         from inference.models.glm_ocr.glm_ocr_inference_models import (

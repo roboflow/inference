@@ -32,7 +32,14 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
-RUN uv pip install --system --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+# the cu124 index dropped nvidia-cudnn-cu12==9.1.0.70 (torch's exact pin), so nvidia-*
+# deps must come from PyPI; +cu124 pins keep torch/torchvision on the pytorch index;
+# unsafe-best-match lets uv look past the first index that lists a package name
+RUN uv pip install --system \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple \
+    --index-strategy unsafe-best-match \
+    torch==2.6.0+cu124 torchvision==0.21.0+cu124
 RUN uv pip install --system \
     -r _requirements.txt \
     -r requirements.doctr.txt \
@@ -47,7 +54,7 @@ RUN uv pip install --system \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     jupyterlab \
-    "setuptools<=75.5.0" \
+    "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
 # Install setup.py requirements for flash_attn
@@ -103,7 +110,7 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools~=83.0.0"
 
 
 WORKDIR /notebooks
@@ -111,6 +118,9 @@ COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
+COPY build_scripts build_scripts
+RUN python3 build_scripts/download_fonts.py
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh

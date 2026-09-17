@@ -2,8 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.env import LMM_ENABLED
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
@@ -11,6 +9,7 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
+from inference.core.workflows.environment import LMM_ENABLED
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
@@ -36,11 +35,14 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
 
 LONG_DESCRIPTION = """
@@ -124,6 +126,18 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.lmm_type):
+            # LMM type fed by selector — provider/model unknown statically.
+            return None
+        if self.lmm_type == "gpt_4v":
+            return [
+                third_party_model(
+                    provider="openai", model_id=self.lmm_config.gpt_model_version
+                )
+            ]
+        return []
+
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         restrictions = []
@@ -147,17 +161,15 @@ class LMMForClassificationBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

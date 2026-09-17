@@ -5,16 +5,22 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     BlockManifest,
     SegmentAnything3InteractiveBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor import (
+    SegmentAnything3InteractiveBlockV1 as TensorSegmentAnything3InteractiveBlockV1,
+)
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from inference_models.models.base.object_detection import Detections
 
 
 @pytest.fixture
@@ -23,7 +29,7 @@ def mock_model_manager():
     mock_prediction = MagicMock()
     mock_prediction.masks = [[[0, 0], [100, 0], [100, 100], [0, 100]]]
     mock_prediction.confidence = 0.95
-    mock.infer_from_request_sync.return_value = MagicMock(predictions=[mock_prediction])
+    mock.run_sam2_segmentation.return_value = [MagicMock(predictions=[mock_prediction])]
     return mock
 
 
@@ -138,16 +144,18 @@ def test_run_locally_with_point_prompts(
     assert len(result) == 1
     assert "predictions" in result[0]
     mock_model_manager.add_model.assert_called_once()
-    inference_request = mock_model_manager.infer_from_request_sync.call_args[0][1]
-    prompts = inference_request.prompts.prompts
+    prompts = mock_model_manager.run_sam2_segmentation.call_args.kwargs["prompts"]
     assert len(prompts) == 1
-    assert len(prompts[0].points) == 2
-    assert prompts[0].points[0].x == 320
-    assert prompts[0].points[0].positive is True
-    assert prompts[0].points[1].positive is False
+    assert len(prompts[0]["points"]) == 2
+    assert prompts[0]["points"][0]["x"] == 320
+    assert prompts[0]["points"][0]["positive"] is True
+    assert prompts[0]["points"][1]["positive"] is False
+    predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [-1]
+    assert predictions["class_name"].tolist() == ["foreground"]
 
 
-def test_run_locally_with_boxes_and_points(
+def test_numpy_boxes_and_points_keep_class_zero_distinct_from_point_prompt(
     mock_model_manager, mock_workflow_image_data
 ) -> None:
     block = SegmentAnything3InteractiveBlockV1(
@@ -167,21 +175,68 @@ def test_run_locally_with_boxes_and_points(
     assert len(result) == 1
     # box and point prompts cannot be mixed in a single SAM prompt batch,
     # so the block issues one request per prompt group
-    assert mock_model_manager.infer_from_request_sync.call_count == 2
-    box_request = mock_model_manager.infer_from_request_sync.call_args_list[0][0][1]
-    box_prompts = box_request.prompts.prompts
+    assert mock_model_manager.run_sam2_segmentation.call_count == 2
+    box_prompts = mock_model_manager.run_sam2_segmentation.call_args_list[0].kwargs[
+        "prompts"
+    ]
     assert len(box_prompts) == 1
-    assert box_prompts[0].box is not None
-    assert box_prompts[0].box.x == 30  # box centre of [10, 10, 50, 50]
-    assert box_prompts[0].points is None
-    points_request = mock_model_manager.infer_from_request_sync.call_args_list[1][0][1]
-    point_prompts = points_request.prompts.prompts
+    assert "box" in box_prompts[0]
+    assert box_prompts[0]["box"]["x"] == 30  # box centre of [10, 10, 50, 50]
+    assert "points" not in box_prompts[0]
+    point_prompts = mock_model_manager.run_sam2_segmentation.call_args_list[1].kwargs[
+        "prompts"
+    ]
     assert len(point_prompts) == 1
-    assert point_prompts[0].box is None
-    assert point_prompts[0].points[0].x == 320
+    assert "box" not in point_prompts[0]
+    assert point_prompts[0]["points"][0]["x"] == 320
     # masks from both requests are merged into a single output
     predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [0, -1]
     assert list(predictions["class_name"]) == ["object", "foreground"]
+
+
+def test_tensor_boxes_and_points_keep_class_zero_distinct_from_point_prompt(
+    mock_workflow_image_data,
+) -> None:
+    model_manager = MagicMock()
+    model_prediction = MagicMock()
+    model_prediction.masks = torch.ones((1, 480, 640), dtype=torch.float32)
+    model_prediction.scores = torch.tensor([0.95], dtype=torch.float32)
+    model_manager.run_tensor_native_inference.side_effect = [
+        [model_prediction],
+        [model_prediction],
+    ]
+    block = TensorSegmentAnything3InteractiveBlockV1(
+        model_manager=model_manager,
+        api_key="test_api_key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    boxes = Detections(
+        xyxy=torch.tensor([[10, 10, 50, 50]], dtype=torch.float32),
+        class_id=torch.tensor([0], dtype=torch.int64),
+        confidence=torch.tensor([0.9], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {0: "object"}},
+        bboxes_metadata=[{"detection_id": "det_1"}],
+    )
+
+    result = block.run_locally(
+        images=[mock_workflow_image_data],
+        points=[[320, 240]],
+        boxes=[boxes],
+        threshold=0.0,
+        multimask_output=False,
+    )
+
+    predictions = result[0]["predictions"]
+    assert predictions.class_id.tolist() == [0, -1]
+    assert [metadata["class"] for metadata in predictions.bboxes_metadata] == [
+        "object",
+        "foreground",
+    ]
+    assert predictions.image_metadata[CLASS_NAMES_KEY] == {
+        0: "object",
+        -1: "foreground",
+    }
 
 
 def test_run_locally_with_empty_detections_and_no_points(
@@ -203,7 +258,7 @@ def test_run_locally_with_empty_detections_and_no_points(
 
     assert len(result) == 1
     assert len(result[0]["predictions"]) == 0
-    mock_model_manager.infer_from_request_sync.assert_not_called()
+    mock_model_manager.run_sam2_segmentation.assert_not_called()
 
 
 @patch(

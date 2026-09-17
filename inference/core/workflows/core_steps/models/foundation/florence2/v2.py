@@ -18,7 +18,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+    roboflow_platform_model,
+)
 
 
 class V2BlockManifest(BaseManifest):
@@ -58,6 +63,9 @@ class V2BlockManifest(BaseManifest):
         },
         protected_namespaces=(),
     )
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_id)]
 
 
 class Florence2BlockV2(Florence2BlockV1):

@@ -55,6 +55,7 @@ from inference.core.utils.image_utils import (
     extract_image_payload_and_type,
     load_image_rgb,
 )
+from inference.usage_tracking.collector import usage_collector
 from inference_models.models.owlv2.owlv2_hf import (
     monkey_patch_vision_encoder_before_compilation,
 )
@@ -685,6 +686,7 @@ class OwlV2(RoboflowInferenceModel):
             )
         ]
 
+    @usage_collector("model")
     def infer(
         self,
         image: Any,
@@ -1058,6 +1060,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def weights_file(self):
         return self.weights_file_path
 
+    @usage_collector("model")
     def infer(
         self,
         image,

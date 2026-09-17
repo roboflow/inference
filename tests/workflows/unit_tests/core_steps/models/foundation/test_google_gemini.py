@@ -16,6 +16,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     BlockManifest as V3BlockManifest,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v4 import (
+    MODEL_VERSION_IDS as V4_MODEL_VERSION_IDS,
+)
 
 STALE_MODEL_IDS = {
     "gemini-3-pro-preview",
@@ -67,7 +70,7 @@ def test_gemini_v3_step_validation_when_input_is_valid() -> None:
 
 @pytest.mark.parametrize(
     "model_ids",
-    [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS],
+    [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS, V4_MODEL_VERSION_IDS],
 )
 def test_gemini_model_catalog_uses_available_google_models(
     model_ids: list[str],
@@ -323,7 +326,9 @@ def test_prepare_generation_config_with_temperature_for_older_models() -> None:
 
 
 def test_prepare_generation_config_with_temperature_for_newer_models() -> None:
-    # when - temperature should be ignored for newer models
+    # when - temperature is forwarded for thinking-level models too; the Gemini
+    # API accepts it alongside thinking_config, and dropping it silently left
+    # no way to make structured extraction deterministic on Gemini 3.x
     result = prepare_generation_config(
         max_tokens=None,
         temperature=0.8,
@@ -332,7 +337,21 @@ def test_prepare_generation_config_with_temperature_for_newer_models() -> None:
     )
 
     # then
-    assert "temperature" not in result
+    assert result["temperature"] == 0.8
+
+
+def test_prepare_generation_config_with_temperature_and_thinking_level() -> None:
+    # when - both explicitly set on a thinking-level model
+    result = prepare_generation_config(
+        max_tokens=None,
+        temperature=0.0,
+        thinking_level="high",
+        model_version="gemini-3.1-pro-preview",
+    )
+
+    # then - both reach the request
+    assert result["thinking_config"] == {"thinking_level": "high"}
+    assert result["temperature"] == 0.0
 
 
 def test_prepare_generation_config_with_thinking_level_for_newer_models() -> None:

@@ -195,7 +195,7 @@ class StreamManagerClient:
             context=context,
             outputs=response[RESPONSE_KEY]["outputs"],
             frames_metadata=[
-                FrameMetadata.model_validate(f)
+                FrameMetadata.model_validate(f) if f is not None else None
                 for f in response[RESPONSE_KEY]["frames_metadata"]
             ],
         )

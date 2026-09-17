@@ -1,3 +1,4 @@
+import logging
 import traceback
 from collections import defaultdict
 from concurrent.futures import Future
@@ -8,10 +9,13 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core import logger
+from inference.core.workflows.core_steps.common.tensor_native import (
+    native_detections_to_root_coordinates,
+)
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
@@ -42,6 +46,15 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     maybe_resolve_futures,
     resolve_futures,
 )
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+from inference_models.models.base.keypoints_detection import (
+    KeyPoints as NativeKeyPoints,
+)
+from inference_models.models.base.object_detection import Detections as NativeDetections
+
+logger = logging.getLogger(__name__)
 
 
 def construct_workflow_output(
@@ -383,6 +396,12 @@ def _convert_sv_detections_coordinates_if_present(data: Any) -> Any:
 def data_needs_sv_detections_coordinate_conversion(data: Any) -> bool:
     if isinstance(data, sv.Detections):
         return _sv_detections_need_root_coordinate_conversion(detections=data)
+    if ENABLE_TENSOR_DATA_REPRESENTATION and _is_native_prediction(data):
+        # native_detections_to_root_coordinates() no-ops on predictions that
+        # carry no root offset, so natives are always admitted here; this
+        # branch must precede the generic tuple recursion below, which would
+        # otherwise swallow the (KeyPoints, Detections) prediction tuple.
+        return True
     if isinstance(data, (list, tuple)):
         return any(data_needs_sv_detections_coordinate_conversion(data=e) for e in data)
     if isinstance(data, dict):
@@ -395,7 +414,7 @@ def data_needs_sv_detections_coordinate_conversion(data: Any) -> bool:
 
 def _sv_detections_need_root_coordinate_conversion(detections: sv.Detections) -> bool:
     if len(detections) == 0:
-        return False
+        return ROOT_PARENT_DIMENSIONS_KEY in detections.metadata
     root_coordinates = detections.data.get(ROOT_PARENT_COORDINATES_KEY)
     if root_coordinates is None:
         return False
@@ -505,7 +524,7 @@ def serialize_single_workflow_result_field(
     kinds_without_serializer = set()
     encountered_errors = []
     for single_kind in kind:
-        kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
+        kind_name = single_kind.name if isinstance(single_kind, Kind) else single_kind
         serializer = kinds_serializers.get(kind_name)
         if serializer is None:
             kinds_without_serializer.add(kind_name)
@@ -555,8 +574,25 @@ def place_data_in_array(array: list, index: DynamicBatchIndex, data: Any) -> Non
         place_data_in_array(array=array[first_chunk], index=remaining_index, data=data)
 
 
+def _is_native_prediction(data: Any) -> bool:
+    """Recognise a tensor-native prediction (the inference_models dataclasses, or the
+    ``(KeyPoints, Detections)`` keypoint-detection tuple) emitted by ``_tensor``
+    blocks under ``ENABLE_TENSOR_DATA_REPRESENTATION``. These are not ``sv.Detections``,
+    so the existing sv-only coordinate-conversion gate skips them."""
+    if isinstance(data, (NativeDetections, NativeInstanceDetections, NativeKeyPoints)):
+        return True
+    if isinstance(data, tuple) and len(data) == 2:
+        key_points, detections = data
+        return isinstance(key_points, NativeKeyPoints) and (
+            detections is None or isinstance(detections, NativeDetections)
+        )
+    return False
+
+
 def data_contains_sv_detections(data: Any) -> bool:
     if isinstance(data, sv.Detections):
+        return True
+    if ENABLE_TENSOR_DATA_REPRESENTATION and _is_native_prediction(data):
         return True
     if isinstance(data, dict):
         result = set()
@@ -574,6 +610,8 @@ def data_contains_sv_detections(data: Any) -> bool:
 def convert_sv_detections_coordinates(data: Any) -> Any:
     if isinstance(data, sv.Detections):
         return sv_detections_to_root_coordinates(detections=data)
+    if ENABLE_TENSOR_DATA_REPRESENTATION and _is_native_prediction(data):
+        return native_detections_to_root_coordinates(prediction=data)
     if isinstance(data, dict):
         return {k: convert_sv_detections_coordinates(data=v) for k, v in data.items()}
     if isinstance(data, list):

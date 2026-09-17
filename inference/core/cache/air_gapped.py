@@ -178,56 +178,6 @@ def _resolve_traditional_cache_model_id(
     return relative_root
 
 
-def _load_legacy_model_ids_by_package(cache_dir: str) -> Dict[str, str]:
-    """Map legacy package directories to IDs stored in auto-resolution metadata."""
-    resolution_cache_dir = os.path.join(cache_dir, "auto-resolution-cache")
-    if os.path.islink(resolution_cache_dir) or not os.path.isdir(resolution_cache_dir):
-        return {}
-    try:
-        from inference_models.models.auto_loaders.model_cache_paths import (
-            slugify_model_id_to_os_safe_format_v1,
-        )
-    except ImportError:
-        return {}
-    candidates: Dict[str, Set[str]] = {}
-    try:
-        entries = sorted(os.listdir(resolution_cache_dir))
-    except OSError:
-        return {}
-    models_cache_dir = os.path.realpath(os.path.join(cache_dir, "models-cache"))
-    for entry in entries:
-        if entry.startswith(".") or not entry.endswith(".json"):
-            continue
-        metadata_path = os.path.join(resolution_cache_dir, entry)
-        metadata = _read_regular_json(path=metadata_path)
-        if not isinstance(metadata, dict):
-            continue
-        model_id = metadata.get("model_id")
-        cache_model_id = metadata.get("cache_model_id") or model_id
-        package_id = metadata.get("model_package_id")
-        if not all(
-            isinstance(value, str) and value
-            for value in (model_id, cache_model_id, package_id)
-        ):
-            continue
-        if not re.fullmatch(r"[A-Za-z0-9]+", package_id):
-            continue
-        model_slug = slugify_model_id_to_os_safe_format_v1(model_id=cache_model_id)
-        model_root = os.path.join(models_cache_dir, model_slug)
-        lexical_package_dir = os.path.join(model_root, package_id)
-        if os.path.islink(model_root) or os.path.islink(lexical_package_dir):
-            continue
-        package_dir = os.path.realpath(lexical_package_dir)
-        if not package_dir.startswith(os.path.realpath(model_root) + os.sep):
-            continue
-        candidates.setdefault(package_dir, set()).add(model_id)
-    return {
-        package_dir: next(iter(model_ids))
-        for package_dir, model_ids in candidates.items()
-        if len(model_ids) == 1
-    }
-
-
 def is_model_cached(model_id: str) -> bool:
     """Best-effort check whether *model_id* has cached artifacts.
 
@@ -424,8 +374,6 @@ def scan_cached_models(
         for root in (excluded_cache_roots or [])
         if os.path.abspath(root) != cache_dir
     ]
-    legacy_model_ids = _load_legacy_model_ids_by_package(cache_dir=cache_dir)
-
     for root, dirs, files in os.walk(cache_dir, followlinks=True):
         root_is_cache_dir = os.path.abspath(root) == cache_dir
         filtered_dirs = []
@@ -486,24 +434,15 @@ def scan_cached_models(
             if isinstance(cfg, dict) and cfg.get("task_type"):
                 metadata = cfg
                 manifest_model_id = cfg.get("model_id")
-                used_legacy_attribution = "model_id" not in cfg
-                if used_legacy_attribution:
-                    stored_model_id = legacy_model_ids.get(os.path.realpath(root))
-                elif isinstance(manifest_model_id, str) and manifest_model_id:
+                if isinstance(manifest_model_id, str) and manifest_model_id:
                     stored_model_id = manifest_model_id
                     try:
                         from inference_models.models.auto_loaders.model_cache_paths import (
-                            slugify_model_id_to_os_safe_format_v1,
-                            slugify_model_id_to_os_safe_format_v2,
+                            slugify_model_id_to_os_safe_format,
                         )
 
                         expected_slugs = {
-                            slugify_model_id_to_os_safe_format_v2(
-                                model_id=stored_model_id
-                            ),
-                            slugify_model_id_to_os_safe_format_v1(
-                                model_id=stored_model_id
-                            ),
+                            slugify_model_id_to_os_safe_format(model_id=stored_model_id)
                         }
                     except (ImportError, TypeError):
                         expected_slugs = set()

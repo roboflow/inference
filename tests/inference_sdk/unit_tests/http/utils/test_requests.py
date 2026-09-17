@@ -5,6 +5,7 @@ from inference_sdk.http.utils.requests import (
     API_KEY_PATTERN,
     api_key_safe_raise_for_status,
     deduct_api_key,
+    deduct_api_key_from_string,
     inject_images_into_payload,
     inject_nested_batches_of_images_into_payload,
 )
@@ -88,6 +89,49 @@ def test_api_keysafe_raise_for_status_when_error_occurs(status_code: int) -> Non
     assert "https://some.com/endpoint?api_key=19***0s&param_2=some_value" in str(
         expected_error.value
     )
+
+
+def test_deduct_service_secret_when_it_travels_on_the_query_string() -> None:
+    # given a URL of the shape a workflow block sends when the caller opted out
+    # of billing - the secret is the server's own, so none of it may be revealed
+    url = "https://some.com/endpoint?api_key=19xjs9-XSXSAos0s&service_secret=super-secret&countinference=False"
+
+    # when
+    result = deduct_api_key_from_string(url)
+
+    # then
+    assert result == (
+        "https://some.com/endpoint?api_key=19***0s"
+        "&service_secret=***&countinference=False"
+    )
+
+
+def test_deduct_service_secret_when_it_is_the_last_parameter() -> None:
+    # given
+    url = "https://some.com/endpoint?countinference=False&service_secret=super-secret"
+
+    # when
+    result = deduct_api_key_from_string(url)
+
+    # then
+    assert result == (
+        "https://some.com/endpoint?countinference=False&service_secret=***"
+    )
+
+
+def test_api_key_safe_raise_for_status_deducts_the_service_secret() -> None:
+    # given
+    response = Response()
+    response.status_code = 500
+    response.url = "https://some.com/endpoint?service_secret=super-secret"
+
+    # when
+    with pytest.raises(HTTPError) as expected_error:
+        api_key_safe_raise_for_status(response=response)
+
+    # then
+    assert "super-secret" not in str(expected_error.value)
+    assert "service_secret=***" in str(expected_error.value)
 
 
 def test_inject_images_into_payload_when_empty_list_of_images_is_given() -> None:

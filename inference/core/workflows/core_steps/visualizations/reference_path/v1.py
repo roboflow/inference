@@ -137,9 +137,13 @@ class ReferencePathVisualizationBlockV1(WorkflowBlock):
         thickness: int,
     ) -> BlockResult:
         reference_path_array = np.array(reference_path)[:, :2].astype(np.int32)
-        numpy_image = image.numpy_image
+        scene = image.numpy_image
+        if copy_image:
+            scene = scene.copy()
+        else:
+            image.declare_numpy_image_mutated()
         result_image = cv2.polylines(
-            numpy_image if not copy_image else numpy_image.copy(),
+            scene,
             [reference_path_array],
             False,
             str_to_color(color).as_bgr(),

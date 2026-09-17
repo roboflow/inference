@@ -847,6 +847,86 @@ def test_workflow_with_object_detection_prompt(
     ], "Expected 2 dogs to be detected"
 
 
+OBJECT_DETECTION_WORKFLOW_GEMINI_V4 = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/google_gemini@v4",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_detector@v2",
+            "name": "parser",
+            "vlm_output": "$steps.gemini.output",
+            "image": "$inputs.image",
+            "classes": "$steps.gemini.classes",
+            "model_type": "google-gemini",
+            "task_type": "object-detection",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "gemini_result",
+            "selector": "$steps.gemini.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(
+    condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
+)
+def test_workflow_with_object_detection_prompt_gemini_v4(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW_GEMINI_V4,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image],
+            "api_key": GOOGLE_API_KEY,
+            "classes": ["cat", "dog"],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "gemini_result",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert result[0]["parsed_prediction"].data["class_name"].tolist() == [
+        "dog",
+        "dog",
+    ], "Expected 2 dogs to be detected"
+
+
 VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
     "version": "1.0",
     "inputs": [
