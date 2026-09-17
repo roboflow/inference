@@ -4425,6 +4425,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/infer/action_recognition",
                     response_model=ActionRecognitionInferenceResponse,
+                    responses=MODEL_SELECTION_RESPONSES,
                     summary="Action Recognition",
                     description=(
                         "Classify the actions in a video clip. The model states "
@@ -4464,22 +4465,15 @@ class HttpInterface(BaseInterface):
                         request (Request): The HTTP request.
 
                     Returns:
-                        ActionRecognitionInferenceResponse: The classified ranges
-                        covering the clip.
+                        Response: The HTTP response containing classified ranges.
                     """
                     logger.debug("Reached /infer/action_recognition")
-                    api_key = api_key_fallback(api_key)
-                    if api_key is not None:
-                        inference_request.api_key = api_key
                     model_id = inference_request.model_id
-                    self.model_manager.add_model(
-                        model_id,
-                        inference_request.api_key,
+                    response = process_inference_request(
+                        inference_request=inference_request,
+                        api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
-                    )
-                    response = self.model_manager.infer_from_request_sync(
-                        model_id, inference_request
                     )
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
@@ -4943,11 +4937,6 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(cache_key, api_key=api_key)
-                if selectors and task_type == "action-recognition":
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Model package selection is not supported for action recognition requests.",
-                    )
                 if task_type == "action-recognition":
                     # The payload is a clip, so none of the image-shaped
                     # arguments below apply to it. The `image` query parameter
@@ -4959,7 +4948,7 @@ class HttpInterface(BaseInterface):
                         # model_id, so the lookup asks for that. Under Lambda
                         # request_model_id is the authorizer's endpoint and
                         # names nothing the manager holds.
-                        model_id,
+                        cache_key if selectors else model_id,
                         ActionRecognitionInferenceRequest(
                             api_key=api_key,
                             model_id=model_id,
@@ -4969,10 +4958,14 @@ class HttpInterface(BaseInterface):
                             class_filter=_parse_legacy_class_filter(
                                 class_filter=class_filter
                             ),
+                            **selectors,
                         ),
                     )
                     logger.debug("Response ready.")
-                    return orjson_response(inference_response)
+                    response = orjson_response(inference_response)
+                    if selectors:
+                        response.headers[MODEL_SELECTION_HEADER] = "applied"
+                    return response
                 inference_request_type = ObjectDetectionInferenceRequest
                 args: Dict[str, Any] = {}
                 if task_type == "instance-segmentation":

@@ -2,7 +2,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
-from inference.core.entities.requests.inference import BaseRequest
+from inference.core.entities.requests.inference import InferenceRequest
 
 
 class InferenceRequestVideo(BaseModel):
@@ -32,7 +32,7 @@ class InferenceRequestVideo(BaseModel):
     )
 
 
-class ActionRecognitionInferenceRequest(BaseRequest):
+class ActionRecognitionInferenceRequest(InferenceRequest):
     """Request for action recognition over a video clip.
 
     Attributes:
@@ -44,6 +44,7 @@ class ActionRecognitionInferenceRequest(BaseRequest):
     """
 
     model_id: str = Field(
+        default=...,
         examples=["workspace/action-recognition-1"],
         description="The model to classify with",
     )

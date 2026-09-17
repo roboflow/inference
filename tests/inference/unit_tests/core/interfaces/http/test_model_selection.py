@@ -15,19 +15,30 @@ def client(monkeypatch):
     monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "ACTION_RECOGNITION_ENABLED", True)
     interface = http_api.HttpInterface(model_manager=MagicMock())
     with TestClient(interface.app) as client:
         yield client
 
 
 @pytest.mark.parametrize("selector", [{"backend": "trt"}, {"quantization": "fp16"}])
-def test_http_rejects_package_id_combined_with_other_selectors(client, selector):
-    response = client.post(
+@pytest.mark.parametrize(
+    "path",
+    [
         "/infer/object_detection",
+        "/infer/action_recognition",
+        "/model/add",
+        "/model/remove",
+    ],
+)
+def test_http_rejects_package_id_combined_with_other_selectors(client, selector, path):
+    response = client.post(
+        path,
         json={
             "model_id": "project/1",
             "model_package_id": "package-1",
             "image": {"type": "url", "value": "https://example.com/image.jpg"},
+            "video": {"type": "url", "value": "https://example.com/clip.mp4"},
             **selector,
         },
     )
@@ -35,7 +46,15 @@ def test_http_rejects_package_id_combined_with_other_selectors(client, selector)
     assert "model_package_id" in response.text
 
 
-@pytest.mark.parametrize("path", ["/infer/object_detection", "/model/add"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/infer/object_detection",
+        "/infer/action_recognition",
+        "/model/add",
+        "/model/remove",
+    ],
+)
 def test_http_rejects_selection_when_flag_is_disabled(client, monkeypatch, path):
     from inference.core import env
 
@@ -46,6 +65,7 @@ def test_http_rejects_selection_when_flag_is_disabled(client, monkeypatch, path)
             "model_id": "project/1",
             "backend": "trt",
             "image": {"type": "url", "value": "https://example.com/image.jpg"},
+            "video": {"type": "url", "value": "https://example.com/clip.mp4"},
         },
     )
     assert response.status_code == 422
@@ -76,7 +96,7 @@ def test_depth_rejects_model_package_selection(client, monkeypatch, path, select
 
 
 @pytest.fixture
-def package_client(monkeypatch):
+def package_client(monkeypatch, request):
     from types import SimpleNamespace
 
     from inference.core import env
@@ -88,7 +108,7 @@ def package_client(monkeypatch):
         served_package: str
 
     class PackageModel:
-        task_type = "object-detection"
+        task_type = getattr(request, "param", "object-detection")
         batch_size = 1
         img_size_h = 32
         img_size_w = 32
@@ -113,6 +133,19 @@ def package_client(monkeypatch):
             )
 
         def infer_from_request(self, request):
+            if self.task_type == "action-recognition":
+                from inference.core.entities.responses.action_recognition import (
+                    ActionRecognitionInferenceResponse,
+                )
+                from inference.core.entities.responses.inference import ResolvedModel
+
+                return ActionRecognitionInferenceResponse(
+                    timeline=[],
+                    source_fps=30,
+                    frame_count=30,
+                    windows_classified=1,
+                    resolved_model=ResolvedModel(**vars(self.resolved_model)),
+                )
             return PackageResponse(served_package=self.resolved_model.model_package_id)
 
         def clear_cache(self, delete_from_disk=True):
@@ -125,6 +158,7 @@ def package_client(monkeypatch):
     monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "ACTION_RECOGNITION_ENABLED", True)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     registry = MagicMock()
     monkeypatch.setattr(http_api, "ALLOW_ORIGINS", ["https://client.example"])
@@ -288,3 +322,42 @@ def test_lmm_rejects_model_package_selection(package_client):
     )
     assert response.status_code == 422
     assert "not supported for LMM" in response.text
+
+
+@pytest.mark.parametrize("package_client", ["action-recognition"], indirect=True)
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize(
+    "selectors",
+    [{"backend": "trt", "quantization": "fp16"}, {"model_package_id": "engine-1"}],
+)
+def test_action_recognition_selected_package_coexists_with_default(
+    package_client, legacy, selectors
+):
+    def infer(selection):
+        if legacy:
+            return package_client.post(
+                "/project/1",
+                params={"image": "https://example.com/clip.mp4", **selection},
+            )
+        return package_client.post(
+            "/infer/action_recognition",
+            json={
+                "model_id": "project/1",
+                "video": {"type": "url", "value": "https://example.com/clip.mp4"},
+                "disable_model_monitoring": True,
+                **selection,
+            },
+        )
+
+    automatic = infer({})
+    selected = infer(selectors)
+    again = infer({})
+    assert automatic.status_code == selected.status_code == again.status_code == 200
+    assert automatic.json()["resolved_model"]["model_package_id"] == "onnx-1"
+    assert again.json()["resolved_model"]["model_package_id"] == "onnx-1"
+    assert selected.json()["resolved_model"]["model_package_id"] == "engine-1"
+    assert selected.headers["X-Roboflow-Model-Selection"] == "applied"
+    assert "X-Roboflow-Model-Selection" not in automatic.headers
+    mismatch = infer({"backend": "trt", "quantization": "fp32"})
+    assert mismatch.status_code == 400
+    assert "X-Roboflow-Model-Selection" not in mismatch.headers

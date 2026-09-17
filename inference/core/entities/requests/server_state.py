@@ -1,12 +1,12 @@
 from typing import Optional
 
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
-from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.requests.model_selection import validate_model_selection
 
 
-class AddModelRequest(InferenceRequest):
+class AddModelRequest(BaseModel):
     """Request to add a model to the inference server.
 
     Attributes:
@@ -19,9 +19,24 @@ class AddModelRequest(InferenceRequest):
     model_id: str = ModelID
     model_type: Optional[str] = ModelType
     api_key: Optional[str] = ApiKey
+    model_package_id: Optional[str] = Field(
+        default=None, min_length=1, description="Exact model package ID."
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package backend, such as trt or onnx.",
+    )
+    quantization: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package quantization, such as fp16 or fp32.",
+    )
+
+    validate_model_selection = model_validator(mode="after")(validate_model_selection)
 
 
-class ClearModelRequest(InferenceRequest):
+class ClearModelRequest(BaseModel):
     """Request to clear a model from the inference server.
 
     Attributes:
@@ -31,3 +46,18 @@ class ClearModelRequest(InferenceRequest):
     model_config = ConfigDict(protected_namespaces=())
     model_id: str = ModelID
     api_key: Optional[str] = ApiKey
+    model_package_id: Optional[str] = Field(
+        default=None, min_length=1, description="Exact model package ID."
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package backend, such as trt or onnx.",
+    )
+    quantization: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package quantization, such as fp16 or fp32.",
+    )
+
+    validate_model_selection = model_validator(mode="after")(validate_model_selection)

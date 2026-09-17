@@ -2189,7 +2189,11 @@ def load_action_recognition_model(
         backend=_get_requested_inference_models_backends(kwargs),
         **kwargs,
     )
-    return _as_action_recognition_model(model=loaded_model, model_id=model_id)
+    model = _as_action_recognition_model(model=loaded_model, model_id=model_id)
+    resolved_model = getattr(loaded_model, "resolved_model", None)
+    if resolved_model is not None:
+        setattr(model, "resolved_model", resolved_model)
+    return model
 
 
 def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognitionModel:

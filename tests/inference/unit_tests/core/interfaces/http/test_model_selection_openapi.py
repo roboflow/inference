@@ -12,6 +12,7 @@ def openapi_schema(monkeypatch):
     monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "ACTION_RECOGNITION_ENABLED", True)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     return http_api.HttpInterface(model_manager=MagicMock()).app.openapi()
 
@@ -25,12 +26,45 @@ def test_openapi_describes_selectors_in_body_and_legacy_query(openapi_schema):
         description = schemas["ObjectDetectionInferenceRequest"]["properties"][
             selector
         ]["description"]
-        assert "USE_INFERENCE_MODELS=true" in description
+        assert description
         assert parameters[selector]["description"] == description
-        for request in ("AddModelRequest", "ClearModelRequest"):
+        for request in (
+            "AddModelRequest",
+            "ClearModelRequest",
+            "ActionRecognitionInferenceRequest",
+        ):
             assert (
                 schemas[request]["properties"][selector]["description"] == description
             )
+
+
+@pytest.mark.parametrize(
+    "schema_name,expected_fields",
+    [
+        (
+            "AddModelRequest",
+            {
+                "model_id",
+                "model_type",
+                "api_key",
+                "model_package_id",
+                "backend",
+                "quantization",
+            },
+        ),
+        (
+            "ClearModelRequest",
+            {"model_id", "api_key", "model_package_id", "backend", "quantization"},
+        ),
+    ],
+)
+def test_model_management_schemas_only_include_model_management_fields(
+    openapi_schema, schema_name, expected_fields
+):
+    assert (
+        set(openapi_schema["components"]["schemas"][schema_name]["properties"])
+        == expected_fields
+    )
 
 
 @pytest.mark.parametrize(
@@ -42,6 +76,7 @@ def test_openapi_describes_selectors_in_body_and_legacy_query(openapi_schema):
         ("/infer/semantic_segmentation", "post"),
         ("/infer/classification", "post"),
         ("/infer/keypoints_detection", "post"),
+        ("/infer/action_recognition", "post"),
         ("/{dataset_id}/{version_id}", "get"),
         ("/{dataset_id}/{version_id}", "post"),
     ],
