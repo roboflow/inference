@@ -37,7 +37,7 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 
 ## Supported Backends
 
-For the composable five-stage TensorRT execution-plan architecture, see
+For the composable five-stage Torch, ONNX and TensorRT execution-plan architecture, see
 [Current RF-DETR Inference-Path Optimization Integration](../contributors/inference-path-optimization-architectures/rfdetr.md).
 
 | Backend | Extras Required |
@@ -92,9 +92,32 @@ annotated_image = bounding_box_annotator.annotate(image, detections)
 cv2.imwrite("annotated.jpg", annotated_image)
 ```
 
-### Calling TensorRT stages independently
+### Selecting preprocessing
 
-The TensorRT backend normally keeps optimized preprocessing asynchronous. Its
+All three object-detection backends accept `rfdetr_execution_plan=RFDetrExecutionPlan(...)`.
+The default `auto` selection prefers `triton-universal-v1` on compatible CUDA
+devices, then `threaded-exact-v1`, with `base` as the reference fallback. CPU and
+MPS do not construct the CUDA-only Triton preprocessor. Torch's `image_size`
+override falls back to reference preprocessing when Triton cannot preserve it.
+
+`base` uses standard Pillow and performs BGR/RGB conversion after resizing, so
+large camera images do not require a full-resolution channel-copy operation.
+`pillow-simd-v1` is a separate, explicit opt-in for Linux x86-64 SSE4.1 hosts with
+an isolated Pillow-SIMD >=12.3.0.post0 installation. It is not selected by `auto`:
+bilinear downscales are not byte-identical to standard Pillow, and its metadata
+declares `changes_numerics=True`. Unsupported hosts (including Jetson ARM) or
+requests fall back observably to `base`, unless compatibility fallback is disabled.
+It accepts uint8 NumPy images; float/tensor requests retain reference behavior.
+
+Use `model.optimization_runtime_metadata` to inspect model selection, last-request
+effective IDs and fallback reasons. Torch and ONNX currently retain their existing
+backend-specific postprocessing and forward behavior behind `base` stage adapters;
+the TensorRT-only fused postprocessor is not registered for those backends.
+Instance segmentation is not migrated in this change.
+
+### Calling stages independently
+
+The CUDA object-detection paths normally keep optimized preprocessing asynchronous. Their
 `pre_process()` and `forward()` methods coordinate through readiness state owned by the
 model instance, avoiding a host synchronization in the normal `model(...)` path.
 

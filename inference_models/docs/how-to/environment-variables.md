@@ -644,7 +644,7 @@ Default: Inherits from `INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS`
 export INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS="300"
 ```
 
-The following variables select RF-DETR TensorRT pipeline implementations when a client
+The following variables select RF-DETR object-detection pipeline implementations when a client
 cannot pass backend-specific `from_pretrained` arguments. Explicit arguments take
 precedence over these environment variables.
 
@@ -652,9 +652,21 @@ See [Inference-Path Optimization Architecture](../contributors/inference-path-op
 for the selection model and the complete RF-DETR execution flow.
 
 **`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
-Default: `triton-universal-v1`
+Default: `auto` (prefers compatible Triton, then threaded exact, then base)
 
-Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`.
+Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`, `pillow-simd-v1`.
+
+`pillow-simd-v1` is opt-in and declares numerical differences from standard Pillow.
+It requires Linux x86-64 with SSE4.1 and Pillow-SIMD >=12.3.0.post0 installed
+separately from standard Pillow. It is not compatible with Jetson ARM.
+
+**`INFERENCE_MODELS_PILLOW_SIMD_PATH`**
+Default: `/opt/pillow_simd`
+
+Directory containing the optional SIMD `PIL` package. An empty value disables it.
+The selected preprocessor loads it under an isolated module name; it never replaces
+the standard `PIL` used by `base`. The x86 ONNX Dockerfiles install the pinned
+12.3.0.post0 build here. Absence or incompatibility selects the declared fallback.
 
 ```bash
 export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
@@ -670,9 +682,12 @@ export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
 ```
 
 **`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
-Default: `triton-fused-v1`
+Default: `auto` (TensorRT prefers `triton-fused-v1`; Torch/ONNX use `base`)
 
 Supported values: `base`, `auto`, `triton-fused-v1`.
+
+`triton-fused-v1` is registered only for TensorRT. Torch and ONNX accept `base`
+or `auto`; explicit TensorRT-only IDs raise an unknown-implementation error.
 
 ```bash
 export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"

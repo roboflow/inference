@@ -3,6 +3,7 @@
 import torch
 
 from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
     ImagePreProcessing,
     NetworkInputDefinition,
 )
@@ -36,7 +37,7 @@ class TritonUniversalPreprocessor:
         implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(device_kind="gpu"),
+        target=DeviceCompatibility(device_kind="gpu", device_types=("cuda",)),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping(
@@ -84,7 +85,9 @@ class TritonUniversalPreprocessor:
         Returns:
             Whether the target is compatible.
         """
-        return metadata_supports_context(self.metadata, context)
+        return torch.device(
+            context.device
+        ).type == "cuda" and metadata_supports_context(self.metadata, context)
 
     def check_model_compatibility(
         self,
@@ -124,6 +127,15 @@ class TritonUniversalPreprocessor:
             Compatibility result with actionable reasons.
         """
         del context
+        if request.image_size_wh is not None:
+            return CompatibilityResult.incompatible("custom image_size override")
+        if (
+            request.input_color_format is None
+            and request.network_input.color_mode == ColorMode.BGR
+        ):
+            return CompatibilityResult.incompatible(
+                "implicit color order for a BGR network requires the legacy base semantics"
+            )
         result = self._runtime.check_request_compatibility(
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,

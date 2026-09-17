@@ -40,8 +40,14 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
+from inference_models.models.rfdetr.optimization.backend_path import (
+    RFDetrBackendPath,
+    RFDetrBackendPlanMixin,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
 from inference_models.models.rfdetr.post_processor import PostProcess
-from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
@@ -77,7 +83,8 @@ RESIZE_MODES_TO_REVERT_PADDING = {
 
 
 class RFDetrForObjectDetectionTorch(
-    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict])
+    RFDetrBackendPlanMixin,
+    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict]),
 ):
 
     @classmethod
@@ -90,6 +97,8 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
         if os.path.isfile(model_name_or_path):
@@ -99,6 +108,9 @@ class RFDetrForObjectDetectionTorch(
                 labels=labels,
                 resolution=resolution,
                 rf_detr_max_input_resolution=rf_detr_max_input_resolution,
+                device=device,
+                rfdetr_execution_plan=rfdetr_execution_plan,
+                rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -173,6 +185,8 @@ class RFDetrForObjectDetectionTorch(
             post_processor=post_processor,
             resolution=model_config.resolution,
             recommended_parameters=recommended_parameters,
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
 
     @classmethod
@@ -184,6 +198,8 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         if model_type is None:
             raise MissingModelInitParameterError(
@@ -279,6 +295,8 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
 
     def __init__(
@@ -291,6 +309,8 @@ class RFDetrForObjectDetectionTorch(
         post_processor: PostProcess,
         resolution: int,
         recommended_parameters=None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -306,6 +326,13 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_dtype = None
         self._lock = RLock()
         self.recommended_parameters = recommended_parameters
+        self._execution_path = RFDetrBackendPath(
+            device=device,
+            inference_config=inference_config,
+            backend="torch",
+            execution_plan=rfdetr_execution_plan,
+            max_workers=rfdetr_preprocessor_max_workers,
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -352,19 +379,30 @@ class RFDetrForObjectDetectionTorch(
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
+        return self._execution_path.preprocess(
+            images,
             input_color_format=input_color_format,
-            image_size_wh=image_size,
+            image_size=image_size,
             pre_processing_overrides=pre_processing_overrides,
+            independent_stage_execution=independent_stage_execution,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
+        stream = (
+            torch.cuda.current_stream(self._device)
+            if self._device.type == "cuda"
+            else None
+        )
+        return self._execution_path.forward(
+            pre_processed_images,
+            stream=stream,
+            operation=lambda: self._forward(pre_processed_images, **kwargs),
+        )
+
+    def _forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
         if (
             self._inference_model is None
             and not self._has_warned_about_not_being_optimized_for_inference
@@ -416,6 +454,15 @@ class RFDetrForObjectDetectionTorch(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        return self._execution_path.postprocess(
+            lambda: self._post_process(
+                model_results, pre_processing_meta, confidence, **kwargs
+            )
+        )
+
+    def _post_process(
+        self, model_results, pre_processing_meta, confidence="default", **kwargs
+    ):
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,

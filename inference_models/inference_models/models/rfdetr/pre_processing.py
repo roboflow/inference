@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
@@ -101,6 +102,7 @@ def pre_process_network_input(
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     preprocessor_implementation_id: str = RFDETR_PREPROCESSOR_BASE,
     preprocessor_max_workers: int = RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
+    image_module=None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     """Preprocess RF-DETR inputs with the selected implementation.
 
@@ -114,6 +116,7 @@ def pre_process_network_input(
         pre_processing_overrides: Optional request-specific preprocessing overrides.
         preprocessor_implementation_id: Explicit implementation ID.
         preprocessor_max_workers: Explicit threaded worker limit.
+        image_module: Explicit resize implementation. None preserves standard Pillow.
 
     Returns:
         Contiguous NCHW batch and per-image preprocessing metadata.
@@ -198,6 +201,7 @@ def pre_process_network_input(
             target_size=target_size,
             input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
+            image_module=image_module,
         )
 
     if selected_preprocessor == RFDETR_PREPROCESSOR_THREADED_EXACT_V1:
@@ -257,6 +261,7 @@ def _pre_process_one(
     target_size: ImageDimensions,
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
+    image_module=None,
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
     if isinstance(image, torch.Tensor) and image.is_floating_point():
         return _pre_process_tensor(
@@ -280,6 +285,7 @@ def _pre_process_one(
             target_size=target_size,
             input_color_mode=input_color_mode,
             pre_processing_overrides=pre_processing_overrides,
+            image_module=image_module,
         )
     raise TypeError(
         f"Unsupported image input type for RFDETR pre-processing: {type(image)}"
@@ -293,6 +299,7 @@ def _pre_process_numpy(
     target_size: ImageDimensions,
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
+    image_module=None,
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
     """numpy / uint8-tensor branch: PIL chain matching training source-of-truth.
 
@@ -302,6 +309,7 @@ def _pre_process_numpy(
     `training_input_size` (matching training's SquareResize). Otherwise we stretch
     directly in a single PIL F.resize step.
     """
+    resize_image = Image if image_module is None else image_module
     if _needs_two_step_resize(network_input):
         intermediate_image, meta = _dataset_version_resize_uint8(
             image=image,
@@ -314,7 +322,8 @@ def _pre_process_numpy(
             nonsquare_intermediate_size=meta.inference_size,
             inference_size=target_size,
         )
-        pil = Image.fromarray(np.ascontiguousarray(intermediate_image))
+        pil = resize_image.fromarray(np.ascontiguousarray(intermediate_image))
+        swap_channels = False
     else:
         original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
         image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -327,9 +336,8 @@ def _pre_process_numpy(
         size_after_pre_processing = ImageDimensions(
             width=image.shape[1], height=image.shape[0]
         )
-        if input_color_mode != network_input.color_mode:
-            image = image[:, :, ::-1]
-        pil = Image.fromarray(np.ascontiguousarray(image))
+        pil = resize_image.fromarray(np.ascontiguousarray(image))
+        swap_channels = input_color_mode != network_input.color_mode
         meta = _build_metadata(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
@@ -337,7 +345,13 @@ def _pre_process_numpy(
             static_crop_offset=static_crop_offset,
         )
 
-    resized = TF.resize(pil, (target_size.height, target_size.width), antialias=True)
+    # Resize channels independently before swapping on the smaller image (#2988).
+    # Call the image directly: PILSIMD images are not torchvision PIL instances.
+    resized = np.array(
+        pil.resize((target_size.width, target_size.height), resize_image.BILINEAR)
+    )
+    if swap_channels:
+        resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
