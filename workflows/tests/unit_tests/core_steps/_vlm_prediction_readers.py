@@ -68,6 +68,27 @@ def detection_confidences(predictions: Any) -> List[float]:
     return predictions.confidence.detach().cpu().tolist()
 
 
+def detection_masks(predictions: Any) -> List[Any]:
+    """Per-instance boolean ``(H, W)`` masks as numpy arrays, decoded from RLE
+    when that is how the prediction carries them (the segmentation decoder's
+    contract) - numpy-side ``data["rle_mask"]``, tensor-side ``InstancesRLEMasks``."""
+    from pycocotools import mask as mask_utils
+
+    if isinstance(predictions, sv.Detections):
+        rle_masks = predictions.data.get("rle_mask")
+        if rle_masks is not None:
+            return [mask_utils.decode(rle).astype(bool) for rle in rle_masks]
+        return [] if predictions.mask is None else list(predictions.mask)
+    mask = predictions.mask
+    if hasattr(mask, "masks") and hasattr(mask, "image_size"):
+        height, width = mask.image_size
+        return [
+            mask_utils.decode({"size": [height, width], "counts": counts}).astype(bool)
+            for counts in mask.masks
+        ]
+    return list(mask.detach().cpu().numpy().astype(bool))
+
+
 def detection_inference_ids(predictions: Any) -> List[str]:
     """The inference id of every box - per-box data numpy-side, a single
     ``image_metadata`` entry tensor-side."""

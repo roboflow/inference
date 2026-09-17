@@ -109,6 +109,7 @@ class FontsConfiguration:
 @dataclass(frozen=True)
 class ModelsConfiguration:
     lmm_enabled: bool = False
+    vlm_segmentation_max_polygon_vertices: int = 500
     clip_version_id: str = "ViT-B-16"
     core_model_sam2_enabled: bool = True
     core_model_sam3_enabled: bool = True

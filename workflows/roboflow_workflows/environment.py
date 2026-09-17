@@ -115,6 +115,9 @@ MODEL_CACHE_DIR = _CONFIGURATION.fonts.model_cache_dir
 
 # --- model feature flags ---
 LMM_ENABLED = _CONFIGURATION.models.lmm_enabled
+WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES = (
+    _CONFIGURATION.models.vlm_segmentation_max_polygon_vertices
+)
 CLIP_VERSION_ID = _CONFIGURATION.models.clip_version_id
 CORE_MODEL_SAM2_ENABLED = _CONFIGURATION.models.core_model_sam2_enabled
 CORE_MODEL_SAM3_ENABLED = _CONFIGURATION.models.core_model_sam3_enabled

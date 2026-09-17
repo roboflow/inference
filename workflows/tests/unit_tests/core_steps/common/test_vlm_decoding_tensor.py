@@ -53,7 +53,10 @@ from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from tests.unit_tests.core_steps._vlm_prediction_readers import detection_masks
 
 pytestmark = pytest.mark.skipif(
     not ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -318,3 +321,86 @@ def test_duplicate_classes_report_error_status_instead_of_raising() -> None:
 
     assert error_status is True
     assert predictions is None
+
+
+def test_decode_vlm_output_returns_instance_detections_for_segmentation() -> None:
+    """The segmentation task has no deprecated formatter to pin against, so
+    this checks the carrier shape the tensor-mode serializer relies on."""
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8),
+    )
+    raw_output = json.dumps(
+        {
+            "segmentations": [
+                {"label": "cat", "polygon": [80, 100, 400, 100, 400, 300, 80, 300]},
+                {"label": "bird", "polygon": [500, 50, 600, 50, 600, 150]},
+            ]
+        }
+    )
+
+    error_status, predictions = decode_vlm_output(
+        task_type="instance-segmentation",
+        raw_output=raw_output,
+        image=image,
+        classes=CLASSES,
+        inference_id="inference-id",
+        upload_width=IMAGE_WIDTH,
+        upload_height=IMAGE_HEIGHT,
+    )
+
+    assert error_status is False
+    assert isinstance(predictions, InstanceDetections)
+    # Boxes come from the RLE (`toBbox`), i.e. the pixels the mask covers, not
+    # the polygon extents: the triangle's hypotenuse boundary is not painted.
+    assert predictions.xyxy.tolist() == [
+        [80.0, 100.0, 400.0, 300.0],
+        [501.0, 50.0, 600.0, 149.0],
+    ]
+    assert predictions.class_id.tolist() == [0, -1]
+    assert predictions.confidence.tolist() == [1.0, 1.0]
+    # RLE carrier, never a dense (N, H, W) tensor.
+    assert isinstance(predictions.mask, InstancesRLEMasks)
+    assert predictions.mask.image_size == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert len(predictions.mask.masks) == 2
+    assert all(isinstance(counts, bytes) for counts in predictions.mask.masks)
+    masks = detection_masks(predictions)
+    assert masks[0].shape == (IMAGE_HEIGHT, IMAGE_WIDTH)
+    assert bool(masks[0][200, 240])
+    assert not bool(masks[0][50, 50])
+    assert predictions.image_metadata[PREDICTION_TYPE_KEY] == "instance-segmentation"
+    assert predictions.image_metadata[CLASS_NAMES_KEY] == {0: "cat", -1: "bird"}
+    assert predictions.image_metadata[INFERENCE_ID_KEY] == "inference-id"
+    assert predictions.image_metadata[IMAGE_DIMENSIONS_KEY] == [
+        IMAGE_HEIGHT,
+        IMAGE_WIDTH,
+    ]
+    assert [entry[CLASS_NAME_KEY] for entry in predictions.bboxes_metadata] == [
+        "cat",
+        "bird",
+    ]
+
+
+def test_decode_vlm_output_returns_empty_instance_detections_for_empty_answer() -> None:
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8),
+    )
+
+    error_status, predictions = decode_vlm_output(
+        task_type="instance-segmentation",
+        raw_output='{"segmentations": []}',
+        image=image,
+        classes=CLASSES,
+        inference_id="inference-id",
+        upload_width=IMAGE_WIDTH,
+        upload_height=IMAGE_HEIGHT,
+    )
+
+    assert error_status is False
+    assert isinstance(predictions, InstanceDetections)
+    assert len(predictions) == 0
+    assert isinstance(predictions.mask, InstancesRLEMasks)
+    assert predictions.mask.masks == []
+    assert predictions.bboxes_metadata is None
+    assert predictions.image_metadata[CLASS_NAMES_KEY] == {0: "cat", 1: "dog"}

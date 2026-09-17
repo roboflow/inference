@@ -39,6 +39,10 @@ VLM_TASKS_METADATA = {
         "name": "Unprompted Object Detection",
         "description": "Model detects and returns the bounding boxes for prominent objects in the image",
     },
+    "instance-segmentation": {
+        "name": "Instance Segmentation",
+        "description": "Model segments every instance of the provided classes and returns a polygon outline per instance",
+    },
     "open-vocabulary-object-detection": {
         "name": "Object Detection",
         "description": "Model detects and returns the bounding boxes for the provided classes",

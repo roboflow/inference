@@ -17,6 +17,10 @@ format, and reproduces the output of the deprecated tensor formatter blocks
 * detections carry ``image_metadata`` with the ``class_id -> name`` map,
   prediction type, dimensions, inference id and the parent/root lineage, plus
   per-box ``detection_id``/``class`` on ``bboxes_metadata``;
+* RLE-masked detections (the ``instance-segmentation`` task, ``mask=None`` +
+  ``data["rle_mask"]``) become ``InstanceDetections`` with the same metadata
+  and an ``InstancesRLEMasks`` carrier - what the tensor-mode serializer
+  registered for the instance-segmentation kinds expects, and no dense mask;
 * classification carries the dense, ``class_id``-indexed confidence vector and
   is tagged ``CLASSIFICATION_STYLE_FORMATTER`` so
   ``serializers_tensor.serialise_native_classification`` reproduces the "D4 /
@@ -52,6 +56,7 @@ from roboflow_workflows.execution_engine.constants import (
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -66,17 +71,22 @@ try:
         ClassificationPrediction,
         MultiLabelClassificationPrediction,
     )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
     from inference_models.models.base.object_detection import Detections
+    from inference_models.models.base.types import InstancesRLEMasks
 
     TENSOR_NATIVE_CARRIERS_AVAILABLE = True
 except ImportError:
     torch = None
     ClassificationPrediction = None
     MultiLabelClassificationPrediction = None
+    InstanceDetections = None
+    InstancesRLEMasks = None
     Detections = None
     TENSOR_NATIVE_CARRIERS_AVAILABLE = False
 
 DETECTION_PREDICTION_TYPE = "object-detection"
+INSTANCE_SEGMENTATION_PREDICTION_TYPE = "instance-segmentation"
 CLASSIFICATION_PREDICTION_TYPE = "classification"
 
 
@@ -107,11 +117,22 @@ def to_tensor_native_predictions(
             an empty detection prediction, which carries no per-box copy.
 
     Returns:
-        The native ``Detections`` / ``ClassificationPrediction`` /
-        ``MultiLabelClassificationPrediction``, or the input unchanged.
+        The native ``Detections`` / ``InstanceDetections`` /
+        ``ClassificationPrediction`` / ``MultiLabelClassificationPrediction``,
+        or the input unchanged.
     """
     if not tensor_native_carriers_enabled():
         return predictions
+    if isinstance(predictions, sv.Detections) and (
+        predictions.mask is not None
+        or RLE_MASK_KEY_IN_SV_DETECTIONS in predictions.data
+    ):
+        return native_instance_detections_from_sv_detections(
+            detections=predictions,
+            image=image,
+            classes=classes,
+            inference_id=inference_id,
+        )
     if isinstance(predictions, sv.Detections):
         return native_detections_from_sv_detections(
             detections=predictions,
@@ -146,6 +167,73 @@ def native_detections_from_sv_detections(
     Returns:
         The native ``inference_models.Detections``.
     """
+    fields = _native_detection_fields(
+        detections=detections,
+        image=image,
+        classes=classes,
+        inference_id=inference_id,
+        prediction_type=DETECTION_PREDICTION_TYPE,
+    )
+    return Detections(**fields)
+
+
+def native_instance_detections_from_sv_detections(
+    detections: sv.Detections,
+    image: WorkflowImageData,
+    classes: Optional[List[str]],
+    inference_id: Optional[str] = None,
+) -> "InstanceDetections":
+    """Rebuild masked ``sv.Detections`` decoded from a VLM answer as native
+    instance detections.
+
+    Same tensors and metadata as :func:`native_detections_from_sv_detections`
+    plus the mask carrier: ``InstancesRLEMasks`` when the decoder handed back
+    RLE (the segmentation task's contract), else the dense boolean stack.
+
+    Args:
+        detections: Detections built by ``build_instance_segmentations``.
+        image: Workflow image the instances refer to.
+        classes: Class names the block asked the model for.
+
+    Returns:
+        The native ``inference_models.InstanceDetections``.
+    """
+    fields = _native_detection_fields(
+        detections=detections,
+        image=image,
+        classes=classes,
+        inference_id=inference_id,
+        prediction_type=INSTANCE_SEGMENTATION_PREDICTION_TYPE,
+    )
+    image_height, image_width = image._read_shape_without_materialization()
+    rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    if rle_masks is not None or detections.mask is None:
+        counts = [
+            (
+                rle["counts"].encode("utf-8")
+                if isinstance(rle["counts"], str)
+                else rle["counts"]
+            )
+            for rle in (rle_masks if rle_masks is not None else [])
+        ]
+        mask = InstancesRLEMasks(image_size=(image_height, image_width), masks=counts)
+    else:
+        mask = torch.as_tensor(
+            np.asarray(detections.mask),
+            dtype=torch.bool,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        )
+    return InstanceDetections(mask=mask, **fields)
+
+
+def _native_detection_fields(
+    detections: sv.Detections,
+    image: WorkflowImageData,
+    classes: Optional[List[str]],
+    inference_id: Optional[str],
+    prediction_type: str,
+) -> Dict[str, Any]:
+    """The constructor fields shared by ``Detections`` and ``InstanceDetections``."""
     image_height, image_width = image._read_shape_without_materialization()
     class_name = [
         str(value) for value in detections.data.get(CLASS_NAME_DATA_FIELD, [])
@@ -196,8 +284,9 @@ def native_detections_from_sv_detections(
         image_width=image_width,
         inference_id=inference_id,
         class_names=class_names,
+        prediction_type=prediction_type,
     )
-    return Detections(
+    return dict(
         xyxy=torch.as_tensor(
             np.asarray(detections.xyxy),
             dtype=torch.float32,
@@ -224,6 +313,7 @@ def _build_detections_image_metadata(
     image_width: int,
     inference_id: str,
     class_names: Dict[int, str],
+    prediction_type: str = DETECTION_PREDICTION_TYPE,
 ) -> dict:
     """Per-image detection state - verbatim port of ``build_image_metadata``
     from ``formatters/vlm_as_detector/v2_tensor.py``."""
@@ -233,7 +323,7 @@ def _build_detections_image_metadata(
     root_coordinates = root.origin_coordinates
     return {
         CLASS_NAMES_KEY: class_names,
-        PREDICTION_TYPE_KEY: DETECTION_PREDICTION_TYPE,
+        PREDICTION_TYPE_KEY: prediction_type,
         IMAGE_DIMENSIONS_KEY: [image_height, image_width],
         INFERENCE_ID_KEY: inference_id,
         PARENT_ID_KEY: parent.parent_id,

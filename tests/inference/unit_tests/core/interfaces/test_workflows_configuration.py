@@ -143,6 +143,10 @@ FIELDS = [
     ("ALLOW_WORKFLOWS_FONTS_DOWNLOAD", lambda c: c.fonts.allow_download),
     ("MODEL_CACHE_DIR", lambda c: c.fonts.model_cache_dir),
     ("LMM_ENABLED", lambda c: c.models.lmm_enabled),
+    (
+        "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES",
+        lambda c: c.models.vlm_segmentation_max_polygon_vertices,
+    ),
     ("CLIP_VERSION_ID", lambda c: c.models.clip_version_id),
     ("CORE_MODEL_SAM2_ENABLED", lambda c: c.models.core_model_sam2_enabled),
     ("CORE_MODEL_SAM3_ENABLED", lambda c: c.models.core_model_sam3_enabled),
@@ -210,7 +214,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 75, len(tabled)
+    assert len(tabled) == 76, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -255,6 +259,7 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
 @pytest.mark.parametrize(
     "name, value",
     [
+        ("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 17),
         ("WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET", "https://deployment.example/v1"),
         ("WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT", 12.5),
         ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", set()),
@@ -269,7 +274,7 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
         ("LAMBDA", True),
     ],
 )
-def test_server_configuration_preserves_new_remote_settings(monkeypatch, name, value):
+def test_server_configuration_preserves_new_settings(monkeypatch, name, value):
     monkeypatch.setattr(env, name, value)
     configuration = build_configuration_from_env()
     assert dict(FIELDS)[name](configuration) == value
