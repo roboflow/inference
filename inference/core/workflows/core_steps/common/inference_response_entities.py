@@ -38,6 +38,15 @@ class InferenceResponseImage(BaseModel):
 
 
 class ResolvedModel(BaseModel):
+    """Identity of the model package used for inference.
+
+    Attributes:
+        model_id (str): Canonical model ID returned by the weights provider.
+        model_package_id (str): ID of the loaded model package.
+        backend (str): Backend of the loaded package.
+        quantization (str): Quantization of the loaded package.
+    """
+
     model_config = ConfigDict(protected_namespaces=())
     model_id: str = Field(
         description="Canonical model ID returned by the weights provider. It can differ from the requested alias."
@@ -60,6 +69,7 @@ class InferenceResponse(BaseModel):
         inference_id (Optional[str]): Unique identifier of inference
         frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
+        resolved_model (Optional[ResolvedModel]): Identity of the model package used for inference.
     """
 
     model_config = ConfigDict(protected_namespaces=())

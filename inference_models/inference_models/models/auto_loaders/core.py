@@ -11,7 +11,18 @@ import urllib.parse
 from contextvars import ContextVar
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 
 import torch
 from filelock import FileLock
@@ -2427,16 +2438,12 @@ def attempt_loading_model_with_auto_load_cache(
                 model_init_kwargs=model_init_kwargs,
             ),
         )
-        if (
-            cache_entry.canonical_model_id is not None
-            and cache_entry.backend_type is not None
-        ):
-            model.resolved_model = ResolvedModelMetadata(
-                model_id=cache_entry.canonical_model_id,
-                model_package_id=cache_entry.model_package_id,
-                backend=cache_entry.backend_type.value,
-                quantization=package_config.quantization or Quantization.UNKNOWN.value,
-            )
+        model.resolved_model = ResolvedModelMetadata(
+            model_id=cast(str, cache_entry.canonical_model_id),
+            model_package_id=cache_entry.model_package_id,
+            backend=cache_entry.backend_type.value,
+            quantization=package_config.quantization or Quantization.UNKNOWN.value,
+        )
         if point_model_directory:
             point_model_directory(model_package_cache_dir)
         verbose_info(
