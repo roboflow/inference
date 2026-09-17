@@ -26,7 +26,6 @@ import supervision as sv
 from pycocotools import mask as mask_utils
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.env import WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -40,6 +39,9 @@ from inference.core.workflows.core_steps.common.vlm_decoding.json_extraction imp
 )
 from inference.core.workflows.core_steps.common.vlm_decoding.utils import (
     create_classes_index,
+)
+from inference.core.workflows.environment import (
+    WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
