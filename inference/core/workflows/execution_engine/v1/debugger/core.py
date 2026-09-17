@@ -4,8 +4,7 @@ from typing import Optional
 
 import networkx as nx
 
-from inference.core.utils.environment import str2bool
-from inference.core.utils.file_system import ensure_parent_dir_exists
+from inference.core.workflows.utils.text import ensure_parent_dir_exists, str2bool
 
 DUMP_EXECUTION_GRAPH_ENV = "DUMP_EXECUTION_GRAPH"
 WORKFLOWS_DEBUG_DIR_ENV = "WORKFLOWS_DEBUG_DIR_ENV"

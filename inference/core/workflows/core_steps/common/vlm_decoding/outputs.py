@@ -8,8 +8,8 @@ even for tasks that decode nothing - it is simply ``None`` at runtime.
 """
 
 from typing import Any, Iterable, List, Optional, Tuple
+import logging
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.vlm_decoding.classification import (
     decode_classification,
 )
@@ -35,6 +35,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     Kind,
 )
+
+logger = logging.getLogger(__name__)
 
 DETECTION_TASKS = {"object-detection"}
 SEGMENTATION_TASKS = {"instance-segmentation"}

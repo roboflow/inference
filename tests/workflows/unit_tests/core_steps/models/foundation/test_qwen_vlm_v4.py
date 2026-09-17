@@ -94,9 +94,7 @@ def _openrouter_block() -> QwenVlmBlockV4:
 
 def _native_block(response: str) -> QwenVlmBlockV4:
     model_manager = MagicMock()
-    prediction = MagicMock()
-    prediction.response = response
-    model_manager.infer_from_request_sync.return_value = prediction
+    model_manager.run_lmm.return_value = {"response": response}
     return QwenVlmBlockV4(
         model_manager=model_manager,
         api_key="ws-key",

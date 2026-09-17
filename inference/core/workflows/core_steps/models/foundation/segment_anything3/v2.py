@@ -1,21 +1,31 @@
+import logging
 from types import SimpleNamespace
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator, validator
 
-from inference.core import logger
-from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
-from inference.core.entities.responses.inference import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.inference_response_entities import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam3 import Sam3SegmentationPrediction
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
+    load_core_model,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Sam3Prompt,
+)
+from inference.core.workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -25,16 +35,6 @@ from inference.core.env import (
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import build_roboflow_api_headers
-from inference.core.utils.url_utils import wrap_url
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    load_core_model,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -66,7 +66,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+logger = logging.getLogger(__name__)
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -241,17 +248,19 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -353,18 +362,16 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 )
 
             # Single batched request with all prompts
-            inference_request = Sam3SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
+            sam3_response = self._model_manager.run_sam3_segmentation(
                 model_id=model_id,
+                image=single_image.to_inference_format(numpy_preferred=True),
+                prompts=[
+                    prompt.model_dump(exclude_none=True) for prompt in unified_prompts
+                ],
                 api_key=self._api_key,
-                prompts=unified_prompts,
                 output_prob_thresh=confidence,
                 nms_iou_threshold=nms_iou_threshold if apply_nms else None,
-            )
-
-            sam3_response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
+            )[0]
 
             # Unpack unified batch response
             class_predictions = []
@@ -538,10 +545,12 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                         ROBOFLOW_INTERNAL_SERVICE_SECRET
                     )
 
-                headers = build_roboflow_api_headers(explicit_headers=headers)
+                headers = self._platform_client.build_api_headers(
+                    explicit_headers=headers
+                )
 
                 response = requests.post(
-                    wrap_url(f"{endpoint}?api_key={api_key}"),
+                    self._platform_client.wrap_url(f"{endpoint}?api_key={api_key}"),
                     json=payload,
                     headers=headers,
                     timeout=60,
@@ -604,7 +613,9 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
 
 def convert_sam3_segmentation_response_to_inference_instances_seg_response(
-    sam3_segmentation_predictions: List[Sam3SegmentationPrediction],
+    # Items are the server's Sam3SegmentationPrediction; only .masks and
+    # .confidence are read.
+    sam3_segmentation_predictions: List[Any],
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],

@@ -1,7 +1,10 @@
 from typing import List, Type
 
-from inference.core.cache import cache
-from inference.core.env import (
+from inference.core.workflows.configuration import get_configuration
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
+from inference.core.workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
@@ -12,9 +15,6 @@ from inference.core.env import (
     WORKFLOW_DISABLED_BLOCK_TYPES,
     WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     WORKFLOWS_STEP_EXECUTION_MODE,
-)
-from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
-    DataAggregatorBlockV1,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -458,20 +458,6 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
 else:
     from inference.core.workflows.core_steps.math.cosine_similarity.v1_tensor import (
         CosineSimilarityBlockV1,
-    )
-
-# visual_search emits only dict/scalar/image outputs, so it needs no _tensor sibling.
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
-    RoboflowVisualSearchBlockV1,
-)
-
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
-        RoboflowVisualSearchClassifierBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1_tensor import (
-        RoboflowVisualSearchClassifierBlockV1,
     )
 
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
@@ -1066,60 +1052,6 @@ else:
         ONVIFSinkBlockV1,
     )
 
-from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
-    RoboflowAssetLibraryAttributesBlockV1,
-)
-
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
-        RoboflowCustomMetadataBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1_tensor import (
-        RoboflowCustomMetadataBlockV1,
-    )
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
-        RoboflowDatasetUploadBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
-        RoboflowDatasetUploadBlockV1,
-    )
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
-        RoboflowDatasetUploadBlockV2,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
-        RoboflowDatasetUploadBlockV2,
-    )
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
-        ModelMonitoringInferenceAggregatorBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1_tensor import (
-        ModelMonitoringInferenceAggregatorBlockV1,
-    )
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
-        RoboflowVisionEventsBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
-        RoboflowVisionEventsBlockV1,
-    )
-
-if not ENABLE_TENSOR_DATA_REPRESENTATION:
-    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1 import (
-        VisionEventBundleSinkBlockV1,
-    )
-else:
-    from inference.core.workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
-        VisionEventBundleSinkBlockV1,
-    )
-
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1612,20 +1544,42 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
+from inference.core.workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
+from inference.core.workflows.utils.in_memory_cache import InMemoryWorkflowsCache
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
-    "cache": cache,
+    # Standalone default. Every server composition root overrides it with
+    # `workflows_core.cache` (the shared, Redis-backed singleton) through
+    # install_workflows_platform_bindings(); a per-process cache here would
+    # make sink cooldown and dedup state per-worker.
+    "cache": InMemoryWorkflowsCache(),
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
+    # A no-op by default: billing and tracing are the host's, and a host binds
+    # its own through `workflows_core.execution_observer`.
+    "execution_observer": NULL_EXECUTION_OBSERVER,
     "thread_pool_executor": None,
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
+    # Standalone default. The server overrides it with
+    # `workflows_core.platform_client` at every composition root. An object,
+    # not a function: call_if_callable() would invoke a function registered
+    # here with no arguments.
+    "platform_client": OFFLINE_PLATFORM_CLIENT,
     "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    # The whole configuration, for core blocks that want more than the values
+    # this dict spells out. It resolves for blocks whose `block_source` is
+    # `workflows_core` - every core block, plus a plugin that declares
+    # `BLOCKS_SOURCE = "workflows_core"`. An ordinary plugin must import
+    # `inference.core.workflows.configuration.get_configuration` instead;
+    # see `steps_initialiser.retrieve_init_parameter_values`.
+    "configuration": get_configuration(),
 }
 
 KINDS_SERIALIZERS = {
@@ -1781,13 +1735,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
-        RoboflowVisualSearchBlockV1,
-        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
-        RoboflowDatasetUploadBlockV1,
-        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
@@ -1900,9 +1850,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
-        RoboflowCustomMetadataBlockV1,
-        ModelMonitoringInferenceAggregatorBlockV1,
-        RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV1,
@@ -2010,8 +1957,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
-        RoboflowVisionEventsBlockV1,
-        VisionEventBundleSinkBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
         PPOCRBlockV1,

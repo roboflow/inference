@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.deserializers import (
     _parse_optional_parent_metadata,
 )
@@ -21,6 +20,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -42,6 +42,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.image_codec import ImageCodec
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -88,6 +89,8 @@ def deserialize_image_kind(
     parameter: str,
     image: Any,
     prevent_local_images_loading: bool = False,
+    *,
+    image_codec: Optional["ImageCodec"] = None,
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
@@ -125,6 +128,7 @@ def deserialize_image_kind(
         parameter=parameter,
         image=image,
         prevent_local_images_loading=prevent_local_images_loading,
+        image_codec=image_codec,
     )
 
 

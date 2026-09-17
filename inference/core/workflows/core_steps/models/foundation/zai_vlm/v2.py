@@ -21,7 +21,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
@@ -72,6 +71,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 # Detection and classification answers are decoded in-block now, so only
 # `structured-answering` still points at a downstream parser.

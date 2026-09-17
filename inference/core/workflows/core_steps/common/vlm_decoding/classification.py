@@ -6,9 +6,9 @@ serializers reproduce this exact dict (see the "D4 / formatter shape" notes
 in ``common/serializers_tensor.py``).
 """
 
+import logging
 from typing import List, Optional, Tuple
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.vlm_decoding.json_extraction import (
     extract_json,
 )
@@ -20,6 +20,8 @@ from inference.core.workflows.core_steps.common.vlm_json import (
     coerce_classification_payload,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logger = logging.getLogger(__name__)
 
 
 def decode_classification(
