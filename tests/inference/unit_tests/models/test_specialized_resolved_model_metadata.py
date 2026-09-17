@@ -44,7 +44,8 @@ IMAGE = InferenceRequestImage(type="base64", value="unused")
 
 @pytest.fixture
 def load_adapter(monkeypatch):
-    monkeypatch.setattr("inference.core.models.base.USE_INFERENCE_MODELS", True)
+    base_module = importlib.import_module("inference.core.models.base")
+    monkeypatch.setattr(base_module, "USE_INFERENCE_MODELS", True)
     imported_modules = []
 
     def load(module_name, class_name):
@@ -106,7 +107,8 @@ def test_embedding_request_metadata(
     load_adapter, monkeypatch, module_name, class_name, request_class, enabled
 ):
     adapter = load_adapter(module_name, class_name)
-    monkeypatch.setattr("inference.core.models.base.USE_INFERENCE_MODELS", enabled)
+    base_module = importlib.import_module("inference.core.models.base")
+    monkeypatch.setattr(base_module, "USE_INFERENCE_MODELS", enabled)
     adapter.embed_text = Mock(return_value=np.array([[0.1, 0.2]]))
 
     response = adapter.infer_from_request(request_class(text="cat"))
