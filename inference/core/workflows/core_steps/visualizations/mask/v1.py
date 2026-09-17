@@ -1,8 +1,5 @@
-import copy
 from typing import List, Literal, Optional, Type, Union
 
-import numpy as np
-import pycocotools.mask as mask_utils
 import supervision as sv
 from pydantic import ConfigDict, Field
 
@@ -13,8 +10,8 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
-from inference.core.workflows.execution_engine.constants import (
-    RLE_MASK_KEY_IN_SV_DETECTIONS,
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
@@ -174,17 +171,7 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
             opacity,
         )
 
-        if (
-            predictions.mask is None
-            and RLE_MASK_KEY_IN_SV_DETECTIONS in predictions.data
-        ):
-            predictions = copy.copy(predictions)
-            predictions.mask = np.array(
-                [
-                    mask_utils.decode(rle).astype(bool)
-                    for rle in predictions.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
-                ]
-            )
+        predictions = ensure_dense_masks(predictions)
 
         scene = image.numpy_image
         if copy_image:

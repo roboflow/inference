@@ -1,4 +1,5 @@
 import numpy as np
+import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
 from pydantic import ValidationError
@@ -271,3 +272,43 @@ def test_label_visualization_block_with_area_converted_missing_data() -> None:
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+
+
+def test_label_visualization_center_of_mass_with_rle_masks() -> None:
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:60, 20:60] = 1
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    detections = sv.Detections(
+        xyxy=np.array([[20, 20, 60, 60]], dtype=np.float64),
+        mask=None,
+        class_id=np.array([1]),
+        data={
+            "class_name": np.array(["cat"]),
+            "rle_mask": np.array([rle], dtype=object),
+        },
+    )
+
+    output = LabelVisualizationBlockV1().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        ),
+        predictions=detections,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        text="Class",
+        text_position="CENTER_OF_MASS",
+        text_color="WHITE",
+        text_scale=1.0,
+        text_thickness=1,
+        text_padding=10,
+        border_radius=0,
+    )
+
+    result = output["image"].numpy_image
+    assert result.shape == (100, 100, 3)
+    assert not np.array_equal(result, np.zeros((100, 100, 3), dtype=np.uint8))

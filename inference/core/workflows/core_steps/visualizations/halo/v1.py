@@ -13,6 +13,9 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
@@ -180,6 +183,7 @@ class HaloVisualizationBlockV1(ColorableVisualizationBlock):
             opacity,
             kernel_size,
         )
+        predictions = ensure_dense_masks(predictions)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()

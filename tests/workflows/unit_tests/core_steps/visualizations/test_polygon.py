@@ -1,4 +1,5 @@
 import numpy as np
+import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
 from pydantic import ValidationError
@@ -188,3 +189,64 @@ def test_polygon_annotator_draws_at_correct_coordinates() -> None:
     assert (
         not origin_region.any()
     ), "Polygon was drawn near origin — coordinate offset is broken"
+
+
+def _rle_circle_detections() -> sv.Detections:
+    height, width, cx, cy, radius = 100, 100, 50, 50, 15
+    yy, xx = np.ogrid[:height, :width]
+    mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= radius**2
+    rle = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return sv.Detections(
+        xyxy=np.array([[35, 35, 65, 65]], dtype=np.float64),
+        mask=None,
+        class_id=np.array([1]),
+        data={
+            "class_name": np.array(["cat"]),
+            "rle_mask": np.array([rle], dtype=object),
+        },
+    )
+
+
+def _interior_contour_pixel(mask: np.ndarray, xyxy) -> tuple[int, int]:
+    x1, y1, x2, y2 = (int(v) for v in xyxy)
+    height, width = mask.shape
+    for y in range(1, height - 1):
+        for x in range(1, width - 1):
+            if not mask[y, x]:
+                continue
+            if x in (x1, x2) or y in (y1, y2):
+                continue
+            if not (
+                mask[y - 1, x] and mask[y + 1, x] and mask[y, x - 1] and mask[y, x + 1]
+            ):
+                return x, y
+    raise AssertionError("expected a contour pixel inside the box")
+
+
+@pytest.mark.parametrize(
+    "block_cls", [PolygonVisualizationBlockV1, PolygonVisualizationBlockV2]
+)
+def test_polygon_visualization_draws_rle_contour_not_box(block_cls) -> None:
+    detections = _rle_circle_detections()
+    yy, xx = np.ogrid[:100, :100]
+    circle = (xx - 50) ** 2 + (yy - 50) ** 2 <= 15**2
+    contour_x, contour_y = _interior_contour_pixel(circle, detections.xyxy[0])
+
+    output = block_cls().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        ),
+        predictions=detections,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=[],
+        color_axis="CLASS",
+        thickness=1,
+    )
+
+    result = output["image"].numpy_image
+    assert result[contour_y, contour_x].any(), "expected the mask contour to be drawn"
+    assert not result[35, 35].any(), "box corner should stay empty for an RLE circle"

@@ -13,7 +13,10 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.core_steps.visualizations.common.label_text import (
     build_detection_labels,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -265,6 +268,8 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
+        if text_position == "CENTER_OF_MASS":
+            predictions = ensure_dense_masks(predictions)
         labels = build_detection_labels(predictions, text)
         scene = image.numpy_image
         if copy_image:

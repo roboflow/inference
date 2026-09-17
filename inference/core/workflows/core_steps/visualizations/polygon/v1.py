@@ -13,6 +13,9 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -168,6 +171,7 @@ class PolygonVisualizationBlockV1(ColorableVisualizationBlock):
             thickness,
         )
 
+        predictions = ensure_dense_masks(predictions)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()
