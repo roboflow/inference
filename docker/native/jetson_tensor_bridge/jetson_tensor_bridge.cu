@@ -272,10 +272,10 @@ struct RfJetsonPipeline {
     bool conversion_failed = false;
     char conversion_error[1024] = {0};
     RfFrameInfo last_frame_info{};
-    bool frame_info_valid = false;
     // The advertised source properties are established from the first frame.
     // If later caps disagree, grab() fails recoverably instead of returning
     // tensors whose dimensions no longer match cached workflow metadata.
+    bool frame_info_valid = false;
     // dmabuf fds observed on this pipeline (guarded by `mutex`); its size is
     // exported as stats.unique_buffer_fds. Decoder capture pools are small
     // (single digits), so an ordered set is fine.
