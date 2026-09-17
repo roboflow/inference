@@ -1,8 +1,11 @@
+import importlib
 import time
 from datetime import datetime
+from functools import partial
 from inspect import signature
 from queue import Queue
 from threading import Event, Thread
+from typing import List, Tuple
 from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
@@ -11,6 +14,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core import env as env_module
 from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera import video_source
 from inference.core.interfaces.camera.entities import (
@@ -493,6 +497,41 @@ def test_video_source_selects_gstreamer_producer_for_rtsps_on_jetson() -> None:
     mock_producer_cls.assert_called_once_with(credentialed_url)
 
 
+@_NUMPY_ONLY
+def test_video_source_selects_gstreamer_for_rtsps_when_running_on_jetson_alias_resolves(
+    monkeypatch,
+) -> None:
+    credentialed_url = "rtsps://user:secret@192.168.1.1:554/stream"
+    with monkeypatch.context() as env_context:
+        env_context.delenv("RUNS_ON_JETSON", raising=False)
+        env_context.setenv("RUNNING_ON_JETSON", "True")
+        importlib.reload(env_module)
+        resolved_runs_on_jetson = env_module.RUNS_ON_JETSON
+    importlib.reload(env_module)
+
+    assert resolved_runs_on_jetson is True
+    with patch.object(video_source, "RUNS_ON_JETSON", resolved_runs_on_jetson):
+        with patch(
+            "inference.core.interfaces.camera.gstreamer_rtsp_producer.gstreamer_rtsp_capture_available",
+            return_value=True,
+        ):
+            with patch(
+                "inference.core.interfaces.camera.gstreamer_rtsp_producer.GStreamerRtspVideoFrameProducer"
+            ) as mock_producer_cls:
+                mock_producer_cls.return_value.isOpened.return_value = True
+                mock_producer_cls.return_value.discover_source_properties.return_value = SourceProperties(
+                    width=640,
+                    height=480,
+                    fps=30.0,
+                    total_frames=0,
+                    is_file=False,
+                )
+                source = VideoSource.init(video_reference=credentialed_url)
+                source.start()
+
+    mock_producer_cls.assert_called_once_with(credentialed_url)
+
+
 def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
     url = "rtsp://user:secret@192.168.1.1:554/stream"
     with patch("inference.core.interfaces.camera.video_source.RUNS_ON_JETSON", True):
@@ -513,6 +552,127 @@ def test_video_source_keeps_cv2_producer_for_plain_rtsp_on_jetson() -> None:
             source.start()
 
     mock_producer_cls.assert_called_once_with(url)
+
+
+def test_video_source_describe_source_sanitizes_credentialed_rtsp_url() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    result = source.describe_source()
+
+    assert result.source_reference == "rtsp://192.168.1.1:554/stream"
+    assert source._stream_reference == credentialed_url
+
+
+def test_video_source_describe_source_sanitizes_password_with_at_sign() -> None:
+    credentialed_url = "rtsp://user:p@ss@host:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    result = source.describe_source()
+
+    assert result.source_reference == "rtsp://host:554/stream"
+    assert "p@ss" not in result.source_reference
+    assert source._stream_reference == credentialed_url
+
+
+def test_video_source_describe_source_callable_reference_unchanged() -> None:
+    def producer_factory():
+        return MagicMock()
+
+    source = VideoSource.init(video_reference=producer_factory)
+
+    result = source.describe_source()
+
+    assert result.source_reference == str(producer_factory)
+
+
+def test_video_source_describe_source_partial_reference_redacts_credentials() -> None:
+    def producer_factory(url):
+        return MagicMock()
+
+    factory = partial(producer_factory, "rtsp://user:secret@host:554/stream")
+    source = VideoSource.init(video_reference=factory)
+
+    result = source.describe_source()
+
+    assert "secret" not in result.source_reference
+    assert "rtsp://host:554/stream" in result.source_reference
+
+
+def test_video_source_connection_error_uses_sanitized_reference() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = ""
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    error_message = str(exc_info.value)
+    assert "secret" not in error_message
+    assert "rtsp://192.168.1.1:554/stream" in error_message
+    assert source._stream_reference == credentialed_url
+
+
+def test_video_source_connection_error_sanitizes_password_with_at_sign() -> None:
+    credentialed_url = "rtsp://user:p@ss@host:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = ""
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    error_message = str(exc_info.value)
+    assert "p@ss" not in error_message
+    assert "rtsp://host:554/stream" in error_message
+
+
+def test_video_source_connection_error_classification_uses_raw_stderr() -> None:
+    source = VideoSource.init(video_reference="rtsp://192.168.1.64:554/stream")
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = False
+        mock_producer.return_value.connection_error_message.return_value = (
+            "Connection to tcp://192.168.1.64:554?timeout=0 failed: Connection refused"
+        )
+        with pytest.raises(SourceConnectionError) as exc_info:
+            source.start()
+
+    assert exc_info.value.code == StreamErrorCode.STREAM_TIMEOUT
+    assert "timeout=0" not in str(exc_info.value)
+
+
+def test_video_source_decode_path_uses_operational_reference() -> None:
+    credentialed_url = "rtsp://user:secret@192.168.1.1:554/stream"
+    source = VideoSource.init(video_reference=credentialed_url)
+
+    with patch(
+        "inference.core.interfaces.camera.video_source.CV2VideoFrameProducer"
+    ) as mock_producer:
+        mock_producer.return_value.isOpened.return_value = True
+        mock_producer.return_value.discover_source_properties.return_value = (
+            SourceProperties(
+                width=640,
+                height=480,
+                fps=30.0,
+                total_frames=0,
+                is_file=False,
+            )
+        )
+        try:
+            source.start()
+            mock_producer.assert_called_once_with(credentialed_url)
+        finally:
+            tear_down_source(source=source)
 
 
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
@@ -1170,6 +1330,7 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1203,6 +1364,7 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
 def test_stream_consumption_when_buffering_not_allowed() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1240,6 +1402,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1278,6 +1441,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1321,6 +1485,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
 def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.DROP_LATEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1357,6 +1522,7 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
 def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -> None:
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1406,6 +1572,7 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -1456,6 +1623,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=200.0,
@@ -1530,6 +1698,7 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=5.0,
         adaptive_mode_reader_pace_tolerance=200.0,
@@ -1605,6 +1774,7 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
 ):
     # given
     consumer = VideoConsumer.init(
+        adaptive_backpressure=False,
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=100.0,
         adaptive_mode_reader_pace_tolerance=0.1,
@@ -1657,6 +1827,140 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
         len(buffer_content) < 103
     ), "With delay in stream consumption, not all frames can be processed as adaptive strategy taking into account reader pace should trigger decoding prevention"
     assert buffer.empty() is True, "Everything should be consumed from buffer"
+
+
+def _run_adaptive_stream_pace_scenario(
+    adaptive_backpressure: bool,
+    drain: bool = True,
+    buffer_maxsize: int = 0,
+) -> Tuple[List[int], List[StatusUpdate], MagicMock, Queue]:
+    """Drive a consumer whose grabbing pace can never reach the DECLARED fps.
+
+    The source announces 200 fps while frames are emitted at ~100 fps, so the
+    legacy stream-pace rule of ADAPTIVE mode is permanently satisfied - exactly
+    the shape of a real RTSP camera that advertises a round 30 fps and delivers
+    a hair less. With `drain=True` the reader empties the buffer the moment a
+    frame appears (a consumer with abundant spare capacity); with `drain=False`
+    nobody reads at all (a consumer that is genuinely stuck).
+    """
+    status_updates: List[StatusUpdate] = []
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=200.0,
+        minimum_adaptive_mode_samples=2,
+        maximum_adaptive_frames_dropped_in_row=1,
+        status_update_handlers=[status_updates.append],
+        adaptive_backpressure=adaptive_backpressure,
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=False, fps=200)
+    video.discover_source_properties.return_value = source_properties
+    buffer = Queue(maxsize=buffer_maxsize)
+
+    consumed_frame_ids: List[int] = []
+    consumer.reset(source_properties=source_properties)
+    for _ in range(20):
+        consumer.consume_frame(
+            video=video,
+            declared_source_fps=source_properties.fps,
+            is_source_video_file=source_properties.is_file,
+            buffer=buffer,
+            frames_buffering_allowed=True,
+        )
+        time.sleep(0.01)
+        if drain:
+            while not buffer.empty():
+                consumed_frame_ids.append(buffer.get_nowait().frame_id)
+                consumer.notify_frame_consumed()
+    return consumed_frame_ids, status_updates, video, buffer
+
+
+@pytest.mark.slow
+def test_adaptive_backpressure_never_starves_a_draining_consumer() -> None:
+    # when
+    consumed_frame_ids, status_updates, _, _ = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=True,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    assert len(adaptive_drops) == 0, (
+        "The buffer is drained the moment a frame appears, so it never reaches"
+        " the watermark and demand-driven mode must not drop anything - the"
+        " unreachable DECLARED fps that fools the legacy rule is never consulted"
+    )
+    assert (
+        len(consumed_frame_ids) == 20
+    ), "A consumer with spare capacity must receive every grabbed frame"
+    assert consumed_frame_ids[-1] == 20, "Last grabbed frame must reach the consumer"
+
+
+@pytest.mark.slow
+def test_adaptive_backpressure_keeps_buffer_fresh_for_a_stuck_consumer() -> None:
+    # when - nobody drains a 4-slot buffer for 20 grabbed frames
+    _, status_updates, video, buffer = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=True,
+        drain=False,
+        buffer_maxsize=4,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    evictions = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "DROP_OLDEST strategy"
+    ]
+    assert len(adaptive_drops) == 0, (
+        "Demand-driven ADAPTIVE_DROP_OLDEST must never invoke the estimator"
+        " drop path - the full-buffer eviction path handles overrun"
+    )
+    assert (
+        len(evictions) == 16
+    ), "Every frame beyond the buffer capacity must evict the oldest one"
+    assert video.retrieve.call_count == 20, "Eviction happens post-decode here"
+    buffered_ids = []
+    while not buffer.empty():
+        buffered_ids.append(buffer.get_nowait().frame_id)
+    assert buffered_ids == [17, 18, 19, 20], (
+        "The buffer must hold the NEWEST frames - keep-oldest-when-full ages"
+        " the content past any staleness budget and starves TTL consumers,"
+        " which is exactly the failure measured on the L4 at 4 streams"
+    )
+
+
+@pytest.mark.slow
+def test_adaptive_backpressure_can_be_disabled_restoring_legacy_rules() -> None:
+    # when
+    consumed_frame_ids, status_updates, _, _ = _run_adaptive_stream_pace_scenario(
+        adaptive_backpressure=False,
+    )
+
+    # then
+    adaptive_drops = [
+        update
+        for update in status_updates
+        if update.payload.get("cause") == "ADAPTIVE strategy"
+    ]
+    assert len(adaptive_drops) >= 5, (
+        "With backpressure disabled, the unreachable declared fps must keep the"
+        " legacy drop ratchet engaged"
+    )
+    assert (
+        len(consumed_frame_ids) < 18
+    ), "Legacy open-loop behaviour starves the consumer"
 
 
 def test_get_fps_if_tick_happens_now_when_monitor_has_no_ticks_registered() -> None:

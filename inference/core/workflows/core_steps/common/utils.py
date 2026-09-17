@@ -1,22 +1,29 @@
 import logging
+import math
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
+import cv2
 import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD, ORIENTED_BOX_COORDINATES
 
-from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.sam2 import Sam2InferenceRequest
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
+    validate_keypoints_padding,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -53,30 +60,35 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    wrap_with_context_snapshot,
+)
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
 
 T = TypeVar("T")
 
 
 def load_core_model(
-    model_manager: ModelManager,
-    inference_request: Union[
-        DoctrOCRInferenceRequest,
-        EasyOCRInferenceRequest,
-        ClipCompareRequest,
-        YOLOWorldInferenceRequest,
-        Sam2InferenceRequest,
-    ],
+    model_manager: ModelsProvider,
     core_model: str,
+    version_id: Optional[str],
+    api_key: Optional[str],
 ) -> str:
-    version_id_field = f"{core_model}_version_id"
-    core_model_id = (
-        f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
-    )
+    """Register a Roboflow core model and return the id it was registered under.
+
+    Takes the version id and api key directly rather than a request object, so
+    `inference.core.workflows` does not import the server's HTTP request
+    classes just to read two attributes off them.
+    """
+    core_model_id = f"{core_model}/{version_id}"
     model_manager.add_model(
         core_model_id,
-        inference_request.api_key,
-        endpoint_type=ModelEndpointType.CORE_MODEL,
+        api_key,
+        endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
     )
     return core_model_id
 
@@ -177,6 +189,7 @@ def add_inference_keypoints_to_sv_detections(
     # is_data_equal (used in Detections indexing/comparison).
     max_kps = max((len(kp) for kp in keypoints_xy), default=0)
     n = len(inference_prediction)
+    validate_keypoints_padding(n, max_kps)
     padded_xy = np.zeros((n, max_kps, 2), dtype=np.float32)
     padded_conf = np.zeros((n, max_kps), dtype=np.float32)
     padded_class_id = np.zeros((n, max_kps), dtype=int)
@@ -212,6 +225,16 @@ def attach_parents_coordinates_to_batch_of_sv_detections(
     return result
 
 
+def empty_detections_with_image_metadata(image: WorkflowImageData) -> sv.Detections:
+    """Keep image/parent metadata for zero-row results and retain the empty
+    confidence/class_id arrays expected by downstream blocks.
+    """
+    image_height, image_width = image.numpy_image.shape[:2]
+    detections = sv.Detections.empty()
+    detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
+    return attach_parents_coordinates_to_sv_detections(detections, image)
+
+
 def attach_parents_coordinates_to_sv_detections(
     detections: sv.Detections,
     image: WorkflowImageData,
@@ -240,6 +263,21 @@ def attach_parent_coordinates_to_detections(
     dimensions_key: str,
 ) -> sv.Detections:
     parent_coordinates_system = parent_metadata.origin_coordinates
+    if len(detections) == 0:
+        # Per-row data cannot retain lineage when there are no rows.
+        detections.metadata.update(
+            {
+                parent_id_key: parent_metadata.parent_id,
+                coordinates_key: [
+                    parent_coordinates_system.left_top_x,
+                    parent_coordinates_system.left_top_y,
+                ],
+                dimensions_key: [
+                    parent_coordinates_system.origin_height,
+                    parent_coordinates_system.origin_width,
+                ],
+            }
+        )
     detections[parent_id_key] = np.array([parent_metadata.parent_id] * len(detections))
     coordinates = np.array(
         [[parent_coordinates_system.left_top_x, parent_coordinates_system.left_top_y]]
@@ -271,6 +309,22 @@ def sv_detections_to_root_coordinates(
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
+        root_dimensions = detections_copy.metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
+        if root_dimensions is not None:
+            detections_copy.metadata.update(
+                {
+                    IMAGE_DIMENSIONS_KEY: list(root_dimensions),
+                    PARENT_DIMENSIONS_KEY: list(root_dimensions),
+                    PARENT_COORDINATES_KEY: [0, 0],
+                    ROOT_PARENT_COORDINATES_KEY: [0, 0],
+                    SCALING_RELATIVE_TO_PARENT_KEY: 1.0,
+                    SCALING_RELATIVE_TO_ROOT_PARENT_KEY: 1.0,
+                }
+            )
+            if ROOT_PARENT_ID_KEY in detections_copy.metadata:
+                detections_copy.metadata[PARENT_ID_KEY] = detections_copy.metadata[
+                    ROOT_PARENT_ID_KEY
+                ]
         return detections_copy
 
     if any(
@@ -394,65 +448,168 @@ def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str
 
 def scale_sv_detections(
     detections: sv.Detections,
-    scale: float,
+    scale: Union[float, Tuple[float, float]],
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    target_size_wh: Optional[Tuple[int, int]] = None,
+    update_scaling_metadata: bool = True,
 ) -> sv.Detections:
+    """Scale detection geometry into a new image coordinate frame.
+
+    Args:
+        detections: Predictions in the source image frame.
+        scale: Isotropic factor, or ``(scale_x, scale_y)`` for aspect-preserving
+            resizes where integer truncation makes the axes differ.
+        keypoints_key: Key under which keypoint xy arrays are stored.
+        target_size_wh: Optional exact ``(width, height)`` of the destination
+            image (e.g. the JPEG that will be uploaded). When set, dense masks
+            and ``image_dimensions`` are forced to this canvas so annotations
+            stay intact relative to the stored image.
+        update_scaling_metadata: Whether to update the scalar workflow coordinate
+            lineage metadata. Set to ``False`` for terminal consumers, such as
+            Dataset Upload, when using different X/Y scales. An anisotropic
+            transform cannot be represented by the existing scalar metadata.
+    """
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
         return detections_copy
-    detections_copy.xyxy = (detections_copy.xyxy * scale).round()
+
+    if isinstance(scale, (tuple, list)):
+        scale_x, scale_y = float(scale[0]), float(scale[1])
+    else:
+        scale_x = scale_y = float(scale)
+
+    scales_are_isotropic = abs(scale_x - scale_y) < 1e-9
+    if update_scaling_metadata and not scales_are_isotropic:
+        raise ValueError(
+            "Anisotropic scaling cannot be represented by scalar workflow "
+            "coordinate metadata. Set update_scaling_metadata=False for a "
+            "terminal result that will not undergo root-coordinate recovery."
+        )
+
+    xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
+    xyxy[:, [0, 2]] *= scale_x
+    xyxy[:, [1, 3]] *= scale_y
+    detections_copy.xyxy = xyxy.round()
+
     if keypoints_key in detections_copy.data:
         for i in range(len(detections_copy[keypoints_key])):
-            detections_copy[keypoints_key][i] = (
-                detections_copy[keypoints_key][i].astype(np.float32) * scale
-            ).round()
-    detections_copy[IMAGE_DIMENSIONS_KEY] = (
-        detections_copy[IMAGE_DIMENSIONS_KEY] * scale
-    ).round()
+            keypoints = detections_copy[keypoints_key][i]
+            if len(keypoints) == 0:
+                continue
+            scaled_keypoints = keypoints.astype(np.float32, copy=True)
+            scaled_keypoints[..., 0] *= scale_x
+            scaled_keypoints[..., 1] *= scale_y
+            detections_copy[keypoints_key][i] = scaled_keypoints.round()
+
+    if target_size_wh is not None:
+        target_w, target_h = int(target_size_wh[0]), int(target_size_wh[1])
+        detections_copy[IMAGE_DIMENSIONS_KEY] = np.array(
+            [[target_h, target_w]] * len(detections_copy)
+        )
+    elif IMAGE_DIMENSIONS_KEY in detections_copy.data:
+        image_dimensions = detections_copy[IMAGE_DIMENSIONS_KEY].astype(
+            np.float64, copy=True
+        )
+        image_dimensions[:, 0] *= scale_y
+        image_dimensions[:, 1] *= scale_x
+        detections_copy[IMAGE_DIMENSIONS_KEY] = image_dimensions.round()
+
+    # RLE-only predictions (`mask=None` with the `rle_mask` data key) are
+    # intentionally passed through untouched, matching historical behaviour: no
+    # stock workflow routes them through a resize, and decoding full-resolution
+    # RLE just to resize it is expensive. Their RLE stays sized to the source
+    # canvas after scaling - callers needing scaled RLE must densify first.
     if detections_copy.mask is not None:
-        scaled_masks = []
+        # Resize dense masks directly onto the destination canvas. Polygon →
+        # scale → raster round-trips fragment edge-touching masks; combined with
+        # mask_to_polygon that used to take contours[0], Dataset Upload persisted
+        # speckles instead of the real instance.
         original_mask_size_wh = (
             detections_copy.mask.shape[2],
             detections_copy.mask.shape[1],
         )
-        scaled_mask_size_wh = round(original_mask_size_wh[0] * scale), round(
-            original_mask_size_wh[1] * scale
-        )
-        for detection_mask in detections_copy.mask:
-            polygons = sv.mask_to_polygons(mask=detection_mask)
-            polygon_masks = []
-            for polygon in polygons:
-                scaled_polygon = (polygon * scale).round().astype(np.int32)
-                polygon_masks.append(
-                    sv.polygon_to_mask(
-                        polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
+        if target_size_wh is not None:
+            scaled_w, scaled_h = int(target_size_wh[0]), int(target_size_wh[1])
+        else:
+            scaled_w = int(round(original_mask_size_wh[0] * scale_x))
+            scaled_h = int(round(original_mask_size_wh[1] * scale_y))
+        scaled_w = max(1, scaled_w)
+        scaled_h = max(1, scaled_h)
+        if (scaled_w, scaled_h) != original_mask_size_wh:
+            rle_masks_present = RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data
+            if rle_masks_present:
+                # pycocotools is not a base dependency - it ships with the extras
+                # that produce RLE predictions - so keep the import deferred and
+                # only reach it when RLE masks are actually involved.
+                from pycocotools import mask as mask_utils
+
+            resized_masks = np.array(
+                [
+                    cv2.resize(
+                        detection_mask.astype(np.uint8),
+                        (scaled_w, scaled_h),
+                        interpolation=cv2.INTER_NEAREST,
+                    ).astype(bool)
+                    for detection_mask in detections_copy.mask
+                ]
+            )
+            detections_copy.mask = resized_masks
+            if rle_masks_present:
+                # Source RLE counts encode the old canvas and cannot be scaled
+                # arithmetically. Re-encode every resized mask, including valid
+                # all-zero masks, to preserve detection-to-RLE alignment.
+                resized_rle_masks = []
+                for detection_mask in resized_masks:
+                    rle_mask = mask_utils.encode(
+                        np.asfortranarray(detection_mask.astype(np.uint8))
                     )
+                    if isinstance(rle_mask["counts"], bytes):
+                        rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
+                    resized_rle_masks.append(rle_mask)
+                detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                    resized_rle_masks, dtype=object
                 )
-            scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-            scaled_masks.append(scaled_detection_mask)
-        detections_copy.mask = np.array(scaled_masks)
+
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
-        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
-            (detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] * scale)
-            .round()
-            .astype(np.int32)
-        )
-    if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
-        )
-    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
-        )
-    else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
-        )
+        polygons = detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS]
+        if isinstance(polygons, np.ndarray) and np.issubdtype(
+            polygons.dtype, np.number
+        ):
+            scaled_polygons = polygons.astype(np.float64, copy=True)
+            scaled_polygons[..., 0] *= scale_x
+            scaled_polygons[..., 1] *= scale_y
+            detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
+                scaled_polygons.round().astype(np.int32)
+            )
+        else:
+            # Ragged object-dtype polygon lists
+            scaled_polygons = []
+            for polygon in polygons:
+                scaled_polygon = np.asarray(polygon, dtype=np.float64).copy()
+                scaled_polygon[..., 0] *= scale_x
+                scaled_polygon[..., 1] *= scale_y
+                scaled_polygons.append(scaled_polygon.round().astype(np.int32))
+            detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
+                scaled_polygons, dtype=object
+            )
+
+    if update_scaling_metadata:
+        if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
+        if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+                detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale_x
+            )
+        else:
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+                [scale_x] * len(detections_copy)
+            )
     return detections_copy
 
 
@@ -490,88 +647,123 @@ def post_process_ocr_result(
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
-    tasks = _propagate_inference_context(tasks)
+    tasks = [wrap_with_context_snapshot(task) for task in tasks]
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(lambda f: f(), tasks))
 
 
-def _propagate_inference_context(
-    tasks: List[Callable[[], T]],
-) -> List[Callable[[], T]]:
-    """Wrap each task so that inference_sdk context vars and server-side
-    context vars are propagated into worker threads.  Returns the tasks
-    unchanged when no context is active.
+DETECTION_MAX_EDGE_PIXELS = 2048
+"""Maximum longest edge used when uploading images for VLM object detection."""
+
+
+def scale_dimensions_to_max_edge(
+    width: int,
+    height: int,
+    max_edge: int,
+) -> Tuple[int, int]:
+    """Scale dimensions down so the longest edge is at most ``max_edge``.
+
+    Never upscales and preserves the aspect ratio. Both the VLM blocks that
+    downscale images before upload and the parsers that map returned pixel
+    coordinates back onto the original image must use this exact arithmetic.
+
+    Args:
+        width: Original image width in pixels.
+        height: Original image height in pixels.
+        max_edge: Maximum allowed longest edge in pixels.
+
+    Returns:
+        Target ``(width, height)`` after scaling.
     """
-    from inference.core.managers.model_load_collector import (
-        model_load_info,
-        request_model_ids,
-    )
+    if max(width, height) <= max_edge:
+        return (width, height)
 
-    load_collector = model_load_info.get(None)
-    ids_collector = request_model_ids.get(None)
+    if width >= height:
+        scaled_width = max_edge
+        scaled_height = max(round(height * max_edge / width), 1)
+    else:
+        scaled_height = max_edge
+        scaled_width = max(round(width * max_edge / height), 1)
 
-    try:
-        from asgi_correlation_id import correlation_id as _cid_ctx
+    return (scaled_width, scaled_height)
 
-        corr_id = _cid_ctx.get()
-    except Exception:
-        corr_id = None
 
-    try:
-        from inference_sdk.config import (
-            apply_duration_minimum,
-            execution_id,
-            remote_processing_times,
+ANTHROPIC_DETECTION_MAX_EDGE_PIXELS = 2576
+"""Maximum padded edge length of images uploaded to Anthropic Claude models.
+
+High-resolution tier limit from Anthropic's vision documentation; edges are
+padded up to a multiple of ``ANTHROPIC_IMAGE_TILE_PIXELS`` before the check.
+"""
+
+ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS = 4784
+"""Maximum visual-token budget of images uploaded to Anthropic Claude models."""
+
+ANTHROPIC_IMAGE_TILE_PIXELS = 28
+"""Edge length of the square tiles Claude tokenizes images with."""
+
+
+def count_anthropic_image_tokens(width: int, height: int) -> int:
+    """Count the visual tokens Claude spends on an image of given dimensions.
+
+    Args:
+        width: Image width in pixels.
+        height: Image height in pixels.
+
+    Returns:
+        Number of visual tokens.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+    return math.ceil(width / tile) * math.ceil(height / tile)
+
+
+def compute_anthropic_upload_dimensions(
+    width: int,
+    height: int,
+    max_edge: int = ANTHROPIC_DETECTION_MAX_EDGE_PIXELS,
+    max_tokens: int = ANTHROPIC_DETECTION_MAX_IMAGE_TOKENS,
+) -> Tuple[int, int]:
+    """Compute the dimensions Claude resizes an image to before processing.
+
+    Mirrors the reference implementation from Anthropic's vision coordinates
+    documentation, so pixel coordinates returned by Claude map one-to-one onto
+    an image pre-resized to these dimensions. Never upscales. The Claude block
+    that pre-resizes detection uploads and the parser that maps returned pixel
+    coordinates back onto the original image must use this exact arithmetic.
+
+    Args:
+        width: Original image width in pixels.
+        height: Original image height in pixels.
+        max_edge: Maximum padded edge length in pixels.
+        max_tokens: Maximum visual-token budget.
+
+    Returns:
+        Target ``(width, height)`` after Claude's internal resize.
+    """
+    tile = ANTHROPIC_IMAGE_TILE_PIXELS
+
+    def fits(candidate_width: int, candidate_height: int) -> bool:
+        return (
+            math.ceil(candidate_width / tile) * tile <= max_edge
+            and math.ceil(candidate_height / tile) * tile <= max_edge
+            and count_anthropic_image_tokens(candidate_width, candidate_height)
+            <= max_tokens
         )
 
-        exec_id = execution_id.get() if execution_id is not None else None
-        rpt_collector = (
-            remote_processing_times.get()
-            if remote_processing_times is not None
-            else None
+    if fits(width, height):
+        return (width, height)
+
+    if height > width:
+        resized_height, resized_width = compute_anthropic_upload_dimensions(
+            height, width, max_edge, max_tokens
         )
-        duration_min = (
-            apply_duration_minimum.get() if apply_duration_minimum is not None else None
-        )
-    except ImportError:
-        exec_id = None
-        rpt_collector = None
-        duration_min = None
+        return (resized_width, resized_height)
 
-    if (
-        exec_id is None
-        and rpt_collector is None
-        and duration_min is None
-        and load_collector is None
-        and ids_collector is None
-        and corr_id is None
-    ):
-        return tasks
-
-    def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
-        def _with_context() -> T:
-            if corr_id is not None:
-                from asgi_correlation_id import correlation_id as _cid_ctx
-
-                _cid_ctx.set(corr_id)
-            if exec_id is not None:
-                from inference_sdk.config import execution_id
-
-                execution_id.set(exec_id)
-            if rpt_collector is not None:
-                from inference_sdk.config import remote_processing_times
-
-                remote_processing_times.set(rpt_collector)
-            if duration_min is not None:
-                from inference_sdk.config import apply_duration_minimum
-
-                apply_duration_minimum.set(duration_min)
-            if load_collector is not None:
-                model_load_info.set(load_collector)
-            if ids_collector is not None:
-                request_model_ids.set(ids_collector)
-            return fun()
-
-        return _with_context
-
-    return [_wrap(t) for t in tasks]
+    aspect_ratio = width / height
+    low, high = 1, width
+    while low + 1 < high:
+        mid = (low + high) // 2
+        if fits(mid, max(round(mid / aspect_ratio), 1)):
+            low = mid
+        else:
+            high = mid
+    return (low, max(round(low / aspect_ratio), 1))

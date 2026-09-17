@@ -17,6 +17,7 @@ from inference.core.models.inference_models_adapters import (
     InferenceModelsDepthEstimationAdapter,
     InferenceModelsInstanceSegmentationAdapter,
     InferenceModelsObjectDetectionAdapter,
+    _fixed_input_hw_from_backend,
     _supports_independent_stage_execution,
     prepare_classification_response,
     prepare_multi_label_classification_response,
@@ -622,3 +623,121 @@ def test_depth_estimation_adapter_tensor_native_composes_to_numpy_normalization(
 
     expected = np.array([[1.0, 2 / 3], [1 / 3, 0.0]], dtype=np.float32)
     assert np.allclose(normalized.numpy(), expected, atol=1e-6)
+
+
+def test_semantic_segmentation_adapter_postprocess_populates_present_class_ids():
+    import base64 as _base64
+    import io as _io
+
+    import numpy as _np
+    from PIL import Image as _Image
+
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsSemanticSegmentationAdapter,
+    )
+
+    # given: an adapter shell around a fake underlying model
+    adapter = InferenceModelsSemanticSegmentationAdapter.__new__(
+        InferenceModelsSemanticSegmentationAdapter
+    )
+    adapter.class_names = ["background", "cat", "dog"]
+    seg = torch.zeros((30, 40), dtype=torch.int64)
+    seg[5:10, 5:15] = 1
+    seg[20:25, 20:30] = 2
+    segmentation = SimpleNamespace(
+        segmentation_map=seg, confidence=torch.full((30, 40), 0.5)
+    )
+    adapter._model = SimpleNamespace(
+        post_process=lambda predictions, metadata, **kwargs: [segmentation]
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(height=30, width=40))
+
+    # when
+    responses = adapter.postprocess(None, [metadata])
+
+    # then
+    prediction = responses[0].predictions
+    assert prediction.present_class_ids == [0, 1, 2]
+    decoded = _np.asarray(
+        _Image.open(_io.BytesIO(_base64.b64decode(prediction.segmentation_mask)))
+    )
+    assert _np.array_equal(decoded, seg.numpy().astype(_np.uint8))
+
+
+def test_semantic_segmentation_adapter_postprocess_numpy_mask_format():
+    import numpy as _np
+
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsSemanticSegmentationAdapter,
+    )
+
+    # given: an adapter shell around a fake underlying model
+    adapter = InferenceModelsSemanticSegmentationAdapter.__new__(
+        InferenceModelsSemanticSegmentationAdapter
+    )
+    adapter.class_names = ["background", "cat"]
+    seg = torch.zeros((20, 30), dtype=torch.int64)
+    seg[4:9, 6:16] = 1
+    confidence = torch.full((20, 30), 0.5)
+    segmentation = SimpleNamespace(segmentation_map=seg, confidence=confidence)
+    adapter._model = SimpleNamespace(
+        post_process=lambda predictions, metadata, **kwargs: [segmentation]
+    )
+    metadata = SimpleNamespace(original_size=SimpleNamespace(height=20, width=30))
+
+    # when
+    responses = adapter.postprocess(None, [metadata], response_mask_format="numpy")
+
+    # then: raw arrays, no PNG/base64 encode happened
+    prediction = responses[0].predictions
+    assert isinstance(prediction.segmentation_mask, _np.ndarray)
+    assert isinstance(prediction.confidence_mask, _np.ndarray)
+    assert _np.array_equal(prediction.segmentation_mask, seg.numpy().astype(_np.uint8))
+    assert _np.array_equal(
+        prediction.confidence_mask,
+        (confidence * 255).to(torch.uint8).numpy(),
+    )
+    assert prediction.present_class_ids == [0, 1]
+
+
+def _backend_with_network_input(
+    *,
+    height: int,
+    width: int,
+    dynamic_spatial_size_supported: bool = False,
+):
+    return SimpleNamespace(
+        _inference_config=SimpleNamespace(
+            network_input=SimpleNamespace(
+                dynamic_spatial_size_supported=dynamic_spatial_size_supported,
+                training_input_size=SimpleNamespace(height=height, width=width),
+            )
+        )
+    )
+
+
+def test_fixed_input_hw_from_backend():
+    assert _fixed_input_hw_from_backend(
+        _backend_with_network_input(height=518, width=640)
+    ) == (518, 640)
+
+
+def test_fixed_input_hw_from_backend_skips_dynamic_spatial():
+    assert (
+        _fixed_input_hw_from_backend(
+            _backend_with_network_input(
+                height=640,
+                width=640,
+                dynamic_spatial_size_supported=True,
+            )
+        )
+        is None
+    )
+
+
+def test_fixed_input_hw_from_backend_skips_missing_or_invalid_network_input():
+    assert _fixed_input_hw_from_backend(SimpleNamespace(_inference_config=None)) is None
+    assert (
+        _fixed_input_hw_from_backend(_backend_with_network_input(height=0, width=640))
+        is None
+    )

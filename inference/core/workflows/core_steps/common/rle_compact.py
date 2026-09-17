@@ -183,6 +183,12 @@ def compact_mask_from_coco_rle(
         y2c = int(max(0, min(int(y2), img_h - 1)))
 
         # Mirror CompactMask.from_dense's degenerate-box handling exactly.
+        # The CLIPPED coordinates decide this, not the raw box, and the order is
+        # load-bearing: clipping resurrects boxes like [0, 0, -1, -1] into a legal
+        # 1x1 crop at the origin (max(0, min(-1, w - 1)) == 0), so testing the raw
+        # box here would emit the all-False fallback where from_dense emits the
+        # real pixel — a silent ONE-pixel divergence at [0, 0]. See
+        # test_degenerate_box_decides_on_clipped_coordinates.
         if x2c < x1c or y2c < y1c:
             rles.append(np.array([1], dtype=np.int32))
             crop_shapes.append((1, 1))

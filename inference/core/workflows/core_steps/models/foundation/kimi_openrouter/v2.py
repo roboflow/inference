@@ -83,6 +83,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         json_schema_extra={
             "name": "MoonshotAI Kimi",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Use MoonshotAI Kimi v3, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
             "short_description": "Run Moonshot AI Kimi vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Moonshot AI Kimi License",

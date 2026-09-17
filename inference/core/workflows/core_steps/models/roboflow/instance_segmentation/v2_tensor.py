@@ -7,7 +7,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND`` instead of
 ``sv.Detections``.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns
   ``List[InstanceDetections]`` straight from the adapter. The mask carrier (dense
   ``torch.Tensor`` vs ``InstancesRLEMasks``) is adapter-decided: the v2 manifest
   exposes ``enforce_dense_masks_in_inference_models`` and the adapter consumes it
@@ -41,21 +41,21 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.env import (
-    HOSTED_INSTANCE_SEGMENTATION_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     build_native_image_metadata,
     take_prediction_by_mask,
+)
+from inference.core.workflows.environment import (
+    HOSTED_INSTANCE_SEGMENTATION_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
@@ -101,6 +101,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
@@ -268,7 +269,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -439,6 +440,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,

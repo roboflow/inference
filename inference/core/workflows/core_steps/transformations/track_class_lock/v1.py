@@ -1,6 +1,6 @@
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
-from typing import Annotated, Dict, List, Literal, Optional, Set, Type, Union
+from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -32,6 +32,25 @@ OUTPUT_KEY: str = "tracked_detections"
 # would otherwise grow per-video state without limit on long-running servers;
 # least-recently-seen video state is evicted beyond this cap.
 MAX_TRACKED_VIDEOS: int = 256
+# Upper bound on retained tracks per video stream. Track state is retained for
+# up to state_ttl frames after a track was last seen, so without a cap an input
+# stream carrying many distinct tracker_id values (adversarial or a runaway
+# tracker) would grow per-video memory without limit and enlarge the per-frame
+# re-attachment candidate scan. Least-recently-seen tracks are evicted beyond
+# this cap. The value is far above any realistic simultaneous-object count.
+MAX_TRACKS_PER_VIDEO: int = 4096
+# Upper bound on state_ttl (in frames). state_ttl governs how long unseen track
+# state is retained; an unbounded value combined with a high track turnover
+# would prolong retention. Bounded here (and re-checked at runtime for
+# selector-provided values) as defense in depth alongside MAX_TRACKS_PER_VIDEO.
+MAX_STATE_TTL: int = 1_000_000
+# Upper bound on lost-track candidates considered when re-attaching a new
+# tracker id. Re-attachment bridges SHORT detection gaps, where only a handful
+# of locked tracks are ever simultaneously lost; capping the candidate pool
+# keeps per-frame re-attachment work at O(new_ids * MAX_REATTACH_CANDIDATES)
+# instead of O(new_ids * lost_tracks). The most-recently-lost tracks (the most
+# plausible re-attachment targets) are kept.
+MAX_REATTACH_CANDIDATES: int = 256
 LONG_DESCRIPTION = """
 Lock the class label of each tracked object by majority voting, eliminating class
 flicker in video workflows where a model alternates between similar classes for the
@@ -58,7 +77,9 @@ in the image's video metadata:
    switches caused by short detection gaps or occlusions. Only locked tracks are
    inherited, and a track still present in the current frame is never inherited.
    Set reattach_window to 0 to disable re-attachment.
-5. State for tracks unseen for state_ttl frames is purged.
+5. State for tracks unseen for state_ttl frames is purged. Retained per-video
+   track state is additionally capped, evicting least-recently-seen tracks, so
+   state stays bounded under high tracker-id turnover.
 
 Each detection is annotated with a boolean `class_locked` flag in detections.data.
 
@@ -114,7 +135,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Number of CONSECUTIVE qualifying frames of the same challenger class required to change an existing lock. Any interruption resets the streak. Minimum 1 (a value of 1 switches on a single contrary frame; use >= 2 to enforce a multi-frame streak).",
         examples=[15, "$inputs.switch_after"],
     )
-    state_ttl: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    state_ttl: Union[Annotated[int, Field(ge=1, le=MAX_STATE_TTL)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=300,
         description="Number of frames after which state of unseen tracks is purged.",
         examples=[300, "$inputs.state_ttl"],
@@ -196,6 +217,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
             raise ValueError(f"`switch_after` must be >= 1, got {switch_after}")
         if state_ttl < 1:
             raise ValueError(f"`state_ttl` must be >= 1, got {state_ttl}")
+        if state_ttl > MAX_STATE_TTL:
+            raise ValueError(f"`state_ttl` must be <= {MAX_STATE_TTL}, got {state_ttl}")
         if reattach_window < 0:
             raise ValueError(f"`reattach_window` must be >= 0, got {reattach_window}")
         if not 0.0 <= reattach_iou <= 1.0:
@@ -243,22 +266,35 @@ class TrackClassLockBlockV1(WorkflowBlock):
             active_tids = {
                 int(t) for t in dets.tracker_id if t is not None and int(t) >= 0
             }
+        # Re-attachment can only inherit from tracks that are locked, lost (last
+        # seen on an earlier frame, within reattach_window) and absent from the
+        # current frame. Tracks created while this frame is processed have gap 0
+        # and can never qualify, so the eligible set is fixed for the whole
+        # frame. Computing it once turns the per-new-id scan of the entire track
+        # store (O(new_ids * total_tracks), quadratic for a frame of all-new
+        # ids) into a scan of just the lost-locked candidates.
+        inherit_candidates = _eligible_inheritance_candidates(
+            tracks=tracks,
+            frame=frame,
+            reattach_window=reattach_window,
+            active_tids=active_tids,
+        )
         for i in range(n):
             tid = dets.tracker_id[i]
             if tid is None or int(tid) < 0:
                 continue
             tid = int(tid)
-            if tid not in tracks:
-                inherited = _find_lock_to_inherit(
-                    tracks=tracks,
+            if tid not in tracks and inherit_candidates:
+                inherited_idx = _find_lock_to_inherit(
+                    candidates=inherit_candidates,
                     xyxy=dets.xyxy[i],
-                    frame=frame,
-                    reattach_window=reattach_window,
                     reattach_iou=reattach_iou,
-                    active_tids=active_tids,
                 )
-                if inherited is not None:
-                    tracks[tid] = tracks.pop(inherited)
+                if inherited_idx is not None:
+                    # claim the candidate so a later new id in the same frame
+                    # cannot inherit the same lost track
+                    inherited_tid = inherit_candidates.pop(inherited_idx)[0]
+                    tracks[tid] = tracks.pop(inherited_tid)
             st = tracks.setdefault(
                 tid,
                 {
@@ -340,29 +376,75 @@ class TrackClassLockBlockV1(WorkflowBlock):
         for t in stale:
             del tracks[t]
 
+        _enforce_track_cap(tracks)
+
         return {OUTPUT_KEY: dets}
 
 
-def _find_lock_to_inherit(
+def _eligible_inheritance_candidates(
     tracks: Dict[int, dict],
-    xyxy: np.ndarray,
     frame: int,
     reattach_window: int,
-    reattach_iou: float,
     active_tids: Set[int],
-) -> Optional[int]:
-    best_tid: Optional[int] = None
-    best_iou = 0.0
+) -> List[Tuple[int, dict]]:
+    """Lost, locked tracks a new tracker id may inherit this frame.
+
+    A track qualifies only if it is locked, has a known last box, is not
+    present in the current frame, and was last seen between 1 and
+    ``reattach_window`` frames ago. Tracks created while the current frame is
+    processed have a gap of 0 and never qualify, so this set is stable for the
+    whole frame and can be computed once instead of rescanned per new id.
+    """
+    if reattach_window <= 0:
+        return []
+    candidates: List[Tuple[int, dict]] = []
     for tid, st in tracks.items():
         if tid in active_tids or st["locked"] is None or st["last_xyxy"] is None:
             continue
         gap = frame - st["last_seen"]
         if gap < 1 or gap > reattach_window:
             continue
+        candidates.append((tid, st))
+    if len(candidates) > MAX_REATTACH_CANDIDATES:
+        # keep the most-recently-lost tracks; bounds the per-new-id scan even
+        # when a pathological input produces very many lost, locked tracks
+        candidates.sort(key=lambda c: c[1]["last_seen"], reverse=True)
+        del candidates[MAX_REATTACH_CANDIDATES:]
+    return candidates
+
+
+def _find_lock_to_inherit(
+    candidates: List[Tuple[int, dict]],
+    xyxy: np.ndarray,
+    reattach_iou: float,
+) -> Optional[int]:
+    """Index into ``candidates`` of the best IoU match, or ``None``.
+
+    ``candidates`` comes from :func:`_eligible_inheritance_candidates`; the
+    caller pops the returned index so the same lost track is not inherited
+    twice within a frame.
+    """
+    best_idx: Optional[int] = None
+    best_iou = 0.0
+    for idx, (_tid, st) in enumerate(candidates):
         iou = _box_iou(xyxy, st["last_xyxy"])
         if iou >= reattach_iou and iou > best_iou:
-            best_tid, best_iou = tid, iou
-    return best_tid
+            best_idx, best_iou = idx, iou
+    return best_idx
+
+
+def _enforce_track_cap(tracks: Dict[int, dict]) -> None:
+    """Bound per-video retained state by evicting least-recently-seen tracks.
+
+    The sort is only paid on frames that exceed ``MAX_TRACKS_PER_VIDEO`` and
+    leaves the store at exactly the cap afterwards.
+    """
+    excess = len(tracks) - MAX_TRACKS_PER_VIDEO
+    if excess <= 0:
+        return
+    evictable = sorted(tracks, key=lambda t: tracks[t]["last_seen"])
+    for t in evictable[:excess]:
+        del tracks[t]
 
 
 def _box_iou(box_a: np.ndarray, box_b: np.ndarray) -> float:

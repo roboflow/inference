@@ -1,3 +1,4 @@
+import logging
 from copy import copy
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -10,7 +11,6 @@ from pydantic import ConfigDict, Field
 from supervision import OverlapFilter
 from supervision.config import ORIENTED_BOX_COORDINATES
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     embed_rle_masks_in_larger_canvas,
     strip_host_mirror_metadata,
@@ -56,6 +56,8 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
+
+logger = logging.getLogger(__name__)
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 
@@ -237,9 +239,7 @@ class DetectionsStitchBlockV1(WorkflowBlock):
             if row_count > 0:
                 # move_detections has already rejected a missing offset for a
                 # non-empty prediction, so offset is guaranteed here.
-                deferred_shifts.append(
-                    (float(offset[0]), float(offset[1]), row_count)
-                )
+                deferred_shifts.append((float(offset[0]), float(offset[1]), row_count))
         overlap_filter = choose_overlap_filter_strategy(
             overlap_filtering_strategy=overlap_filtering_strategy,
         )
@@ -298,9 +298,7 @@ def apply_deferred_box_shifts(
     """
     if not shifts or len(detections) == 0:
         return detections
-    per_crop = np.asarray(
-        [[dx, dy, dx, dy] for dx, dy, _ in shifts], dtype=np.float64
-    )
+    per_crop = np.asarray([[dx, dy, dx, dy] for dx, dy, _ in shifts], dtype=np.float64)
     row_counts = [row_count for _, _, row_count in shifts]
     expanded = np.repeat(per_crop, row_counts, axis=0)
     total_rows = int(detections.xyxy.shape[0])
@@ -576,8 +574,7 @@ def merge_detections(
             bboxes_metadata.extend({} for _ in range(len(detections)))
             continue
         bboxes_metadata.extend(
-            dict(entry) if isinstance(entry, dict) else entry
-            for entry in per_detection
+            dict(entry) if isinstance(entry, dict) else entry for entry in per_detection
         )
     if is_instance_segmentation:
         mask = _merge_masks(non_empty)

@@ -2,20 +2,19 @@ from typing import Dict, List, Literal, Optional, Tuple, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     native_detections_from_inference_predictions,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import CLASS_NAME_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -36,8 +35,14 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceHTTPClient
@@ -160,11 +165,24 @@ class BlockManifest(WorkflowBlockManifest):
             "easy_ocr/zh_sim_g2",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # `language` is a pure Literal (no selector support), so the id run()
+        # will load is statically known: `easy_ocr/<version>` with the version
+        # token taken from the MODELS map. `quantize` does not change the
+        # loaded model id.
+        version, _ = MODELS[self.language]
+        return [
+            roboflow_platform_model(
+                model_id=f"easy_ocr/{version}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -221,7 +239,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self._model_manager.add_model(
             model_id,
             self._api_key,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
+            endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
         )
         results = []
         for single_image in images:
@@ -272,6 +290,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )

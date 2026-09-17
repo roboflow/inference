@@ -4,7 +4,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``inference_models.Detections`` (torch tensors on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``)
 under ``TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND`` instead of ``sv.Detections``.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns ``List[Detections]``
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns ``List[Detections]``
   straight from the adapter (xyxy / class_id / confidence only). The block applies
   ``class_filter`` natively (the adapter/model does NOT read it on this path) and
   attaches the producer contract (``image_metadata[class_names]`` + per-box
@@ -23,20 +23,20 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.env import (
-    HOSTED_DETECT_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     native_detections_from_inference_predictions,
     take_prediction_by_mask,
+)
+from inference.core.workflows.environment import (
+    HOSTED_DETECT_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -69,6 +69,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.object_detection import Detections
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -202,7 +203,7 @@ class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -354,6 +355,7 @@ class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,

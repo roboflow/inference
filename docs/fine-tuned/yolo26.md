@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: https://docs.roboflow.com/deploy/supported-models/yolo26
+redirect_url: https://docs.roboflow.com/models/supported-models/yolo26
 ---

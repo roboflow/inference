@@ -100,6 +100,7 @@ def test_workflow_with_json_parameter(
 def test_workflow_with_json_parameter_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -114,7 +115,7 @@ def test_workflow_with_json_parameter_tensor_native(
 
     result = execution_engine.run(
         runtime_parameters={
-            "image": dogs_image,
+            "image": image_as_workflow_input(dogs_image),
             "config": '{"model_id": "yolov8n-640"}',
         }
     )

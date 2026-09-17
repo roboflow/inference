@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
@@ -27,6 +26,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.lru_cache import LRUCache
 
 TYPE: str = "roboflow_core/grid_visualization@v1"
 SHORT_DESCRIPTION = "Shows an array of images in a grid."

@@ -4,6 +4,9 @@ import pytest
 import torch
 
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.optimization import (
+    runtime_components as runtime_components_module,
+)
 from inference_models.models.optimization.contracts import (
     CompatibilityResult,
     DeviceCompatibility,
@@ -13,8 +16,12 @@ from inference_models.models.optimization.contracts import (
     OptimizationStage,
     ValidationRecord,
 )
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.optimization.torch_readiness import TensorReadinessTracker
 
 
@@ -58,6 +65,14 @@ def _context() -> ExecutionContext:
     )
 
 
+def test_recoverable_stage_error_is_not_a_public_model_runtime_error() -> None:
+    error = RecoverableStageExecutionError(message="internal recoverable failure")
+
+    assert isinstance(error, Exception)
+    assert not isinstance(error, ModelRuntimeError)
+    assert error.args == ("internal recoverable failure",)
+
+
 def test_inference_execution_plan_defaults_and_serializes() -> None:
     plan = InferenceExecutionPlan()
 
@@ -68,6 +83,7 @@ def test_inference_execution_plan_defaults_and_serializes() -> None:
         "postprocessor": "base",
         "engine_plugin": "base",
         "allow_compatibility_fallback": True,
+        "allow_runtime_failure_fallback": True,
     }
 
 
@@ -77,6 +93,32 @@ def test_compatibility_result_preserves_actionable_reasons() -> None:
     assert not result.supported
     assert result.reasons == ("static crop", "grayscale")
     assert result.reason == "static crop, grayscale"
+
+
+def test_runtime_component_discovery_centralizes_package_import_checks(
+    monkeypatch,
+) -> None:
+    def runtime_component_is_available(module_name: str) -> bool:
+        return module_name != "triton"
+
+    get_runtime_components.cache_clear()
+    monkeypatch.setattr(
+        runtime_components_module,
+        "_runtime_component_is_available",
+        runtime_component_is_available,
+    )
+    try:
+        components = get_runtime_components()
+    finally:
+        get_runtime_components.cache_clear()
+
+    assert components == {
+        "Pillow": True,
+        "TensorRT": True,
+        "torch": True,
+        "torchvision": True,
+        "triton": False,
+    }
 
 
 def test_validation_record_is_serialized_as_informational_metadata() -> None:

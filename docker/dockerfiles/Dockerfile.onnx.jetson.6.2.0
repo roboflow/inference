@@ -503,7 +503,7 @@ RUN echo "opencv-python==4.12.0.88" > /tmp/jetson-opencv-overrides.txt && \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools~=83.0.0" \
-    "transformers>=4.57.3,<5.9.0" \
+    "transformers==5.15.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/jetson-opencv-overrides.txt
 
@@ -841,7 +841,7 @@ ENV VERSION_CHECK_MODE=once \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
-    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=False \
     USE_INFERENCE_MODELS=True \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=36.4.0 \

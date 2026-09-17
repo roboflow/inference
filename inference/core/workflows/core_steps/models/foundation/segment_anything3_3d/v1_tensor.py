@@ -23,18 +23,16 @@ from typing import Any, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
-from inference.core.entities.responses.sam3_3d import Sam3_3D_Objects_Response
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    SAM3_3D_OBJECTS_ENABLED,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    SAM3_3D_OBJECTS_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -56,14 +54,17 @@ from inference.core.workflows.offline import ensure_builtin_remote_execution_all
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
@@ -165,12 +166,16 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return restrictions
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Mirrors the constant model id used in run().
+        return [roboflow_platform_model(model_id="sam3-3d-objects")]
+
 
 class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -209,6 +214,9 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -247,14 +255,11 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
 
         for single_image, single_mask_input in zip(images, mask_input):
             converted_mask = extract_masks_from_input(single_mask_input)
-            inference_request = Sam3_3D_Objects_InferenceRequest(
+            response = self._model_manager.run_sam3_3d_objects(
+                model_id=model_id,
                 image=single_image.to_inference_format(numpy_preferred=True),
                 mask_input=converted_mask,
                 api_key=self._api_key,
-                model_id=model_id,
-            )
-            response: Sam3_3D_Objects_Response = (
-                self._model_manager.infer_from_request_sync(model_id, inference_request)
             )
             results.append(_format_response(response))
         return results
@@ -278,7 +283,9 @@ def extract_masks_from_input(mask_input: Any) -> Any:
     return mask_input
 
 
-def _format_response(response: Sam3_3D_Objects_Response) -> dict:
+# `response` is the server's Sam3_3D_Objects_Response; only the fields read
+# below are accessed, so the annotation is dropped (decontamination).
+def _format_response(response: Any) -> dict:
     """Format response with base64 encoded outputs."""
 
     def encode(data):

@@ -14,7 +14,10 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections as _serialise_legacy_sv_detections,
 )
-from inference.core.workflows.core_steps.common.serializers import serialize_timestamp
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_action_recognition_prediction_kind,
+    serialize_timestamp,
+)
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
@@ -77,7 +80,10 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
+    WorkflowImageData,
+)
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -768,8 +774,12 @@ def serialize_wildcard_kind(value: Any) -> Any:
     including the ``sv.Detections`` arm (defensive: non-swapped paths can still
     route sv under the flag) — routed to the NUMPY detections serialiser, since
     this module's same-name ``serialise_sv_detections`` consumes native objects.
-    Tuples other than the keypoint prediction pass through untouched, mirroring
-    the numpy contract.
+    Tuples other than the keypoint prediction convert ELEMENT-WISE (namedtuples
+    rebuilt field-wise) — a DIVERGENCE from the numpy sibling's pass-through,
+    which is process-safe for numpy values but would smuggle a live CUDA tensor
+    across the stream-manager process boundary here (CUDA IPC is unsupported on
+    Jetson/Tegra — "CUDA error: invalid argument"). The numpy sibling stays
+    untouched for flag-off parity.
     """
     if isinstance(value, WorkflowImageData):
         return serialise_image(image=value)
@@ -789,8 +799,22 @@ def serialize_wildcard_kind(value: Any) -> Any:
         return {key: serialize_wildcard_kind(value=item) for key, item in value.items()}
     if isinstance(value, list):
         return [serialize_wildcard_kind(value=element) for element in value]
+    if isinstance(value, tuple):
+        # The keypoint pair was consumed above, so any tuple here is a plain
+        # container — convert element-wise so a nested tensor cannot cross the
+        # stream-manager process boundary alive. Namedtuples take one
+        # positional argument PER FIELD — splat; a plain tuple takes the
+        # iterable whole (same reconstruction as the representation boundary).
+        converted = [serialize_wildcard_kind(value=element) for element in value]
+        if hasattr(value, "_fields"):
+            return type(value)(*converted)
+        return type(value)(converted)
     if isinstance(value, sv.Detections):
         return _serialise_legacy_sv_detections(detections=value)
+    if isinstance(value, ActionRecognitionPrediction):
+        # Without this the model reaches clients by field name, so the
+        # timeline arrives as "class_name" where the kind declares "class".
+        return serialize_action_recognition_prediction_kind(value=[value])[0]
     if isinstance(value, datetime):
         return serialize_timestamp(timestamp=value)
     return value

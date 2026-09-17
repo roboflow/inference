@@ -168,17 +168,19 @@ def test_rtsps_source_uses_live_rtsp_pipeline() -> None:
         "rtsps://camera.example.test:7441/live?token=secret"
     )
 
-    # Explicit video-only chain: a codec-specific depayloader never links the
-    # audio track, so an audio-muxing camera cannot poison the pipeline. The
-    # decoder's NV12 NVMM output feeds the appsink directly (the bridge
-    # converts NV12->RGB in CUDA) — no nvvidconv VIC pass, and the queue
-    # buffers compressed data before the depayloader instead of leaking
-    # decoded frames.
+    # Explicit video-only chain: the media=video caps filter pins rtspsrc's
+    # delayed link to the video stream (first-pad-wins would otherwise let an
+    # audio-first camera wire audio into the chain), so an audio-muxing camera
+    # cannot poison the pipeline. The decoder's NV12 NVMM output feeds the
+    # appsink directly (the bridge converts NV12->RGB in CUDA) — no nvvidconv
+    # VIC pass, and the queue buffers compressed data before the depayloader
+    # instead of leaking decoded frames.
     assert pipeline.startswith(
         'rtspsrc location="rtsps://camera.example.test:7441/live?token=secret" '
         "protocols=tcp latency=200 drop-on-latency=true teardown-timeout=0 ! "
         "application/x-rtp,media=video ! queue ! "
     )
+    assert "application/x-rtp,media=video" in pipeline
     assert (
         "rtph264depay request-keyframe=true wait-for-keyframe=true ! "
         "h264parse ! h264timestamper ! "

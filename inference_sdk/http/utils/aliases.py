@@ -102,6 +102,7 @@ RFDETR_ALIASES = {
     "rfdetr-seg-large": "coco-dataset-vdnr1/38",
     "rfdetr-seg-xlarge": "coco-dataset-vdnr1/39",
     "rfdetr-seg-2xlarge": "coco-dataset-vdnr1/40",
+    "rfdetr-keypoint-preview": "microsoft/coco-pose-detection-17-rfdetr-keypoint-preview-t1",
 }
 
 QWEN_ALIASES = {

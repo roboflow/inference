@@ -27,14 +27,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
@@ -46,6 +38,12 @@ from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -73,7 +71,12 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     third_party_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # ---------------------------------------------------------------------------
 # Model variants
@@ -85,7 +88,7 @@ from inference_sdk import InferenceHTTPClient
 # - OpenRouter model_ids are OpenRouter slugs (e.g. ``qwen/qwen3.6-27b``).
 
 MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
-    # Native — small models that run on Roboflow infrastructure.
+    # Native — models served on Roboflow infrastructure.
     "Qwen 2.5 VL 7B": {
         "backend": "native",
         "model_id": "qwen25-vl-7b",
@@ -101,6 +104,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
     "Qwen 3.5 VL 2B": {
         "backend": "native",
         "model_id": "qwen3_5-2b",
+    },
+    "Qwen 3.8 VL 27B": {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
     },
     # OpenRouter — large hosted models reached via OpenRouter.
     "Qwen 3.5 9B": {
@@ -143,10 +150,14 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.6-plus",
     },
+    "Qwen 3.8 Max": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen3.8-max",
+    },
     # Note: Qwen 3.6 Max Preview is intentionally excluded — it's a text-only
     # model on OpenRouter (no image-input endpoints), so it can't satisfy a
-    # VLM block. If/when OpenRouter ships a vision-capable Max variant, add
-    # it back here.
+    # VLM block. The Qwen 3.8 Max entry above is the vision-capable Max
+    # variant OpenRouter now ships (text + image + video input).
 }
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
@@ -183,6 +194,7 @@ NATIVE_SUPPORTED_VARIANTS = NATIVE_MODEL_IDS + ["qwen-pretrains/2"]
 # which is the qwen3.5-2b base — so include the sentinel here too.
 NATIVE_THINKING_MODEL_VERSIONS = [
     "Qwen 3.5 VL 2B",
+    "Qwen 3.8 VL 27B",
     FINE_TUNED_NATIVE_LABEL,
 ]
 
@@ -263,7 +275,7 @@ _DEFAULT_UNCONSTRAINED_SYSTEM_PROMPT = (
 
 
 def _coerce_native_response(response: Any) -> Tuple[str, str]:
-    """Normalize a native Qwen prediction.response into (output, thinking).
+    """Normalize a native Qwen prediction["response"] into (output, thinking).
 
     When ``enable_thinking`` is on, some Qwen variants return a
     ``{"thinking": "...", "answer": "..."}`` dict; split that into the two
@@ -388,7 +400,7 @@ A validator catches mismatches between your selected backend and model.
 class BlockManifest(OpenRouterBlockManifestMixin):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Qwen-VL",
+            "name": "Qwen",
             "version": "v1",
             "short_description": "Run any Qwen vision model — natively or via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
@@ -399,6 +411,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "qwen-vl",
                 "qwen3.5",
                 "qwen3.6",
+                "qwen3.8",
                 "VLM",
                 "Alibaba",
                 "OpenRouter",
@@ -769,16 +782,21 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        super().__init__(model_manager=model_manager, api_key=api_key)
+        super().__init__(
+            model_manager=model_manager,
+            api_key=api_key,
+            platform_client=platform_client,
+        )
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -928,21 +946,15 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
         self._model_manager.add_model(model_id=model_id, api_key=self._roboflow_api_key)
         outputs: List[Dict[str, str]] = []
         for image in inference_images:
-            request_kwargs: Dict[str, Any] = dict(
-                api_key=self._roboflow_api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_id,
                 image=image,
-                source="workflow-execution",
                 prompt=combined_prompt,
+                api_key=self._roboflow_api_key,
                 enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
-            if max_new_tokens is not None:
-                request_kwargs["max_new_tokens"] = max_new_tokens
-            request = LMMInferenceRequest(**request_kwargs)
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_id, request=request
-            )
-            output, thinking = _coerce_native_response(prediction.response)
+            output, thinking = _coerce_native_response(prediction["response"])
             outputs.append({"output": output, "thinking": thinking})
         return outputs
 
@@ -960,6 +972,9 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []

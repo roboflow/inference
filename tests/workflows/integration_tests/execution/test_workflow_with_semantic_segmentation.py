@@ -133,6 +133,7 @@ def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native
     dogs_image: np.ndarray,
     deep_lab_v3_api_key: str,
     block_type: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -148,7 +149,7 @@ def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": dogs_image},
+        runtime_parameters={"image": image_as_workflow_input(dogs_image)},
     )
 
     # then
@@ -298,6 +299,7 @@ def test_semantic_segmentation_workflow_when_batch_input_provided_tensor_native(
     dogs_image: np.ndarray,
     deep_lab_v3_api_key: str,
     block_type: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -313,7 +315,12 @@ def test_semantic_segmentation_workflow_when_batch_input_provided_tensor_native(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": [dogs_image, dogs_image]},
+        runtime_parameters={
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(dogs_image),
+            ]
+        },
     )
 
     # then

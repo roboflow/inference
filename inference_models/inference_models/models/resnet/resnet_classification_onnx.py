@@ -38,7 +38,7 @@ from inference_models.models.common.roboflow.post_processing import ConfidenceFi
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.streams import get_cuda_stream
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -172,7 +172,7 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         **kwargs,
     ) -> torch.Tensor:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             pre_processed_images = pre_process_network_input(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
@@ -204,7 +204,7 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         **kwargs,
     ) -> ClassificationPrediction:
         post_process_stream = self._post_process_stream
-        with torch.cuda.stream(post_process_stream):
+        with use_cuda_stream(post_process_stream):
             if post_process_stream is not None:
                 model_results.record_stream(post_process_stream)
             if self._inference_config.post_processing.fused:
@@ -349,7 +349,7 @@ class ResNetForMultiLabelClassificationOnnx(
         **kwargs,
     ) -> torch.Tensor:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             pre_processed_images = pre_process_network_input(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
@@ -392,7 +392,7 @@ class ResNetForMultiLabelClassificationOnnx(
                 dtype=model_results.dtype, device=model_results.device
             )
         post_process_stream = self._post_process_stream
-        with torch.cuda.stream(post_process_stream):
+        with use_cuda_stream(post_process_stream):
             if post_process_stream is not None:
                 model_results.record_stream(post_process_stream)
             if self._inference_config.post_processing.fused:

@@ -8,11 +8,11 @@ import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from requests import Response
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -36,6 +36,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
@@ -268,14 +269,6 @@ class BlockManifest(WorkflowBlockManifest):
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
-        json_schema_extra={
-            "relevant_for": {
-                "model_version": {
-                    "values": MODELS_NOT_SUPPORTING_THINKING_LEVEL,
-                    "required": False,
-                },
-            },
-        },
     )
     max_tokens: Optional[int] = Field(
         default=None,
@@ -344,15 +337,13 @@ class GoogleGeminiBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -873,7 +864,11 @@ def prepare_generation_config(
     if thinking_level is not None and supports_thinking_level:
         result["thinking_config"] = {"thinking_level": thinking_level}
 
-    if temperature is not None and not supports_thinking_level:
+    # The Gemini API accepts temperature alongside thinking_config for
+    # thinking-level models, so forward it whenever the user set it explicitly.
+    # Silently dropping it left workflows with no way to make structured
+    # extraction deterministic on Gemini 3.x models.
+    if temperature is not None:
         result["temperature"] = temperature
 
     return result

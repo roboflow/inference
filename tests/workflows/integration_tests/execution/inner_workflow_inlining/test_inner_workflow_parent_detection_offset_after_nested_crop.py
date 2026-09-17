@@ -394,6 +394,7 @@ def _assert_offset_detection_lists_equal_native(
 def test_inlined_crop_and_offset_match_nested_inner_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     h, w = dogs_image.shape[:2]
     run_mock = mock.MagicMock(
@@ -431,10 +432,18 @@ def test_inlined_crop_and_offset_match_nested_inner_workflow_tensor_native(
             _flat_parent_workflow_with_detection_offset(offset_x, offset_y),
         )
 
-        res_nested_crop = nested_crop.run(runtime_parameters={"image": dogs_image})
-        res_flat_crop = flat_crop.run(runtime_parameters={"image": dogs_image})
-        res_nested_off = nested_off.run(runtime_parameters={"image": dogs_image})
-        res_flat_off = flat_off.run(runtime_parameters={"image": dogs_image})
+        res_nested_crop = nested_crop.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        res_flat_crop = flat_crop.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        res_nested_off = nested_off.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        res_flat_off = flat_off.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
 
     # Native Detections has no value __eq__; assert the crop-only values on BOTH runs
     # instead of comparing res_nested_crop == res_flat_crop.

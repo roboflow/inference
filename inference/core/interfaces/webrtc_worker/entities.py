@@ -101,7 +101,10 @@ class WebRTCSessionHeartbeatRequest(BaseModel):
     """Request body for WebRTC session heartbeat and end endpoints."""
 
     session_id: str
-    api_key: str
+    # Optional since header-based auth: the key may alternatively arrive in the
+    # `Authorization: Bearer <api_key>` header; the routes still 401 when no
+    # channel carries a key.
+    api_key: Optional[str] = None
 
 
 class StreamOutputMode(str, Enum):

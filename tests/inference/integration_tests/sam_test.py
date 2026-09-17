@@ -7,6 +7,10 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import bool_env
 
 api_key = os.environ.get("API_KEY")
@@ -22,12 +26,13 @@ with open(os.path.join(Path(__file__).resolve().parent, "sam_tests.json"), "r") 
     reason="Skipping SAM test",
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_sam(test, clean_loaded_models_fixture):
+def test_sam(test, auth_mode, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
         f"{base_url}:{port}/sam/{test['type']}",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
     try:
         print(response.json())

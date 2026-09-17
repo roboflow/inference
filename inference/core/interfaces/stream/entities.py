@@ -114,11 +114,27 @@ class LatencyMonitorReport:
 
 
 @dataclass(frozen=True)
+class SourceCompletionStatistics:
+    source_id: Optional[int]
+    completed_frames: int = 0
+    last_completed_at_monotonic: Optional[float] = None
+    last_frame_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class CompletionStatistics:
+    # Process-local monotonic seconds; compare snapshots of the same pipeline only.
+    sampled_at_monotonic: float
+    sources: List[SourceCompletionStatistics]
+
+
+@dataclass(frozen=True)
 class PipelineStateReport:
     video_source_status_updates: List[StatusUpdate]
     latency_reports: List[LatencyMonitorReport]
     inference_throughput: float
     sources_metadata: List[SourceMetadata]
+    completion_statistics: Optional[CompletionStatistics] = None
 
 
 @dataclass(frozen=True)

@@ -1,24 +1,34 @@
+import hashlib
+import json
+import logging
+import sys
 import threading
 import time
 import types
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Dict, List, Optional, Type
 
-from inference.core.env import (
+from inference.core.workflows.environment import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
     WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
-from inference.core.exceptions import WorkspaceLoadError
-from inference.core.logger import logger
-from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+    BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+    BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE,
+    clear_block_duration,
+    peek_block_duration,
+    record_block_duration,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
     get_active_collector,
@@ -43,6 +53,16 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+from inference.core.workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+    WorkspaceResolver,
+)
+
+logger = logging.getLogger(__name__)
 
 try:
     from inference_sdk.config import execution_id as _execution_id_ctxvar
@@ -75,9 +95,13 @@ IMPORTS_LINES = [
 # tensor mode too (user code may mix representations for its own math).
 # NOTE: `modal/modal_app.py` mirrors this list into the remote sandbox namespace
 # via a guarded import of this constant — keep it importable and self-contained.
+# The device is read from the Workflows configuration facade, not from the
+# server's env module: the generated code must be importable wherever the
+# workflows package is, including the Modal sandbox, where the sandbox's own
+# `inference/core/__init__.py` installs its configuration.
 TENSOR_NATIVE_IMPORTS_LINES = [
     "import torch",
-    "from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE",
+    "from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE",
     "from inference_models.models.base.object_detection import Detections",
     "from inference_models.models.base.instance_segmentation import InstanceDetections",
     "from inference_models.models.base.keypoints_detection import KeyPoints",
@@ -177,6 +201,90 @@ def _current_workflow_execution_id() -> Optional[str]:
     return _execution_id_ctxvar.get()
 
 
+USAGE_BLOCK_KIND = "custom_python"
+
+
+def compute_block_code_fingerprint(python_code: PythonCode) -> str:
+    """Stable identity for a custom Python block, used as its usage resource id.
+
+    Keyed on the code rather than on the author-chosen block type, so the same
+    snippet aggregates across the workflows that embed it and two unrelated
+    blocks that happen to share a name stay separate. Deliberately independent
+    of the Modal executor's code hash, which keys a sandbox namespace cache and
+    must match the sandbox's own implementation.
+    """
+    # JSON rather than a join: concatenating with a separator that can occur
+    # inside the parts is not injective, so a newline moved from the end of the
+    # run code to the start of the init code would keep the same digest.
+    content = json.dumps(
+        [
+            python_code.run_function_code or "",
+            python_code.init_function_code or "",
+            list(python_code.imports or []),
+        ]
+    )
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+
+
+def _usage_tracked_run(self, *args, **kwargs) -> BlockResult:
+    """The ``run`` the engine sees; the host observes the call inside it.
+
+    The block's own inputs are handed to the observer in a single
+    ``block_kwargs`` mapping rather than spread over ``**kwargs``. A dynamic
+    block's parameter names come straight from the workflow definition with no
+    reserved-name validation, so spreading them would let an input named after
+    one of a host's own bookkeeping arguments bind to it - suppressing billing
+    or redirecting a usage row - and be swallowed before the user's function
+    ever saw it.
+    """
+    # `run()` is called once per SIMD element inside a single context
+    # (`executor/core.py` `run_simd_step_in_non_batch_mode`), so a measurement
+    # left behind by an element whose observation failed must not be billed to
+    # the next one.
+    clear_block_duration()
+    return self._execution_observer.observe_block_run(
+        block=self,
+        block_args=args,
+        block_kwargs=kwargs,
+        run=partial(self._run_dynamic_block, *args, **kwargs),
+    )
+
+
+def _record_remote_block_execution(
+    wall_clock_duration: float,
+    *,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Fill in a duration for a remote invocation the sandbox did not measure.
+
+    The executor publishes the sandbox's own runtime straight into the
+    measurement channel, so when it reported one there is nothing to add.
+
+    A failed call is recorded as zero rather than as the client's wall clock,
+    whatever raised it: that wall clock is dominated by connect timeouts and
+    sandbox cold start, none of which is time the block ran. Classifying on the
+    exception type instead would split user-code failures from transport
+    failures - `DynamicBlockCodeError` is not a `DynamicBlockError` - and bill
+    the two differently for the same non-event.
+
+    A *successful* call the sandbox did not measure still falls back to the
+    client's wall clock: the block did run, and over-reporting by the round trip
+    beats reporting nothing. `duration_source` marks it as an estimate.
+    """
+    if peek_block_duration() is not None:
+        return
+    if error is not None:
+        record_block_duration(
+            duration=0,
+            source=BLOCK_DURATION_SOURCE_UNAVAILABLE,
+        )
+        return
+    record_block_duration(
+        duration=wall_clock_duration,
+        source=BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+    )
+
+
 def _record_logs_to_active_collector(
     step_name: str,
     stdout_buf,
@@ -198,6 +306,7 @@ def assembly_custom_python_block(
     manifest: Type[WorkflowBlockManifest],
     python_code: PythonCode,
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
     manifest_description: Optional[ManifestDescription] = None,
 ) -> Type[WorkflowBlock]:
@@ -207,6 +316,7 @@ def assembly_custom_python_block(
         python_code=python_code,
         module_name=f"dynamic_module_{unique_identifier}",
         api_key=api_key,
+        workspace_resolver=workspace_resolver,
         skip_class_eval=skip_class_eval,
     )
 
@@ -223,7 +333,7 @@ def assembly_custom_python_block(
     declared_input_kinds = collect_declared_input_kind_names(manifest_description)
     declared_output_kinds = collect_declared_output_kind_names(manifest_description)
 
-    def run(self, *args, **kwargs) -> BlockResult:
+    def run_dynamic_block(self, *args, **kwargs) -> BlockResult:
         step_name = getattr(self, "_workflow_step_name", None) or block_type_name
         # Representation boundary: under ENABLE_TENSOR_DATA_REPRESENTATION,
         # `legacy_compatibility` blocks receive the documented sv/numpy
@@ -251,22 +361,30 @@ def assembly_custom_python_block(
                 declared_input_kinds=declared_input_kinds,
             )
 
-            try:  # Get workspace_id from context if available
-                workspace_id = get_roboflow_workspace(self._api_key)
-            except WorkspaceLoadError:
-                workspace_id = None
+            workspace_id = self._workspace_resolver.resolve_workspace(self._api_key)
 
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
             with _acquire_modal_executor(workspace_id) as executor:
-                remote_result = executor.execute_remote(
-                    block_type_name=block_type_name,
-                    python_code=python_code,
-                    inputs=kwargs,
-                    workspace_id=workspace_id,
-                    workflow_context=self.get_workflow_context(),
-                )
+                started_at = time.monotonic()
+                try:
+                    remote_result = executor.execute_remote(
+                        block_type_name=block_type_name,
+                        python_code=python_code,
+                        inputs=kwargs,
+                        workspace_id=workspace_id,
+                        workflow_context=self.get_workflow_context(),
+                    )
+                finally:
+                    # `sys.exc_info()` rather than binding the exception to a
+                    # local: `except ... as e` is deleted on purpose, and
+                    # rebinding would keep this frame - and the decoded input
+                    # images in `kwargs` - alive until the cycle collector runs.
+                    _record_remote_block_execution(
+                        time.monotonic() - started_at,
+                        error=sys.exc_info()[1],
+                    )
             return convert_block_result_to_native(
                 result=remote_result,
                 manifest_description=self._manifest_description,
@@ -294,7 +412,19 @@ def assembly_custom_python_block(
                     # stdout/stderr already reach the process streams in real time via the
                     # tee in capture_output(); buffers are also forwarded to the active
                     # debug collector (if any) and used to attach context on error.
-                    result = run_function(self, *args, **kwargs)
+                    #
+                    # Timed here, innermost, so the measurement excludes the
+                    # engine's representation-boundary conversions AND - on the
+                    # error path - the traceback extraction and log forwarding
+                    # below, which run before any enclosing `finally` would.
+                    started_at = time.monotonic()
+                    try:
+                        result = run_function(self, *args, **kwargs)
+                    finally:
+                        record_block_duration(
+                            duration=time.monotonic() - started_at,
+                            source=BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+                        )
             except Exception as error:
                 # Record on failure too: the error payload carries this step's
                 # streams via BlockTraceback, but the collector is the only place
@@ -327,9 +457,20 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self, api_key: Optional[str] = None):
+    def constructor(
+        self,
+        api_key: Optional[str] = None,
+        workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
+        execution_observer: Optional[ExecutionObserver] = None,
+    ):
         self._init_results = init_function()
         self._api_key = api_key
+        self._workspace_resolver = workspace_resolver
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
 
     def get_workflow_context(self) -> Dict[str, Any]:
         return {
@@ -341,7 +482,7 @@ def assembly_custom_python_block(
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key"]
+        return ["api_key", "workspace_resolver", "execution_observer"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -355,7 +496,14 @@ def assembly_custom_python_block(
             "get_workflow_context": get_workflow_context,
             "get_init_parameters": get_init_parameters,
             "get_manifest": get_manifest,
-            "run": run,
+            "run": _usage_tracked_run,
+            "_run_dynamic_block": run_dynamic_block,
+            # Read by the usage collector to identify this block's rows.
+            "_usage_block_kind": USAGE_BLOCK_KIND,
+            "_usage_block_type": block_type_name,
+            "_usage_resource_id": (
+                f"{USAGE_BLOCK_KIND}/{compute_block_code_fingerprint(python_code)}"
+            ),
             # AUTHORITATIVE source of the raw dynamic-block manifest description
             # (carries `tensor_compatibility`): run() reads self._manifest_description,
             # it is introspectable, and the Step-1 assembler tests pin it. The
@@ -375,6 +523,7 @@ def create_dynamic_module(
     python_code: PythonCode,
     module_name: str,
     api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
 ) -> types.ModuleType:
 
@@ -402,10 +551,7 @@ def create_dynamic_module(
             validate_code_in_modal,
         )
 
-        try:  # Get workspace_id from context if available
-            validation_workspace = get_roboflow_workspace(api_key)
-        except WorkspaceLoadError:
-            validation_workspace = None
+        validation_workspace = workspace_resolver.resolve_workspace(api_key)
 
         # Fall back to "anonymous" for non-authenticated users
         if not validation_workspace:

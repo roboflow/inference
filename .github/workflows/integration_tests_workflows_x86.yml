@@ -27,8 +27,12 @@ on:
           - "false"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   call_is_mergeable:
@@ -48,6 +52,18 @@ jobs:
       matrix:
         python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     timeout-minutes: 25
     steps:
       - name: 🛎️ Checkout
@@ -79,6 +95,8 @@ jobs:
       - name: 🔤 Download Workflows font assets
         run: python build_scripts/download_fonts.py
       - name: 🧪 Integration Tests of Workflows
+        env:
+          POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"
         run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
       - name: 🧪 Integration Tests of Workflows (Modal, staging)
         run: PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py

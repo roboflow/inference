@@ -2,7 +2,9 @@ from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic.json_schema import SkipJsonSchema
 
+from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 from inference_sdk.http.entities import Confidence
 
@@ -277,7 +279,11 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
 
 
 class SemanticSegmentationInferenceRequest(CVInferenceRequest):
-    """Semantic Segmentation inference request."""
+    """Semantic Segmentation inference request.
+
+    Attributes:
+        response_mask_format (str): Format of the masks in the response, one of 'base64_png', 'numpy'.
+    """
 
     def __init__(self, **kwargs):
         kwargs["model_type"] = "semantic-segmentation"
@@ -291,6 +297,43 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
             '"default" uses the model built-in, or pass a float.'
         ),
     )
+    response_mask_format: SkipJsonSchema[Literal["base64_png", "numpy"]] = Field(
+        default="base64_png",
+        examples=["base64_png"],
+        description=(
+            "[INTERNAL USE ONLY] Format of segmentation_mask / confidence_mask in the response. "
+            "'base64_png' (default) returns base64-encoded PNG strings. "
+            "'numpy' returns raw uint8 numpy arrays and is an in-process "
+            "contract for callers like the workflows semantic segmentation "
+            "block, skipping a full-resolution PNG encode/decode round-trip. "
+            "Wire boundaries coerce 'numpy' back to 'base64_png' (see "
+            "ensure_wire_safe_mask_format), and json-mode serialization of a "
+            "'numpy' response encodes the masks to base64 PNG, so wire "
+            "responses always carry strings."
+        ),
+    )
+
+
+def ensure_wire_safe_mask_format(request: InferenceRequest) -> None:
+    """Coerces the in-process-only 'numpy' mask format to 'base64_png'.
+
+    This guard is load-bearing, not belt-and-braces: the server's wire
+    boundaries (``orjson_response`` and the enterprise parallel
+    ``write_response``) serialize with python-mode ``model_dump``/``dict``,
+    where pydantic's ``when_used='json'`` field serializer does NOT run - a
+    leaked ndarray mask would ship as a giant nested int array with a 200,
+    not fail. Call this at every boundary that ultimately serializes the
+    response for the wire. Safe to call with any request type.
+    """
+    if (
+        isinstance(request, SemanticSegmentationInferenceRequest)
+        and getattr(request, "response_mask_format", None) == "numpy"
+    ):
+        logger.warning(
+            "response_mask_format='numpy' is an in-process contract; "
+            "coercing to 'base64_png' for wire serialization"
+        )
+        request.response_mask_format = "base64_png"
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):

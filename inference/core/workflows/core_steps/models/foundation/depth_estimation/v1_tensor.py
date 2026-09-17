@@ -5,15 +5,15 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     DEPTH_ESTIMATION_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -28,13 +28,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -169,6 +172,9 @@ class BlockManifest(WorkflowBlockManifest):
             "yolo26x-depth-768",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
+
 
 def _depth_to_visualization(
     origin_image: WorkflowImageData,
@@ -186,7 +192,7 @@ def _depth_to_visualization(
 class DepthEstimationBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -235,6 +241,9 @@ class DepthEstimationBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

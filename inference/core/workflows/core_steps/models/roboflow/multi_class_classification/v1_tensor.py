@@ -12,7 +12,7 @@ with legacy aliases, plain ``confidence`` field, ``inference_id`` output kind
 is changed to the tensor-native kind. The run bodies follow the ``v3_tensor``
 pattern:
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns ONE batched
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns ONE batched
   ``ClassificationPrediction`` (``class_id`` shape ``(bs,)``, ``confidence`` shape
   ``(bs, num_classes)`` full softmax). The consumer indexes per-image, so the
   block fans the batched object out into ``bs`` single-row predictions, each
@@ -31,16 +31,16 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     CLASSIFICATION_STYLE_KEY,
@@ -79,6 +79,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.classification import ClassificationPrediction
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -192,7 +193,7 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -319,6 +320,7 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,

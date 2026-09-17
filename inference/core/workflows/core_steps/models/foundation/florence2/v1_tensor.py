@@ -10,12 +10,6 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
@@ -29,13 +23,20 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     TaskType,
     _coordinate_to_loc,
 )
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models import Detections, InstanceDetections, KeyPoints
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # inference_models native prediction shapes accepted on the grounding input.
 TensorNativeGrounding = Union[
@@ -49,7 +50,7 @@ class Florence2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -197,6 +198,9 @@ class Florence2BlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

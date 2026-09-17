@@ -256,6 +256,7 @@ def _assert_crop_predictions_equal_native(crop_preds: list) -> None:
 def test_inlined_dynamic_crop_matches_inner_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     h, w = dogs_image.shape[:2]
     run_mock = mock.MagicMock(
@@ -272,8 +273,12 @@ def test_inlined_dynamic_crop_matches_inner_workflow_tensor_native(
     ):
         nested_engine = execution_engine(model_manager, _nested_workflow(inner))
         flat_engine = execution_engine(model_manager, _flat_workflow())
-        nested_result = nested_engine.run(runtime_parameters={"image": dogs_image})
-        flat_result = flat_engine.run(runtime_parameters={"image": dogs_image})
+        nested_result = nested_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        flat_result = flat_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
 
     assert run_mock.call_count == 2
     for call in run_mock.call_args_list:

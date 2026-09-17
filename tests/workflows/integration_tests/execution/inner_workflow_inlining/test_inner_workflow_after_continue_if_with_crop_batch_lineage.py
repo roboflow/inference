@@ -405,6 +405,7 @@ def _get_class_names_factory():
 def test_inlined_continue_if_echo_matches_inner_workflow_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     h, w = dogs_image.shape[:2]
     run_mock = mock.MagicMock(
@@ -425,13 +426,13 @@ def test_inlined_continue_if_echo_matches_inner_workflow_tensor_native(
         flat_engine = execution_engine(model_manager, _flat_workflow())
         nested_result = nested_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )
         flat_result = flat_engine.run(
             runtime_parameters={
-                "image": dogs_image,
+                "image": image_as_workflow_input(dogs_image),
                 "crop_label": "passed",
             },
         )

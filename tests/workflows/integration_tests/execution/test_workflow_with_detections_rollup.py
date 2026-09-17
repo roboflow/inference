@@ -683,6 +683,7 @@ def test_dimension_rollup_with_keypoint_detection_only_tensor_native(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity of test_dimension_rollup_with_keypoint_detection_only."""
     # given
@@ -700,7 +701,7 @@ def test_dimension_rollup_with_keypoint_detection_only_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": crowd_image,
+            "image": image_as_workflow_input(crowd_image),
         }
     )
 

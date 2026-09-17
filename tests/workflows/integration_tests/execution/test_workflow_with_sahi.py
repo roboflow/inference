@@ -641,6 +641,7 @@ def test_sahi_workflow_with_serialization(
 @_NUMPY_ONLY
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     model_manager: ModelManager,
+    raw_model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
     """
@@ -666,7 +667,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = model_manager.models()["yolov8n-640"]
+    model = raw_model_manager.models()["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}
@@ -739,7 +740,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
 @_TENSOR_ONLY
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_native(
     model_manager: ModelManager,
+    raw_model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity: detections_stitch emits a native inference_models.Detections
     (torch fields). The direct-SAHI reference side stays numpy; the workflow side is bridged
@@ -758,7 +761,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = model_manager.models()["yolov8n-640"]
+    model = raw_model_manager.models()["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}
@@ -793,7 +796,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
     detections_obtained_directly = slicer(crowd_image)
     workflow_result = execution_engine.run(
         runtime_parameters={
-            "image": [crowd_image],
+            "image": [image_as_workflow_input(crowd_image)],
             "overlap_filtering_strategy": "nms",
         }
     )
@@ -848,6 +851,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
 @_TENSOR_ONLY
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_tensor_input(
     model_manager: ModelManager,
+    raw_model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
     """Same as test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_native,
@@ -869,7 +873,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_te
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = model_manager.models()["yolov8n-640"]
+    model = raw_model_manager.models()["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}

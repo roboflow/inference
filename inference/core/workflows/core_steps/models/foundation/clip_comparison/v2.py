@@ -4,19 +4,14 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    run_in_parallel,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
@@ -45,7 +40,11 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
@@ -145,16 +144,14 @@ class BlockManifest(WorkflowBlockManifest):
                     model_id=self.version,
                     model_id_resolver=lambda version: f"clip/{version}",
                     model_registration_kwargs={
-                        "endpoint_type": ModelEndpointType.CORE_MODEL
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
                     },
                 )
             ]
         return [
             roboflow_platform_model(
                 model_id=f"clip/{self.version}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -163,7 +160,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -202,23 +199,16 @@ class ClipComparisonBlockV2(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = ClipCompareRequest(
-                clip_version_id=version,
-                subject=single_image.to_inference_format(numpy_preferred=True),
-                subject_type="image",
-                prompt=classes,
-                prompt_type="text",
-                api_key=self._api_key,
+            predictions.append(
+                self._model_manager.run_clip_comparison(
+                    subject=single_image.to_inference_format(numpy_preferred=True),
+                    subject_type="image",
+                    prompt=classes,
+                    prompt_type="text",
+                    api_key=self._api_key,
+                    version_id=version,
+                )
             )
-            clip_model_id = load_core_model(
-                model_manager=self._model_manager,
-                inference_request=inference_request,
-                core_model="clip",
-            )
-            prediction = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
-            )
-            predictions.append(prediction.model_dump())
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -239,6 +229,9 @@ class ClipComparisonBlockV2(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

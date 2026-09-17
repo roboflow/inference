@@ -1358,6 +1358,7 @@ WORKFLOW_WITH_TENSOR_NATIVE_MINTING_BLOCK = {
 def test_workflow_with_tensor_native_custom_block_minting_native_detections(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """tensor_native authoring surface: the extended IMPORTS_LINES must resolve in
     the generated module namespace (torch, Detections,
@@ -1378,7 +1379,7 @@ def test_workflow_with_tensor_native_custom_block_minting_native_detections(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": [dogs_image]},
+        runtime_parameters={"image": [image_as_workflow_input(dogs_image)]},
         serialize_results=True,
     )
 
@@ -1478,6 +1479,7 @@ WORKFLOW_WITH_TENSOR_NATIVE_PROBING_BLOCK = {
 def test_workflow_with_tensor_native_custom_block_receiving_native_predictions(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """tensor_native pass-through: user code receives the NATIVE prediction from a
     model step (no boundary conversion in either direction) and can return it
@@ -1496,7 +1498,7 @@ def test_workflow_with_tensor_native_custom_block_receiving_native_predictions(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": [dogs_image]},
+        runtime_parameters={"image": [image_as_workflow_input(dogs_image)]},
         serialize_results=True,
     )
 

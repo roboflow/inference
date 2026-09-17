@@ -8,7 +8,10 @@ from inference.core.workflows.core_steps.visualizations.common.base_tensor impor
     PredictionsVisualizationBlock,
     PredictionsVisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    str_to_color,
+    wrap_color_palette,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
@@ -103,7 +106,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CLASS",
-        description="Choose how bounding box colors are assigned.",
+        description="Choose how bounding box colors are assigned. Detections with a negative class or tracker id (for example unmatched VLM labels with class_id = -1) are painted in a neutral gray.",
         examples=["CLASS", "$inputs.color_axis"],
     )
 
@@ -116,11 +119,11 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
     @classmethod
     def getPalette(self, color_palette, palette_size, custom_colors):
         if color_palette == "CUSTOM":
-            return sv.ColorPalette(
+            palette = sv.ColorPalette(
                 colors=[str_to_color(color) for color in custom_colors]
             )
         elif hasattr(sv.ColorPalette, color_palette):
-            return getattr(sv.ColorPalette, color_palette)
+            palette = getattr(sv.ColorPalette, color_palette)
         else:
             palette_name = color_palette.replace("Matplotlib ", "")
 
@@ -145,7 +148,8 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
             else:
                 palette_name = palette_name.lower()
 
-            return sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+            palette = sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+        return wrap_color_palette(palette)
 
     @abstractmethod
     def run(

@@ -499,6 +499,20 @@ class SequenceElementsCount(OperationDefinition):
     type: Literal["SequenceElementsCount"]
 
 
+class SequenceJoin(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Operation joins elements of input sequence into single string, "
+            "placing separator between consecutive elements",
+            "compound": False,
+            "input_kind": [LIST_OF_VALUES_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["SequenceJoin"]
+    separator: str = ", "
+
+
 class SequenceApply(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -623,6 +637,7 @@ AllOperationsType = Annotated[
         ExtractFrameMetadata,
         SequenceLength,
         SequenceElementsCount,
+        SequenceJoin,
         Multiply,
         Divide,
         DetectionsSelection,

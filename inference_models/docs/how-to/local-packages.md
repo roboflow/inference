@@ -47,6 +47,20 @@ model = AutoModel.from_pretrained(
 !!! warning "Security Warning"
     Only enable `allow_local_code_packages` for trusted sources. This allows execution of arbitrary Python code from the model package.
 
+### Local Packages in Inference Server Workflows
+
+To load local packages through Inference Server workflows, enable
+`USE_INFERENCE_MODELS=True` and
+`ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES=True`. This grants workflow
+callers access to local model packages readable by the server, including their
+Python code. Use this feature only with trusted callers and packages.
+
+Online servers reject this configuration when `MODELS_CACHE_AUTH_ENABLED=True`:
+a filesystem path cannot be authorized against a caller's Roboflow API key.
+Keep direct local loading disabled when per-model authorization is required.
+Offline deployments retain their explicit `ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS`
+opt-in for trusted single-tenant use.
+
 ### Creating Custom Model Packages
 
 #### Step 1: Create `model_config.json`

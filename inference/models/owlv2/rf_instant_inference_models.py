@@ -24,6 +24,7 @@ from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.owlv2.owlv2_inference_models import Owlv2AdapterSingleton
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AnyModel, AutoModel, Detections
 from inference_models.models.auto_loaders.access_manager import (
     LiberalModelAccessManager,
@@ -31,9 +32,20 @@ from inference_models.models.auto_loaders.access_manager import (
 from inference_models.models.roboflow_instant.roboflow_instant_hf import (
     RoboflowInstantHF,
 )
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+)
 
 
 class RFInstantSpecificLiberalModelAccessManager(LiberalModelAccessManager):
+    def __init__(
+        self,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
+    ) -> None:
+        super().__init__()
+        self._content_addressed_artifact_cache = content_addressed_artifact_cache
 
     def retrieve_model_instance(
         self,
@@ -51,6 +63,7 @@ class RFInstantSpecificLiberalModelAccessManager(LiberalModelAccessManager):
         return Owlv2AdapterSingleton(
             model_id,
             api_key=api_key,
+            content_addressed_artifact_cache=(self._content_addressed_artifact_cache),
         ).model
 
 
@@ -59,6 +72,9 @@ class InferenceModelsRFInstantModelAdapter(Model):
         self,
         model_id: str,
         api_key: str = None,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
         **kwargs,
     ):
         super().__init__()
@@ -68,7 +84,9 @@ class InferenceModelsRFInstantModelAdapter(Model):
         self.api_key = api_key if api_key else API_KEY
 
         self.task_type = "object-detection"
-        model_access_manager = RFInstantSpecificLiberalModelAccessManager()
+        model_access_manager = RFInstantSpecificLiberalModelAccessManager(
+            content_addressed_artifact_cache=content_addressed_artifact_cache
+        )
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
@@ -86,6 +104,7 @@ class InferenceModelsRFInstantModelAdapter(Model):
             model_access_manager=model_access_manager,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
             **kwargs,
         )
 
@@ -96,6 +115,7 @@ class InferenceModelsRFInstantModelAdapter(Model):
     ) -> List[Detections]:
         return self._model.infer(images=images, **kwargs)
 
+    @usage_collector("model")
     def infer(
         self,
         image,

@@ -6,7 +6,7 @@ Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND`` instead of the standard
 multi-label classification prediction dict.
 
-- LOCAL: ``ModelManager.run_tensor_native_inference`` returns a
+- LOCAL: ``ModelsProvider.run_tensor_native_inference`` returns a
   ``List[MultiLabelClassificationPrediction]`` (one per image) straight from the
   adapter. Each carries ``class_ids`` (the already-threshold-filtered predicted
   label ids — the model's ``post_process`` applied the full priority chain, so we
@@ -28,16 +28,16 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     CLASSIFICATION_STYLE_KEY,
@@ -77,6 +77,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
@@ -220,7 +221,7 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -355,6 +356,7 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,

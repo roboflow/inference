@@ -81,6 +81,7 @@ RFDetrExecutionPlan(
     postprocessor_id="triton-fused-v1",
     engine_plugin_id="base",
     allow_compatibility_fallback=True,
+    allow_runtime_failure_fallback=True,
 )
 ```
 
@@ -100,11 +101,13 @@ constructs only the effective compatible stage objects. Resolution follows these
 3. `auto` checks the model path's ordered preference list and selects the first
    compatible implementation; unlisted implementations remain explicit-only, and
    `base` is the terminal fallback.
-4. Unknown IDs and failures during implementation execution never fall back.
+4. Unknown IDs never fall back.
 
 Compatibility fallback is decided before execution and records the requested ID,
-effective ID, and reason. It does not catch compilation, CUDA, allocation, or other
-unexpected runtime failures.
+effective ID, and reason. Separately, an implementation may classify a runtime failure
+as recoverable, record request-aware runtime incompatibility, and retry the declared
+fallback. Unclassified compilation, CUDA, allocation, and other unexpected runtime
+failures still propagate.
 
 Static target and runtime-component compatibility belongs to registry resolution.
 Request selectors handle only constraints that depend on concrete request values, such
@@ -116,7 +119,14 @@ They are provenance and do not participate in compatibility or automatic resolut
 The same policy applies to every selectable stage. Set
 `allow_compatibility_fallback=False` when an explicitly requested implementation must
 either run or raise. The default is `True`, which preserves the base inference path for
-contracts that an optimized implementation declares unsupported.
+contracts that an optimized implementation declares unsupported. This global
+strictness gate also disables runtime-failure fallback.
+
+`allow_runtime_failure_fallback` independently controls recoverable execution failures
+when compatibility fallback is enabled and also defaults to `True`. Set it to `False`
+to permit pre-execution compatibility fallback while requiring execution failures to
+surface at the model boundary. Runtime fallback therefore requires both
+`allow_compatibility_fallback=True` and `allow_runtime_failure_fallback=True`.
 
 The catalog answers **what exists**. The registry answers **what may run here**.
 

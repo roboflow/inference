@@ -1,7 +1,7 @@
 import json
 import os.path
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from threading import Event
 from unittest import mock
 from unittest.mock import MagicMock
@@ -381,50 +381,6 @@ def test_generate_auto_resolution_cache_path_rejects_unsafe_hash(
 
 @pytest.mark.torch_models
 @pytest.mark.cpu_only
-def test_find_compatible_reuses_newest_entry_across_api_key_hashes(
-    empty_local_dir: str,
-) -> None:
-    cache = BaseAutoLoadMetadataCache(file_lock_acquire_timeout=10)
-    compatibility_hash = "c" * 64
-    older_entry = AutoResolutionCacheEntry(
-        model_id="workspace/model/1",
-        model_package_id="olderPackage",
-        resolved_files=[],
-        model_architecture="yolov8",
-        task_type="object-detection",
-        backend_type=BackendType.ONNX,
-        created_at=datetime.now() - timedelta(seconds=1),
-        offline_compatibility_hash=compatibility_hash,
-        trusted_source=True,
-    )
-    newer_entry = older_entry.model_copy(
-        update={
-            "model_package_id": "newerPackage",
-            # Mixed aware/naive timestamps are accepted by pydantic and must
-            # remain orderable when cache entries came from different clients.
-            "created_at": datetime.now(timezone.utc),
-        }
-    )
-
-    with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
-        # These exact hashes model requests made with different API keys. Their
-        # credential-free compatibility hash intentionally remains the same.
-        cache.register(auto_negotiation_hash="a" * 64, cache_entry=older_entry)
-        cache.register(auto_negotiation_hash="b" * 64, cache_entry=newer_entry)
-        candidates = cache.find_compatible_candidates(
-            offline_compatibility_hash=compatibility_hash
-        )
-        result = cache.find_compatible(offline_compatibility_hash=compatibility_hash)
-
-    assert candidates == [
-        ("b" * 64, newer_entry),
-        ("a" * 64, older_entry),
-    ]
-    assert result == ("b" * 64, newer_entry)
-
-
-@pytest.mark.torch_models
-@pytest.mark.cpu_only
 def test_expired_retrieve_cannot_delete_concurrently_registered_fresh_entry(
     empty_local_dir: str,
 ) -> None:
@@ -459,8 +415,6 @@ def test_expired_retrieve_cannot_delete_concurrently_registered_fresh_entry(
 
     with mock.patch.object(
         auto_resolution_cache, "INFERENCE_HOME", empty_local_dir
-    ), mock.patch.object(
-        auto_resolution_cache, "OFFLINE_MODE", False
     ), mock.patch.object(
         auto_resolution_cache,
         "read_json",
@@ -506,17 +460,14 @@ def test_auto_resolution_cache_rejects_symlinked_cache_directory(
         task_type="object-detection",
         backend_type=BackendType.ONNX,
         created_at=datetime.now(),
-        offline_compatibility_hash="c" * 64,
         trusted_source=True,
     )
 
     with mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", empty_local_dir):
         cache.register(auto_negotiation_hash="a" * 64, cache_entry=cache_entry)
         retrieved = cache.retrieve(auto_negotiation_hash="a" * 64)
-        compatible = cache.find_compatible(offline_compatibility_hash="c" * 64)
 
     assert retrieved is None
-    assert compatible is None
     assert os.listdir(outside_dir) == []
 
 
@@ -589,6 +540,8 @@ def test_auto_resolution_cache_does_not_follow_symlinked_lock_file(
         assert file.read() == "sentinel"
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_offline_auto_resolution_cache_read_is_lock_free(
     empty_local_dir: str,
 ) -> None:
@@ -624,6 +577,8 @@ def test_offline_auto_resolution_cache_read_is_lock_free(
     assert not os.path.lexists(os.path.join(cache_dir, f".{cache_hash}.json.lock"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_offline_auto_resolution_cache_preserves_invalid_metadata(
     empty_local_dir: str,
 ) -> None:

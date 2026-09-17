@@ -195,3 +195,122 @@ def test_run_with_partial_class_mapping(mock_run_locally, mock_workflow_image_da
         "dog",
         "bird",
     ]
+
+
+def _sam3_polygon_response():
+    """One text prompt, one polygon; the shapes
+    `_convert_polygon_response_to_inference_format` reads off the response."""
+    prediction = MagicMock()
+    prediction.confidence = 0.9
+    prediction.masks = [[[0, 0], [8, 0], [8, 6], [0, 6]]]
+    prompt_result = MagicMock()
+    prompt_result.prompt_index = 0
+    prompt_result.predictions = [prediction]
+    response = MagicMock()
+    response.prompt_results = [prompt_result]
+    response.predictions = [prediction]
+    return response
+
+
+_SAM3_POLYGON_JSON = {
+    "prompt_results": [
+        {
+            "prompt_index": 0,
+            "predictions": [
+                {"confidence": 0.9, "masks": [[[0, 0], [8, 0], [8, 6], [0, 6]]]}
+            ],
+        }
+    ]
+}
+
+
+def _one_polygon_image_batch():
+    from inference.core.workflows.execution_engine.entities.base import Batch
+
+    return Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="p"),
+                numpy_image=np.zeros((10, 20, 3), dtype=np.uint8),
+            )
+        ],
+        indices=[(0,)],
+    )
+
+
+_POLYGON_RUN_KWARGS = dict(
+    class_names=["cat"],
+    confidence=0.5,
+    per_class_confidence=None,
+    apply_nms=False,
+    nms_iou_threshold=0.9,
+    output_format="polygons",
+)
+
+
+def test_v3_local_polygon_path_converts_through_supervision() -> None:
+    """Drives `run_locally` with a stubbed model provider; confirms that
+    `_convert_polygon_response_to_inference_format` returns a Pydantic
+    `InstanceSegmentationInferenceResponse`, which the block serialises with
+    `model_dump(by_alias=True, exclude_none=True)` before passing to
+    `sv.Detections.from_inference`."""
+    model_manager = MagicMock()
+    model_manager.run_sam3_segmentation.return_value = [_sam3_polygon_response()]
+    block = SegmentAnything3BlockV3(
+        model_manager=model_manager,
+        api_key="k",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    result = block.run_locally(
+        images=_one_polygon_image_batch(),
+        model_id="sam3/sam3_final",
+        **_POLYGON_RUN_KWARGS
+    )
+    detections = result[0]["predictions"]
+    assert len(detections) == 1
+    assert detections.xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
+    model_manager.run_sam3_segmentation.assert_called_once()
+
+
+def test_v3_remote_polygon_path_converts_through_supervision() -> None:
+    """The REMOTE branch converts the JSON payload via
+    `_convert_polygon_json_response_to_inference_format`, producing a Pydantic
+    `InstanceSegmentationInferenceResponse` that is serialised with
+    `model_dump(by_alias=True, exclude_none=True)` before `sv.Detections.from_inference`.
+    """
+    import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as v3_module
+
+    with patch.object(v3_module, "InferenceHTTPClient") as client_cls:
+        client_cls.return_value.sam3_concept_segment.return_value = _SAM3_POLYGON_JSON
+        block = SegmentAnything3BlockV3(
+            model_manager=MagicMock(),
+            api_key="k",
+            step_execution_mode=StepExecutionMode.REMOTE,
+        )
+        result = block.run_remotely(
+            images=_one_polygon_image_batch(),
+            model_id="sam3/sam3_final",
+            **_POLYGON_RUN_KWARGS
+        )
+    assert len(result[0]["predictions"]) == 1
+    assert result[0]["predictions"].xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]
+
+
+def test_v3_proxy_polygon_path_converts_through_supervision() -> None:
+    """The inference-proxy branch (`run_via_request`, `v3.py:622`) - the third
+    changed call site."""
+    import inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 as v3_module
+
+    response = MagicMock()
+    response.json.return_value = _SAM3_POLYGON_JSON
+    with patch.object(v3_module.requests, "post", return_value=response):
+        block = SegmentAnything3BlockV3(
+            model_manager=MagicMock(),
+            api_key="k",
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+        result = block.run_via_request(
+            images=_one_polygon_image_batch(), **_POLYGON_RUN_KWARGS
+        )
+    assert len(result[0]["predictions"]) == 1
+    assert result[0]["predictions"].xyxy.tolist() == [[0.0, 0.0, 8.0, 6.0]]

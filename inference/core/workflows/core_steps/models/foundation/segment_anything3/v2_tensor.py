@@ -28,21 +28,6 @@ import requests
 from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.entities.requests.sam3 import Sam3Prompt
-from inference.core.env import (
-    API_BASE_URL,
-    CORE_MODEL_SAM3_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SAM3_EXEC_MODE,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import build_roboflow_api_headers
-from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Reuse the v1_tensor SAM3 conversion machinery verbatim.
@@ -52,6 +37,21 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_
     _build_instance_detections,
     _build_instance_detections_from_polygons,
     _normalize_class_names,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Sam3Prompt,
+)
+from inference.core.workflows.environment import (
+    API_BASE_URL,
+    CORE_MODEL_SAM3_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -86,9 +86,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # TODO(sam3-public-adapter): these per-class-threshold + cross-prompt-NMS helpers
 # are LOCAL COPIES of the private `inference.models.sam3.
@@ -258,17 +263,19 @@ class SegmentAnything3BlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key", "step_execution_mode", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -405,6 +412,9 @@ class SegmentAnything3BlockV2(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         http_prompts = _build_http_prompts(class_names, per_class_confidence)
@@ -460,10 +470,12 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 headers["X-Roboflow-Internal-Service-Secret"] = (
                     ROBOFLOW_INTERNAL_SERVICE_SECRET
                 )
-            headers = build_roboflow_api_headers(explicit_headers=headers)
+            headers = self._platform_client.build_api_headers(explicit_headers=headers)
             try:
                 response = requests.post(
-                    wrap_url(f"{endpoint}?api_key={self._api_key}"),
+                    self._platform_client.wrap_url(
+                        f"{endpoint}?api_key={self._api_key}"
+                    ),
                     json=payload,
                     headers=headers,
                     timeout=60,

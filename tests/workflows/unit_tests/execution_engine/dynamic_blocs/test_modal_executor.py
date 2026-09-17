@@ -11,6 +11,11 @@ import pytest
 import supervision as sv
 import torch
 
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
     representation_boundary,
 )
@@ -146,3 +151,56 @@ def test_modal_serializer_sv_detections_ride_dedicated_arm_when_flag_on() -> Non
     # then
     assert payload["predictions"]["_type"] == "sv_detections"
     assert payload["predictions"]["predictions"][0]["class"] == "widget"
+
+
+def _workflow_image(seed: int) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id=f"crop_{seed}"),
+        numpy_image=np.full((8, 8, 3), seed, dtype=np.uint8),
+    )
+
+
+def test_modal_serializer_preserves_batch_of_images() -> None:
+    """Batch must ride a dedicated arm.
+
+    ``Batch`` subclasses neither ``list`` nor ``dict``, so without an explicit
+    case it reaches the generic encoder, which stringifies it via ``str(obj)``.
+    Blocks declaring ``batch_oriented_parameters`` then receive the repr instead
+    of their crops.
+    """
+    batch = Batch(
+        content=[_workflow_image(1), _workflow_image(2)], indices=[(0,), (1,)]
+    )
+
+    payload = json.loads(serialize_for_modal_remote_execution(inputs={"image": batch}))
+
+    entry = payload["image"]
+    assert entry["_type"] == "batch"
+    assert entry["indices"] == [[0], [1]]
+    assert len(entry["value"]) == 2
+    for item in entry["value"]:
+        assert item["_type"] == "workflow_image"
+        assert item["value"], "image payload must survive, not be stringified"
+    assert "Batch object at" not in json.dumps(payload)
+
+
+def test_modal_serializer_preserves_batch_of_scalars() -> None:
+    """Non-image batch parameters regress the same way (e.g. per-crop floats)."""
+    batch = Batch(content=[0.357, 0.642], indices=[(0,), (1,)])
+
+    payload = json.loads(serialize_for_modal_remote_execution(inputs={"frac": batch}))
+
+    assert payload["frac"] == {
+        "_type": "batch",
+        "value": [0.357, 0.642],
+        "indices": [[0], [1]],
+    }
+
+
+def test_modal_serializer_handles_batch_without_indices() -> None:
+    batch = Batch(content=[1, 2, 3], indices=None)
+
+    payload = json.loads(serialize_for_modal_remote_execution(inputs={"v": batch}))
+
+    assert payload["v"]["value"] == [1, 2, 3]
+    assert payload["v"]["indices"] is None

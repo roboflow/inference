@@ -21,7 +21,12 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.easyocr.txt \
     ./
 
-RUN pip3 install --upgrade pip && pip3 install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+# the cu124 index dropped nvidia-cudnn-cu12==9.1.0.70 (torch's exact pin), so nvidia-*
+# deps must come from PyPI; +cu124 pins keep torch/torchvision on the pytorch index
+RUN pip3 install --upgrade pip && pip3 install \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple \
+    torch==2.6.0+cu124 torchvision==0.21.0+cu124
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \

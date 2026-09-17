@@ -2,15 +2,14 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     SMOLVLM2_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -33,7 +32,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -136,7 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
 class SmolVLM2BlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -190,6 +190,9 @@ class SmolVLM2BlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -227,18 +230,13 @@ class SmolVLM2BlockV1(WorkflowBlock):
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
             # Build an LMMInferenceRequest with both prompt and image.
-            request = LMMInferenceRequest(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=single_prompt,
+                api_key=self._api_key,
             )
-            # Run inference.
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            response_text = prediction.response
+            response_text = prediction["response"]
             predictions.append(
                 {
                     "parsed_output": response_text,

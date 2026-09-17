@@ -1,6 +1,6 @@
 ---
 name: review-workflows-execution-engine
-description: Review guidance for PRs touching inference/core/workflows/execution_engine/**, inference/core/workflows/errors.py, inference/core/workflows/prototypes/block.py, docs/workflows/execution_engine_changelog.md, or .cursor/rules/execution-engine-version-changelog.mdc. Diff signals: EXECUTION_ENGINE_V1_VERSION, REGISTERED_ENGINES, COMPILATION_CACHE, contains_future/resolve_futures, ClientCausedStepExecutionError, get_output_dimensionality_offset. NOT core_steps block implementations.
+description: Review guidance for PRs touching inference/core/workflows/execution_engine/**, inference/core/workflows/errors.py, inference/core/workflows/prototypes/block.py, or .cursor/rules/execution-engine-version-changelog.mdc. Diff signals: EXECUTION_ENGINE_V1_VERSION, REGISTERED_ENGINES, COMPILATION_CACHE, contains_future/resolve_futures, ClientCausedStepExecutionError, get_output_dimensionality_offset. NOT core_steps block implementations.
 ---
 
 # Reviewing workflows-execution-engine changes
@@ -9,7 +9,7 @@ description: Review guidance for PRs touching inference/core/workflows/execution
 Trigger when a PR changes any of:
 - `inference/core/workflows/execution_engine/**` — compiler, executor, introspection, profiling, inner-workflows, dynamic blocks, engine entities (`execution_engine/entities/{engine.py,base.py,types.py}`).
 - `inference/core/workflows/errors.py`, `inference/core/workflows/prototypes/block.py` — the workflow-core contracts the engine depends on.
-- `docs/workflows/execution_engine_changelog.md`, `docs/workflows/versioning.md`, `docs/workflows/workflows_compiler.md`, `docs/workflows/workflow_execution.md`.
+- the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`), and the Workflows developer guide on docs.roboflow.com (versioning, compiler, workflow execution): <https://docs.roboflow.com/workflows/developer-guide/developer-guide>.
 
 **Out of scope** (other skills own these): block implementations under `inference/core/workflows/core_steps/**` (block-authoring skill) and the query-language (`core_steps/common/query_language/**`). A `core_steps` change enters scope only when it *forces* an engine behavior change (then EE versioning rules apply — e.g. #2106 bumped EE + touched query-language together).
 
@@ -18,7 +18,7 @@ Note: there is no `inference/core/workflows/entities/` directory — the engine 
 ## Review checklist
 Severity-tagged. Verify each against the linked Standard before raising.
 
-- **BLOCK** — Diff changes compile or run **behavior** but has no user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`. Do not ask the contributor to bump a version. (Standard: Versioning.)
+- **BLOCK** — Diff changes compile or run **behavior** but has no user-facing entry under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`). Do not ask the contributor to bump a version. (Standard: Versioning.)
 - **BLOCK** — Compile behavior depends on an input that is NOT part of the `COMPILATION_CACHE` hash key (`workflow_definition` + `execution_engine_version` only). Stale graphs get served on a cache hit. (Standard: Compilation cache.)
 - **BLOCK** — Dict-key access on external/JSON input (`introspection/schema_parser.py`, definition parsing) checks presence but not type — must be `isinstance(..., dict/list)`. (Standard: Defensive parsing; broke in #1122.)
 - **BLOCK** — Emptiness check on an index/batch/collection uses truthiness instead of `is not None` / `len(...) > 0`. (Standard: None-vs-falsy; broke in #777.)
@@ -30,6 +30,8 @@ Severity-tagged. Verify each against the linked Standard before raising.
 - **FLAG** — A `ThreadPoolExecutor` is created inside `run(...)`, or `max_concurrent_steps` is no longer honored. (Standard: Injectable executor.)
 - **FLAG** — Serialization change drops empty or non-batch outputs. (Standard: Serialization; broke in #815.)
 - **FLAG** — Dimensionality/lineage change (`get_output_dimensionality_offset`, `get_parameters_accepting_batches[_and_scalars]`, control-flow lineage) does not preserve results for pre-existing workflows. (Standard: Dimensionality/lineage.)
+- **BLOCK** — A change to the tensor-mode wildcard serializer lets a new container shape pass through without an arm — a smuggled device tensor crossing the stream-manager process boundary is a runtime crash on Jetson, not a serialization nit. (Standard: Tensor-native seams.)
+- **FLAG** — A diff touches `dynamic_blocks/representation_boundary.py` conversion semantics without mirrored round-trip tests, or weakens its loud-error contract for ambiguous values into a silent pass-through. (Standard: Tensor-native seams.)
 - **NIT** — Deprecated inputs/selectors (`WorkflowImage`, `WorkflowVideoMetadata`, old `*Selector` annotations) removed before EE v2.
 
 ### Not blocking
@@ -40,7 +42,7 @@ Severity-tagged. Verify each against the linked Standard before raising.
 
 ## Standards
 
-**Versioning.** Any behavior change to compile or run MUST add user-facing behavior bullets (not file lists) under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`. Contributors do not choose or change a version. At release time, maintainers choose the bump (patch = bug fix, minor = new capability, major = breaking and rare), update `EXECUTION_ENGINE_V1_VERSION` and mirrored assertions, and replace `## Unreleased` with the final `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` heading. Codified in `.cursor/rules/execution-engine-version-changelog.mdc`. One exception to release-time bumping: when a Workflow block must gate on a capability still under `## Unreleased` via `get_execution_engine_compatibility()`, the version is placed and bumped early (final heading + `EXECUTION_ENGINE_V1_VERSION` + mirrored assertions, maintainer-coordinated) so the block can declare its floor — see `review-workflows-blocks`.
+**Versioning.** Any behavior change to compile or run MUST add user-facing behavior bullets (not file lists) under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`). Contributors do not choose or change a version. At release time, maintainers choose the bump (patch = bug fix, minor = new capability, major = breaking and rare), update `EXECUTION_ENGINE_V1_VERSION` and mirrored assertions, and replace `## Unreleased` with the final `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` heading. Codified in `.cursor/rules/execution-engine-version-changelog.mdc`. One exception to release-time bumping: when a Workflow block must gate on a capability still under `## Unreleased` via `get_execution_engine_compatibility()`, the version is placed and bumped early (final heading + `EXECUTION_ENGINE_V1_VERSION` + mirrored assertions, maintainer-coordinated) so the block can declare its floor — see `review-workflows-blocks`.
 
 **Compilation cache.** `COMPILATION_CACHE` (a `BasicWorkflowsCache`, defined in `compiler/core.py`, class in `compiler/cache.py`) memoizes the compiled graph. Its hash key is built from exactly two hash functions: `workflow_definition` (`json.dumps(sort_keys=True)`) and `execution_engine_version`. Any new compile-time input that changes the resulting graph MUST be added to the cache's `hash_functions`, or a cache hit will serve a stale graph. The cache is size-bounded (`cache_size=256`, LRU-style eviction via `_keys_buffer`) — do not swap in an unbounded dict. Dynamic-blocks-allowed is re-validated on every hit (`ensure_dynamic_blocks_allowed`); preserve that so a cached graph cannot bypass the guard.
 
@@ -68,9 +70,12 @@ Severity-tagged. Verify each against the linked Standard before raising.
 
 **Serialization** must handle empty AND non-batch outputs — both serialize (#815, changelog v1.4.0).
 
-## Required companions
+**Tensor-native seams** (#2357). Under `ENABLE_TENSOR_DATA_REPRESENTATION` the design is a **same-name swap**: the kind registry and block-name lists are identical in both flag directions; only implementations, serializers, and deserializers swap (`KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS` flag-on overrides in `core_steps/loader.py`, e.g. classification/keypoint/RLE/embedding/tensor kinds). Three seams to guard:
+- **Serializer selection is first-kind-wins** (`output_constructor.py`): the declared kind LIST order on a manifest picks the wire payload — reordering kinds is a payload contract change, not a cosmetic edit.
+- **The tensor wildcard serializer is THE single container walker** for both HTTP output and stream-manager IPC (`serialise_single_workflow_result_element` in `orjson_utils.py` resolves it at call time). Its arms: dicts and lists recurse; tuples convert element-wise with namedtuple splat (added after a CUDA-tensor-inside-a-tuple crossed IPC and crashed on Jetson — CUDA IPC is unsupported on Tegra); the `(KeyPoints, Detections)` pair is a semantic LEAF checked before generic tuple recursion. Any new container shape reaching wildcard outputs needs an explicit arm or a loud error — never silent pass-through of device tensors.
+- **The dynamic-block representation boundary** (`v1/dynamic_blocks/representation_boundary.py`) converts native↔legacy around `legacy_compatibility` custom-Python blocks: kind-driven converter selection, best-effort sniffing for wildcard inputs, and a LOUD-error contract for ambiguous values (bare tensors, bare `KeyPoints`, unknown native dataclasses). It is a strict identity flag-off. Its documented lossy corners are deliberate — classification confidence vectors rebuild SPARSE from thresholded dicts, and the class-name id→name map is first-seen-wins with per-box overrides on collision — do not "fix" them casually; changes need round-trip tests in both directions.
 Block a behavior-changing EE PR that is missing:
-1. **Changelog** — a user-facing entry under `## Unreleased` in `docs/workflows/execution_engine_changelog.md`.
+1. **Changelog** — a user-facing entry under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`).
 2. **Tests** — unit test in the matching `tests/workflows/unit_tests/execution_engine/{compiler,executor,inner_workflow,introspection,profiling,...}` dir AND an integration test under `tests/workflows/integration_tests/execution/` reproducing the fixed scenario (#777, #2352, #645).
 
 (See `### Not blocking` for version-bump and exemption carve-outs.)
@@ -92,6 +97,7 @@ subsequent contributions.
 - `execution_engine/v1/executor/core.py`, `output_constructor.py`, `execution_data_manager/step_input_assembler.py`, `executor/utils.py` (future helpers), `executor/flow_coordinator.py`.
 - `execution_engine/v1/inner_workflow/{inline.py,dynamic_blocks_collection.py,compiler_bridge.py}`.
 - `execution_engine/entities/{engine.py,base.py,types.py}`, `errors.py`, `introspection/schema_parser.py`.
+- Tensor-native seams: `execution_engine/v1/dynamic_blocks/representation_boundary.py` (native↔legacy boundary), `core_steps/common/serializers_tensor.py` (`serialize_wildcard_kind` — the single container walker), `interfaces/http/orjson_utils.py` (`serialise_single_workflow_result_element`, call-time wildcard resolution), `core_steps/loader.py` (flag-on serializer/deserializer overrides).
 - `.cursor/rules/execution-engine-version-changelog.mdc`.
 
 ## Reference PRs

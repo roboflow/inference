@@ -25,6 +25,9 @@ from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
 )
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+)
 from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
 
 MINIMAL_FPS = 0.01
@@ -182,15 +185,15 @@ class VideoSourcesManager:
         """Policy-driven sibling of `retrieve_frames_from_sources`.
 
         Mirrors the legacy loop (stop signal, inactive sources, EOS
-        registration, reconnection-thread joins, the
-        `_last_batch_yielded_time`-anchored budget) but the per-round budget
-        comes from the policy's self-tuning window and per-source reads go
-        through the policy (bounded-staleness FIFO for live sources, plain
-        reads for files).
+        registration, reconnection-thread joins), but the policy window is a
+        wait duration computed after the preceding execution gap. Its deadline
+        is therefore anchored at collection start rather than the previous
+        batch yield. Per-source reads go through the policy (bounded-staleness
+        FIFO for live sources, plain reads for files).
         """
         batch_frames = []
         window = collection_policy.collection_window()
-        batch_timeout_moment = self._last_batch_yielded_time + timedelta(seconds=window)
+        batch_timeout_moment = datetime.now() + timedelta(seconds=window)
         for source_ord, (source, source_should_reconnect) in enumerate(
             zip(self._video_sources.all_sources, self._video_sources.allow_reconnection)
         ):
@@ -496,7 +499,8 @@ def _attempt_reconnect(
             time.sleep(RESTART_ATTEMPT_DELAY)
         except Exception as error:
             logger.warning(
-                f"Fatal error in re-connection to source: {video_source.source_id}. Details: {error}"
+                f"Fatal error in re-connection to source: {video_source.source_id}. "
+                f"Details: {redact_credentials_in_text(str(error))}"
             )
             on_fatal_error()
             break

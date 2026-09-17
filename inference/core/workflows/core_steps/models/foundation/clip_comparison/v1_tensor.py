@@ -5,19 +5,18 @@ import torch
 import torch.nn.functional as F
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.env import (
-    CLIP_VERSION_ID,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     remove_unexpected_keys_from_dictionary,
     run_in_parallel,
+)
+from inference.core.workflows.environment import (
+    CLIP_VERSION_ID,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
@@ -39,10 +38,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
@@ -110,12 +115,23 @@ class BlockManifest(WorkflowBlockManifest):
 
         return list(CLIP_CACHE_MODEL_IDS)
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # No version field on this manifest — run() uses the server-level
+        # default CLIP variant, so the dependency is server-configuration
+        # relative.
+        return [
+            roboflow_platform_model(
+                model_id=f"clip/{CLIP_VERSION_ID}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class ClipComparisonBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -154,7 +170,7 @@ class ClipComparisonBlockV1(WorkflowBlock):
         self._model_manager.add_model(
             clip_model_id,
             self._api_key,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
+            endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
         )
         text_embeddings = F.normalize(
             self._model_manager.run_tensor_native_inference(
@@ -199,6 +215,9 @@ class ClipComparisonBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

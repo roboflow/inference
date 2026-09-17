@@ -2,15 +2,14 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     COSMOS3_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -34,7 +33,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 DEFAULT_PROMPT = "Describe what's in this image."
 DEFAULT_SYSTEM_PROMPT = (
@@ -85,11 +85,12 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["Is the walkway free of obstacles?", "$inputs.prompt"],
     )
     model_version: Union[
-        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"]
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Literal["nvidia/cosmos-3-edge"], str
     ] = Field(
         default="nvidia/cosmos-3-edge",
-        description="The Cosmos 3 Edge model to be used for inference.",
-        examples=["nvidia/cosmos-3-edge"],
+        description="The Cosmos 3 Edge model to be used for inference: the base model, "
+        "or the model id of a Roboflow fine-tune.",
+        examples=["nvidia/cosmos-3-edge", "my-project/3"],
     )
     system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
@@ -151,7 +152,7 @@ class BlockManifest(WorkflowBlockManifest):
 class Cosmos3EdgeBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -209,6 +210,9 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -239,21 +243,21 @@ class Cosmos3EdgeBlockV1(WorkflowBlock):
 
         predictions = []
         for image in inference_images:
-            request = LMMInferenceRequest(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=combined_prompt,
+                api_key=self._api_key,
             )
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            predictions.append({"output": prediction.response})
+            predictions.append({"output": prediction["response"]})
         return predictions
 
 
 def _combine_prompt(prompt: Optional[str], system_prompt: Optional[str]) -> str:
+    """Only a system prompt the user set rides the sentinel: with none, the model
+    applies its own default, which for a Roboflow fine-tune is the prompt it was
+    trained with rather than the base model's."""
     prompt = prompt or DEFAULT_PROMPT
-    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    if not system_prompt:
+        return prompt
     return prompt + "<system_prompt>" + system_prompt

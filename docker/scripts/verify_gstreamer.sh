@@ -3,6 +3,7 @@
 set -eu
 
 GSTREAMER_REQUIRE_NVCODEC="${GSTREAMER_REQUIRE_NVCODEC:-false}"
+GSTREAMER_REQUIRE_NVCODEC_NVRTC="${GSTREAMER_REQUIRE_NVCODEC_NVRTC:-false}"
 GSTREAMER_REQUIRE_NVCODEC_RUNTIME="${GSTREAMER_REQUIRE_NVCODEC_RUNTIME:-false}"
 
 for element in \
@@ -97,15 +98,60 @@ if [ "${GSTREAMER_REQUIRE_NVCODEC}" = "true" ]; then
     fi
 fi
 
+# GPU-FREE guard for the nvcodec CUDA converters. cudaconvert / cudascale /
+# cudaconvertscale JIT their kernels through NVRTC and gstcudanvrtc.cpp dlopen()s
+# the UNVERSIONED soname "libnvrtc.so", which CUDA *runtime* base images do not
+# ship (it belongs to cuda-nvrtc-dev). When it is missing those three elements
+# are silently not registered while nvh264dec / cudaupload / cudadownload still
+# are, so GSTREAMER_REQUIRE_NVCODEC (a link-level check) keeps passing and the
+# regression only shows up as a CPU-decode fallback at run time on a real GPU.
+# This check needs no GPU: it is exactly the dlopen the plugin performs.
+if [ "${GSTREAMER_REQUIRE_NVCODEC_NVRTC}" = "true" ]; then
+    if ! python3 -c "import ctypes; ctypes.CDLL('libnvrtc.so')" >/dev/null 2>&1; then
+        echo "libnvrtc.so (unversioned soname) is not loadable - GStreamer" >&2
+        echo "cudaconvert/cudascale/cudaconvertscale will not register and all" >&2
+        echo "hardware decoding will silently fall back to the cv2 CPU decoder." >&2
+        echo "Symlink it onto the versioned library shipped by the CUDA runtime." >&2
+        exit 1
+    fi
+fi
+
+# Same GPU-FREE guard for nvJPEG. nvjpegenc loads NVIDIA's nvJPEG library by
+# trying the UNVERSIONED soname "libnvjpeg.so" first and then falling back to
+# "libnvjpeg.so.<CUDA major reported by the host DRIVER>". Without the
+# unversioned link the element only registers on hosts whose driver major
+# happens to match the image's CUDA toolkit, so the regression hides on
+# same-major machines and shows up as "No such element or plugin 'nvjpegenc'"
+# only on newer-driver runners. This check needs no GPU: it is exactly the
+# first, version-independent dlopen the plugin performs.
+if [ "${GSTREAMER_REQUIRE_NVCODEC_NVRTC}" = "true" ]; then
+    if ! python3 -c "import ctypes; ctypes.CDLL('libnvjpeg.so')" >/dev/null 2>&1; then
+        echo "libnvjpeg.so (unversioned soname) is not loadable - GStreamer" >&2
+        echo "nvjpegenc will not register on hosts whose driver reports a" >&2
+        echo "different CUDA major than the image's toolkit." >&2
+        echo "Symlink it onto the versioned library shipped by the CUDA runtime." >&2
+        exit 1
+    fi
+fi
+
+# Full element-registration + pipeline smoke test. Requires a real GPU (the
+# nvcodec plugin only registers elements after cuInit succeeds and a device is
+# enumerated), so it CANNOT run on a GPU-less build machine - it is driven from
+# the GPU CI job (.github/workflows/test.nvidia_t4.yml) against the built image.
 if [ "${GSTREAMER_REQUIRE_NVCODEC_RUNTIME}" = "true" ]; then
+    # Encoder requirement is the MODERN nvcudah26xenc elements, not the legacy
+    # nvh26xenc ones: the legacy elements still register but can only request
+    # pre-SDK-10 preset GUIDs, which CUDA-13-era drivers removed - they fail
+    # at set_format on such hosts. Everything that encodes in this image (the
+    # tensor-runtime verifier's fixture synthesis) uses the modern elements.
     for element in \
         cudaconvertscale \
         cudadownload \
         cudaupload \
+        nvcudah264enc \
+        nvcudah265enc \
         nvh264dec \
-        nvh264enc \
         nvh265dec \
-        nvh265enc \
         nvjpegdec \
         nvjpegenc
     do

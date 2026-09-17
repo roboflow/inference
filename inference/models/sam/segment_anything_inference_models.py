@@ -30,6 +30,7 @@ from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.sam.cache import (
     SamImageEmbeddingsInMemoryCache,
@@ -85,6 +86,11 @@ class InferenceModelsSAMAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        # Usage telemetry reads the fixed canvas from `image_size`; SAMTorch
+        # only keeps it on the wrapped encoder. Never let a telemetry lookup
+        # fail model construction.
+        encoder = getattr(getattr(self._model, "_model", None), "image_encoder", None)
+        self.image_size = getattr(encoder, "img_size", None)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs
@@ -97,6 +103,7 @@ class InferenceModelsSAMAdapter(Model):
             return self._model.embed_images(**kwargs)
         return self._model.segment_images(**kwargs)
 
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):

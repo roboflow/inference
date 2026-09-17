@@ -5,19 +5,18 @@ import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
-from inference.core.env import (
-    CORE_MODEL_SAM2_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
     split_key_point_prediction,
+)
+from inference.core.workflows.environment import (
+    CORE_MODEL_SAM2_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -44,11 +43,18 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -56,7 +62,7 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 # SAM2 mask-binarisation threshold in logit space, mirroring the numpy adapter's
 # MASK_THRESHOLD (inference/models/sam2/segment_anything2_inference_models.py): a pixel
@@ -185,12 +191,32 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2/hiera_b_plus",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"sam2/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"sam2/{self.version}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class SegmentAnything2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -250,7 +276,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     ) -> BlockResult:
         sam_model_id = f"sam2/{version}"
         self._model_manager.add_model(
-            sam_model_id, self._api_key, endpoint_type=ModelEndpointType.CORE_MODEL
+            sam_model_id, self._api_key, endpoint_type=CORE_MODEL_ENDPOINT_TYPE
         )
 
         boxes_iter = boxes if boxes is not None else [None] * len(images)
@@ -302,6 +328,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 

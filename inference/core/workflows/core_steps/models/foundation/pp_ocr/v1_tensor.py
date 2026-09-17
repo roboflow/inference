@@ -8,7 +8,7 @@ run-body emits a native `inference_models.Detections` instead of `sv.Detections`
 
 PP-OCR has no `run_tensor_native_inference` adapter, so both execution modes keep
 the exact model-calling machinery of `pp_ocr.v1` (a `PPOCRInferenceRequest` served
-by the local `ModelManager`, or `InferenceHTTPClient.ocr_image` remotely) and
+by the local `ModelsProvider`, or `InferenceHTTPClient.ocr_image` remotely) and
 produce the standard inference-format `OCRInferenceResponse` dicts. Those dicts are
 converted to a native `Detections` HERE (no shared util is touched) so the numpy
 `post_process_ocr_result` / `sv.Detections.from_inference` path is bypassed.
@@ -27,21 +27,19 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
-from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.constants import CLASS_NAME_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -61,11 +59,17 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_models.models.base.object_detection import Detections
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
 # Fixed, non-empty `class_id -> name` fallback map. PP-OCR emits `class_id == 0` for
@@ -171,11 +175,19 @@ class BlockManifest(WorkflowBlockManifest):
             "pp_ocr/none-small",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(
+                model_id=f"pp_ocr/{self.text_detection}-{self.text_recognition}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class PPOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -222,24 +234,15 @@ class PPOCRBlockV1(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = PPOCRInferenceRequest(
-                text_detection=text_detection,
-                text_recognition=text_recognition,
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
-            )
-            model_id = load_core_model(
-                model_manager=self._model_manager,
-                inference_request=inference_request,
-                core_model="pp_ocr",
-            )
-            result = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
             predictions.append(
                 _build_native_prediction(
                     image=single_image,
-                    response=result.model_dump(by_alias=True, exclude_none=True),
+                    response=self._model_manager.run_pp_ocr(
+                        image=single_image.to_inference_format(numpy_preferred=True),
+                        api_key=self._api_key,
+                        text_detection=text_detection,
+                        text_recognition=text_recognition,
+                    ),
                 )
             )
         return predictions
@@ -262,6 +265,7 @@ class PPOCRBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         configuration = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )

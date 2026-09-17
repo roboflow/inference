@@ -8,20 +8,18 @@ import pycocotools.mask as mask_utils
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.inference import (
-    SemanticSegmentationInferenceRequest,
-)
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     HOSTED_SEMANTIC_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
     RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
@@ -49,6 +47,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -165,7 +164,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -211,25 +210,19 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = SemanticSegmentationInferenceRequest(
-            api_key=self._api_key,
-            model_id=model_id,
-            image=inference_images,
-            confidence=confidence,
-            source="workflow-execution",
-        )
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
+        predictions = self._model_manager.run_semantic_segmentation(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
+            confidence=confidence,
+            # In-process call: raw numpy masks skip a full-resolution PNG
+            # encode/decode round-trip between the model and this block.
+            response_mask_format="numpy",
         )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(predictions=predictions, model_id=model_id)
 
     def run_remotely(
@@ -250,6 +243,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             confidence_threshold=confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -283,26 +277,46 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
 
     @staticmethod
     def _convert_to_sv_detections(predictions_dict: Dict) -> sv.Detections:
-        seg_mask_b64 = predictions_dict.get("segmentation_mask", "")
-        conf_mask_b64 = predictions_dict.get("confidence_mask", "")
+        seg_mask = predictions_dict.get("segmentation_mask", "")
+        conf_mask = predictions_dict.get("confidence_mask", "")
         class_map: Dict[str, str] = predictions_dict.get("class_map", {})
 
-        mask_bytes = base64.b64decode(seg_mask_b64)
-        nparr = np.frombuffer(mask_bytes, np.uint8)
-        mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if isinstance(seg_mask, np.ndarray):
+            # response_mask_format="numpy" fast path - the model handed the
+            # label map over in-process, no PNG/base64 round-trip involved.
+            mask_array = seg_mask
+        else:
+            mask_bytes = base64.b64decode(seg_mask)
+            nparr = np.frombuffer(mask_bytes, np.uint8)
+            mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
         if mask_array is None:
             return sv.Detections.empty()
 
-        unique_class_ids = [cid for cid in np.unique(mask_array).tolist() if cid != 0]
+        present_class_ids = predictions_dict.get("present_class_ids")
+        if not present_class_ids:
+            # Hint absent (or empty, which no producer emits for a real mask
+            # - do not trust it) - scan the full-resolution mask instead.
+            present_class_ids = np.unique(mask_array).tolist()
+        unique_class_ids = [cid for cid in present_class_ids if cid != 0]
         if not unique_class_ids:
             return sv.Detections.empty()
 
         conf_array = None
-        if conf_mask_b64:
-            conf_bytes = base64.b64decode(conf_mask_b64)
+        if isinstance(conf_mask, np.ndarray):
+            conf_array = conf_mask
+        elif conf_mask:
+            conf_bytes = base64.b64decode(conf_mask)
             conf_nparr = np.frombuffer(conf_bytes, np.uint8)
             conf_array = cv2.imdecode(conf_nparr, cv2.IMREAD_GRAYSCALE)
+
+        # pycocotools requires Fortran-ordered uint8 masks. Converting the label
+        # map to F-order once makes every `label_map_f == cid` result below
+        # F-contiguous already, so the per-class asfortranarray in the RLE loop
+        # is a no-op instead of a full-frame transposing copy. The C-order mask
+        # still feeds bbox/confidence: those reductions are layout-sensitive and
+        # run several times slower on F-order masks.
+        label_map_f = np.asfortranarray(mask_array)
 
         xyxy_list, masks_list, class_id_list, class_name_list, confidence_list = (
             [],
@@ -317,14 +331,20 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             # class mask even though this is not necessarily meaningful for non-contiguous masks.
             rows = np.where(np.any(binary_mask, axis=1))[0]
             cols = np.where(np.any(binary_mask, axis=0))[0]
+            if rows.size == 0:
+                # present_class_ids promised a class the mask does not contain.
+                continue
             xyxy_list.append([cols[0], rows[0], cols[-1], rows[-1]])
-            masks_list.append(binary_mask)
+            masks_list.append(label_map_f == class_id)
             class_id_list.append(class_id)
             class_name_list.append(class_map.get(str(class_id), str(class_id)))
             if conf_array is not None:
                 confidence_list.append(float(conf_array[binary_mask].mean()) / 255.0)
             else:
                 confidence_list.append(1.0)
+
+        if not class_id_list:
+            return sv.Detections.empty()
 
         rle_list = []
         for mask in masks_list:
@@ -341,11 +361,22 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             data={
                 "class_name": np.array(class_name_list),
                 DETECTION_ID_KEY: detection_ids,
+                IMAGE_DIMENSIONS_KEY: np.array(
+                    [list(mask_array.shape[:2])] * len(class_id_list)
+                ),
                 RLE_MASK_KEY_IN_SV_DETECTIONS: np.array(rle_list, dtype=object),
             },
         )
 
         if conf_array is not None:
-            result["confidence_mask"] = conf_array
+            # sv.Detections data fields must have one entry per detection:
+            # filtering indexes every field with a length-N boolean mask, and a
+            # bare (H, W) map here fails with "boolean index did not match
+            # indexed array along axis 0". Share the single map across an
+            # object array of length N instead of copying it per class.
+            confidence_maps = np.empty(len(class_id_list), dtype=object)
+            for idx in range(len(class_id_list)):
+                confidence_maps[idx] = conf_array
+            result["confidence_mask"] = confidence_maps
 
         return result

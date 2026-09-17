@@ -6,19 +6,17 @@ test -f /usr/local/cuda/nvvm/libdevice/libdevice.10.bc
 test -f /usr/local/share/licenses/cuda-ptxas
 test "${TRITON_PTXAS_PATH}" = /usr/local/cuda/bin/ptxas
 test "${TRITON_PTXAS_BLACKWELL_PATH}" = /usr/local/cuda/bin/ptxas
+test "${TRITON_CACHE_DIR}" = /tmp/triton-cache
 test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas
 test ! -e /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas-blackwell
 test -x /usr/local/bin/inference
 test -x /usr/local/bin/run_uvicorn.sh
 test -s /opt/roboflow/lib/libroboflow_jetson_tensor.so.1
+test -s /usr/local/lib/python3.12/dist-packages/bitsandbytes/libbitsandbytes_cuda132.so
 test -f /usr/include/python3.12/Python.h
 command -v gcc >/dev/null
 command -v python3-config >/dev/null
 DISABLE_VERSION_CHECK=true inference --help >/dev/null
-torchvision_image="$(
-    python3 -c 'from torchvision._internally_replaced_utils import _get_extension_path; print(_get_extension_path("image"))'
-)"
-ldd "${torchvision_image}" | grep -q 'libnvjpeg.so.13'
 
 for command_name in \
     c++ \
@@ -73,23 +71,27 @@ done
 
 python3 - <<'PY'
 import cv2
+import bitsandbytes
 import flash_attn
 import importlib.metadata
 import importlib.util
 import onnxruntime
+import supervision
 import tensorrt
 import torch
 import torchvision
 import triton
+import trackers
 from torchvision import io as torchvision_io
 
 arch_flags = set(torch._C._cuda_getArchFlags().split())
-assert {"sm_87", "sm_110"}.issubset(arch_flags), arch_flags
+# The JP7.2 server image is shared by Orin and Thor, so the bundled PyTorch
+# wheel must retain both architecture targets after dependency resolution.
+assert {"sm_87", "sm_110"} <= arch_flags, arch_flags
 
 providers = set(onnxruntime.get_available_providers())
 assert {"CUDAExecutionProvider", "TensorrtExecutionProvider"}.issubset(providers)
 
-assert cv2.cuda.getCudaEnabledDeviceCount() >= 0
 assert flash_attn.__version__
 assert tensorrt.__version__
 assert torch.__version__
@@ -97,20 +99,37 @@ assert torchvision.__version__
 assert triton.__version__
 assert torchvision_io
 assert hasattr(torch.ops.image, "decode_jpegs_cuda")
+assert importlib.metadata.version("bitsandbytes") == "0.48.2"
+assert bitsandbytes.__version__ == "0.48.2"
+assert supervision.__file__
+assert trackers.__file__
+assert cv2.__file__.startswith("/opt/opencv/python/"), cv2.__file__
 
-torch_requirements = importlib.metadata.requires("torch") or []
-assert not any(
-    requirement.partition(";")[0].strip().lower().startswith("nvidia-")
-    for requirement in torch_requirements
-), torch_requirements
-
-pip_cuda_distributions = sorted(
-    name
-    for distribution in importlib.metadata.distributions()
-    if (name := distribution.metadata.get("Name"))
-    and name.lower().startswith("nvidia-")
-)
-assert not pip_cuda_distributions, pip_cuda_distributions
+# The custom Torch wheel links to the JP7.2 CUDA libraries installed by APT.
+# Keep those libraries in the image, but reject the duplicate split-CUDA
+# payloads that an equally-versioned upstream Torch candidate would introduce.
+for redundant_distribution in (
+    "nvidia-cublas",
+    "nvidia-cuda-cupti",
+    "nvidia-cuda-nvrtc",
+    "nvidia-cuda-runtime",
+    "nvidia-cudnn-cu13",
+    "nvidia-cufft",
+    "nvidia-cufile",
+    "nvidia-curand",
+    "nvidia-cusolver",
+    "nvidia-cusparse",
+    "nvidia-cusparselt-cu13",
+    "nvidia-nccl-cu13",
+    "nvidia-nvjitlink",
+    "nvidia-nvshmem-cu13",
+    "nvidia-nvtx",
+):
+    try:
+        redundant_version = importlib.metadata.version(redundant_distribution)
+    except importlib.metadata.PackageNotFoundError:
+        continue
+    raise AssertionError((redundant_distribution, redundant_version))
 
 for module in (
     "build",

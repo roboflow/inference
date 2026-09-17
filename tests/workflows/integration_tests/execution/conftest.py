@@ -94,6 +94,48 @@ def empty_directory() -> Generator[str, None, None]:
         yield tmp_dir
 
 
+def _numpy_image_as_tensor_input(image: np.ndarray):
+    """Convert a BGR HWC numpy test image into the tensor-input form producers
+    submit: CHW RGB uint8 torch.Tensor on WORKFLOWS_IMAGE_TENSOR_DEVICE.
+    Delegates to the established `tensor_input_utils.numpy_image_as_tensor`
+    helper (same conversion + correct device placement); grayscale handled
+    here since the helper only covers 3-channel fixtures."""
+    import torch
+
+    if image.ndim == 2:
+        from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+
+        return (
+            torch.from_numpy(np.ascontiguousarray(image).copy())
+            .unsqueeze(0)
+            .to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        )
+    from tests.workflows.integration_tests.execution.tensor_input_utils import (
+        numpy_image_as_tensor,
+    )
+
+    return numpy_image_as_tensor(image)
+
+
+@pytest.fixture(
+    scope="function",
+    params=["numpy-input", "tensor-input"],
+    ids=["numpy-input", "tensor-input"],
+)
+def image_as_workflow_input(request):
+    """_TENSOR_ONLY input hardening: every image runtime parameter must work
+    submitted BOTH as np.ndarray (the historical test path, lazy numpy->tensor
+    materialisation) AND as torch.Tensor (the producer path, exercising the
+    deserializer's tensor arm and tensor-origin lazy numpy materialisation).
+
+    Usage in a tensor-only test: add this fixture and wrap each image input:
+    ``runtime_parameters={"image": [image_as_workflow_input(crowd_image)]}``.
+    """
+    if request.param == "numpy-input":
+        return lambda image: image
+    return _numpy_image_as_tensor_input
+
+
 def bool_env(val):
     if isinstance(val, bool):
         return val
@@ -107,7 +149,7 @@ def face_image() -> np.ndarray:
 
 # Below taken from https://github.com/eclipse-paho/paho.mqtt.python/blob/d45de3737879cfe7a6acc361631fa5cb1ef584bb/tests/testsupport/broker.py
 class FakeMQTTBroker:
-    def __init__(self):
+    def __init__(self, connack_reason_code: int = 0, listening: bool = True):
         # Bind to "localhost" for maximum performance, as described in:
         # http://docs.python.org/howto/sockets.html#ipc
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -117,12 +159,18 @@ class FakeMQTTBroker:
         self.port = sock.getsockname()[1]
         self.messages = []
         self.messages_count_to_wait_for = 2
+        self.connack_reason_code = connack_reason_code
 
         sock.settimeout(5)
-        sock.listen(1)
 
         self._sock = sock
         self._conn = None
+        # bound but not listening: connection attempts are refused until listen()
+        if listening:
+            self.listen()
+
+    def listen(self):
+        self._sock.listen(1)
 
     def start(self):
         if self._sock is None:
@@ -133,14 +181,16 @@ class FakeMQTTBroker:
         conn, address = self._sock.accept()
         conn.settimeout(1)
         self._conn = conn
-        while len(self.messages) < self.messages_count_to_wait_for:
+        connack_sent = False
+        while len(self.messages) < self.messages_count_to_wait_for or not connack_sent:
             packet = self.receive_packet(1000)
             print(f"Received {packet}")
             if not packet:
-                continue
+                break
             if packet.startswith(b"\x10"):
                 print("sending CONNACK")
-                self._conn.send(b"\x20\x02\x00\x00")
+                self._conn.send(b"\x20\x02\x00" + bytes([self.connack_reason_code]))
+                connack_sent = True
                 continue
             self.messages.append(packet)
 

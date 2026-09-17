@@ -7,11 +7,9 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
 from twilio.rest import Client
 
-from inference.core.cache.base import BaseCache
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -27,6 +25,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
@@ -35,6 +34,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.prototypes.cache import WorkflowsCache
 
 CACHE_EXPIRE_TIME = 15 * 60
 TRUNCATION_MARKER = "[...]"
@@ -256,8 +256,8 @@ class TwilioSMSNotificationBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        cache: BaseCache,
-        background_tasks: Optional[BackgroundTasks],
+        cache: WorkflowsCache,
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         disable_sinks: bool = False,
     ):

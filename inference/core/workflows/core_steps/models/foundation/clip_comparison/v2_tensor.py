@@ -6,16 +6,15 @@ import torch
 import torch.nn.functional as F
 from pydantic import ConfigDict, Field
 
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -42,11 +41,18 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_models import ClassificationPrediction
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
@@ -137,12 +143,32 @@ class BlockManifest(WorkflowBlockManifest):
 
         return list(CLIP_CACHE_MODEL_IDS)
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"clip/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"clip/{self.version}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class ClipComparisonBlockV2(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -183,7 +209,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
         self._model_manager.add_model(
             clip_model_id,
             self._api_key,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
+            endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
         )
         class_embeddings = F.normalize(
             self._model_manager.run_tensor_native_inference(
@@ -230,6 +256,9 @@ class ClipComparisonBlockV2(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()

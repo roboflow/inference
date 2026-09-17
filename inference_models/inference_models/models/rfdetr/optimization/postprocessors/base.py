@@ -78,6 +78,16 @@ class BasePostprocessor:
 
         return result
 
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Return runtime compatibility for the stateless base path."""
+        del request, context
+        return CompatibilityResult.compatible()
+
     def postprocess(
         self,
         request: PostprocessRequest,

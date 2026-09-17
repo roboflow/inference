@@ -386,6 +386,7 @@ def test_sorting_workflow_for_size_descending(
 def test_sorting_workflow_for_size_descending_tensor_native(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -406,7 +407,7 @@ def test_sorting_workflow_for_size_descending_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": crowd_image,
+            "image": image_as_workflow_input(crowd_image),
             "model_id": "yolov8n-640",
             "classes": {"person"},
         }

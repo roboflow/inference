@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -6,7 +7,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -20,6 +20,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     empty_predictions_passthrough,
+    resolve_overlap_winners,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -30,6 +31,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 _EMPTY_I64 = np.zeros(0, dtype=np.int64)
 
@@ -154,6 +157,19 @@ def gpu_draw_boxes(
     total_px = int((heights * widths).sum())
     if total_px == 0:
         return scene_chw
+    # Every band that contributes pixels must lie inside the frame — the
+    # clips above guarantee it for any input geometry (negative, inverted,
+    # off-frame, degenerate), so a violation here means broken host-side
+    # geometry that would become an out-of-range device scatter. O(n) on
+    # host, and raising routes the frame to the block's sv fallback.
+    active = (heights > 0) & (widths > 0)
+    if (
+        int(rect_r1[active].min(initial=0)) < 0
+        or int(rect_r2[active].max(initial=0)) >= height
+        or int(rect_c1[active].min(initial=0)) < 0
+        or int(rect_c2[active].max(initial=0)) >= width
+    ):
+        raise ValueError("bounding-box band escaped the frame after clipping")
 
     # Pairwise overlap test on the expanded bounds: disjoint borders make
     # every pixel's winner its own box, so owner resolution can be skipped.
@@ -244,11 +260,13 @@ def gpu_draw_boxes(
 
     colors_dev = colors_flat_t.view(n, 3).to(torch.uint8)
     if boxes_overlap:
-        # include_self=False: uninitialized cells never participate, and
-        # every gathered position below was scattered to.
-        owner = torch.empty(height * width, dtype=torch.int32, device=device)
-        owner.scatter_reduce_(0, flat, pixel_box, reduce="amax", include_self=False)
-        winner_colors = colors_dev[owner[flat].long()]  # (P, 3) uint8
+        # Later-box-wins ownership, provably in [0, n) for any duplication
+        # pattern (see resolve_overlap_winners for why the previous
+        # empty + include_self=False formulation was retired).
+        winners = resolve_overlap_winners(
+            flat, pixel_box, num_cells=height * width, num_candidates=n
+        )
+        winner_colors = colors_dev[winners]  # (P, 3) uint8
     else:
         winner_colors = colors_dev[pixel_box.long()]
     # .view (not .reshape): guarantees the write lands in the caller's storage
@@ -323,6 +341,11 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
+        # One-shot latch so a permanently broken GPU fast path is visible in
+        # production logs (WARNING) without emitting one record per frame.
+        # Deliberately unsynchronised: a benign race can only cost a duplicate
+        # warning, which is cheaper than a lock on the annotate path.
+        self._gpu_fallback_warned = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -456,11 +479,23 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
                     )
                 }
             except Exception as gpu_error:
-                logger.debug(
-                    "GPU box painter failed (%s); falling back to "
-                    "sv.BoxAnnotator path.",
-                    gpu_error,
-                )
+                if not self._gpu_fallback_warned:
+                    self._gpu_fallback_warned = True
+                    logger.warning(
+                        "Bounding Box Visualization: GPU box painter failed "
+                        "(%s); falling back to the slower sv.BoxAnnotator path "
+                        "(this materialises the frame on the host, paying a "
+                        "device-to-host transfer per frame). Only the first "
+                        "occurrence is logged at warning level; subsequent "
+                        "fallbacks are logged at debug level.",
+                        gpu_error,
+                    )
+                else:
+                    logger.debug(
+                        "GPU box painter failed (%s); falling back to "
+                        "sv.BoxAnnotator path.",
+                        gpu_error,
+                    )
         # sv.BoxAnnotator / sv.RoundBoxAnnotator draw from `xyxy` only and never
         # read `.mask`; skip the device->host dense-mask materialisation.
         predictions = to_supervision_for_annotation(

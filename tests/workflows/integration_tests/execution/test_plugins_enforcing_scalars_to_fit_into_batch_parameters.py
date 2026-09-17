@@ -4523,6 +4523,7 @@ def test_workflow_with_input_derived_dims_and_emergent_dims_tensor_native(
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     get_plugin_modules_mock.return_value = [
@@ -4544,7 +4545,10 @@ def test_workflow_with_input_derived_dims_and_emergent_dims_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, crowd_image],
+            "image": [
+                image_as_workflow_input(dogs_image),
+                image_as_workflow_input(crowd_image),
+            ],
         }
     )
 

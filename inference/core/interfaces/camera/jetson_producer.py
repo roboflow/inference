@@ -3,7 +3,9 @@
 import ctypes
 import ctypes.util
 import os
+import subprocess
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
 from urllib.parse import parse_qsl, unquote, urlparse
@@ -193,6 +195,39 @@ def required_gstreamer_elements(
     return tuple(elements)
 
 
+@lru_cache(maxsize=None)
+def _nvv4l2decoder_max_performance_fragment() -> str:
+    """Return the decoder clock-pinning property when the platform has it.
+
+    JetPack 7.x's ``nvv4l2decoder`` dropped ``enable-max-performance``;
+    keeping it in the launch string there makes gst_parse_launch fail before
+    a single frame is decoded. JetPack 5/6 still expose the property and the
+    fleet's throughput numbers were tuned with the decoder clocks pinned, so
+    those platforms must keep it exactly as-is. The pipeline is built as a
+    launch string before any native handle exists, so introspect the
+    installed plugin registry via ``gst-inspect-1.0`` (the same probe the
+    runtime verifiers use) instead of sniffing the L4T version. On probe
+    failure the property is kept: only affirmative evidence that the platform
+    removed it changes the historically validated pipeline.
+    """
+
+    try:
+        result = subprocess.run(
+            ["gst-inspect-1.0", "nvv4l2decoder"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "enable-max-performance=1 "
+    if result.returncode != 0:
+        return "enable-max-performance=1 "
+    if b"enable-max-performance" in result.stdout:
+        return "enable-max-performance=1 "
+    return ""
+
+
 def build_gstreamer_pipeline(
     video: Union[str, int],
     *,
@@ -222,8 +257,11 @@ def build_gstreamer_pipeline(
         # uridecodebin: autoplugging an RTSP source decodes EVERY track, and a
         # camera that muxes audio (e.g. A-Law) poisons the bus with a
         # missing-decoder error — fatal at startup when it races preroll, and a
-        # mid-run grab() failure otherwise. A codec-specific depayloader only
-        # ever links the video stream, so the audio track is never plugged.
+        # mid-run grab() failure otherwise. The application/x-rtp,media=video
+        # caps filter pins rtspsrc's delayed link to the video stream: without
+        # it the parser links whichever pad rtspsrc creates FIRST (a bare queue
+        # accepts any caps), so a camera that lists audio before video would
+        # wire the audio track into the video chain and never deliver a frame.
         # protocols defaults to tcp: RTP-over-UDP needs raised kernel buffers
         # and a NAT-free path that containers typically lack, and a failed UDP
         # SETUP can make cameras drop the whole control connection.
@@ -234,7 +272,9 @@ def build_gstreamer_pipeline(
         # - no nvvidconv: the decoder's NV12 NVMM output goes straight to the
         #   appsink and the bridge converts NV12->RGB CHW in CUDA, removing the
         #   per-frame VIC pass and its extra buffer pool;
-        # - enable-max-performance keeps the decoder clocks pinned;
+        # - enable-max-performance keeps the decoder clocks pinned where the
+        #   platform still exposes the property (JetPack 5/6; JetPack 7.x
+        #   removed it, see _nvv4l2decoder_max_performance_fragment);
         # - the appsink never accumulates (the bridge's new-sample callback
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
@@ -272,7 +312,7 @@ def build_gstreamer_pipeline(
             # codec's SPS reordering metadata before NVDEC.
             + f"{depayloader} ! "
             f"{codec}parse ! {codec}timestamper ! "
-            "nvv4l2decoder enable-max-performance=1 ! "
+            f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "
             "video/x-raw(memory:NVMM),format=NV12 ! "
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
             "wait-on-eos=false"

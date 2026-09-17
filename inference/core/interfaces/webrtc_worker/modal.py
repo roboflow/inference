@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
@@ -24,7 +25,11 @@ from inference.core.env import (
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBEXEC_TRANSPORT,
+    WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
     WEBEXEC_WS_CONNECTION_POOL_SIZE,
+    WEBEXEC_WS_FAIL_ON_SESSION_LOSS,
+    WEBEXEC_WS_IDLE_RELEASE_SECONDS,
+    WEBEXEC_WS_READ_TIMEOUT_SECONDS,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
@@ -63,6 +68,9 @@ from inference.core.env import (
 from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+)
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    sanitize_source_reference,
 )
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
@@ -131,7 +139,7 @@ if modal is not None:
         )
 
     video_processing_image = (
-        video_processing_image.apt_install("ffmpeg")
+        video_processing_image.apt_install("ffmpeg", "python3-pip")
         .pip_install("modal", "msgpack", "websocket-client")
         .entrypoint([])
     )
@@ -161,6 +169,9 @@ if modal is not None:
             "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
                 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
             ),
+            "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES": str(
+                ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
+            ),
             "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
             "DISABLE_INFERENCE_CACHE": "True",
             "DISABLE_VERSION_CHECK": "True",
@@ -188,6 +199,12 @@ if modal is not None:
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "WEBEXEC_TRANSPORT": WEBEXEC_TRANSPORT,
             "WEBEXEC_WS_CONNECTION_POOL_SIZE": str(WEBEXEC_WS_CONNECTION_POOL_SIZE),
+            "WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS": str(
+                WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS
+            ),
+            "WEBEXEC_WS_FAIL_ON_SESSION_LOSS": str(WEBEXEC_WS_FAIL_ON_SESSION_LOSS),
+            "WEBEXEC_WS_IDLE_RELEASE_SECONDS": str(WEBEXEC_WS_IDLE_RELEASE_SECONDS),
+            "WEBEXEC_WS_READ_TIMEOUT_SECONDS": str(WEBEXEC_WS_READ_TIMEOUT_SECONDS),
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
             "TELEMETRY_API_PLAN_CACHE_TTL_SECONDS": str(
                 os.getenv("TELEMETRY_API_PLAN_CACHE_TTL_SECONDS", 60)
@@ -367,7 +384,10 @@ if modal is not None:
             logger.info("stream_output: %s", webrtc_request.stream_output)
             logger.info("data_output: %s", webrtc_request.data_output)
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
-            logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
+            logger.info(
+                "rtsp_url: %s",
+                sanitize_source_reference(webrtc_request.rtsp_url or ""),
+            )
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
@@ -392,7 +412,7 @@ if modal is not None:
             logger.info("MODAL_REGION: %s", MODAL_REGION)
             logger.info("MODAL_TASK_ID: %s", MODAL_TASK_ID)
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
-            logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
+            logger.info("MODAL_IDENTITY_TOKEN set: %s", bool(MODAL_IDENTITY_TOKEN))
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")

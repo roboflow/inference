@@ -127,6 +127,32 @@ def test_build_source_connection_error_message_includes_underlying_error() -> No
     assert "rtsp://camera.example/stream" in message
 
 
+def test_wrap_source_connection_error_classifies_raw_text_stores_redacted() -> None:
+    stderr = "Connection to tcp://192.168.1.64:554?timeout=0 failed: Connection refused"
+    error = wrap_source_connection_error(
+        build_source_connection_error_message(
+            source_reference="rtsp://192.168.1.64:554/stream",
+            underlying_error=stderr,
+        ),
+        source_reference="rtsp://192.168.1.64:554/stream",
+        classification_text=stderr,
+    )
+    assert error.code == classify_stream_error_message(stderr)
+    assert "timeout=0" not in str(error)
+
+
+def test_build_source_connection_error_message_redacts_credentialed_stderr() -> None:
+    message = build_source_connection_error_message(
+        source_reference="rtsp://192.168.1.1:554/stream",
+        underlying_error=(
+            "OpenCV: Couldn't read video stream from file "
+            '"rtsp://user:secret@192.168.1.1:554/stream"'
+        ),
+    )
+    assert "secret" not in message
+    assert "rtsp://192.168.1.1:554/stream" in message
+
+
 def test_wrap_source_connection_error_classifies_underlying_ffmpeg_error() -> None:
     error = wrap_source_connection_error(
         build_source_connection_error_message(

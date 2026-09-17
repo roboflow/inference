@@ -315,6 +315,7 @@ def _assert_crop_predictions_equal_native(crop_preds: list) -> None:
 def test_inlined_parent_crop_matches_inner_workflow_detection_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     run_mock = mock.MagicMock(
         side_effect=_run_tensor_native_inference_factory(),
@@ -330,8 +331,12 @@ def test_inlined_parent_crop_matches_inner_workflow_detection_tensor_native(
     ):
         nested_engine = execution_engine(model_manager, _nested_workflow(inner))
         flat_engine = execution_engine(model_manager, _flat_workflow())
-        nested_result = nested_engine.run(runtime_parameters={"image": dogs_image})
-        flat_result = flat_engine.run(runtime_parameters={"image": dogs_image})
+        nested_result = nested_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
+        flat_result = flat_engine.run(
+            runtime_parameters={"image": image_as_workflow_input(dogs_image)}
+        )
 
     assert run_mock.call_count == 2
     for call in run_mock.call_args_list:
@@ -352,13 +357,17 @@ def test_inlined_parent_crop_matches_inner_workflow_detection_tensor_native(
 def test_inlined_parent_crop_matches_inner_workflow_detection_runtime_image_list_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     """Same equivalence as the single-image case, but ``image`` is a list at runtime (batch)."""
     run_mock = mock.MagicMock(
         side_effect=_run_tensor_native_inference_factory(),
     )
     inner = child_detection_only_for_parent_dynamic_crop()
-    images = [dogs_image, dogs_image.copy()]
+    images = [
+        image_as_workflow_input(dogs_image),
+        image_as_workflow_input(dogs_image.copy()),
+    ]
 
     with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
         ModelManager, "get_class_names", return_value=["x", "y", "z"]

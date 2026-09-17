@@ -21,19 +21,18 @@ Prompt modes (see ``prompt_mode``):
 ``boxes`` is ignored on frames where we only propagate.
 """
 
+from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
-from inference.core.workflows.core_steps.models.foundation._streaming_video_common import (
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,
@@ -66,6 +65,15 @@ from inference.core.workflows.prototypes.block import (
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference.core.workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
@@ -240,9 +248,11 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
+        execution_observer: Optional[ExecutionObserver] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
@@ -250,10 +260,22 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         self._model = None  # lazily loaded
         self._current_model_id: Optional[str] = None
         self._sessions: Dict[str, VideoSessionBookkeeping] = {}
+        self._platform_client = platform_client
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "platform_client",
+            "execution_observer",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -263,11 +285,16 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
-            extra_weights_provider_headers = get_extra_weights_provider_headers()
+            extra_weights_provider_headers = (
+                self._platform_client.build_weights_provider_headers()
+            )
             self._model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                content_addressed_artifact_cache=(
+                    self._model_manager.content_addressed_artifact_cache
+                ),
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
@@ -275,6 +302,33 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         return self._model
 
     def run(
+        self,
+        images: Batch[WorkflowImageData],
+        boxes: Optional[Batch[sv.Detections]],
+        model_id: str,
+        prompt_mode: PromptMode,
+        prompt_interval: int,
+        threshold: float,
+    ) -> BlockResult:
+        # The remote-mode rejection stays *inside* the observed call: today it
+        # is raised under the usage decorator, so it is reported as an errored
+        # model row, and hoisting it here would silently stop reporting it.
+        return self._execution_observer.observe_model_run(
+            block=self,
+            model_id=model_id,
+            images=images,
+            run=partial(
+                self._tracked_run,
+                images=images,
+                boxes=boxes,
+                model_id=model_id,
+                prompt_mode=prompt_mode,
+                prompt_interval=prompt_interval,
+                threshold=threshold,
+            ),
+        )
+
+    def _tracked_run(
         self,
         images: Batch[WorkflowImageData],
         boxes: Optional[Batch[sv.Detections]],

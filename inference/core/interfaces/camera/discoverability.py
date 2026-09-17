@@ -5,8 +5,22 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+    sanitize_source_reference,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _display_reference(video: Optional[Union[str, int]]) -> Union[str, int, None]:
+    """Loggable form of a source reference — URLs carry `user:password@`
+    credentials, so string references are sanitized; ints (webcam indices)
+    and None pass through."""
+    if isinstance(video, str):
+        return sanitize_source_reference(video)
+    return video
+
 
 JETSON = "jetson"
 DGPU = "dgpu"
@@ -244,7 +258,8 @@ def build_hw_producer(
             # results and the fallback to cv2 looks inexplicable.
             logger.warning(
                 f"Constructing the '{name}' hardware decoder for source "
-                f"reference {video} failed: {error!r}. Trying the next "
+                f"reference {_display_reference(video)} failed: "
+                f"{redact_credentials_in_text(repr(error))}. Trying the next "
                 "candidate decoder."
             )
             continue

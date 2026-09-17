@@ -46,6 +46,9 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
 from inference.core.interfaces.stream.entities import (
     AnyPrediction,
     InferenceHandler,
@@ -65,6 +68,9 @@ from inference.core.interfaces.stream.utils import (
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
+)
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
 )
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.base import ModelManager
@@ -272,7 +278,7 @@ class InferencePipeline:
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
         * ACTIVE_LEARNING_ENABLED - controls Active Learning middleware if explicit parameter not given
 
-        Returns: Instance of InferencePipeline
+        Returns: Instance of InferencePipeline.
 
         Throws:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
@@ -549,6 +555,7 @@ class InferencePipeline:
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
         disable_sinks: bool = False,
         workflows_thread_pool_workers: int = 4,
+        execution_engine_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
         batch_collection_timeout: Optional[float] = None,
@@ -626,7 +633,12 @@ class InferencePipeline:
                 with custom plugins.
             disable_sinks (bool): Whether to disable sink writes and outbound notifications/uploads.
             workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
-                by workflows blocks to run background tasks.
+                by workflows blocks and sinks to run background tasks (fire-and-forget dispatch of
+                notifications, uploads and other side effects).
+            execution_engine_thread_pool_workers (int): Number of workers for the thread pool used
+                exclusively by the workflows Execution Engine to run workflow steps. Kept separate
+                from `workflows_thread_pool_workers` so that slow background sink tasks cannot
+                starve step execution.
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
                 canceled at the end of InferencePipeline processing. By default, when video file ends or
                 pipeline is stopped, tasks that has not started will be cancelled.
@@ -709,6 +721,16 @@ class InferencePipeline:
                 WorkflowRunner,
                 wrap_workflow_runner_for_stream_pipeline,
             )
+            from inference.core.interfaces.workflows_configuration import (
+                server_workflows_configuration,
+            )
+            from inference.core.interfaces.workflows_execution_observer import (
+                UsageTrackingExecutionObserver,
+            )
+            from inference.core.interfaces.workflows_image_codec import bind_image_codec
+            from inference.core.interfaces.workflows_step_error_handlers import (
+                resolve_step_error_handler,
+            )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -745,18 +767,42 @@ class InferencePipeline:
             thread_pool_executor = ThreadPoolExecutor(
                 max_workers=workflows_thread_pool_workers
             )
-            workflow_init_parameters["workflows_core.model_manager"] = model_manager
+            # Deliberately a separate pool: sharing one executor between
+            # fire-and-forget sink tasks and step execution lets slow sinks
+            # block the whole pipeline.
+            execution_engine_thread_pool_executor = ThreadPoolExecutor(
+                max_workers=execution_engine_thread_pool_workers
+            )
+            workflow_init_parameters["workflows_core.model_manager"] = (
+                ModelManagerModelsProvider(model_manager)
+            )
             workflow_init_parameters["workflows_core.api_key"] = api_key
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            workflow_init_parameters["workflows_core.execution_observer"] = (
+                UsageTrackingExecutionObserver()
+            )
+            # setdefault semantics: a caller's workflow_init_parameters may
+            # already carry an explicit inner_workflow_spec_resolver.
+            install_workflows_platform_bindings(workflow_init_parameters)
+            bind_image_codec(workflow_init_parameters)
+            # setdefault, not assignment: a caller-supplied configuration must
+            # reach `ExecutionEngine.init`, where a mismatch with the installed
+            # process configuration is reported. Overwriting it here would hide
+            # the mis-wiring the check exists to catch.
+            workflow_init_parameters.setdefault(
+                "workflows_core.configuration", server_workflows_configuration()
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
                 profiler=profiler,
+                executor=execution_engine_thread_pool_executor,
                 dependencies_pre_init=workflows_dependencies_pre_init,
+                step_error_handler=resolve_step_error_handler(),
             )
             workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,
@@ -781,6 +827,7 @@ class InferencePipeline:
             cancel_thread_pool_tasks_on_exit=cancel_thread_pool_tasks_on_exit,
             profiler=profiler,
             profiling_directory=profiling_directory,
+            execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
         )
         return cls.init_with_custom_logic(
             video_reference=video_reference,
@@ -1154,6 +1201,12 @@ class InferencePipeline:
             predictions, video_frames = inference_results
             if _rfdetr_stream_pipeline_enabled():
                 predictions = _resolve_prediction_futures(predictions)
+            # Older duck-typed watchdogs need not implement completion telemetry.
+            on_completed = getattr(
+                self._watchdog, "on_model_prediction_completed", None
+            )
+            if on_completed is not None:
+                on_completed(frames=video_frames)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,

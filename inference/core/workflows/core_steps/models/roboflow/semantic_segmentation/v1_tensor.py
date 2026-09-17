@@ -1,7 +1,7 @@
 """Tensor-native sibling of `roboflow_core/roboflow_semantic_segmentation_model@v1`.
 
-Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via
-`SemanticSegmentationInferenceRequest` + `infer_from_request_sync`; REMOTE: via the
+Numpy `semantic_segmentation/v1.py` runs the model (LOCAL: via the models port's
+`run_semantic_segmentation` / `run_instance_segmentation`; REMOTE: via the
 HTTP client) and converts each *dense* per-pixel response into an ``sv.Detections``
 carrying one COCO-RLE mask per class (under ``data['rle_mask']``). Under
 ENABLE_TENSOR_DATA_REPRESENTATION this sibling must instead emit a native
@@ -87,18 +87,18 @@ import numpy as np
 import torch
 from pydantic import ConfigDict
 
-from inference.core.env import (
-    HOSTED_SEMANTIC_SEGMENTATION_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
+)
+from inference.core.workflows.environment import (
+    HOSTED_SEMANTIC_SEGMENTATION_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -128,6 +128,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
@@ -144,6 +145,13 @@ PREDICTION_TYPE = "semantic-segmentation"
 # so id 0 is the single excluded id. (This intentionally does NOT do the
 # data-driven background-by-name / 255 exclusion; see the module docstring.)
 BACKGROUND_CLASS_ID = 0
+
+# `image_metadata` key under which the dense per-pixel confidence map is carried
+# for numpy parity (numpy `v1.py` stores `conf_array` on the sv.Detections under
+# `result["confidence_mask"]`, as a per-detection object array sharing one map).
+# The serialiser never emits it into `predictions`,
+# but it survives for consumers reading the prediction's `image_metadata`.
+CONFIDENCE_MASK_KEY = "confidence_mask"
 
 
 LONG_DESCRIPTION = """
@@ -215,7 +223,7 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -308,6 +316,7 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
@@ -399,6 +408,7 @@ def _assemble_instance_detections(
     height: int,
     width: int,
     inference_id: str,
+    confidence_mask: Optional[torch.Tensor] = None,
 ) -> InstanceDetections:
     if len(rle_dicts) == 0:
         return _empty_instance_detections(
@@ -428,6 +438,12 @@ def _assemble_instance_detections(
         prediction_type=PREDICTION_TYPE,
         inference_id=inference_id,
     )
+    # Carry the dense per-pixel confidence map for numpy parity (numpy `v1.py`
+    # attaches `conf_array` to the sv.Detections under `confidence_mask`). The
+    # serialiser drops it from `predictions`, but consumers can still read it off
+    # the prediction's `image_metadata`.
+    if confidence_mask is not None:
+        detections.image_metadata[CONFIDENCE_MASK_KEY] = confidence_mask
     detections.bboxes_metadata = bboxes_metadata
     return detections
 
@@ -502,6 +518,8 @@ def _build_instance_detections_from_segmentation(
         height=height,
         width=width,
         inference_id=inference_id,
+        # Dense per-pixel confidence grid (kept on device) for numpy parity.
+        confidence_mask=confidence,
     )
 
 
@@ -512,7 +530,7 @@ def _build_instance_detections_from_inference_response(
 ) -> InstanceDetections:
     """Standard inference semantic-seg response (a single ``dict``, matching numpy
     ``v1.py``'s ``_convert_to_sv_detections`` input - produced identically by v1's
-    LOCAL ``infer_from_request_sync`` dump and its REMOTE HTTP client) ->
+    LOCAL ``run_semantic_segmentation`` dump and its REMOTE HTTP client) ->
     one RLE instance per present non-background/non-ignore class.
 
     Response shape (see numpy ``v1.py``):
@@ -572,6 +590,14 @@ def _build_instance_detections_from_inference_response(
             {DETECTION_ID_KEY: str(uuid.uuid4()), CLASS_NAME_KEY: class_name}
         )
 
+    # Carry the dense per-pixel confidence map for numpy parity (numpy `v1.py`
+    # attaches the decoded `conf_array`). Mirror the native carrier convention by
+    # moving it to the workflow tensor device when present.
+    confidence_mask = (
+        torch.from_numpy(conf_array).to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        if conf_array is not None
+        else None
+    )
     return _assemble_instance_detections(
         xyxy=xyxy,
         class_ids=class_ids,
@@ -583,6 +609,7 @@ def _build_instance_detections_from_inference_response(
         height=height,
         width=width,
         inference_id=inference_id,
+        confidence_mask=confidence_mask,
     )
 
 

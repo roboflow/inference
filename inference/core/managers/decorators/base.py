@@ -51,6 +51,10 @@ class ModelManagerDecorator(ModelManager):
     def pingback(self):
         return self.model_manager.pingback
 
+    @property
+    def content_addressed_artifact_cache(self):
+        return self.model_manager.content_addressed_artifact_cache
+
     def add_model(
         self,
         model_id: str,
@@ -84,6 +88,13 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+        )
+
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        return self.model_manager.load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
         )
 
     def record_request_metadata(
@@ -178,6 +189,21 @@ class ModelManagerDecorator(ModelManager):
             List of class names.
         """
         return self.model_manager.get_class_names(model_id)
+
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        return self.model_manager.get_keypoints_classes(model_id)
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        return self.model_manager.model_supports_stream_pipeline(model_id)
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        return self.model_manager.get_model_pipeline_depth(model_id)
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        return self.model_manager.flush_model_stream_pipeline(model_id)
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        return self.model_manager.shutdown_model_stream_pipeline(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         """Removes a model from the manager.

@@ -178,6 +178,7 @@ def _native_class_locked(detections) -> bool:
 @_TENSOR_ONLY
 def test_track_class_lock_state_persists_across_sequential_engine_runs_tensor_native(
     model_manager: ModelManager,
+    image_as_workflow_input,
 ) -> None:
     """Tensor-native parity of the persistence test: feeds native
     `inference_models.Detections` frames one per engine call and asserts the SAME
@@ -206,7 +207,7 @@ def test_track_class_lock_state_persists_across_sequential_engine_runs_tensor_na
     for _ in range(10):
         result = execution_engine.run(
             runtime_parameters={
-                "image": [image],
+                "image": [image_as_workflow_input(image)],
                 "predictions": [_native_tracked_detections("cat", 0.9)],
             }
         )
@@ -223,7 +224,7 @@ def test_track_class_lock_state_persists_across_sequential_engine_runs_tensor_na
     # when - a contrary "dog" frame arrives in a fresh engine call
     result = execution_engine.run(
         runtime_parameters={
-            "image": [image],
+            "image": [image_as_workflow_input(image)],
             "predictions": [_native_tracked_detections("dog", 0.95)],
         }
     )

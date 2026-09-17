@@ -3,19 +3,18 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    MOONDREAM2_ENABLED,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
+)
+from inference.core.workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    MOONDREAM2_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -44,7 +43,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -149,7 +149,7 @@ class BlockManifest(WorkflowBlockManifest):
 class Moondream2BlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -203,6 +203,9 @@ class Moondream2BlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -240,18 +243,15 @@ class Moondream2BlockV1(WorkflowBlock):
 
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            request = Moondream2InferenceRequest(
-                api_key=self._api_key,
-                model_id=model_version,
-                image=image,
-                text=[],
-                prompt=single_prompt,
+            predictions.append(
+                self._model_manager.run_moondream2(
+                    model_id=model_version,
+                    image=image,
+                    prompt=single_prompt,
+                    text=[],
+                    api_key=self._api_key,
+                )
             )
-            # Run inference.
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
 
         return self._post_process_result(images=images, predictions=predictions)
 

@@ -2,7 +2,10 @@ import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
-from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    ROBOFLOW_API_KEY,
+    apply_auth_mode,
+)
 
 PP_OCR_WORKFLOW = {
     "version": "1.0",
@@ -37,12 +40,14 @@ PP_OCR_WORKFLOW = {
 def test_workflow_with_pp_ocr(
     object_detection_service_url: str,
     license_plate_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(

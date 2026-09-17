@@ -228,6 +228,7 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty(
 def test_detections_nearest_neighbor_workflow_tensor_native(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -244,7 +245,7 @@ def test_detections_nearest_neighbor_workflow_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": crowd_image,
+            "image": image_as_workflow_input(crowd_image),
             "model_id": "yolov8n-640",
             "target_confidence": 0.5,
         }
@@ -295,6 +296,7 @@ def test_detections_nearest_neighbor_workflow_tensor_native(
 def test_detections_nearest_neighbor_workflow_when_target_set_is_empty_tensor_native(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    image_as_workflow_input,
 ) -> None:
     # given: target_confidence=0.999 is unreachable on this model/image, so
     # target_predictions is empty and no query detection can find a match.
@@ -312,7 +314,7 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty_tensor_na
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": crowd_image,
+            "image": image_as_workflow_input(crowd_image),
             "model_id": "yolov8n-640",
             "target_confidence": 0.999,
         }

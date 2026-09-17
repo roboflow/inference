@@ -498,6 +498,7 @@ def test_edge_snap_cv_pipeline_with_empty_segmentation(
 @_TENSOR_ONLY
 def test_edge_snap_cv_pipeline_with_segmentation_tensor_native(
     model_manager: ModelManager,
+    image_as_workflow_input,
 ) -> None:
     """Edge snap pipeline with preprocessing + native InstanceDetections segmentation."""
     # given - Create a test image with a synthetic object
@@ -531,7 +532,10 @@ def test_edge_snap_cv_pipeline_with_segmentation_tensor_native(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": noisy_image, "segmentation": detections},
+        runtime_parameters={
+            "image": image_as_workflow_input(noisy_image),
+            "segmentation": detections,
+        },
     )
 
     # then
@@ -622,6 +626,7 @@ def test_edge_snap_cv_pipeline_with_segmentation_with_tensor_input(
 @_TENSOR_ONLY
 def test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native(
     model_manager: ModelManager,
+    image_as_workflow_input,
 ) -> None:
     """Edge snap pipeline with empty native segmentation."""
     # given - Create a simple test image
@@ -648,7 +653,10 @@ def test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": test_image, "segmentation": detections},
+        runtime_parameters={
+            "image": image_as_workflow_input(test_image),
+            "segmentation": detections,
+        },
     )
 
     # then

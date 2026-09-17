@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 from typing import List, Literal, Optional, Tuple, Type, Union
 
@@ -8,7 +9,6 @@ import torch
 from pydantic import ConfigDict, Field
 from supervision.annotators.utils import resolve_text_background_xyxy, wrap_text
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -21,6 +21,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable_te
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     empty_predictions_passthrough,
+    resolve_overlap_winners,
     to_supervision_for_annotation,
 )
 from inference.core.workflows.core_steps.visualizations.common.label_text import (
@@ -35,6 +36,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 TYPE: str = "roboflow_core/label_visualization@v1"
 SHORT_DESCRIPTION = (
@@ -640,12 +643,14 @@ def gpu_paste_label_sprites(
     )
     labels_overlap = int((inter_x & inter_y).sum()) > pieces  # diagonal always True
     if labels_overlap:
-        # include_self=False: uninitialized cells never participate, and every
-        # gathered position below was scattered to.
+        # Later-label-wins ownership, provably in [0, total) for any
+        # duplication pattern (see resolve_overlap_winners for why the
+        # previous empty + include_self=False formulation was retired).
         order = torch.arange(total, device=device, dtype=torch.int32)
-        owner = torch.empty(height * width, dtype=torch.int32, device=device)
-        owner.scatter_reduce_(0, flat, order, reduce="amax", include_self=False)
-        colors = colors[owner[flat].long()]
+        winners = resolve_overlap_winners(
+            flat, order, num_cells=height * width, num_candidates=total
+        )
+        colors = colors[winners]
     scene_chw.view(3, -1)[:, flat] = colors.t()
     return scene_chw
 
@@ -812,6 +817,11 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         # steady-state path allocates/pins nothing per frame and its single
         # upload never blocks the stream (see _PinnedSlabRing).
         self._table_ring = _PinnedSlabRing()
+        # One-shot latch so a permanently broken GPU fast path is visible in
+        # production logs (WARNING) without emitting one record per frame.
+        # Deliberately unsynchronised: a benign race can only cost a duplicate
+        # warning, which is cheaper than a lock on the annotate path.
+        self._gpu_fallback_warned = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -1128,11 +1138,23 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                     )
                 }
             except Exception as gpu_error:
-                logger.debug(
-                    "GPU label compositor failed (%s); falling back to "
-                    "sv.LabelAnnotator path.",
-                    gpu_error,
-                )
+                if not self._gpu_fallback_warned:
+                    self._gpu_fallback_warned = True
+                    logger.warning(
+                        "Label Visualization: GPU label compositor failed "
+                        "(%s); falling back to the slower sv.LabelAnnotator "
+                        "path (this materialises the frame on the host, paying "
+                        "a device-to-host transfer per frame). Only the first "
+                        "occurrence is logged at warning level; subsequent "
+                        "fallbacks are logged at debug level.",
+                        gpu_error,
+                    )
+                else:
+                    logger.debug(
+                        "GPU label compositor failed (%s); falling back to "
+                        "sv.LabelAnnotator path.",
+                        gpu_error,
+                    )
         predictions = to_supervision_for_annotation(
             predictions, materialise_masks=needs_masks
         )

@@ -7,8 +7,8 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialize_wildcard_kind,
 )
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search import v1
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+from inference.roboflow_workflows_plugin.integrations.visual_search import v1
+from inference.roboflow_workflows_plugin.integrations.visual_search.v1 import (
     BlockManifest,
     RoboflowVisualSearchBlockV1,
 )

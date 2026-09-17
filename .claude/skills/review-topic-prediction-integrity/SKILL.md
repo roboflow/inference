@@ -1,6 +1,6 @@
 ---
 name: review-topic-prediction-integrity
-description: Load when a diff touches `sv_detections_to_root_coordinates`, `scale_sv_detections`, `move_boxes`/`move_masks`, `POLYGON_KEY_IN_SV_DETECTIONS`, `add_inference_keypoints_to_sv_detections`, `serialise_sv_detections`, `mask_to_polygon`, `enforce_dense_masks_in_inference_models`, `binarization_threshold`, `run_nms_for_*`; or `xyxy +=`/`* scale` arithmetic; crop/stitch/perspective/dynamic_zones blocks; `inference_models/` pre/post-processing (resize/BGR-RGB/NMS/slice); a `supervision` bump.
+description: Load when a diff touches `sv_detections_to_root_coordinates`, `scale_sv_detections`, `move_boxes`/`move_masks`, `POLYGON_KEY_IN_SV_DETECTIONS`, `add_inference_keypoints_to_sv_detections`, `serialise_sv_detections`, `mask_to_polygon`, `enforce_dense_masks_in_inference_models`, `binarization_threshold`, `run_nms_for_*`; or `xyxy +=`/`* scale` arithmetic; crop/stitch/perspective/dynamic_zones blocks; `inference_models/` pre/post-processing (resize/BGR-RGB/NMS/slice); a `supervision` bump; a `vN_tensor.py` sibling or `bboxes_metadata`/`image_metadata`/host-mirror handling; golden expected-response fixtures for GPU regression tests.
 ---
 
 # Review topic: Prediction, coordinate & pre/post-processing integrity
@@ -25,6 +25,7 @@ Content trigger (not one directory). Load when a diff does any of:
 - [ ] **No class/background-index off-by-one.** Class remapping and background index verified against the reference implementation (see Standards §5).
 
 ### FLAG — reviewer should raise
+- [ ] **Flag parity holds.** No numpy-path behavior edit rides a tensor-sibling PR; the same workflow serializes to the same shape in both flag directions unless the divergence is a documented decision; metadata merges preserve per-row class names under colliding class ids (see Standards §8).
 - [ ] **Threshold / activation change is gated.** New default threshold, sigmoid-vs-raw-logits, or column-slice change is justified against the reference and made configurable if it shifts scores (see Standards §5).
 - [ ] **No ragged object-dtype arrays.** New `sv.Detections` data arrays are fixed-shape numeric; keypoints padded to uniform length (see Standards §6).
 - [ ] **RLE ↔ dense honored per consumer.** Mask-format seam not broken for a downstream consumer (see Standards §3).
@@ -56,6 +57,12 @@ Content trigger (not one directory). Load when a diff does any of:
 6. **Array shape/dtype discipline in `sv.Detections`.** Ragged object-dtype arrays break supervision's indexing/comparison. `add_inference_keypoints_to_sv_detections` in `common/utils.py` pads keypoints to fixed-shape numeric arrays (`padded_xy`/`padded_conf`/`padded_class_id`, uniform max length) rather than `dtype=object` (#2170).
 
 7. **`supervision` bumps are load-bearing.** On any version change, verify annotators, `mask_to_polygons`, keypoint edge maps, and indexing still behave (#2467, #1725, #1424/#1425 pin history).
+
+8. **Flag parity & native-metadata integrity** (#2357). Four checks whenever a diff touches tensor-native prediction handling:
+   - **Flag-off equals pre-tensor `main`, byte for byte.** Any numpy-path behavior edit riding a tensor PR — even a genuine bug fix — is a finding: it must ship as its own change, not as a silent flag-off divergence (semantic-seg confidence-mask relocation lesson: reverted and re-landed separately).
+   - **Cross-flag payload parity.** The same workflow serialized under both flag directions should produce the same shape; kind-order divergence between siblings flips mask encodings (`points` vs `rle_mask`) per deployment flag. When a payload difference is a deliberate contract, it must be a documented decision, not a manifest accident.
+   - **Class-name integrity in native metadata.** Native detections carry a per-image `class_id→name` map in `image_metadata` plus per-box name overrides in `bboxes_metadata`; merging/concatenating detections from models with COLLIDING class ids is last-wins on the map — rows silently adopt another model's class name and downstream class-based logic acts on wrong names (consensus/rollup lesson; a `raise_on_class_name_conflict` knob exists but defaults to override-with-warning). Review any metadata-merge path for this.
+   - **Golden-response tolerances are GPU-generation-sensitive.** Expected-response fixtures with sub-pixel `atol` (0.1 px) recorded on one GPU generation fail on another with SYSTEMATIC sub-pixel drift across every test — before calling a regression, check detection counts, row ordering, and classes first; matching structure + consistent tiny deltas = numerics, not a product bug (and a runner-hardware upgrade will require golden/tolerance refresh).
 
 ## Key files & Reference PRs
 - `inference/core/workflows/core_steps/common/utils.py` — `sv_detections_to_root_coordinates`, `scale_sv_detections`, `attach_parent_coordinates_to_detections`, `add_inference_keypoints_to_sv_detections`. All geometry channels transformed together + keypoint padding (#2473, #1268, #2170).

@@ -153,6 +153,8 @@ def _tensor_image(seed: int = 7) -> WorkflowImageData:
 
 
 def _mirrored_od_detections(n: int = N_BOXES) -> Detections:
+    image = _tensor_image()
+    device = image.tensor_image.device
     boxes = np.array(
         [
             [40.5, 60.25, 200.75, 200.125],
@@ -163,17 +165,19 @@ def _mirrored_od_detections(n: int = N_BOXES) -> Detections:
         dtype=np.float32,
     )[:n]
     detections = Detections(
-        xyxy=torch.tensor(boxes, dtype=torch.float32),
-        class_id=torch.tensor([index % 3 for index in range(n)], dtype=torch.long),
+        xyxy=torch.tensor(boxes, dtype=torch.float32, device=device),
+        class_id=torch.tensor(
+            [index % 3 for index in range(n)], dtype=torch.long, device=device
+        ),
         confidence=torch.tensor(
-            np.linspace(0.42, 0.99, max(n, 1))[:n], dtype=torch.float32
+            np.linspace(0.42, 0.99, max(n, 1))[:n], dtype=torch.float32, device=device
         ),
         image_metadata=None,
         bboxes_metadata=None,
     )
     return attach_native_detection_metadata(
         detections=detections,
-        image=_tensor_image(),
+        image=image,
         class_names=CLASS_NAMES,
         prediction_type="object-detection",
     )
@@ -206,7 +210,9 @@ def _disjoint_od_detections(n: int) -> Detections:
 
 def _mirrored_is_detections(n: int = 2) -> InstanceDetections:
     base = _mirrored_od_detections(n)
-    masks = torch.zeros((n, SCENE_H, SCENE_W), dtype=torch.bool)
+    masks = torch.zeros(
+        (n, SCENE_H, SCENE_W), dtype=torch.bool, device=base.xyxy.device
+    )
     masks[0, 70:180, 50:190] = True
     if n > 1:
         masks[1, 100:250, 260:410] = True
@@ -237,10 +243,11 @@ def test_viz_phase_mask_then_label_combined_trace_is_transfer_clean() -> None:
     label_block.run(image=_tensor_image(), predictions=detections, **_LABEL_RUN_KWARGS)
 
     # when - the audited steady-state viz phase, label consuming mask's output
+    audited_image = _tensor_image()
     mask_audit = _TransferAudit()
     with mask_audit:
         masked = mask_block.run(
-            image=_tensor_image(), predictions=segmentation, **_MASK_RUN_KWARGS
+            image=audited_image, predictions=segmentation, **_MASK_RUN_KWARGS
         )
     label_audit = _TransferAudit()
     with label_audit:

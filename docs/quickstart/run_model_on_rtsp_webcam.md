@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: /using_inference/inference_pipeline/
+redirect_url: https://docs.roboflow.com/reference/inference/inference-python/inference-pipeline
 ---

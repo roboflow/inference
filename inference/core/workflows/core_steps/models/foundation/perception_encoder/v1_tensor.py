@@ -4,17 +4,15 @@ from typing import List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.cache.lru_cache import LRUCache
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     CORE_MODEL_PE_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -29,13 +27,21 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference.core.workflows.utils.lru_cache import LRUCache
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Use the Meta Perception Encoder model to create semantic embeddings of text and images.
@@ -123,6 +129,26 @@ class BlockManifest(WorkflowBlockManifest):
             "perception_encoder/PE-Core-G14-448",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"perception_encoder/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"perception_encoder/{self.version}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 text_cache = LRUCache()
 
@@ -130,7 +156,7 @@ text_cache = LRUCache()
 class PerceptionEncoderModelBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -177,7 +203,7 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             self._model_manager.add_model(
                 pe_model_id,
                 self._api_key,
-                endpoint_type=ModelEndpointType.CORE_MODEL,
+                endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
             )
             embeddings = self._model_manager.run_tensor_native_inference(
                 pe_model_id,
@@ -191,7 +217,7 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             self._model_manager.add_model(
                 pe_model_id,
                 self._api_key,
-                endpoint_type=ModelEndpointType.CORE_MODEL,
+                endpoint_type=CORE_MODEL_ENDPOINT_TYPE,
             )
             if data.is_tensor_materialised():
                 model_image, image_color_format = data.tensor_image, "rgb"
@@ -216,6 +242,9 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
             else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         if isinstance(data, str):
