@@ -175,8 +175,9 @@ def package_client(monkeypatch, request):
     "selectors",
     [{"backend": "trt", "quantization": "fp16"}, {"model_package_id": "engine-1"}],
 )
+@pytest.mark.parametrize("remove_by_handle", [False, True])
 def test_http_selected_package_coexists_with_automatic_package(
-    package_client, selectors
+    package_client, selectors, remove_by_handle
 ):
     payload = {
         "model_id": "project/1",
@@ -195,9 +196,12 @@ def test_http_selected_package_coexists_with_automatic_package(
     assert selected.json()["served_package"] == "engine-1"
     registered = package_client.get("/model/registry").json()["models"]
     assert len(registered) == 2
-    removed = package_client.post(
-        "/model/remove", json={"model_id": "project/1", **selectors}
-    )
+    removal = {"model_id": "project/1", **selectors}
+    if remove_by_handle:
+        loaded = package_client.post("/model/add", json=removal)
+        assert loaded.status_code == 200
+        removal = {"model_id": loaded.json()["selected_model_id"]}
+    removed = package_client.post("/model/remove", json=removal)
     assert removed.status_code == 200
     assert [model["model_id"] for model in removed.json()["models"]] == ["project/1"]
 
@@ -263,7 +267,7 @@ def test_aliased_legacy_selection_shares_v1_entry_and_can_be_removed(
 
 
 def test_selected_model_handle_depends_on_server_secret(package_client, monkeypatch):
-    from inference.core.entities.requests import model_selection
+    from inference.core.managers import model_selection
 
     payload = {"model_id": "project/1", "backend": "trt", "api_key": "owner"}
     first = package_client.post("/model/add", json=payload)

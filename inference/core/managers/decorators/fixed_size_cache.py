@@ -23,6 +23,7 @@ from inference.core.managers.base import (
     ModelManager,
     acquire_with_timeout,
     model_load_options,
+    validate_public_model_id,
 )
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
@@ -76,8 +77,6 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        from inference.core.managers.base import validate_public_model_id
-
         validate_public_model_id(model_id, model_id_alias)
         if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(

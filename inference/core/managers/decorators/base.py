@@ -6,7 +6,12 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
-from inference.core.managers.base import Model, ModelManager, model_load_options
+from inference.core.managers.base import (
+    Model,
+    ModelManager,
+    model_load_options,
+    validate_public_model_id,
+)
 from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
@@ -75,8 +80,6 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        from inference.core.managers.base import validate_public_model_id
-
         validate_public_model_id(model_id, model_id_alias)
         cache_key = model_cache_key or model_id
         if cache_key in self:

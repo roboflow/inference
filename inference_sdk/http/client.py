@@ -1158,6 +1158,9 @@ class InferenceHTTPClient:
     def unload_model(self, model_id: str) -> RegisteredModels:
         """Unload a model from the server.
 
+        With package selection configured, load the selected model through this
+        client before unloading it.
+
         Args:
             model_id (str): The identifier of the model to unload.
 
@@ -1166,17 +1169,20 @@ class InferenceHTTPClient:
 
         Raises:
             WrongClientModeError: If not in API v1 mode.
+            ModelNotInitializedError: If this client has no confirmed handle for the selected model.
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         selectors = self.__inference_configuration.to_model_selection_parameters()
+        removal_model_id = self.__resolve_model_id_for_unload(
+            de_aliased_model_id, selectors
+        )
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
-                "model_id": de_aliased_model_id,
-                **selectors,
+                "model_id": removal_model_id,
                 **(self.__legacy_api_key_payload() if selectors else {}),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
@@ -1198,12 +1204,14 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         selectors = self.__inference_configuration.to_model_selection_parameters()
+        removal_model_id = self.__resolve_model_id_for_unload(
+            de_aliased_model_id, selectors
+        )
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/remove",
                 json={
-                    "model_id": de_aliased_model_id,
-                    **selectors,
+                    "model_id": removal_model_id,
                     **(self.__legacy_api_key_payload() if selectors else {}),
                 },
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
@@ -1219,6 +1227,19 @@ class InferenceHTTPClient:
         ):
             self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
+
+    def __resolve_model_id_for_unload(
+        self, model_id: str, selectors: Dict[str, str]
+    ) -> str:
+        if not selectors:
+            return model_id
+        selection_key = (model_id, tuple(sorted(selectors.items())))
+        try:
+            return self.__model_selection_ids[selection_key]
+        except KeyError as error:
+            raise ModelNotInitializedError(
+                "Load the selected model with this client before unloading it."
+            ) from error
 
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:

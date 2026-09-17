@@ -6,7 +6,7 @@ from aioresponses import aioresponses
 
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.entities import ApiKeyTransport
-from inference_sdk.http.errors import InvalidParameterError
+from inference_sdk.http.errors import InvalidParameterError, ModelNotInitializedError
 
 
 def register_response(
@@ -138,17 +138,21 @@ async def test_async_v1_description_loads_selected_variant_without_loading_defau
         }
 
 
-def test_unload_selected_variant_sends_public_id_and_selectors(requests_mock):
-    selectors: dict[str, Any] = {"model_package_id": "engine-1"}
-    requests_mock.post("http://server/model/remove", json={"models": []})
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_selected_unload_requires_a_confirmed_handle_before_sending_request(
+    requests_mock, asynchronous
+):
     client = InferenceHTTPClient(api_url="http://server", api_key="key")
-    client.configure(InferenceConfiguration(**selectors))
-    client.unload_model("project/1")
-    assert requests_mock.last_request.json() == {
-        "model_id": "project/1",
-        "api_key": "key",
-        **selectors,
-    }
+    client.configure(InferenceConfiguration(model_package_id="engine-1"))
+    with aioresponses() as responses:
+        register_response(
+            requests_mock, responses, "post", "/model/remove", registry_payload()
+        )
+        with pytest.raises(ModelNotInitializedError, match="Load the selected model"):
+            await call_client(client, "unload_model", asynchronous, "project/1")
+        assert not requests_mock.called
+        assert not responses.requests
 
 
 @pytest.mark.asyncio
@@ -290,25 +294,38 @@ async def test_unload_forgets_selected_handle(requests_mock, asynchronous, unloa
 @pytest.mark.asyncio
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("transport", [ApiKeyTransport.LEGACY, ApiKeyTransport.HEADER])
-async def test_unload_selected_model_uses_public_alias_and_auth(
+async def test_unload_selected_model_uses_confirmed_handle_and_auth(
     requests_mock, asynchronous, transport
 ):
     client = InferenceHTTPClient(api_url="http://server", api_key="key")
     client.configure(InferenceConfiguration(backend="trt", api_key_transport=transport))
     with aioresponses() as responses:
         register_response(
+            requests_mock,
+            responses,
+            "post",
+            "/model/add",
+            registry_payload("server-handle", selected_model_id="server-handle"),
+            {"X-Roboflow-Model-Selection": "applied"},
+        )
+        await call_client(client, "load_model", asynchronous, "yolov8n-640")
+        register_response(
             requests_mock, responses, "post", "/model/remove", registry_payload()
         )
         await call_client(client, "unload_model", asynchronous, "yolov8n-640")
         if asynchronous:
-            request = next(iter(responses.requests.values()))[0].kwargs
+            request = next(
+                calls[0].kwargs
+                for (_, url), calls in responses.requests.items()
+                if url.path == "/model/remove"
+            )
             payload, headers = request["json"], request["headers"]
         else:
             payload, headers = (
                 requests_mock.last_request.json(),
                 requests_mock.last_request.headers,
             )
-        expected = {"model_id": "coco/3", "backend": "trt"}
+        expected = {"model_id": "server-handle"}
         if transport is ApiKeyTransport.LEGACY:
             expected["api_key"] = "key"
         else:

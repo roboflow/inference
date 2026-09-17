@@ -70,7 +70,6 @@ from inference.core.entities.requests.inference import (
     ensure_wire_safe_mask_format,
 )
 from inference.core.entities.requests.model_selection import (
-    model_selection_cache_key,
     model_selection_kwargs,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
@@ -331,6 +330,7 @@ from inference.core.managers.model_load_collector import (
     request_model_ids,
     request_workflow_id,
 )
+from inference.core.managers.model_selection import model_selection_cache_key
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     assume_identity_authorised_workspace_db_id,
