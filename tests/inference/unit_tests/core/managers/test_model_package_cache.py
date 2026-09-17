@@ -19,6 +19,7 @@ from inference.core.managers import base as base_module
 from inference.core.managers.active_learning import ActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.models import base as model_module
 from inference.core.models.base import Model
 
 
@@ -30,11 +31,13 @@ class PackageModel(Model):
 
     def __init__(self, model_id, api_key, backend=None, **kwargs):
         self.model_id = model_id
-        self.resolved_model = SimpleNamespace(
-            model_id=model_id,
-            model_package_id=f"{backend or 'onnx'}-package",
-            backend=backend or "onnx",
-            quantization="fp16" if backend == "trt" else "fp32",
+        self._model = SimpleNamespace(
+            resolved_model=SimpleNamespace(
+                model_id=model_id,
+                model_package_id=f"{backend or 'onnx'}-package",
+                backend=backend or "onnx",
+                quantization="fp16" if backend == "trt" else "fp32",
+            )
         )
 
     def infer_from_request(self, request) -> Any:
@@ -42,6 +45,11 @@ class PackageModel(Model):
 
     def clear_cache(self, delete_from_disk=True):
         pass
+
+
+@pytest.fixture(autouse=True)
+def enable_model_metadata(monkeypatch):
+    monkeypatch.setattr(model_module, "USE_INFERENCE_MODELS", True)
 
 
 def test_package_variants_coexist_without_changing_automatic_model():
