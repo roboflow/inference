@@ -88,6 +88,44 @@ def test_batch_encode_does_not_mutate_input() -> None:
     assert torch.equal(masks, original)
 
 
+@pytest.mark.parametrize(
+    "slicer",
+    [
+        lambda m: m[:, ::2, ::2],  # strided in both spatial dims
+        lambda m: m[::2, 1:, :-3],  # strided batch dim + offset/truncated views
+        lambda m: m.transpose(1, 2),  # permuted strides
+    ],
+)
+def test_batch_encode_non_contiguous_input_matches_per_mask(slicer) -> None:
+    rng = np.random.default_rng(seed=17)
+    base = torch.from_numpy(rng.integers(0, 2, size=(6, 41, 37)).astype(bool))
+    masks = slicer(base)
+    assert not masks.is_contiguous()
+    batch = torch_masks_to_coco_rle_batch(masks)
+    per_mask = [torch_mask_to_coco_rle(m) for m in masks]
+    assert len(batch) == len(per_mask) == masks.shape[0]
+    for got, want in zip(batch, per_mask):
+        assert got["counts"] == want["counts"]
+        assert list(got["size"]) == list(want["size"])
+    wrapped = InstancesRLEMasks.from_coco_rle_masks(
+        image_size=(masks.shape[1], masks.shape[2]), masks=batch
+    )
+    np.testing.assert_array_equal(coco_rle_masks_to_numpy_mask(wrapped), masks.numpy())
+
+
+def test_batch_encode_accepts_tensor_requiring_grad() -> None:
+    # Guards the .detach() in torch_masks_to_coco_rle_batch: a float mask still
+    # attached to an autograd graph must encode instead of raising in .numpy().
+    rng = np.random.default_rng(seed=23)
+    logits = torch.from_numpy(rng.standard_normal(size=(3, 18, 22)).astype(np.float32))
+    logits.requires_grad_(True)
+    masks = logits * 1.0  # attached to the autograd graph
+    assert masks.requires_grad
+    batch = torch_masks_to_coco_rle_batch(masks)
+    expected = torch_masks_to_coco_rle_batch(masks.detach())
+    assert [r["counts"] for r in batch] == [r["counts"] for r in expected]
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 def test_batch_encode_cuda_matches_cpu() -> None:
     rng = np.random.default_rng(seed=11)
