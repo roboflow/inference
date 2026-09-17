@@ -1997,6 +1997,14 @@ class InferenceModelsActionRecognitionAdapter(Model):
         self, request: ActionRecognitionInferenceRequest
     ) -> ActionRecognitionInferenceResponse:
         sampling = self._model.video_sampling
+        default_confidence = getattr(self._model, "confidence_threshold", None)
+        threshold = (
+            default_confidence if request.confidence is None else request.confidence
+        )
+        if default_confidence is None and request.confidence is not None:
+            raise ValueError(
+                "This action-recognition model does not produce confidence scores"
+            )
         class_filter = request.class_filter or None
         # Only a model that carries its own class list has ids to report. A
         # request filter is not a vocabulary: a zero-shot model ignores it and
@@ -2016,6 +2024,11 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 sampling=sampling,
             )
             timeline: List[ActionRecognitionPrediction] = []
+            candidates = (
+                []
+                if request.include_candidates and default_confidence is not None
+                else None
+            )
             windows_classified = 0
             window_frames = read_frame_windows(
                 path=path,
@@ -2028,16 +2041,51 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 windows_classified += 1
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
+                infer_kwargs = {}
+                window_frame_limit = frame_count
+                if window.duration_seconds is not None:
+                    infer_kwargs["duration_seconds"] = window.duration_seconds
+                    window_frame_limit = min(
+                        frame_count,
+                        round(
+                            window.frame_indices[0]
+                            + window.duration_seconds * source_fps
+                        ),
+                    )
+                if threshold is not None:
+                    infer_kwargs["confidence"] = (
+                        0.0 if request.include_candidates else threshold
+                    )
+                segments = self._model.infer(
+                    frames=frames,
+                    class_names=class_filter,
+                    fps=window.sample_fps,
+                    **infer_kwargs,
+                )
+                if candidates is not None:
+                    merge_window_segments(
+                        timeline=candidates,
+                        frame_numbers=window.frame_indices[: len(frames)],
+                        segments=segments,
+                        id_vocabulary=id_vocabulary,
+                        stride=source_fps / window.sample_fps,
+                        sample_stride=source_fps / window.sample_fps,
+                        frame_limit=window_frame_limit,
+                        merge=False,
+                    )
+                    segments = [
+                        segment
+                        for segment in segments
+                        if segment.confidence >= threshold
+                    ]
                 merge_window_segments(
                     timeline=timeline,
                     frame_numbers=window.frame_indices[: len(frames)],
-                    segments=self._model.infer(
-                        frames=frames,
-                        class_names=class_filter,
-                        fps=window.sample_fps,
-                    ),
+                    segments=segments,
                     id_vocabulary=id_vocabulary,
                     stride=max(1.0, source_fps / window.sample_fps),
+                    frame_limit=window_frame_limit,
+                    sample_stride=source_fps / window.sample_fps,
                 )
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
         return ActionRecognitionInferenceResponse(
@@ -2045,6 +2093,9 @@ class InferenceModelsActionRecognitionAdapter(Model):
             source_fps=source_fps,
             frame_count=frame_count,
             windows_classified=windows_classified,
+            span_semantics=getattr(self._model, "span_semantics", "instances"),
+            confidence_threshold=threshold,
+            candidates=candidates,
         )
 
     def preprocess(self, *args, **kwargs):

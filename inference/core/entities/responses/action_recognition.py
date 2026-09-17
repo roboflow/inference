@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,3 +20,6 @@ class ActionRecognitionInferenceResponse(BaseModel):
     source_fps: float = Field(description="Frames per second of the clip")
     frame_count: int = Field(description="Frames the clip holds")
     windows_classified: int = Field(description="Model calls the clip was cut into")
+    span_semantics: Literal["instances", "class_union"] = "instances"
+    confidence_threshold: Optional[float] = None
+    candidates: Optional[List[ActionRecognitionPrediction]] = None

@@ -16,6 +16,7 @@ dependencies = [
   "transformers>=5.10.0,<5.16.0",
   "diffusers>=0.39.0,<0.41.0",
   "timm>=1.0.0,<2.0.0",
+  "safetensors>=0.6.2,<1.0.0",
   "accelerate>=1.0.0,<2.0.0",
   "einops>=0.7.0,<1.0.0",
   "peft>=0.18.1",

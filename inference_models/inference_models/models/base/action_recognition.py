@@ -11,9 +11,11 @@ import torch
 class ActionRecognitionPrediction:
     """One classified frame segment; ranges may overlap."""
 
-    start_frame_idx: int
-    end_frame_idx: int
+    start_frame_idx: Union[int, float]
+    end_frame_idx: Union[int, float]
     class_name: str
+    confidence: Optional[float] = None
+    end_exclusive: bool = False
 
 
 SLIDING_WINDOW_MODE = "sliding_window"
@@ -78,9 +80,15 @@ class VideoSampling:
     max_frame_side: Optional[int] = None
     mode: str = SLIDING_WINDOW_MODE
     max_frames: Optional[int] = None
+    overlap_frames: int = 0
+    end_aligned: bool = False
+    fixed_sample_fps: bool = False
 
 
 class ActionRecognitionModel(ABC):
+
+    span_semantics = "instances"
+    confidence_threshold = None
 
     @property
     def video_sampling(self) -> VideoSampling:
@@ -144,6 +152,7 @@ class WindowSpec:
 
     frame_indices: Tuple[int, ...]
     sample_fps: float
+    duration_seconds: Optional[float] = None
 
 
 def plan_windows(
@@ -166,6 +175,30 @@ def plan_windows(
     window_us = _window_span_us(sampling=sampling)
     if window_us is None or duration_us <= window_us:
         return [_plan_interval(0, duration_us, frame_count, source_fps, sampling)]
+    if sampling.overlap_frames or sampling.end_aligned:
+        stride_us = window_us - round(
+            sampling.overlap_frames / sampling.sample_fps * _MICROSECONDS
+        )
+        if sampling.overlap_frames < 0 or stride_us <= 0:
+            raise ValueError(
+                "Window overlap must be nonnegative and shorter than the window"
+            )
+        last_start = duration_us - window_us
+        starts = list(range(0, last_start + 1, stride_us))
+        if sampling.end_aligned and starts[-1] != last_start:
+            starts.append(last_start)
+        elif not sampling.end_aligned and starts[-1] + window_us < duration_us:
+            starts.append(starts[-1] + stride_us)
+        return [
+            _plan_interval(
+                start,
+                min(start + window_us, duration_us),
+                frame_count,
+                source_fps,
+                sampling,
+            )
+            for start in starts
+        ]
     whole_windows = duration_us // window_us
     windows = [
         _plan_interval(
@@ -284,12 +317,24 @@ def _plan_interval(
                 sampling.max_frames, int(round(duration_seconds * sampling.sample_fps))
             ),
         )
-        step_us = span_us / count
+        step_us = (
+            _MICROSECONDS / sampling.sample_fps
+            if sampling.fixed_sample_fps
+            else span_us / count
+        )
         indices = tuple(
             min(last_frame, _frame_at_or_after(start_us + index * step_us, source_fps))
             for index in range(count)
         )
-        return WindowSpec(frame_indices=indices, sample_fps=count / duration_seconds)
+        return WindowSpec(
+            frame_indices=indices,
+            sample_fps=(
+                sampling.sample_fps
+                if sampling.fixed_sample_fps
+                else count / duration_seconds
+            ),
+            duration_seconds=duration_seconds if sampling.fixed_sample_fps else None,
+        )
     effective_fps = min(sampling.sample_fps, source_fps)
     count = max(floor, int(round(duration_seconds * effective_fps)))
     step_us = _MICROSECONDS / effective_fps
@@ -352,25 +397,29 @@ def merge_segment(timeline: list, segment, stride: float) -> None:
             segment=segment,
             start_frame_idx=start_frame_idx,
             end_frame_idx=end_frame_idx,
+            confidence=max(
+                (
+                    value
+                    for entry in [segment, *matching]
+                    if (value := getattr(entry, "confidence", None)) is not None
+                ),
+                default=None,
+            ),
         )
     )
 
 
-def _widened(segment, start_frame_idx: int, end_frame_idx: int):
+def _widened(segment, start_frame_idx: int, end_frame_idx: int, confidence=None):
     """A copy of ``segment`` covering the wider range.
 
     Timeline entries are frozen dataclasses on the model side and pydantic
     models on the response side, so the copy uses whichever protocol the entry
     offers rather than assuming one.
     """
+    updates = {"start_frame_idx": start_frame_idx, "end_frame_idx": end_frame_idx}
+    if confidence is not None:
+        updates["confidence"] = confidence
     model_copy = getattr(segment, "model_copy", None)
     if callable(model_copy):
-        return model_copy(
-            update={
-                "start_frame_idx": start_frame_idx,
-                "end_frame_idx": end_frame_idx,
-            }
-        )
-    return replace(
-        segment, start_frame_idx=start_frame_idx, end_frame_idx=end_frame_idx
-    )
+        return model_copy(update=updates)
+    return replace(segment, **updates)
