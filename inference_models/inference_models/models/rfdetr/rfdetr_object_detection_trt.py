@@ -483,6 +483,13 @@ class RFDetrForObjectDetectionTRT(
                 for stage, selection in self._model_selections.items()
             },
         }
+        last_execution = self._last_execution_metadata()
+        if last_execution:
+            metadata["last_execution"] = last_execution
+        return metadata
+
+    def _last_execution_metadata(self) -> Dict[str, Any]:
+        """Copy only this caller thread's last completed stage selections."""
         last_execution = {}
         for stage in (
             "preprocessor",
@@ -498,10 +505,7 @@ class RFDetrForObjectDetectionTRT(
             )
             if selection is not None:
                 last_execution[stage] = dict(selection)
-        if last_execution:
-            metadata["last_execution"] = last_execution
-
-        return metadata
+        return last_execution
 
     @property
     def runtime_performance_diagnostics(self):
@@ -563,9 +567,7 @@ class RFDetrForObjectDetectionTRT(
                         detection.confidence,
                     )
                 ],
-                "execution": self.optimization_runtime_metadata.get(
-                    "last_execution", {}
-                ),
+                "execution": self._last_execution_metadata(),
             }
         return detections
 

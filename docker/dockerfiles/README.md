@@ -76,3 +76,34 @@ jetson-containers build l4t-ml
 ```
 
 This requires that you have the `jetson-containers` tool installed on your system. Follow the instructions in the [jetson-containers](https://github.com/dusty-nv/jetson-containers/blob/master/docs/setup.md) repository to install the tool.
+
+
+### Strict RF-DETR TensorRT qualification
+
+To reject compatibility or runtime fallback in a deployed RF-DETR pipeline,
+set both `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK=false` and
+`INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK=false`. These controls
+apply when no explicit `RFDetrExecutionPlan` is provided; an explicit plan takes
+precedence. Both default to `true` for backwards compatibility. Select the GPU
+stages with `INFERENCE_MODELS_RFDETR_PREPROCESSOR=triton-universal-v1` and
+`INFERENCE_MODELS_RFDETR_POSTPROCESSOR=triton-fused-v1`. Backend selection is
+separate: confirm that the loaded model is native TensorRT, and verify the
+resolved plan and CUDA frame representation in the running pipeline.
+
+For opt-in qualification, `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true` exposes
+`RFDetrForObjectDetectionTRT.last_inference_diagnostics`: the most recently
+completed call's timestamp, tensor devices for each stage, and actual stage
+selections captured in the inference thread. It contains no image pixels and
+performs no tensor copies. Concurrent calls publish complete snapshots; it is a
+latest-call diagnostic, not per-stream attribution or a performance counter.
+It is disabled by default. It allocates a small metadata snapshot per completed call;
+no tensor copies does not mean zero CPU overhead.
+
+
+Jetson bridge drop counters distinguish layers. `frames_dropped_by_consumer`
+counts replacements in the native ready queue. `frames_discarded_before_retrieve`
+counts a Python-reserved tensor discarded by the next grab without retrieval,
+including source FPS subsampling or adaptive buffering. Source-level drop events
+can describe that same discard, so these layers must not be added together.
+Repeated `retrieve()` returns the same selected frame; one bounded pooled buffer
+remains referenced until the next grab or close, including while paused.

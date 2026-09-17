@@ -419,7 +419,7 @@ def test_universal_runtime_requires_cuda_device() -> None:
 
 @pytest.mark.parametrize("tensor_input", [False, True])
 @pytest.mark.parametrize("dataset_size", [32, 64, 128])
-def test_workspace_stretch_and_auto_orient_preserve_decoded_pixel_contract(
+def test_workspace_metadata_does_not_change_reference_decoded_pixel_contract(
     tensor_input, dataset_size
 ) -> None:
     image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
@@ -455,3 +455,44 @@ def test_workspace_stretch_and_auto_orient_preserve_decoded_pixel_contract(
     )
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     assert actual_metadata == expected_metadata
+
+
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("tensor_input", [False, True])
+@pytest.mark.parametrize("dataset_size", [32, 64, 128])
+def test_workspace_configs_execute_actual_triton_preprocessor(
+    tensor_input, dataset_size
+):
+    image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
+    if tensor_input:
+        image = torch.from_numpy(image).permute(2, 0, 1).cuda()
+    network = _network_input().model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(
+                height=dataset_size, width=dataset_size
+            )
+        }
+    )
+    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    expected, expected_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=transforms,
+        network_input=network,
+        target_device=torch.device("cuda"),
+        input_color_format="rgb",
+    )
+    runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
+    actual = runtime.preprocess(
+        images=image,
+        input_color_format=ColorMode.RGB,
+        image_pre_processing=transforms,
+        network_input=network,
+        pre_processing_overrides=None,
+        stream=stream,
+    )
+    stream.synchronize()
+    torch.testing.assert_close(actual.tensor, expected, rtol=1e-5, atol=1e-5)
+    assert actual.metadata == expected_metadata

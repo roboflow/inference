@@ -109,6 +109,8 @@ class NativeJetsonTensorPipeline:
         self._lifecycle_lock = threading.Lock()
         self._handle = None
         self._grabbed_tensor = None
+        self._grabbed_retrieved = False
+        self._frames_discarded_before_retrieve = 0
         self._library = _load_bridge_library()
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         self._handle = self._library.rf_jetson_pipeline_create(
@@ -130,7 +132,10 @@ class NativeJetsonTensorPipeline:
         ``None`` preserves the historic unbounded wait, but still returns
         promptly on interrupt()/EOS/bus errors because the pull is chunked.
         """
+        if self._grabbed_tensor is not None and not self._grabbed_retrieved:
+            self._frames_discarded_before_retrieve += 1
         self._grabbed_tensor = None
+        self._grabbed_retrieved = False
         error = ctypes.create_string_buffer(_ERROR_CAPACITY)
         deadline_ns: Optional[int] = None
         if timeout_ns is not None:
@@ -174,6 +179,7 @@ class NativeJetsonTensorPipeline:
         self._ensure_open()
         if self._grabbed_tensor is None:
             raise RuntimeError("No grabbed frame is available")
+        self._grabbed_retrieved = True
         return self._grabbed_tensor
 
     def _take_ready_tensor(self):
@@ -240,7 +246,14 @@ class NativeJetsonTensorPipeline:
         )
         if status < 0:
             raise RuntimeError("Could not read Jetson tensor bridge statistics")
-        return {name: int(getattr(stats, name)) for name, _ in stats._fields_}
+        result = {name: int(getattr(stats, name)) for name, _ in stats._fields_}
+        # Keep native ready-queue replacement distinct from frames intentionally
+        # grabbed but not retrieved (FPS subsampling/adaptive source policies).
+        # These can overlap source-layer drop events; do not sum the layers.
+        result["frames_discarded_before_retrieve"] = (
+            self._frames_discarded_before_retrieve
+        )
+        return result
 
     def interrupt(self) -> None:
         with self._lifecycle_lock:

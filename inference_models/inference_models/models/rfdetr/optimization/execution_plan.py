@@ -9,6 +9,8 @@ from typing import Optional
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME,
+    RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME,
     RFDETR_POSTPROCESSOR_ENV_NAME,
     RFDETR_PREPROCESSOR_ENV_NAME,
 )
@@ -47,10 +49,10 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
                     AUTO_IMPLEMENTATION_ID,
                 ),
                 allow_compatibility_fallback=get_boolean_from_env(
-                    "INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK", default=True
+                    RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME, default=True
                 ),
                 allow_runtime_failure_fallback=get_boolean_from_env(
-                    "INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK",
+                    RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME,
                     default=True,
                 ),
                 postprocessor_id=os.getenv(

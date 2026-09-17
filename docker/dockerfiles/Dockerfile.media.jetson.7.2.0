@@ -266,6 +266,7 @@ RUN curl -fsSL "https://developer.download.nvidia.com/compute/cuda/redist/libnvj
     mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
     cp -L /tmp/nvjpeg/lib/libnvjpeg.so.13 /opt/cuda-runtime/lib/libnvjpeg.so.13 && \
     cp /tmp/nvjpeg/LICENSE /opt/cuda-runtime/share/licenses/libnvjpeg && \
+    sha256sum /opt/cuda-runtime/lib/libnvjpeg.so.13 > /opt/cuda-runtime/share/libnvjpeg.sha256 && \
     rm -rf /tmp/nvjpeg /tmp/nvjpeg.tar.xz
 
 RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
@@ -290,6 +291,8 @@ RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
         /opt/cuda-runtime/share/licenses/cuda-cudart && \
     cp "/usr/share/doc/libnpp-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/libnpp && \
+    test -s /opt/cuda-runtime/lib/libnvjpeg.so.13 && \
+    sha256sum -c /opt/cuda-runtime/share/libnvjpeg.sha256 && \
     test "$(du -sm /opt/cuda-runtime | cut -f1)" -lt 165
 
 FROM ubuntu:24.04 AS runtime

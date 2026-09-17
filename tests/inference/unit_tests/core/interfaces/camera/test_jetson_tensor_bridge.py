@@ -14,6 +14,8 @@ def queued_pipeline(*frames):
     pipeline = NativeJetsonTensorPipeline.__new__(NativeJetsonTensorPipeline)
     pipeline._handle = 1
     pipeline._grabbed_tensor = None
+    pipeline._grabbed_retrieved = False
+    pipeline._frames_discarded_before_retrieve = 0
     pipeline._library = SimpleNamespace(
         rf_jetson_pipeline_grab=lambda *args: 1 if queue else 0,
     )
@@ -69,3 +71,29 @@ def test_retrieve_requires_a_successful_grab():
     with pytest.raises(RuntimeError, match="No grabbed frame"):
         pipeline.retrieve()
     assert len(queue) == 1
+
+
+def test_unretrieved_grabs_are_counted_separately_from_native_queue_drops():
+    pipeline, _ = queued_pipeline(object(), object(), object())
+    pipeline._library.rf_jetson_pipeline_get_stats = lambda *args: 0
+    assert pipeline.grab()
+    assert pipeline.grab()
+    assert pipeline.stats()["frames_discarded_before_retrieve"] == 1
+    assert pipeline.stats()["frames_dropped_by_consumer"] == 0
+    pipeline.retrieve()
+    pipeline.retrieve()
+    assert pipeline.grab()
+    assert pipeline.stats()["frames_discarded_before_retrieve"] == 1
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_unretrieved_frame_discard_is_counted_before_eos_or_timeout(timeout):
+    pipeline, _ = queued_pipeline(object())
+    assert pipeline.grab()
+    if timeout:
+        with pytest.raises(TimeoutError):
+            pipeline.grab(timeout_ns=0)
+    else:
+        assert not pipeline.grab()
+    assert pipeline._frames_discarded_before_retrieve == 1
+    assert pipeline._grabbed_tensor is None
