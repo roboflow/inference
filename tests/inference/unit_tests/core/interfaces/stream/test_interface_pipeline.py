@@ -967,6 +967,7 @@ _LEGACY_FACTORY_PARAMETERS = {
         "workflow_init_parameters",
         "disable_sinks",
         "workflows_thread_pool_workers",
+        "execution_engine_thread_pool_workers",
         "cancel_thread_pool_tasks_on_exit",
         "video_metadata_input_name",
         "batch_collection_timeout",
