@@ -30,9 +30,8 @@ Pre-built experimental Docker images are available on Docker Hub under the `robo
 
 | Image Tag | JetPack Version | Status |
 |-----------|----------------|--------|
-| `roboflow/roboflow-inference-server-jetson-7.2.0:latest` | JetPack 7.2 (L4T 39, Orin & Thor) | ✅ Production |
-| `roboflow/roboflow-inference-server-jetson-6.2.0:latest` | JetPack 6.2 (L4T 36.4) — support ends 2027 | ✅ Production |
-| `roboflow/inference-exp:jp62-*` | JetPack 6.2 (L4T 36.x) — support ends 2027 | 🚧 In development |
+| `roboflow/roboflow-inference-server-jetson-7.2.0:latest` | JetPack 7.2 (L4T 39, Orin & Thor) | 🤖 Automated |
+| `roboflow/roboflow-inference-server-jetson-6.2.0:latest` | JetPack 6.2 (L4T 36.4) — support ends 2027 | 🤖 Automated |
 | `roboflow/roboflow-inference-server-jetson-5.1.1:0.62.5-experimental` | JetPack 5.1 (L4T 35.2.1) — **deprecated, removed 2027** | ✋ Manual (experimental) |
 
 !!! note "Image Status"
