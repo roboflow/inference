@@ -25,8 +25,22 @@ from inference.core.interfaces.workflows_configuration import (
 )
 from inference.core.logger import logger
 from inference.core.version import __version__
+from inference.core.workflows.prototypes.image_codec import (
+    set_default_image_codec_factory,
+)
+
+
+def _resolve_workflows_image_codec():
+    from inference.core.interfaces.workflows_image_codec import resolve_image_codec
+
+    return resolve_image_codec()
+
 
 install_workflows_configuration()
+# Direct WorkflowImageData callers need the same guarded loader as the server.
+# Resolve it on first use so startup does not import the server image utilities
+# and callers can still bind an explicit codec before loading an image.
+set_default_image_codec_factory(_resolve_workflows_image_codec)
 
 latest_release = None
 last_checked = 0

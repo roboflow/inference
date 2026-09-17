@@ -14,10 +14,14 @@ import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.models.foundation.openai.v7 import (
+    INSTANCE_SEGMENTATION_DEFAULT_MODEL,
+    STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
     BlockManifest,
     OpenAIBlockV7,
     detection_upload_dimensions,
+    encode_image_for_task,
     get_detection_box_format,
+    prepare_instance_segmentation_prompt,
     prepare_object_detection_prompt,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -29,7 +33,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
     classification_inference_id,
@@ -40,6 +46,7 @@ from tests.workflows.unit_tests.core_steps._vlm_prediction_readers import (
     detection_class_names,
     detection_count,
     detection_inference_ids,
+    detection_masks,
     is_detection_prediction,
 )
 
@@ -136,6 +143,8 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs["error_status"] == [BOOLEAN_KIND]
@@ -147,6 +156,13 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     "task_type, expected_kind",
     [
         ("object-detection", [OBJECT_DETECTION_PREDICTION_KIND]),
+        (
+            "instance-segmentation",
+            [
+                RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ],
+        ),
         ("classification", [CLASSIFICATION_PREDICTION_KIND]),
         ("multi-label-classification", [CLASSIFICATION_PREDICTION_KIND]),
     ],
@@ -191,6 +207,8 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert [output.name for output in BlockManifest.describe_outputs()] == list(outputs)
@@ -269,6 +287,10 @@ def test_detection_upload_dimensions_only_apply_to_absolute_formats() -> None:
     assert detection_upload_dimensions(
         image=image, task_type="unconstrained", box_format="xyxy_absolute"
     ) == (None, None)
+    # Segmentation uploads the original image, whatever the box format.
+    assert detection_upload_dimensions(
+        image=image, task_type="instance-segmentation", box_format="named_normalized"
+    ) == (DETECTION_IMAGE_WIDTH, DETECTION_IMAGE_HEIGHT)
 
 
 @pytest.mark.parametrize(
@@ -355,6 +377,151 @@ def test_run_reports_error_status_for_unparsable_detection_output() -> None:
         raw_output="I am sorry, I cannot help with that.",
         image=image,
         model_version="gpt-4o",
+        classes=["cat", "dog"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+# ---------------------------------------------------------------------------
+# Instance segmentation
+# ---------------------------------------------------------------------------
+
+# Polygon vertices are absolute pixels of the ORIGINAL image (no downscale on
+# this path), so the extent box is the polygon's own bounds.
+SEGMENTATION_OUTPUT = json.dumps(
+    {
+        "segmentations": [
+            {"label": "cat", "polygon": [800, 400, 1600, 400, 1600, 1200, 800, 1200]}
+        ]
+    }
+)
+
+
+def _segmentation_manifest(**overrides: object) -> BlockManifest:
+    raw_manifest = {
+        "type": "roboflow_core/open_ai@v7",
+        "name": "open_ai",
+        "images": "$inputs.image",
+        "task_type": "instance-segmentation",
+        "classes": ["cat", "dog"],
+    }
+    raw_manifest.update(overrides)
+    return BlockManifest.model_validate(raw_manifest)
+
+
+def test_segmentation_task_defaults_model_to_astra_when_unset() -> None:
+    manifest = _segmentation_manifest()
+
+    assert (
+        manifest.model_version == INSTANCE_SEGMENTATION_DEFAULT_MODEL == "gpt-6-astra"
+    )
+
+
+@pytest.mark.parametrize("model_version", ["gpt-5.6-sol", "$inputs.openai_model"])
+def test_segmentation_task_keeps_explicit_model(model_version: str) -> None:
+    manifest = _segmentation_manifest(model_version=model_version)
+
+    assert manifest.model_version == model_version
+
+
+def test_other_tasks_keep_block_default_model() -> None:
+    manifest = _segmentation_manifest(task_type="object-detection")
+
+    assert manifest.model_version == "gpt-5.1"
+
+
+def test_segmentation_task_requires_classes() -> None:
+    with pytest.raises(ValueError):
+        _segmentation_manifest(classes=None)
+
+
+def test_instance_segmentation_prompt_enforces_polygon_schema() -> None:
+    prompt = prepare_instance_segmentation_prompt(
+        base64_image="abc",
+        classes=["cat", "dog"],
+        image_width=640,
+        image_height=480,
+        image_detail="high",
+    )
+
+    content = prompt["input"][0]["content"]
+    assert content[0] == {
+        "type": "input_image",
+        "image_url": "data:image/jpeg;base64,abc",
+        "detail": "high",
+    }
+    assert content[1]["type"] == "input_text"
+    assert "640x480" in content[1]["text"]
+    assert content[1]["text"].endswith("Only use these labels: cat, dog")
+    assert prompt["text"] is STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT
+    schema = prompt["text"]["format"]["schema"]
+    assert prompt["text"]["format"]["strict"] is True
+    assert schema["required"] == ["segmentations"]
+    entry = schema["properties"]["segmentations"]["items"]
+    assert entry["required"] == ["label", "polygon"]
+    assert entry["properties"]["polygon"] == {
+        "type": "array",
+        "items": {"type": "integer"},
+    }
+    assert "instructions" not in prompt
+
+
+def test_encode_image_for_task_keeps_original_resolution_for_segmentation() -> None:
+    image = np.zeros((DETECTION_IMAGE_HEIGHT, DETECTION_IMAGE_WIDTH, 3), dtype=np.uint8)
+
+    _, width, height = encode_image_for_task(image, task_type="instance-segmentation")
+    _, det_width, det_height = encode_image_for_task(
+        image, task_type="object-detection"
+    )
+
+    assert (width, height) == (DETECTION_IMAGE_WIDTH, DETECTION_IMAGE_HEIGHT)
+    assert (det_width, det_height) == (2048, 1024)
+
+
+@pytest.mark.parametrize("model_version", ["gpt-6-astra", "gpt-5.1", "gpt-4o"])
+def test_run_decodes_instance_segmentation_into_masks(model_version: str) -> None:
+    # given
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+
+    # when
+    result = _run_block(
+        task_type="instance-segmentation",
+        raw_output=SEGMENTATION_OUTPUT,
+        image=image,
+        model_version=model_version,
+        classes=["cat", "dog"],
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["output"] == SEGMENTATION_OUTPUT
+    predictions = result["predictions"]
+    assert is_detection_prediction(predictions)
+    assert detection_count(predictions) == 1
+    assert detection_boxes(predictions)[0] == EXPECTED_XYXY
+    assert detection_class_ids(predictions) == [0]
+    assert detection_class_names(predictions) == ["cat"]
+    assert detection_inference_ids(predictions) == [result["inference_id"]]
+    masks = detection_masks(predictions)
+    assert len(masks) == 1
+    assert masks[0].shape == (DETECTION_IMAGE_HEIGHT, DETECTION_IMAGE_WIDTH)
+    assert masks[0][800, 1200]
+    assert not masks[0][100, 100]
+
+
+def test_run_reports_error_status_for_unparsable_segmentation_output() -> None:
+    # given
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+
+    # when
+    result = _run_block(
+        task_type="instance-segmentation",
+        raw_output="I am sorry, I cannot help with that.",
+        image=image,
+        model_version="gpt-6-astra",
         classes=["cat", "dog"],
     )
 
