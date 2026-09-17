@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-- `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
-
 ### Fixed
 
 - `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
