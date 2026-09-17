@@ -1,12 +1,12 @@
-from unittest.mock import Mock
-
 import base64
 from io import BytesIO
-from PIL import Image
+from typing import Union
+from unittest.mock import Mock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from typing import Union
+from PIL import Image
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -95,6 +95,7 @@ def test_loads_trainer_artifact_and_preserves_raw_scores(tmp_path, monkeypatch):
     from roboflow_anomaly import AnomalyConfig, AnomalyDetector
     from roboflow_anomaly.adapters import patchcore
     from roboflow_anomaly.data import Sample
+
     from inference.core.models.roboflow import RoboflowInferenceModel
     from inference.models.anomaly_detection.model import AnomalyDetectionModel
 

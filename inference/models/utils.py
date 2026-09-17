@@ -66,6 +66,10 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.anomaly_detection.model import (
+    FoundADAnomalyDetection,
+    PatchCoreAnomalyDetection,
+)
 from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
@@ -73,11 +77,6 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
 )
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
-
-from inference.models.anomaly_detection.model import (
-    FoundADAnomalyDetection,
-    PatchCoreAnomalyDetection,
-)
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "patchcore"): PatchCoreAnomalyDetection,
