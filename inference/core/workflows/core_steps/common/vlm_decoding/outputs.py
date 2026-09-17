@@ -7,8 +7,8 @@ returned keys to exactly equal its declared actual outputs (see
 even for tasks that decode nothing - it is simply ``None`` at runtime.
 """
 
-from typing import Any, Iterable, List, Optional, Tuple
 import logging
+from typing import Any, Iterable, List, Optional, Tuple
 
 from inference.core.workflows.core_steps.common.vlm_decoding.classification import (
     decode_classification,
