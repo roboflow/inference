@@ -17,25 +17,30 @@ def openapi_schema(monkeypatch):
     return http_api.HttpInterface(model_manager=MagicMock()).app.openapi()
 
 
-def test_openapi_describes_selectors_in_body_and_legacy_query(openapi_schema):
+def test_openapi_exposes_optional_string_selectors_in_body_and_legacy_query(
+    openapi_schema,
+):
     schemas = openapi_schema["components"]["schemas"]
     legacy = openapi_schema["paths"]["/{dataset_id}/{version_id}"]["post"]
     parameters = {parameter["name"]: parameter for parameter in legacy["parameters"]}
 
     for selector in ("model_package_id", "backend", "quantization"):
-        description = schemas["ObjectDetectionInferenceRequest"]["properties"][
-            selector
-        ]["description"]
-        assert description
-        assert parameters[selector]["description"] == description
+        parameter = parameters[selector]
+        assert parameter["in"] == "query"
+        assert parameter["required"] is False
+        assert {"type": "string", "minLength": 1} in parameter["schema"]["anyOf"]
+        assert {"type": "null"} in parameter["schema"]["anyOf"]
         for request in (
+            "ObjectDetectionInferenceRequest",
             "AddModelRequest",
             "ClearModelRequest",
             "ActionRecognitionInferenceRequest",
         ):
-            assert (
-                schemas[request]["properties"][selector]["description"] == description
-            )
+            schema = schemas[request]
+            field = schema["properties"][selector]
+            assert selector not in schema.get("required", [])
+            assert {"type": "string", "minLength": 1} in field["anyOf"]
+            assert {"type": "null"} in field["anyOf"]
 
 
 @pytest.mark.parametrize(
