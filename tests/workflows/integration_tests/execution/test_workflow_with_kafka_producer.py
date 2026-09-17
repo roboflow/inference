@@ -170,14 +170,17 @@ def test_changed_connection_is_rejected_without_publishing() -> None:
 
 @pytest.fixture
 def enterprise_blocks(monkeypatch):
-    from inference.core import env
+    from inference.core.env import ENTERPRISE_BLOCKS_PLUGIN
     from inference.core.workflows.execution_engine.introspection import blocks_loader
     from inference.core.workflows.execution_engine.v1.compiler.core import (
         COMPILATION_CACHE,
     )
 
-    monkeypatch.setattr(env, "LOAD_ENTERPRISE_BLOCKS", True)
-    monkeypatch.setattr(blocks_loader, "LOAD_ENTERPRISE_BLOCKS", True)
+    # enterprise blocks load through the generic plugin mechanism (see env.py)
+    plugins = blocks_loader.get_plugin_modules()
+    if ENTERPRISE_BLOCKS_PLUGIN not in plugins:
+        plugins.append(ENTERPRISE_BLOCKS_PLUGIN)
+    monkeypatch.setenv(blocks_loader.WORKFLOWS_PLUGINS_ENV, ",".join(plugins))
     blocks_loader.load_core_workflow_blocks.cache_clear()
     yield
     blocks_loader.load_core_workflow_blocks.cache_clear()
