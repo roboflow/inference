@@ -48,6 +48,16 @@ class ActionRecognitionInferenceRequest(BaseRequest):
         description="The model to classify with",
     )
     video: InferenceRequestVideo
+    confidence: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Candidate threshold before merging; absent uses the model default",
+    )
+    include_candidates: bool = Field(
+        default=False,
+        description="Return unmerged scored candidates for threshold evaluation",
+    )
     class_filter: Optional[List[str]] = Field(
         None,
         examples=[["entering", "leaving"]],
