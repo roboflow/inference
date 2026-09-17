@@ -4948,7 +4948,7 @@ class HttpInterface(BaseInterface):
                         # model_id, so the lookup asks for that. Under Lambda
                         # request_model_id is the authorizer's endpoint and
                         # names nothing the manager holds.
-                        cache_key if selectors else model_id,
+                        cache_key,
                         ActionRecognitionInferenceRequest(
                             api_key=api_key,
                             model_id=model_id,

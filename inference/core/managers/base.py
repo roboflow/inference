@@ -621,20 +621,14 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
-        if isinstance(request, InferenceRequest):
-            self._validate_loaded_model_selection(
-                model, model_selection_kwargs(request)
-            )
+        self._validate_loaded_model_selection(model, model_selection_kwargs(request))
         return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
-        if isinstance(request, InferenceRequest):
-            self._validate_loaded_model_selection(
-                model, model_selection_kwargs(request)
-            )
+        self._validate_loaded_model_selection(model, model_selection_kwargs(request))
         return model.infer_from_request(request)
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
