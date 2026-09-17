@@ -37,6 +37,12 @@ def test_boundary_decision_is_consistent_with_classification_predictions():
     assert result.confidence == 0.5
 
 
+def test_decision_and_confidence_disagreement_is_rejected():
+    inconsistent = dict(prediction(score=1.0, threshold=2.0), anomalous_confidence=0.7)
+    with pytest.raises(ValueError, match="disagrees"):
+        make_anomaly_response(inconsistent, 20, 10, 0.1)
+
+
 def test_http_serialization_keeps_anomaly_fields():
     app = FastAPI()
 

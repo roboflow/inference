@@ -11,6 +11,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.models.roboflow import RoboflowInferenceModel
 from inference.core.utils.image_utils import load_image_rgb
+from inference.usage_tracking.collector import usage_collector
 
 CLASS_NAMES = ("normal", "anomalous")
 
@@ -18,6 +19,14 @@ CLASS_NAMES = ("normal", "anomalous")
 def make_anomaly_response(result, width, height, elapsed):
     top_index = int(result["is_anomalous"])
     confidence = result["anomalous_confidence"]
+    # The runtime maps the saved threshold to exactly 0.5 (sigmoid of the
+    # scaled score margin), so the decision and the argmax of the two class
+    # confidences must agree; a disagreement means a broken artifact.
+    if (confidence >= 0.5) != bool(result["is_anomalous"]):
+        raise ValueError(
+            "Anomaly decision disagrees with the anomalous confidence: "
+            f"is_anomalous={result['is_anomalous']} confidence={confidence}"
+        )
     scores = [1 - confidence, confidence]
     predictions = [
         ClassificationPrediction(
@@ -76,6 +85,7 @@ class AnomalyDetectionModel(RoboflowInferenceModel):
     def get_infer_bucket_file_list(self):
         return ["environment.json"]
 
+    @usage_collector("model")
     def infer(
         self, image: Any, include_anomaly_map=False, return_image_dims=False, **kwargs
     ):
