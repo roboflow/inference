@@ -89,8 +89,9 @@ def build_rfdetr_implementation_registry(
     """Build the complete RF-DETR stage implementation registry.
 
     Args:
-        device: CUDA target selected for the TensorRT model.
+        device: Target selected for the model.
         preprocessor_max_workers: Bounded threaded preprocessing worker limit.
+        backend: Object-detection backend: trt, torch or onnx.
 
     Returns:
         Registry containing every available preprocessing and postprocessing choice.

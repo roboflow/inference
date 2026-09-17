@@ -68,7 +68,14 @@ class PillowSIMDPreprocessor(BasePreprocessor):
         return CompatibilityResult.compatible()
 
     def check_request_compatibility(self, *, request, context):
-        return check_threaded_request_compatibility(request)
+        result = check_threaded_request_compatibility(request)
+        return replace(
+            result,
+            reasons=tuple(
+                reason.replace("threaded preprocessing", "Pillow-SIMD preprocessing")
+                for reason in result.reasons
+            ),
+        )
 
     def preprocess(self, request, context):
         # Selection validates availability before execution; never silently change

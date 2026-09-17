@@ -47,7 +47,7 @@ class BaseBufferStrategy:
                 "layout": "unchanged",
                 "ownership": "framework tensor retained by caller",
                 "aliasing": "exact preprocessing tensor; no copy",
-                "lifetime": "through TensorRT consumption",
+                "lifetime": "through backend consumption",
             }
         ),
         numerical_behavior="identity; does not inspect or modify tensor values",

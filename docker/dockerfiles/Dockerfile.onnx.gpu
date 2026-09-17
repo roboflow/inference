@@ -300,7 +300,7 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
 # Pillow-SIMD (x86-64 only), beside Pillow under /opt so the wheel stays the `PIL` package.
 ARG TARGETARCH
 RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
-      python3 -m pip install --no-cache-dir --no-deps --target /opt/pillow_simd "pillow-simd @ git+https://github.com/uploadcare/pillow-simd.git@af4a84b84a6a791f3e590de18c4bf1fbd0938ace" && \
+      python3 -m pip install --no-cache-dir --no-deps --target /opt/pillow_simd "pillow-simd @ git+https://github.com/uploadcare/pillow-simd.git@d50c9d40e84b6cdbe3bcde19b6c77ccdff2421f7" && \
       python3 docker/scripts/verify_pillow_simd.py; \
     fi
 
