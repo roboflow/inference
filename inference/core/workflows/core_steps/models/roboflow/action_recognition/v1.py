@@ -118,8 +118,8 @@ class _ActionRecognitionBookkeeping:
     last_fire_frame_number: Optional[int] = None
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float] = field(
-        default_factory=lambda: ((), 0.0, 0.0)
+    signature: Tuple[Tuple[str, ...], float, float, Optional[float]] = field(
+        default_factory=lambda: ((), 0.0, 0.0, None)
     )
 
 
@@ -161,11 +161,15 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
+    confidence: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
+        default=None,
+        description="Candidate confidence threshold before merging; empty uses the model default",
+    )
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
         description=(
             "Time between classification calls. Leave empty to classify "
-            "consecutive windows without overlap. A smaller stride slides "
+            "windows with the model's recorded overlap. A smaller stride slides "
             "overlapping windows for finer range boundaries at the cost of "
             "more model calls."
         ),
@@ -174,6 +178,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_window_inputs(self) -> "BlockManifest":
+        if isinstance(self.confidence, (int, float)) and not 0 <= self.confidence <= 1:
+            raise ValueError("Confidence must be between zero and one")
         if isinstance(self.stride_seconds, (int, float)) and (
             self.stride_seconds <= 0 or not math.isfinite(self.stride_seconds)
         ):
@@ -279,10 +285,18 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         model_id: str,
         class_filter: Optional[List[str]] = None,
         stride_seconds: Optional[float] = None,
+        confidence: Optional[float] = None,
     ) -> BlockResult:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
+        if (
+            confidence is not None
+            and getattr(model, "confidence_threshold", None) is None
+        ):
+            raise ValueError(
+                "This action-recognition model does not produce confidence scores"
+            )
         block_filter = normalise_class_names(class_filter) or None
         # A filter is not a vocabulary; only the model's own class list
         # carries ids. See the adapter for the zero-shot case this avoids.
@@ -307,6 +321,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     id_vocabulary=id_vocabulary,
                     video_sampling=video_sampling,
                     stride_seconds=stride_seconds,
+                    confidence=confidence,
                 )
             )
         return results
@@ -319,11 +334,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         video_sampling: VideoSampling,
         stride_seconds: Optional[float],
+        confidence: Optional[float] = None,
     ) -> dict:
         metadata = image.video_metadata
         requested_window_seconds = float(video_sampling.window_seconds)
         requested_stride_seconds = (
             requested_window_seconds
+            - getattr(video_sampling, "overlap_frames", 0) / video_sampling.sample_fps
             if stride_seconds is None
             else float(stride_seconds)
         )
@@ -334,6 +351,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             tuple(block_filter or ()),
             requested_window_seconds,
             requested_stride_seconds,
+            confidence,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
@@ -427,6 +445,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 id_vocabulary=id_vocabulary,
                 effective_sample_fps=effective_sample_fps,
                 sampling_stride=sampling_stride,
+                confidence=confidence,
+                frame_limit=frame_number + 1,
             )
 
         bookkeeping.last_frame_number = frame_number
@@ -464,6 +484,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         id_vocabulary: Optional[List[str]],
         effective_sample_fps: float,
         sampling_stride: float,
+        confidence: Optional[float] = None,
+        frame_limit: Optional[int] = None,
     ) -> str:
         if not bookkeeping.sampled:
             return ""
@@ -471,10 +493,19 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             [frame for _, frame in bookkeeping.sampled]
         )
         try:
+            infer_kwargs = {"confidence": confidence} if confidence is not None else {}
+            if (
+                getattr(model, "span_semantics", None) == "class_union"
+                and frame_limit is not None
+            ):
+                infer_kwargs["duration_seconds"] = (
+                    frame_limit - bookkeeping.sampled[0][0]
+                ) / (sampling_stride * effective_sample_fps)
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
                 fps=effective_sample_fps,
+                **infer_kwargs,
             )
         except Exception as error:
             logger.warning(
@@ -505,6 +536,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             stride=max(1, math.ceil(sampling_stride)),
+            sample_stride=sampling_stride,
+            frame_limit=frame_limit,
         )
         return ""
 
@@ -555,6 +588,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         block_filter: Optional[List[str]],
         id_vocabulary: Optional[List[str]],
         stride: float,
+        sample_stride: Optional[float] = None,
+        frame_limit: Optional[int] = None,
     ) -> None:
         merge_window_segments(
             timeline=bookkeeping.timeline,
@@ -563,6 +598,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             id_vocabulary=id_vocabulary,
             stride=stride,
             class_filter=block_filter,
+            sample_stride=sample_stride,
+            frame_limit=frame_limit,
         )
         self._evict_oldest_actions(bookkeeping=bookkeeping)
         bookkeeping.timeline.sort(

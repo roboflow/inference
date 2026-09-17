@@ -498,6 +498,17 @@ except:
     )
 
 try:
+    if USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2-1-vitb-384")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2_1")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:

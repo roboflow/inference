@@ -4649,6 +4649,10 @@ class HttpInterface(BaseInterface):
                         "zero-shot model answers in its own words and ignores it."
                     ),
                 ),
+                include_candidates: bool = Query(
+                    False,
+                    description="Action recognition: return raw scored candidates",
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4740,6 +4744,11 @@ class HttpInterface(BaseInterface):
                 )
                 api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
+                action_confidence = (
+                    confidence
+                    if "confidence" in request.query_params and confidence != "default"
+                    else None
+                )
                 if isinstance(confidence, (int, float)):
                     if confidence >= 1:
                         confidence /= 100
@@ -4836,6 +4845,8 @@ class HttpInterface(BaseInterface):
                             class_filter=_parse_legacy_class_filter(
                                 class_filter=class_filter
                             ),
+                            confidence=action_confidence,
+                            include_candidates=include_candidates,
                         ),
                     )
                     logger.debug("Response ready.")
