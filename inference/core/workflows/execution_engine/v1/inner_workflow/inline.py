@@ -150,7 +150,7 @@ def _defaults_for_unbound_workflow_parameters(
 def _replace_inputs_in_string(
     s: str,
     *,
-    bindings: Dict[str, str],
+    bindings: Dict[str, Any],
     input_defaults: Dict[str, Any],
 ) -> str | Any:
     """Resolve ``$inputs.<name>`` placeholders inside a single string leaf.
@@ -166,14 +166,14 @@ def _replace_inputs_in_string(
     Examples:
         >>> _replace_inputs_in_string(
         ...     "$inputs.threshold",
-        ...     bindings={"threshold": "0.5"},
+        ...     bindings={"threshold": 0.5},
         ...     input_defaults={},
         ... )
-        '0.5'
+        0.5
 
         >>> _replace_inputs_in_string(
         ...     "prefix-$inputs.image_size-suffix",
-        ...     bindings={"image_size": "42", "image": "x"},
+        ...     bindings={"image_size": 42, "image": "x"},
         ...     input_defaults={},
         ... )
         'prefix-42-suffix'
@@ -256,7 +256,7 @@ def _rewrite_inner_scalar(
     value: Any,
     *,
     step_pairs: List[Tuple[str, str]],
-    bindings: Dict[str, str],
+    bindings: Dict[str, Any],
     input_defaults: Dict[str, Any],
 ) -> Any:
     """Rewrite one JSON scalar from the child workflow for inlining under ``inner_step``.
@@ -438,7 +438,13 @@ def _expand_leaf_inner_at_index(
         profiler=profiler,
     )
 
-    bindings = {str(k): str(v) for k, v in raw_bindings.items()}
+    # Keep literal binding values typed (numbers, booleans, lists, ...): a whole-string
+    # ``$inputs.<name>`` reference in the child is replaced with the bound value as-is,
+    # so stringifying here would turn e.g. ``0.3`` into ``"0.3"``. Values are deep-copied
+    # so the inlined definition never aliases the parent step's ``parameter_bindings``.
+    bindings: Dict[str, Any] = {
+        str(k): copy.deepcopy(v) for k, v in raw_bindings.items()
+    }
     validate_parameter_bindings_against_child(
         bindings=bindings,
         child_parsed=inner_parsed,
