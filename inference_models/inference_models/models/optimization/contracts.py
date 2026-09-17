@@ -245,8 +245,13 @@ def metadata_compatibility(
     """
     reasons = []
     target = metadata.target
-    if target.device_types and context.device.split(":", 1)[0] not in target.device_types:
-        reasons.append(f"device {context.device!r} requires one of {target.device_types}")
+    if (
+        target.device_types
+        and context.device.split(":", 1)[0] not in target.device_types
+    ):
+        reasons.append(
+            f"device {context.device!r} requires one of {target.device_types}"
+        )
     if (
         target.host_architectures
         and context.host_architecture not in target.host_architectures
