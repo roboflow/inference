@@ -430,6 +430,36 @@ class TestDetectJetson:
         assert image == expected_image
         assert "dpkg" in source
 
+    @pytest.mark.parametrize(
+        "l4t_major, l4t_minor", [(32, 7), (36, 3), (38, 4), (39, 1)]
+    )
+    @patch.object(
+        container_adapter, "_get_jetpack_version_from_dpkg", return_value=None
+    )
+    def test_raises_for_unsupported_l4t_without_dpkg(
+        self, _dpkg_mock: MagicMock, l4t_major: int, l4t_minor: int
+    ) -> None:
+        with patch.object(
+            container_adapter,
+            "_parse_tegra_release",
+            return_value=(l4t_major, l4t_minor),
+        ):
+            with pytest.raises(RuntimeError, match="not supported"):
+                _detect_jetson()
+
+    @pytest.mark.parametrize("jetpack_version", ["6.0", "7.1"])
+    @patch.object(container_adapter, "_parse_tegra_release", return_value=(38, 4))
+    def test_raises_for_unsupported_l4t_with_unsupported_dpkg(
+        self, _tegra_mock: MagicMock, jetpack_version: str
+    ) -> None:
+        with patch.object(
+            container_adapter,
+            "_get_jetpack_version_from_dpkg",
+            return_value=jetpack_version,
+        ):
+            with pytest.raises(RuntimeError, match="not supported"):
+                _detect_jetson()
+
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
     @patch.object(
         container_adapter, "_get_jetpack_version_from_dpkg", return_value=None
