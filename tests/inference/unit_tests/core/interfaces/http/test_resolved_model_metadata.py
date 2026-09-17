@@ -133,7 +133,7 @@ def test_http_batch_reports_package_for_each_image(monkeypatch):
     ]
 
 
-def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
+def test_http_inference_reports_model_id_when_flag_is_disabled(monkeypatch):
     monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
     model_types = runpy.run_path(model_utils.__file__)["ROBOFLOW_MODEL_TYPES"]
     monkeypatch.setattr(
@@ -143,7 +143,7 @@ def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
     )
 
     def initialize_legacy_model(self, model_id, **kwargs):
-        self.model_id = model_id
+        self.endpoint = model_id
 
     monkeypatch.setattr(YOLOv8ObjectDetection, "__init__", initialize_legacy_model)
     monkeypatch.setattr(YOLOv8ObjectDetection, "infer", PackageModel.infer)
@@ -170,6 +170,7 @@ def test_http_inference_omits_metadata_when_flag_is_disabled(monkeypatch):
     assert payload == {
         "image": {"width": 640, "height": 480},
         "predictions": [],
+        "resolved_model": {"model_id": "test/1"},
     }
 
 
@@ -257,7 +258,7 @@ def test_http_inference_omits_metadata_for_a_model_without_package_identity(
     assert "resolved_model" not in response.json()
 
 
-def test_direct_model_response_omits_package_with_flag_disabled(monkeypatch):
+def test_direct_model_response_reports_model_id_with_flag_disabled(monkeypatch):
     from inference.core.entities.requests.inference import (
         InferenceRequestImage,
         ObjectDetectionInferenceRequest,
@@ -274,7 +275,13 @@ def test_direct_model_response_omits_package_with_flag_disabled(monkeypatch):
     )
 
     assert isinstance(response, ObjectDetectionInferenceResponse)
-    assert response.resolved_model is None
+    assert response.resolved_model is not None
+    assert response.resolved_model.model_dump() == {
+        "model_id": "test/1",
+        "model_package_id": None,
+        "backend": None,
+        "quantization": None,
+    }
 
 
 def test_classification_adapter_reports_package_with_predictions(monkeypatch):
@@ -404,6 +411,6 @@ def test_openapi_documents_metadata_for_all_inference_response_types(monkeypatch
         metadata = schemas[name]["properties"]["resolved_model"]
         assert {"$ref": "#/components/schemas/ResolvedModel"} in metadata["anyOf"]
     assert (
-        "Canonical model ID"
+        "canonical ID"
         in schemas["ResolvedModel"]["properties"]["model_id"]["description"]
     )

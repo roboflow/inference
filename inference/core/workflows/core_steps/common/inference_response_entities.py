@@ -38,27 +38,30 @@ class InferenceResponseImage(BaseModel):
 
 
 class ResolvedModel(BaseModel):
-    """Identity of the model package used for inference.
+    """Identity of the model and available package details used for inference.
 
     Attributes:
-        model_id (str): Canonical model ID returned by the weights provider.
-        model_package_id (str): ID of the loaded model package.
-        backend (str): Backend of the loaded package.
-        quantization (str): Quantization of the loaded package.
+        model_id (str): ID of the loaded model, using the canonical ID when available.
+        model_package_id (Optional[str]): ID of the loaded model package.
+        backend (Optional[str]): Backend of the loaded package.
+        quantization (Optional[str]): Quantization of the loaded package.
     """
 
     model_config = ConfigDict(protected_namespaces=())
     model_id: str = Field(
-        description="Canonical model ID returned by the weights provider. It can differ from the requested alias."
+        description="ID of the loaded model, using the canonical ID when available."
     )
-    model_package_id: str = Field(
-        description="ID of the package that loaded successfully and produced this result, including after a loading fallback."
+    model_package_id: Optional[str] = Field(
+        default=None,
+        description="ID of the package that loaded successfully and produced this result, including after a loading fallback.",
     )
-    backend: str = Field(
-        description="Backend of the loaded package, such as onnx, trt, or torch."
+    backend: Optional[str] = Field(
+        default=None,
+        description="Backend of the loaded package, such as onnx, trt, or torch.",
     )
-    quantization: str = Field(
-        description="Package quantization, such as fp32 or fp16, or unknown when unavailable. This does not specify the input tensor dtype or the precision of every runtime operation."
+    quantization: Optional[str] = Field(
+        default=None,
+        description="Package quantization, such as fp32 or fp16, or unknown when unavailable. This does not specify the input tensor dtype or the precision of every runtime operation.",
     )
 
 
@@ -69,7 +72,7 @@ class InferenceResponse(BaseModel):
         inference_id (Optional[str]): Unique identifier of inference
         frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
-        resolved_model (Optional[ResolvedModel]): Identity of the model package used for inference.
+        resolved_model (Optional[ResolvedModel]): Model identity and available package details for this result.
     """
 
     model_config = ConfigDict(protected_namespaces=())
@@ -86,7 +89,7 @@ class InferenceResponse(BaseModel):
     )
     resolved_model: Optional[ResolvedModel] = Field(
         default=None,
-        description="Package identity of the model instance that produced this result.",
+        description="Model identity and available package details for this result.",
     )
 
 

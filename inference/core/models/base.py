@@ -113,7 +113,10 @@ class Model(BaseInference):
     @property
     def resolved_model(self) -> Any:
         if not USE_INFERENCE_MODELS:
-            return None
+            model_id = getattr(self, "endpoint", None) or getattr(
+                self, "model_id", None
+            )
+            return ResolvedModel(model_id=model_id) if model_id is not None else None
         return getattr(getattr(self, "_model", None), "resolved_model", None)
 
     def _attach_resolved_model_metadata(self, responses: Any) -> None:
