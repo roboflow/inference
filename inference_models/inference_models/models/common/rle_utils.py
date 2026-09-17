@@ -40,7 +40,8 @@ def torch_masks_to_coco_rle_batch(masks: torch.Tensor) -> List[dict]:
         return []
     # pycocotools expects a Fortran-ordered [H, W, N] uint8 array. The single
     # .cpu() here replaces the 2*N per-detection syncs in torch_mask_to_coco_rle.
-    # .detach() so a tensor attached to an autograd graph can still go to numpy.
+    # Explicit .detach() so a graph-attached tensor can never reach .numpy()
+    # with requires_grad set (the uint8 cast drops it today, but be explicit).
     masks_hwn = (
         masks.detach().to(torch.uint8).permute(1, 2, 0).contiguous().cpu().numpy()
     )

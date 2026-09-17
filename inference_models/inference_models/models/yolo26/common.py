@@ -3,10 +3,10 @@ from typing import List
 import torch
 
 from inference_models import InstanceDetections, InstancesRLEMasks
-from inference_models.models.common.rle_utils import torch_masks_to_coco_rle_batch
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
+    align_instance_segmentation_results_to_rle_masks_batched,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
 )
@@ -74,23 +74,25 @@ def prepare_rle_masks(
             image_meta.pad_right,
             image_meta.pad_bottom,
         )
-        aligned_boxes, aligned_masks = align_instance_segmentation_results(
-            image_bboxes=image_bboxes,
-            masks=cropped_masks,
-            padding=padding,
-            scale_height=image_meta.scale_height,
-            scale_width=image_meta.scale_width,
-            original_size=image_meta.original_size,
-            size_after_pre_processing=image_meta.size_after_pre_processing,
-            inference_size=image_meta.inference_size,
-            static_crop_offset=image_meta.static_crop_offset,
+        aligned_boxes, rle_masks = (
+            align_instance_segmentation_results_to_rle_masks_batched(
+                image_bboxes=image_bboxes,
+                masks=cropped_masks,
+                padding=padding,
+                scale_height=image_meta.scale_height,
+                scale_width=image_meta.scale_width,
+                original_size=image_meta.original_size,
+                size_after_pre_processing=image_meta.size_after_pre_processing,
+                inference_size=image_meta.inference_size,
+                static_crop_offset=image_meta.static_crop_offset,
+            )
         )
         instances_masks = InstancesRLEMasks.from_coco_rle_masks(
             image_size=(
                 image_meta.original_size.height,
                 image_meta.original_size.width,
             ),
-            masks=torch_masks_to_coco_rle_batch(aligned_masks),
+            masks=rle_masks,
         )
         final_results.append(
             InstanceDetections(

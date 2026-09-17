@@ -13,7 +13,10 @@ from inference_models.logger import LOGGER
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
-from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_models.models.common.rle_utils import (
+    torch_mask_to_coco_rle,
+    torch_masks_to_coco_rle_batch,
+)
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
@@ -520,6 +523,57 @@ def align_instance_segmentation_results(
     )
     image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     return image_bboxes, masks
+
+
+def align_instance_segmentation_results_to_rle_masks_batched(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
+    inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
+    mask_chunk_size: int = INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE,
+) -> Tuple[torch.Tensor, List[dict]]:
+    """Chunked batch variant of align_instance_segmentation_results_to_rle_masks.
+
+    Aligns and RLE-encodes detections ``mask_chunk_size`` at a time: each chunk
+    goes through align_instance_segmentation_results and a single
+    device->host transfer in torch_masks_to_coco_rle_batch. Compared to the
+    per-detection generator this cuts host syncs from ~2*N to ceil(N / chunk),
+    while peak memory stays bounded by ``chunk x H x W`` full-resolution bool
+    masks instead of materializing all ``N x H x W`` at once. Output (boxes and
+    RLE) is identical to the generator.
+
+    NOTE: image_bboxes is modified in-place (same behaviour as the other
+    variants). Pass a .clone() if that's not acceptable.
+    """
+    if image_bboxes.shape[0] == 0:
+        return image_bboxes, []
+    mask_chunk_size = max(1, int(mask_chunk_size))
+    aligned_boxes_chunks, rle_masks = [], []
+    for start in range(0, image_bboxes.shape[0], mask_chunk_size):
+        end = start + mask_chunk_size
+        chunk_boxes, chunk_masks = align_instance_segmentation_results(
+            image_bboxes=image_bboxes[start:end],
+            masks=masks[start:end],
+            padding=padding,
+            scale_width=scale_width,
+            scale_height=scale_height,
+            original_size=original_size,
+            size_after_pre_processing=size_after_pre_processing,
+            inference_size=inference_size,
+            static_crop_offset=static_crop_offset,
+            binarization_threshold=binarization_threshold,
+            mask_chunk_size=mask_chunk_size,
+        )
+        aligned_boxes_chunks.append(chunk_boxes)
+        rle_masks.extend(torch_masks_to_coco_rle_batch(chunk_masks))
+        del chunk_masks
+    return torch.cat(aligned_boxes_chunks, dim=0), rle_masks
 
 
 def align_instance_segmentation_results_to_rle_masks(
