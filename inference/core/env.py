@@ -1612,6 +1612,11 @@ ENABLE_TENSOR_DATA_REPRESENTATION = (
     and USE_INFERENCE_MODELS
 )
 
+# Opt out of CPU decoder fallback for deployments that require GPU media.
+VIDEO_SOURCE_ALLOW_CPU_FALLBACK = str2bool(
+    os.getenv("VIDEO_SOURCE_ALLOW_CPU_FALLBACK", "True")
+)
+
 # ADAPTIVE buffer filling historically decided drops from rate estimates, and
 # every estimate available in VideoSource proved unreliable: the declared source
 # fps is nominal (a round 30.0 that a real stream never quite delivers), reader

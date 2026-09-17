@@ -94,26 +94,20 @@ def test_rate_limiter_when_next_tick_should_be_delayed(time_mock: MagicMock) -> 
     )
 
 
-def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_fast() -> None:
-    # given
-    frames_generator = generate_with_delay(items=10, delay=0.005)
+def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_fast(
+    monkeypatch,
+) -> None:
+    # DROP allows 200 ms of bounded credit, while bounding sustained rate.
+    clock = [0.0]
+    monkeypatch.setattr(utils.time, "monotonic", lambda: clock[0])
 
-    # when
-    results, results_timestamp = [], []
-    for result in limit_frame_rate(
-        frames_generator=frames_generator, max_fps=100, strategy=FPSLimiterStrategy.DROP
-    ):
-        results_timestamp.append(time.monotonic())
-        results.append(result)
+    def arrivals():
+        for index in range(2001):
+            clock[0] = index / 200
+            yield index
 
-    # then
-    timestamp_differences = get_pairs_differences(results_timestamp)
-    assert all(
-        diff >= 0.01 for diff in timestamp_differences
-    ), "Difference between two next frames should be at least 10ms"
-    assert (
-        0 < len(results) <= 5
-    ), "Stream is 200fps, so we should process at most half (5) of the items"
+    results = list(limit_frame_rate(arrivals(), 100, FPSLimiterStrategy.DROP))
+    assert 1000 <= len(results) <= 1020
 
 
 def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_slow() -> None:
@@ -378,13 +372,8 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
         results.append(result)
 
     # then
-    timestamp_differences = get_pairs_differences(results_timestamp)
-    assert all(
-        diff >= 0.02 for diff in timestamp_differences
-    ), "At minimum, 0.02s delay must be enforced by generator, even if stream is faster"
-    assert (
-        0 <= len(results) <= 5
-    ), "With default strategy being DROP frames that do not fit FPS limit, having 100FPS stream and 50FPS limit we should process at most 50% of frames"
+    elapsed = results_timestamp[-1] - results_timestamp[0]
+    assert 0 < len(results) <= 10 + 50 * elapsed
     assert (
         dummy_source.start_called is True
     ), "VideoSource must be started once initialised from source reference"
@@ -483,16 +472,17 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_
         results.append(result)
 
     # then
-    timestamp_differences = get_pairs_differences(results_timestamp)
-    assert (
-        sum(timestamp_differences) / len(timestamp_differences) >= 0.005
-    ), "On average, time difference between frames must be at minimum 0.005s to match 200FPS limit"
+    elapsed = results_timestamp[-1] - results_timestamp[0]
+    assert len(results) <= 40 + 200 * elapsed
     assert (
         0 <= len(results) <= 431
     ), "This video has 431 frames and part of them could be dropped, if decoding happens faster than 200FPS"
 
 
 class DummyVideoSource:
+    def record_frame_dropped(self, frame, cause):
+        pass
+
     def __init__(
         self,
         items: int,

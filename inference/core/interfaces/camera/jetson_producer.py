@@ -2,6 +2,7 @@
 
 import ctypes
 import ctypes.util
+import json
 import os
 import subprocess
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
 from urllib.parse import unquote, urlparse
 
+from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     FrameImage,
     SourceProperties,
@@ -46,7 +48,7 @@ _RTSP_PROTOCOLS_ENV_VAR = "ROBOFLOW_RTSP_PROTOCOLS"
 _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265")
+_RTSP_VIDEO_CODECS = ("auto", "h264", "h265")
 
 _COMMON_ELEMENTS = (
     "appsink",
@@ -74,6 +76,23 @@ _SOFTWARE_DECODER_ELEMENTS = (
     "jpegdec",
     "libde265dec",
     "openh264dec",
+)
+_STARTUP_DIAGNOSTIC_COUNTERS = (
+    "frames",
+    "descriptor_maps",
+    "nvmm_frames",
+    "conversion_kernels",
+    "host_pixel_maps",
+    "host_to_device_copies",
+    "device_to_host_copies",
+    "array_flatten_copies",
+    "frames_dropped_by_consumer",
+    "unique_buffer_fds",
+    "egl_cache_hits",
+    "egl_cache_misses",
+    "last_nvbuf_memory_type",
+    "last_egl_frame_type",
+    "last_egl_color_format",
 )
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
@@ -171,11 +190,11 @@ def required_gstreamer_elements(
             ]
         )
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! nvv4l2decoder chain
-        # (no uridecodebin autoplugging), so only those elements are required.
+        # Auto mode chooses the depayloader/parser from each RTP source's caps;
+        # explicit codec overrides retain the direct NVIDIA decoder chain.
         return tuple(
             elements
-            + ["h264parse", "h265parse", "nvv4l2decoder"]
+            + ["decodebin", "h264parse", "h265parse", "nvv4l2decoder"]
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
@@ -270,14 +289,28 @@ def build_gstreamer_pipeline(
         #   drains it on the streaming thread), so a small non-dropping queue
         #   is enough.
         codec = _rtsp_video_codec()
+        if codec == "auto":
+            # Each RTSP subscription negotiates its own encoding-name (H264 or
+            # H265). Keep the video-only RTP filter so audio cannot autoplug,
+            # and require NVMM output so no host-pixel conversion is added.
+            # Leave format negotiation to NVIDIA; the bridge supports NV12/RGBA.
+            # The constructor boosts NVIDIA decoder ranks; first-frame hardware
+            # validation still rejects software-only decoding. Unlike a global
+            # forced codec, this supports mixed H264/H265 sources in one process.
+            decode_chain = 'decodebin caps="video/x-raw(memory:NVMM)" ! '
+        else:
+            # Retain the explicit deployment override and legacy decoder tuning.
+            decode_chain = (
+                f"rtp{codec}depay ! {codec}parse ! "
+                f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "
+                "video/x-raw(memory:NVMM),format=NV12 ! "
+            )
         return (
             f'rtspsrc location="{_quote_gstreamer_value(str(video))}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
             "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
-            f"nvv4l2decoder {_nvv4l2decoder_max_performance_fragment()}! "
-            "video/x-raw(memory:NVMM),format=NV12 ! "
+            f"{decode_chain}"
             "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false "
             "wait-on-eos=false"
         )
@@ -426,7 +459,12 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def discover_source_properties(self) -> SourceProperties:
         if self._cached_source_properties is not None:
             return self._cached_source_properties
-        if not self.grab():
+        try:
+            has_frame = self.grab()
+        except TimeoutError as error:
+            self._log_first_frame_timeout(error)
+            raise
+        if not has_frame:
             raise RuntimeError("Jetson pipeline did not produce source metadata")
         self._prerolled_frame_pending = True
         frame_info = self._native_pipeline.frame_info()
@@ -460,6 +498,48 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         )
         self._cached_source_properties = properties
         return properties
+
+    def _log_first_frame_timeout(self, error: TimeoutError) -> None:
+        # Capture before VideoSource releases the native producer. Never include
+        # source URIs, pipeline descriptions, exception messages, or pixels.
+        if getattr(self, "_startup_timeout_reported", False) or not any(
+            os.getenv(flag, "false").lower() == "true"
+            for flag in (
+                "ENABLE_RUNTIME_DIAGNOSTICS",
+                "INFERENCE_MODELS_RUNTIME_DIAGNOSTICS",
+            )
+        ):
+            return
+        self._startup_timeout_reported = True
+        snapshot = {"exception_type": type(error).__name__}
+        try:
+            counters = self._native_pipeline.stats()
+            snapshot["counters"] = {
+                key: counters[key]
+                for key in _STARTUP_DIAGNOSTIC_COUNTERS
+                if isinstance(counters.get(key), int)
+                and not isinstance(counters[key], bool)
+                and 0 <= counters[key] <= (1 << 64) - 1
+            }
+        except Exception as diagnostic_error:
+            snapshot["counters_error_type"] = type(diagnostic_error).__name__
+        try:
+            snapshot["decoder_factories"] = [
+                factory
+                for factory in ("nvv4l2decoder", "nvjpegdec")
+                + _SOFTWARE_DECODER_ELEMENTS
+                if self._native_pipeline.has_factory(factory)
+            ]
+        except Exception as diagnostic_error:
+            snapshot["factories_error_type"] = type(diagnostic_error).__name__
+        try:
+            logger.warning(
+                "Jetson first-frame timeout diagnostics: "
+                + json.dumps(snapshot, sort_keys=True)
+            )
+        except Exception:
+            # Optional observability must not replace the original timeout.
+            pass
 
     def interrupt(self) -> None:
         if self._closed or self._eos:

@@ -42,6 +42,8 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME,
+    RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME,
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_BASE,
@@ -700,3 +702,34 @@ def test_immutable_mapping_detaches_from_source() -> None:
     source["batch"] = 2
 
     assert immutable["batch"] == 1
+
+
+@pytest.mark.parametrize(
+    "compatibility,runtime",
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_execution_plan_environment_fallback_policy(
+    monkeypatch, compatibility, runtime
+):
+    monkeypatch.setenv(RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME, str(compatibility))
+    monkeypatch.setenv(RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME, str(runtime))
+    plan = RFDetrExecutionPlan.resolve()
+    assert plan.allow_compatibility_fallback is compatibility
+    assert plan.allow_runtime_failure_fallback is runtime
+
+
+def test_explicit_execution_plan_takes_precedence_over_environment(monkeypatch):
+    monkeypatch.setenv(RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME, "false")
+    monkeypatch.setenv(RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME, "false")
+    explicit = RFDetrExecutionPlan(
+        allow_compatibility_fallback=True, allow_runtime_failure_fallback=True
+    )
+    assert RFDetrExecutionPlan.resolve(execution_plan=explicit) is explicit
+
+
+def test_execution_plan_environment_fallback_defaults(monkeypatch):
+    monkeypatch.delenv(RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME, raising=False)
+    monkeypatch.delenv(RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME, raising=False)
+    plan = RFDetrExecutionPlan.resolve()
+    assert plan.allow_compatibility_fallback is True
+    assert plan.allow_runtime_failure_fallback is True

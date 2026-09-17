@@ -252,6 +252,8 @@ def _build_model(
     registry.register(base_stage)
     registry.register(selected_stage)
     model = model_class.__new__(model_class)
+    # This fixture bypasses __init__; mirror its default-disabled timing state.
+    model._runtime_timing = None
     model._implementation_registry = registry
     model._rfdetr_execution_plan = SimpleNamespace(
         allow_compatibility_fallback=allow_compatibility_fallback,
@@ -558,3 +560,58 @@ def test_postprocess_nonrecoverable_failure_records_attempted_selection(
     assert selection["fallback_reason"] is None
     assert candidate.calls == 1
     assert base.calls == 0
+
+
+def test_diagnostics_copies_only_thread_local_execution(
+    rfdetr_trt_model_class, monkeypatch
+):
+    model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
+    model._thread_local_storage = threading.local()
+    model._runtime_timing = None
+    model._runtime_diagnostics_enabled = True
+    model._thread_local_storage.last_preprocessor_selection = {
+        "effective_id": "triton-universal-v1",
+        "fallback_reason": None,
+    }
+    tensor = torch.zeros((1, 3, 2, 2))
+    model.pre_process = lambda **kwargs: (tensor, [])
+    model.forward = lambda *args, **kwargs: (tensor, tensor)
+    model.post_process = lambda *args, **kwargs: []
+
+    def reject_full_metadata(self):
+        raise AssertionError("Per-call diagnostics must not build full metadata")
+
+    monkeypatch.setattr(
+        rfdetr_trt_model_class,
+        "optimization_runtime_metadata",
+        property(reject_full_metadata),
+    )
+    model.infer(tensor)
+    snapshot = model.last_inference_diagnostics["execution"]
+    model._thread_local_storage.last_preprocessor_selection["effective_id"] = "changed"
+    assert snapshot["preprocessor"]["effective_id"] == "triton-universal-v1"
+
+
+def test_last_execution_metadata_is_caller_thread_local(rfdetr_trt_model_class):
+    model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
+    model._thread_local_storage = threading.local()
+    barrier = threading.Barrier(2)
+    outputs = {}
+
+    def worker(name):
+        model._thread_local_storage.last_preprocessor_selection = {"effective_id": name}
+        barrier.wait(timeout=5)
+        outputs[name] = model._last_execution_metadata()
+
+    threads = [
+        threading.Thread(target=worker, args=(name,)) for name in ("first", "second")
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert outputs == {
+        name: {"preprocessor": {"effective_id": name}} for name in ("first", "second")
+    }
+    assert model._last_execution_metadata() == {}

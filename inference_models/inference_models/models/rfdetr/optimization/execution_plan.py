@@ -9,9 +9,12 @@ from typing import Optional
 from inference_models.models.optimization.execution_plan import InferenceExecutionPlan
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME,
+    RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME,
     RFDETR_POSTPROCESSOR_ENV_NAME,
     RFDETR_PREPROCESSOR_ENV_NAME,
 )
+from inference_models.utils.environment import get_boolean_from_env
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
 
         Args:
             execution_plan: Explicit composed plan. When omitted, stage IDs are read
-                from the RF-DETR environment variables.
+                from the RF-DETR environment variables, including fallback policy.
 
         Returns:
             Immutable requested execution plan.
@@ -44,6 +47,13 @@ class RFDetrExecutionPlan(InferenceExecutionPlan):
                 preprocessor_id=os.getenv(
                     RFDETR_PREPROCESSOR_ENV_NAME,
                     AUTO_IMPLEMENTATION_ID,
+                ),
+                allow_compatibility_fallback=get_boolean_from_env(
+                    RFDETR_ALLOW_COMPATIBILITY_FALLBACK_ENV_NAME, default=True
+                ),
+                allow_runtime_failure_fallback=get_boolean_from_env(
+                    RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK_ENV_NAME,
+                    default=True,
                 ),
                 postprocessor_id=os.getenv(
                     RFDETR_POSTPROCESSOR_ENV_NAME,

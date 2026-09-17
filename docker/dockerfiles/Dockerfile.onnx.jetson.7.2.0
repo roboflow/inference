@@ -422,6 +422,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
         "setuptools>=83.0.0" && \
+    python -m pip wheel --no-deps --wheel-dir /opt/wheels ./inference_models && \
     cp dist/*.whl /opt/wheels/ && \
     find /usr/local/lib/python3.12/dist-packages -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
@@ -515,6 +516,13 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /opt/wheels/inference_gpu-*.whl && \
+    # Ship inference-models from this checkout, including unreleased Jetson
+    # fixes. The requirements resolver may select an equally-versioned index
+    # wheel, so replace it explicitly after all dependency resolution.
+    rm -rf /opt/python-runtime/inference_models /opt/python-runtime/inference_models-*.dist-info && \
+    python3 -m pip install --no-deps --target /opt/python-runtime \
+        /opt/wheels/inference_models-*.whl && \
+    python3 -c 'from pathlib import Path; source = Path("/build/inference/inference_models/inference_models"); installed = Path("/opt/python-runtime/inference_models"); files = list(source.rglob("*.py")); assert files; mismatches = [str(p.relative_to(source)) for p in files if not (installed / p.relative_to(source)).is_file() or p.read_bytes() != (installed / p.relative_to(source)).read_bytes()]; assert not mismatches, f"Packaged inference-models differs from checkout: {mismatches}"' && \
     # OpenCV comes from the validated media runtime. Remove Python wheel copies
     # so every process resolves the same CUDA-enabled implementation.
     find /opt/python-runtime -type d \
