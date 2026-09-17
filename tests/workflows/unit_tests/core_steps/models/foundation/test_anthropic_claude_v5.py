@@ -72,7 +72,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
 ) -> dict:
-    block = AnthropicClaudeBlockV5(model_manager=None, api_key="rf-key")
+    block = AnthropicClaudeBlockV5(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
         mock_execute.return_value = [(raw_output, 11, 3)]
         results = block.run(
@@ -407,7 +407,7 @@ def _direct_request(model_version: str, **overrides: Any) -> dict:
     kwargs.update(overrides)
     with patch(ANTHROPIC_CLIENT_SEAM) as mock_anthropic_class:
         mock_client = _mock_streaming_client(mock_anthropic_class)
-        execute_claude_request(**kwargs)
+        execute_claude_request(platform_client=MagicMock(), **kwargs)
         return mock_client.messages.stream.call_args.kwargs
 
 

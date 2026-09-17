@@ -5,8 +5,42 @@ import requests
 from packaging import version as packaging_version
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
+
+# Hand the Workflows module its configuration before anything can READ it.
+# The invariant: `install_workflows_configuration()` runs before any import
+# of `inference.core.workflows.environment` (the constants facade) or any
+# other configuration-consuming workflows module, so `core_steps/loader.py`'s
+# import-time tensor branches and every facade constant see the server's
+# values. A few configuration-independent workflows modules are already on
+# the bootstrap path above this point (`inference.core.env` ->
+# `utils/environment.py` -> `core/exceptions.py` ->
+# `workflows/prototypes/platform_errors.py`, and the builder's own import of
+# `workflows/configuration.py`); they must stay configuration-independent -
+# none of them may import the facade. `inference.core.interfaces
+# .workflows_configuration` imports only `inference.core.env` (already fully
+# imported above) and `inference.core.workflows.configuration`, so this adds
+# no import weight.
+from inference.core.interfaces.workflows_configuration import (
+    install_workflows_configuration,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__
+from inference.core.workflows.prototypes.image_codec import (
+    set_default_image_codec_factory,
+)
+
+
+def _resolve_workflows_image_codec():
+    from inference.core.interfaces.workflows_image_codec import resolve_image_codec
+
+    return resolve_image_codec()
+
+
+install_workflows_configuration()
+# Direct WorkflowImageData callers need the same guarded loader as the server.
+# Resolve it on first use so startup does not import the server image utilities
+# and callers can still bind an explicit codec before loading an image.
+set_default_image_codec_factory(_resolve_workflows_image_codec)
 
 latest_release = None
 last_checked = 0

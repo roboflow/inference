@@ -14,6 +14,17 @@ from inference.core.workflows.core_steps.models.foundation.spacexai.v1 import (
     prepare_object_detection_prompt,
 )
 from inference.core.workflows.prototypes.block import third_party_model
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
+
 
 PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
 JPEG_MAGIC_BYTES = b"\xff\xd8\xff"
@@ -187,6 +198,7 @@ def test_execute_spacexai_request_routes_direct_key(
     direct_mock.return_value = "direct"
     result = execute_spacexai_request(
         roboflow_api_key="rf_abc",
+        platform_client=platform_client,
         xai_api_key="xai-secret",
         instructions=None,
         input_content=[{"role": "user", "content": []}],

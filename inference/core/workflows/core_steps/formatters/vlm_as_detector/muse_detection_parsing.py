@@ -1,3 +1,4 @@
+import logging
 import math
 from typing import List, Optional, Union
 from uuid import uuid4
@@ -6,7 +7,6 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
     empty_detections_with_image_metadata,
@@ -24,6 +24,8 @@ from inference.core.workflows.execution_engine.constants import (
     PREDICTION_TYPE_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logger = logging.getLogger(__name__)
 
 MUSE_BOX_COORDINATE_SCALE = 1000.0
 _BOX_FIELDS = ("x_min", "y_min", "x_max", "y_max")

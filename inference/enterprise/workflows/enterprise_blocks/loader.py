@@ -33,6 +33,15 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.postgresql.v1 import
     PostgreSQLSinkBlockV1,
 )
 
+# Plugin interface (see blocks_loader._load_blocks_from_plugin). Enterprise
+# blocks keep the core block source so the `workflows_core.*` init parameters
+# the server supplies - `disable_sinks` in particular - still resolve for them.
+BLOCKS_SOURCE = "workflows_core"
+
+
+def load_blocks() -> List[Type[WorkflowBlock]]:
+    return load_enterprise_blocks()
+
 
 def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
     return [

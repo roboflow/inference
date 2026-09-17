@@ -2,21 +2,15 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import post_process_ocr_result
+from inference.core.workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    post_process_ocr_result,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -38,6 +32,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     roboflow_platform_model,
+)
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
 )
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
@@ -150,9 +148,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             roboflow_platform_model(
                 model_id=f"pp_ocr/{self.text_detection}-{self.text_recognition}",
-                model_registration_kwargs={
-                    "endpoint_type": ModelEndpointType.CORE_MODEL
-                },
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
 
@@ -160,7 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
 class PPOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -207,21 +203,14 @@ class PPOCRBlockV1(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         for single_image in images:
-            inference_request = PPOCRInferenceRequest(
-                text_detection=text_detection,
-                text_recognition=text_recognition,
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
+            predictions.append(
+                self._model_manager.run_pp_ocr(
+                    image=single_image.to_inference_format(numpy_preferred=True),
+                    api_key=self._api_key,
+                    text_detection=text_detection,
+                    text_recognition=text_recognition,
+                )
             )
-            model_id = load_core_model(
-                model_manager=self._model_manager,
-                inference_request=inference_request,
-                core_model="pp_ocr",
-            )
-            result = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
-            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
         return post_process_ocr_result(
             predictions=predictions,
             images=images,

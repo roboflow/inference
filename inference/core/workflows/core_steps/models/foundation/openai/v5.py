@@ -9,16 +9,15 @@ import requests
 from openai import OpenAI
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import post_to_roboflow_api
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import (
     DETECTION_MAX_EDGE_PIXELS,
     run_in_parallel,
     scale_dimensions_to_max_edge,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -43,6 +42,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
     third_party_model,
 )
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 # Detection prompt styles (selected per model based on a 17-model x 10-format
 # x 100-image benchmark; see the object-detection prompt builders below):
@@ -526,15 +530,15 @@ class OpenAIBlockV5(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -562,6 +566,7 @@ class OpenAIBlockV5(WorkflowBlock):
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
             roboflow_api_key=self._api_key,
+            platform_client=self._platform_client,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -582,6 +587,7 @@ class OpenAIBlockV5(WorkflowBlock):
 
 def run_openai_prompting(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -645,6 +651,7 @@ def run_openai_prompting(
         openai_prompts.append(generated_prompt)
     return execute_openai_requests(
         roboflow_api_key=roboflow_api_key,
+        platform_client=platform_client,
         openai_api_key=openai_api_key,
         openai_prompts=openai_prompts,
         model_version=model_version,
@@ -708,6 +715,7 @@ def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
 
 def execute_openai_requests(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     openai_prompts: List[dict],
     model_version: str,
@@ -737,6 +745,7 @@ def execute_openai_requests(
         partial(
             execute_openai_request,
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             openai_api_key=openai_api_key,
             instructions=prompt.get("instructions"),
             input_content=prompt["input"],
@@ -760,6 +769,7 @@ def execute_openai_requests(
 
 def _execute_proxied_openai_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     instructions: Optional[str],
     input_content: List[dict],
@@ -803,7 +813,7 @@ def _execute_proxied_openai_request(
 
     try:
         # Use the Roboflow API post function (this ensures proper auth headers used based on invocation context)
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,
@@ -940,6 +950,7 @@ def _execute_direct_openai_request(
 
 def execute_openai_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     openai_api_key: str,
     instructions: Optional[str],
     input_content: List[dict],
@@ -977,6 +988,7 @@ def execute_openai_request(
 
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             openai_api_key=openai_api_key,
             instructions=instructions,
             input_content=input_content,

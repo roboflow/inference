@@ -6,14 +6,14 @@ from weakref import finalize
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
-from inference.core.entities.requests.inference import (
-    InstanceSegmentationInferenceRequest,
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
+    filter_out_unwanted_classes_from_sv_detections_batch,
 )
-from inference.core.entities.responses.inference import (
-    InstanceSegmentationInferenceResponseDC,
-    _is_response_dc_to_dict,
-)
-from inference.core.env import (
+from inference.core.workflows.environment import (
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
@@ -21,14 +21,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -60,6 +52,7 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_models.configuration import get_rfdetr_pipeline_depth
 from inference_models.models.base.async_handoff import (
     get_async_response_context_id,
@@ -265,7 +258,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -374,12 +367,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         )
         if self.stream_pipeline_depth() > 0 and len(images) == 1:
             self._pending_stream_prediction_contexts.append(stream_context)
-        request = InstanceSegmentationInferenceRequest(
-            api_key=self._api_key,
+        results = self._model_manager.run_instance_segmentation(
             model_id=model_id,
-            image=inference_images,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
+            images=inference_images,
+            api_key=self._api_key,
             class_agnostic_nms=class_agnostic_nms,
             class_filter=class_filter,
             confidence=confidence,
@@ -388,15 +379,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
-            source="workflow-execution",
-            stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
+            stream_pipeline_context_id=stream_context.context_id,
+            # The rfdetr stream path hands back a `Future` on the response
+            # object; `_extract_async_response_future` needs the object, not
+            # its dict form.
+            return_raw_responses=True,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
-        )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
+        predictions = results.raw_responses
         async_response_future = self._extract_async_response_future(
             predictions=predictions
         )
@@ -502,13 +494,13 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         stream_context: _StreamPredictionContext,
     ) -> BlockResult:
         # The adapter returns dataclass responses when source="workflow-execution"
-        # (cheaper construct + dict-walk than pydantic). Any other response type
-        # (e.g. if a non-rfdetr backend is bound to the same block) falls back
-        # to `model_dump`.
+        # (cheaper construct + dict-walk than pydantic); those expose `to_dict()`.
+        # Any other response type (e.g. if a non-rfdetr backend is bound to the
+        # same block) falls back to `model_dump`.
         predictions = [
             (
-                _is_response_dc_to_dict(e)
-                if isinstance(e, InstanceSegmentationInferenceResponseDC)
+                e.to_dict()
+                if callable(getattr(e, "to_dict", None))
                 else e.model_dump(by_alias=True, exclude_none=True)
             )
             for e in predictions
@@ -568,11 +560,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             or self._last_model_id not in self._model_manager
         ):
             return False
-        model = self._model_manager[self._last_model_id]
-        return (
-            callable(getattr(model, "flush", None))
-            and getattr(model, "_pipeline_depth", 1) > 1
-        )
+        return self._model_manager.model_supports_stream_pipeline(self._last_model_id)
 
     def can_activate_stream_pipeline(self) -> bool:
         return (
@@ -583,8 +571,8 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
     def stream_pipeline_depth(self) -> int:
         if not self.is_stream_pipelined():
             return 0
-        model = self._model_manager[self._last_model_id]
-        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
+        depth = self._model_manager.get_model_pipeline_depth(self._last_model_id)
+        return max(0, int(depth) - 1)
 
     def flush_stream_pipeline_outputs(
         self,
@@ -595,12 +583,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         ):
             self._pending_stream_prediction_contexts.clear()
             return []
-        model = self._model_manager[self._last_model_id]
-        flush_fn = getattr(model, "flush", None)
-        if not callable(flush_fn):
+        predictions = self._model_manager.flush_model_stream_pipeline(
+            self._last_model_id
+        )
+        if predictions is None:
             self._pending_stream_prediction_contexts.clear()
             return []
-        predictions = flush_fn()
         if not isinstance(predictions, list):
             predictions = [predictions]
 
@@ -646,10 +634,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             or self._last_model_id not in self._model_manager
         ):
             return None
-        model = self._model_manager[self._last_model_id]
-        shutdown_fn = getattr(model, "shutdown_pipeline", None)
-        if callable(shutdown_fn):
-            shutdown_fn()
+        self._model_manager.shutdown_model_stream_pipeline(self._last_model_id)
 
     def _build_stream_context_id(self, images: Batch[WorkflowImageData]) -> str:
         self._stream_context_generation += 1

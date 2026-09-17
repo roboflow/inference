@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -6,7 +7,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -31,6 +31,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 _EMPTY_I64 = np.zeros(0, dtype=np.int64)
 
