@@ -32,6 +32,7 @@ from inference.core.interfaces.http.orjson_utils import (
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink, multi_sink
+from inference.core.interfaces.stream.utils import materialise_video_frame_for_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
@@ -201,6 +202,7 @@ class InferencePipelineManager(Process):
                 source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
                 video_source_properties=parsed_payload.video_configuration.video_source_properties,
                 workflows_thread_pool_workers=parsed_payload.processing_configuration.workflows_thread_pool_workers,
+                execution_engine_thread_pool_workers=parsed_payload.processing_configuration.execution_engine_thread_pool_workers,
                 cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
@@ -413,7 +415,12 @@ class InferencePipelineManager(Process):
                             "Please try to adjust the scene so models detect objects"
                         )
                         errors.append("or stop preview, update workflow and try again.")
-                        frame = video_frame.image.copy()
+                        # The WebRTC preview needs CPU pixels; the pipeline
+                        # hands tensor frames through unmaterialised, so
+                        # convert at this consumer boundary.
+                        frame = materialise_video_frame_for_sink(
+                            video_frame
+                        ).image.copy()
 
                     for row, error in enumerate(errors):
                         frame = cv.putText(
@@ -451,6 +458,7 @@ class InferencePipelineManager(Process):
                 source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
                 video_source_properties=parsed_payload.video_configuration.video_source_properties,
                 workflows_thread_pool_workers=parsed_payload.processing_configuration.workflows_thread_pool_workers,
+                execution_engine_thread_pool_workers=parsed_payload.processing_configuration.execution_engine_thread_pool_workers,
                 cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,

@@ -30,6 +30,7 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
     data_contains_sv_detections,
     place_data_in_array,
     serialize_data_piece,
+    serialize_single_workflow_result_field,
 )
 from inference.core.workflows.execution_engine.v1.executor.utils import contains_future
 
@@ -959,6 +960,62 @@ def test_serialize_data_piece_for_specific_output_when_serializers_found_and_suc
             STRING_KIND.name: _valid_serializer,
             INTEGER_KIND.name: _valid_serializer,
         },
+    )
+
+    # then
+    assert result == ("serialized", "data")
+
+
+def test_serialize_single_workflow_result_field_when_kind_given_as_string_and_serializer_found() -> (
+    None
+):
+    # given
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_single_workflow_result_field(
+        output_name="my_output",
+        value="data",
+        kind=[STRING_KIND.name],
+        kinds_serializers={STRING_KIND.name: _valid_serializer},
+    )
+
+    # then
+    assert result == (
+        "serialized",
+        "data",
+    ), "Expected serializer to be looked up by the string kind name"
+
+
+def test_serialize_single_workflow_result_field_when_kind_given_as_string_and_serializer_not_found() -> (
+    None
+):
+    # when
+    result = serialize_single_workflow_result_field(
+        output_name="my_output",
+        value="data",
+        kind=[STRING_KIND.name],
+        kinds_serializers={},
+    )
+
+    # then
+    assert result == "data", "Expected raw value to be passed through"
+
+
+def test_serialize_single_workflow_result_field_when_kinds_mix_objects_and_strings() -> (
+    None
+):
+    # given
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_single_workflow_result_field(
+        output_name="my_output",
+        value="data",
+        kind=[INTEGER_KIND, STRING_KIND.name],
+        kinds_serializers={STRING_KIND.name: _valid_serializer},
     )
 
     # then

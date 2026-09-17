@@ -163,6 +163,7 @@ def test_segment_image_with_cached_image_id_skips_preprocessing(
     # given
     adapter = _build_adapter(adapter_module, _single_prediction())
     adapter.preproc_image = MagicMock()
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome = MagicMock()
 
     # when
     adapter.segment_image(image=object(), image_id="abc")
@@ -173,6 +174,9 @@ def test_segment_image_with_cached_image_id_skips_preprocessing(
     call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
     assert call_kwargs["images"] is None
     assert call_kwargs["image_hashes"] == "abc"
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome.assert_called_once_with(
+        "hit"
+    )
 
 
 def test_segment_image_falls_back_to_preprocessing_on_cache_miss(
@@ -186,6 +190,7 @@ def test_segment_image_falls_back_to_preprocessing_on_cache_miss(
     ]
     loaded_image = object()
     adapter.preproc_image = MagicMock(return_value=loaded_image)
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome = MagicMock()
 
     # when
     adapter.segment_image(image=object(), image_id="abc")
@@ -196,6 +201,31 @@ def test_segment_image_falls_back_to_preprocessing_on_cache_miss(
     call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
     assert call_kwargs["images"] is loaded_image
     assert call_kwargs["image_hashes"] == "abc"
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome.assert_called_once_with(
+        "miss"
+    )
+
+
+def test_segment_image_without_image_id_records_cache_not_attempted(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    adapter = _build_adapter(adapter_module, _single_prediction())
+    loaded_image = object()
+    adapter.preproc_image = MagicMock(return_value=loaded_image)
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome = MagicMock()
+
+    # when
+    adapter.segment_image(image=object())
+
+    # then
+    adapter.preproc_image.assert_called_once()
+    call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
+    assert call_kwargs["images"] is loaded_image
+    assert call_kwargs["image_hashes"] is None
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome.assert_called_once_with(
+        "not_attempted"
+    )
 
 
 def test_segment_image_propagates_non_cache_miss_input_error(
@@ -207,11 +237,13 @@ def test_segment_image_propagates_non_cache_miss_input_error(
         adapter_module.ModelInputError(message="invalid point shape")
     )
     adapter.preproc_image = MagicMock()
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome = MagicMock()
 
     # when / then
     with pytest.raises(adapter_module.ModelInputError):
         adapter.segment_image(image=object(), image_id="abc")
     adapter.preproc_image.assert_not_called()
+    adapter_module.record_sam3_visual_segment_embedding_cache_outcome.assert_not_called()
 
 
 @pytest.mark.parametrize("send_to_cpu", [True, False])

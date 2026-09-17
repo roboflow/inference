@@ -1,7 +1,7 @@
 import base64
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
@@ -30,12 +30,13 @@ from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.sam.cache import (
     SamImageEmbeddingsInMemoryCache,
     SamLowResolutionMasksInMemoryCache,
 )
-from inference_models.models.sam.entities import SAMImageEmbeddings
+from inference_models.models.sam.entities import SAMImageEmbeddings, SAMPrediction
 from inference_models.models.sam.sam_torch import SAMTorch, compute_image_hash
 
 MASK_THRESHOLD = 0.0
@@ -85,10 +86,24 @@ class InferenceModelsSAMAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        # Usage telemetry reads the fixed canvas from `image_size`; SAMTorch
+        # only keeps it on the wrapped encoder. Never let a telemetry lookup
+        # fail model construction.
+        encoder = getattr(getattr(self._model, "_model", None), "image_encoder", None)
+        self.image_size = getattr(encoder, "img_size", None)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs
 
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAMImageEmbeddings, SAMPrediction]]:
+        kwargs = self.map_inference_kwargs(kwargs)
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_images(**kwargs)
+
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):

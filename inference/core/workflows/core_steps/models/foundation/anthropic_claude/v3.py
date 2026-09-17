@@ -8,13 +8,15 @@ import requests
 from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import post_to_roboflow_api
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
+    build_thinking_config,
+    resolve_temperature,
+)
+from inference.core.workflows.environment import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -35,8 +37,20 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
+)
+from inference.core.workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
+)
+from inference.core.workflows.utils.images import (
+    downscale_image_keeping_aspect_ratio,
+    encode_image_to_jpeg_bytes,
+    load_image,
 )
 
 CLAUDE_MODELS = [
@@ -265,13 +279,15 @@ class BlockManifest(WorkflowBlockManifest):
     extended_thinking: Optional[bool] = Field(
         default=None,
         description="Enable extended thinking for deeper reasoning on complex tasks. "
-        "Note: temperature cannot be used when extended thinking is enabled.",
+        "Note: temperature cannot be used when extended thinking is enabled. Models that "
+        "only support adaptive thinking (Claude Opus 4.7 and newer) ignore `thinking_budget_tokens`.",
     )
     thinking_budget_tokens: Optional[int] = Field(
         default=None,
         description="Maximum number of tokens for internal thinking when extended thinking is enabled. "
         "Higher values allow deeper reasoning but increase latency and cost. "
-        "Must be less than max_tokens. Minimum: 1024.",
+        "Must be less than max_tokens. Minimum: 1024. Ignored by models that only support "
+        "adaptive thinking (Claude Opus 4.7 and newer).",
         ge=1024,
         json_schema_extra={
             "relevant_for": {
@@ -289,7 +305,8 @@ class BlockManifest(WorkflowBlockManifest):
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-1.0, the higher - the more "
-        'random / "creative" the generations are. Cannot be used when extended_thinking is enabled.',
+        'random / "creative" the generations are. Cannot be used when extended_thinking is enabled. '
+        "Ignored by models that no longer accept sampling parameters (Claude Opus 4.7 and newer).",
         ge=0.0,
         le=1.0,
     )
@@ -355,20 +372,42 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.model_version):
+            # Selector returned verbatim; the attached resolver performs the
+            # EXACT_MODEL_VERSIONS lookup once the input value is substituted.
+            return [
+                third_party_model(
+                    provider="anthropic",
+                    model_id=self.model_version,
+                    model_id_resolver=lambda label: EXACT_MODEL_VERSIONS.get(
+                        label, label
+                    ),
+                )
+            ]
+        return [
+            third_party_model(
+                provider="anthropic",
+                model_id=EXACT_MODEL_VERSIONS.get(
+                    self.model_version, self.model_version
+                ),
+            )
+        ]
+
 
 class AnthropicClaudeBlockV3(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
+        self._platform_client = platform_client
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["api_key", "platform_client"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -397,6 +436,7 @@ class AnthropicClaudeBlockV3(WorkflowBlock):
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_claude_prompting(
             roboflow_api_key=self._api_key,
+            platform_client=self._platform_client,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -418,6 +458,7 @@ class AnthropicClaudeBlockV3(WorkflowBlock):
 
 def run_claude_prompting(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -452,6 +493,7 @@ def run_claude_prompting(
         prompts.append(generated_prompt)
     return execute_claude_requests(
         roboflow_api_key=roboflow_api_key,
+        platform_client=platform_client,
         anthropic_api_key=anthropic_api_key,
         prompts=prompts,
         model_version=model_version,
@@ -465,6 +507,7 @@ def run_claude_prompting(
 
 def execute_claude_requests(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     prompts: List[Tuple[Optional[str], List[dict]]],
     model_version: str,
@@ -478,6 +521,7 @@ def execute_claude_requests(
         partial(
             execute_claude_request,
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             anthropic_api_key=anthropic_api_key,
             system_prompt=prompt[0],
             messages=prompt[1],
@@ -501,6 +545,7 @@ def execute_claude_requests(
 
 def execute_claude_request(
     roboflow_api_key: Optional[str],
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     system_prompt: Optional[str],
     messages: List[dict],
@@ -514,6 +559,7 @@ def execute_claude_request(
     if anthropic_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_claude_request(
             roboflow_api_key=roboflow_api_key,
+            platform_client=platform_client,
             anthropic_api_key=anthropic_api_key,
             system_prompt=system_prompt,
             messages=messages,
@@ -538,6 +584,7 @@ def execute_claude_request(
 
 def _execute_proxied_claude_request(
     roboflow_api_key: str,
+    platform_client: RoboflowPlatformClient,
     anthropic_api_key: str,
     system_prompt: Optional[str],
     messages: List[dict],
@@ -561,24 +608,27 @@ def _execute_proxied_claude_request(
     if system_prompt is not None:
         payload["system"] = system_prompt
 
-    if temperature is not None and not extended_thinking:
+    temperature = resolve_temperature(
+        temperature,
+        model_version=model_version,
+        extended_thinking=extended_thinking,
+    )
+    if temperature is not None:
         payload["temperature"] = temperature
 
-    if extended_thinking:
-        effective_budget = (
-            thinking_budget_tokens
-            if thinking_budget_tokens is not None
-            else model_max_output // 2
-        )
-        payload["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": effective_budget,
-        }
+    thinking = build_thinking_config(
+        extended_thinking=extended_thinking,
+        thinking_budget_tokens=thinking_budget_tokens,
+        model_version=model_version,
+        model_max_output=model_max_output,
+    )
+    if thinking is not None:
+        payload["thinking"] = thinking
 
     endpoint = "apiproxy/anthropic"
 
     try:
-        response_data = post_to_roboflow_api(
+        response_data = platform_client.post(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,
@@ -608,7 +658,12 @@ def _execute_direct_claude_request(
     if system_prompt is None:
         system_prompt = NOT_GIVEN
 
-    if temperature is None or extended_thinking:
+    temperature = resolve_temperature(
+        temperature,
+        model_version=model_version,
+        extended_thinking=extended_thinking,
+    )
+    if temperature is None:
         temperature = NOT_GIVEN
 
     model_max_output = MAX_OUTPUT_TOKENS.get(model_version, DEFAULT_MAX_OUTPUT_TOKENS)
@@ -622,16 +677,14 @@ def _execute_direct_claude_request(
         "temperature": temperature,
     }
 
-    if extended_thinking:
-        effective_budget = (
-            thinking_budget_tokens
-            if thinking_budget_tokens is not None
-            else model_max_output // 2
-        )
-        request_params["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": effective_budget,
-        }
+    thinking = build_thinking_config(
+        extended_thinking=extended_thinking,
+        thinking_budget_tokens=thinking_budget_tokens,
+        model_version=model_version,
+        model_max_output=model_max_output,
+    )
+    if thinking is not None:
+        request_params["thinking"] = thinking
 
     # Stream response to avoid max_tokens limitation
     with client.messages.stream(**request_params) as stream:

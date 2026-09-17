@@ -281,8 +281,14 @@ def test_jetson_images_table_is_sorted_descending() -> None:
     )
 
 
+def test_jetson_images_have_unique_jetpack_prefixes() -> None:
+    prefixes = [entry.jetpack_prefix for entry in _JETSON_IMAGES]
+    assert len(prefixes) == len(set(prefixes))
+
+
 JETSON_511 = "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
 JETSON_620 = "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
+JETSON_720 = "roboflow/roboflow-inference-server-jetson-7.2.0:latest"
 
 
 class TestParseTegraRelease:
@@ -319,6 +325,7 @@ class TestImageForL4t:
             (35, 4, JETSON_511),
             (36, 4, JETSON_620),
             (36, 5, JETSON_620),
+            (39, 2, JETSON_720),
         ],
     )
     def test_l4t_to_image(self, l4t_major: int, l4t_minor: int, expected: str) -> None:
@@ -330,17 +337,21 @@ class TestImageForL4t:
     @pytest.mark.parametrize(
         "l4t_major, l4t_minor",
         [
-            # JetPack 4.x (L4T r32), JetPack 6.0/6.1 (L4T r36.0-r36.3) and
-            # JetPack 7.x (L4T r38) are no longer supported.
+            # JetPack 4.x (L4T r32), JetPack 6.0/6.1 (L4T r36.0-r36.3),
+            # JetPack 7.0/7.1 (L4T r38) and pre-7.2 L4T r39 releases are not
+            # supported.
             (32, 0),
             (32, 7),
             (36, 0),
             (36, 3),
             (38, 0),
+            (38, 2),
             (38, 4),
+            (39, 0),
+            (39, 1),
         ],
     )
-    def test_returns_none_for_dropped_l4t(
+    def test_returns_none_for_unsupported_l4t(
         self, l4t_major: int, l4t_minor: int
     ) -> None:
         assert _image_for_l4t(l4t_major, l4t_minor) is None
@@ -355,13 +366,17 @@ class TestGetJetpackImage:
             ("5.1.1", JETSON_511),
             ("6.2", JETSON_620),
             ("6.2.0", JETSON_620),
+            ("7.2", JETSON_720),
+            ("7.2.0", JETSON_720),
+            ("7.2-b187", JETSON_720),
         ],
     )
     def test_returns_correct_image(self, version: str, expected_image: str) -> None:
         assert _get_jetpack_image(version) == expected_image
 
     @pytest.mark.parametrize(
-        "version", ["3.0", "4.5", "4.6", "6.0", "6.1", "7.1", "7.1.0"]
+        "version",
+        ["3.0", "4.5", "4.6", "6.0", "6.1", "7", "7.1", "7.1.0", "7.1-b123"],
     )
     def test_raises_for_unsupported_version(self, version: str) -> None:
         with pytest.raises(RuntimeError, match="not supported"):
@@ -369,26 +384,50 @@ class TestGetJetpackImage:
 
 
 class TestDetectJetson:
-    def test_detects_from_tegra_release(self) -> None:
-        content = "# R36 (release), REVISION: 4.0, GCID: 12345, BOARD: generic"
+    @pytest.mark.parametrize(
+        "l4t_major, l4t_minor, expected_image",
+        [
+            (36, 4, JETSON_620),
+            (39, 2, JETSON_720),
+        ],
+    )
+    def test_detects_from_tegra_release(
+        self, l4t_major: int, l4t_minor: int, expected_image: str
+    ) -> None:
+        content = (
+            f"# R{l4t_major} (release), REVISION: {l4t_minor}.0, "
+            "GCID: 12345, BOARD: generic"
+        )
         with patch("builtins.open", mock_open(read_data=content)):
             result = _detect_jetson()
         assert result is not None
         image, source = result
-        assert image == JETSON_620
+        assert image == expected_image
         assert "/etc/nv_tegra_release" in source
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
-    @patch.object(
-        container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.2"
+    @pytest.mark.parametrize(
+        "jetpack_version, expected_image",
+        [
+            ("6.2", JETSON_620),
+            ("7.2", JETSON_720),
+        ],
     )
     def test_falls_back_to_dpkg(
-        self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock
+        self,
+        _tegra_mock: MagicMock,
+        jetpack_version: str,
+        expected_image: str,
     ) -> None:
-        result = _detect_jetson()
+        with patch.object(
+            container_adapter,
+            "_get_jetpack_version_from_dpkg",
+            return_value=jetpack_version,
+        ):
+            result = _detect_jetson()
         assert result is not None
         image, source = result
-        assert image == JETSON_620
+        assert image == expected_image
         assert "dpkg" in source
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)

@@ -3,16 +3,23 @@ import os
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import bool_env
 
 doc_api_key = os.environ.get("API_KEY")
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_QWEN25_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
+    bool_env(os.getenv("SKIP_QWEN25_TEST", False))
+    or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Qwen2.5 test",
 )
-def test_qwen25_inference(server_url: str, clean_loaded_models_fixture) -> None:
+def test_qwen25_inference(
+    server_url: str, auth_mode: str, clean_loaded_models_fixture
+) -> None:
     # given
     payload = {
         "api_key": doc_api_key,
@@ -27,7 +34,8 @@ def test_qwen25_inference(server_url: str, clean_loaded_models_fixture) -> None:
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, doc_api_key),
     )
 
     # then
@@ -37,10 +45,13 @@ def test_qwen25_inference(server_url: str, clean_loaded_models_fixture) -> None:
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_QWEN3_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
+    bool_env(os.getenv("SKIP_QWEN3_TEST", False))
+    or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Qwen3 test",
 )
-def test_qwen3_inference(server_url: str, clean_loaded_models_fixture) -> None:
+def test_qwen3_inference(
+    server_url: str, auth_mode: str, clean_loaded_models_fixture
+) -> None:
     # given
     payload = {
         "api_key": doc_api_key,
@@ -55,7 +66,8 @@ def test_qwen3_inference(server_url: str, clean_loaded_models_fixture) -> None:
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, doc_api_key),
     )
 
     # then
@@ -65,10 +77,13 @@ def test_qwen3_inference(server_url: str, clean_loaded_models_fixture) -> None:
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_QWEN25_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
+    bool_env(os.getenv("SKIP_QWEN25_TEST", False))
+    or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Qwen2.5 test",
 )
-def test_qwen25_inference_empty_prompt(server_url: str, clean_loaded_models_fixture) -> None:
+def test_qwen25_inference_empty_prompt(
+    server_url: str, auth_mode: str, clean_loaded_models_fixture
+) -> None:
     # given
     payload = {
         "api_key": doc_api_key,
@@ -82,20 +97,26 @@ def test_qwen25_inference_empty_prompt(server_url: str, clean_loaded_models_fixt
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, doc_api_key),
     )
 
     # then
     response.raise_for_status()
     data = response.json()
-    assert len(data.get("response")) > 0, "Expected a response from Qwen2.5 model with default prompt"
+    assert (
+        len(data.get("response")) > 0
+    ), "Expected a response from Qwen2.5 model with default prompt"
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_QWEN3_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
+    bool_env(os.getenv("SKIP_QWEN3_TEST", False))
+    or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Qwen3 test",
 )
-def test_qwen3_inference_empty_prompt(server_url: str, clean_loaded_models_fixture) -> None:
+def test_qwen3_inference_empty_prompt(
+    server_url: str, auth_mode: str, clean_loaded_models_fixture
+) -> None:
     # given
     payload = {
         "api_key": doc_api_key,
@@ -109,10 +130,13 @@ def test_qwen3_inference_empty_prompt(server_url: str, clean_loaded_models_fixtu
     # when
     response = requests.post(
         f"{server_url}/infer/lmm",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, doc_api_key),
     )
 
     # then
     response.raise_for_status()
     data = response.json()
-    assert len(data.get("response")) > 0, "Expected a response from Qwen3 model with default prompt"
+    assert (
+        len(data.get("response")) > 0
+    ), "Expected a response from Qwen3 model with default prompt"

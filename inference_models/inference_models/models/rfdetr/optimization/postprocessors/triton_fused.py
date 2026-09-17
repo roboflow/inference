@@ -33,10 +33,7 @@ class TritonFusedPostprocessor:
         implementation_id=RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
         stage=OptimizationStage.POSTPROCESS,
         version="1",
-        target=DeviceCompatibility(
-            device_kind="gpu",
-            device_families=("nvidia_jetson", "nvidia_discrete_gpu"),
-        ),
+        target=DeviceCompatibility(device_kind="gpu"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping({"batch": ">=1", "queries": "1..1024"}),
@@ -104,6 +101,26 @@ class TritonFusedPostprocessor:
             num_classes=request.num_classes,
             classes_re_mapping=request.classes_re_mapping,
         )
+
+        return result
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PostprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check whether this implementation remains available after execution.
+
+        Args:
+            request: Typed postprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result carrying any recorded runtime failure reason.
+        """
+        del request, context
+        result = self._runtime.check_runtime_compatibility()
 
         return result
 

@@ -1,3 +1,5 @@
+import logging
+from copy import copy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
@@ -5,7 +7,6 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from inference.core import logger
 from inference.core.workflows.core_steps.common.keypoints import real_keypoints_count
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
@@ -64,10 +65,13 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ActionRecognitionPrediction,
     ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_SECRET_LENGTH_TO_REVEAL_PREFIX = 8
 MIN_POLYGON_POINT_COUNT = 3
@@ -249,10 +253,16 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     }  # TODO: this breaks the contract of
     # standard inference, but to fix that problem, we would need sv.Detections to provide
     # detection-level metadata.
+    if image_dimensions is None:
+        # Zero-row detections carry image dimensions in ``metadata`` (not per-row
+        # ``data``, which the loop above never iterates). Producers that return
+        # empty detections with ``metadata={IMAGE_DIMENSIONS_KEY: [h, w]}`` get
+        # the same ``image.width`` / ``image.height`` as the tensor-native path.
+        image_dimensions = detections.metadata.get(IMAGE_DIMENSIONS_KEY)
     if image_dimensions is not None:
         image_metadata = {
-            "width": image_dimensions[1].item(),
-            "height": image_dimensions[0].item(),
+            "width": int(image_dimensions[1]),
+            "height": int(image_dimensions[0]),
         }
     return {"image": image_metadata, "predictions": serialized_detections}
 
@@ -285,7 +295,12 @@ def mask_to_polygon(mask: np.ndarray) -> Optional[np.ndarray]:
     # our response schema for InstanceSegmentationPrediction
     # (see `inference.core.entities.responses.inference.InstanceSegmentationPrediction`)
     # FROM THE BEGINNING were allowing to serialise single polygon that belongs to mask,
-    # no hierarchy respected and multiple polygons are not taken into account
+    # no hierarchy respected and multiple polygons are not taken into account.
+    #
+    # When multiple contours are present (speckle noise, resize aliasing, holes), pick the
+    # largest by area. Contour order from findContours is not stable across resolutions —
+    # taking contours[0] caused Dataset Upload to persist tiny edge speckles while the
+    # bounding box still reflected the real instance (masks cut away at image edges).
     contours, _ = cv2.findContours(
         mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
@@ -295,12 +310,16 @@ def mask_to_polygon(mask: np.ndarray) -> Optional[np.ndarray]:
     if len(contours) > 1:
         logger.warning(
             f"Detected instance segmentation that has {len(contours)} in the mask, which by convention "
-            "should not happen. We are taking the first polygon to avoid exceptions, but if you see this "
-            "warning - it may indicate that some model producing instance segmentation result works under "
-            "different assumptions that models historically added into inference and that should be a signal "
-            "to figure out more generic representation for instance seg predictions."
+            "should not happen. We are taking the largest polygon by area to avoid exceptions, but if you "
+            "see this warning - it may indicate that some model producing instance segmentation result "
+            "works under different assumptions that models historically added into inference and that "
+            "should be a signal to figure out more generic representation for instance seg predictions."
         )
-    contour = np.squeeze(contours[0], axis=1)
+    contour = max(contours, key=cv2.contourArea)
+    contour = np.squeeze(contour, axis=1)
+    if contour.ndim == 1:
+        # single-point contour squeezes to shape (2,)
+        contour = np.expand_dims(contour, axis=0)
     contour_padding = max(MIN_POLYGON_POINT_COUNT - contour.shape[0], 0)
     if contour_padding > 0:
         padding = np.repeat(
@@ -339,6 +358,12 @@ def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
     return video_metadata.dict()
 
 
+def serialize_action_recognition_prediction_kind(
+    value: List[ActionRecognitionPrediction],
+) -> List[dict]:
+    return [entry.model_dump(by_alias=True) for entry in value]
+
+
 def serialize_wildcard_kind(value: Any) -> Any:
     if isinstance(value, WorkflowImageData):
         value = serialise_image(image=value)
@@ -348,6 +373,10 @@ def serialize_wildcard_kind(value: Any) -> Any:
         value = serialize_list(elements=value)
     elif isinstance(value, sv.Detections):
         value = serialise_sv_detections(detections=value)
+    elif isinstance(value, ActionRecognitionPrediction):
+        # Without this the model reaches clients by field name, so the
+        # timeline arrives as "class_name" where the kind declares "class".
+        value = serialize_action_recognition_prediction_kind(value=[value])[0]
     elif isinstance(value, datetime):
         value = serialize_timestamp(timestamp=value)
     return value
@@ -382,6 +411,31 @@ def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
 
 
+def serialise_sv_detections_for_transport(detections: sv.Detections) -> dict:
+    """Serialise detections for the custom-Python-block remote executor.
+
+    Semantic segmentation blocks emit ``sv.Detections`` with ``mask=None``, the
+    class masks stored as COCO RLE in ``data["rle_mask"]`` and no
+    ``image_dimensions``. The plain serialiser drops the RLE and emits
+    ``image: {width: None, height: None}``, which makes
+    ``sv.Detections.from_inference`` raise on the receiving side. Keep the RLE
+    and fill the image size from it so the payload deserialises everywhere.
+    """
+    if detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS) is not None:
+        serialised = serialise_rle_sv_detections(detections=detections)
+    else:
+        serialised = serialise_sv_detections(detections=detections)
+    image = serialised.get("image") or {}
+    if image.get("width") is None or image.get("height") is None:
+        for prediction in serialised.get("predictions", []):
+            rle = prediction.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+            size = rle.get("size") if isinstance(rle, dict) else None
+            if size is not None and len(size) == 2:
+                serialised["image"] = {"width": int(size[1]), "height": int(size[0])}
+                break
+    return serialised
+
+
 def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
     rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
     if rle_masks is None:
@@ -390,7 +444,13 @@ def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
             "This serializer requires RLE masks to be present."
         )
 
-    result = serialise_sv_detections(detections=detections)
+    # The shared serializer converts dense masks to polygons and drops an
+    # instance when no contour exists. RLE can represent an empty mask, and the
+    # generated polygon would be removed below anyway, so bypass that conversion
+    # with a shallow copy. Only the copy's `mask` attribute is changed.
+    detections_without_dense_masks = copy(detections)
+    detections_without_dense_masks.mask = None
+    result = serialise_sv_detections(detections=detections_without_dense_masks)
 
     for idx, detection_dict in enumerate(result["predictions"]):
         detection_dict.pop(POLYGON_KEY, None)

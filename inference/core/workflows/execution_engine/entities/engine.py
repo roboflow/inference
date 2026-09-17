@@ -21,6 +21,7 @@ class BaseExecutionEngine(ABC):
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
         ] = None,
+        dependencies_pre_init: Optional[List[str]] = None,
     ) -> "BaseExecutionEngine":
         pass
 

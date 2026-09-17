@@ -107,7 +107,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ.setdefault("VERSION_CHECK_MODE", "continuous")
 os.environ.setdefault("PROJECT", "roboflow-platform")
 os.environ.setdefault("NUM_WORKERS", "1")
-os.environ.setdefault("HOST", "0.0.0.0")
+os.environ.setdefault("HOST", "127.0.0.1")
 os.environ.setdefault("PORT", "9001")
 os.environ.setdefault("WORKFLOWS_STEP_EXECUTION_MODE", "local")
 os.environ.setdefault("WORKFLOWS_MAX_CONCURRENT_STEPS", "4")
@@ -157,9 +157,10 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 if __name__ == "__main__":
     logger.info("Starting server")
     # Import the FastAPI app
-    from cpu_http import app
-    import uvicorn
     import asyncio
+
+    import uvicorn
+    from cpu_http import app
 
     class FilteredAccessLogConfig(logging.Filter):
         """Filter out static file requests from access logs"""
@@ -168,7 +169,11 @@ if __name__ == "__main__":
             # Get the log message
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
-            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+            if (
+                "/static" in message
+                or "/_next/static" in message
+                or " / HTTP" in message
+            ):
                 return False
             return True
 
@@ -182,7 +187,7 @@ if __name__ == "__main__":
 
         config = uvicorn.Config(
             app,
-            host="0.0.0.0",
+            host=os.environ["HOST"],
             port=port,
             log_level="info",
             access_log=True,
@@ -202,7 +207,14 @@ if __name__ == "__main__":
                 if isinstance(handler, logging.StreamHandler):
                     lg.removeHandler(handler)
 
-        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+        for name in (
+            "",
+            "uvicorn",
+            "uvicorn.error",
+            "uvicorn.access",
+            "inference",
+            "inference.app",
+        ):
             _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"

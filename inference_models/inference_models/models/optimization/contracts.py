@@ -78,10 +78,13 @@ class OptimizationStage(str, Enum):
 
 @dataclass(frozen=True)
 class DeviceCompatibility:
-    """Hardware compatibility declared by one implementation."""
+    """Hardware constraints currently enforced by registry resolution.
+
+    Extend this contract only when a concrete implementation requires another
+    reliably observable target property.
+    """
 
     device_kind: Literal["cpu", "gpu"]
-    device_families: Tuple[str, ...] = ()
     minimum_compute_capability: Optional[Tuple[int, int]] = None
 
 
@@ -103,44 +106,22 @@ class InputCompatibility:
 
 
 @dataclass(frozen=True)
-class ValidationEnvironment:
-    """One measured environment for an implementation."""
+class ValidationRecord:
+    """Reproducible identity of one successfully validated workload.
 
-    machine_type: str
+    ``docker_image`` contains the repository and tag representation used for profiling.
+    Failed and inconclusive attempts are not validation records.
+    """
+
     device_kind: Literal["cpu", "gpu"]
     device_name: str
     scenario: str
-    resolved_axes: Mapping[str, Any]
-    runtime_versions: Mapping[str, str]
-    source_commit: str
-    profiling_bundle: str
-    status: Literal["validated", "failed", "inconclusive"]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "resolved_axes", immutable_mapping(self.resolved_axes))
-        object.__setattr__(
-            self,
-            "runtime_versions",
-            immutable_mapping(self.runtime_versions),
-        )
-
-    def matches(self, context: "ExecutionContext") -> bool:
-        """Return whether this validation record matches a runtime context.
-
-        Args:
-            context: Runtime context being resolved.
-
-        Returns:
-            Whether validated target and scenario identity match.
-        """
-        target_matches = (
-            self.status == "validated"
-            and self.device_kind == context.device_kind
-            and self.device_name == context.device_name
-        )
-        scenario_matches = self.scenario in {context.scenario, "*"}
-
-        return target_matches and scenario_matches
+    profiler_commit: str
+    runtime_commit: str
+    docker_image: str
+    model_id: str
+    backend: str
+    quantization: str
 
 
 @dataclass(frozen=True)
@@ -160,7 +141,7 @@ class OptimizationMetadata:
     output_contract: Mapping[str, Any] = field(default_factory=immutable_mapping)
     numerical_behavior: str = ""
     stream_behavior: str = ""
-    validated_environments: Tuple[ValidationEnvironment, ...] = ()
+    validation_records: Tuple[ValidationRecord, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -175,19 +156,19 @@ class OptimizationMetadata:
         Returns:
             JSON-compatible metadata dictionary.
         """
-        environments = [
+        validation_records = [
             {
-                "machine_type": environment.machine_type,
-                "device_kind": environment.device_kind,
-                "device_name": environment.device_name,
-                "scenario": environment.scenario,
-                "resolved_axes": dict(environment.resolved_axes),
-                "runtime_versions": dict(environment.runtime_versions),
-                "source_commit": environment.source_commit,
-                "profiling_bundle": environment.profiling_bundle,
-                "status": environment.status,
+                "device_kind": record.device_kind,
+                "device_name": record.device_name,
+                "scenario": record.scenario,
+                "profiler_commit": record.profiler_commit,
+                "runtime_commit": record.runtime_commit,
+                "docker_image": record.docker_image,
+                "model_id": record.model_id,
+                "backend": record.backend,
+                "quantization": record.quantization,
             }
-            for environment in self.validated_environments
+            for record in self.validation_records
         ]
         serialized = {
             "implementation_id": self.implementation_id,
@@ -195,7 +176,6 @@ class OptimizationMetadata:
             "version": self.version,
             "target": {
                 "device_kind": self.target.device_kind,
-                "device_families": list(self.target.device_families),
                 "minimum_compute_capability": self.target.minimum_compute_capability,
             },
             "inputs": {
@@ -212,7 +192,7 @@ class OptimizationMetadata:
             "output_contract": dict(self.output_contract),
             "numerical_behavior": self.numerical_behavior,
             "stream_behavior": self.stream_behavior,
-            "validated_environments": environments,
+            "validation_records": validation_records,
         }
 
         return serialized
@@ -220,20 +200,76 @@ class OptimizationMetadata:
 
 @dataclass(frozen=True)
 class ExecutionContext:
-    """Runtime target and request context used for stage resolution."""
+    """Minimal runtime facts used by stage resolution and execution.
+
+    Add context fields only when a concrete compatibility or execution requirement
+    can populate and consume them reliably.
+    """
 
     device_kind: Literal["cpu", "gpu"]
     device: str
-    device_name: str
-    machine_type: str
-    scenario: str
-    resolved_axes: Mapping[str, Any] = field(default_factory=immutable_mapping)
     current_stream: Optional[Any] = None
-    device_family: Optional[str] = None
     compute_capability: Optional[Tuple[int, int]] = None
+    runtime_components: Mapping[str, bool] = field(default_factory=immutable_mapping)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "resolved_axes", immutable_mapping(self.resolved_axes))
+        object.__setattr__(
+            self,
+            "runtime_components",
+            immutable_mapping(self.runtime_components),
+        )
+
+
+def metadata_compatibility(
+    metadata: OptimizationMetadata,
+    context: ExecutionContext,
+) -> CompatibilityResult:
+    """Check declared target and dependency constraints against a runtime context.
+
+    Runtime components are rejected only when the context explicitly reports them as
+    unavailable. Components absent from the context remain unknown so existing model
+    paths can adopt capability reporting incrementally.
+
+    Args:
+        metadata: Implementation compatibility metadata.
+        context: Runtime target and available-component context.
+
+    Returns:
+        Compatibility result with actionable static-runtime reasons.
+    """
+    reasons = []
+    target = metadata.target
+    if target.device_kind != context.device_kind:
+        reasons.append(
+            f"requires device_kind={target.device_kind!r}, "
+            f"received {context.device_kind!r}"
+        )
+    if (
+        target.minimum_compute_capability is not None
+        and context.compute_capability is not None
+        and context.compute_capability < target.minimum_compute_capability
+    ):
+        reasons.append(
+            f"compute_capability={context.compute_capability!r} is below "
+            f"{target.minimum_compute_capability!r}"
+        )
+    unavailable_dependencies = [
+        dependency
+        for dependency in metadata.dependencies
+        if context.runtime_components.get(dependency) is False
+    ]
+    if unavailable_dependencies:
+        reasons.append(
+            "unavailable runtime components: "
+            + ", ".join(sorted(unavailable_dependencies))
+        )
+
+    if reasons:
+        compatibility = CompatibilityResult.incompatible(*reasons)
+    else:
+        compatibility = CompatibilityResult.compatible()
+
+    return compatibility
 
 
 def metadata_supports_context(
@@ -249,23 +285,9 @@ def metadata_supports_context(
     Returns:
         Whether the target constraints match.
     """
-    target = metadata.target
-    if target.device_kind != context.device_kind:
-        return False
-    if (
-        target.device_families
-        and context.device_family is not None
-        and context.device_family not in target.device_families
-    ):
-        return False
-    if (
-        target.minimum_compute_capability is not None
-        and context.compute_capability is not None
-        and context.compute_capability < target.minimum_compute_capability
-    ):
-        return False
+    compatibility = metadata_compatibility(metadata=metadata, context=context)
 
-    return True
+    return compatibility.supported
 
 
 class InferenceStage(Protocol):

@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -28,6 +27,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 MAX_STACK_SIZE = 64
 MAX_RESOLUTION_WIDTH = 1920

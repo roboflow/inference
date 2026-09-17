@@ -18,6 +18,7 @@ Tag each finding BLOCK / FLAG / NIT. See **Standards** below for the one canonic
 
 - **BLOCK** — Changed runtime behavior ships with no test that actually runs in the PR's x86 CI (Standard 1), OR a bugfix lands with no regression test reproducing the bug.
 - **BLOCK** — A new env-gated / GPU test's gate is never flipped `False` by any CI job → dead test giving false confidence (Standard 4).
+- **BLOCK** — A new `inference_models/tests/unit_tests` `gpu_only` test lacks a dependency marker selected by `.github/workflows/unit_tests_inference_experimental_gpu.yml`, so no GPU job collects it (Standard 4).
 - **BLOCK** — A leaked module-level `monkeypatch`, `sys.modules` stub, or mutated global registry corrupts other tests (Standard 3).
 - **FLAG** — A new selector/branch/enum value is exercised only by literals, not by a test driving *that* runtime value (Standard 2).
 - **FLAG** — Mock-only test that asserts the mock's own return value rather than the changed output (Standard 6).
@@ -47,9 +48,9 @@ Tag each finding BLOCK / FLAG / NIT. See **Standards** below for the one canonic
 
 3. **Test isolation.** Monkeypatching goes through the function-scoped `monkeypatch` fixture (auto-undone), never module-level assignment. Module stubs belong in a registered `stub_plugins/` package, not `sys.modules` hacks. `autouse` fixtures must restore any shared global they touch.
 
-4. **Gate direction.** For any new `skipif`/env gate, grep the workflows for the var and confirm a job sets it so the test actually runs (e.g. `SKIP_SAM2_TESTS=False` in `test.nvidia_t4.yml`, `SKIP_LMM_TEST` in `integration_tests_inference_server_x86.yml`). A gate that defaults to skip and is never flipped is a dead test.
+4. **Gate direction and GPU-unit routing.** For any new `skipif`/env gate, grep the workflows for the var and confirm a job sets it so the test actually runs (e.g. `SKIP_SAM2_TESTS=False` in `test.nvidia_t4.yml`, `SKIP_LMM_TEST` in `integration_tests_inference_server_x86.yml`). A gate that defaults to skip and is never flipped is a dead test. GPU-only tests under `inference_models/tests/unit_tests` must carry `gpu_only` plus the dependency marker for the environment they require (for example, `trt_extras`). Confirm that `.github/workflows/unit_tests_inference_experimental_gpu.yml` installs that dependency group and selects the same marker intersection. The ordinary CPU unit workflow intentionally deselects every `gpu_only` test.
 
-5. **Marker correctness.** Any new marker used in the diff must be declared in `pytest.ini` — only `slow` and `workflows` are registered. Unregistered markers silently no-op the intended deselection (PR #1724 had to add `workflows`).
+5. **Marker correctness.** Any new marker used in the diff must be declared in the relevant `pytest.ini`. `inference_models/pytest.ini` registers its hardware and dependency markers separately from the repository-root configuration. Unregistered markers silently no-op the intended deselection (PR #1724 had to add `workflows`).
 
 6. **Real coverage over mock theater.** The assertion must observe the changed output, not a mock return value the test itself set. A test whose mocks reproduce the exact code under change asserts nothing about the change.
 
@@ -61,7 +62,8 @@ Tag each finding BLOCK / FLAG / NIT. See **Standards** below for the one canonic
 - `tests/workflows/integration_tests/execution/stub_plugins/` — **isolated module stubs done right**: fake blocks in registered plugin packages loaded per-test, not `sys.modules` monkeypatching.
 - `tests/inference/unit_tests/conftest.py` (`_patch_aioresponses_stream_writer`, `autouse=True` + `monkeypatch`) — **scoped, auto-undone patching**; contrast with module-level global assignment.
 - `tests/inference/integration_tests/test_sam2.py` (`SKIP_SAM2_TESTS` gate) + `.github/workflows/test.nvidia_t4.yml` (sets `SKIP_SAM2_TESTS=False`) — the **gate-plus-runner pair** for checking any new env-gated test has a CI job that flips it.
-- `pytest.ini` — the only registered markers (`slow`, `workflows`); any new marker must be added here.
+- `inference_models/tests/unit_tests/models/rfdetr/test_triton_universal_preprocess_runtime.py` (`gpu_only` + `trt_extras`) + `.github/workflows/unit_tests_inference_experimental_gpu.yml` — canonical GPU-only unit-test routing through a dependency marker.
+- The relevant `pytest.ini` — repository-root and `inference_models` suites register different marker sets; add every new marker to the configuration governing its test path.
 
 ## Reference PRs
 - #1129 — selector coverage established (one behavior test per new `property_name`).

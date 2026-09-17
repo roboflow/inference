@@ -1,8 +1,4 @@
-import importlib.util
-import sys
 from datetime import datetime
-from pathlib import Path
-from types import ModuleType
 
 import numpy as np
 import pytest
@@ -27,58 +23,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor 
     serialize_for_modal_remote_execution,
     serialize_inputs_for_msgpack,
 )
-
-
-class _FakeModalImage:
-    @classmethod
-    def debian_slim(cls, *args, **kwargs):
-        return cls()
-
-    @classmethod
-    def from_registry(cls, *args, **kwargs):
-        return cls()
-
-    def apt_install(self, *args, **kwargs):
-        return self
-
-    def pip_install(self, *args, **kwargs):
-        return self
-
-    def entrypoint(self, *args, **kwargs):
-        return self
-
-
-class _FakeModalApp:
-    def __init__(self, name: str):
-        self.name = name
-
-    def cls(self, *args, **kwargs):
-        return lambda cls: cls
-
-
-def _identity_decorator(*args, **kwargs):
-    return lambda obj: obj
-
-
-@pytest.fixture()
-def modal_app_with_fake_modal(monkeypatch):
-    fake_modal = ModuleType("modal")
-    fake_modal.App = _FakeModalApp
-    fake_modal.Image = _FakeModalImage
-    fake_modal.parameter = lambda *args, **kwargs: None
-    fake_modal.enter = _identity_decorator
-    fake_modal.fastapi_endpoint = _identity_decorator
-    fake_modal.asgi_app = _identity_decorator
-    fake_modal.concurrent = _identity_decorator
-    monkeypatch.setitem(sys.modules, "modal", fake_modal)
-
-    modal_app_path = Path(__file__).resolve().parents[5] / "modal" / "modal_app.py"
-    spec = importlib.util.spec_from_file_location(
-        "modal_app_code_hash_parity_test", modal_app_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.mark.parametrize(

@@ -33,6 +33,7 @@ from inference.core.env import (
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
+    WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -45,6 +46,10 @@ from inference.core.exceptions import (
     WebRTCConfigurationError,
 )
 from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.interfaces.camera.source_reference_sanitizer import (
+    redact_credentials_in_text,
+    sanitize_source_reference,
+)
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
@@ -63,6 +68,7 @@ from inference.core.interfaces.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
     VideoFileUploadHandler,
 )
+from inference.core.interfaces.webrtc_worker.sources.rtsp import ThreadedRTSPTrack
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
@@ -74,6 +80,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
+from inference.core.utils.mjpeg import open_mjpeg_player
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
@@ -338,6 +345,7 @@ class VideoFrameProcessor:
             workflows_parameters=workflow_configuration.workflows_parameters,
             disable_sinks=workflow_configuration.disable_sinks,
             workflows_thread_pool_workers=workflow_configuration.workflows_thread_pool_workers,
+            execution_engine_thread_pool_workers=workflow_configuration.execution_engine_thread_pool_workers,
             cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
             model_manager=model_manager,
@@ -874,6 +882,21 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
         pass
 
 
+def _open_media_player(file: str, **kwargs) -> MediaPlayer:
+    """Open a MediaPlayer, replacing failures with a credential-free error.
+
+    av/aiortc exceptions embed the full credentialed URL in their message and
+    are logged raw by callers, so the original exception must not propagate.
+    """
+    try:
+        return MediaPlayer(file, **kwargs)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to open stream {sanitize_source_reference(file)}: "
+            f"{redact_credentials_in_text(str(exc))}"
+        ) from None
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], None],
@@ -1085,17 +1108,23 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.rtsp_url:
         if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
             webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
-        logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
-        player = MediaPlayer(
-            webrtc_request.rtsp_url,
-            format="rtsp",
-            options={
-                "rtsp_transport": "tcp",
-                "rtsp_flags": "prefer_tcp",
-                "stimeout": "2000000",  # 2s socket timeout
-            },
+        logger.info(
+            "Processing RTSP URL: %s",
+            sanitize_source_reference(webrtc_request.rtsp_url),
         )
-        video_processor.set_track(track=player.video)
+        if webrtc_request.webrtc_realtime_processing:
+            player = _open_media_player(
+                webrtc_request.rtsp_url,
+                format="rtsp",
+                options={
+                    "rtsp_transport": "tcp",
+                    "rtsp_flags": "prefer_tcp",
+                    "stimeout": "2000000",  # 2s socket timeout
+                },
+            )
+            video_processor.set_track(track=player.video)
+        else:
+            video_processor.set_track(track=ThreadedRTSPTrack(webrtc_request.rtsp_url))
 
         # For DATA_ONLY mode, start data-only processing task
         if not should_send_video:
@@ -1103,8 +1132,14 @@ async def init_rtc_peer_connection_with_loop(
             asyncio.create_task(video_processor.process_frames_data_only())
 
     elif webrtc_request.mjpeg_url:
-        logger.info("Processing MJPEG URL: %s", webrtc_request.mjpeg_url)
-        player = MediaPlayer(webrtc_request.mjpeg_url)
+        logger.info(
+            "Processing MJPEG URL: %s",
+            sanitize_source_reference(webrtc_request.mjpeg_url),
+        )
+        player = open_mjpeg_player(
+            webrtc_request.mjpeg_url,
+            allow_non_global_addresses=WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES,
+        )
         video_processor.set_track(track=player.video)
 
         if not should_send_video:
@@ -1364,4 +1399,5 @@ async def init_rtc_peer_connection_with_loop(
 def default_encoder(obj: Any) -> Any:
     if isinstance(obj, bytes):
         return base64.b64encode(obj).decode("ascii")
-    return obj
+    # Returning the object unchanged makes orjson call this hook forever.
+    raise TypeError(f"Cannot serialize {type(obj).__name__} for WebRTC output")

@@ -41,7 +41,7 @@ from inference_models.models.common.roboflow.semantic_segmentation import (
     resolve_background_class_id,
     validate_class_names,
 )
-from inference_models.models.common.streams import get_cuda_stream
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -180,7 +180,7 @@ class YOLO26ForSemanticSegmentationOnnx(
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             pre_processed_images, pre_processing_meta = pre_process_network_input(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
@@ -212,7 +212,7 @@ class YOLO26ForSemanticSegmentationOnnx(
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         post_process_stream = self._post_process_stream
-        with torch.cuda.stream(post_process_stream):
+        with use_cuda_stream(post_process_stream):
             if post_process_stream is not None:
                 model_results.record_stream(post_process_stream)
             results = post_process_semantic_segmentation_logits(

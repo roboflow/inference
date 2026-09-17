@@ -1,4 +1,4 @@
-import os.path
+import os
 import zipfile
 
 import pytest
@@ -42,6 +42,7 @@ COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.g
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
 RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
+RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV = "INFERENCE_MODELS_RFDETR_KP_TRT_PACKAGE"
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -438,6 +439,19 @@ def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
         model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
         package_name="rfdetr-kp-preview-onnx-glue-sticks",
     )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_trt_package() -> str:
+    package_path = os.getenv(RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV)
+    if not package_path or not os.path.isdir(package_path):
+        pytest.skip(
+            "RF-DETR keypoint TRT package is not published yet. Set "
+            f"{RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV} to a local flat package directory "
+            "(class_names.txt, inference_config.json, trt_config.json, engine.plan, "
+            "keypoints_metadata.json) or wait for Core-team Surface 2 upload."
+        )
+    return package_path
 
 
 @pytest.fixture(scope="module")

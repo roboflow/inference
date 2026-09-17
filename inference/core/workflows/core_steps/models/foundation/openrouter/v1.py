@@ -40,7 +40,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlockManifest,
+    third_party_model,
 )
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
@@ -230,6 +232,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [third_party_model(provider="openrouter", model_id=self.model_id)]
 
 
 class OpenRouterBlockV1(OpenRouterWorkflowBlockBase):

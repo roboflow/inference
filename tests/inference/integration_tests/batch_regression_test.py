@@ -9,6 +9,10 @@ import pytest
 import requests
 from PIL import Image
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import (
     compare_prediction_response,
 )
@@ -28,7 +32,12 @@ def bool_env(val):
 
 
 def infer_request_with_image_url(
-    test, port=9001, api_key="", base_url="http://localhost", batch_size=1
+    test,
+    port=9001,
+    api_key="",
+    base_url="http://localhost",
+    batch_size=1,
+    auth_mode="legacy",
 ):
     payload = {
         "model_id": f"{test['project']}/{test['version']}",
@@ -46,14 +55,20 @@ def infer_request_with_image_url(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "url",
     )
 
 
 def infer_request_with_base64_image_dif_size(
-    test, port=9001, api_key="", base_url="http://localhost", batch_size=1
+    test,
+    port=9001,
+    api_key="",
+    base_url="http://localhost",
+    batch_size=1,
+    auth_mode="legacy",
 ):
     sizes = [
         (155, 73),
@@ -98,14 +113,20 @@ def infer_request_with_base64_image_dif_size(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "base64_diffsize",
     )
 
 
 def infer_request_with_base64_image_dif_size_fixed(
-    test, port=9001, api_key="", base_url="http://localhost", batch_size=1
+    test,
+    port=9001,
+    api_key="",
+    base_url="http://localhost",
+    batch_size=1,
+    auth_mode="legacy",
 ):
     sizes = [
         (155, 73),
@@ -152,14 +173,20 @@ def infer_request_with_base64_image_dif_size_fixed(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "base64_diffsize",
     )
 
 
 def infer_request_with_base64_image(
-    test, port=9001, api_key="", base_url="http://localhost", batch_size=1
+    test,
+    port=9001,
+    api_key="",
+    base_url="http://localhost",
+    batch_size=1,
+    auth_mode="legacy",
 ):
     buffered = BytesIO()
     test["pil_image"].save(buffered, quality=100, format="PNG")
@@ -181,12 +208,18 @@ def infer_request_with_base64_image(
     return (
         requests.post(
             f"{base_url}:{port}/infer/{test['type']}",
-            json=payload,
+            json=without_api_key_in_header_mode(auth_mode, payload),
+            headers=api_key_auth_headers(auth_mode, api_key),
         ),
         "base64",
     )
 
-TESTS_FILE = "batch_tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "batch_tests_inference_models.json"
+
+TESTS_FILE = (
+    "batch_tests.json"
+    if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true"
+    else "batch_tests_inference_models.json"
+)
 with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r") as f:
     TESTS = json.load(f)
 
@@ -202,14 +235,14 @@ DETECTION_TEST_PARAMS = []
 is_parallel_server = bool_env(os.getenv("IS_PARALLEL_SERVER", False))
 for test in TESTS:
     if test["description"] == "YOLACT Instance Segmentation" and is_parallel_server:
-        continue # Skip YOLACT tests for parallel server
+        continue  # Skip YOLACT tests for parallel server
     if "expected_response" in test:
         for res_func in INFER_RESPONSE_FUNCTIONS:
             DETECTION_TEST_PARAMS.append((test, res_func))
 
 
 @pytest.mark.parametrize("test,res_function", DETECTION_TEST_PARAMS)
-def test_detection(test, res_function, clean_loaded_models_fixture):
+def test_detection(test, res_function, auth_mode, clean_loaded_models_fixture):
     try:
         try:
             pil_image = Image.open(
@@ -220,7 +253,10 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
             raise ValueError(f"Unable to load image from URL: {test['image_url']}")
 
         response, image_type = res_function(
-            test, port, api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY")
+            test,
+            port,
+            api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY"),
+            auth_mode=auth_mode,
         )
         try:
             response.raise_for_status()

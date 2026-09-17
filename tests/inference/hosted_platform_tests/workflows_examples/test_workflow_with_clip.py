@@ -2,7 +2,10 @@ import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
-from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    ROBOFLOW_API_KEY,
+    apply_auth_mode,
+)
 
 WORKFLOW_WITH_CLIP_COMPARISON_V2_AND_CLASSES_REPLACEMENT = {
     "version": "1.0",
@@ -60,12 +63,14 @@ def test_workflow_with_clip_as_classifier_replacing_predictions(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     dogs_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(

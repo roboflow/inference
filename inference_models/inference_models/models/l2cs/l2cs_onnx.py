@@ -21,7 +21,7 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
-from inference_models.models.common.streams import get_cuda_stream
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -147,7 +147,7 @@ class L2CSNetOnnx:
         **kwargs,
     ) -> torch.Tensor:
         pre_process_stream = self._pre_process_stream
-        with torch.cuda.stream(pre_process_stream):
+        with use_cuda_stream(pre_process_stream):
             pre_processed_images = self._pre_process(
                 images=images,
                 input_color_format=input_color_format,

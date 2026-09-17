@@ -1,35 +1,34 @@
-from typing import List, Literal, Optional, Type, TypeVar, Union
+from typing import Any, List, Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam2 import (
-    Box,
-    Sam2Prompt,
-    Sam2PromptSet,
-    Sam2SegmentationRequest,
-)
-from inference.core.entities.responses.inference import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.inference_response_entities import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
-from inference.core.env import (
-    CORE_MODEL_SAM2_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (
+    Box,
+    Sam2Prompt,
+)
+from inference.core.workflows.environment import (
+    CORE_MODEL_SAM2_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -49,13 +48,20 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import (
+    CORE_MODEL_ENDPOINT_TYPE,
+    ModelsProvider,
+)
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -183,12 +189,32 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2/hiera_b_plus",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.version):
+            # Selector returned verbatim; the attached resolver applies the
+            # family prefix once the input value is substituted.
+            return [
+                roboflow_platform_model(
+                    model_id=self.version,
+                    model_id_resolver=lambda version: f"sam2/{version}",
+                    model_registration_kwargs={
+                        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
+                    },
+                )
+            ]
+        return [
+            roboflow_platform_model(
+                model_id=f"sam2/{self.version}",
+                model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
+            )
+        ]
+
 
 class SegmentAnything2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -249,6 +275,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
@@ -419,24 +448,22 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                         )
                     )
                     prompts.append(prompt)
-            inference_request = Sam2SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                sam2_version_id=version,
-                api_key=self._api_key,
-                source="workflow-execution",
-                prompts=Sam2PromptSet(prompts=prompts),
-                threshold=threshold,
-                multimask_output=multimask_output,
-            )
+            image = single_image.to_inference_format(numpy_preferred=True)
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,
-                inference_request=inference_request,
+                version_id=version,
+                api_key=self._api_key,
                 core_model="sam2",
             )
-
-            sam2_segmentation_response = self._model_manager.infer_from_request_sync(
-                sam_model_id, inference_request
-            )
+            sam2_segmentation_response = self._model_manager.run_sam2_segmentation(
+                model_id=sam_model_id,
+                image=image,
+                prompts=[prompt.model_dump(exclude_none=True) for prompt in prompts],
+                api_key=self._api_key,
+                version_id=version,
+                threshold=threshold,
+                multimask_output=multimask_output,
+            )[0]
 
             prediction = convert_sam2_segmentation_response_to_inference_instances_seg_response(
                 sam2_segmentation_predictions=sam2_segmentation_response.predictions,
@@ -474,7 +501,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
 
 
 def convert_sam2_segmentation_response_to_inference_instances_seg_response(
-    sam2_segmentation_predictions: List[Sam2SegmentationPrediction],
+    # Items are the server's Sam2SegmentationPrediction; only .masks and
+    # .confidence are read.
+    sam2_segmentation_predictions: List[Any],
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],

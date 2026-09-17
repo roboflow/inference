@@ -1,6 +1,7 @@
 """
-Resolve ``roboflow_core/inner_workflow@v1`` steps that reference a saved workflow by id into inline
-``workflow_definition`` payloads before parsing / composition validation.
+Resolve embedded ``roboflow_core/inner_workflow@v1`` references into inline
+``workflow_definition`` payloads before parsing and composition validation. Dispatched
+references stay opaque for the target inference server to resolve.
 """
 
 from __future__ import annotations
@@ -8,8 +9,12 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from inference.core.workflows.errors import WorkflowDefinitionError
+from inference.core.workflows.errors import (
+    WorkflowDefinitionError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 
@@ -29,25 +34,22 @@ def default_inner_workflow_spec_resolver(
     workflow_version_id: Optional[str],
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
-    from inference.core.roboflow_api import get_workflow_specification
+    """Standalone default: no platform, so no remote workflow definitions.
 
-    api_key = init_parameters.get("workflows_core.api_key")
-    if workspace_id != "local" and not api_key:
-        raise WorkflowDefinitionError(
-            public_message=(
-                "Resolving an `inner_workflow` step by workflow id requires a Roboflow API key. "
-                "Set `workflows_core.api_key` in workflow init_parameters, inject "
-                "`workflows_core.inner_workflow_spec_resolver`, or use "
-                '`workflow_workspace_id` `"local"` with a matching on-disk workflow '
-                "definition."
-            ),
-            context="workflow_compilation | inner_workflow_spec_resolution",
-        )
-    return get_workflow_specification(
-        api_key=api_key,
-        workspace_id=workspace_id,
-        workflow_id=workflow_id,
-        workflow_version_id=workflow_version_id,
+    The Roboflow-backed implementation moved to
+    `inference.core.interfaces.roboflow_platform_client.default_inner_workflow_spec_resolver`
+    and is installed by every server composition root - the shape Task 7.2 used
+    for the step error handler.
+    """
+    raise WorkflowEnvironmentConfigurationError(
+        public_message=(
+            "Resolving an `inner_workflow` step by workflow id requires access to the "
+            "Roboflow API, which is not available in this installation of `workflows`. "
+            f"Inject `{WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER}` in workflow "
+            "init_parameters, or define the inner workflow inline instead of "
+            "referencing it by id."
+        ),
+        context="workflow_compilation | inner_workflow_spec_resolution",
     )
 
 
@@ -82,16 +84,22 @@ def _inner_workflow_step_has_nonempty_workflow_definition(
     return isinstance(wf, dict) and len(wf) > 0
 
 
+def _inner_workflow_step_is_dispatched(step: Dict[str, Any]) -> bool:
+    return step.get("execution_mode") == INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH
+
+
 def workflow_definition_contains_unresolved_inner_workflow_reference(
     workflow_definition: Dict[str, Any],
 ) -> bool:
-    """True if any ``inner_workflow`` step (at any depth) still needs reference resolution."""
+    """True if any embedded ``inner_workflow`` still needs reference resolution."""
 
     def visit(wf: Dict[str, Any]) -> bool:
         for step in wf.get("steps", []) or []:
             if not isinstance(step, dict):
                 continue
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+                continue
+            if _inner_workflow_step_is_dispatched(step):
                 continue
             if _inner_workflow_step_has_reference(step):
                 return True
@@ -142,6 +150,22 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
                 context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
+        if _inner_workflow_step_is_dispatched(step):
+            if not has_ref and not has_inline:
+                step_name = step.get("name", "<unknown>")
+                raise WorkflowDefinitionError(
+                    public_message=(
+                        f"inner_workflow step `{step_name}` requires a non-empty "
+                        "`workflow_definition` object or reference fields "
+                        "`workflow_workspace_id` and `workflow_id`."
+                    ),
+                    context="workflow_compilation | inner_workflow_spec_resolution",
+                )
+            # The target inference server resolves and compiles this child. Keeping the
+            # reference or inline specification opaque also avoids requiring its blocks
+            # and nested workflow definitions to be installed in the caller runtime.
+            continue
+
         if has_ref:
             workspace_id = _strip_optional_str(step["workflow_workspace_id"])
             saved_workflow_id = _strip_optional_str(step["workflow_id"])
@@ -185,8 +209,9 @@ def normalize_inner_workflow_references_in_definition(
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Return a workflow definition suitable for parsing: all ``inner_workflow`` reference fields
-    are resolved to inline ``workflow_definition`` (recursively). The input dict is never mutated.
+    Return a workflow definition suitable for parsing: embedded ``inner_workflow``
+    references are resolved to inline ``workflow_definition`` recursively. Dispatched
+    workflows remain opaque. The input dict is never mutated.
     """
     if not workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition

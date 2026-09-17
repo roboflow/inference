@@ -41,6 +41,10 @@ from inference_models.errors import (
     UntrustedFileError,
 )
 from inference_models.logger import LOGGER
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+    NullContentAddressedArtifactCache,
+)
 from inference_models.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
@@ -116,6 +120,7 @@ def download_files_to_directory(
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Dict[str, str]:
     """Download multiple files to a directory with parallel downloads and hash verification.
 
@@ -163,6 +168,9 @@ def download_files_to_directory(
 
         on_file_renamed: Optional callback called when a file is renamed.
             Receives old and new paths as arguments.
+
+        content_addressed_artifact_cache: Optional cache used for files with
+            declared hashes. Defaults to a no-op cache.
 
     Returns:
         Dictionary mapping file handles to their absolute paths in the target directory.
@@ -276,6 +284,7 @@ def download_files_to_directory(
                     file_lock_acquire_timeout=file_lock_acquire_timeout,
                     on_file_created=on_file_created,
                     on_file_renamed=on_file_renamed,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                 )
                 futures.append(future)
             done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
@@ -339,6 +348,7 @@ def safe_download_file(
     file_lock_acquire_timeout: int,
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> None:
     ensure_parent_dir_exists(path=target_file_path)
     target_file_dir, target_file_name = os.path.split(target_file_path)
@@ -354,6 +364,27 @@ def safe_download_file(
                     f"skipping download."
                 )
                 return
+            artifact_cache = content_addressed_artifact_cache
+            if md5_hash is None or artifact_cache is None:
+                artifact_cache = NullContentAddressedArtifactCache()
+            restored_from_blob_cache = False
+            try:
+                restored_from_blob_cache = artifact_cache.restore(
+                    content_hash=md5_hash,
+                    target_path=tmp_download_file,
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    "Model blob cache lookup failed; using original model source: %s",
+                    error,
+                )
+            if restored_from_blob_cache:
+                if on_file_created:
+                    on_file_created(tmp_download_file)
+                os.replace(tmp_download_file, target_file_path)
+                if on_file_renamed:
+                    on_file_renamed(tmp_download_file, target_file_path)
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -368,6 +399,16 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
+            if verify_hash_while_download:
+                try:
+                    artifact_cache.schedule_store(
+                        content_hash=md5_hash,
+                        source_path=target_file_path,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "Could not schedule model blob cache upload: %s", error
+                    )
     finally:
         remove_file_if_exists(path=tmp_download_file)
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from inspect import signature
 from queue import Queue
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, List, Optional, Tuple, Union
 from unittest.mock import MagicMock
 
@@ -76,6 +76,15 @@ class VideoSourceStub:
         self._calls.append("start")
         self._current_round += 1
         self._emissions_in_current_round = 0
+
+    def pause(self) -> None:
+        self._calls.append("pause")
+
+    def mute(self) -> None:
+        self._calls.append("mute")
+
+    def resume(self) -> None:
+        self._calls.append("resume")
 
     @lock_state_transition
     def terminate(
@@ -224,6 +233,65 @@ def test_inference_pipeline_close_calls_handler_close_hook() -> None:
     pipeline._close_inference_handler()
 
     assert handler.close_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_all_sources(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)()
+
+    assert first_source._calls == [expected_call]
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "expected_call"),
+    [
+        ("pause_stream", "pause"),
+        ("mute_stream", "mute"),
+        ("resume_stream", "resume"),
+    ],
+)
+def test_stream_control_applies_to_matching_source(
+    method_name: str, expected_call: str
+) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=1)
+
+    assert first_source._calls == []
+    assert second_source._calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    "method_name", ["pause_stream", "mute_stream", "resume_stream"]
+)
+def test_stream_control_ignores_unknown_source(method_name: str) -> None:
+    first_source = VideoSourceStub(frames_number=0, is_file=False, source_id=0)
+    second_source = VideoSourceStub(frames_number=0, is_file=False, source_id=1)
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._video_sources = [first_source, second_source]
+
+    getattr(pipeline, method_name)(source_id=2)
+
+    assert first_source._calls == []
+    assert second_source._calls == []
 
 
 @pytest.mark.timeout(90)
@@ -845,6 +913,41 @@ def test_init_with_workflow_injects_sink_execution_policy(
     )
 
 
+def test_init_with_workflow_gives_execution_engine_a_separate_thread_pool(
+    monkeypatch,
+) -> None:
+    # A shared pool lets slow fire-and-forget sink tasks starve step execution,
+    # so the Execution Engine must get its own executor.
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine = MagicMock()
+    execution_engine_init = MagicMock(return_value=execution_engine)
+    pipeline = MagicMock()
+    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
+    monkeypatch.setattr(
+        InferencePipeline,
+        "init_with_custom_logic",
+        MagicMock(return_value=pipeline),
+    )
+
+    result = InferencePipeline.init_with_workflow(
+        video_reference="video.mp4",
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        workflows_thread_pool_workers=3,
+        execution_engine_thread_pool_workers=5,
+    )
+
+    assert result is pipeline
+    blocks_executor = execution_engine_init.call_args.kwargs["init_parameters"][
+        "workflows_core.thread_pool_executor"
+    ]
+    execution_engine_executor = execution_engine_init.call_args.kwargs["executor"]
+    assert execution_engine_executor is not blocks_executor
+    assert blocks_executor._max_workers == 3
+    assert execution_engine_executor._max_workers == 5
+
+
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
     from threading import Thread
     from unittest.mock import MagicMock
@@ -878,3 +981,118 @@ def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None
     assert ids_seen_by_inference["pipeline_1"] == pipeline_1._stream_session_id
     assert ids_seen_by_inference["pipeline_2"] == pipeline_2._stream_session_id
     assert stream_session_id.get() is None
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_completion_statistics_wait_for_prediction_futures(monkeypatch, failed) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+    resolving = Event()
+
+    class PendingPrediction(Future):
+        def result(self, timeout=None):
+            resolving.set()
+            return super().result(timeout=2)
+
+    pending = PendingPrediction()
+    sources = [VideoSourceStub(1, False, source_id=i) for i in range(2)]
+    frames = [source.read_frame() for source in sources]
+    watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(sources)
+    queue = Queue()
+    errors = []
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=sources,
+        predictions_queue=queue,
+        watchdog=watchdog,
+        status_update_handlers=[],
+    )
+    # The existing ready callback measures submission; completion must stay zero.
+    pipeline._queue_inference_result([{"output": pending}, {}], frames)
+    queue.put(None)
+
+    def dispatch():
+        try:
+            pipeline._dispatch_inference_results()
+        except Exception as error:
+            errors.append(error)
+
+    thread = Thread(target=dispatch)
+    thread.start()
+    try:
+        assert resolving.wait(timeout=2)
+        before = watchdog.get_report().completion_statistics
+        assert [s.completed_frames for s in before.sources] == [0, 0]
+        assert all(s.last_completed_at_monotonic is None for s in before.sources)
+        if failed:
+            pending.set_exception(ValueError("prediction failed"))
+        else:
+            pending.set_result("prediction")
+    finally:
+        if not pending.done():
+            pending.set_result(None)
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+    after = watchdog.get_report().completion_statistics
+    assert [s.completed_frames for s in after.sources] == ([0, 0] if failed else [1, 1])
+    assert bool(errors) == failed
+    assert [s.completed_frames for s in before.sources] == [0, 0]
+    if not failed:
+        assert all(s.last_frame_id == 1 for s in after.sources)
+        assert all(
+            before.sampled_at_monotonic
+            <= s.last_completed_at_monotonic
+            <= after.sampled_at_monotonic
+            for s in after.sources
+        )
+
+
+def test_dispatch_preserves_legacy_duck_typed_watchdog(monkeypatch) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "1")
+    queue = Queue()
+    queue.put(([{}], []))
+    queue.put(None)
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=[],
+        predictions_queue=queue,
+        watchdog=_PredictionReadyWatchdog(),
+        status_update_handlers=[],
+    )
+    pipeline._dispatch_inference_results()
+    assert queue.unfinished_tasks == 0
+
+
+def test_completion_counts_null_predictions_before_sink_failure(monkeypatch) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "1")
+    sources = [VideoSourceStub(1, False, source_id=i) for i in range(2)]
+    watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(sources)
+    queue = Queue()
+    queue.put(([None], [sources[0].read_frame()]))
+    queue.put(None)
+    observed = []
+
+    def failing_sink(predictions, frames):
+        observed.append(
+            [
+                s.completed_frames
+                for s in watchdog.get_report().completion_statistics.sources
+            ]
+        )
+        assert predictions == [None, None]
+        assert frames[0].source_id == 0
+        assert frames[1] is None
+        raise RuntimeError("sink unavailable")
+
+    pipeline = InferencePipeline(
+        on_video_frame=lambda frames: [],
+        video_sources=sources,
+        predictions_queue=queue,
+        watchdog=watchdog,
+        status_update_handlers=[],
+        on_prediction=failing_sink,
+    )
+    pipeline._dispatch_inference_results()
+    assert observed == [[1, 0]]
+    assert queue.unfinished_tasks == 0

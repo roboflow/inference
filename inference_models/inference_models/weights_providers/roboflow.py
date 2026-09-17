@@ -16,6 +16,7 @@ from inference_models.configuration import (
     ROBOFLOW_API_KEY,
     SECURE_GATEWAY,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
 
 LOCAL_API_KEY = "local"
 
@@ -215,11 +216,13 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    parts = urllib.parse.urlsplit(
-        SECURE_GATEWAY if "://" in SECURE_GATEWAY else f"http://{SECURE_GATEWAY}"
-    )
-    gateway_base = f"{parts.scheme}://{parts.netloc}"
-    return f"{gateway_base}/proxy?url=" + urllib.parse.quote(url, safe="~()*!'")
+    gateway_base = validate_secure_gateway_url(SECURE_GATEWAY)
+    gateway_prefix = f"{gateway_base}/proxy?url="
+    # Idempotent: an already-wrapped URL (e.g. a download_url proxied upstream)
+    # must not be proxied twice.
+    if url.startswith(gateway_prefix):
+        return url
+    return gateway_prefix + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(

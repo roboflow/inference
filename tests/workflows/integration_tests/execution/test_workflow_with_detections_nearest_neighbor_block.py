@@ -9,8 +9,15 @@ numeric to keep the test stable across model-weight nudges.
 """
 
 import numpy as np
+import pytest
+from inference_models.models.base.object_detection import (
+    Detections as NativeDetections,
+)
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
@@ -19,6 +26,16 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="Asserts on sv.Detections data columns produced by the numpy path",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="Asserts on native Detections bboxes_metadata produced under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION",
 )
 
 DETECTIONS_NEAREST_NEIGHBOR_WORKFLOW = {
@@ -95,6 +112,7 @@ primary detection set vs. a reference/landmark set, etc.
     workflow_definition=DETECTIONS_NEAREST_NEIGHBOR_WORKFLOW,
     workflow_name_in_app="detections-nearest-neighbor",
 )
+@_NUMPY_ONLY
 def test_detections_nearest_neighbor_workflow(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -159,6 +177,7 @@ def test_detections_nearest_neighbor_workflow(
     )
 
 
+@_NUMPY_ONLY
 def test_detections_nearest_neighbor_workflow_when_target_set_is_empty(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -200,6 +219,123 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty(
     assert len(matched_target_detections) == 0
     for distance in query_predictions.data[NEAREST_TARGET_DISTANCE_KEY]:
         assert distance is None, (
+            "With an empty target set every query detection must be unmatched "
+            "(nearest_target_distance=None)."
+        )
+
+
+@_TENSOR_ONLY
+def test_detections_nearest_neighbor_workflow_tensor_native(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    image_as_workflow_input,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_NEAREST_NEIGHBOR_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": image_as_workflow_input(crowd_image),
+            "model_id": "yolov8n-640",
+            "target_confidence": 0.5,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected one output element for one input image"
+    assert set(result[0].keys()) == {
+        "query_predictions",
+        "matched_query_detections",
+        "matched_target_detections",
+    }
+
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION detections-kind outputs are
+    # native inference_models Detections; per-box scalars ride in
+    # bboxes_metadata instead of sv data columns.
+    query_predictions = result[0]["query_predictions"]
+    matched_query_detections = result[0]["matched_query_detections"]
+    matched_target_detections = result[0]["matched_target_detections"]
+    assert isinstance(query_predictions, NativeDetections)
+
+    assert (
+        len(query_predictions) > 0
+    ), "Expected at least one person detection at confidence=0.3 on the crowd image."
+    assert len(matched_query_detections) == len(matched_target_detections), (
+        "matched_query_detections and matched_target_detections must stay the "
+        "same length and index-aligned."
+    )
+    assert len(matched_query_detections) > 0, (
+        "Expected at least one query detection to find a nearest target "
+        "detection on the crowd image."
+    )
+
+    for entry in query_predictions.bboxes_metadata:
+        assert NEAREST_TARGET_DISTANCE_KEY in entry
+        distance = entry[NEAREST_TARGET_DISTANCE_KEY]
+        assert distance is None or isinstance(distance, float)
+
+    for entry in matched_query_detections.bboxes_metadata:
+        assert entry[NEAREST_TARGET_DISTANCE_KEY] is not None, (
+            "Every detection appearing in matched_query_detections must carry "
+            "a real (non-None) nearest_target_distance."
+        )
+
+
+@_TENSOR_ONLY
+def test_detections_nearest_neighbor_workflow_when_target_set_is_empty_tensor_native(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    image_as_workflow_input,
+) -> None:
+    # given: target_confidence=0.999 is unreachable on this model/image, so
+    # target_predictions is empty and no query detection can find a match.
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_NEAREST_NEIGHBOR_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": image_as_workflow_input(crowd_image),
+            "model_id": "yolov8n-640",
+            "target_confidence": 0.999,
+        }
+    )
+
+    # then
+    assert isinstance(result, list)
+    assert len(result) == 1
+    query_predictions = result[0]["query_predictions"]
+    matched_query_detections = result[0]["matched_query_detections"]
+    matched_target_detections = result[0]["matched_target_detections"]
+    assert isinstance(query_predictions, NativeDetections)
+
+    assert len(query_predictions) > 0, (
+        "Expected at least one person detection at confidence=0.3 on the crowd "
+        "image, even though the target set is empty."
+    )
+    assert len(matched_query_detections) == 0
+    assert len(matched_target_detections) == 0
+    for entry in query_predictions.bboxes_metadata:
+        assert entry[NEAREST_TARGET_DISTANCE_KEY] is None, (
             "With an empty target set every query detection must be unmatched "
             "(nearest_target_distance=None)."
         )

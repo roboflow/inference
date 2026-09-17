@@ -59,6 +59,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import CLASS_AGNOSTIC_NMS, HF_HUB_CACHE, OFFLINE_MODE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
+from inference.usage_tracking.collector import usage_collector
 
 BERT_REPO_ID = "google-bert/bert-base-uncased"
 LEGACY_BERT_REPO_ID = "bert-base-uncased"
@@ -152,6 +153,7 @@ class GroundingDINO(RoboflowCoreModel):
         result = self.infer(**request.dict())
         return result
 
+    @usage_collector("model")
     def infer(
         self,
         image: InferenceRequestImage,

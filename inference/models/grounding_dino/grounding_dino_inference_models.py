@@ -1,5 +1,8 @@
 from time import perf_counter
-from typing import Any, List
+from typing import Any, List, Union
+
+import numpy as np
+import torch
 
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequestImage
@@ -19,7 +22,8 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
-from inference_models import AutoModel
+from inference.usage_tracking.collector import usage_collector
+from inference_models import AutoModel, Detections
 from inference_models.models.grounding_dino.grounding_dino_torch import (
     GroundingDinoForObjectDetectionTorch,
 )
@@ -65,6 +69,13 @@ class InferenceModelsGroundingDINOAdapter(Model):
             **kwargs,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[Detections]:
+        return self._model(images=images, **kwargs)
+
     def preproc_image(self, image: Any):
         """Preprocesses an image.
 
@@ -86,6 +97,7 @@ class InferenceModelsGroundingDINOAdapter(Model):
         result = self.infer(**request.dict())
         return result
 
+    @usage_collector("model")
     def infer(
         self,
         image: InferenceRequestImage,

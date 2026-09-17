@@ -1,11 +1,22 @@
 import base64
 from typing import Any, Dict
 
-from inference.core.env import WEBRTC_PREVIEW_FRAME_JPEG_QUALITY
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
-from inference.core.workflows.core_steps.common.serializers import (
-    serialize_wildcard_kind,
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WEBRTC_PREVIEW_FRAME_JPEG_QUALITY,
 )
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+
+# The loader swaps the wildcard serialiser under the tensor flag; this module
+# mirrors that swap, or tensor-native outputs reach orjson unserialised.
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialize_wildcard_kind,
+    )
+else:
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialize_wildcard_kind,
+    )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 

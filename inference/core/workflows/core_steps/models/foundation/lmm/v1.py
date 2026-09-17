@@ -7,18 +7,16 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.env import (
-    LMM_ENABLED,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     run_in_parallel,
+)
+from inference.core.workflows.environment import (
+    LMM_ENABLED,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
@@ -43,12 +41,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
+    third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 from inference_sdk import InferenceHTTPClient
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
@@ -172,6 +174,18 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        if is_workflow_selector(self.lmm_type):
+            # LMM type fed by selector — provider/model unknown statically.
+            return None
+        if self.lmm_type == "gpt_4v":
+            return [
+                third_party_model(
+                    provider="openai", model_id=self.lmm_config.gpt_model_version
+                )
+            ]
+        return []
+
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         restrictions = []
@@ -195,17 +209,15 @@ class LMMBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

@@ -37,6 +37,12 @@ class WorkflowInferenceRequest(BaseModel):
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
     )
+    inner_workflow_dispatch_depth: int = Field(
+        default=0,
+        ge=0,
+        strict=True,
+        description="Number of remote inner-workflow dispatch hops preceding this request.",
+    )
     disable_sinks: bool = Field(
         default=False,
         description="Run the workflow with sink writes and outbound notifications/uploads disabled.",
@@ -80,8 +86,11 @@ class DescribeBlocksRequest(BaseModel):
 
 
 class DescribeInterfaceRequest(BaseModel):
-    api_key: str = Field(
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route still requires "
+        "a key through one of the channels.",
     )
 
 

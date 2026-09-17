@@ -1,7 +1,5 @@
 import hashlib
-import json
 import logging
-import re
 from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -13,10 +11,28 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
+from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.anthropic_detection_parsing import (
+    parse_anthropic_object_detection_response,
+)
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     parse_gemini_object_detection_response,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.muse_detection_parsing import (
+    extract_flat_object_entries,
+    parse_muse_object_detection_response,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.openai_detection_parsing import (
+    parse_openai_object_detection_response,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.qwen_detection_parsing import (
+    parse_qwen_object_detection_response,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_detection_parsing import (
+    parse_spacexai_object_detection_response,
 )
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -43,10 +59,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
-
 LONG_DESCRIPTION = """
-Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
+**Deprecated.** VLM blocks now decode detections in-block: use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead of routing their raw text through this block.
+
+Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and available confidence scores, converting coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
 
 ## How This Block Works
 
@@ -72,8 +88,9 @@ This block converts VLM/LLM text outputs containing object detection predictions
 
    **For OpenAI/Gemini/Claude models:**
    - Extracts detections array from parsed JSON
-   - Converts normalized coordinates (0-1 range) to pixel coordinates using image dimensions
-   - Extracts class names, confidence scores, and bounding box coordinates
+   - Converts normalized or absolute coordinates to pixel coordinates using image dimensions
+   - Extracts class names, available confidence scores, and bounding box coordinates
+   - Assigns confidence 1.0 when a model format does not provide confidence; confidence filtering is not meaningful for those detections
    - Maps class names to class IDs using provided classes list
    - Creates detection objects with bounding boxes, classes, and confidences
 
@@ -85,14 +102,13 @@ This block converts VLM/LLM text outputs containing object detection predictions
    - For other tasks: uses MD5-based class ID generation or provided classes
    - Sets confidence to 1.0 for Florence-2 detections (model doesn't provide confidence)
 5. Converts coordinates and normalizes data:
-   - Converts normalized coordinates (0-1) to absolute pixel coordinates (x_min, y_min, x_max, y_max)
-   - Scales coordinates using image width and height
-   - Normalizes confidence scores to valid range [0.0, 1.0]
-   - Clamps confidence values outside the range
+   - Converts normalized coordinates (0-1) or uploaded-image pixel coordinates to original-image pixel coordinates (x_min, y_min, x_max, y_max)
+   - Normalizes provided confidence scores to valid range [0.0, 1.0]
+   - Assigns confidence 1.0 when the source format does not provide confidence
 6. Creates class name to class ID mapping:
    - For OpenAI/Gemini/Claude: uses provided classes list to create index mapping (class_name → class_id)
    - Classes are mapped in order (first class = ID 0, second = ID 1, etc.)
-   - Classes not in the provided list get class_id = -1
+   - Classes not in the provided list get class_id = -1. The model's original label is kept as class_name, and visualization blocks paint those detections in a neutral gray.
    - For Florence-2: uses different mapping strategies based on task type
 7. Constructs object detection predictions:
    - Creates supervision Detections objects with bounding boxes (xyxy format)
@@ -127,7 +143,7 @@ This block receives images and VLM outputs and produces object detection predict
 
 - **After VLM/LLM blocks** to parse detection outputs into standard format (e.g., VLM output to detections, LLM output to detections, parse model outputs), enabling VLM-to-detection workflows
 - **Before detection-based blocks** to use parsed detections (e.g., use parsed detections in workflows, provide detections to downstream blocks, use VLM detections with detection blocks), enabling detection-to-workflow workflows
-- **Before filtering blocks** to filter VLM detections (e.g., filter by class, filter by confidence, apply filters to VLM predictions), enabling detection-to-filter workflows
+- **Before filtering blocks** to filter VLM detections by class or by confidence when the source model provides confidence scores
 - **Before analytics blocks** to analyze VLM detection results (e.g., analyze VLM detections, perform analytics on parsed detections, track VLM detection metrics), enabling detection analytics workflows
 - **Before visualization blocks** to display VLM detection results (e.g., visualize VLM detections, display parsed detection predictions, show VLM detection outputs), enabling detection visualization workflows
 - **In workflow outputs** to provide VLM detections as final output (e.g., VLM detection outputs, parsed detection results, VLM-based detection outputs), enabling detection output workflows
@@ -142,7 +158,7 @@ This version (v2) includes the following enhancements over v1:
 
 ## Requirements
 
-This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports four model types: "openai", "google-gemini", "anthropic-claude", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, and Claude models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
+This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports nine model types: "openai", "google-gemini", "anthropic-claude", "spacexai", "qwen", "muse", "zai", "zai-flash", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, Claude, SpaceXAI, Qwen, Muse, and Z.ai models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1; the model's original label is kept as class_name and visualization blocks paint those detections in a neutral gray. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
 """
 
 SHORT_DESCRIPTION = "Parses raw string into object-detection prediction."
@@ -165,6 +181,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Detector",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -198,7 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
             List[str],
         ]
     ] = Field(
-        description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
+        description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1; the model's original label is kept as class_name and visualization blocks paint those detections in a neutral gray. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
         examples=[
             [
                 "$steps.lmm.classes",
@@ -210,22 +228,44 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "model_type": {
-                    "values": ["openai", "google-gemini", "anthropic-claude"],
+                    "values": [
+                        "openai",
+                        "google-gemini",
+                        "anthropic-claude",
+                        "spacexai",
+                        "qwen",
+                        "muse",
+                        "zai",
+                        "zai-flash",
+                    ],
                     "required": True,
                 },
             }
         },
     )
-    model_type: Literal["openai", "google-gemini", "anthropic-claude", "florence-2"] = (
-        Field(
-            description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
-            examples=[
-                ["openai"],
-                ["google-gemini"],
-                ["anthropic-claude"],
-                ["florence-2"],
-            ],
-        )
+    model_type: Literal[
+        "openai",
+        "google-gemini",
+        "anthropic-claude",
+        "spacexai",
+        "qwen",
+        "muse",
+        "zai",
+        "zai-flash",
+        "florence-2",
+    ] = Field(
+        description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'spacexai' (Grok), 'qwen' (Qwen-VL via OpenRouter), 'zai' (Z.ai GLM 5V Turbo via OpenRouter, box_2d xyxy 0-1000), 'zai-flash' (Z.ai GLM 5.3 Flash via OpenRouter, bbox_2d xyxy 0-1000), 'muse' (Meta Muse via OpenRouter), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
+        examples=[
+            ["openai"],
+            ["google-gemini"],
+            ["anthropic-claude"],
+            ["spacexai"],
+            ["qwen"],
+            ["muse"],
+            ["zai"],
+            ["zai-flash"],
+            ["florence-2"],
+        ],
     )
     task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(
         description="Task type performed by the VLM/LLM model. Determines which parser and format handler is used. Supported task types: 'object-detection' (standard object detection), 'open-vocabulary-object-detection' (detect objects with custom classes), 'object-detection-and-caption' (detection with captions), 'phrase-grounded-object-detection' (ground phrases to detections), 'region-proposal' (propose regions of interest), 'ocr-with-text-detection' (OCR with text region detection). The task type must match what the VLM/LLM was asked to perform.",
@@ -242,7 +282,8 @@ class BlockManifest(WorkflowBlockManifest):
             )
         if self.model_type != "florence-2" and self.classes is None:
             raise ValueError(
-                "Must pass list of classes to this block when using gemini or claude"
+                "Must pass list of classes to this block for every model type "
+                "except florence-2"
             )
 
         return self
@@ -280,6 +321,10 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
         error_status, parsed_data = string2json(
             raw_json=vlm_output,
         )
+        if error_status and model_type == "muse":
+            loose_entries = extract_flat_object_entries(vlm_output)
+            if loose_entries:
+                error_status, parsed_data = False, loose_entries
         if error_status:
             return {
                 "error_status": True,
@@ -314,29 +359,7 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
 def string2json(
     raw_json: str,
 ) -> Tuple[bool, Union[dict, list]]:
-    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
-    if len(json_blocks_found) == 0:
-        return try_parse_json(raw_json)
-    first_block = json_blocks_found[0]
-    return try_parse_json(first_block)
-
-
-def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, (dict, list)):
-            return False, parsed
-        logging.warning(
-            "Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v2` block. "
-            f"Unexpected JSON root type: {type(parsed).__name__}."
-        )
-        return True, {}
-    except Exception as error:
-        logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
-            f"Error type: {error.__class__.__name__}. Details: {error}"
-        )
-        return True, {}
+    return extract_json_payload(raw_json)
 
 
 def parse_llm_object_detection_response(
@@ -348,7 +371,7 @@ def parse_llm_object_detection_response(
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
     if len(parsed_data["detections"]) == 0:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(image=image)
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in parsed_data["detections"]:
         xyxy.append(
@@ -457,11 +480,122 @@ def get_4digit_from_md5(input_string):
     return integer_value % 10000
 
 
+def parse_openai_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> sv.Detections:
+    """Parse OpenAI object-detection output, dispatching on response format.
+
+    OpenAI blocks v1-v4 (and the v5 normalized-legacy style) produce
+    ``{"detections": [{"x_min": ...}]}`` with coordinates normalized to
+    0.0-1.0. The v5 plain-absolute style produces a JSON list of ``box_2d``
+    entries and the v5 structured-absolute style wraps the same entries in a
+    ``{"detections": [...]}`` object; both use absolute pixel coordinates of
+    the resized upload.
+
+    Args:
+        image: Workflow image the detections refer to.
+        parsed_data: JSON payload extracted from the VLM output.
+        classes: Class names used to map labels onto class ids.
+        inference_id: Identifier attached to every parsed detection.
+
+    Returns:
+        Parsed detections in the original image's coordinate space.
+    """
+    if isinstance(parsed_data, dict) and "detections" in parsed_data:
+        detections = parsed_data["detections"]
+        if (
+            isinstance(detections, list)
+            and len(detections) > 0
+            and isinstance(detections[0], dict)
+            and "box_2d" in detections[0]
+        ):
+            return parse_openai_object_detection_response(
+                image=image,
+                parsed_data=detections,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        return parse_llm_object_detection_response(
+            image=image,
+            parsed_data=parsed_data,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    return parse_openai_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
+def parse_anthropic_detection_response(
+    image: WorkflowImageData,
+    parsed_data: Union[dict, list],
+    classes: List[str],
+    inference_id: str,
+) -> sv.Detections:
+    """Parse Claude object-detection output, dispatching on response format.
+
+    Claude blocks v1-v3 produce ``{"detections": [{"x_min": ...}]}`` with
+    coordinates normalized to 0.0-1.0. The v4 block produces a JSON list of
+    ``box_2d`` entries with absolute pixel coordinates of the pre-resized
+    upload.
+
+    Args:
+        image: Workflow image the detections refer to.
+        parsed_data: JSON payload extracted from the VLM output.
+        classes: Class names used to map labels onto class ids.
+        inference_id: Identifier attached to every parsed detection.
+
+    Returns:
+        Parsed detections in the original image's coordinate space.
+    """
+    if isinstance(parsed_data, dict) and "detections" in parsed_data:
+        detections = parsed_data["detections"]
+        if (
+            isinstance(detections, list)
+            and len(detections) > 0
+            and isinstance(detections[0], dict)
+            and "box_2d" in detections[0]
+        ):
+            return parse_anthropic_object_detection_response(
+                image=image,
+                parsed_data=detections,
+                classes=classes,
+                inference_id=inference_id,
+            )
+        return parse_llm_object_detection_response(
+            image=image,
+            parsed_data=parsed_data,
+            classes=classes,
+            inference_id=inference_id,
+        )
+    return parse_anthropic_object_detection_response(
+        image=image,
+        parsed_data=parsed_data,
+        classes=classes,
+        inference_id=inference_id,
+    )
+
+
 REGISTERED_PARSERS = {
     # LLMs
-    ("openai", "object-detection"): parse_llm_object_detection_response,
+    ("openai", "object-detection"): parse_openai_detection_response,
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
-    ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
+    ("anthropic-claude", "object-detection"): parse_anthropic_detection_response,
+    ("spacexai", "object-detection"): parse_spacexai_object_detection_response,
+    ("qwen", "object-detection"): parse_qwen_object_detection_response,
+    ("muse", "object-detection"): parse_muse_object_detection_response,
+    # Both GLM models emit xyxy 0-1000 boxes: GLM 5V Turbo under the
+    # "box_2d" key, GLM 5.3 Flash under "bbox_2d". The Qwen parser accepts
+    # both keys, so both model_types share it; the labels stay separate
+    # for saved-workflow compatibility.
+    ("zai", "object-detection"): parse_qwen_object_detection_response,
+    ("zai-flash", "object-detection"): parse_qwen_object_detection_response,
     # Florence 2
     ("florence-2", "object-detection"): partial(
         parse_florence2_object_detection_response, florence_task_type="<OD>"

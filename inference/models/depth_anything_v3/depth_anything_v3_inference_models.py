@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Union
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
@@ -72,6 +72,13 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        return self._model(images, **kwargs)
 
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):

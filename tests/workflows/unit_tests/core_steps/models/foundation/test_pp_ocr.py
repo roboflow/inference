@@ -148,35 +148,29 @@ def _make_images() -> Batch:
 def test_pp_ocr_run_locally_full_mode() -> None:
     # given
     model_manager = MagicMock()
-    model_manager.infer_from_request_sync.return_value = MagicMock(
-        model_dump=MagicMock(
-            return_value={
-                "result": "HELLO",
-                "image": {"width": 168, "height": 192},
-                "predictions": [
-                    {
-                        "x": 15.0,
-                        "y": 10.0,
-                        "width": 30.0,
-                        "height": 20.0,
-                        "confidence": 0.9,
-                        "class": "HELLO",
-                        "class_id": 0,
-                    }
-                ],
+    model_manager.run_pp_ocr.return_value = {
+        "result": "HELLO",
+        "image": {"width": 168, "height": 192},
+        "predictions": [
+            {
+                "x": 15.0,
+                "y": 10.0,
+                "width": 30.0,
+                "height": 20.0,
+                "confidence": 0.9,
+                "class": "HELLO",
+                "class_id": 0,
             }
-        )
-    )
+        ],
+    }
     block = _make_block(model_manager)
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="small", text_recognition="small"
-    )
+    result = block.run(images=images, text_detection="small", text_recognition="small")
 
     # then
-    model_manager.infer_from_request_sync.assert_called_once()
+    model_manager.run_pp_ocr.assert_called_once()
     assert len(result) == 1
     single = result[0]
     assert single["result"] == "HELLO"
@@ -196,32 +190,26 @@ def test_pp_ocr_run_locally_full_mode() -> None:
 def test_pp_ocr_run_locally_detect_only() -> None:
     # given
     model_manager = MagicMock()
-    model_manager.infer_from_request_sync.return_value = MagicMock(
-        model_dump=MagicMock(
-            return_value={
-                "result": "",
-                "image": {"width": 168, "height": 192},
-                "predictions": [
-                    {
-                        "x": 15.0,
-                        "y": 10.0,
-                        "width": 30.0,
-                        "height": 20.0,
-                        "confidence": 0.9,
-                        "class": "",
-                        "class_id": 0,
-                    }
-                ],
+    model_manager.run_pp_ocr.return_value = {
+        "result": "",
+        "image": {"width": 168, "height": 192},
+        "predictions": [
+            {
+                "x": 15.0,
+                "y": 10.0,
+                "width": 30.0,
+                "height": 20.0,
+                "confidence": 0.9,
+                "class": "",
+                "class_id": 0,
             }
-        )
-    )
+        ],
+    }
     block = _make_block(model_manager)
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="small", text_recognition="none"
-    )
+    result = block.run(images=images, text_detection="small", text_recognition="none")
 
     # then
     assert len(result) == 1
@@ -234,22 +222,16 @@ def test_pp_ocr_run_locally_detect_only() -> None:
 def test_pp_ocr_run_locally_recognize_only() -> None:
     # given
     model_manager = MagicMock()
-    model_manager.infer_from_request_sync.return_value = MagicMock(
-        model_dump=MagicMock(
-            return_value={
-                "result": "HELLO",
-                "image": {"width": 168, "height": 192},
-                "predictions": [],
-            }
-        )
-    )
+    model_manager.run_pp_ocr.return_value = {
+        "result": "HELLO",
+        "image": {"width": 168, "height": 192},
+        "predictions": [],
+    }
     block = _make_block(model_manager)
     images = _make_images()
 
     # when
-    result = block.run(
-        images=images, text_detection="none", text_recognition="small"
-    )
+    result = block.run(images=images, text_detection="none", text_recognition="small")
 
     # then
     assert len(result) == 1

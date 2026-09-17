@@ -3,15 +3,14 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import DepthEstimationRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     DEPTH_ESTIMATION_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -28,13 +27,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -166,11 +168,14 @@ class BlockManifest(WorkflowBlockManifest):
             "yolo26x-depth-768",
         ]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
+
 
 class DepthEstimationBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -219,6 +224,9 @@ class DepthEstimationBlockV1(WorkflowBlock):
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
@@ -270,16 +278,12 @@ class DepthEstimationBlockV1(WorkflowBlock):
 
         predictions = []
         for idx, image in enumerate(inference_images):
-            # Run inference.
-            request = DepthEstimationRequest(
-                image=image,
-            )
-
             try:
-                prediction = self._model_manager.infer_from_request_sync(
-                    model_id=model_version, request=request
+                predictions.append(
+                    self._model_manager.run_depth_estimation(
+                        model_id=model_version, image=image
+                    )
                 )
-                predictions.append(prediction.response)
             except Exception as e:
                 raise
 

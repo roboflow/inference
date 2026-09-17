@@ -2,21 +2,20 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
-from inference.core.env import (
-    HOSTED_DETECT_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
-from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
+)
+from inference.core.workflows.environment import (
+    HOSTED_DETECT_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -41,9 +40,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
+    roboflow_platform_project,
 )
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -140,6 +143,20 @@ class BlockManifest(WorkflowBlockManifest):
     def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["object-detection"]
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        resources = [roboflow_platform_model(model_id=self.model_id)]
+        if self.disable_active_learning is True:
+            # Active learning literally disabled (the default) — the target
+            # project is dead configuration, not a dependency.
+            return resources
+        if self.active_learning_target_dataset is not None:
+            resources.append(
+                roboflow_platform_project(
+                    project_url=self.active_learning_target_dataset
+                )
+            )
+        return resources
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
@@ -162,7 +179,7 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -236,32 +253,23 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = ObjectDetectionInferenceRequest(
-            api_key=self._api_key,
+        self._model_manager.add_model(
             model_id=model_id,
-            image=inference_images,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
+            api_key=self._api_key,
+        )
+        predictions = self._model_manager.run_object_detection(
+            model_id=model_id,
+            images=inference_images,
+            api_key=self._api_key,
             class_agnostic_nms=class_agnostic_nms,
             class_filter=class_filter,
             confidence=confidence,
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            source="workflow-execution",
+            disable_active_learning=disable_active_learning,
+            active_learning_target_dataset=active_learning_target_dataset,
         )
-        self._model_manager.add_model(
-            model_id=model_id,
-            api_key=self._api_key,
-        )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request
-        )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -293,6 +301,7 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,

@@ -37,7 +37,7 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
-    pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 GRANULARITY_2TASK = {
@@ -607,15 +607,16 @@ class Florence2HF:
             image_dimensions = extract_input_images_dimensions(images=image_list)
             pre_processing_metadata = None
         else:
-            images, pre_processing_metadata = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                pre_processing_overrides=pre_processing_overrides,
+            image_list, pre_processing_metadata = (
+                pre_process_network_input_to_image_list(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
             )
-            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
             image_dimensions = [
                 e.size_after_pre_processing for e in pre_processing_metadata
             ]

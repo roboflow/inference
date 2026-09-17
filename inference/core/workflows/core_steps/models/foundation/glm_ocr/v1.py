@@ -3,15 +3,14 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.environment import (
     GLM_OCR_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -27,13 +26,16 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    roboflow_platform_model,
 )
-from inference_sdk import InferenceHTTPClient
+from inference.core.workflows.prototypes.models_provider import ModelsProvider
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 STRUCTURED_ANSWERING_PROMPT_TEMPLATE = (
     "You are supposed to produce responses in JSON wrapped in Markdown markers: "
@@ -261,6 +263,9 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return restrictions
 
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
+
 
 def _resolve_prompt(
     task_type: str,
@@ -293,7 +298,7 @@ def _resolve_prompt(
 class GLMOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
-        model_manager: ModelManager,
+        model_manager: ModelsProvider,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
@@ -354,6 +359,9 @@ class GLMOCRBlockV1(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
@@ -386,20 +394,14 @@ class GLMOCRBlockV1(WorkflowBlock):
 
         predictions = []
         for image in inference_images:
-            request_kwargs = dict(
-                api_key=self._api_key,
+            prediction = self._model_manager.run_lmm(
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
                 prompt=prompt,
+                api_key=self._api_key,
+                max_new_tokens=max_new_tokens,
             )
-            if max_new_tokens is not None:
-                request_kwargs["max_new_tokens"] = max_new_tokens
-            request = LMMInferenceRequest(**request_kwargs)
-            prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
-            )
-            response_text = prediction.response
+            response_text = prediction["response"]
             predictions.append({"parsed_output": response_text})
 
         return predictions
