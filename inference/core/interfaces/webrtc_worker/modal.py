@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
@@ -167,6 +168,9 @@ if modal is not None:
         "env": {
             "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
                 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+            ),
+            "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES": str(
+                ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
             ),
             "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
             "DISABLE_INFERENCE_CACHE": "True",

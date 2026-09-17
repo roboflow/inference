@@ -10,11 +10,11 @@ Every image source carrying a *host policy* goes through here:
 * Local-filesystem reads - `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`.
 * Pickled-numpy payloads - `ALLOW_NUMPY_INPUT`, the gate before `pickle.loads`.
 
-None of those rules is reimplemented here and none may be. The Roboflow
-inference server injects its guarded implementation
-(`inference.core.interfaces.workflows_image_codec`); standalone Workflows falls
-back to `WorkflowsLocalImageCodec`, which refuses all three outright rather than
-doing them unguarded.
+None of those rules is reimplemented here and none may be. Normal inference
+startup registers a lazy default for its guarded implementation; server entry
+points can still bind an explicit codec before the default is used. Isolated
+Workflows, without a host default, falls back to WorkflowsLocalImageCodec,
+which refuses all three outright rather than doing them unguarded.
 
 TWO INJECTION PATHS, by consumer:
 
@@ -37,7 +37,7 @@ timing, which is a bug, not a configuration.
 """
 
 import threading
-from typing import Any, Optional, Protocol, Tuple, Union
+from typing import Any, Callable, Optional, Protocol, Tuple, Union
 
 import cv2
 import numpy as np
@@ -234,13 +234,31 @@ class WorkflowsLocalImageCodec:
 
 
 _DEFAULT_CODEC = WorkflowsLocalImageCodec()
+_DEFAULT_CODEC_FACTORY: Optional[Callable[[], ImageCodec]] = None
 _INSTALLED_CODEC: Optional[ImageCodec] = None
 _INSTALL_LOCK = threading.Lock()
 
 
+def set_default_image_codec_factory(factory: Callable[[], ImageCodec]) -> None:
+    """Register a lazy host default without preempting an explicit codec."""
+    global _DEFAULT_CODEC_FACTORY
+    with _INSTALL_LOCK:
+        _DEFAULT_CODEC_FACTORY = factory
+
+
 def get_image_codec() -> ImageCodec:
-    """The process-wide codec, or the refusing default if none is installed."""
+    """Resolve the host default on first use, or use the isolated fallback."""
+    global _INSTALLED_CODEC
     codec = _INSTALLED_CODEC
+    factory = _DEFAULT_CODEC_FACTORY
+    if codec is None and factory is not None:
+        # Host imports must run outside the lock. An explicit codec installed
+        # while they run takes precedence over the default.
+        default_codec = factory()
+        with _INSTALL_LOCK:
+            if _INSTALLED_CODEC is None:
+                _INSTALLED_CODEC = default_codec
+            codec = _INSTALLED_CODEC
     return codec if codec is not None else _DEFAULT_CODEC
 
 
@@ -269,7 +287,8 @@ def set_image_codec(codec: ImageCodec) -> None:
 
 
 def reset_image_codec() -> None:
-    """Clear the installed codec. Tests only - never call this from a server."""
-    global _INSTALLED_CODEC
+    """Clear the installed codec and host default. Tests only."""
+    global _INSTALLED_CODEC, _DEFAULT_CODEC_FACTORY
     with _INSTALL_LOCK:
         _INSTALLED_CODEC = None
+        _DEFAULT_CODEC_FACTORY = None

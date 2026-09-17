@@ -97,6 +97,12 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
 ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
     os.getenv("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
 )
+# Self-hosted compatibility flag for the Webhook Workflow sink. Defaults to
+# permissive to preserve existing private/LAN webhooks. Hosted deployments set
+# this to False so tenant workflows can only reach publicly-routable addresses.
+ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True)
+)
 # Optional comma-separated denylist of destinations the PostgreSQL Workflow sink
 # may never connect to (IP literals or hostnames). Enforced regardless of the
 # non-global setting above: the raw host and every resolved IP are checked
@@ -1154,6 +1160,17 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
 # serialized to the wire. Default is False (RLE).
 WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
     os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
+)
+
+# Upper bound on the vertices of one polygon that Workflows VLM blocks accept
+# when decoding an instance-segmentation answer (e.g. `open_ai@v7`). Polygons
+# above it are skipped before encoding: the COCO RLE encoder allocates memory
+# proportional to the outline length, so a single oversized (looping or
+# prompt-injected) model answer could otherwise cost gigabytes. At the
+# default, one worst-case polygon on a 4000x3000 image costs ~120 MB and
+# ~0.2 s; real outlines stay far below the bound.
+WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES = int(
+    os.getenv("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", "500")
 )
 
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")

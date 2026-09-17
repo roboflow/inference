@@ -254,7 +254,10 @@ class YOLONasForObjectDetectionTRT(
                     stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
                 )
-                return torch.cat(results, dim=-1)
+                with torch.cuda.stream(self._inference_stream):
+                    concatenated = torch.cat(results, dim=-1)
+                self._inference_stream.synchronize()
+                return concatenated
 
     def post_process(
         self,

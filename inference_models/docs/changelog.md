@@ -4,9 +4,13 @@
 
 ### Changed
 
-- The RF-DETR numpy preprocessor swaps BGR to RGB after the PIL resize, on the
-  network-size image, instead of before it on the full-size input. Output is
-  bit-exact. On a 2048x1371 input `pre_process` drops from about 38ms to 22ms.
+- Optimization: the RF-DETR numpy preprocessor swaps BGR to RGB after the PIL resize,
+  on the network-size image, instead of before it on the full-size input. Output is
+  bit-exact.
+
+### Fixed
+
+- `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
 
 ---
 
