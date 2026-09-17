@@ -64,33 +64,17 @@ class InferenceRequest(BaseRequest):
     model_package_id: Optional[str] = Field(
         default=None,
         min_length=1,
-        description=(
-            "Exact model package ID. Requires USE_INFERENCE_MODELS=true. "
-            "Cannot be combined with backend or quantization. A successful request "
-            "uses this package; an unknown package ID returns HTTP 404. "
-            "Without selectors, the server uses its automatic package selection."
-        ),
+        description="Exact model package ID.",
     )
     backend: Optional[str] = Field(
         default=None,
         min_length=1,
-        description=(
-            "Required package backend, such as trt or onnx. Requires "
-            "USE_INFERENCE_MODELS=true. Can be combined with quantization, but "
-            "not model_package_id. A successful request satisfies both selectors. "
-            "Unsupported values or unavailable combinations return HTTP 400."
-        ),
+        description="Required package backend, such as trt or onnx.",
     )
     quantization: Optional[str] = Field(
         default=None,
         min_length=1,
-        description=(
-            "Required package quantization, such as fp16 or fp32. Requires "
-            "USE_INFERENCE_MODELS=true. Can be combined with backend, but "
-            "not model_package_id. This describes the package, not the precision "
-            "of every runtime operation. Unsupported values or unavailable "
-            "combinations return HTTP 400."
-        ),
+        description="Required package quantization, such as fp16 or fp32.",
     )
 
     @model_validator(mode="after")
