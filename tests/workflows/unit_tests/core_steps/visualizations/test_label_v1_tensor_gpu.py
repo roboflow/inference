@@ -409,8 +409,12 @@ def test_sprite_cache_reuses_sprites_across_runs(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("device", DEVICES)
-def test_cached_sprites_are_device_resident_tensors(device: str) -> None:
+def test_cached_sprites_are_device_resident_tensors(device: str, monkeypatch) -> None:
     # given
+    monkeypatch.setattr(
+        "inference.core.workflows.execution_engine.entities.base.WORKFLOWS_IMAGE_TENSOR_DEVICE",
+        torch.device(device),
+    )
     scene = _make_scene(89)
     detections = _default_detections(device=device)
     block = LabelVisualizationBlockV1()
@@ -752,6 +756,8 @@ def test_gpu_fallback_warns_once_then_stays_quiet(monkeypatch, caplog) -> None:
     # (see inference/core/logger.py), so its records never reach the root
     # logger pytest's caplog handler is attached to. Attach the caplog
     # handler directly to the module logger.
+    # Capture once regardless of handlers installed on ancestor loggers.
+    monkeypatch.setattr(label_v1_tensor.logger, "propagate", False)
     label_v1_tensor.logger.addHandler(caplog.handler)
     try:
         with caplog.at_level(logging.WARNING, logger=label_v1_tensor.logger.name):

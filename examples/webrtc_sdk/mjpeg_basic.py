@@ -12,8 +12,18 @@ Usage:
       [--stream-output <output_name>] \\
       [--data-output <output_name>]
 
+The server accepts HTTP(S) MJPEG streams from public addresses by default.
+For a private camera such as camera.local, set
+WEBRTC_MJPEG_ALLOW_NON_GLOBAL_ADDRESSES=True on a trusted inference server.
+This permits callers to reach private, loopback and link-local HTTP services;
+keep it disabled on servers accepting untrusted requests. File paths and other
+protocols remain prohibited. Destinations are checked on every redirect
+(at most five), connections/read operations time out after five seconds,
+and environment HTTP proxies are not used for MJPEG input.
+
 Press 'q' in the preview window to exit.
 """
+
 import argparse
 
 import av

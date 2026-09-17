@@ -16,7 +16,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
@@ -62,6 +61,7 @@ from inference.core.workflows.prototypes.block import (
     is_workflow_selector,
     third_party_model,
 )
+from inference.core.workflows.utils.images import encode_image_to_jpeg_bytes
 
 # Ported verbatim from vlm-exam's `_NORMALIZED_XYXY_PROMPT_TEMPLATE`, the
 # detection coordinate format pinned for GLM 5V Turbo in the benchmark
@@ -469,6 +469,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         json_schema_extra={
             "name": "Z.ai",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use Z.ai v2, which decodes detection and classification predictions in-block; the VLM as Detector / VLM as Classifier blocks are deprecated.",
             "short_description": "Run Z.ai GLM vision models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",

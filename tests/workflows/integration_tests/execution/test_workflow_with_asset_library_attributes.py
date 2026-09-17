@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes import (
+from inference.roboflow_workflows_plugin.sinks.asset_library_attributes import (
     v1,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine

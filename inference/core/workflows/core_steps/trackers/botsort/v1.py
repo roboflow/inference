@@ -1,10 +1,10 @@
+import logging
 from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 from trackers import BoTSORTTracker
 
-from inference.core import logger
 from inference.core.workflows.core_steps.trackers._base import (
     TRACKER_PREDICTION_KINDS,
     TrackerBlockBase,
@@ -22,6 +22,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+logger = logging.getLogger(__name__)
 
 #: Camera motion compensation (CMC) backend for BoT-SORT. Valid string values:
 #:

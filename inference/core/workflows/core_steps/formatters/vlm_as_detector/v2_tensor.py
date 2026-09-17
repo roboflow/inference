@@ -9,8 +9,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
-from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
@@ -39,6 +37,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.spacexai_det
     convert_spacexai_detection_to_pixel_xyxy,
     extract_spacexai_detection_entries,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -74,6 +73,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_models.models.base.object_detection import Detections
+
+logger = logging.getLogger(__name__)
 
 LONG_DESCRIPTION = """
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
@@ -195,6 +196,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Detector",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

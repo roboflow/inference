@@ -1,7 +1,11 @@
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from inference.core.env import ALLOW_UNSAFE_GSTREAMER_PIPELINES
+from inference.core.interfaces.camera.source_reference_validation import (
+    validate_video_references,
+)
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -44,6 +48,13 @@ class ObjectDetectionModelConfiguration(BaseModel):
 
 
 class PipelineInitialisationRequest(BaseModel):
+    @field_validator("video_reference")
+    @classmethod
+    def validate_video_reference(cls, value):
+        return validate_video_references(
+            value, allow_unsafe=ALLOW_UNSAFE_GSTREAMER_PIPELINES
+        )
+
     model_id: str = Field(description="Roboflow model id")
     video_reference: Union[str, int, List[Union[str, int]]] = Field(
         description="Reference to video source - either stream, video file or device. It must be accessible from the host running inference stream"

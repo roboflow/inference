@@ -67,10 +67,38 @@ This block receives two detection sets and produces the enriched query predictio
 
 This block requires two sets of detection predictions (object detection, instance segmentation, or keypoint detection); the same set can be used for both `query_predictions` and `target_predictions`. To use the `KEYPOINT` anchor option for either set, that set must be keypoint detection predictions and the corresponding `query_keypoint_name`/`target_keypoint_name` must be provided. Self-match exclusion relies on `detection_id` being present on both sets - this is populated automatically for all Roboflow object detection, instance segmentation, and keypoint detection model blocks. `max_distance` is optional; leave it unset to match every query detection to its nearest target regardless of distance.
 
+Because matching computes a full query x target pairwise distance matrix, `query_predictions` and `target_predictions` may each contain at most 1,000 detections; the block raises an error instead of matching when either set exceeds this limit. Separately, if many query/target anchor points are co-located (or within the tie epsilon of each other), the number of matched query-target pairs returned in `matched_query_detections`/`matched_target_detections` can be much larger than either input set - up to their full product in the worst case - since a query with several tied targets contributes one row per tie. This is capped independently at 10,000 matched pairs (100 when either `query_predictions` or `target_predictions` is instance segmentation, since a matched instance segmentation row carries a full-resolution mask and is far larger than a plain bbox/keypoint row), because slicing a large matched-pair set out of the input detections is its own memory cost, separate from the distance matrix; the block raises an error instead of matching when the applicable limit would be exceeded.
+
 Note that `query_predictions` is enriched in place - the same `sv.Detections` object passed in is mutated (a new `nearest_target_distance` field is added to its `.data`) and returned, the same convention used by blocks like Velocity and Time in Zone. Avoid feeding the same selector into two independent branches of a workflow if each branch needs to see its own, unmodified `nearest_target_distance`.
 """
 
 TIE_EPSILON_PX = 1.0
+
+# Matching builds a full query x target pairwise distance matrix (see
+# `match_query_to_targets`), so its memory/CPU cost is O(num_query *
+# num_target). At the 1000x1000 cap, a worst-case (all-tied) request is still
+# bounded to a few tens of MB rather than letting a crafted input with many
+# detections exhaust process memory.
+MAX_DETECTIONS_PER_SET = 1_000
+
+# Independent from MAX_DETECTIONS_PER_SET: many co-located (or near-co-located)
+# anchor points can tie every query against every target, so the number of
+# matched pairs - and therefore the size of the matched_query_detections /
+# matched_target_detections slices - can approach MAX_DETECTIONS_PER_SET ** 2
+# even though each input set is individually within bounds. Capping the pair
+# count itself (checked directly off the tie mask, before any index list or
+# slice is materialized) keeps that output-side cost bounded regardless of how
+# the ties are distributed.
+MAX_MATCHED_PAIRS = 10_000
+
+# Instance segmentation masks are stored one dense (roughly input-image
+# resolution) boolean array per detection, so a single mask can already be
+# hundreds of KB to a few MB - orders of magnitude larger than a plain bbox
+# row. Duplicating MAX_MATCHED_PAIRS worth of masked rows could reach into the
+# gigabytes even though the same row count is safe for bbox/keypoint-only
+# detections, so a mask-carrying match uses this much smaller budget instead
+# whenever either side of the match has masks.
+MAX_MATCHED_PAIRS_WITH_MASKS = 100
 
 KEYPOINT_POINT_OPTION = "KEYPOINT"
 ANCHOR_POINT_OPTIONS = [
@@ -232,6 +260,24 @@ class DetectionsNearestNeighborBlockV1(WorkflowBlock):
             raise ValueError(
                 "`target_keypoint_name` must be provided when `target_point` is set to 'KEYPOINT'."
             )
+        if len(query_predictions) > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`query_predictions` contains {len(query_predictions)} detections, "
+                f"exceeding the {MAX_DETECTIONS_PER_SET}-detection limit for "
+                "`roboflow_core/detections_nearest_neighbor@v1`, which performs a "
+                "full pairwise comparison between the query and target sets. Reduce "
+                "the number of query detections (e.g. filter or limit them "
+                "upstream) before using this block."
+            )
+        if len(target_predictions) > MAX_DETECTIONS_PER_SET:
+            raise ValueError(
+                f"`target_predictions` contains {len(target_predictions)} "
+                f"detections, exceeding the {MAX_DETECTIONS_PER_SET}-detection "
+                "limit for `roboflow_core/detections_nearest_neighbor@v1`, which "
+                "performs a full pairwise comparison between the query and target "
+                "sets. Reduce the number of target detections (e.g. filter or "
+                "limit them upstream) before using this block."
+            )
 
         query_points = resolve_anchor_points(
             detections=query_predictions,
@@ -359,6 +405,35 @@ def match_query_to_targets(
     # A tie duplicates the query row once per tied target; row-major `np.where`
     # keeps the two paired outputs the same length and index-aligned.
     tie_mask = distance_matrix <= (min_per_row[:, None] + TIE_EPSILON_PX)
+    # Counted directly off the boolean mask, before `np.where`/`.tolist()`
+    # materialize any index list: widespread co-located ties can produce far
+    # more matched pairs than either input set's size alone would suggest (up
+    # to num_query * num_target), and those pairs get sliced out of the input
+    # detections (masks included) below in `run()`.
+    num_matched_pairs = int(np.count_nonzero(tie_mask))
+    # A matched instance segmentation row carries a full-resolution mask, far
+    # larger than a plain bbox/keypoint row, so a masked match is held to a
+    # much smaller pair budget than the general case.
+    has_masks = query_detections.mask is not None or target_detections.mask is not None
+    matched_pairs_limit = (
+        MAX_MATCHED_PAIRS_WITH_MASKS if has_masks else MAX_MATCHED_PAIRS
+    )
+    if num_matched_pairs > matched_pairs_limit:
+        mask_note = (
+            " (a stricter limit applies because query and/or target "
+            "predictions carry instance segmentation masks)"
+            if has_masks
+            else ""
+        )
+        raise ValueError(
+            f"`roboflow_core/detections_nearest_neighbor@v1` would produce "
+            f"{num_matched_pairs} matched query-target pairs, exceeding the "
+            f"{matched_pairs_limit} limit{mask_note}. This usually means many "
+            "query/target detections share the same (or a near-identical) "
+            "anchor point, producing widespread ties. Reduce the number of "
+            "detections or increase separation between anchor points before "
+            "using this block."
+        )
     matched_query_indices, matched_target_indices = (
         x.tolist() for x in np.where(tie_mask)
     )

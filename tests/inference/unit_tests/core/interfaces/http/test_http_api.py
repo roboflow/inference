@@ -2248,7 +2248,7 @@ def test_secure_gateway_health_route_passes_configuration_to_probe(monkeypatch) 
 
     assert response.status_code == 200
     probe_mock.assert_called_once_with(
-        gateway_base_url="http://gateway.local:8080",
+        gateway_base_url="https://gateway.local:8080",
         timeout=7.5,
         verify_ssl=False,
     )
@@ -2280,3 +2280,31 @@ def test_local_whitelist_middleware_skips_check_for_secure_gateway_health(
 
 def test_secure_gateway_health_is_a_health_check_log_path() -> None:
     assert SECURE_GATEWAY_HEALTH_PATH in http_api.HEALTH_CHECK_LOG_PATHS
+
+
+@pytest.mark.parametrize("path", ["/workflows/run", "/workspace/workflows/child"])
+def test_workflow_http_routes_propagate_dispatch_depth(monkeypatch, path) -> None:
+    interface, _ = _build_plain_interface(monkeypatch)
+    specification = {"version": "1.0", "inputs": [], "steps": [], "outputs": []}
+    monkeypatch.setattr(
+        http_api, "get_workflow_specification", MagicMock(return_value=specification)
+    )
+    engine = MagicMock()
+    engine.run.return_value = []
+    execution_engine = MagicMock()
+    execution_engine.init.return_value = engine
+    monkeypatch.setattr(http_api, "ExecutionEngine", execution_engine)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            path,
+            json={
+                "inputs": {},
+                "specification": specification,
+                "inner_workflow_dispatch_depth": 2,
+            },
+        )
+
+    assert response.status_code == 200
+    parameters = execution_engine.init.call_args.kwargs["init_parameters"]
+    assert parameters["workflows_core.inner_workflow_dispatch_depth"] == 2

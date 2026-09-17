@@ -5,8 +5,8 @@ import cv2
 import numpy as np
 import pytest
 import supervision as sv
-from supervision.config import ORIENTED_BOX_COORDINATES
 from pycocotools import mask as mask_utils
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_rle_sv_detections,
@@ -23,6 +23,7 @@ from inference.core.workflows.core_steps.common.utils import (
     compute_anthropic_upload_dimensions,
     convert_inference_detections_batch_to_sv_detections,
     count_anthropic_image_tokens,
+    empty_detections_with_image_metadata,
     filter_out_unwanted_classes_from_sv_detections_batch,
     grab_batch_parameters,
     grab_non_batch_parameters,
@@ -32,6 +33,7 @@ from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
     SCALING_RELATIVE_TO_PARENT_KEY,
     SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
@@ -42,6 +44,24 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+
+
+def test_empty_detections_with_image_metadata_keeps_empty_field_contract() -> None:
+    # given / when
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((480, 640, 3), dtype=np.uint8),
+    )
+    result = empty_detections_with_image_metadata(image=image)
+
+    # then - image dimensions travel in metadata (zero rows means `data` is
+    # invisible to the serialiser), while the fields `sv.Detections.empty()`
+    # populates stay empty arrays rather than becoming `None`; consumers such as
+    # `DetectionsPropertyExtract` call `.tolist()` on them unconditionally.
+    assert len(result) == 0
+    assert result.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert result.confidence.tolist() == []
+    assert result.class_id.tolist() == []
 
 
 def test_attach_prediction_type_info_for_non_empty_predictions() -> None:

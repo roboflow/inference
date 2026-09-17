@@ -62,6 +62,15 @@ def make_keypoint_detections(
     return detections
 
 
+def make_masked_detections(xyxy, detection_ids=None) -> sv.Detections:
+    """Instance-segmentation detections with a (tiny, for test speed) mask per
+    row - only the presence of `.mask` matters for the mask-aware matched-pair
+    limit, not its size."""
+    detections = make_detections(xyxy=xyxy, detection_ids=detection_ids)
+    detections.mask = np.zeros((len(xyxy), 4, 4), dtype=bool)
+    return detections
+
+
 def run_block(
     query,
     target,
@@ -403,6 +412,149 @@ def test_keypoint_option_requires_keypoint_predictions() -> None:
         )
 
 
+def test_detections_per_set_limit_rejects_oversized_query_set() -> None:
+    # given: 1001 query detections exceeds the 1000-detection-per-set limit
+    query = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"q{i}" for i in range(1001)],
+    )
+    target = make_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
+
+    # when / then
+    with pytest.raises(ValueError, match="query_predictions"):
+        run_block(query, target)
+
+
+def test_detections_per_set_limit_rejects_oversized_target_set() -> None:
+    # given: 1001 target detections exceeds the 1000-detection-per-set limit
+    query = make_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
+    target = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"t{i}" for i in range(1001)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="target_predictions"):
+        run_block(query, target)
+
+
+def test_detections_per_set_limit_allows_inputs_at_the_limit() -> None:
+    # given: exactly 1000 detections on each side - at, not over, the limit
+    query = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"q{i}" for i in range(1000)],
+    )
+    target = make_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"t{i}" for i in range(1000)],
+    )
+
+    # when
+    result = run_block(query, target)
+
+    # then
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
+
+
+def test_matched_pairs_limit_rejects_widespread_ties() -> None:
+    # given: 200 query and 200 target detections, all co-located at the same
+    # anchor point - every pair ties, producing 40,000 matched pairs even
+    # though each set (200) is well under the 1000-detection-per-set limit.
+    # This is exactly the scenario MAX_DETECTIONS_PER_SET alone would miss.
+    query = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"q{i}" for i in range(200)],
+    )
+    target = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"t{i}" for i in range(200)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="matched query-target pairs"):
+        run_block(query, target)
+
+
+def test_matched_pairs_limit_allows_ties_at_the_limit() -> None:
+    # given: 100 query and 100 target detections, all co-located - exactly
+    # 10,000 tied pairs, at (not over) the limit
+    query = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 10_000
+    assert len(matched_target) == 10_000
+
+
+def test_matched_pairs_limit_with_masks_rejects_widespread_ties() -> None:
+    # given: 20 co-located instance-segmentation query and target detections -
+    # 400 tied pairs exceeds the 100-pair mask-aware limit, even though 400 is
+    # well under the general 10,000-pair limit that applies to bbox-only
+    # matches.
+    query = make_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"q{i}" for i in range(20)],
+    )
+    target = make_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"t{i}" for i in range(20)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="instance segmentation masks"):
+        run_block(query, target)
+
+
+def test_matched_pairs_limit_with_masks_applies_when_only_one_side_has_masks() -> None:
+    # given: only the target set carries masks - the stricter limit still
+    # applies, since the target side of the match still duplicates masks
+    query = make_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"q{i}" for i in range(20)],
+    )
+    target = make_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"t{i}" for i in range(20)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="instance segmentation masks"):
+        run_block(query, target)
+
+
+def test_matched_pairs_limit_with_masks_allows_ties_at_the_limit() -> None:
+    # given: 10 co-located instance-segmentation query and target detections -
+    # exactly 100 tied pairs, at (not over) the mask-aware limit
+    query = make_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 10,
+        detection_ids=[f"q{i}" for i in range(10)],
+    )
+    target = make_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 10,
+        detection_ids=[f"t{i}" for i in range(10)],
+    )
+
+    # when
+    result = run_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 100
+    assert len(matched_target) == 100
+
+
 def make_native_detections(
     xyxy, detection_ids=None, class_name="object"
 ) -> NativeDetections:
@@ -417,6 +569,26 @@ def make_native_detections(
         class_id=torch.zeros(n, dtype=torch.long),
         confidence=torch.full((n,), 0.9, dtype=torch.float32),
         image_metadata={CLASS_NAMES_KEY: {0: class_name}},
+        bboxes_metadata=bboxes_metadata,
+    )
+
+
+def make_native_masked_detections(xyxy, detection_ids=None) -> NativeInstanceDetections:
+    """Instance-segmentation detections with a (tiny, for test speed) mask per
+    row - only the presence of `.mask` matters for the mask-aware matched-pair
+    limit, not its size."""
+    n = len(xyxy)
+    bboxes_metadata = None
+    if detection_ids is not None:
+        bboxes_metadata = [
+            {"detection_id": detection_id} for detection_id in detection_ids
+        ]
+    return NativeInstanceDetections(
+        xyxy=torch.tensor(xyxy, dtype=torch.float32).reshape(-1, 4),
+        class_id=torch.zeros(n, dtype=torch.long),
+        confidence=torch.full((n,), 0.9, dtype=torch.float32),
+        mask=torch.zeros((n, 4, 4), dtype=torch.bool),
+        image_metadata={CLASS_NAMES_KEY: {0: "object"}},
         bboxes_metadata=bboxes_metadata,
     )
 
@@ -521,9 +693,7 @@ def test_single_nearest_match_tensor_native() -> None:
     matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
     matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
     expected_distance = math.hypot(15 - 5, 15 - 5)
-    assert nearest_distances(query_out)[0] == pytest.approx(
-        expected_distance, rel=1e-6
-    )
+    assert nearest_distances(query_out)[0] == pytest.approx(expected_distance, rel=1e-6)
     assert len(matched_query) == 1
     assert len(matched_target) == 1
     assert matched_query.bboxes_metadata[0]["detection_id"] == "q1"
@@ -755,9 +925,7 @@ def test_bbox_anchor_point_options_tensor_native(point_option, expected_point) -
     ex, ey = expected_point
     expected_distance = math.hypot(100 - ex, 100 - ey)
     query_out = result[OUTPUT_KEY_QUERY_PREDICTIONS]
-    assert nearest_distances(query_out)[0] == pytest.approx(
-        expected_distance, rel=1e-6
-    )
+    assert nearest_distances(query_out)[0] == pytest.approx(expected_distance, rel=1e-6)
 
 
 @_TENSOR_ONLY
@@ -852,6 +1020,161 @@ def test_keypoint_option_requires_keypoint_predictions_tensor_native() -> None:
             query_point="KEYPOINT",
             query_keypoint_name="left_shoulder",
         )
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_rejects_oversized_query_set_tensor_native() -> None:
+    # given: 1001 query detections exceeds the 1000-detection-per-set limit
+    query = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"q{i}" for i in range(1001)],
+    )
+    target = make_native_detections(xyxy=[[10, 10, 20, 20]], detection_ids=["t1"])
+
+    # when / then
+    with pytest.raises(ValueError, match="query_predictions"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_rejects_oversized_target_set_tensor_native() -> None:
+    # given: 1001 target detections exceeds the 1000-detection-per-set limit
+    query = make_native_detections(xyxy=[[0, 0, 10, 10]], detection_ids=["q1"])
+    target = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1001)],
+        detection_ids=[f"t{i}" for i in range(1001)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="target_predictions"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_detections_per_set_limit_allows_inputs_at_the_limit_tensor_native() -> None:
+    # given: exactly 1000 detections on each side - at, not over, the limit
+    query = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"q{i}" for i in range(1000)],
+    )
+    target = make_native_detections(
+        xyxy=[[i, i, i + 10, i + 10] for i in range(1000)],
+        detection_ids=[f"t{i}" for i in range(1000)],
+    )
+
+    # when
+    result = run_tensor_block(query, target)
+
+    # then
+    assert len(result[OUTPUT_KEY_QUERY_PREDICTIONS]) == 1000
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_rejects_widespread_ties_tensor_native() -> None:
+    # given: 200 query and 200 target detections, all co-located at the same
+    # anchor point - every pair ties, producing 40,000 matched pairs even
+    # though each set (200) is well under the 1000-detection-per-set limit.
+    # This is exactly the scenario MAX_DETECTIONS_PER_SET alone would miss.
+    query = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"q{i}" for i in range(200)],
+    )
+    target = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 200,
+        detection_ids=[f"t{i}" for i in range(200)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="matched query-target pairs"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_allows_ties_at_the_limit_tensor_native() -> None:
+    # given: 100 query and 100 target detections, all co-located - exactly
+    # 10,000 tied pairs, at (not over) the limit
+    query = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"q{i}" for i in range(100)],
+    )
+    target = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 100,
+        detection_ids=[f"t{i}" for i in range(100)],
+    )
+
+    # when
+    result = run_tensor_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 10_000
+    assert len(matched_target) == 10_000
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_with_masks_rejects_widespread_ties_tensor_native() -> None:
+    # given: 20 co-located instance-segmentation query and target detections -
+    # 400 tied pairs exceeds the 100-pair mask-aware limit, even though 400 is
+    # well under the general 10,000-pair limit that applies to bbox-only
+    # matches.
+    query = make_native_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"q{i}" for i in range(20)],
+    )
+    target = make_native_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"t{i}" for i in range(20)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="instance segmentation masks"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_with_masks_applies_when_only_one_side_has_masks_tensor_native() -> (
+    None
+):
+    # given: only the target set carries masks - the stricter limit still
+    # applies, since the target side of the match still duplicates masks
+    query = make_native_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"q{i}" for i in range(20)],
+    )
+    target = make_native_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 20,
+        detection_ids=[f"t{i}" for i in range(20)],
+    )
+
+    # when / then
+    with pytest.raises(ValueError, match="instance segmentation masks"):
+        run_tensor_block(query, target)
+
+
+@_TENSOR_ONLY
+def test_matched_pairs_limit_with_masks_allows_ties_at_the_limit_tensor_native() -> (
+    None
+):
+    # given: 10 co-located instance-segmentation query and target detections -
+    # exactly 100 tied pairs, at (not over) the mask-aware limit
+    query = make_native_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 10,
+        detection_ids=[f"q{i}" for i in range(10)],
+    )
+    target = make_native_masked_detections(
+        xyxy=[[0, 0, 10, 10]] * 10,
+        detection_ids=[f"t{i}" for i in range(10)],
+    )
+
+    # when
+    result = run_tensor_block(query, target)
+
+    # then: every query is tied with every target
+    matched_query = result[OUTPUT_KEY_MATCHED_QUERY_DETECTIONS]
+    matched_target = result[OUTPUT_KEY_MATCHED_TARGET_DETECTIONS]
+    assert len(matched_query) == 100
+    assert len(matched_target) == 100
 
 
 @_TENSOR_ONLY

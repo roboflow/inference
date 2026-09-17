@@ -6,6 +6,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   push:
     branches:
       - main
@@ -13,10 +14,19 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   actionlint:
@@ -33,3 +43,14 @@ jobs:
           # Shell/Python static analysis belongs to their dedicated checks;
           # this gate is strictly for Actions YAML, expressions, and actions.
           args: -no-color -shellcheck= -pyflakes=
+
+      # Every pull_request/push-triggered workflow must carry the shared
+      # concurrency block (see the `concurrency:` comment in any workflow), and
+      # workflow names must be unique because github.workflow is the group key.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check concurrency blocks and unique workflow names
+        run: |
+          python -m pip install --quiet pyyaml
+          python .github/scripts/check_workflow_concurrency.py

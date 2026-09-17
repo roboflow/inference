@@ -14,9 +14,10 @@ from inference.core.workflows.execution_engine.entities.engine import (
 )
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.core import (
-    DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     EXECUTION_ENGINE_V1_VERSION,
+    OMITTED_STEP_ERROR_HANDLER,
     ExecutionEngineV1,
+    _OmittedStepErrorHandler,
 )
 
 REGISTERED_ENGINES = {
@@ -41,8 +42,8 @@ class ExecutionEngine(BaseExecutionEngine):
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
         step_error_handler: Optional[
-            Union[str, Callable[[str, Exception], None]]
-        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
+            Union[str, Callable[[str, Exception], None], _OmittedStepErrorHandler]
+        ] = OMITTED_STEP_ERROR_HANDLER,
         dependencies_pre_init: Optional[List[str]] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(

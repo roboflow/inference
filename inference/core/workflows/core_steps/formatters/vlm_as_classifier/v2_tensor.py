@@ -5,11 +5,11 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlm_json import (
     coerce_classification_payload,
     extract_json_payload,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     CLASSIFICATION_STYLE_FORMATTER,
@@ -140,6 +140,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Classifier",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

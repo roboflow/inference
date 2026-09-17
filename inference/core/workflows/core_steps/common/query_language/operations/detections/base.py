@@ -6,7 +6,6 @@ import supervision as sv
 import torch
 from supervision import Position
 
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -32,6 +31,7 @@ from inference.core.workflows.core_steps.common.serializers_tensor import (
 from inference.core.workflows.core_steps.common.tensor_native import (
     strip_host_mirror_metadata,
 )
+from inference.core.workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,

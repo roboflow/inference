@@ -9,7 +9,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
@@ -19,6 +18,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
     get_gemini_detection_class_name,
     scale_confidence,
 )
+from inference.core.workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -167,6 +167,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Detector",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

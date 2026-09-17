@@ -11,6 +11,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
+    empty_detections_with_image_metadata,
 )
 from inference.core.workflows.core_steps.common.vlm_json import extract_json_payload
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -59,6 +60,8 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
+**Deprecated.** VLM blocks now decode detections in-block: use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead of routing their raw text through this block.
+
 Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and available confidence scores, converting coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
 
 ## How This Block Works
@@ -178,6 +181,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "VLM As Detector",
             "version": "v2",
+            "deprecated": True,
+            "deprecation_message": "Deprecated: VLM blocks now decode predictions in-block. Use the `predictions` output of the latest Anthropic Claude, OpenAI, Google Gemini, OpenRouter, Qwen-VL, Z.ai, Meta Muse or SpaceXAI block instead.",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -366,7 +371,7 @@ def parse_llm_object_detection_response(
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
     if len(parsed_data["detections"]) == 0:
-        return sv.Detections.empty()
+        return empty_detections_with_image_metadata(image=image)
     xyxy, class_id, class_name, confidence = [], [], [], []
     for detection in parsed_data["detections"]:
         xyxy.append(

@@ -28,16 +28,36 @@ runs:
     - name: Determine Image Tags
       shell: bash
       id: image_tags
+      env:
+        CUSTOM_TAG: ${{ inputs.custom_tag }}
+        VERSION: ${{ inputs.version }}
+        BASE_IMAGE: ${{ inputs.base_image }}
+        TOKEN: ${{ inputs.token }}
+        FORCE_PUSH: ${{ inputs.force_push }}
+        BRANCH: ${{ github.ref_name }}
+        EVENT_NAME: ${{ github.event_name }}
+        TARGET_BRANCH: ${{ github.event.release.target_commitish }}
+        REPOSITORY: ${{ github.repository }}
       run: |
-        # Capture inputs
-        CUSTOM_TAG="${{ inputs.custom_tag }}"
-        VERSION="${{ inputs.version }}"
-        BASE_IMAGE="${{ inputs.base_image }}"
-        TOKEN="${{ inputs.token }}"
-        FORCE_PUSH="${{ inputs.force_push }}"
-        BRANCH="${{ github.ref_name }}"
-        EVENT_NAME="${{ github.event_name }}"
-        TARGET_BRANCH="${{ github.event.release.target_commitish }}"
+        set -euo pipefail
+        for value in "$CUSTOM_TAG" "$VERSION" "$BASE_IMAGE" "$BRANCH" "$TARGET_BRANCH" "$REPOSITORY"; do
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "Tag inputs must not contain line breaks." >&2
+            exit 1
+          fi
+        done
+        if [[ ! "$BASE_IMAGE" =~ ^[a-z0-9][a-z0-9._:/-]*$ ]]; then
+          echo "Invalid image repository." >&2
+          exit 1
+        fi
+        if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+          echo "Invalid image version." >&2
+          exit 1
+        fi
+        if [[ -n "$CUSTOM_TAG" && ! "$CUSTOM_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+          echo "Invalid custom tag." >&2
+          exit 1
+        fi
 
         # Initialize the tags
         IMAGE_TAGS=""
@@ -61,10 +81,14 @@ runs:
           if [ "$EVENT_NAME" == "release" ]; then
             RELEASE=$BRANCH
             NORMALIZED_RELEASE=$(if echo "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then echo "$RELEASE" | sed 's/^v//'; else echo "$RELEASE"; fi)
+            if [[ ! "$NORMALIZED_RELEASE" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid release tag." >&2
+              exit 1
+            fi
             echo "Normalized release: $NORMALIZED_RELEASE"
 
             LATEST_RELEASE=$(curl -s -H "Authorization: Bearer $TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.tag_name')
+              "https://api.github.com/repos/$REPOSITORY/releases/latest" | jq -r '.tag_name')
             echo "Fetched latest release: $LATEST_RELEASE"
 
             # Normalize versions: remove 'v' from the latest release tag
@@ -99,10 +123,22 @@ runs:
         # Echo the computed tags
         echo "Computed image tags: $IMAGE_TAGS"
 
-        if [ -z $IMAGE_TAGS ]; then
+        if [ -z "$IMAGE_TAGS" ]; then
           echo "No valid image tags found."
           exit 1
         fi
 
-        # Export the tags to outputs
-        echo "image_tags=$IMAGE_TAGS" >> $GITHUB_OUTPUT
+        # Validate final tags after adding version prefixes or normalizing refs.
+        IFS=',' read -r -a tags <<< "$IMAGE_TAGS"
+        for image_tag in "${tags[@]}"; do
+          if [[ "$image_tag" != "$BASE_IMAGE:"* ]]; then
+            echo "Generated tags must use the configured image repository." >&2
+            exit 1
+          fi
+          tag="${image_tag#"$BASE_IMAGE:"}"
+          if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid generated Docker tag." >&2
+            exit 1
+          fi
+        done
+        printf 'image_tags=%s\n' "$IMAGE_TAGS" >> "$GITHUB_OUTPUT"
