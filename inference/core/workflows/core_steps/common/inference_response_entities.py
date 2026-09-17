@@ -37,6 +37,22 @@ class InferenceResponseImage(BaseModel):
     )
 
 
+class ResolvedModel(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    model_id: str = Field(
+        description="Canonical model ID returned by the weights provider. It can differ from the requested alias."
+    )
+    model_package_id: str = Field(
+        description="ID of the package that loaded successfully and produced this result, including after a loading fallback."
+    )
+    backend: str = Field(
+        description="Backend of the loaded package, such as onnx, trt, or torch."
+    )
+    quantization: str = Field(
+        description="Package quantization, such as fp32 or fp16, or unknown when unavailable. This does not specify the input tensor dtype or the precision of every runtime operation."
+    )
+
+
 class InferenceResponse(BaseModel):
     """Base inference response.
 
@@ -47,6 +63,18 @@ class InferenceResponse(BaseModel):
     """
 
     model_config = ConfigDict(protected_namespaces=())
+    resolved_model: Optional[ResolvedModel] = Field(
+        default=None,
+        description="Package identity of the model instance that produced this result. Available when USE_INFERENCE_MODELS=true and the model has a single resolved package. Each batch result carries its own metadata. Models without package identity, including direct local-path loads and multi-package pipelines, omit it. Image-only responses do not contain this field.",
+        examples=[
+            {
+                "model_id": "project/3",
+                "model_package_id": "trtpackage",
+                "backend": "trt",
+                "quantization": "fp16",
+            }
+        ],
+    )
     inference_id: Optional[str] = Field(
         description="Unique identifier of inference", default=None
     )
@@ -60,14 +88,6 @@ class InferenceResponse(BaseModel):
     )
 
 
-class ResolvedModel(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
-    model_id: str
-    model_package_id: str
-    backend: str
-    quantization: str
-
-
 class CvInferenceResponse(InferenceResponse):
     """Computer Vision inference response.
 
@@ -76,10 +96,6 @@ class CvInferenceResponse(InferenceResponse):
     """
 
     image: Union[List[InferenceResponseImage], InferenceResponseImage]
-    resolved_model: Optional[ResolvedModel] = Field(
-        default=None,
-        description="The model package that produced this result. Present when USE_INFERENCE_MODELS is enabled and the loaded model has package metadata. Quantization describes the package, not every runtime operation.",
-    )
 
 
 class WithVisualizationResponse(BaseModel):

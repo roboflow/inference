@@ -3043,6 +3043,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/clip/embed_image",
                     response_model=ClipEmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="CLIP Image Embeddings",
                     description="Run the Open AI CLIP model to embed image data.",
                 )
@@ -3089,6 +3090,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/clip/embed_text",
                     response_model=ClipEmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="CLIP Text Embeddings",
                     description="Run the Open AI CLIP model to embed text data.",
                 )
@@ -3135,6 +3137,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/clip/compare",
                     response_model=ClipCompareResponse,
+                    response_model_exclude_none=True,
                     summary="CLIP Compare",
                     description="Run the Open AI CLIP model to compute similarity scores.",
                 )
@@ -3183,6 +3186,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/perception_encoder/embed_image",
                     response_model=PerceptionEncoderEmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="PE Image Embeddings",
                     description="Run the Meta Perception Encoder model to embed image data.",
                 )
@@ -3229,6 +3233,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/perception_encoder/embed_text",
                     response_model=PerceptionEncoderEmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="Perception Encoder Text Embeddings",
                     description="Run the Meta Perception Encoder model to embed text data.",
                 )
@@ -3275,6 +3280,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/perception_encoder/compare",
                     response_model=PerceptionEncoderCompareResponse,
+                    response_model_exclude_none=True,
                     summary="Perception Encoder Compare",
                     description="Run the Meta Perception Encoder model to compute similarity scores.",
                 )
@@ -3523,6 +3529,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam/embed_image",
                     response_model=SamEmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="SAM Image Embeddings",
                     description="Run the Meta AI Segmant Anything Model to embed image data.",
                 )
@@ -3574,6 +3581,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam/segment_image",
                     response_model=SamSegmentationResponse,
+                    response_model_exclude_none=True,
                     summary="SAM Image Segmentation",
                     description="Run the Meta AI Segmant Anything Model to generate segmenations for image data.",
                 )
@@ -3627,6 +3635,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam2/embed_image",
                     response_model=Sam2EmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="SAM2 Image Embeddings",
                     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
@@ -3668,6 +3677,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam2/segment_image",
                     response_model=Sam2SegmentationResponse,
+                    response_model_exclude_none=True,
                     summary="SAM2 Image Segmentation",
                     description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
@@ -3716,6 +3726,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam3/embed_image",
                     response_model=Sam3EmbeddingResponse,
+                    response_model_exclude_none=True,
                     summary="Seg preview Image Embeddings",
                     description="Run the  Model to embed image data.",
                 )
@@ -3762,6 +3773,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam3/concept_segment",
                     response_model=Sam3SegmentationResponse,
+                    response_model_exclude_none=True,
                     summary="SAM3 PCS (promptable concept segmentation)",
                     description="Run the SAM3 PCS (promptable concept segmentation) to generate segmentations for image data.",
                 )
@@ -3934,6 +3946,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam3/visual_segment",
                     response_model=Sam2SegmentationResponse,
+                    response_model_exclude_none=True,
                     summary="SAM3 PVS (promptable visual segmentation)",
                     description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
                 )
@@ -4256,6 +4269,7 @@ class HttpInterface(BaseInterface):
                             depth_data["normalized_depth"]
                         )
                     return DepthEstimationResponse(
+                        resolved_model=getattr(response, "resolved_model", None),
                         normalized_depth=serialized_depth,
                         depth_map_format=inference_request.depth_map_format,
                         image=depth_data["image"].base64_image,
@@ -4264,6 +4278,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/infer/depth-estimation",
                     response_model=DepthEstimationResponse,
+                    response_model_exclude_none=True,
                     summary="Depth Estimation",
                     description="Run the depth estimation model to generate a depth map.",
                 )
@@ -4302,6 +4317,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/infer/depth-estimation/{model_id:path}",
                     response_model=DepthEstimationResponse,
+                    response_model_exclude_none=True,
                     summary="Depth Estimation with model ID in path",
                     description="Run depth estimation. Model ID is specified in the URL path and can contain slashes.",
                 )
@@ -4340,6 +4356,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/infer/action_recognition",
                     response_model=ActionRecognitionInferenceResponse,
+                    response_model_exclude_none=True,
                     summary="Action Recognition",
                     description=(
                         "Classify the actions in a video clip. The model states "

@@ -366,7 +366,7 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     landmarks: Union[List[Point], List[Point3D]]
 
 
-class DepthEstimationResponse(BaseModel):
+class DepthEstimationResponse(InferenceResponse):
     """Response for depth estimation inference.
 
     Attributes:

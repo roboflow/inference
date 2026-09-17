@@ -28,7 +28,6 @@ from inference.core.entities.responses.action_recognition import (
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
-    CvInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
     InferenceResponseImageDC,
@@ -46,7 +45,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
     Point,
     PointDC,
-    ResolvedModel,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
@@ -257,39 +255,7 @@ def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
     return height, width
 
 
-class InferenceModelsAdapter(Model):
-    _model: Any
-
-    @property
-    def resolved_model(self) -> Any:
-        return getattr(self._model, "resolved_model", None)
-
-    def infer_from_request(
-        self, request: InferenceRequest
-    ) -> Union[List[InferenceResponse], InferenceResponse]:
-        responses = super().infer_from_request(request)
-        self._attach_resolved_model_metadata(responses)
-        return responses
-
-    def _attach_resolved_model_metadata(self, responses: Any) -> None:
-        metadata = self.resolved_model
-        if metadata is None:
-            return
-        resolved_model = ResolvedModel(
-            model_id=metadata.model_id,
-            model_package_id=metadata.model_package_id,
-            backend=metadata.backend,
-            quantization=metadata.quantization,
-        )
-        responses = responses if isinstance(responses, list) else [responses]
-        for response in responses:
-            if isinstance(
-                response, (CvInferenceResponse, InstanceSegmentationInferenceResponseDC)
-            ):
-                response.resolved_model = resolved_model
-
-
-class InferenceModelsObjectDetectionAdapter(InferenceModelsAdapter):
+class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -455,7 +421,7 @@ class InferenceModelsObjectDetectionAdapter(InferenceModelsAdapter):
         )
 
 
-class InferenceModelsInstanceSegmentationAdapter(InferenceModelsAdapter):
+class InferenceModelsInstanceSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1168,7 +1134,7 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
     return segments
 
 
-class InferenceModelsKeyPointsDetectionAdapter(InferenceModelsAdapter):
+class InferenceModelsKeyPointsDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1389,7 +1355,7 @@ def model_keypoints_to_response(
     return results
 
 
-class InferenceModelsClassificationAdapter(InferenceModelsAdapter):
+class InferenceModelsClassificationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1730,7 +1696,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     return buffered.getvalue()
 
 
-class InferenceModelsSemanticSegmentationAdapter(InferenceModelsAdapter):
+class InferenceModelsSemanticSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1888,7 +1854,7 @@ class InferenceModelsSemanticSegmentationAdapter(InferenceModelsAdapter):
         )
 
 
-class InferenceModelsDepthEstimationAdapter(InferenceModelsAdapter):
+class InferenceModelsDepthEstimationAdapter(Model):
     """Serves any `inference_models` DepthEstimationModel (e.g. YOLO26-depth)
     behind the depth-estimation contract shared with the DepthAnything
     adapters: per-image min-max-normalized depth plus a viridis
@@ -2011,7 +1977,7 @@ class InferenceModelsDepthEstimationAdapter(InferenceModelsAdapter):
         pass
 
 
-class InferenceModelsActionRecognitionAdapter(InferenceModelsAdapter):
+class InferenceModelsActionRecognitionAdapter(Model):
     """Serves a clip to an action recognition model, one window at a time.
 
     The model declares how a clip is cut and sampled, so a caller never states
@@ -2075,12 +2041,14 @@ class InferenceModelsActionRecognitionAdapter(InferenceModelsAdapter):
                     stride=max(1.0, source_fps / window.sample_fps),
                 )
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
-        return ActionRecognitionInferenceResponse(
+        response = ActionRecognitionInferenceResponse(
             timeline=timeline,
             source_fps=source_fps,
             frame_count=frame_count,
             windows_classified=windows_classified,
         )
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def preprocess(self, *args, **kwargs):
         raise NotImplementedError(

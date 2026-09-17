@@ -1,4 +1,5 @@
 import contextlib
+from types import SimpleNamespace
 from typing import List, Optional
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,8 @@ MODULE = "inference.core.models.inference_models_adapters"
 
 
 class _FakeModel:
+    resolved_model: Optional[SimpleNamespace] = None
+
     def __init__(self, responses, class_names=None, sampling=None):
         self.responses = list(responses)
         self._class_names = class_names
@@ -92,6 +95,23 @@ def test_window_segments_map_to_clip_frame_indices() -> None:
     assert response.timeline[0].end_frame_idx == 75
     assert response.timeline[0].class_name == "walk"
     assert response.timeline[0].class_id == 0
+
+
+def test_clip_response_reports_the_loaded_package(monkeypatch) -> None:
+    from inference.core.models import base
+
+    monkeypatch.setattr(base, "USE_INFERENCE_MODELS", True)
+    model = _FakeModel(responses=[[]], class_names=["walk"])
+    model.resolved_model = SimpleNamespace(
+        model_id="workspace/model",
+        model_package_id="video-package",
+        backend="torch",
+        quantization="fp16",
+    )
+    with _clip(frame_count=3, source_fps=10.0):
+        response = _adapter(model).infer_from_request(_request())
+
+    assert response.model_dump()["resolved_model"] == vars(model.resolved_model)
 
 
 def test_ranges_of_one_class_merge_across_windows() -> None:

@@ -10,11 +10,13 @@ from starlette.testclient import TestClient
 from inference.core import env
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
+    LMMInferenceResponse,
     ObjectDetectionInferenceResponse,
 )
 from inference.core.interfaces.http import http_api
 from inference.core.managers import base as manager_module
 from inference.core.managers.base import ModelManager
+from inference.core.models import base as model_module
 from inference.core.models import inference_models_adapters as adapters
 from inference.core.registries import roboflow as registry_module
 from inference.core.registries.base import ModelRegistry
@@ -33,7 +35,7 @@ RESOLVED_MODEL = SimpleNamespace(
 )
 
 
-class PackageModel(adapters.InferenceModelsAdapter):
+class PackageModel(model_module.Model):
     task_type = "object-detection"
     model_id = "test/1"
 
@@ -51,6 +53,7 @@ class PackageModel(adapters.InferenceModelsAdapter):
 
 
 def build_client(monkeypatch, flag=True, model=None, registry=None, preload=True):
+    monkeypatch.setattr(model_module, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(manager_module, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(manager_module, "MODELS_CACHE_AUTH_ENABLED", False)
     monkeypatch.setattr(manager_module, "DISABLE_INFERENCE_CACHE", True)
@@ -254,13 +257,14 @@ def test_http_inference_omits_metadata_for_a_model_without_package_identity(
     assert "resolved_model" not in response.json()
 
 
-def test_direct_adapter_response_reports_its_package_with_flag_disabled(monkeypatch):
+def test_direct_model_response_omits_package_with_flag_disabled(monkeypatch):
     from inference.core.entities.requests.inference import (
         InferenceRequestImage,
         ObjectDetectionInferenceRequest,
     )
 
     monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
+    monkeypatch.setattr(model_module, "USE_INFERENCE_MODELS", False)
     response = PackageModel().infer_from_request(
         ObjectDetectionInferenceRequest(
             id="direct-request",
@@ -270,11 +274,11 @@ def test_direct_adapter_response_reports_its_package_with_flag_disabled(monkeypa
     )
 
     assert isinstance(response, ObjectDetectionInferenceResponse)
-    assert response.resolved_model is not None
-    assert response.resolved_model.model_package_id == "onnxpackage"
+    assert response.resolved_model is None
 
 
 def test_classification_adapter_reports_package_with_predictions(monkeypatch):
+    monkeypatch.setattr(model_module, "USE_INFERENCE_MODELS", True)
     import base64
 
     import cv2
@@ -324,3 +328,83 @@ def test_classification_adapter_reports_package_with_predictions(monkeypatch):
     assert response.top == "cat"
     assert response.resolved_model is not None
     assert response.resolved_model.model_package_id == "onnxpackage"
+
+
+def test_lmm_response_reports_package_without_task_specific_adapter(monkeypatch):
+    class LMMModel(PackageModel):
+        task_type = "lmm"
+
+        def infer(self, **kwargs):
+            return [
+                LMMInferenceResponse(
+                    image=InferenceResponseImage(width=640, height=480),
+                    response="A cat.",
+                )
+            ]
+
+    client, _ = build_client(monkeypatch, model=LMMModel())
+    response = client.post(
+        "/infer/lmm",
+        json={
+            "model_id": "test/1",
+            "image": {"type": "base64", "value": "image"},
+            "prompt": "Describe the image.",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["response"] == "A cat."
+    assert response.json()["resolved_model"] == vars(RESOLVED_MODEL)
+
+
+@pytest.mark.parametrize("depth_map_format", ["json", "png8", "png16"])
+def test_depth_response_preserves_package_metadata(monkeypatch, depth_map_format):
+    class DepthModel(PackageModel):
+        task_type = "depth-estimation"
+
+        def infer(self, **kwargs):
+            return [
+                LMMInferenceResponse(
+                    image=InferenceResponseImage(width=2, height=2),
+                    response={
+                        "normalized_depth": np.array([[0.0, 0.25], [0.5, 1.0]]),
+                        "image": SimpleNamespace(base64_image="depth-image"),
+                    },
+                )
+            ]
+
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    client, _ = build_client(monkeypatch, model=DepthModel())
+    response = client.post(
+        "/infer/depth-estimation",
+        json={
+            "model_id": "test/1",
+            "image": {"type": "base64", "value": "image"},
+            "depth_map_format": depth_map_format,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["depth_map_format"] == depth_map_format
+    assert response.json()["resolved_model"] == vars(RESOLVED_MODEL)
+
+
+def test_openapi_documents_metadata_for_all_inference_response_types(monkeypatch):
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "ACTION_RECOGNITION_ENABLED", True)
+    client, _ = build_client(monkeypatch)
+    schemas = client.get("/openapi.json").json()["components"]["schemas"]
+
+    for name in (
+        "ObjectDetectionInferenceResponse",
+        "LMMInferenceResponse",
+        "DepthEstimationResponse",
+        "ActionRecognitionInferenceResponse",
+    ):
+        metadata = schemas[name]["properties"]["resolved_model"]
+        assert "USE_INFERENCE_MODELS=true" in metadata["description"]
+        assert metadata["examples"][0]["backend"] == "trt"
+    assert (
+        "Canonical model ID"
+        in schemas["ResolvedModel"]["properties"]["model_id"]["description"]
+    )
