@@ -12,6 +12,7 @@ from roboflow_workflows.enterprise_blocks.sinks.kafka_producer.v1 import (
 from roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
     MicrosoftSQLServerSinkBlockV1,
 )
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import MQTTReaderBlockV1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
     MQTTWriterSinkBlockV1,
 )
@@ -43,6 +44,7 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
     return [
         OPCWriterSinkBlockV1,
         MQTTWriterSinkBlockV1,
+        MQTTReaderBlockV1,
         PLCBlockV1,
         PLCReaderBlockV1,
         PLCWriterBlockV1,
