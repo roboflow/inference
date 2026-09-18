@@ -318,6 +318,12 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
         dist/inference_sdk*.whl \
         "setuptools~=83.0.0"
 
+# Pillow-SIMD (x86-64 only), beside Pillow under /opt so the wheel stays the `PIL` package.
+ARG TARGETARCH
+RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
+      python3 -m pip install --no-cache-dir --no-deps --target /opt/pillow_simd "pillow-simd @ git+https://github.com/uploadcare/pillow-simd.git@633de896bd7b493e03396d31e1a30f04a7a5ea80" && \
+      python3 docker/scripts/verify_pillow_simd.py; \
+    fi
 
 RUN find /usr/local/lib/python3.12 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
@@ -372,6 +378,7 @@ COPY --from=gstreamer-runtime /opt/gstreamer /opt/gstreamer
 COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
 COPY --from=gstreamer-cuda-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
 COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /opt/pillow_simd /opt/pillow_simd
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
