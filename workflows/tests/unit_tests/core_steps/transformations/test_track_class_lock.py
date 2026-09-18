@@ -698,9 +698,7 @@ def test_track_class_lock_tensor_variant_bounds_per_track_class_state() -> None:
     # given - the tensor-native sibling duplicates the voting loop; it must
     # apply the same per-track class cap (skipped where torch is unavailable)
     pytest.importorskip("torch")
-    from inference.core.workflows.core_steps.transformations.track_class_lock import (
-        v1_tensor,
-    )
+    from roboflow_workflows.core_steps.transformations.track_class_lock import v1_tensor
 
     block = v1_tensor.TrackClassLockBlockV1()
     n = MAX_CLASSES_PER_TRACK * 4
