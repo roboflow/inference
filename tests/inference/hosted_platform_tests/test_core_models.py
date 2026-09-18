@@ -9,7 +9,6 @@ from tests.inference.hosted_platform_tests.conftest import (
     PlatformEnvironment,
     api_key_auth_headers,
     apply_auth_mode,
-    required_response_keys,
     without_api_key_in_header_mode,
 )
 
@@ -84,10 +83,11 @@ def test_infer_from_ocr_model_when_valid_input_given(
 
     # then
     assert isinstance(result, dict), "Expected dict as response"
-    assert required_response_keys(result) == {
+    assert set(result.keys()) == {
         "result",
         "time",
         "parent_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -108,10 +108,11 @@ def test_infer_from_easy_ocr_model_when_valid_input_given(
 
     # then
     assert isinstance(result, dict), "Expected dict as response"
-    assert required_response_keys(result) == {
+    assert set(result.keys()) == {
         "result",
         "time",
         "parent_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -291,12 +292,13 @@ def test_infer_from_clip_model_when_valid_input_given(
 
     # then
     assert isinstance(result, dict), "Expected dict as response"
-    assert required_response_keys(result) == {
+    assert set(result.keys()) == {
         "similarity",
         "time",
         "parent_id",
         "inference_id",
         "frame_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -376,10 +378,11 @@ def test_infer_from_yolo_world_model_when_valid_input_given(
     # then
     assert isinstance(result, list), "Expected list as response"
     assert len(result), "One image provided - one output expected"
-    assert required_response_keys(result[0]) == {
+    assert set(result[0].keys()) == {
         "predictions",
         "image",
         "time",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 

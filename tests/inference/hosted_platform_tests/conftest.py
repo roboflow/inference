@@ -44,25 +44,6 @@ IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
 # ["legacy"] is the single switch disabling the header lane.
 API_KEY_AUTH_MODES = ["legacy", "header"]
 
-# Response fields that a server may or may not return, depending on the
-# deployed version and on the model that served the request. Tests run against
-# environments that are deployed independently (staging / production), so
-# assertions on response schema must accept both shapes.
-OPTIONAL_RESPONSE_KEYS = {"resolved_model"}
-
-
-def required_response_keys(response: Dict[str, Any]) -> set:
-    """Returns response keys without optional ones, validating optional fields when present."""
-    resolved_model = response.get("resolved_model")
-    if resolved_model is not None:
-        assert isinstance(
-            resolved_model, dict
-        ), "Expected `resolved_model` to be a dict when provided"
-        assert isinstance(
-            resolved_model.get("model_id"), str
-        ), "Expected `resolved_model.model_id` to be a string"
-    return set(response.keys()) - OPTIONAL_RESPONSE_KEYS
-
 
 @pytest.fixture(params=API_KEY_AUTH_MODES)
 def auth_mode(request) -> str:

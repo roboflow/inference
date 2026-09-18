@@ -15,7 +15,6 @@ from tests.inference.hosted_platform_tests.conftest import (
     PlatformEnvironment,
     api_key_auth_headers,
     apply_auth_mode,
-    required_response_keys,
     without_api_key_in_header_mode,
 )
 
@@ -214,11 +213,12 @@ def test_infer_from_object_detection_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "image",
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -248,7 +248,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -282,12 +282,13 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization",
         "image",
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray
@@ -471,11 +472,12 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "image",
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -505,7 +507,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -539,12 +541,13 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization",
         "image",
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray
@@ -728,12 +731,13 @@ def test_infer_from_classification_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "image",
         "predictions",
         "inference_id",
         "predicted_classes",
         "time",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -763,7 +767,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -797,13 +801,14 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert required_response_keys(response) == {
+    assert set(response.keys()) == {
         "visualization",
         "image",
         "inference_id",
         "predictions",
         "predicted_classes",
         "time",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray
