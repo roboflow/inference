@@ -87,6 +87,18 @@ FIELDS = [
             else set(c.engine.postgresql_sink_whitelisted_addresses)
         ),
     ),
+    (
+        "KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS",
+        lambda c: c.engine.allow_kafka_sinks_user_provided_bootstrap_servers,
+    ),
+    (
+        "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS",
+        lambda c: (
+            None
+            if c.engine.kafka_sinks_whitelisted_bootstrap_servers is None
+            else list(c.engine.kafka_sinks_whitelisted_bootstrap_servers)
+        ),
+    ),
     ("ENABLE_TENSOR_DATA_REPRESENTATION", lambda c: c.tensor.representation_enabled),
     ("WORKFLOWS_IMAGE_TENSOR_DEVICE", lambda c: c.tensor.image_tensor_device),
     (
@@ -214,7 +226,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 76, len(tabled)
+    assert len(tabled) == 78, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -271,6 +283,14 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
         ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", None),
         ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", set()),
         ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"database.example"}),
+        ("KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS", False),
+        ("KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS", None),
+        ("KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS", []),
+        # order preserved, not sorted
+        (
+            "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS",
+            ["kafka-2:9092", "kafka-1:9092"],
+        ),
         ("LAMBDA", True),
     ],
 )

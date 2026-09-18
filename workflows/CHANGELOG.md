@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Kafka Consumer and Kafka Producer enterprise blocks; `confluent-kafka` and `aws-msk-iam-sasl-signer-python` join the `enterprise` extra.
+
 ---
 
 ## `0.1.1`

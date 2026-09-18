@@ -47,7 +47,7 @@ RUN pip3 install uv \
     && cd workflows \
     && uv build --out-dir /wheels \
     && cd - \
-    && pip3 install --find-links /wheels /wheels/roboflow_workflows-*.whl \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
     && rm -rf ~/.cache/pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime

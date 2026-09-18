@@ -51,6 +51,8 @@ enterprise = [
   "pylogix==1.0.5",
   "pymodbus>=3.6.9,<=3.8.3",
   "psycopg[binary]>=3.2,<4",
+  "confluent-kafka>=2.5,<3",
+  "aws-msk-iam-sasl-signer-python>=1.0.2,<2",
   "fastapi>=0.100,<0.129",
 ]
 test = [
