@@ -110,10 +110,9 @@ def resolve_bootstrap_servers(bootstrap_servers: str, log_override: bool = True)
     # module attributes are read on every call so tests can patch them
     user_provided_allowed = KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS
     allowlist = KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS
-    operator_servers: Dict[str, str] = {}
-    for entry in _split_bootstrap_servers(allowlist) if allowlist is not None else []:
-        # first spelling wins: operator's order, deduplicated by normalised form
-        operator_servers.setdefault(normalise_bootstrap_server(entry), entry)
+    operator_servers = (
+        _split_bootstrap_servers(allowlist) if allowlist is not None else []
+    )
     if not user_provided_allowed:
         if not operator_servers:
             raise ConfigurationError(
@@ -125,16 +124,18 @@ def resolve_bootstrap_servers(bootstrap_servers: str, log_override: bool = True)
                 "Kafka blocks: the workflow-provided bootstrap_servers value was replaced "
                 "by the operator-configured servers (%s), because "
                 "KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS is False.",
-                ",".join(operator_servers.values()),
+                ",".join(operator_servers),
             )
-        return ",".join(operator_servers.values())
+        # exactly what the operator wrote, in the operator's order
+        return ",".join(operator_servers)
     if allowlist is None:
         return bootstrap_servers
     entries = _split_bootstrap_servers(bootstrap_servers)
     if not entries:
         raise ConfigurationError("bootstrap_servers holds no host:port entry.")
+    permitted = {normalise_bootstrap_server(entry) for entry in operator_servers}
     for entry in entries:
-        if normalise_bootstrap_server(entry) not in operator_servers:
+        if normalise_bootstrap_server(entry) not in permitted:
             # the allowlist holds the operator's internal hostnames: never echo it
             raise ConfigurationError(
                 f"Bootstrap server {entry!r} is not permitted on this deployment: the "

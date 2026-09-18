@@ -157,8 +157,8 @@ def test_resolve_replaces_user_value_with_operator_servers_in_stable_order() -> 
         first = resolve_bootstrap_servers("evil.example.com:9092")
         second = resolve_bootstrap_servers("anything", log_override=False)
 
-    # operator's order and spelling, deduplicated by normalised form
-    assert first == second == "Kafka-2:9092,kafka-1"
+    # exactly what the operator wrote, in the operator's order; only blank entries go
+    assert first == second == "Kafka-2:9092,kafka-1,kafka-2:9092,kafka-1:9092"
     assert warning.call_count == 1
     logged = warning.call_args.args[0] % warning.call_args.args[1:]
     assert "evil.example.com" not in logged
@@ -215,9 +215,10 @@ def test_env_parses_the_allowlist_in_order_without_empty_entries() -> None:
         }
     )
 
+    # trimmed, blank entries dropped, otherwise exactly what the operator wrote
     assert values == {
         "allow_user_provided": False,
-        "allowlist": ["kafka-2:9092", "kafka-1:9092"],
+        "allowlist": ["kafka-2:9092", "kafka-1:9092", "kafka-2:9092"],
     }
 
 

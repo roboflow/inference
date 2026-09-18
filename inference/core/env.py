@@ -152,13 +152,11 @@ KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = os.getenv(
 )
 if KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is not None:
     # a list, not a set: the operator's order is what the client is given
-    KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = list(
-        dict.fromkeys(
-            entry.strip()
-            for entry in KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS.split(",")
-            if entry.strip()
-        )
-    )
+    KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = [
+        entry.strip()
+        for entry in KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS.split(",")
+        if entry.strip()
+    ]
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
