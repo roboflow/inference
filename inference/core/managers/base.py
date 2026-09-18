@@ -10,9 +10,7 @@ from inference.core.cache import model_monitoring as model_monitoring_cache_modu
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.requests.model_selection import (
-    model_selection_kwargs,
-)
+from inference.core.entities.requests.model_selection import model_selection_kwargs
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,

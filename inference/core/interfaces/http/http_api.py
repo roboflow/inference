@@ -69,9 +69,7 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
     ensure_wire_safe_mask_format,
 )
-from inference.core.entities.requests.model_selection import (
-    model_selection_kwargs,
-)
+from inference.core.entities.requests.model_selection import model_selection_kwargs
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
