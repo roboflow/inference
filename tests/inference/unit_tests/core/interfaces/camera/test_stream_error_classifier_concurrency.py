@@ -33,6 +33,32 @@ SUBPROCESS_TIMEOUT_SECONDS = 120.0
 OVER_PIPE_CAPACITY_LINES = 200
 LINE_PAYLOAD = b"x" * 1024 + b"\n"
 
+# The select-limit test opens descriptors until one is numbered above 1100, and
+# the capture then needs a few more on top of that.
+DESCRIPTORS_NEEDED_BY_SELECT_LIMIT_TEST = 1200
+
+
+def _descriptor_limit_allows(descriptor_count: int) -> bool:
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - Windows
+        return False
+    soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    return soft_limit == resource.RLIM_INFINITY or soft_limit >= descriptor_count
+
+
+# Platform requirements are decided once, at collection time, on the test
+# thread. pytest.skip() raised inside a worker thread never reaches pytest: it
+# only kills that thread, and the test then fails instead of skipping.
+requires_procfs = pytest.mark.skipif(
+    not os.path.isdir("/proc/self/fd"),
+    reason="/proc/self/fd is unavailable on this platform",
+)
+requires_high_descriptor_limit = pytest.mark.skipif(
+    not _descriptor_limit_allows(DESCRIPTORS_NEEDED_BY_SELECT_LIMIT_TEST),
+    reason="RLIMIT_NOFILE is too low to open a descriptor above FD_SETSIZE",
+)
+
 
 def _reset_module_state() -> None:
     # Bounded: a wedged capture must not turn cleanup into a second hang.
@@ -96,10 +122,9 @@ def _call_on_daemon_thread(target: Callable[[], None]) -> dict:
 
 
 def _open_fd_count() -> int:
-    try:
-        return len(os.listdir("/proc/self/fd"))
-    except OSError:  # pragma: no cover - non-Linux
-        pytest.skip("/proc/self/fd is unavailable on this platform")
+    # Callers must be marked with `requires_procfs`; this may run on a worker
+    # thread, where skipping is not possible.
+    return len(os.listdir("/proc/self/fd"))
 
 
 def _stderr_identity() -> tuple:
@@ -176,6 +201,7 @@ def test_capture_does_not_block_when_output_exceeds_pipe_capacity() -> None:
     assert captured[0].count("x") > 128 * 1024
 
 
+@requires_high_descriptor_limit
 def test_drains_when_the_read_descriptor_is_above_the_select_limit() -> None:
     # select() raises ValueError for descriptors at or above FD_SETSIZE (1024),
     # which a server holding many cameras and sockets reaches; a capture that
@@ -399,6 +425,7 @@ def test_capture_is_a_no_op_when_disabled_by_env(monkeypatch) -> None:
     assert _stderr_identity() == before
 
 
+@requires_procfs
 def test_repeated_sequential_captures_do_not_leak_file_descriptors() -> None:
     counts: List[int] = []
 
@@ -434,6 +461,7 @@ def test_capability_marker_is_exposed_on_the_public_callable() -> None:
     assert stream_error_classifier.NATIVE_STDERR_CAPTURE_HANDLES_CONCURRENT_OPENS
 
 
+@requires_procfs
 def test_interrupt_inside_thread_start_leaves_no_orphan_state(monkeypatch) -> None:
     # Thread.start() may already have spawned the drain when the interrupt
     # lands, so startup has to hand fd 2 back and drop its descriptors without
@@ -582,6 +610,7 @@ else:
     assert "CHILD_EXIT=0" in result.stdout
 
 
+@requires_procfs
 def test_fork_closes_the_read_end_of_a_capture_that_is_still_winding_down() -> None:
     # A released capture has already given fd 2 back, but its drain thread is
     # still inside its poll interval and still owns the read end. That thread
