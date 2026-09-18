@@ -89,9 +89,9 @@ def build_rfdetr_implementation_registry(
     """Build the complete RF-DETR stage implementation registry.
 
     Args:
-        device: Target selected for the model.
-        preprocessor_max_workers: Bounded threaded preprocessing worker limit.
-        backend: Object-detection backend: trt, torch or onnx.
+        device (torch.device): Target selected for the model.
+        preprocessor_max_workers (int): Bounded threaded preprocessing worker limit.
+        backend (str): Object-detection backend: trt, torch or onnx.
 
     Returns:
         Registry containing every available preprocessing and postprocessing choice.
@@ -140,6 +140,7 @@ def build_rfdetr_implementation_registry(
             ),
         )
         return registry
+
     registry.register_factory(
         metadata=BaseExecutionScheduler.metadata,
         factory=lambda: BaseExecutionScheduler(device=device),

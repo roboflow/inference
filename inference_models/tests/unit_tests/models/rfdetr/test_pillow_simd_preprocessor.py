@@ -1,7 +1,6 @@
 """Pillow-SIMD isolation, compatibility, and explicit numerical tolerance."""
 
 import json
-from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,7 +17,6 @@ from inference_models.models.rfdetr.optimization.backend_path import RFDetrBacke
 from inference_models.models.rfdetr.optimization.catalog import (
     build_rfdetr_implementation_registry,
 )
-from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
@@ -28,7 +26,7 @@ from inference_models.models.rfdetr.pre_processing import pre_process_network_in
 from .test_backend_execution_plan import config
 
 
-def fake_package(tmp_path, version="12.3.0.post0", broken=False):
+def _fake_package(tmp_path, *, version="12.3.0.post0", broken=False):
     package = tmp_path / "PIL"
     package.mkdir()
     (package / "__init__.py").write_text(f"__version__ = {version!r}\n")
@@ -37,11 +35,18 @@ def fake_package(tmp_path, version="12.3.0.post0", broken=False):
         if broken
         else "from PIL.Image import fromarray, BILINEAR\ncore = object()\n"
     )
-    return str(tmp_path)
+    root = str(tmp_path)
+
+    return root
 
 
 def test_loader_preserves_standard_pillow(tmp_path):
-    image = loader._load_image(fake_package(tmp_path))
+    """Load an isolated module without replacing standard Pillow.
+
+    Args:
+        tmp_path (Path): Temporary native-package fixture root.
+    """
+    image = loader._load_image(_fake_package(tmp_path))
     assert image is not Image
     assert image.core is not Image.core
     assert image.__name__.startswith("PILSIMD_")
@@ -52,20 +57,37 @@ def test_loader_preserves_standard_pillow(tmp_path):
 
 @pytest.mark.parametrize("version", ["12.2.0.post0", "12.3.0"])
 def test_loader_rejects_old_or_non_simd_package(tmp_path, version):
+    """Reject packages that do not meet the SIMD version contract.
+
+    Args:
+        tmp_path (Path): Temporary package root.
+        version (str): Unsupported package version to simulate.
+    """
     with pytest.raises(ImportError, match="required"):
-        loader._load_image(fake_package(tmp_path, version=version))
+        loader._load_image(_fake_package(tmp_path, version=version))
 
 
 def test_broken_native_build_has_import_error(tmp_path):
+    """Convert native import failures into actionable compatibility errors.
+
+    Args:
+        tmp_path (Path): Temporary package root.
+    """
     with pytest.raises(ImportError, match="broken native extension"):
-        loader._load_image(fake_package(tmp_path, broken=True))
+        loader._load_image(_fake_package(tmp_path, broken=True))
 
 
 def test_arm_selection_does_not_attempt_native_import(monkeypatch):
-    def unexpected():
+    """Reject ARM via metadata without loading an x86 extension.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Native import replacement fixture.
+    """
+
+    def _unexpected():
         pytest.fail("ARM must not import the x86 native extension")
 
-    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", unexpected)
+    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", _unexpected)
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cpu"), preprocessor_max_workers=1, backend="torch"
     )
@@ -81,10 +103,17 @@ def test_arm_selection_does_not_attempt_native_import(monkeypatch):
 
 @pytest.mark.parametrize("reason", ["disabled", "absent", "broken native extension"])
 def test_missing_build_uses_observable_base(monkeypatch, reason):
-    def unavailable():
+    """Expose native-build failures through base-fallback metadata.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Host and loader replacement fixture.
+        reason (str): Native loader failure to simulate.
+    """
+
+    def _unavailable():
         raise ImportError(reason)
 
-    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", unavailable)
+    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", _unavailable)
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
     path = RFDetrBackendPath(
         device=torch.device("cpu"),
@@ -100,16 +129,23 @@ def test_missing_build_uses_observable_base(monkeypatch, reason):
 
 
 def test_selected_simd_is_separate_from_reference_and_reports_numerics(monkeypatch):
+    """Verify explicit SIMD selection, numerical metadata, and input fallback.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Native module and host replacement fixture.
+    """
     calls = []
 
-    def fromarray(array):
+    def _fromarray(array):
         calls.append(array.shape)
-        return Image.fromarray(array)
+        image = Image.fromarray(array)
+
+        return image
 
     monkeypatch.setattr(
         pillow_simd,
         "load_pillow_simd_image",
-        lambda: SimpleNamespace(fromarray=fromarray, BILINEAR=Image.BILINEAR),
+        lambda: SimpleNamespace(fromarray=_fromarray, BILINEAR=Image.BILINEAR),
     )
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
     cfg = config()
@@ -144,10 +180,16 @@ def test_selected_simd_is_separate_from_reference_and_reports_numerics(monkeypat
 
 @pytest.mark.parametrize("shape", [(32, 32, 3), (160, 200, 3), (480, 640, 3)])
 def test_real_simd_resize_tolerance_when_installed(shape):
+    """Check native resize tolerance and exact no-op behavior when available.
+
+    Args:
+        shape (tuple[int, int, int]): Source image shape.
+    """
     try:
         simd = loader.load_pillow_simd_image()
     except ImportError as error:
         pytest.skip(str(error))
+
     source = np.random.default_rng(23).integers(0, 256, shape, dtype=np.uint8)
     standard = np.asarray(
         Image.fromarray(source).resize((32, 32), Image.BILINEAR)

@@ -82,6 +82,10 @@ python -m pytest inference_models/tests/unit_tests/models/rfdetr \
 
 ## Profiling setup
 
+The validation section above records the initial migration checkpoint. Subsequent
+T4 validation exercised the native Pillow-SIMD build and its isolation smoke check;
+the later experiments and the pre-PR rules review are linked below.
+
 - Runner branch `codex/autonomous-optimization-reports`, commit
   `5656bf567b15a566a88ee7c4543c1ce3553f3b63`, recipe `profile-latency`.
 - Profiler branch `codex/runtime-environment-v2`, commit
@@ -170,3 +174,40 @@ before measurement. Keep the recorded image digest fixed for later comparisons.
   separately from latency data; it does not establish locked GPU clocks.
 - This is a TensorRT regression comparison. It does not measure the speedup from
   migrating Torch/ONNX, nor isolate the base-channel-swap or x86 SIMD improvement.
+
+## Follow-up profiling and pre-PR rules review
+
+Additional experiments compare explicit preprocessors at the same runtime revision:
+
+- [Orin latency: base versus Triton](rfdetr-preprocessors-orin-2026-09-18.md).
+- [T4 latency: base, Pillow-SIMD and Triton](rfdetr-preprocessors-t4-2026-09-18.md).
+- [T4 memory: Pillow-SIMD versus Triton](rfdetr-preprocessors-memory-t4-2026-09-18.md).
+- [T4 snapshots and output deltas](rfdetr-simd-memory-output-delta-t4-2026-09-18.md).
+
+Before opening the draft PR, the branch was reviewed against every `.cursor/rules`
+file. The review added full Google-style docstrings to new/changed public APIs and
+tests, documented the new loader/preprocessor arguments, replaced new `os.path`
+handling in the Docker verifier with `Path`, and applied named-return and logical
+spacing conventions. New helper configuration uses explicit keywords; existing
+model API positional signatures remain compatible. Unused test/runtime imports
+were removed. Private test helpers were named explicitly as private.
+
+No new CLI parser, Pydantic model, or workflow Execution Engine behavior was added,
+so the CLI, Field-description, and separate Execution Engine changelog rules do not
+require further changes. Formatting uses the repository-pinned Black 26.3.1,
+isort 5.13.2 and Flake8 7.0.0 through an isolated uv environment. No dependency
+manifest or lockfile changes were needed for this review.
+
+The targeted RF-DETR and shared optimization suite passes locally with **212
+passed, 30 skipped, 7 warnings**. Black/isort checks on all 20 changed Python files,
+the repository's blocking Flake8 selection (`E9,F63,F7,F82`), and whitespace checks
+pass. Advisory Flake8 still reports four pre-existing warnings in the model
+adapters (three placeholder-free f-strings and a bare exception handler).
+
+All remote profiling and the Orin CUDA suite above ran at `94002e982`; the later
+pre-PR cleanup was validated locally, not reprofiled. It changes documentation,
+style, private helper names and a helper's keyword-only configuration, not the
+preprocessing algorithms. The five full production Dockerfiles have not been
+built end-to-end in this task; the T4 profiling image and native verifier were
+validated separately. Real learned-model Torch/ONNX end-to-end validation remains
+follow-up work.

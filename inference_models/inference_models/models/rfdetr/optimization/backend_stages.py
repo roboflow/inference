@@ -46,10 +46,30 @@ class BackendEnginePlugin:
     )
 
     def is_compatible(self, context: ExecutionContext) -> bool:
-        return metadata_supports_context(self.metadata, context)
+        """Check the stage's declared runtime requirements.
+
+        Args:
+            context (ExecutionContext): Device and installed runtime components.
+
+        Returns:
+            bool: Whether the stage supports the selected context.
+        """
+        compatible = metadata_supports_context(self.metadata, context)
+
+        return compatible
 
     def execute(self, operation: Callable[[], ResultT]) -> ResultT:
-        return operation()
+        """Invoke the backend operation without changing its semantics.
+
+        Args:
+            operation (Callable): Zero-argument backend operation.
+
+        Returns:
+            ResultT: The operation's unchanged result.
+        """
+        result = operation()
+
+        return result
 
 
 class BackendPostprocessor(BackendEnginePlugin):
@@ -86,6 +106,16 @@ class BackendExecutionScheduler(BackendEnginePlugin):
     def finalize_preprocess(
         self, engine_input, *, context, independent_stage_execution
     ):
+        """Synchronize standalone inputs or retain readiness for composed inference.
+
+        Args:
+            engine_input (EngineInputBuffer): Preprocessed tensor and completion event.
+            context (ExecutionContext): Device and preprocessing stream.
+            independent_stage_execution (bool): Whether to synchronize before return.
+
+        Returns:
+            torch.Tensor: The unchanged tensor to pass to the backend.
+        """
         if independent_stage_execution:
             if engine_input.ready_event is not None:
                 engine_input.ready_event.synchronize()
@@ -96,6 +126,7 @@ class BackendExecutionScheduler(BackendEnginePlugin):
             if event is None and context.current_stream is not None:
                 event = torch.cuda.Event()
                 event.record(context.current_stream)
+
             self._readiness.record(
                 engine_input.tensor,
                 ready_event=event,
@@ -103,12 +134,26 @@ class BackendExecutionScheduler(BackendEnginePlugin):
                 implementation_id=engine_input.preprocessor_implementation_id,
                 fallback_reason=engine_input.fallback_reason,
             )
+
         return engine_input.tensor
 
     def execute_engine(self, tensor, *, stream, operation):
+        """Wait for this tensor's preprocessing before invoking the backend.
+
+        Args:
+            tensor (torch.Tensor): Exact tensor returned from preprocessing.
+            stream (torch.cuda.Stream, optional): Backend consumer stream.
+            operation (Callable): Zero-argument backend forward operation.
+
+        Returns:
+            Any: The backend operation's unchanged result.
+        """
         readiness = self._readiness.consume(tensor)
         if readiness is not None and readiness.ready_event is not None:
             stream.wait_event(readiness.ready_event)
         if stream is not None:
             tensor.record_stream(stream)
-        return operation()
+
+        result = operation()
+
+        return result

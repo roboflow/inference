@@ -63,13 +63,34 @@ class PillowSIMDPreprocessor(BasePreprocessor):
             self._unavailable_reason = str(error)
 
     def check_model_compatibility(self, *, image_pre_processing, network_input):
+        """Check availability of the isolated native resize implementation.
+
+        Args:
+            image_pre_processing (ImagePreProcessing): Model preprocessing settings.
+            network_input (NetworkInputDefinition): Model input contract.
+
+        Returns:
+            CompatibilityResult: Availability with a reason for unsupported builds.
+        """
         if self._unavailable_reason:
-            return CompatibilityResult.incompatible(self._unavailable_reason)
-        return CompatibilityResult.compatible()
+            result = CompatibilityResult.incompatible(self._unavailable_reason)
+        else:
+            result = CompatibilityResult.compatible()
+
+        return result
 
     def check_request_compatibility(self, *, request, context):
+        """Restrict SIMD requests to supported NumPy image layouts and types.
+
+        Args:
+            request (PreprocessRequest): Images and model preprocessing settings.
+            context (ExecutionContext): Selected runtime target.
+
+        Returns:
+            CompatibilityResult: Request compatibility and fallback reasons.
+        """
         result = check_threaded_request_compatibility(request)
-        return replace(
+        compatibility = replace(
             result,
             reasons=tuple(
                 reason.replace("threaded preprocessing", "Pillow-SIMD preprocessing")
@@ -77,11 +98,26 @@ class PillowSIMDPreprocessor(BasePreprocessor):
             ),
         )
 
+        return compatibility
+
     def preprocess(self, request, context):
+        """Resize with Pillow-SIMD and transfer the normalized batch to the target.
+
+        Args:
+            request (PreprocessRequest): Images and preprocessing configuration.
+            context (ExecutionContext): Target device and optional CUDA stream.
+
+        Returns:
+            PreprocessResult: Normalized batch with SIMD identity and resize metadata.
+
+        Raises:
+            ImportError: If the isolated native implementation is unavailable.
+        """
         # Selection validates availability before execution; never silently change
         # the effective implementation ID by falling back inside this stage.
         if self._image is None:
             raise ImportError(self._unavailable_reason)
+
         result = run_reference_preprocessor(
             request,
             context,
@@ -89,8 +125,10 @@ class PillowSIMDPreprocessor(BasePreprocessor):
             max_workers=1,
             image_module=self._image,
         )
-        return replace(
+        simd_result = replace(
             result,
             implementation_id=self.metadata.implementation_id,
             input_kind="numpy-pillow-simd",
         )
+
+        return simd_result

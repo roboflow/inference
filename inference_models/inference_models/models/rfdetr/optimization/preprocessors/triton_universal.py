@@ -80,14 +80,16 @@ class TritonUniversalPreprocessor:
         """Return whether the Triton path supports the runtime context.
 
         Args:
-            context: Runtime target and request context.
+            context (ExecutionContext): Runtime target and request context.
 
         Returns:
             Whether the target is compatible.
         """
-        return torch.device(
+        compatible = torch.device(
             context.device
         ).type == "cuda" and metadata_supports_context(self.metadata, context)
+
+        return compatible
 
     def check_model_compatibility(
         self,
@@ -120,22 +122,28 @@ class TritonUniversalPreprocessor:
         """Check request-specific constraints supported by Triton preprocessing.
 
         Args:
-            request: Typed preprocessing request.
-            context: Runtime target and request context.
+            request (PreprocessRequest): Typed preprocessing request.
+            context (ExecutionContext): Runtime target and request context.
 
         Returns:
             Compatibility result with actionable reasons.
         """
         del context
         if request.image_size_wh is not None:
-            return CompatibilityResult.incompatible("custom image_size override")
+            result = CompatibilityResult.incompatible("custom image_size override")
+
+            return result
+
         if (
             request.input_color_format is None
             and request.network_input.color_mode == ColorMode.BGR
         ):
-            return CompatibilityResult.incompatible(
+            result = CompatibilityResult.incompatible(
                 "implicit color order for a BGR network requires the legacy base semantics"
             )
+
+            return result
+
         result = self._runtime.check_request_compatibility(
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,

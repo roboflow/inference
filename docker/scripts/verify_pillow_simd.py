@@ -8,21 +8,22 @@ import importlib
 import importlib.util
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import PIL
 import PIL.Image
 
-ROOT = os.environ.get("INFERENCE_MODELS_PILLOW_SIMD_PATH", "/opt/pillow_simd")
-PACKAGE_DIR = os.path.join(ROOT, "PIL")
+ROOT = Path(os.environ.get("INFERENCE_MODELS_PILLOW_SIMD_PATH", "/opt/pillow_simd"))
+PACKAGE_DIR = ROOT / "PIL"
 
 major, minor = (int(part) for part in PIL.__version__.split(".")[:2])
 assert (major, minor) >= (12, 3), f"standard Pillow replaced: {PIL.__version__}"
 
 spec = importlib.util.spec_from_file_location(
     "PILSIMD",
-    os.path.join(PACKAGE_DIR, "__init__.py"),
-    submodule_search_locations=[PACKAGE_DIR],
+    PACKAGE_DIR / "__init__.py",
+    submodule_search_locations=[str(PACKAGE_DIR)],
 )
 module = importlib.util.module_from_spec(spec)
 sys.modules["PILSIMD"] = module

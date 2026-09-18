@@ -23,16 +23,17 @@ def run_reference_preprocessor(
     """Run the existing RF-DETR preprocessor on the context stream.
 
     Args:
-        request: Typed preprocessing request.
-        context: Runtime context containing the CUDA stream.
-        implementation_id: Base or threaded implementation ID.
-        max_workers: Bounded threaded worker limit.
+        request (PreprocessRequest): Typed preprocessing request.
+        context (ExecutionContext): Target device and optional CUDA stream.
+        implementation_id (str): Base or threaded implementation ID.
+        max_workers (int): Bounded threaded worker limit.
+        image_module (ModuleType, optional): Isolated resize module; None uses Pillow.
 
     Returns:
         Typed preprocessing result.
 
     Raises:
-        ModelRuntimeError: If the execution context has no CUDA stream.
+        ModelRuntimeError: If a CUDA target has no preprocessing stream.
     """
     stream = context.current_stream
     if stream is None and torch.device(context.device).type == "cuda":

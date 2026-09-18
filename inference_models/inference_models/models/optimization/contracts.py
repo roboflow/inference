@@ -237,8 +237,8 @@ def metadata_compatibility(
     paths can adopt capability reporting incrementally.
 
     Args:
-        metadata: Implementation compatibility metadata.
-        context: Runtime target and available-component context.
+        metadata (OptimizationMetadata): Implementation compatibility metadata.
+        context (ExecutionContext): Runtime target and available-component context.
 
     Returns:
         Compatibility result with actionable static-runtime reasons.

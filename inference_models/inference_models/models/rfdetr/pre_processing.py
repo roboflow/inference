@@ -107,16 +107,16 @@ def pre_process_network_input(
     """Preprocess RF-DETR inputs with the selected implementation.
 
     Args:
-        images: Single image or image batch represented by NumPy arrays or tensors.
-        image_pre_processing: Model-package image preprocessing configuration.
-        network_input: Model-package network input definition.
-        target_device: Device receiving the preprocessed batch.
-        input_color_format: Optional color format supplied by the caller.
-        image_size_wh: Optional requested network input dimensions.
-        pre_processing_overrides: Optional request-specific preprocessing overrides.
-        preprocessor_implementation_id: Explicit implementation ID.
-        preprocessor_max_workers: Explicit threaded worker limit.
-        image_module: Explicit resize implementation. None preserves standard Pillow.
+        images (np.ndarray | torch.Tensor | list): Single image or image batch.
+        image_pre_processing (ImagePreProcessing): Package preprocessing settings.
+        network_input (NetworkInputDefinition): Model-package input definition.
+        target_device (torch.device): Device receiving the preprocessed batch.
+        input_color_format (ColorFormat, optional): Source color format.
+        image_size_wh (int | tuple[int, int], optional): Requested input dimensions.
+        pre_processing_overrides (PreProcessingOverrides, optional): Per-call overrides.
+        preprocessor_implementation_id (str): Explicit implementation ID.
+        preprocessor_max_workers (int): Explicit threaded worker limit.
+        image_module (ModuleType, optional): Resize module; None uses standard Pillow.
 
     Returns:
         Contiguous NCHW batch and per-image preprocessing metadata.
@@ -141,6 +141,7 @@ def pre_process_network_input(
                 "#modelruntimeerror"
             ),
         )
+
     selected_preprocessor = preprocessor_implementation_id
     preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
         max_workers=preprocessor_max_workers
@@ -191,10 +192,10 @@ def pre_process_network_input(
     else:
         image_list = [images]
 
-    def preprocess_one(
+    def _preprocess_one(
         image: Union[np.ndarray, torch.Tensor],
     ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
-        return _pre_process_one(
+        result = _pre_process_one(
             image=image,
             image_pre_processing=image_pre_processing,
             network_input=network_input,
@@ -203,6 +204,8 @@ def pre_process_network_input(
             pre_processing_overrides=pre_processing_overrides,
             image_module=image_module,
         )
+
+        return result
 
     if selected_preprocessor == RFDETR_PREPROCESSOR_THREADED_EXACT_V1:
         unsupported = [
@@ -241,11 +244,11 @@ def pre_process_network_input(
         if len(image_list) > 1 and preprocessor_max_workers > 1:
             worker_count = min(len(image_list), preprocessor_max_workers)
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                processed = list(executor.map(preprocess_one, image_list))
+                processed = list(executor.map(_preprocess_one, image_list))
         else:
-            processed = [preprocess_one(image) for image in image_list]
+            processed = [_preprocess_one(image) for image in image_list]
     else:
-        processed = [preprocess_one(image) for image in image_list]
+        processed = [_preprocess_one(image) for image in image_list]
 
     tensors = [tensor.to(device=target_device) for tensor, _ in processed]
     metadata = [meta for _, meta in processed]
