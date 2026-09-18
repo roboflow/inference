@@ -1,7 +1,8 @@
+import math
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
@@ -92,9 +93,27 @@ class InitialisePipelinePayload(BaseModel):
         type="MemorySinkConfiguration"
     )
     consumption_timeout: Optional[float] = None
+    retain_results_on_eof: bool = Field(
+        default=False,
+        description="Keep completed pipelines available for result collection until "
+        "explicit termination or consumption_timeout. Requires a finite, positive "
+        "consumption_timeout. The result buffer remains bounded.",
+    )
     api_key: Optional[str] = None
     predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE
+
+    @model_validator(mode="after")
+    def validate_result_retention(self):
+        if self.retain_results_on_eof and (
+            self.consumption_timeout is None
+            or not math.isfinite(self.consumption_timeout)
+            or self.consumption_timeout <= 0
+        ):
+            raise ValueError(
+                "retain_results_on_eof requires a finite, positive consumption_timeout"
+            )
+        return self
 
 
 class WebRTCOffer(BaseModel):

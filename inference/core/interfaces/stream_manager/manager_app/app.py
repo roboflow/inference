@@ -8,10 +8,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Process, Queue
+from queue import Empty
 from socketserver import BaseRequestHandler, BaseServer
 from threading import Lock, Thread
 from types import FrameType
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional
 from uuid import uuid4
 
 import psutil
@@ -71,6 +72,7 @@ class ManagedInferencePipeline:
         )
     )
     is_terminating: bool = False
+    retain_results_on_eof: bool = False
 
 
 PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
@@ -188,11 +190,25 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         managed_pipeline = get_or_spawn_pipeline_process(
             processes_table=self._processes_table,
         )
+        managed_pipeline.retain_results_on_eof = command.get(
+            "retain_results_on_eof", False
+        )
         managed_pipeline.command_queue.put((request_id, command))
         response = get_response_ignoring_thrash(
             responses_queue=managed_pipeline.responses_queue,
             matching_request_id=request_id,
+            process=managed_pipeline.pipeline_manager,
         )
+        if response.get(STATUS_KEY) != OperationStatus.SUCCESS:
+            # Failed initialization has no usable pipeline for the caller to close.
+            with PROCESSES_TABLE_LOCK:
+                self._processes_table.pop(managed_pipeline.pipeline_id, None)
+            process = managed_pipeline.pipeline_manager
+            process.terminate()
+            process.join(timeout=5)
+            if process.is_alive():
+                process.kill()
+                process.join()
         serialised_response = prepare_response(
             request_id=request_id,
             response=response,
@@ -214,6 +230,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         response = get_response_ignoring_thrash(
             responses_queue=managed_pipeline.responses_queue,
             matching_request_id=request_id,
+            process=managed_pipeline.pipeline_manager,
         )
         serialised_response = prepare_response(
             request_id=request_id,
@@ -290,14 +307,26 @@ def handle_command(
         return get_response_ignoring_thrash(
             responses_queue=managed_pipeline.responses_queue,
             matching_request_id=request_id,
+            process=managed_pipeline.pipeline_manager,
         )
 
 
 def get_response_ignoring_thrash(
-    responses_queue: Queue, matching_request_id: str
+    responses_queue: Queue, matching_request_id: str, process: Optional[Process] = None
 ) -> dict:
     while True:
-        response = responses_queue.get()
+        try:
+            response = responses_queue.get(timeout=0.5)
+        except Empty:
+            # A health sweep or idle timeout can stop a worker after a command
+            # was queued. Never block the entire TCP manager on a dead worker.
+            if process is not None and not process.is_alive():
+                return describe_error(
+                    exception=None,
+                    error_type=ErrorType.NOT_FOUND,
+                    public_error_message="InferencePipeline process exited before responding.",
+                )
+            continue
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
@@ -308,16 +337,16 @@ def get_response_ignoring_thrash(
 def execute_termination(
     signal_number: int,
     frame: FrameType,
-    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
+    processes_table: Dict[str, ManagedInferencePipeline],
 ) -> None:
     with PROCESSES_TABLE_LOCK:
         pipeline_ids = list(processes_table.keys())
         for pipeline_id in pipeline_ids:
             logger.info(f"Terminating pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].terminate()
+            processes_table[pipeline_id].pipeline_manager.terminate()
             logger.info(f"Pipeline: {pipeline_id} terminated.")
             logger.info(f"Joining pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].join()
+            processes_table[pipeline_id].pipeline_manager.join()
             logger.info(f"Pipeline: {pipeline_id} joined.")
         logger.info(f"Termination handler completed.")
         sys.exit(0)
@@ -363,8 +392,9 @@ def check_process_health() -> None:
                         "Process for pipeline_id=%s is above RAM limit.", pipeline_id
                     )
 
-                if managed_pipeline.is_idle:
-                    # skipping idle pipelines in status probing
+                if managed_pipeline.is_idle or managed_pipeline.retain_results_on_eof:
+                    # Retained results belong to the consumer. The worker enforces
+                    # its bounded consumption timeout if the consumer disappears.
                     continue
                 command = {
                     TYPE_KEY: CommandType.STATUS,
