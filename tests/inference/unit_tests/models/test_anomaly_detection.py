@@ -100,7 +100,7 @@ def test_http_serialization_keeps_anomaly_fields():
 def test_request_and_sdk_forward_optional_map_to_the_model():
     model = object.__new__(InferenceModelsAnomalyDetectionAdapter)
     model.class_names = CLASS_NAMES
-    model._model = Mock()
+    model._model = Mock(resolved_model=None)
     model._model.post_process.return_value = prediction()
     image = BytesIO()
     Image.new("RGB", (20, 10)).save(image, format="PNG")
