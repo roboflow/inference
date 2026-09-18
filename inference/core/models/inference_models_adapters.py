@@ -27,6 +27,7 @@ from inference.core.entities.responses.action_recognition import (
     ActionRecognitionPrediction,
 )
 from inference.core.entities.responses.inference import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
@@ -1616,6 +1617,68 @@ def _reshape_classification_confidences(
             "the classifier head."
         )
     return confidence.reshape(expected_num_images, expected_num_classes)
+
+
+class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapter):
+    """Serves PatchCore and FoundAD through the classification route."""
+
+    def postprocess(
+        self,
+        predictions: Any,
+        returned_metadata: List[Tuple[int, int]],
+        **kwargs,
+    ) -> List[AnomalyDetectionResponse]:
+        post_processed_predictions = self._model.post_process(
+            predictions, include_anomaly_map=kwargs.get("include_anomaly_map", False)
+        )
+        return prepare_anomaly_detection_response(
+            post_processed_predictions,
+            image_sizes=returned_metadata,
+            class_names=self.class_names,
+        )
+
+
+def prepare_anomaly_detection_response(
+    post_processed_predictions: ClassificationPrediction,
+    image_sizes: List[Tuple[int, int]],
+    class_names: List[str],
+) -> List[AnomalyDetectionResponse]:
+    # The decision comes from the threshold saved with the model, so both classes
+    # are always reported and the request confidence does not filter them.
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    responses = []
+    for classes_confidence, top_class_id, image_metadata, image_size in zip(
+        batch_confidences.tolist(),
+        post_processed_predictions.class_id.tolist(),
+        post_processed_predictions.images_metadata,
+        image_sizes,
+    ):
+        class_predictions = [
+            {
+                "class_id": class_id,
+                "class": class_names[class_id],
+                "confidence": round(classes_confidence[class_id], 4),
+            }
+            for class_id in (top_class_id, 1 - top_class_id)
+        ]
+        anomaly_map = image_metadata.get("anomaly_map")
+        responses.append(
+            AnomalyDetectionResponse(
+                image=InferenceResponseImage(width=image_size[1], height=image_size[0]),
+                predictions=class_predictions,
+                top=class_predictions[0]["class"],
+                confidence=class_predictions[0]["confidence"],
+                anomaly_score=image_metadata["anomaly_score"],
+                anomaly_threshold=image_metadata["anomaly_threshold"],
+                is_anomalous=image_metadata["is_anomalous"],
+                anomaly_map=anomaly_map.tolist() if anomaly_map is not None else None,
+            )
+        )
+    return responses
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):

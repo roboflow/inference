@@ -66,10 +66,6 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
-from inference.models.anomaly_detection.model import (
-    FoundADAnomalyDetection,
-    PatchCoreAnomalyDetection,
-)
 from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
@@ -79,8 +75,6 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
 ROBOFLOW_MODEL_TYPES = {
-    ("classification", "patchcore"): PatchCoreAnomalyDetection,
-    ("classification", "foundad"): FoundADAnomalyDetection,
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
     ("classification", "dinov3"): DinoV3Classification,
@@ -1219,6 +1213,17 @@ if USE_INFERENCE_MODELS:
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
         InferenceModelsKeyPointsDetectionAdapter
     )
+
+    # PatchCore and FoundAD anomaly detection are inference_models-only
+    # (no legacy implementation), so we add entries directly.
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsAnomalyDetectionAdapter,
+    )
+
+    for variant in ["patchcore", "foundad"]:
+        ROBOFLOW_MODEL_TYPES[("classification", variant)] = (
+            InferenceModelsAnomalyDetectionAdapter
+        )
 
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.

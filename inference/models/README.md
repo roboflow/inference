@@ -2,7 +2,6 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 
 | model                                 |                                                                           license                                                                            | commercial license available |
 |:--------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------:|:----------------------------:|
-| `inference/models/anomaly_detection`  | [Apache 2.0](https://github.com/amazon-science/patchcore-inspection/blob/main/LICENSE) (PatchCore), [MIT](https://github.com/ymxlzgy/FoundAD/blob/main/LICENSE) (FoundAD), [DINOv3 License](https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md) (FoundAD encoder) |              👍              |
 | `inference/models/clip`               |                                                   [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                                                    |              👍              |
 | `inference/models/cosmos3`            |                                                    [OpenMDW-1.1](https://openmdw.ai/license/1-1/)                                                    |              👍              |
 | `inference/models/doctr`              |                                               [Apache 2.0](https://github.com/mindee/doctr/blob/main/LICENSE)                                                |              👍              |
