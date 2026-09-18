@@ -6,6 +6,9 @@ from io import TextIOWrapper
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
+from roboflow_workflows.core_steps.common.workload_presets import (
+    LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.environment import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
@@ -14,8 +17,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -210,6 +218,15 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.STORAGE_WRITE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):

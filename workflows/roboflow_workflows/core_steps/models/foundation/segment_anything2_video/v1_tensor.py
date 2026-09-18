@@ -40,6 +40,11 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.str
     extract_box_prompts_tensor,
     masks_to_instance_detections,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+)
 from roboflow_workflows.environment import (
     GCP_SERVERLESS,
     WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION,
@@ -62,10 +67,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -218,6 +228,25 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2video/tiny",
             "sam2video/base-plus",
             "sam2video/large",
+        ]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Loaded with AutoModel.from_pretrained(), not the model_manager.add_model()
+        # registration the dependency pre-loader performs; declaring `model_id` here
+        # would pre-load through a path this block never uses.
+        return None
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.TRACKING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
         ]
 
 

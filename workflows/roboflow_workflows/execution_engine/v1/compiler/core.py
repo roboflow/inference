@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -20,6 +21,7 @@ from roboflow_workflows.execution_engine.v1.compiler.entities import (
     GraphCompilationResult,
     InputSubstitution,
     ParsedWorkflowDefinition,
+    StructuralCompilationResult,
 )
 from roboflow_workflows.execution_engine.v1.compiler.graph_constructor import (
     prepare_execution_graph,
@@ -248,6 +250,87 @@ def compile_workflow_graph(
     if cacheable:
         COMPILATION_CACHE.cache(key=key, value=result)
     return result
+
+
+@execution_phase(
+    name="workflow_structural_compilation",
+    categories=["execution_engine_operation"],
+)
+def compile_workflow_structure(
+    workflow_definition: dict,
+    init_parameters: Optional[Dict[str, Union[Any, Callable[[None], Any]]]] = None,
+    execution_engine_version: Optional[Union[str, Version]] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> StructuralCompilationResult:
+    """Compile a workflow for INSPECTION: the same resolution, hoisting,
+    inlining, parsing, validation and graph construction as
+    `compile_workflow_graph`, with everything executable left out.
+
+    Differences from the executable path, each deliberate:
+
+    * the caller's definition is deep-copied first, so hoisting nested
+      `dynamic_blocks_definitions` (which mutates) never reaches the request;
+    * dynamic blocks are compiled in structural mode - no allowance / tensor
+      gates, no code evaluation, no Modal validation, no workspace resolution;
+    * no step initialisation, no initializers, no kinds (de)serializers;
+    * `COMPILATION_CACHE` is neither read nor written, and the result is built
+      fresh per call, so structural objects never reach the executable cache.
+
+    Inner-workflow references are still resolved through the injected
+    `workflows_core.inner_workflow_spec_resolver`, embedded children are
+    inlined under their compiler-generated `<inner>__<child>` names, and
+    `remote_dispatch` children stay opaque steps.
+    """
+    if init_parameters is None:
+        init_parameters = {}
+    workflow_definition = deepcopy(workflow_definition)
+    raw_workflow_definition: Dict[str, Any] = (
+        normalize_inner_workflow_references_in_definition(
+            workflow_definition=workflow_definition,
+            init_parameters=init_parameters,
+        )
+    )
+    dynamic_blocks_definitions = (
+        apply_collected_dynamic_blocks_definitions_to_workflow_root(
+            workflow_definition=raw_workflow_definition,
+        )
+    )
+    statically_defined_blocks = load_workflow_blocks(
+        execution_engine_version=execution_engine_version,
+        profiler=profiler,
+    )
+    dynamic_blocks = compile_dynamic_blocks(
+        dynamic_blocks_definitions=dynamic_blocks_definitions,
+        profiler=profiler,
+        structural=True,
+    )
+    available_blocks = statically_defined_blocks + dynamic_blocks
+    validate_inner_workflow_composition_from_raw_workflow_definition(
+        raw_workflow_definition
+    )
+    inlined_raw_workflow_definition: Dict[str, Any] = inline_inner_workflow_steps(
+        raw_workflow_definition,
+        available_blocks=available_blocks,
+        profiler=profiler,
+    )
+    parsed_workflow_definition = parse_workflow_definition(
+        raw_workflow_definition=inlined_raw_workflow_definition,
+        available_blocks=available_blocks,
+        profiler=profiler,
+    )
+    validate_workflow_specification(
+        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
+    execution_graph = prepare_execution_graph(
+        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
+    return StructuralCompilationResult(
+        execution_graph=execution_graph,
+        parsed_workflow_definition=parsed_workflow_definition,
+        available_blocks=available_blocks,
+    )
 
 
 def collect_input_substitutions(

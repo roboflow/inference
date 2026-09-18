@@ -28,6 +28,9 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import ValidationError
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -93,9 +96,11 @@ from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowDescribeWorkloadRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
+    WorkflowSpecificationDescribeWorkloadRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -255,6 +260,7 @@ from inference.core.interfaces.http.handlers.secure_gateway import (
 )
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
+    handle_describe_workflow_workload,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
@@ -2344,6 +2350,68 @@ class HttpInterface(BaseInterface):
                     )
                 return handle_describe_workflows_interface(
                     definition=workflow_request.specification,
+                )
+
+            @app.post(
+                "/{workspace_name}/workflows/{workflow_id}/describe_workload",
+                response_model=WorkflowIntrospection,
+                summary="Endpoint to describe compile-time workload of predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
+                "and describes the graph, per-step work operations, restrictions, dependent resources and model "
+                "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
+                "code is evaluated.",
+            )
+            @with_route_exceptions
+            def describe_predefined_workflow_workload(
+                workspace_name: str,
+                workflow_id: str,
+                workflow_request: PredefinedWorkflowDescribeWorkloadRequest,
+            ) -> WorkflowIntrospection:
+                workflow_request.api_key = api_key_override(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_id=workflow_id,
+                    use_cache=workflow_request.use_cache,
+                    workflow_version_id=workflow_request.workflow_version_id,
+                )
+                return handle_describe_workflow_workload(
+                    definition=workflow_specification,
+                    api_key=workflow_request.api_key,
+                )
+
+            @app.post(
+                "/workflows/describe_workload",
+                response_model=WorkflowIntrospection,
+                summary="Endpoint to describe compile-time workload of workflow given in request",
+                description="Parses and structurally inspects the workflow definition, describing the graph, "
+                "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
+                "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
+            )
+            @with_route_exceptions
+            def describe_workflow_workload_route(
+                workflow_request: WorkflowSpecificationDescribeWorkloadRequest,
+            ) -> WorkflowIntrospection:
+                # Mirrors `describe_workflow_interface`: the key may arrive in
+                # the body or the Bearer header, and one of the two channels is
+                # required. Here the key is also the credential the optional
+                # model-metadata lookup runs under.
+                workflow_request.api_key = api_key_override(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
+                return handle_describe_workflow_workload(
+                    definition=workflow_request.specification,
+                    api_key=workflow_request.api_key,
                 )
 
             @app.post(

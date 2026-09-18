@@ -4,6 +4,9 @@ from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -16,10 +19,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -160,6 +168,15 @@ class BlockManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DETECTION_PROCESSING, WorkOperation.TEMPORAL_BUFFERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):

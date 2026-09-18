@@ -16,7 +16,15 @@ from roboflow_workflows.core_steps.visualizations.common.base_tensor import (
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import INTEGER_KIND, Selector
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 TYPE: str = "roboflow_core/corner_visualization@v1"
 SHORT_DESCRIPTION = "Draw the corners of detected objects in an image."
@@ -100,6 +108,15 @@ class CornerManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class CornerVisualizationBlockV1(ColorableVisualizationBlock):

@@ -31,7 +31,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     Selector,
 )
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
@@ -459,6 +467,15 @@ class MaskManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class MaskVisualizationBlockV1(ColorableVisualizationBlock):

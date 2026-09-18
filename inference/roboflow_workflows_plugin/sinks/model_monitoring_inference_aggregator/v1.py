@@ -8,6 +8,14 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionCondition,
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+)
 
 from inference.core.env import DEVICE_ID
 from inference.core.managers.metrics import get_system_info
@@ -50,6 +58,22 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
 )
 from inference.core.workflows.prototypes.cache import WorkflowsCache
+
+# Portable twin of this block's legacy `get_restrictions()` note. The
+# aggregation buffer lives in process memory while the reporting interval is
+# tracked in the shared cache, so a stateless or multi-replica HTTP runtime
+# splits one reporting window across workers. Declared as plain data: the
+# condition describes the TARGET deployment, never the host answering the
+# introspection call.
+AGGREGATION_BUFFER_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="aggregation_buffer_resets_on_stateless_http",
+    severity=Severity.SOFT,
+    when=RestrictionCondition(
+        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+        step_execution_modes=[StepExecutionMode.REMOTE],
+        input_modes=[RuntimeInputMode.VIDEO],
+    ),
+)
 
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
@@ -259,6 +283,19 @@ class BlockManifest(WorkflowBlockManifest):
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.DATA_AGGREGATION,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            AGGREGATION_BUFFER_HTTP_SOFT_PORTABLE_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+        ]
 
 
 class ParsedPrediction(BaseModel):

@@ -791,9 +791,10 @@ def denote_data_flow_for_step(
         else:
             data_lineage = []
         control_flow_lineage_support = []
+        reference_dimensionality = 0
     else:
-        data_lineage, control_flow_lineage_support = (
-            establish_batch_oriented_step_lineage(
+        data_lineage, control_flow_lineage_support, reference_lineage = (
+            establish_batch_oriented_step_lineage_with_reference(
                 step_selector=node,
                 all_data_derived_lineages=all_data_derived_lineages,
                 all_control_flow_lineages=all_control_flow_lineages,
@@ -802,6 +803,8 @@ def denote_data_flow_for_step(
                 output_dimensionality_offset=output_dimensionality_offset,
             )
         )
+        reference_dimensionality = len(reference_lineage)
+    step_node_data.reference_dimensionality = reference_dimensionality
     step_node_data.step_execution_dimensionality = (
         establish_step_execution_dimensionality(
             inputs_dimensionalities=inputs_dimensionalities,
@@ -1917,6 +1920,31 @@ def establish_batch_oriented_step_lineage(
     dimensionality_reference_property: Optional[str],
     output_dimensionality_offset: int,
 ) -> Tuple[List[str], List[str]]:
+    data_lineage, control_flow_lineage_support, _ = (
+        establish_batch_oriented_step_lineage_with_reference(
+            step_selector=step_selector,
+            all_data_derived_lineages=all_data_derived_lineages,
+            all_control_flow_lineages=all_control_flow_lineages,
+            input_data=input_data,
+            dimensionality_reference_property=dimensionality_reference_property,
+            output_dimensionality_offset=output_dimensionality_offset,
+        )
+    )
+    return data_lineage, control_flow_lineage_support
+
+
+def establish_batch_oriented_step_lineage_with_reference(
+    step_selector: str,
+    all_data_derived_lineages: List[List[str]],
+    all_control_flow_lineages: List[List[str]],
+    input_data: StepInputData,
+    dimensionality_reference_property: Optional[str],
+    output_dimensionality_offset: int,
+) -> Tuple[List[str], List[str], List[str]]:
+    """Like `establish_batch_oriented_step_lineage`, additionally returning
+    the REFERENCE lineage the output lineage was derived from (before the
+    output offset is applied). Its length is the step's effective input
+    depth, persisted as `StepNode.reference_dimensionality`."""
     reference_lineage, control_flow_lineage_support = get_reference_lineage(
         step_selector=step_selector,
         all_data_derived_lineages=all_data_derived_lineages,
@@ -1926,11 +1954,12 @@ def establish_batch_oriented_step_lineage(
     )
     if output_dimensionality_offset < 0:
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
-        return result_dimensionality, []
+        return result_dimensionality, [], reference_lineage
     if output_dimensionality_offset == 0:
-        return reference_lineage, control_flow_lineage_support
-    reference_lineage.append(step_selector)
-    return reference_lineage, []
+        return reference_lineage, control_flow_lineage_support, reference_lineage
+    output_lineage = copy(reference_lineage)
+    output_lineage.append(step_selector)
+    return output_lineage, [], reference_lineage
 
 
 def get_reference_lineage(

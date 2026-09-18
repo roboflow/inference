@@ -8,6 +8,9 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.utils import load_core_model, run_in_parallel
+from roboflow_workflows.core_steps.models.workload_presets import (
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     LMM_ENABLED,
     LOCAL_INFERENCE_API_URL,
@@ -33,6 +36,12 @@ from roboflow_workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionMetadata,
+    WorkOperation,
+    incomplete_discovery,
 )
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
@@ -200,6 +209,31 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(
+        self,
+    ) -> Union[List[WorkOperation], Discovery[WorkOperation]]:
+        # Mirrors discover_dependent_resources() above: the literal `lmm_type`
+        # picks the work. `gpt_4v` calls the OpenAI API on both execution
+        # paths (directly when local, through Roboflow /llm_v1 when remote),
+        # so it encodes the image and issues a vendor request. The only other
+        # value, `cog_vlm`, is end-of-life and raises. A selector-fed
+        # `lmm_type` is not statically resolvable.
+        if is_workflow_selector(self.lmm_type):
+            return incomplete_discovery(
+                [WorkOperation.MODEL_INFERENCE],
+                [f"lmm_type_selector_unresolved:$steps.{self.name}"],
+            )
+        if self.lmm_type == GPT_4V_MODEL_TYPE:
+            return [
+                WorkOperation.MODEL_INFERENCE,
+                WorkOperation.EXTERNAL_REQUEST,
+                WorkOperation.IMAGE_ENCODING,
+            ]
+        return []
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [hosted_endpoint_disabled_by_flag("LMM_ENABLED")]
 
 
 class LMMBlockV1(WorkflowBlock):

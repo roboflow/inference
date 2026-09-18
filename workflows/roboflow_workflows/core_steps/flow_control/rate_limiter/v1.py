@@ -12,10 +12,16 @@ from roboflow_workflows.execution_engine.entities.types import (
     StepSelector,
     WorkflowImageSelector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
 from roboflow_workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION,
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -121,6 +127,15 @@ class RateLimiterManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [COOLDOWN_HTTP_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.FLOW_CONTROL]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class RateLimiterBlockV1(WorkflowBlock):

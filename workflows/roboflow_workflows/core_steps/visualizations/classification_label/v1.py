@@ -18,7 +18,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowParameterSelector,
 )
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 
@@ -158,6 +166,15 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):

@@ -28,8 +28,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -163,6 +168,15 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
                 kind=[INTEGER_KIND],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ANALYSIS]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class TemplateMatchingBlockV1(WorkflowBlock):

@@ -44,6 +44,10 @@ from uuid import uuid4
 
 import torch
 from pydantic import ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from typing_extensions import Annotated
 
 from inference.core.env import (
@@ -250,6 +254,12 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [roboflow_platform_project(project_url=self.target_project)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
 
 
 class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):

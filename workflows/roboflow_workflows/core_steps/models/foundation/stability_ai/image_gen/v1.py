@@ -18,6 +18,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -149,6 +153,16 @@ class BlockManifest(WorkflowBlockManifest):
                 model_id=self.model if self.model in ENDPOINT else "core",
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
 
 
 class StabilityAIImageGenBlockV1(WorkflowBlock):

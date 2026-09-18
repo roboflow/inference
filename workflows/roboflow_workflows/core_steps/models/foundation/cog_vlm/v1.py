@@ -3,6 +3,11 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    DEPRECATED_BLOCK_ALWAYS_RAISES,
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import LMM_ENABLED
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -19,9 +24,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -157,6 +167,23 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # run() raises FeatureDeprecatedError before a model is ever fetched,
+        # so the step pulls no external resource on any runtime.
+        return []
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # run() raises FeatureDeprecatedError before touching a model, so the
+        # step performs no work on any runtime.
+        return []
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            DEPRECATED_BLOCK_ALWAYS_RAISES,
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("LMM_ENABLED"),
+        ]
 
 
 class CogVLMBlockV1(WorkflowBlock):

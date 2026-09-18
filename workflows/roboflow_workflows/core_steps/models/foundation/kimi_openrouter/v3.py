@@ -28,6 +28,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -250,6 +254,16 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 model_id=MODEL_VERSION_MAPPING[self.model_version],
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
 
 
 class KimiOpenrouterBlockV3(OpenRouterWorkflowBlockBase):

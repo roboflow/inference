@@ -20,7 +20,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
     WorkflowParameterSelector,
 )
-from roboflow_workflows.prototypes.block import WorkflowBlock, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    DependentResource,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 LONG_DESCRIPTION = """
 This **Modbus TCP** block integrates a Roboflow Workflow with a PLC using Modbus TCP.
@@ -103,6 +111,15 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class ModbusTCPBlockV1(WorkflowBlock):

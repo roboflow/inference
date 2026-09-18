@@ -29,6 +29,10 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.vis
     SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
@@ -55,6 +59,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
@@ -244,6 +252,15 @@ class BlockManifest(WorkflowBlockManifest):
             # declare.
             return []
         return [roboflow_platform_model(model_id=SAM3_INTERACTIVE_MODEL_ID)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM3_ENABLED"),
+        ]
 
 
 class SegmentAnything3InteractiveBlockV1(WorkflowBlock):

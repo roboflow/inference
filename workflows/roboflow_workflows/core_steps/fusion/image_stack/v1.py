@@ -5,6 +5,9 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -16,9 +19,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
     RuntimeRestriction,
@@ -181,6 +189,15 @@ class BlockManifest(WorkflowBlockManifest):
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ENCODING, WorkOperation.TEMPORAL_BUFFERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _compress_frame(

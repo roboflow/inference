@@ -204,6 +204,19 @@ def _current_workflow_execution_id() -> Optional[str]:
 
 USAGE_BLOCK_KIND = "custom_python"
 
+# Every dynamic block class - executable or structural placeholder - declares
+# the same init parameters, so `steps_initialiser` treats both alike and a
+# placeholder that is initialised by mistake fails in its own constructor
+# rather than in parameter resolution.
+DYNAMIC_BLOCK_INIT_PARAMETERS = ["api_key", "workspace_resolver", "execution_observer"]
+
+STRUCTURAL_PLACEHOLDER_MESSAGE = (
+    "Dynamic block `{block_type_name}` was compiled as a structural placeholder "
+    "for workflow inspection and is not executable. Structural compilation never "
+    "evaluates custom Python code; compile the workflow through the executable "
+    "path (`compile_workflow`) to run it."
+)
+
 
 def compute_block_code_fingerprint(python_code: PythonCode) -> str:
     """Stable identity for a custom Python block, used as its usage resource id.
@@ -301,6 +314,62 @@ def _record_logs_to_active_collector(
     )
 
 
+def assembly_structural_placeholder_block(
+    block_type_name: str,
+    unique_identifier: str,
+    manifest: Type[WorkflowBlockManifest],
+    python_code: PythonCode,
+    manifest_description: Optional[ManifestDescription] = None,
+) -> Type[WorkflowBlock]:
+    """The block class of a dynamic block compiled for INSPECTION only.
+
+    Carries the same manifest, init-parameter contract and usage identity as
+    the executable class (so the compiled graph looks the same to introspection),
+    but the user code is never turned into a module: `__init__` and `run` refuse
+    to execute. `skip_class_eval` is not enough for this - it still runs the
+    allowance / tensor gates and, in Modal mode, remote validation.
+    """
+    message = STRUCTURAL_PLACEHOLDER_MESSAGE.format(block_type_name=block_type_name)
+
+    def constructor(self, *args, **kwargs) -> None:
+        raise DynamicBlockError(
+            public_message=message,
+            context="workflow_structural_compilation | dynamic_block_placeholder_init",
+        )
+
+    def run(self, *args, **kwargs) -> BlockResult:
+        raise DynamicBlockError(
+            public_message=message,
+            context="workflow_structural_compilation | dynamic_block_placeholder_run",
+        )
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return list(DYNAMIC_BLOCK_INIT_PARAMETERS)
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return manifest
+
+    return type(
+        f"DynamicBlock[{unique_identifier}]",
+        (WorkflowBlock,),
+        {
+            "__init__": constructor,
+            "get_init_parameters": get_init_parameters,
+            "get_manifest": get_manifest,
+            "run": run,
+            "_usage_block_kind": USAGE_BLOCK_KIND,
+            "_usage_block_type": block_type_name,
+            "_usage_resource_id": (
+                f"{USAGE_BLOCK_KIND}/{compute_block_code_fingerprint(python_code)}"
+            ),
+            "_manifest_description": manifest_description,
+            "_structural_placeholder": True,
+        },
+    )
+
+
 def assembly_custom_python_block(
     block_type_name: str,
     unique_identifier: str,
@@ -310,7 +379,18 @@ def assembly_custom_python_block(
     workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
     manifest_description: Optional[ManifestDescription] = None,
+    structural: bool = False,
 ) -> Type[WorkflowBlock]:
+    if structural:
+        # Before `create_dynamic_module`: no exec, no Modal validation, no
+        # workspace resolution - the api key and resolver are never consulted.
+        return assembly_structural_placeholder_block(
+            block_type_name=block_type_name,
+            unique_identifier=unique_identifier,
+            manifest=manifest,
+            python_code=python_code,
+            manifest_description=manifest_description,
+        )
 
     code_module = create_dynamic_module(
         block_type_name=block_type_name,
@@ -483,7 +563,7 @@ def assembly_custom_python_block(
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "workspace_resolver", "execution_observer"]
+        return list(DYNAMIC_BLOCK_INIT_PARAMETERS)
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

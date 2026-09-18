@@ -10,6 +10,11 @@ import numpy as np
 import requests
 import supervision as sv
 from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
 
 from inference.core.env import API_BASE_URL
 from inference.core.roboflow_api import build_roboflow_api_headers
@@ -47,6 +52,7 @@ from inference.core.workflows.prototypes.background_tasks import BackgroundTaskS
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -455,6 +461,18 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [COOLDOWN_HTTP_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Posts an event to the platform or to a local event store; `solution` is
+        # a Vision Events use case identifier, not a project - no Roboflow model,
+        # no Roboflow project, no third-party model.
+        return []
 
 
 class RoboflowVisionEventsBlockV1(WorkflowBlock):

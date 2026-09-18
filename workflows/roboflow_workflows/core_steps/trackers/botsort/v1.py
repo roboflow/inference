@@ -4,6 +4,9 @@ from typing import Any, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 from roboflow_workflows._compat_names import get_logger
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.trackers._base import (
     TRACKER_PREDICTION_KINDS,
     TrackerBlockBase,
@@ -20,7 +23,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     Selector,
 )
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 from trackers import BoTSORTTracker
 
 logger = get_logger(__name__)
@@ -241,6 +252,15 @@ class BoTSORTManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.TRACKING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class BoTSORTBlockV1(TrackerBlockBase):

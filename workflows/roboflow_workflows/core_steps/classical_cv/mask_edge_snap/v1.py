@@ -20,8 +20,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     SELECTOR_POINTS_TO_BATCH_KEY,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -275,6 +280,15 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_FILTERING, WorkOperation.DETECTION_PROCESSING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class MaskEdgeSnapBlockV1(WorkflowBlock):

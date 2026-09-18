@@ -27,6 +27,9 @@ from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    ROBOFLOW_INTERNAL_ENDPOINT_ONLY,
+)
 from roboflow_workflows.environment import (
     API_BASE_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -53,10 +56,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -155,6 +163,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
         """This block requires internet access to the remote inference proxy."""
         return AirGappedAvailability(available=False, reason="requires_internet")
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Roboflow-internal proxy endpoint: the served model is chosen server side
+        # and is never named in the manifest.
+        return None
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [ROBOFLOW_INTERNAL_ENDPOINT_ONLY]
 
 
 class SegPreviewBlockV1(WorkflowBlock):

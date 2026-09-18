@@ -7,8 +7,13 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import IMAGE_KIND, Selector
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -126,6 +131,15 @@ class ContrastEnhancementManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_FILTERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class ContrastEnhancementBlock(WorkflowBlock):

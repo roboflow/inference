@@ -22,6 +22,10 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.pro
     Box,
     Sam2Prompt,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     CORE_MODEL_SAM2_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -44,6 +48,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -207,6 +215,15 @@ class BlockManifest(WorkflowBlockManifest):
                 model_id=f"sam2/{self.version}",
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
+        ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM2_ENABLED"),
         ]
 
 

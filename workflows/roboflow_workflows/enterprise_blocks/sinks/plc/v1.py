@@ -31,7 +31,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
     WorkflowParameterSelector,
 )
-from roboflow_workflows.prototypes.block import WorkflowBlock, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    DependentResource,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 from typing_extensions import Literal
 
 # Connection modes (the `connection_mode` selector) and per-mode field visibility.
@@ -376,6 +384,15 @@ class PLCReaderBlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
+
 
 class PLCReaderBlockV1(_PLCConnectionMixin, WorkflowBlock):
     """Reads PLC tag values over the PLC Relay or a direct EtherNet/IP / Modbus connection."""
@@ -519,6 +536,15 @@ class PLCWriterBlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class PLCWriterBlockV1(_PLCConnectionMixin, WorkflowBlock):

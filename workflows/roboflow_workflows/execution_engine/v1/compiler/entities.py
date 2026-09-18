@@ -44,6 +44,17 @@ class GraphCompilationResult:
 
 
 @dataclass(frozen=True)
+class StructuralCompilationResult:
+    """Output of `compile_workflow_structure` - the compiled graph and the
+    parsed definition, without initialised steps, initializers or serializers.
+    Built fresh per call; never stored in `COMPILATION_CACHE`."""
+
+    execution_graph: nx.DiGraph
+    parsed_workflow_definition: ParsedWorkflowDefinition
+    available_blocks: List[BlockSpecification]
+
+
+@dataclass(frozen=True)
 class InputSubstitution:
     input_parameter_name: str
     step_manifest: WorkflowBlockManifest
@@ -250,6 +261,16 @@ class StepNode(ExecutionGraphNode):
         },
     )
     step_execution_dimensionality: int = 0
+    reference_dimensionality: int = field(
+        default=0,
+        metadata={
+            "help": "Depth of the reference lineage the step's output lineage was "
+            "derived from - the effective compiled input depth (control-flow "
+            "lineage depth for input-less controlled steps). NOT the executor "
+            "loop depth (`step_execution_dimensionality`): reducers and "
+            "mixed-depth parameters make those two differ."
+        },
+    )
 
     def controls_flow(self) -> bool:
         if self.child_execution_branches:

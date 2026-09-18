@@ -8,6 +8,10 @@ from roboflow_workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -31,6 +35,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -144,6 +152,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [roboflow_platform_model(model_id=self.model_version)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("MOONDREAM2_ENABLED"),
+        ]
 
 
 class Moondream2BlockV1(WorkflowBlock):

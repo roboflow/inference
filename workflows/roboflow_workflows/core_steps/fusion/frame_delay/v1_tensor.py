@@ -45,9 +45,12 @@ nested deeper than list/tuple containers (e.g. inside dicts) are likewise
 buffered as-is.
 """
 
-from typing import Any, Optional, Type, Union
+from typing import Any, List, Optional, Type, Union
 
 from pydantic import ConfigDict
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
     LONG_DESCRIPTION as NUMPY_LONG_DESCRIPTION,
 )
@@ -58,7 +61,15 @@ from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
     FrameDelayBlockV1 as NumpyFrameDelayBlockV1,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 TENSOR_MODE_ADDENDUM = """
 ## Tensor Data Representation Behavior
@@ -87,6 +98,15 @@ class BlockManifest(NumpyBlockManifest):
             "long_description": LONG_DESCRIPTION,
         }
     )
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.TEMPORAL_BUFFERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _spill_images_to_host(data: Any) -> Any:

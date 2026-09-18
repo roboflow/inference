@@ -4,6 +4,10 @@ from typing import List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     CORE_MODEL_PE_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -23,6 +27,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     STRING_KIND,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -147,6 +155,15 @@ class BlockManifest(WorkflowBlockManifest):
                 model_id=f"perception_encoder/{self.version}",
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
+        ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("CORE_MODEL_PE_ENABLED"),
         ]
 
 

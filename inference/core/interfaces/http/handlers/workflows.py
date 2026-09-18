@@ -3,6 +3,12 @@ import copy
 from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
+from roboflow_workflows.execution_engine.introspection.workload import (
+    describe_workflow_workload,
+)
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 
 from inference.core.cache.air_gapped import has_cached_model_variant
 from inference.core.entities.responses.workflows import (
@@ -13,7 +19,13 @@ from inference.core.entities.responses.workflows import (
     WorkflowsBlocksDescription,
 )
 from inference.core.env import ENABLE_BUILDER
-from inference.core.interfaces.roboflow_platform_client import SERVER_WORKSPACE_RESOLVER
+from inference.core.interfaces.roboflow_platform_client import (
+    SERVER_WORKSPACE_RESOLVER,
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_workload_metadata import (
+    ServerModelMetadataProvider,
+)
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -206,6 +218,39 @@ def handle_describe_workflows_interface(
         outputs=outputs,
         typing_hints=typing_hints,
         kinds_schemas=kinds_schemas,
+    )
+
+
+def handle_describe_workflow_workload(
+    definition: dict,
+    api_key: Optional[str] = None,
+) -> WorkflowIntrospection:
+    """Compile-time workload facts for a workflow definition.
+
+    Structural inspection only: `describe_workflow_workload()` builds the graph
+    without initialising blocks, loading models or running custom Python. The
+    api key is used for two things and nothing else - the `workflows_core.*`
+    platform bindings the compiler needs to inline saved inner workflows, and
+    the optional model metadata lookup performed by
+    `ServerModelMetadataProvider`.
+    """
+    requested_execution_engine_version = retrieve_requested_execution_engine_version(
+        workflow_definition=definition
+    )
+    if not SpecifierSet(f">=1.0.0,<2.0.0").contains(requested_execution_engine_version):
+        raise WorkflowExecutionEngineVersionError(
+            public_message="Describing workflow workload is only supported for Execution Engine v1.",
+            context="describing_workflow_workload",
+        )
+    init_parameters = install_workflows_platform_bindings(
+        {
+            "workflows_core.api_key": api_key,
+        }
+    )
+    return describe_workflow_workload(
+        definition,
+        init_parameters=init_parameters,
+        model_metadata_provider=ServerModelMetadataProvider(api_key=api_key),
     )
 
 

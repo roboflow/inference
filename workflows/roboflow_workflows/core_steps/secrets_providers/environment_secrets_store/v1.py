@@ -2,13 +2,21 @@ import os
 from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.workload_presets import (
+    ENVIRONMENT_VARIABLE_ACCESS_DISABLED_PORTABLE_RESTRICTION,
+)
 from roboflow_workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import SECRET_KIND
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -112,6 +120,15 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.ENVIRONMENT_READ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [ENVIRONMENT_VARIABLE_ACCESS_DISABLED_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class EnvironmentSecretsStoreBlockV1(WorkflowBlock):

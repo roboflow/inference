@@ -12,6 +12,9 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    UNSUPPORTED_IN_TENSOR_REPRESENTATION,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -26,6 +29,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -134,6 +141,15 @@ class BlockManifest(WorkflowBlockManifest):
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        # The tensor-native sibling of this block raises
+        # FeatureDeprecatedError: there is no inference_models path for
+        # YOLO-World.
+        return [UNSUPPORTED_IN_TENSOR_REPRESENTATION]
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

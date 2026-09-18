@@ -29,6 +29,12 @@ else:
 
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import WILDCARD_KIND, Selector
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionMetadata,
+    WorkOperation,
+    incomplete_discovery,
+)
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
     INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
     INNER_WORKFLOW_EXECUTION_MODE_REMOTE_DISPATCH,
@@ -195,6 +201,18 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_work_operations(self) -> Discovery[WorkOperation]:
+        return incomplete_discovery(
+            items=[WorkOperation.EXTERNAL_REQUEST],
+            reasons=[f"remote_dispatch_child_opaque:$steps.{self.name}"],
+        )
+
+    def discover_portable_restrictions(self) -> Discovery[RestrictionMetadata]:
+        return incomplete_discovery(
+            items=[],
+            reasons=[f"remote_dispatch_child_opaque:$steps.{self.name}"],
+        )
 
 
 class InnerWorkflowBlockV1(WorkflowBlock):

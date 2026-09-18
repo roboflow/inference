@@ -13,8 +13,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -184,6 +189,17 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        if self.task_type == "resize":
+            return [WorkOperation.IMAGE_RESIZE]
+        return [WorkOperation.IMAGE_TRANSFORM]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class ImagePreprocessingBlockV1(WorkflowBlock):

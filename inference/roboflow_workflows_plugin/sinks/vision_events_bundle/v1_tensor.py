@@ -30,6 +30,14 @@ from pydantic import (
     NonNegativeInt,
     field_validator,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
@@ -60,6 +68,7 @@ from inference.core.workflows.prototypes.background_tasks import BackgroundTaskS
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -538,6 +547,21 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ENCODING, WorkOperation.STORAGE_WRITE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION,
+            *LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS,
+        ]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Writes the event bundle to the local volume; `solution` is a Vision
+        # Events use case identifier, not a project - no Roboflow model, no
+        # Roboflow project, no third-party model.
+        return []
 
 
 class VisionEventBundleSinkBlockV1(WorkflowBlock):

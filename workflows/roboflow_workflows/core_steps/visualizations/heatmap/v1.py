@@ -5,6 +5,9 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
@@ -22,9 +25,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
     RuntimeRestriction,
@@ -172,6 +180,15 @@ class HeatmapManifest(PredictionsVisualizationManifest):
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION, WorkOperation.TEMPORAL_BUFFERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):

@@ -18,10 +18,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionMetadata,
+    WorkOperation,
+    incomplete_discovery,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    is_workflow_selector,
 )
 
 LONG_DESCRIPTION = """
@@ -186,6 +194,28 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
                 kind=[IMAGE_KIND],
             ),
         ]
+
+    def discover_work_operations(
+        self,
+    ) -> Union[List[WorkOperation], Discovery[WorkOperation]]:
+        if is_workflow_selector(self.visualize):
+            # A runtime value may switch visualisation on, so the set of
+            # operations is not knowable here. Declare what holds either way
+            # and say why the rest is unknown - never guess, and never
+            # substitute the input's default value.
+            return incomplete_discovery(
+                items=[WorkOperation.IMAGE_ANALYSIS],
+                reasons=[f"visualize_selector_unresolved:$steps.{self.name}"],
+            )
+        if self.visualize:
+            return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
+        return [WorkOperation.IMAGE_ANALYSIS]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class SIFTComparisonBlockV2(WorkflowBlock):

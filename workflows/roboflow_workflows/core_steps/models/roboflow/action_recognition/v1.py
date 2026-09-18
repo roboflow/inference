@@ -14,6 +14,11 @@ from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+)
 from roboflow_workflows.errors import WorkflowEnvironmentConfigurationError
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
@@ -33,10 +38,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -217,6 +227,26 @@ class BlockManifest(WorkflowBlockManifest):
         # Fine-tuned packages carry their own base weights, so the block
         # depends on no separately cached foundation model.
         return None
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Loaded with model_manager.load_action_recognition_model(), not the
+        # model_manager.add_model() registration the dependency pre-loader performs;
+        # declaring `model_id` here would pre-load through a path this block never
+        # uses.
+        return None
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+        ]
 
 
 class ActionRecognitionModelBlockV1(WorkflowBlock):

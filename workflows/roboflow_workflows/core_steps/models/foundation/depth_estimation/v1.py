@@ -3,6 +3,10 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     DEPTH_ESTIMATION_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -23,6 +27,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     RoboflowModelField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -170,6 +178,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [roboflow_platform_model(model_id=self.model_version)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [
+            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+            hosted_endpoint_disabled_by_flag("DEPTH_ESTIMATION_ENABLED"),
+        ]
 
 
 class DepthEstimationBlockV1(WorkflowBlock):

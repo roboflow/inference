@@ -19,6 +19,7 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
 from roboflow_workflows.core_steps.sinks.onvif_movement.v1 import (
+    NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION,
     NO_LAN_FROM_HOSTED_RESTRICTION,
 )
 from roboflow_workflows.execution_engine.constants import (
@@ -39,8 +40,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     WorkflowBlock,
@@ -262,6 +268,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [NO_LAN_FROM_HOSTED_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 # primarily used for rate limiting

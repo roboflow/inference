@@ -8,6 +8,9 @@ from roboflow_workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    UNSUPPORTED_IN_TENSOR_REPRESENTATION,
+)
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -29,6 +32,10 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     ImageInputField,
     Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -158,6 +165,15 @@ class BlockManifest(WorkflowBlockManifest):
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        # The tensor-native sibling of this block raises
+        # FeatureDeprecatedError: there is no inference_models path for
+        # YOLO-World.
+        return [UNSUPPORTED_IN_TENSOR_REPRESENTATION]
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

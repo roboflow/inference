@@ -1,12 +1,22 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 from roboflow_workflows.errors import BlockInterfaceError
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionCondition,
+    RestrictionMetadata,
+    Runtime,
+    RuntimeInputMode,
+    Severity,
+    StepExecutionMode,
+    WorkOperation,
+)
 from roboflow_workflows.execution_engine.introspection.utils import get_full_type_name
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
 
@@ -30,55 +40,10 @@ class AirGappedAvailability:
     reason: Optional[str] = None
 
 
-class Severity(str, Enum):
-    """Severity of a runtime restriction for a workflow block in a given runtime.
-
-    SOFT: the block runs to completion and returns the right output shape,
-    but the values are degraded or meaningless (e.g. tracker IDs reset across
-    requests, cooldown does not throttle, file is written to ephemeral disk).
-
-    HARD: the block does not run / raises / cannot produce a usable output
-    in this runtime. The engine should refuse to compile or fail-fast.
-    """
-
-    SOFT = "soft"
-    HARD = "hard"
-
-
-class Runtime(str, Enum):
-    """Canonical runtimes a workflow block can be executed in.
-
-    Runtimes not covered by ``get_restrictions()`` are considered OK.
-    """
-
-    HOSTED_SERVERLESS = "hosted_serverless"
-    DEDICATED_DEPLOYMENT = "dedicated_deployment"
-    SELF_HOSTED_CPU = "self_hosted_cpu"
-    SELF_HOSTED_GPU = "self_hosted_gpu"
-    INFERENCE_PIPELINE = "inference_pipeline"
-
-
-class RuntimeInputMode(str, Enum):
-    """Workflow input modes for a restriction."""
-
-    IMAGE = "image"
-    VIDEO = "video"
-
-
-class StepExecutionMode(Enum):
-    """How a workflow step is dispatched at runtime.
-
-    LOCAL: the step executes in-process inside the current Python interpreter.
-    REMOTE: the step delegates execution to a remote inference service / HTTP
-    runtime.
-
-    Kept in ``prototypes/block.py`` so the framework layer owns this enum and
-    higher-level packages (``core_steps``, executor, compiler) depend on
-    ``prototypes`` rather than the other way around.
-    """
-
-    LOCAL = "local"
-    REMOTE = "remote"
+# ``Severity``, ``Runtime``, ``RuntimeInputMode`` and ``StepExecutionMode``
+# are defined in ``roboflow_workflows.execution_engine.entities.workload``
+# (dependency-light, shared with the portable restriction entities) and
+# re-exported here unchanged - this module stays their public import path.
 
 
 @dataclass(frozen=True)
@@ -178,6 +143,42 @@ STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
 )
 
 
+# ----------------------------------------------------------------------------
+# Portable counterparts of the presets above, for
+# ``WorkflowBlockManifest.discover_portable_restrictions()``. They carry a
+# stable code and a condition instead of a human note; ``get_restrictions()``
+# and the legacy presets are unchanged.
+# ----------------------------------------------------------------------------
+
+
+STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="stateful_video_state_resets_on_stateless_http",
+    severity=Severity.SOFT,
+    when=RestrictionCondition(
+        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+        step_execution_modes=[StepExecutionMode.REMOTE],
+        input_modes=[RuntimeInputMode.VIDEO],
+    ),
+)
+
+
+COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="cooldown_timer_resets_on_stateless_http",
+    severity=Severity.SOFT,
+    when=RestrictionCondition(
+        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+        step_execution_modes=[StepExecutionMode.REMOTE],
+    ),
+)
+
+
+STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="temporal_block_no_benefit_on_still_image",
+    severity=Severity.SOFT,
+    when=RestrictionCondition(input_modes=[RuntimeInputMode.IMAGE]),
+)
+
+
 @dataclass(frozen=True)
 class BlockAirGappedInfo:
     """Full air-gapped status for a block, as returned by the describe endpoint."""
@@ -235,6 +236,7 @@ class ModelExecutionLocation(str, Enum):
 class RoboflowPlatformModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
+    type: Literal["roboflow_platform_model"] = "roboflow_platform_model"
     model_id: str
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION
     execution_location: Optional[ModelExecutionLocation] = None
@@ -315,6 +317,7 @@ class RoboflowPlatformModelMetadata(BaseModel):
 class RoboflowPlatformProjectMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    type: Literal["roboflow_platform_project"] = "roboflow_platform_project"
     project_url: str
 
     def requires_runtime_resolution(self) -> bool:
@@ -324,6 +327,7 @@ class RoboflowPlatformProjectMetadata(BaseModel):
 class ThirdPartyModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
+    type: Literal["third_party_model"] = "third_party_model"
     provider: str
     model_id: str
     # See RoboflowPlatformModelMetadata.model_id_resolver — same contract.
@@ -355,6 +359,7 @@ REGISTERED_RESOURCE_METADATA_TYPES: Dict[DependentResourceType, Type[BaseModel]]
 class DependentResource(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    type: Literal["dependent_resource"] = "dependent_resource"
     resource_type: DependentResourceType
     metadata: Union[
         RoboflowPlatformModelMetadata,
@@ -379,6 +384,17 @@ class DependentResource(BaseModel):
         expected_type = REGISTERED_RESOURCE_METADATA_TYPES.get(resource_type)
         if expected_type is None:
             return values
+        # Old envelopes carry no `type`; an explicit one must agree with
+        # `resource_type`, otherwise the declaration contradicts itself.
+        declared_type = metadata.get("type")
+        expected_discriminator = expected_type.model_fields["type"].default
+        if declared_type is not None and declared_type != expected_discriminator:
+            raise BlockInterfaceError(
+                public_message=f"DependentResource of type {resource_type.value} "
+                f"requires metadata of type `{expected_discriminator}`, got "
+                f"`{declared_type}`.",
+                context="declaring_block_dependent_resources",
+            )
         return {**values, "metadata": expected_type.model_validate(metadata)}
 
     @model_validator(mode="after")
@@ -395,7 +411,13 @@ class DependentResource(BaseModel):
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)
+        # Legacy envelope shape: no `type` discriminators at any level. Use
+        # `model_dump(mode="json")` for the discriminated (introspection) form.
+        return self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude={"type": True, "metadata": {"type": True}},
+        )
 
 
 def roboflow_platform_model(
@@ -525,6 +547,52 @@ class WorkflowBlockManifest(BaseModel, ABC):
         metadata — the block does not resolve them. Callers may substitute
         ``$inputs`` references once runtime parameters are known; ``$steps``
         references are not statically resolvable.
+        """
+        return None
+
+    def discover_work_operations(
+        self,
+    ) -> Optional[Union[List[WorkOperation], Discovery[WorkOperation]]]:
+        """Declare the meaningful work this step performs.
+
+        Return-value convention (shared with
+        ``discover_portable_restrictions()``):
+
+        * ``None`` (the default) - unknown: the block does not declare its
+          operations (e.g. an unannotated plugin). Callers must treat it as an
+          incomplete discovery, which is distinct from
+        * ``[]`` / a plain ``list`` - a complete declaration; an empty list
+          truthfully says the block performs no meaningful operation (noop).
+        * a ``Discovery[WorkOperation]`` - explicit completeness with reasons,
+          e.g. custom Python declares
+          ``incomplete_discovery([WorkOperation.CUSTOM_PYTHON],
+          ["custom_python_internal_operations_unknown:$steps.<name>"])``.
+
+        Callers normalise every return value through
+        ``roboflow_workflows.execution_engine.entities.workload.normalize_declaration``.
+        Annotate meaningful block behaviour (what the step does), not every
+        helper invoked internally; literal manifest settings may select the
+        operations (e.g. resize vs rotate). Environment-dependent dispatch
+        must not add ``EXTERNAL_REQUEST`` merely because this server is
+        configured for remote execution.
+        """
+        return None
+
+    def discover_portable_restrictions(
+        self,
+    ) -> Optional[Union[List[RestrictionMetadata], Discovery[RestrictionMetadata]]]:
+        """Declare portable (code + condition) runtime restrictions.
+
+        Same return-value convention as ``discover_work_operations()``:
+        ``None`` = unknown (the default), a plain ``list`` = complete
+        declaration (``[]`` = declares none), a
+        ``Discovery[RestrictionMetadata]`` = explicit completeness with
+        reasons.
+
+        Return every declaration that applies conditionally on the target
+        configuration (see ``RestrictionCondition``) without evaluating this
+        host's flags. ``get_restrictions()`` (human notes, environment
+        filtered) is unchanged and remains the legacy API.
         """
         return None
 

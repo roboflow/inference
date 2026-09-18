@@ -4,6 +4,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
@@ -262,6 +266,12 @@ class BlockManifest(WorkflowBlockManifest):
             # project is ever accessed.
             return []
         return [roboflow_platform_project(project_url=self.target_project)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
 
 
 class RoboflowDatasetUploadBlockV2(WorkflowBlock):

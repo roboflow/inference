@@ -26,8 +26,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
+    RestrictionCondition,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -128,6 +134,20 @@ NO_LAN_FROM_HOSTED_RESTRICTION = RuntimeRestriction(
         Runtime.HOSTED_SERVERLESS,
         Runtime.DEDICATED_DEPLOYMENT,
     ],
+)
+
+
+# Portable counterpart of the preset above; shared with v1_tensor for the same
+# reason. The condition mirrors the legacy declaration exactly: runtimes only.
+NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="requires_lan_access_to_device",
+    severity=Severity.HARD,
+    when=RestrictionCondition(
+        runtimes=[
+            Runtime.HOSTED_SERVERLESS,
+            Runtime.DEDICATED_DEPLOYMENT,
+        ],
+    ),
 )
 
 
@@ -260,6 +280,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [NO_LAN_FROM_HOSTED_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return [NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 # primarily used for rate limiting

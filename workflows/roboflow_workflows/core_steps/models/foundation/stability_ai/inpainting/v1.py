@@ -23,9 +23,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -160,6 +165,22 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Vendor API (Stability AI) with one fixed edit endpoint: the manifest
+        # carries no model identity to declare.
+        return None
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+            WorkOperation.IMAGE_COMPOSITION,
+        ]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return []
 
 
 class StabilityAIInpaintingBlockV1(WorkflowBlock):

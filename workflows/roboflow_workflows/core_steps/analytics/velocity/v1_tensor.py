@@ -6,6 +6,9 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     split_key_point_prediction,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.constants import (
     SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
     SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
@@ -27,10 +30,15 @@ from roboflow_workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    RestrictionMetadata,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -181,6 +189,15 @@ class VelocityManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DETECTION_PROCESSING, WorkOperation.TEMPORAL_BUFFERING]
+
+    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class _VideoVelocityState:
