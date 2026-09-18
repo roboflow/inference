@@ -59,7 +59,12 @@ def start(
         typer.Option(
             "--dev",
             "-d",
-            help="Run inference server in development mode (default is False).",
+            help="Run inference server in development mode (default is False). "
+            "Also sets ENABLE_BUILDER=True and NOTEBOOK_ENABLED=True in the "
+            "container, which turns on the Workflows builder UI (/build) and "
+            "the Jupyter notebook server. Set those two variables directly "
+            "(for example with --env-file) to enable them without the rest "
+            "of development mode.",
         ),
     ] = False,
     api_key: Annotated[

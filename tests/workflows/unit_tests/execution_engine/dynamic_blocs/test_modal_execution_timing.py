@@ -13,16 +13,16 @@ from unittest import mock
 
 import pytest
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks import modal_executor
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import modal_executor
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     clear_block_duration,
     consume_block_duration,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     ModalExecutor,
 )
 

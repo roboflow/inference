@@ -20,6 +20,7 @@ from inference.core.workflows.prototypes.image_codec import (
     WorkflowsLocalImageCodec,
     get_image_codec,
     reset_image_codec,
+    set_default_image_codec_factory,
     set_image_codec,
 )
 from inference.core.workflows.utils.image_encoding import (
@@ -152,7 +153,7 @@ def test_default_never_imports_or_calls_pickle() -> None:
     # AST instead: no import of `pickle`, and no attribute call on a name
     # `pickle`.
     tree = ast.parse(
-        Path("inference/core/workflows/prototypes/image_codec.py").read_text(
+        Path("workflows/roboflow_workflows/prototypes/image_codec.py").read_text(
             encoding="utf-8"
         )
     )
@@ -262,6 +263,43 @@ def test_registry_returns_the_refusing_default_until_a_host_installs_one() -> No
     assert isinstance(get_image_codec(), WorkflowsLocalImageCodec)
 
 
+def test_host_default_is_resolved_lazily_and_keeps_the_codec_fixed() -> None:
+    codec = WorkflowsLocalImageCodec()
+    calls = []
+
+    def factory():
+        calls.append(True)
+        return codec
+
+    set_default_image_codec_factory(factory)
+    assert calls == []
+    assert get_image_codec() is codec
+    assert get_image_codec() is codec
+    assert calls == [True]
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        set_image_codec(WorkflowsLocalImageCodec())
+
+
+@pytest.mark.parametrize("install_during_resolution", [False, True])
+def test_explicit_codec_takes_precedence_over_host_default(
+    install_during_resolution,
+) -> None:
+    explicit_codec = WorkflowsLocalImageCodec()
+    calls = []
+
+    def factory():
+        calls.append(True)
+        # Exercise an explicit installation interleaved with host resolution.
+        set_image_codec(explicit_codec)
+        return WorkflowsLocalImageCodec()
+
+    set_default_image_codec_factory(factory)
+    if not install_during_resolution:
+        set_image_codec(explicit_codec)
+    assert get_image_codec() is explicit_codec
+    assert calls == ([True] if install_during_resolution else [])
+
+
 def test_installing_a_codec_makes_it_the_process_codec() -> None:
     codec = WorkflowsLocalImageCodec()
     set_image_codec(codec)
@@ -338,7 +376,7 @@ def test_many_threads_installing_the_same_codec_all_succeed() -> None:
 
 
 def test_module_stays_free_of_the_server_package_and_of_io() -> None:
-    source = Path("inference/core/workflows/prototypes/image_codec.py").read_text(
+    source = Path("workflows/roboflow_workflows/prototypes/image_codec.py").read_text(
         encoding="utf-8"
     )
     tree = ast.parse(source)
