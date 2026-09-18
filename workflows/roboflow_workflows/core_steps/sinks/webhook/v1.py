@@ -73,6 +73,9 @@ for data exchange, notifications, or other integrations.
   `Location` header is not followed.
 * Non-global destinations are allowed by default to preserve existing self-hosted
   private-network webhooks.
+* `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables are honoured
+  unless `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=false`, in which
+  case the proxy is refused and the request fails.
 
 ### Setting Query Parameters
 You can easily set query parameters for your request:
@@ -563,11 +566,17 @@ def _execute_request(
     parsed = urllib.parse.urlsplit(request.url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Webhook requires an HTTP(S) URL with a valid host")
-    # `proxies={}` and calling the adapter directly keep DNS resolution inside
-    # SSRFProtectedHTTPAdapter; environment HTTP(S) proxies must not steer the
-    # destination outside the validating adapter. `stream=True` avoids reading
-    # the body (the block does not consume it), and `allow_redirects` is not
-    # honoured by an adapter's `send()` so a 3xx surfaces here.
+    # Environment HTTP(S)_PROXY is honoured only when non-global destinations
+    # are allowed: a proxy resolves the destination itself, so in hardened
+    # mode `proxies={}` keeps DNS resolution inside SSRFProtectedHTTPAdapter.
+    # Calling the adapter directly: `stream=True` avoids reading the body (the
+    # block does not consume it), and `allow_redirects` is not honoured by an
+    # adapter's `send()` so a 3xx surfaces here.
+    proxies = (
+        requests.utils.get_environ_proxies(request.url)
+        if ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
+        else {}
+    )
     with contextlib.closing(
         SSRFProtectedHTTPAdapter(
             allow_non_global_addresses=ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
@@ -578,7 +587,7 @@ def _execute_request(
                 request,
                 stream=True,
                 timeout=timeout,
-                proxies={},
+                proxies=proxies,
             )
         ) as response:
             if 300 <= response.status_code < 400:

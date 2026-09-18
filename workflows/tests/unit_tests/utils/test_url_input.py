@@ -205,6 +205,23 @@ def test_adapter_rejects_proxy() -> None:
         )
 
 
+def test_adapter_uses_proxy_when_non_global_allowed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        url_input.socket,
+        "getaddrinfo",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not resolve")),
+    )
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=True)
+    pool = adapter.get_connection(
+        "https://example.com/x",
+        proxies={"https": "http://proxy.local:3128"},
+    )
+    # Stock HTTPAdapter path: pool tunnels through the proxy, not pinned.
+    assert pool.host == "example.com"
+    assert pool.proxy.host == "proxy.local"
+    assert pool.proxy.port == 3128
+
+
 @pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
 def test_tls_context_blocks_hostname_resolving_to_non_global(monkeypatch) -> None:
     monkeypatch.setattr(

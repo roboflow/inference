@@ -349,12 +349,17 @@ def test_execute_request_treats_redirect_as_failure(monkeypatch) -> None:
     assert holder["request"].url.startswith("https://public.example/webhook")
 
 
-def test_execute_request_ignores_environment_proxies(monkeypatch) -> None:
+def test_execute_request_ignores_environment_proxies_in_hardened_mode(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.local:3128")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.local:3128")
     monkeypatch.setenv("NO_PROXY", "")
     response = _FakeResponse(status_code=200)
     holder = _install_capturing_adapter(monkeypatch, response)
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
 
     ok, _ = execute_request(
         url="https://public.example/webhook",
@@ -368,6 +373,32 @@ def test_execute_request_ignores_environment_proxies(monkeypatch) -> None:
     )
     assert ok is False
     assert holder["kwargs"]["proxies"] == {}
+
+
+def test_execute_request_honours_environment_proxies_when_non_global_allowed(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.local:3128")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.local:3128")
+    monkeypatch.setenv("NO_PROXY", "")
+    response = _FakeResponse(status_code=200)
+    holder = _install_capturing_adapter(monkeypatch, response)
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
+
+    ok, _ = execute_request(
+        url="https://public.example/webhook",
+        method="POST",
+        query_parameters={},
+        headers={},
+        json_payload={"a": 1},
+        form_data={},
+        multi_part_encoded_files={},
+        timeout=1,
+    )
+    assert ok is False
+    assert holder["kwargs"]["proxies"]["https"] == "http://proxy.local:3128"
 
 
 @pytest.mark.parametrize(

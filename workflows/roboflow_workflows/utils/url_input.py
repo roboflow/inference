@@ -95,8 +95,10 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
     targets it validates the literal directly and lets ``requests`` connect
     normally.
 
-    A configured proxy is rejected outright: a forward proxy would resolve
-    the destination outside this adapter, breaking the pinning guarantee.
+    A configured proxy is rejected in hardened mode (non-global addresses
+    not allowed): a forward proxy would resolve the destination outside this
+    adapter, breaking the pinning guarantee. When non-global addresses are
+    allowed the proxy is used as-is.
     """
 
     def __init__(self, *, allow_non_global_addresses: bool, **kwargs):
@@ -112,12 +114,21 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
             request.headers["Host"] = host_header
         return super().send(request, **kwargs)
 
-    def _reject_proxy(self, url: str, proxies) -> None:
-        if select_proxy(url, proxies):
+    def _proxy_selected(self, url: str, proxies) -> bool:
+        """Return True when the request should go through a proxy.
+
+        A proxy resolves the destination itself, so IP validation and pinning
+        cannot be enforced. That is only acceptable when non-global
+        destinations are allowed anyway; in hardened mode a proxy is refused.
+        """
+        if not select_proxy(url, proxies):
+            return False
+        if not self._allow_non_global_addresses:
             raise URLAddressNotAllowedError(
                 "Webhook transport refuses to use an HTTP(S) proxy: a proxy "
                 "would resolve the destination outside the validating adapter."
             )
+        return True
 
     def _resolve_pin_target(self, url: str) -> Optional[Tuple[str, str]]:
         parsed = urllib3.util.parse_url(url)
@@ -161,7 +172,10 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         return pool
 
     def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
-        self._reject_proxy(request.url, proxies)
+        if self._proxy_selected(request.url, proxies):
+            return super().get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
+            )
         pin = self._resolve_pin_target(request.url)
         if pin is None:
             return super().get_connection_with_tls_context(
@@ -174,7 +188,8 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
 
     def get_connection(self, url, proxies=None):
-        self._reject_proxy(url, proxies)
+        if self._proxy_selected(url, proxies):
+            return super().get_connection(url, proxies)
         pin = self._resolve_pin_target(url)
         if pin is None:
             return super().get_connection(url, proxies)
