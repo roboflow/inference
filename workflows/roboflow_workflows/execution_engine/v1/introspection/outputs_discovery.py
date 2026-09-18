@@ -1,14 +1,20 @@
 from typing import Dict, List, Tuple, Union
 
+from pydantic import TypeAdapter, ValidationError
 from roboflow_workflows.errors import WorkflowDefinitionError
-from roboflow_workflows.execution_engine.entities.base import OutputDefinition
+from roboflow_workflows.execution_engine.entities.base import (
+    InputType,
+    OutputDefinition,
+)
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
 from roboflow_workflows.execution_engine.introspection.entities import BlocksDescription
 from roboflow_workflows.execution_engine.v1.compiler.utils import (
+    construct_input_selector,
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
+    is_input_selector,
     is_step_output_selector,
 )
 from roboflow_workflows.execution_engine.v1.core import EXECUTION_ENGINE_V1_VERSION
@@ -37,6 +43,7 @@ def describe_workflow_outputs(
         )
         return determine_workflow_outputs_kinds(
             outputs_definitions=definition["outputs"],
+            inputs_definitions=definition["inputs"],
             step_name_to_block_type=step_name_to_block_type,
             block_output_map=block_output_map,
         )
@@ -96,13 +103,43 @@ def get_output_property_kinds(
 
 def determine_workflow_outputs_kinds(
     outputs_definitions: List[dict],
+    inputs_definitions: List[dict],
     step_name_to_block_type: Dict[str, str],
     block_output_map: Dict[str, Dict[str, List[str]]],
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
+    input_kinds = {}
+    if any(
+        is_input_selector(selector_or_value=output["selector"])
+        for output in outputs_definitions
+    ):
+        for input_definition in inputs_definitions:
+            try:
+                input_manifest = TypeAdapter(InputType).validate_python(
+                    input_definition
+                )
+            except ValidationError as error:
+                raise WorkflowDefinitionError(
+                    public_message="Workflow definition invalid - input misconfigured. See details in inner error.",
+                    inner_error=error,
+                    context="describing_workflow_outputs",
+                )
+            input_selector = construct_input_selector(input_name=input_manifest.name)
+            input_kinds[input_selector] = [
+                kind.name if hasattr(kind, "name") else kind
+                for kind in input_manifest.kind
+            ]
     workflow_response_definition = {}
     for output in outputs_definitions:
         output_name = output["name"]
         selector = output["selector"]
+        if is_input_selector(selector_or_value=selector):
+            if selector not in input_kinds:
+                raise WorkflowDefinitionError(
+                    public_message=f"Could not find input referred in outputs (`{selector}`) within Workflow inputs.",
+                    context="describing_workflow_outputs",
+                )
+            workflow_response_definition[output_name] = input_kinds[selector]
+            continue
         step_name, selected_property = extract_step_name_and_selected_property(
             selector=selector,
         )
