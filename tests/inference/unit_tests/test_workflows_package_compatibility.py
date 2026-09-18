@@ -396,6 +396,9 @@ _RUN_ROOT = Path(__file__).resolve().parents[3]
 
 def _run_subprocess(source: str, env: dict) -> subprocess.CompletedProcess:
     child_env = os.environ.copy()
+    # Canonical-first orders freeze standalone defaults; a MODEL_CACHE_DIR
+    # leaked by a session fixture would make the later server config differ.
+    child_env.pop("MODEL_CACHE_DIR", None)
     child_env.update(env)
     # Force restrictive standalone defaults; server env re-normalises them.
     child_env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
