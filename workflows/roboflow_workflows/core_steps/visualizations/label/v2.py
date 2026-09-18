@@ -13,7 +13,10 @@ from roboflow_workflows.core_steps.visualizations.common.label_text import (
     build_detection_labels,
     compute_adaptive_label_text_scale,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color, ensure_dense_masks
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 from roboflow_workflows.core_steps.visualizations.label.v1 import (
     LONG_DESCRIPTION,
     SHORT_DESCRIPTION,

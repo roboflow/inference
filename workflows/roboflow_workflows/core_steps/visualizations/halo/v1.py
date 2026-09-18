@@ -10,6 +10,7 @@ from roboflow_workflows.core_steps.visualizations.common.base_colorable import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
+from roboflow_workflows.core_steps.visualizations.common.utils import ensure_dense_masks
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
@@ -19,7 +20,6 @@ from roboflow_workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     Selector,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import ensure_dense_masks
 from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/halo_visualization@v1"

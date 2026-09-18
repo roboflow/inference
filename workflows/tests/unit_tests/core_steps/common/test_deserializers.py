@@ -23,9 +23,7 @@ from roboflow_workflows.core_steps.common.deserializers import (
     deserialize_timestamp,
     deserialize_zone_kind,
 )
-from roboflow_workflows.core_steps.common.serializers import (
-    serialise_sv_detections,
-)
+from roboflow_workflows.core_steps.common.serializers import serialise_sv_detections
 from roboflow_workflows.errors import RuntimeInputError
 from roboflow_workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from roboflow_workflows.execution_engine.entities.base import (

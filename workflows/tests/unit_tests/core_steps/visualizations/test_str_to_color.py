@@ -2,7 +2,10 @@ import numpy as np
 import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color, ensure_dense_masks
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 
 
 def test_str_to_color_with_hex_color() -> None:

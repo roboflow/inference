@@ -20,7 +20,10 @@ from roboflow_workflows.core_steps.visualizations.common.label_text import (
     build_detection_labels,
     compute_adaptive_rich_font_size,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color, ensure_dense_masks
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import (
     INTEGER_KIND,

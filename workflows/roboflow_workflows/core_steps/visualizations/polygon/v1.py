@@ -20,7 +20,6 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-
 TYPE: str = "roboflow_core/polygon_visualization@v1"
 SHORT_DESCRIPTION = "Draw a polygon around detected objects in an image."
 LONG_DESCRIPTION = """
