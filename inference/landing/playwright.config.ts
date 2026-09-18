@@ -3,9 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Frontend-only regression coverage for the /build discovery logic in
 // src/app/page.tsx. Runs against `next dev` with the /build and
 // /dashboard.html network calls intercepted (see e2e/builder-link.spec.ts),
-// so no real inference server is required. Real-server, real-browser
-// verification against the actual backend lives in
-// roboflow/evidence/inference-builder/ (outside this repo checkout).
+// so no real inference server is required
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
