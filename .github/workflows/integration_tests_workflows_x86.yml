@@ -27,10 +27,6 @@ on:
           - "false"
 
 concurrency:
-  # One live run per workflow per ref. A newer push to the same PR, or a newer
-  # merge to main, cancels the older run. Manual dispatches get their own group
-  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
-  # runs. Release runs are keyed by the tag ref and are never cancelled.
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
@@ -87,13 +83,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
+          pip install --no-deps ./inference_models
       - name: 🔤 Cache Workflows font assets
         uses: actions/cache@v5
         with:
-          path: inference/core/workflows/core_steps/visualizations/common/fonts/assets
-          key: workflows-fonts-${{ hashFiles('inference/core/workflows/core_steps/visualizations/common/fonts/registry.py') }}
-      - name: 🔤 Download Workflows font assets
-        run: python build_scripts/download_fonts.py
+          path: workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets
+          key: workflows-fonts-${{ hashFiles('workflows/roboflow_workflows/core_steps/visualizations/common/fonts/registry.py') }}
+      - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
+        run: |
+          make create_workflows_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
       - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"

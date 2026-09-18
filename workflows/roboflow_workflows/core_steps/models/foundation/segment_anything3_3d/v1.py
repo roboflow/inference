@@ -1,0 +1,306 @@
+import base64
+from typing import Any, List, Literal, Optional, Type, Union
+
+import numpy as np
+import supervision as sv
+from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    SAM3_3D_OBJECTS_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
+from roboflow_workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
+    IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
+    STRING_KIND,
+    ImageInputField,
+    Selector,
+)
+from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
+from roboflow_workflows.prototypes.block import (
+    AirGappedAvailability,
+    BlockResult,
+    DependentResource,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+    roboflow_platform_model,
+)
+from roboflow_workflows.prototypes.models_provider import ModelsProvider
+
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+LONG_DESCRIPTION = """
+Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
+
+Accepts masks as: sv.Detections (from SAM2 etc), polygon lists, binary masks, or RLE dicts.
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "SAM3D",
+            "version": "v1",
+            "short_description": "Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "beta": True,
+            "search_keywords": ["SAM3_3D", "3D", "mesh", "gaussian splatting"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-cube",
+                "blockPriority": 9.0,
+                "needsGPU": True,
+                "inference": True,
+            },
+        },
+        protected_namespaces=(),
+    )
+
+    type: Literal["roboflow_core/segment_anything3_3d_objects@v1"]
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    mask_input: Selector(
+        kind=[LIST_OF_VALUES_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND]
+    ) = Field(
+        description="Mask input - either instance segmentation predictions (e.g., from SAM2) or a flat list of polygon coordinates in COCO format [x1, y1, x2, y2, x3, y3, ...]",
+        examples=["$steps.sam2.predictions", "$steps.detections.mask_polygon"],
+    )
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "mask_input"]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="mesh_glb",
+                kind=[STRING_KIND],
+                description="Scene mesh in GLB format (base64 encoded)",
+            ),
+            OutputDefinition(
+                name="gaussian_ply",
+                kind=[STRING_KIND],
+                description="Combined Gaussian splatting in PLY format (base64 encoded)",
+            ),
+            OutputDefinition(
+                name="objects",
+                kind=[LIST_OF_VALUES_KIND],
+                description="List of individual objects, each with mesh_glb, gaussian_ply, and metadata (rotation, translation, scale)",
+            ),
+            OutputDefinition(
+                name="inference_time",
+                kind=[FLOAT_KIND],
+            ),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not SAM3_3D_OBJECTS_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "SAM3_3D_OBJECTS_ENABLED=False on Roboflow Hosted "
+                        "Serverless: the SAM3 3D endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Mirrors the constant model id used in run().
+        return [roboflow_platform_model(model_id="sam3-3d-objects")]
+
+
+class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
+
+    def __init__(
+        self,
+        model_manager: ModelsProvider,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._model_manager = model_manager
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["model_manager", "api_key", "step_execution_mode"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        mask_input: Batch[Union[sv.Detections, List[float]]],
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return self.run_locally(
+                images=images,
+                mask_input=mask_input,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return self.run_remotely(
+                images=images,
+                mask_input=mask_input,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        mask_input: Batch[Union[sv.Detections, List[float]]],
+    ) -> BlockResult:
+        ensure_builtin_remote_execution_allowed("SAM3 3D remote execution")
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        results = []
+        model_id = "sam3-3d-objects"
+
+        for single_image, single_mask_input in zip(images, mask_input):
+            converted_mask = extract_masks_from_input(single_mask_input)
+
+            # Convert numpy arrays to lists for JSON serialization
+            if isinstance(converted_mask, list):
+                serializable_mask = []
+                for mask in converted_mask:
+                    if isinstance(mask, np.ndarray):
+                        serializable_mask.append(mask.tolist())
+                    else:
+                        serializable_mask.append(mask)
+                converted_mask = serializable_mask
+
+            result = client.sam3_3d_infer(
+                inference_input=single_image.base64_image,
+                mask_input=converted_mask,
+                model_id=model_id,
+            )
+
+            # Result already comes formatted from the endpoint
+            results.append(
+                {
+                    "mesh_glb": result.get("mesh_glb"),
+                    "gaussian_ply": result.get("gaussian_ply"),
+                    "objects": result.get("objects", []),
+                    "inference_time": result.get("time", 0.0),
+                }
+            )
+
+        return results
+
+    def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        mask_input: Batch[Union[sv.Detections, List[float]]],
+    ) -> BlockResult:
+        results = []
+        model_id = "sam3-3d-objects"
+
+        self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
+
+        for single_image, single_mask_input in zip(images, mask_input):
+            converted_mask = extract_masks_from_input(single_mask_input)
+
+            response = self._model_manager.run_sam3_3d_objects(
+                model_id=model_id,
+                image=single_image.to_inference_format(numpy_preferred=True),
+                mask_input=converted_mask,
+                api_key=self._api_key,
+            )
+
+            results.append(_format_response(response))
+
+        return results
+
+
+def extract_masks_from_input(mask_input: Any) -> Any:
+    """Extract binary masks from sv.Detections, pass through other formats."""
+    if isinstance(mask_input, sv.Detections):
+        if len(mask_input) == 0:
+            raise ValueError("sv.Detections contains no detections.")
+        if mask_input.mask is not None and len(mask_input.mask) > 0:
+            return list(mask_input.mask)
+        raise ValueError("sv.Detections has no mask data.")
+    return mask_input
+
+
+# `response` is the server's Sam3_3D_Objects_Response; only the fields read
+# below are accessed, so the annotation is dropped (decontamination).
+def _format_response(response: Any) -> dict:
+    """Format response with base64 encoded outputs."""
+
+    def encode(data):
+        return base64.b64encode(data).decode("utf-8") if data else None
+
+    objects_list = [
+        {
+            "mesh_glb": encode(obj.mesh_glb),
+            "gaussian_ply": encode(obj.gaussian_ply),
+            "metadata": {
+                "rotation": obj.metadata.rotation,
+                "translation": obj.metadata.translation,
+                "scale": obj.metadata.scale,
+            },
+        }
+        for obj in response.objects
+    ]
+
+    return {
+        "mesh_glb": encode(response.mesh_glb),
+        "gaussian_ply": encode(response.gaussian_ply),
+        "objects": objects_list,
+        "inference_time": response.time,
+    }

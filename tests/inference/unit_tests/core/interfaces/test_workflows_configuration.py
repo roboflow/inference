@@ -67,6 +67,26 @@ FIELDS = [
         "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES",
         lambda c: c.engine.allow_webhook_sink_to_non_global_addresses,
     ),
+    (
+        "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES",
+        lambda c: c.engine.allow_postgresql_sink_to_non_global_addresses,
+    ),
+    (
+        "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES",
+        lambda c: (
+            None
+            if c.engine.postgresql_sink_blacklisted_addresses is None
+            else set(c.engine.postgresql_sink_blacklisted_addresses)
+        ),
+    ),
+    (
+        "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES",
+        lambda c: (
+            None
+            if c.engine.postgresql_sink_whitelisted_addresses is None
+            else set(c.engine.postgresql_sink_whitelisted_addresses)
+        ),
+    ),
     ("ENABLE_TENSOR_DATA_REPRESENTATION", lambda c: c.tensor.representation_enabled),
     ("WORKFLOWS_IMAGE_TENSOR_DEVICE", lambda c: c.tensor.image_tensor_device),
     (
@@ -119,9 +139,14 @@ FIELDS = [
     ("OFFLINE_MODE", lambda c: c.platform.offline_mode),
     ("SECURE_GATEWAY", lambda c: c.platform.secure_gateway),
     ("GCP_SERVERLESS", lambda c: c.platform.gcp_serverless),
+    ("LAMBDA", lambda c: c.platform.lambda_runtime),
     ("ALLOW_WORKFLOWS_FONTS_DOWNLOAD", lambda c: c.fonts.allow_download),
     ("MODEL_CACHE_DIR", lambda c: c.fonts.model_cache_dir),
     ("LMM_ENABLED", lambda c: c.models.lmm_enabled),
+    (
+        "WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES",
+        lambda c: c.models.vlm_segmentation_max_polygon_vertices,
+    ),
     ("CLIP_VERSION_ID", lambda c: c.models.clip_version_id),
     ("CORE_MODEL_SAM2_ENABLED", lambda c: c.models.core_model_sam2_enabled),
     ("CORE_MODEL_SAM3_ENABLED", lambda c: c.models.core_model_sam3_enabled),
@@ -189,7 +214,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 71, len(tabled)
+    assert len(tabled) == 76, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -200,18 +225,21 @@ def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    workflows_root = REPO_ROOT / "inference" / "core" / "workflows"
+    workflows_root = REPO_ROOT / "workflows" / "roboflow_workflows"
+    source_files = sorted(workflows_root.rglob("*.py"))
+    assert source_files, workflows_root
     requested = set()
-    for path in sorted(workflows_root.rglob("*.py")):
+    for path in source_files:
         if "__pycache__" in str(path):
             continue
         tree = ast.parse(path.read_bytes().decode("utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.ImportFrom)
-                and node.module == "inference.core.workflows.environment"
+                and node.module == "roboflow_workflows.environment"
             ):
                 requested.update(alias.name for alias in node.names)
+    assert requested, "The scan must visit configuration consumers"
     assert requested <= exported, sorted(requested - exported)
 
 
@@ -231,13 +259,22 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
 @pytest.mark.parametrize(
     "name, value",
     [
+        ("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", 17),
         ("WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET", "https://deployment.example/v1"),
         ("WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT", 12.5),
         ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", set()),
         ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {"https://approved.example/v1"}),
+        ("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False),
+        ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", None),
+        ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", set()),
+        ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", {"localhost", "127.0.0.1"}),
+        ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", None),
+        ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", set()),
+        ("POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES", {"database.example"}),
+        ("LAMBDA", True),
     ],
 )
-def test_server_configuration_preserves_new_remote_settings(monkeypatch, name, value):
+def test_server_configuration_preserves_new_settings(monkeypatch, name, value):
     monkeypatch.setattr(env, name, value)
     configuration = build_configuration_from_env()
     assert dict(FIELDS)[name](configuration) == value

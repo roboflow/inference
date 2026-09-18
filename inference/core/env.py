@@ -955,7 +955,7 @@ WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 # Channel used by Workflow blocks to send the API key when executing remotely:
 # "legacy" (query/body only), "both" (default - legacy channels plus an
 # `Authorization: Bearer` header; safe with every server version, including
-# hosted targets that do not read the header yet), or "header" (header only -
+# hosted targets that do not read the header yet), or "header" ( only -
 # requires the remote server to run inference release 1.5.0 or newer).
 # NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
 # directly (bypassing the SDK) and are not affected by this flag.
@@ -1172,6 +1172,17 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
 # serialized to the wire. Default is False (RLE).
 WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
     os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
+)
+
+# Upper bound on the vertices of one polygon that Workflows VLM blocks accept
+# when decoding an instance-segmentation answer (e.g. `open_ai@v7`). Polygons
+# above it are skipped before encoding: the COCO RLE encoder allocates memory
+# proportional to the outline length, so a single oversized (looping or
+# prompt-injected) model answer could otherwise cost gigabytes. At the
+# default, one worst-case polygon on a 4000x3000 image costs ~120 MB and
+# ~0.2 s; real outlines stay far below the bound.
+WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES = int(
+    os.getenv("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", "500")
 )
 
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")

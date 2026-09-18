@@ -251,19 +251,21 @@ remains unanswered — re-mention the author, keep the status line visible.
 
 ### Version and changelog notices
 
-For functional changes to either versioned subsystem, post or refresh a
+For functional changes to any versioned subsystem, post or refresh a
 concise top-level release-coordination comment (separate from the Pass
 Comment):
 
 - Tell the contributor to add the user-facing entry under `## Unreleased` in
-  `inference_models/docs/changelog.md` and/or the EE changelog in the
+  `inference_models/docs/changelog.md`, `workflows/CHANGELOG.md` (any change
+  under `workflows/roboflow_workflows/`) and/or the EE changelog in the
   roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`)
   when it is missing. Per the INDEX carve-out, never ask them to select or
   bump a version.
 - Tell maintainers exactly which system requires a release-time version
-  change: **inference-models**, **Execution Engine**, or both. This maintainer
-  notice is required even when the contributor already updated the changelog,
-  and it does not block the contributor or the pass gate.
+  change: **inference-models**, **roboflow-workflows**, **Execution Engine**,
+  or any combination. This maintainer notice is required even when the
+  contributor already updated the changelog, and it does not block the
+  contributor or the pass gate.
 
 Update the prior release-coordination comment when the affected systems
 change; avoid duplicate notices.
