@@ -7,6 +7,7 @@ from roboflow_workflows.core_steps.visualizations.common.base_colorable import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
+from roboflow_workflows.core_steps.visualizations.common.utils import ensure_dense_masks
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
@@ -177,6 +178,7 @@ class HaloVisualizationBlockV2(ColorableVisualizationBlock):
             opacity,
             kernel_size,
         )
+        predictions = ensure_dense_masks(predictions)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()

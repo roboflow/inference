@@ -13,7 +13,10 @@ from roboflow_workflows.core_steps.visualizations.common.label_text import (
     build_detection_labels,
     compute_adaptive_label_text_scale,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 from roboflow_workflows.core_steps.visualizations.label.v1 import (
     LONG_DESCRIPTION,
     SHORT_DESCRIPTION,
@@ -255,6 +258,8 @@ class LabelVisualizationBlockV2(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
+        if text_position == "CENTER_OF_MASS":
+            predictions = ensure_dense_masks(predictions)
         labels = build_detection_labels(predictions, text)
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
