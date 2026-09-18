@@ -3,8 +3,10 @@ from collections import defaultdict
 from threading import RLock
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import Owlv2ObjectDetectionOutput, box_iou
@@ -54,6 +56,10 @@ Query = Dict[
     str,
     Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]],
 ]
+MODEL_INPUT_ERROR_HELP_URL = (
+    "https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+)
+OWLV2_IMAGE_PAD_VALUE = 0.0
 
 
 def monkey_patch_vision_encoder_before_compilation(
@@ -127,6 +133,257 @@ def monkey_patch_vision_encoder_before_compilation(
         vision_model_forward_patched_for_torch_compile, model.owlv2.vision_model
     )
     return model
+
+
+def _get_owlv2_image_processor(processor: Owlv2Processor):
+    image_processor = getattr(processor, "image_processor", None)
+    if image_processor is None:
+        raise ModelInputError(
+            message="OWLv2 processor does not expose image preprocessing configuration.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    return image_processor
+
+
+def _get_size_dimension(size: object, dimension: str) -> int:
+    if isinstance(size, dict) and dimension in size:
+        return int(size[dimension])
+    if hasattr(size, dimension):
+        return int(getattr(size, dimension))
+    raise ModelInputError(
+        message=f"OWLv2 processor does not expose target image {dimension}.",
+        help_url=MODEL_INPUT_ERROR_HELP_URL,
+    )
+
+
+def _get_owlv2_target_size(image_processor: object) -> Tuple[int, int]:
+    size = getattr(image_processor, "size", None)
+    if size is None:
+        raise ModelInputError(
+            message="OWLv2 processor does not expose target image size.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    height = _get_size_dimension(size=size, dimension="height")
+    width = _get_size_dimension(size=size, dimension="width")
+    if height <= 0 or width <= 0:
+        raise ModelInputError(
+            message="OWLv2 processor target image size must be positive.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    return height, width
+
+
+def _get_owlv2_normalization_config(
+    image_processor: object,
+) -> Tuple[List[float], List[float]]:
+    image_mean = getattr(image_processor, "image_mean", None)
+    image_std = getattr(image_processor, "image_std", None)
+    if image_mean is None or image_std is None:
+        raise ModelInputError(
+            message="OWLv2 processor does not expose image normalization config.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    return list(image_mean), list(image_std)
+
+
+def _get_owlv2_rescale_config(image_processor: object) -> Tuple[bool, float]:
+    return (
+        bool(getattr(image_processor, "do_rescale", True)),
+        float(getattr(image_processor, "rescale_factor", 1 / 255)),
+    )
+
+
+def _images_to_list(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+) -> List[Union[torch.Tensor, np.ndarray]]:
+    if isinstance(images, np.ndarray):
+        return [images]
+    if isinstance(images, torch.Tensor):
+        if len(images.shape) == 3:
+            return [images]
+        if len(images.shape) == 4:
+            return list(torch.unbind(images, dim=0))
+    if not isinstance(images, list):
+        raise ModelInputError(
+            message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    if not images:
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    return images
+
+
+def _get_resized_shape(
+    height: int,
+    width: int,
+    target_height: int,
+    target_width: int,
+) -> Tuple[int, int]:
+    if height <= 0 or width <= 0:
+        raise ModelInputError(
+            message="OWLv2 input image dimensions must be positive.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    resize_ratio = min(target_height / height, target_width / width)
+    resized_height = min(target_height, max(1, int(resize_ratio * height)))
+    resized_width = min(target_width, max(1, int(resize_ratio * width)))
+    return resized_height, resized_width
+
+
+def _ensure_numpy_hwc_image(image: np.ndarray) -> np.ndarray:
+    if image.ndim == 2:
+        return image[:, :, None]
+    if image.ndim != 3 or image.shape[2] not in (1, 3):
+        raise ModelInputError(
+            message=f"Expected OWLv2 numpy image in HWC format, got shape {image.shape}.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    return image
+
+
+def _rescale_image_tensor(
+    image: torch.Tensor,
+    do_rescale: bool,
+    rescale_factor: float,
+) -> torch.Tensor:
+    image = image.float()
+    if do_rescale:
+        return image * rescale_factor
+    return image
+
+
+def _prepare_numpy_image_for_owlv2(
+    image: np.ndarray,
+    target_height: int,
+    target_width: int,
+    do_rescale: bool,
+    rescale_factor: float,
+) -> torch.Tensor:
+    image = _ensure_numpy_hwc_image(image=image)
+    resized_height, resized_width = _get_resized_shape(
+        height=image.shape[0],
+        width=image.shape[1],
+        target_height=target_height,
+        target_width=target_width,
+    )
+    interpolation = cv2.INTER_AREA
+    if resized_height > image.shape[0] or resized_width > image.shape[1]:
+        interpolation = cv2.INTER_LINEAR
+    resized_image = cv2.resize(
+        image,
+        (resized_width, resized_height),
+        interpolation=interpolation,
+    )
+    resized_image = _ensure_numpy_hwc_image(image=resized_image)
+    image_tensor = torch.from_numpy(np.ascontiguousarray(resized_image)).permute(
+        2, 0, 1
+    )
+    image_tensor = _rescale_image_tensor(
+        image=image_tensor,
+        do_rescale=do_rescale,
+        rescale_factor=rescale_factor,
+    )
+    if image_tensor.shape[0] == 1:
+        image_tensor = image_tensor.repeat(3, 1, 1)
+    padded_image = torch.full(
+        (3, target_height, target_width),
+        fill_value=OWLV2_IMAGE_PAD_VALUE,
+        dtype=torch.float32,
+    )
+    padded_image[:, :resized_height, :resized_width] = image_tensor
+    return padded_image
+
+
+def _prepare_tensor_image_for_owlv2(
+    image: torch.Tensor,
+    target_height: int,
+    target_width: int,
+    do_rescale: bool,
+    rescale_factor: float,
+) -> torch.Tensor:
+    if len(image.shape) != 3 or image.shape[0] not in (1, 3):
+        raise ModelInputError(
+            message=f"Expected OWLv2 tensor image in CHW format, got shape {tuple(image.shape)}.",
+            help_url=MODEL_INPUT_ERROR_HELP_URL,
+        )
+    resized_height, resized_width = _get_resized_shape(
+        height=image.shape[1],
+        width=image.shape[2],
+        target_height=target_height,
+        target_width=target_width,
+    )
+    image_tensor = _rescale_image_tensor(
+        image=image,
+        do_rescale=do_rescale,
+        rescale_factor=rescale_factor,
+    )
+    if image_tensor.shape[0] == 1:
+        image_tensor = image_tensor.repeat(3, 1, 1)
+    image_tensor = F.interpolate(
+        image_tensor.unsqueeze(0),
+        size=(resized_height, resized_width),
+        mode="bilinear",
+        align_corners=False,
+        antialias=True,
+    ).squeeze(0)
+    padded_image = torch.full(
+        (3, target_height, target_width),
+        fill_value=OWLV2_IMAGE_PAD_VALUE,
+        dtype=torch.float32,
+        device=image_tensor.device,
+    )
+    padded_image[:, :resized_height, :resized_width] = image_tensor
+    return padded_image
+
+
+def _prepare_single_image_for_owlv2(
+    image: Union[torch.Tensor, np.ndarray],
+    target_height: int,
+    target_width: int,
+    do_rescale: bool,
+    rescale_factor: float,
+) -> torch.Tensor:
+    if isinstance(image, np.ndarray):
+        return _prepare_numpy_image_for_owlv2(
+            image=image,
+            target_height=target_height,
+            target_width=target_width,
+            do_rescale=do_rescale,
+            rescale_factor=rescale_factor,
+        )
+    if isinstance(image, torch.Tensor):
+        return _prepare_tensor_image_for_owlv2(
+            image=image,
+            target_height=target_height,
+            target_width=target_width,
+            do_rescale=do_rescale,
+            rescale_factor=rescale_factor,
+        )
+    raise ModelInputError(
+        message=f"Detected unknown input batch element: {type(image)}",
+        help_url=MODEL_INPUT_ERROR_HELP_URL,
+    )
+
+
+def _normalize_owlv2_pixel_values(
+    pixel_values: torch.Tensor,
+    image_mean: List[float],
+    image_std: List[float],
+) -> torch.Tensor:
+    mean = torch.tensor(
+        image_mean,
+        dtype=pixel_values.dtype,
+        device=pixel_values.device,
+    ).view(1, -1, 1, 1)
+    std = torch.tensor(
+        image_std,
+        dtype=pixel_values.dtype,
+        device=pixel_values.device,
+    ).view(1, -1, 1, 1)
+    return (pixel_values - mean) / std
 
 
 class OWLv2HF(
@@ -240,8 +497,33 @@ class OWLv2HF(
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         image_dimensions = extract_input_images_dimensions(images=images)
-        inputs = self._processor(images=images, return_tensors="pt")
-        return inputs["pixel_values"].to(self._device), image_dimensions
+        image_processor = _get_owlv2_image_processor(processor=self._processor)
+        target_height, target_width = _get_owlv2_target_size(
+            image_processor=image_processor
+        )
+        image_mean, image_std = _get_owlv2_normalization_config(
+            image_processor=image_processor
+        )
+        do_rescale, rescale_factor = _get_owlv2_rescale_config(
+            image_processor=image_processor
+        )
+        image_tensors = [
+            _prepare_single_image_for_owlv2(
+                image=image,
+                target_height=target_height,
+                target_width=target_width,
+                do_rescale=do_rescale,
+                rescale_factor=rescale_factor,
+            )
+            for image in _images_to_list(images=images)
+        ]
+        pixel_values = torch.stack(image_tensors).to(self._device)
+        pixel_values = _normalize_owlv2_pixel_values(
+            pixel_values=pixel_values,
+            image_mean=image_mean,
+            image_std=image_std,
+        )
+        return pixel_values, image_dimensions
 
     def forward(
         self,
