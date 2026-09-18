@@ -4,6 +4,14 @@
 
 ---
 
+## `0.37.4`
+
+### Fixed
+
+- Bumped `anyio` to version above `4.14.2`
+
+---
+
 ## `0.37.3`
 
 ### Added
