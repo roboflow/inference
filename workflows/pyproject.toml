@@ -53,7 +53,7 @@ enterprise = [
   "psycopg[binary]>=3.2,<4",
   "confluent-kafka>=2.5,<3",
   "aws-msk-iam-sasl-signer-python>=1.0.2,<2",
-  "fastapi>=0.100,<0.129",
+  "fastapi>=0.134,<0.142",
 ]
 test = [
   "pytest>=9.0.3,<10.0.0",
