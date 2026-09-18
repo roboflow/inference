@@ -75,11 +75,8 @@ def test_resize_image_workflow_when_valid_input_provided(
         "resized_image",
     }, "Expected all declared outputs to be delivered"
     np_image = result[0]["resized_image"].numpy_image
-    assert (
-        np_image.shape[0] == 1000,
-        "Expected image to be resized to a width of 1000",
-    )
-    assert (np_image.shape[1] == 800, "Expected image to be resized to a height of 800")
+    assert np_image.shape[0] == 800, "Expected image to be resized to a height of 800"
+    assert np_image.shape[1] == 1000, "Expected image to be resized to a width of 1000"
 
 
 def test_upsize_image_workflow_when_valid_input_provided(
@@ -111,11 +108,8 @@ def test_upsize_image_workflow_when_valid_input_provided(
         "resized_image",
     }, "Expected all declared outputs to be delivered"
     np_image = result[0]["resized_image"].numpy_image
-    assert (
-        np_image.shape[0] == 1000,
-        "Expected image to be upsized to a width of 1000",
-    )
-    assert (np_image.shape[1] == 800, "Expected image to be upsized to a height of 800")
+    assert np_image.shape[0] == 800, "Expected image to be upsized to a height of 800"
+    assert np_image.shape[1] == 1000, "Expected image to be upsized to a width of 1000"
 
 
 def test_resize_image_workflow_when_missing_required_parameters() -> None:
