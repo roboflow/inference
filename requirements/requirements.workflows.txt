@@ -1,0 +1,2 @@
+# keep in sync with workflows/pyproject.toml version
+roboflow-workflows==0.1.1

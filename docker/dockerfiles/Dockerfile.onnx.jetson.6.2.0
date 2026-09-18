@@ -528,12 +528,24 @@ COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python -m pip install wheel && \
     rm -f dist/* && \
+    # Build workflows wheel first so inference wheels can resolve
+    # roboflow-workflows from --find-links dist/ instead of PyPI.
+    python workflows/build_scripts/download_fonts.py && \
+    (cd workflows && uv build --out-dir ../dist) && \
+    rm -rf build/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.sdk.setup.py bdist_wheel && \
+    # inference-gpu keeps its Jetson-specific torch/onnxruntime install
+    # (--no-deps), then workflows + core/cli/sdk resolve their remaining
+    # pure-Python deps against --find-links dist/.
     python -m pip install --no-deps dist/inference_gpu*.whl && \
-    python -m pip install \
+    python -m pip install --find-links dist/ \
+        dist/roboflow_workflows-*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
@@ -797,8 +809,6 @@ ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages
 
 # Copy application code
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
