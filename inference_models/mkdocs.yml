@@ -63,6 +63,8 @@ nav:
           - ResNet: models/resnet-classification.md
           - ViT: models/vit-classification.md
           - DINOv3: models/dinov3-classification.md
+          - PatchCore: models/patchcore-anomaly-detection.md
+          - FoundAD: models/foundad-anomaly-detection.md
       - OCR:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md

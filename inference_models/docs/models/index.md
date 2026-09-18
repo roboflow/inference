@@ -64,6 +64,8 @@ The `inference-models` library supports a wide range of computer vision models a
 | [ViT](vit-classification.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
 | [DINOv3](dinov3-classification.md) | `torch` | Meta DINO | N/A | ❌ | ✅ |
 | [YOLOv8 Cls](yolov8-classification.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [PatchCore](patchcore-anomaly-detection.md) | `torch` | Apache 2.0 | N/A | ❌ | ✅ |
+| [FoundAD](foundad-anomaly-detection.md) | `torch` | MIT, Meta DINO | N/A | ❌ | ✅ |
 
 ### Embeddings
 
