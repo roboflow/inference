@@ -11,12 +11,40 @@ export default function Home() {
   // Will use when we add links to in progress example page
   // const [page, setPage] = React.useState("landing");
   const [dashboardAvailable, setDashboardAvailable] = React.useState(false);
+  // The Workflows builder (/build) is only mounted server-side when the
+  // ENABLE_BUILDER env var is set (default: false, see inference/core/env.py).
+  // A manually-run server (docker run / docker compose without that flag)
+  // otherwise leaves this as a dead link that 404s. Probe with GET, not HEAD:
+  // the builder route only registers a GET handler, so a HEAD request falls
+  // through to the static-export catch-all and reports 404 even when the
+  // builder is actually enabled and working.
+  const [builderAvailable, setBuilderAvailable] = React.useState(false);
 
   React.useEffect(() => {
     fetch("/dashboard.html", { method: "HEAD", cache: "no-store" })
       .then((res) => setDashboardAvailable(res.ok))
       .catch(() => setDashboardAvailable(false));
     return () => {};
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    fetch("/build", {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!cancelled) setBuilderAvailable(res.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setBuilderAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
   return (
     <main className="flex min-h-screen flex-col items-stretch gap-0">
@@ -84,9 +112,15 @@ export default function Home() {
             many popular model architectures and fine-tuned models.
           </div>
           <div className="flex items-center justify-center gap-2 md:gap-4 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
+            {/* Always rendered, at its real size, so resolving/losing
+                availability never shifts the other buttons -- same fixed-space
+                approach as the dashboard link below, applied in place instead
+                of a separate row since this button belongs in this row. */}
             <HeaderLink
               href="/build"
-              className=""
+              className={
+                builderAvailable ? "" : "invisible pointer-events-none"
+              }
               label="Start building locally"
               icon="💻"
               target="_top"
