@@ -9,10 +9,12 @@ from typing import Any, Mapping, Sequence
 from development.profiling.nsys_stats import (
     GpuProjectedRange,
     HostRange,
+    KernelSummary,
+    MemoryTransfer,
     get_nsys_version_warning,
 )
 
-ANALYSIS_SCHEMA_VERSION = 1
+ANALYSIS_SCHEMA_VERSION = 2
 ITERATION_RANGE_PATTERN = re.compile(r"^iteration (?P<index>\d+)$")
 
 
@@ -29,6 +31,8 @@ def build_profile_analysis(
     run_dir: Path,
     trace_path: Path,
     report_paths: Mapping[str, Path],
+    kernel_summaries: Sequence[KernelSummary] = (),
+    memory_transfers: Sequence[MemoryTransfer] = (),
 ) -> dict[str, Any]:
     """Build a compact, manifest-linked analysis from parsed Nsight reports."""
     capture_range = manifest.get("capture_range")
@@ -89,9 +93,51 @@ def build_profile_analysis(
         },
         "host_ranges": host_summaries,
         "gpu_projected_ranges": gpu_summaries,
+        "capture_gpu_work": _summarize_capture_gpu_work(
+            kernel_summaries, memory_transfers
+        ),
         "iterations": iterations,
         "iteration_summary": _summarize_iterations(iterations),
         "warnings": warnings,
+    }
+
+
+def _summarize_capture_gpu_work(
+    kernels: Sequence[KernelSummary],
+    transfers: Sequence[MemoryTransfer],
+) -> dict[str, list[dict[str, Any]]]:
+    kernel_totals: dict[str, dict[str, Any]] = {}
+    for kernel in kernels:
+        total = kernel_totals.setdefault(
+            kernel.name,
+            {"name": kernel.name, "instances": 0, "cumulative_duration_ns": 0},
+        )
+        total["instances"] += kernel.instances
+        total["cumulative_duration_ns"] += kernel.cumulative_duration_ns
+
+    transfer_totals: dict[tuple[str, str], dict[str, Any]] = {}
+    for transfer in transfers:
+        key = transfer.source_memory_kind, transfer.destination_memory_kind
+        total = transfer_totals.setdefault(
+            key,
+            {
+                "source_memory_kind": key[0],
+                "destination_memory_kind": key[1],
+                "instances": 0,
+                "total_bytes": 0,
+                "cumulative_duration_ns": 0,
+            },
+        )
+        total["instances"] += 1
+        total["total_bytes"] += transfer.bytes
+        total["cumulative_duration_ns"] += transfer.duration_ns
+
+    return {
+        "kernels": sorted(
+            kernel_totals.values(),
+            key=lambda item: (-item["cumulative_duration_ns"], item["name"]),
+        ),
+        "memory_transfers": [transfer_totals[key] for key in sorted(transfer_totals)],
     }
 
 
