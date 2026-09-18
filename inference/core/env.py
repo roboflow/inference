@@ -126,6 +126,37 @@ if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
     POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
         POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
     )
+# Operator policy for the Kafka Consumer / Kafka Producer Workflow blocks, which
+# open an outbound connection to `bootstrap_servers` taken from the workflow
+# definition or its inputs. When True (default, preserves behaviour) that value
+# is honoured, subject to the allowlist below. When False the workflow-provided
+# value is ignored and the blocks connect to the operator-provided servers from
+# KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS instead; with no servers
+# configured there, the Kafka blocks are disabled (every run reports an error).
+KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS = str2bool(
+    os.getenv("KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS", True)
+)
+# Optional comma-separated list of `host:port` Kafka bootstrap servers the Kafka
+# Workflow blocks may connect to. When set and user-provided servers are allowed,
+# EVERY entry of the workflow's `bootstrap_servers` must be on this list or the
+# run reports an error. When user-provided servers are not allowed, this list is
+# what the blocks connect to. Entries are compared as `host:port` after trimming
+# whitespace and lowercasing the host; an entry without a port means port 9092;
+# there is no DNS resolution. Empty entries are ignored. A variable that is set
+# but holds no entries is an empty allowlist: nothing is permitted. Default None
+# (no allowlist). Limitation: a Kafka client follows broker-advertised addresses
+# after bootstrap, so this list governs the bootstrap connection only, not the
+# brokers the client talks to afterwards.
+KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = os.getenv(
+    "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS"
+)
+if KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is not None:
+    # a list, not a set: the operator's order is what the client is given
+    KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = [
+        entry.strip()
+        for entry in KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS.split(",")
+        if entry.strip()
+    ]
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
@@ -721,8 +752,20 @@ INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
 
-# Enable the builder, default is False
+# Enable the Workflows builder UI (mounts the /build router in http_api.py),
+# default is False. The `inference server start --dev` CLI command sets this
+# to "True" for the container it launches (see
+# inference_cli/lib/container_adapter.py::prepare_container_environment); it
+# is otherwise off for a manually-run server (docker run / docker compose)
+# unless set explicitly. The landing page only links to /build once it has
+# confirmed the route responds, so this flag does not need to be flipped just
+# to keep that link from 404ing.
 ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+# Origin allowed to make cross-origin calls into the builder API/CORS
+# middleware (see http_api.py) and embedded into editor.html for the builder
+# UI to call back out to. Defaults to this deployment's Roboflow app URL
+# (e.g. https://app.roboflow.com for the public platform); override only if
+# you are serving the builder UI from a different origin.
 BUILDER_ORIGIN = os.getenv(
     "BUILDER_ORIGIN",
     resolve_roboflow_service_url("app", region=ROBOFLOW_REGION, project=PROJECT),
@@ -943,7 +986,7 @@ WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 # Channel used by Workflow blocks to send the API key when executing remotely:
 # "legacy" (query/body only), "both" (default - legacy channels plus an
 # `Authorization: Bearer` header; safe with every server version, including
-# hosted targets that do not read the header yet), or "header" (header only -
+# hosted targets that do not read the header yet), or "header" ( only -
 # requires the remote server to run inference release 1.5.0 or newer).
 # NOTE: a handful of sam3/seg_preview blocks call the platform inference proxy
 # directly (bypassing the SDK) and are not affected by this flag.
@@ -1153,6 +1196,17 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
     os.getenv("DISABLE_GSTREAMER_VIDEO_SOURCES", "False")
 )
 
+# Opt-out from capturing the process-wide stderr (fd 2) around native video
+# backend opens (FFmpeg/GStreamer). The capture is what turns an otherwise
+# silent `cv2.VideoCapture` failure into a classified stream error code, so it
+# is on by default; set this to True to leave fd 2 untouched at the cost of
+# losing the underlying error text in `SourceConnectionError` messages.
+# Note that while a capture is active, fd 2 belongs to it, so stderr written
+# by the rest of the process is captured rather than logged.
+DISABLE_NATIVE_STDERR_CAPTURE = str2bool(
+    os.getenv("DISABLE_NATIVE_STDERR_CAPTURE", "False")
+)
+
 # Instance-segmentation tensor blocks request dense (on-device) masks from the
 # inference_models adapter instead of the default RLE carrier. Dense masks let
 # GPU consumers (e.g. the mask-visualization compositor) skip the host-side
@@ -1160,6 +1214,17 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
 # serialized to the wire. Default is False (RLE).
 WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
     os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
+)
+
+# Upper bound on the vertices of one polygon that Workflows VLM blocks accept
+# when decoding an instance-segmentation answer (e.g. `open_ai@v7`). Polygons
+# above it are skipped before encoding: the COCO RLE encoder allocates memory
+# proportional to the outline length, so a single oversized (looping or
+# prompt-injected) model answer could otherwise cost gigabytes. At the
+# default, one worst-case polygon on a 4000x3000 image costs ~120 MB and
+# ~0.2 s; real outlines stay far below the bound.
+WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES = int(
+    os.getenv("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", "500")
 )
 
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
