@@ -112,7 +112,19 @@ workflows/
   pyproject.toml
   uv.lock
   pytest.ini
+  CHANGELOG.md
 ```
+
+### Versioning
+
+`roboflow-workflows` is published to PyPI separately from `inference` and
+pinned by `requirements/requirements.workflows.txt`. Contributors: add an entry
+under `## Unreleased` in `workflows/CHANGELOG.md` for any change in
+`roboflow_workflows/`. Maintainers: at release, bump `version` in
+`workflows/pyproject.toml`, the pin in `requirements/requirements.workflows.txt`,
+the hardcoded `roboflow_workflows-<version>-py3-none-any.whl` in
+`.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing uses
+`skip-existing`, so an unbumped version is silently not re-published.
 
 ### Font provisioning
 
@@ -144,7 +156,7 @@ make create_workflows_wheel    # downloads fonts + uv build
 From the repo root (after building the wheel):
 
 ```bash
-cd workflows && pip install --find-links ../dist "roboflow-workflows[test]==0.1.0"
+cd workflows && pip install --find-links ../dist "$(ls ../dist/roboflow_workflows-*.whl)[test]"
 cd workflows && python -m pytest tests/unit_tests tests/isolation
 ```
 
@@ -154,7 +166,7 @@ Set `ENABLE_TENSOR_DATA_REPRESENTATION=True` for tensor-native mode (matches CI 
 
 ```bash
 python workflows/scripts/workflows_isolation_probe.py \
-    --wheel dist/roboflow_workflows-0.1.0-py3-none-any.whl \
+    --wheel dist/roboflow_workflows-*.whl \
     --find-links dist/
 ```
 
