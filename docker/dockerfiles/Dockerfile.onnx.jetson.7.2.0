@@ -327,6 +327,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-
 
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
+     requirements/requirements.workflows.txt \
      requirements/requirements.cli.txt \
      requirements/requirements.http.txt \
      requirements/requirements.clip.txt \
@@ -456,6 +457,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         --find-links /opt/wheels \
         --override /tmp/runtime-overrides.txt \
         -r /build/reqs/_requirements.txt \
+        -r /build/reqs/requirements.workflows.txt \
         -r /build/reqs/requirements.cli.txt \
         -r /build/reqs/requirements.http.txt \
         -r /build/reqs/requirements.clip.txt \
