@@ -35,6 +35,7 @@ def prepare_video_sources(
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    frame_stride: Optional[int] = None,
 ) -> List[VideoSource]:
     video_reference = wrap_in_list(element=video_reference)
     if len(video_reference) < 1:
@@ -57,6 +58,7 @@ def prepare_video_sources(
         desired_source_fps=desired_source_fps,
         decoding_buffer_size=decoding_buffer_size,
         allow_tensor_frames=allow_tensor_frames,
+        frame_stride=frame_stride,
     )
 
 
@@ -87,6 +89,7 @@ def initialise_video_sources(
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    frame_stride: Optional[int] = None,
 ) -> List[VideoSource]:
     if isinstance(source_buffer_filling_strategy, str):
         source_buffer_filling_strategy = BufferFillingStrategy(
@@ -107,6 +110,7 @@ def initialise_video_sources(
             desired_fps=desired_source_fps,
             buffer_size=decoding_buffer_size,
             allow_tensor_frames=allow_tensor_frames,
+            frame_stride=frame_stride,
         )
         for i, (reference, source_properties) in enumerate(
             zip(video_reference, video_source_properties)

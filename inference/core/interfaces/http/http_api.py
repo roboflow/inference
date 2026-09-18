@@ -2814,6 +2814,10 @@ class HttpInterface(BaseInterface):
                     pipeline_id=pipeline_id
                 )
 
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/consume",
+                response_model=ConsumePipelineResponse,
+            )
             @app.get(
                 "/inference_pipelines/{pipeline_id}/consume",
                 response_model=ConsumePipelineResponse,
@@ -2830,6 +2834,7 @@ class HttpInterface(BaseInterface):
                 return await self.stream_manager_client.consume_pipeline_result(
                     pipeline_id=pipeline_id,
                     excluded_fields=request.excluded_fields,
+                    max_batches=request.max_batches,
                 )
 
         class ModelInitState:

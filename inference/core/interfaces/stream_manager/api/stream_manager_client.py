@@ -178,12 +178,15 @@ class StreamManagerClient:
         self,
         pipeline_id: str,
         excluded_fields: List[str],
+        max_batches: int = 1,
     ) -> ConsumePipelineResponse:
         command = {
             TYPE_KEY: CommandType.CONSUME_RESULT,
             PIPELINE_ID_KEY: pipeline_id,
             "excluded_fields": excluded_fields,
         }
+        if max_batches != 1:
+            command["max_batches"] = max_batches
         response = await self._handle_command(command=command)
         status = response[RESPONSE_KEY][STATUS_KEY]
         context = CommandContext(
@@ -191,6 +194,7 @@ class StreamManagerClient:
             pipeline_id=response.get(PIPELINE_ID_KEY),
         )
         return ConsumePipelineResponse(
+            file_job=response[RESPONSE_KEY].get("file_job"),
             status=status,
             context=context,
             outputs=response[RESPONSE_KEY]["outputs"],

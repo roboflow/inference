@@ -552,6 +552,7 @@ class InferencePipeline:
         workflow_version_id: Optional[str] = None,
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
+        frame_stride: Optional[int] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -796,6 +797,7 @@ class InferencePipeline:
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
             allow_tensor_frames=ENABLE_TENSOR_DATA_REPRESENTATION,
+            frame_stride=frame_stride,
             exec_session_id=exec_session_id,
         )
 
@@ -821,6 +823,7 @@ class InferencePipeline:
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         exec_session_id: Optional[str] = None,
         allow_tensor_frames: bool = False,
+        frame_stride: Optional[int] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -961,6 +964,7 @@ class InferencePipeline:
             desired_source_fps=desired_source_fps,
             decoding_buffer_size=decoding_buffer_size,
             allow_tensor_frames=allow_tensor_frames,
+            frame_stride=frame_stride,
         )
         watchdog.register_video_sources(video_sources=video_sources)
         try:

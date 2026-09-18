@@ -48,6 +48,9 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
 )
+from inference.core.interfaces.stream_manager.manager_app.file_jobs import (
+    FileJobResults,
+)
 from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     describe_error,
 )
@@ -98,6 +101,8 @@ class InferencePipelineManager(Process):
         self._stop = False
         self._model_manager = None
         self._models_loaded_before_init = 0
+        self._file_job = None
+        self._completion_thread = None
         self._buffer_sink: Optional[InMemoryBufferSink] = None
         self._last_consume_time = (
             time.monotonic()
@@ -192,10 +197,21 @@ class InferencePipelineManager(Process):
         try:
             self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
-            buffer_sink = InMemoryBufferSink.init(
-                queue_size=parsed_payload.sink_configuration.results_buffer_size,
-            )
-            self._buffer_sink = buffer_sink
+            if parsed_payload.file_job is not None:
+                if not os.path.isfile(
+                    parsed_payload.video_configuration.video_reference
+                ):
+                    raise ValueError("file_job input is not a completed local file")
+                self._file_job = FileJobResults(
+                    queue_size=parsed_payload.sink_configuration.results_buffer_size,
+                    frame_stride=parsed_payload.file_job.frame_stride,
+                )
+                self._watchdog = self._file_job
+                self._buffer_sink = self._file_job
+            else:
+                self._buffer_sink = InMemoryBufferSink.init(
+                    queue_size=parsed_payload.sink_configuration.results_buffer_size,
+                )
             # Set by the processes manager, never by the HTTP caller. The
             # worker is leased exclusively to this API key and this clip.
             if payload.get("_reuse_model_manager", False):
@@ -232,16 +248,29 @@ class InferencePipelineManager(Process):
                 decoding_buffer_size=parsed_payload.decoding_buffer_size,
                 predictions_queue_size=parsed_payload.predictions_queue_size,
                 model_manager=self._model_manager,
+                frame_stride=(
+                    parsed_payload.file_job.frame_stride
+                    if parsed_payload.file_job
+                    else None
+                ),
             )
             self._consumption_timeout = parsed_payload.consumption_timeout
             self._last_consume_time = time.monotonic()
             self._inference_pipeline.start(use_main_thread=False)
+            if self._file_job is not None:
+                self._completion_thread = threading.Thread(
+                    target=self._file_job.wait_for_completion,
+                    args=(self._inference_pipeline,),
+                    daemon=True,
+                )
+                self._completion_thread.start()
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
             )
             logger.info(f"Pipeline initialised. request_id={request_id}...")
         except (
             ValidationError,
+            ValueError,
             MissingApiKeyError,
             KeyError,
             NotImplementedError,
@@ -565,8 +594,15 @@ class InferencePipelineManager(Process):
             logger.warning(f"Could not terminate pipeline gracefully. Error: {error}")
 
     def _execute_termination(self, keep_model_cache: bool = False) -> None:
+        if self._file_job is not None:
+            self._file_job.cancel()
         self._inference_pipeline.terminate()
-        self._inference_pipeline.join()
+        if self._completion_thread is not None:
+            self._completion_thread.join()
+            if self._file_job.snapshot()["state"] != "completed":
+                keep_model_cache = False
+        else:
+            self._inference_pipeline.join()
         if keep_model_cache and self._watchdog is not None:
             report = self._watchdog.get_report()
             # A failed GPU operation may leave a model unusable. Recycle only
@@ -581,6 +617,8 @@ class InferencePipelineManager(Process):
         self._inference_pipeline = None
         self._watchdog = None
         self._buffer_sink = None
+        self._file_job = None
+        self._completion_thread = None
         self._consumption_timeout = None
         self._stop = not keep_model_cache
 
@@ -643,6 +681,8 @@ class InferencePipelineManager(Process):
                     public_error_message="Cannot retrieve InferencePipeline status. Try again later.",
                 )
             report_payload = asdict(report)
+            if self._file_job is not None:
+                report_payload["file_job"] = self._file_job.snapshot()
             if self._model_manager is not None:
                 report_payload["model_cache"] = {
                     "worker_pid": os.getpid(),
@@ -665,17 +705,18 @@ class InferencePipelineManager(Process):
 
     def _consume_results(self, request_id: str, payload: dict) -> None:
         try:
-            if self._buffer_sink.empty():
-                response_payload = {
-                    STATUS_KEY: OperationStatus.SUCCESS,
-                    "outputs": [],
-                    "frames_metadata": [],
-                }
-                self._responses_queue.put((request_id, response_payload))
-                return None
-            excluded_fields = payload.get("excluded_fields")
-            predictions, frames = self._buffer_sink.consume_prediction()
+            max_batches = payload.get("max_batches", 1)
+            if type(max_batches) is not int or not 1 <= max_batches <= 64:
+                raise ValueError("max_batches must be between 1 and 64")
             self._last_consume_time = time.monotonic()
+            excluded_fields = payload.get("excluded_fields")
+            predictions, frames = [], []
+            for _ in range(max_batches):
+                if self._buffer_sink.empty():
+                    break
+                batch_predictions, batch_frames = self._buffer_sink.consume_prediction()
+                predictions.extend(batch_predictions)
+                frames.extend(batch_frames)
             predictions = [
                 (
                     serialise_single_workflow_result_element(
@@ -704,6 +745,8 @@ class InferencePipelineManager(Process):
                 "outputs": predictions,
                 "frames_metadata": frames_metadata,
             }
+            if self._file_job is not None:
+                response_payload["file_job"] = self._file_job.snapshot()
             self._responses_queue.put((request_id, response_payload))
         except Exception as error:
             self._handle_error(

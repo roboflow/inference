@@ -86,6 +86,15 @@ class WorkflowConfiguration(BaseModel):
     video_metadata_input_name: str = "video_metadata"
 
 
+class FileJobConfiguration(BaseModel):
+    frame_stride: int = Field(
+        default=1,
+        ge=1,
+        strict=True,
+        description="Process source frames 1, 1+stride, ... without an intermediate video.",
+    )
+
+
 class InitialisePipelinePayload(BaseModel):
     video_configuration: VideoConfiguration
     processing_configuration: WorkflowConfiguration
@@ -99,12 +108,33 @@ class InitialisePipelinePayload(BaseModel):
         "explicit termination or consumption_timeout. Requires a finite, positive "
         "consumption_timeout. The result buffer remains bounded.",
     )
+    file_job: Optional[FileJobConfiguration] = None
     api_key: Optional[str] = None
     predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE
 
     @model_validator(mode="after")
     def validate_result_retention(self):
+        if self.file_job is not None:
+            video = self.video_configuration
+            if (
+                not isinstance(video.video_reference, str)
+                or not video.video_reference.startswith("/")
+                or "://" in video.video_reference
+            ):
+                raise ValueError("file_job requires one absolute local video path")
+            if not self.retain_results_on_eof or video.max_fps is not None:
+                raise ValueError(
+                    "file_job requires result retention and frame_stride instead of max_fps"
+                )
+            if self.sink_configuration.results_buffer_size < 1:
+                raise ValueError("file_job requires a positive result buffer size")
+            if self.decoding_buffer_size < 1 or self.predictions_queue_size < 1:
+                raise ValueError(
+                    "file_job requires bounded, positive input and prediction queues"
+                )
+            video.source_buffer_filling_strategy = BufferFillingStrategy.WAIT
+            video.source_buffer_consumption_strategy = BufferConsumptionStrategy.LAZY
         if self.retain_results_on_eof and (
             self.consumption_timeout is None
             or not math.isfinite(self.consumption_timeout)
@@ -160,6 +190,7 @@ class WebRTCData(BaseModel):
 
 
 class ConsumeResultsPayload(BaseModel):
+    max_batches: int = Field(default=1, ge=1, le=64)
     excluded_fields: List[str] = Field(
         default_factory=list,
         description="List of workflow output fields to be filtered out from response",

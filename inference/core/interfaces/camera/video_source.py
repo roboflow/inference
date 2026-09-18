@@ -311,6 +311,7 @@ class VideoSource:
         source_id: Optional[int] = None,
         desired_fps: Optional[Union[float, int]] = None,
         allow_tensor_frames: bool = False,
+        frame_stride: Optional[int] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -449,6 +450,7 @@ class VideoSource:
             maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
             status_update_handlers=status_update_handlers,
             desired_fps=desired_fps,
+            frame_stride=frame_stride,
         )
         return cls(
             stream_reference=video_reference,
@@ -973,6 +975,7 @@ class VideoConsumer:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         desired_fps: Optional[Union[float, int]] = None,
         adaptive_backpressure: bool = DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
+        frame_stride: Optional[int] = None,
     ) -> "VideoConsumer":
         minimum_adaptive_mode_samples = max(minimum_adaptive_mode_samples, 2)
         reader_pace_monitor = sv.FPSMonitor(
@@ -996,6 +999,7 @@ class VideoConsumer:
             decoding_pace_monitor=decoding_pace_monitor,
             desired_fps=desired_fps,
             adaptive_backpressure=adaptive_backpressure,
+            frame_stride=frame_stride,
         )
 
     def __init__(
@@ -1011,6 +1015,7 @@ class VideoConsumer:
         decoding_pace_monitor: sv.FPSMonitor,
         desired_fps: Optional[Union[float, int]],
         adaptive_backpressure: bool = DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
+        frame_stride: Optional[int] = None,
     ):
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
@@ -1024,6 +1029,11 @@ class VideoConsumer:
         self._reader_pace_monitor = reader_pace_monitor
         self._stream_consumption_pace_monitor = stream_consumption_pace_monitor
         self._decoding_pace_monitor = decoding_pace_monitor
+        if frame_stride is not None and (frame_stride < 1 or desired_fps is not None):
+            raise ValueError(
+                "frame_stride must be positive and cannot be combined with desired_fps"
+            )
+        self._frame_stride = frame_stride
         self._desired_fps = desired_fps
         self._declared_source_fps = None
         self._is_source_video_file = None
@@ -1120,6 +1130,8 @@ class VideoConsumer:
             self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
+        if self._frame_stride is not None:
+            return (self._frame_counter - 1) % self._frame_stride != 0
         if self._desired_fps is None:
             return False
         if self._is_source_video_file:

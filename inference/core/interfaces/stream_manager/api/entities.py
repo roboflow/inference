@@ -33,6 +33,7 @@ class FrameMetadata(BaseModel):
 
 
 class ConsumePipelineResponse(CommandResponse):
+    file_job: Optional[dict] = None
     outputs: List[dict]
     frames_metadata: List[FrameMetadata]
 
