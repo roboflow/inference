@@ -3,10 +3,7 @@ import copy
 import numpy as np
 import pycocotools.mask as mask_utils
 import supervision as sv
-
-from roboflow_workflows.execution_engine.constants import (
-    RLE_MASK_KEY_IN_SV_DETECTIONS,
-)
+from roboflow_workflows.execution_engine.constants import RLE_MASK_KEY_IN_SV_DETECTIONS
 
 UNKNOWN_CLASS_COLOR = sv.Color.GREY
 UNKNOWN_CLASS_COLOR_RGB = UNKNOWN_CLASS_COLOR.as_rgb()
