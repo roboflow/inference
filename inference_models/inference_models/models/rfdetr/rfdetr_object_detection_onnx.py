@@ -1,3 +1,5 @@
+"""RF-DETR object detection with ONNX and selectable execution-plan stages."""
+
 import threading
 from typing import List, Optional, Tuple, Union
 
@@ -34,7 +36,13 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
-from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.optimization.backend_path import (
+    RFDetrBackendPath,
+    RFDetrBackendPlanMixin,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -57,12 +65,14 @@ except ImportError as import_error:
 
 
 class RFDetrForObjectDetectionONNX(
+    RFDetrBackendPlanMixin,
     (
         ObjectDetectionModel[
             torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]
         ]
-    )
+    ),
 ):
+    """Load and run RF-DETR ONNX packages with observable stage selection."""
 
     @classmethod
     def from_pretrained(
@@ -73,8 +83,30 @@ class RFDetrForObjectDetectionONNX(
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
+        """Load an ONNX package and resolve its object-detection execution plan.
+
+        Args:
+            model_name_or_path (str): Local model package directory.
+            onnx_execution_providers (list, optional): Ordered ONNX providers/options.
+            default_onnx_trt_options (bool): Apply standard TensorRT provider options.
+            device (torch.device): Requested inference device.
+            rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
+            recommended_parameters (RecommendedParameters, optional): Model defaults.
+            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
+                fallback policies; None resolves environment/default choices.
+            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
+            **kwargs: Extra loader options accepted for shared API compatibility.
+
+        Returns:
+            RFDetrForObjectDetectionONNX: Initialized model with resolved stages.
+
+        Raises:
+            EnvironmentConfigurationError: If no ONNX execution provider is selected.
+        """
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -139,7 +171,7 @@ class RFDetrForObjectDetectionONNX(
         if isinstance(input_batch_size, str):
             input_batch_size = None
         input_name = session.get_inputs()[0].name
-        return cls(
+        model = cls(
             session=session,
             input_name=input_name,
             class_names=class_names,
@@ -148,7 +180,11 @@ class RFDetrForObjectDetectionONNX(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
+
+        return model
 
     def __init__(
         self,
@@ -160,6 +196,8 @@ class RFDetrForObjectDetectionONNX(
         device: torch.device,
         input_batch_size: Optional[int],
         recommended_parameters=None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -175,6 +213,13 @@ class RFDetrForObjectDetectionONNX(
         )
         self._session_thread_lock = threading.Lock()
         self.recommended_parameters = recommended_parameters
+        self._execution_path = RFDetrBackendPath(
+            device=device,
+            inference_config=inference_config,
+            backend="onnx",
+            execution_plan=rfdetr_execution_plan,
+            max_workers=rfdetr_preprocessor_max_workers,
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -185,25 +230,53 @@ class RFDetrForObjectDetectionONNX(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        pre_process_stream = self._pre_process_stream
-        with use_cuda_stream(pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        if pre_process_stream is not None:
-            pre_process_stream.synchronize()
-        return pre_processed_images, pre_processing_meta
+        """Prepare images with the selected compatible preprocessor.
+
+        Args:
+            images (np.ndarray | torch.Tensor | list): Input image or batch.
+            input_color_format (ColorFormat, optional): Source channel order.
+            pre_processing_overrides (PreProcessingOverrides, optional): Per-call
+                overrides of package preprocessing settings.
+            independent_stage_execution (bool): Synchronize before returning when
+                preprocessing is called outside composed inference.
+            **kwargs: Other shared inference options, ignored by this stage.
+
+        Returns:
+            tuple: Backend input tensor and per-image preprocessing metadata.
+        """
+        result = self._execution_path.preprocess(
+            images,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
+            independent_stage_execution=independent_stage_execution,
+        )
+
+        return result
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Run ONNX forward after waiting for the input tensor's readiness.
+
+        Args:
+            pre_processed_images (torch.Tensor): Normalized NCHW image batch.
+            **kwargs: Shared inference options passed to the backend adapter.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Raw bounding boxes and class logits.
+        """
+        result = self._execution_path.forward(
+            pre_processed_images,
+            stream=self._inference_stream,
+            operation=lambda: self._forward(pre_processed_images, **kwargs),
+        )
+
+        return result
+
+    def _forward(self, pre_processed_images: torch.Tensor, **kwargs):
         with self._session_thread_lock:
             bboxes, logits = run_onnx_session_with_batch_size_limit(
                 session=self._session,
@@ -221,6 +294,31 @@ class RFDetrForObjectDetectionONNX(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        """Convert backend predictions using the selected postprocessing stage.
+
+        Args:
+            model_results (tuple): Backend boxes and class logits.
+            pre_processing_meta (list[PreProcessingMetadata]): Per-image transforms.
+            confidence (Confidence): Detection threshold or model-default selector.
+            **kwargs: Other shared inference options passed to postprocessing.
+
+        Returns:
+            list[Detections]: Filtered detections in original-image coordinates.
+        """
+        detections = self._execution_path.postprocess(
+            lambda: self._post_process(
+                model_results,
+                pre_processing_meta=pre_processing_meta,
+                confidence=confidence,
+                **kwargs,
+            )
+        )
+
+        return detections
+
+    def _post_process(
+        self, model_results, pre_processing_meta, confidence="default", **kwargs
+    ):
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,

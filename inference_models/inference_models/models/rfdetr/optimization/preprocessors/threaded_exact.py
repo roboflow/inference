@@ -37,7 +37,7 @@ class ThreadedExactPreprocessor:
         implementation_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(device_kind="gpu"),
+        target=DeviceCompatibility(device_kind="any"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping(
@@ -53,7 +53,7 @@ class ThreadedExactPreprocessor:
         supports_cuda_graphs=False,
         output_contract=immutable_mapping(
             {
-                "device": "selected CUDA device",
+                "device": "selected target device",
                 "dtype": "float32",
                 "layout": "contiguous NCHW",
                 "ownership": "new tensor owned by caller",

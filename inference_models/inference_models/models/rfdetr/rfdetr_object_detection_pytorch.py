@@ -1,3 +1,5 @@
+"""RF-DETR object detection with Torch and selectable execution-plan stages."""
+
 import os.path
 from copy import deepcopy
 from threading import RLock
@@ -18,7 +20,6 @@ from inference_models.errors import (
     MissingModelInitParameterError,
     ModelInputError,
     ModelPackageRestrictedError,
-    ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -40,8 +41,14 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
+from inference_models.models.rfdetr.optimization.backend_path import (
+    RFDetrBackendPath,
+    RFDetrBackendPlanMixin,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+)
 from inference_models.models.rfdetr.post_processor import PostProcess
-from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
@@ -77,8 +84,10 @@ RESIZE_MODES_TO_REVERT_PADDING = {
 
 
 class RFDetrForObjectDetectionTorch(
-    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict])
+    RFDetrBackendPlanMixin,
+    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict]),
 ):
+    """Load RF-DETR Torch models with observable execution-plan stages."""
 
     @classmethod
     def from_pretrained(
@@ -90,16 +99,46 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
+        """Load a model package or checkpoint and resolve its execution plan.
+
+        Args:
+            model_name_or_path (str): Local package directory or checkpoint file.
+            device (torch.device): Device for model execution.
+            model_type (str, optional): RF-DETR variant for a standalone checkpoint.
+            labels (str | list[str], optional): Checkpoint labels or label-file path.
+            resolution (int, optional): Override checkpoint network input resolution.
+            rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
+            recommended_parameters (RecommendedParameters, optional): Package defaults.
+            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
+                fallback policies; None resolves environment/default choices.
+            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
+            **kwargs: Extra loader options accepted for shared API compatibility.
+
+        Returns:
+            RFDetrForObjectDetectionTorch: Initialized model with resolved stages.
+
+        Raises:
+            CorruptedModelPackageError: If the package specifies an unknown variant.
+            MissingModelInitParameterError: If checkpoint metadata is insufficient.
+        """
         if os.path.isfile(model_name_or_path):
-            return cls.from_checkpoint_file(
+            loaded_model = cls.from_checkpoint_file(
                 checkpoint_path=model_name_or_path,
                 model_type=model_type,
                 labels=labels,
                 resolution=resolution,
                 rf_detr_max_input_resolution=rf_detr_max_input_resolution,
+                device=device,
+                rfdetr_execution_plan=rfdetr_execution_plan,
+                rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             )
+
+            return loaded_model
+
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -164,7 +203,7 @@ class RFDetrForObjectDetectionTorch(
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
-        return cls(
+        loaded_model = cls(
             model=model,
             class_names=class_names,
             classes_re_mapping=classes_re_mapping,
@@ -173,7 +212,11 @@ class RFDetrForObjectDetectionTorch(
             post_processor=post_processor,
             resolution=model_config.resolution,
             recommended_parameters=recommended_parameters,
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
+
+        return loaded_model
 
     @classmethod
     def from_checkpoint_file(
@@ -184,7 +227,28 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
+        """Load a standalone checkpoint with explicit architecture metadata.
+
+        Args:
+            checkpoint_path (str): Path to the Torch checkpoint.
+            model_type (str, optional): Required RF-DETR variant identifier.
+            labels (str | list[str], optional): Label-file path or ordered labels.
+            resolution (int, optional): Network input resolution override.
+            device (torch.device): Device for model execution.
+            rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
+            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
+                fallback policies.
+            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
+
+        Returns:
+            RFDetrForObjectDetectionTorch: Initialized checkpoint model.
+
+        Raises:
+            MissingModelInitParameterError: If required architecture metadata is absent.
+        """
         if model_type is None:
             raise MissingModelInitParameterError(
                 message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
@@ -271,7 +335,7 @@ class RFDetrForObjectDetectionTorch(
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
-        return cls(
+        loaded_model = cls(
             model=model,
             class_names=class_names,
             classes_re_mapping=None,
@@ -279,7 +343,11 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
+
+        return loaded_model
 
     def __init__(
         self,
@@ -291,6 +359,8 @@ class RFDetrForObjectDetectionTorch(
         post_processor: PostProcess,
         resolution: int,
         recommended_parameters=None,
+        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -306,6 +376,13 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_dtype = None
         self._lock = RLock()
         self.recommended_parameters = recommended_parameters
+        self._execution_path = RFDetrBackendPath(
+            device=device,
+            inference_config=inference_config,
+            backend="torch",
+            execution_plan=rfdetr_execution_plan,
+            max_workers=rfdetr_preprocessor_max_workers,
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -352,19 +429,60 @@ class RFDetrForObjectDetectionTorch(
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
+        """Prepare images with the selected compatible preprocessor.
+
+        Args:
+            images (np.ndarray | torch.Tensor | list): Input image or batch.
+            input_color_format (ColorFormat, optional): Source channel order.
+            image_size (tuple[int, int], optional): Requested network width/height.
+            pre_processing_overrides (PreProcessingOverrides, optional): Per-call
+                overrides of package preprocessing settings.
+            independent_stage_execution (bool): Synchronize standalone preprocessing.
+            **kwargs: Other shared inference options, ignored by this stage.
+
+        Returns:
+            tuple: Backend input tensor and per-image preprocessing metadata.
+        """
+        result = self._execution_path.preprocess(
+            images,
             input_color_format=input_color_format,
-            image_size_wh=image_size,
+            image_size=image_size,
             pre_processing_overrides=pre_processing_overrides,
+            independent_stage_execution=independent_stage_execution,
         )
 
+        return result
+
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
+        """Run Torch forward after waiting for this input tensor's readiness.
+
+        Args:
+            pre_processed_images (torch.Tensor): Normalized NCHW image batch.
+            **kwargs: Shared inference options passed to the backend adapter.
+
+        Returns:
+            dict: Raw class logits and bounding-box predictions.
+
+        Raises:
+            ModelInputError: If the batch shape conflicts with model optimization.
+        """
+        stream = (
+            torch.cuda.current_stream(self._device)
+            if self._device.type == "cuda"
+            else None
+        )
+        result = self._execution_path.forward(
+            pre_processed_images,
+            stream=stream,
+            operation=lambda: self._forward(pre_processed_images, **kwargs),
+        )
+
+        return result
+
+    def _forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
         if (
             self._inference_model is None
             and not self._has_warned_about_not_being_optimized_for_inference
@@ -416,6 +534,31 @@ class RFDetrForObjectDetectionTorch(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        """Convert backend predictions using the selected postprocessing stage.
+
+        Args:
+            model_results (dict): Backend bounding boxes and class logits.
+            pre_processing_meta (list[PreProcessingMetadata]): Per-image transforms.
+            confidence (Confidence): Detection threshold or model-default selector.
+            **kwargs: Other shared inference options passed to postprocessing.
+
+        Returns:
+            list[Detections]: Filtered detections in original-image coordinates.
+        """
+        detections = self._execution_path.postprocess(
+            lambda: self._post_process(
+                model_results,
+                pre_processing_meta=pre_processing_meta,
+                confidence=confidence,
+                **kwargs,
+            )
+        )
+
+        return detections
+
+    def _post_process(
+        self, model_results, pre_processing_meta, confidence="default", **kwargs
+    ):
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,

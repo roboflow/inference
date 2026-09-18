@@ -3,6 +3,7 @@
 import torch
 
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.streams import use_cuda_stream
 from inference_models.models.optimization.contracts import ExecutionContext
 from inference_models.models.rfdetr.optimization.contracts import (
     PreprocessRequest,
@@ -17,23 +18,25 @@ def run_reference_preprocessor(
     *,
     implementation_id: str,
     max_workers: int,
+    image_module=None,
 ) -> PreprocessResult:
     """Run the existing RF-DETR preprocessor on the context stream.
 
     Args:
-        request: Typed preprocessing request.
-        context: Runtime context containing the CUDA stream.
-        implementation_id: Base or threaded implementation ID.
-        max_workers: Bounded threaded worker limit.
+        request (PreprocessRequest): Typed preprocessing request.
+        context (ExecutionContext): Target device and optional CUDA stream.
+        implementation_id (str): Base or threaded implementation ID.
+        max_workers (int): Bounded threaded worker limit.
+        image_module (ModuleType, optional): Isolated resize module; None uses Pillow.
 
     Returns:
         Typed preprocessing result.
 
     Raises:
-        ModelRuntimeError: If the execution context has no CUDA stream.
+        ModelRuntimeError: If a CUDA target has no preprocessing stream.
     """
     stream = context.current_stream
-    if stream is None:
+    if stream is None and torch.device(context.device).type == "cuda":
         raise ModelRuntimeError(
             message=f"{implementation_id!r} requires a preprocessing CUDA stream.",
             help_url=(
@@ -42,7 +45,17 @@ def run_reference_preprocessor(
             ),
         )
 
-    with torch.cuda.stream(stream):
+    if stream is not None:
+        images = (
+            request.images if isinstance(request.images, list) else [request.images]
+        )
+        for image in images:
+            if isinstance(image, torch.Tensor) and image.device == stream.device:
+                # Reference tensor resizing also runs asynchronously on this stream.
+                # Keep caller-owned CUDA storage alive until preprocessing finishes.
+                image.record_stream(stream)
+
+    with use_cuda_stream(stream):
         tensor, metadata = pre_process_network_input(
             images=request.images,
             image_pre_processing=request.image_pre_processing,
@@ -52,6 +65,8 @@ def run_reference_preprocessor(
             pre_processing_overrides=request.pre_processing_overrides,
             preprocessor_implementation_id=implementation_id,
             preprocessor_max_workers=max_workers,
+            image_size_wh=request.image_size_wh,
+            image_module=image_module,
         )
 
     result = PreprocessResult(

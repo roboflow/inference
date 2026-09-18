@@ -2,8 +2,25 @@
 
 Read the shared
 [Inference-Path Optimization Architecture](../inference-path-optimization-architecture.md)
-first. This document maps that reusable architecture to the current RF-DETR TensorRT
-object-detection implementation.
+first. This document maps that reusable architecture to RF-DETR object detection
+on TensorRT, Torch and ONNX. The diagrams below show the TensorRT implementation;
+Torch/ONNX use the same selection and readiness contracts through `backend_path.py`
+and `backend_stages.py`, preserving their own forward and postprocessing callbacks.
+Instance segmentation is not migrated yet.
+
+All backends share preprocessing choices, including explicit `pillow-simd-v1`.
+This optional Linux x86-64 SSE4.1 stage loads an isolated Pillow-SIMD >=12.3.0.post0
+module, declares numerical differences, and is intentionally excluded from `auto`.
+Architecture and device-type metadata reject incompatible targets before native
+construction. Missing SIMD or unsupported requests resolve to `base`; standard
+Pillow is never replaced. The reference NumPy path swaps channels after resizing.
+
+Torch/ONNX register only `base` for the four non-preprocessing stages. In composed
+CUDA execution, preprocessing records readiness for the exact returned tensor;
+the backend consumer stream waits on it and records allocator ownership. Public
+standalone preprocessing synchronizes before returning. CPU paths require no CUDA
+stream. Per-request image-size overrides unsupported by Triton use the reference
+fallback and remain visible in runtime selection metadata.
 
 The TensorRT semantic forward pass remains protected and is not a selectable
 implementation.

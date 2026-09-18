@@ -34,7 +34,7 @@ class BasePreprocessor:
         implementation_id=RFDETR_PREPROCESSOR_BASE,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(device_kind="gpu"),
+        target=DeviceCompatibility(device_kind="any"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping({"batch": ">=1"}),
@@ -48,14 +48,14 @@ class BasePreprocessor:
         supports_cuda_graphs=False,
         output_contract=immutable_mapping(
             {
-                "device": "selected CUDA device",
+                "device": "selected target device",
                 "dtype": "float32",
                 "layout": "contiguous NCHW",
                 "ownership": "new tensor owned by caller",
             }
         ),
         numerical_behavior="reference RF-DETR PIL/torch pipeline",
-        stream_behavior="submits H2D work to the caller preprocessing stream",
+        stream_behavior="CPU work followed by transfer to the target; CUDA transfers use the caller stream",
     )
 
     def __init__(self, *, max_workers: int) -> None:
