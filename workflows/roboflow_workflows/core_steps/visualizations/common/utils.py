@@ -4,7 +4,7 @@ import numpy as np
 import pycocotools.mask as mask_utils
 import supervision as sv
 
-from inference.core.workflows.execution_engine.constants import (
+from roboflow_workflows.execution_engine.constants import (
     RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
 
