@@ -1,0 +1,4 @@
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (B),DymSMem (B),Bytes (B),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+2177366433,41280,158,,,,,,,,,,1048576,25400.705,Pinned,Device,NVIDIA L4 (0),1,,7,[CUDA memcpy Host-to-Device]
+2209470634,6464,168,1024,1,1,128,1,1,30,0,0,,,,,NVIDIA L4 (0),1,,7,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::CUDAFunctorOnSelf_add<unsigned char>, std::array<char *, (unsigned long)2>>(int, T2, T3)"
+2209677289,44031,178,,,,,,,,,,1048576,23814.210,Device,Pageable,NVIDIA L4 (0),1,,7,[CUDA memcpy Device-to-Host]
