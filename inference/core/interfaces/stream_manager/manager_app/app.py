@@ -210,12 +210,15 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         managed_pipeline.retain_results_on_eof = command.get(
             "retain_results_on_eof", False
         )
-        managed_pipeline.command_queue.put((request_id, command))
-        response = get_response_ignoring_thrash(
-            responses_queue=managed_pipeline.responses_queue,
-            matching_request_id=request_id,
-            process=managed_pipeline.pipeline_manager,
-        )
+        # Serialize with health checks: two readers must not consume and drop
+        # one another's responses while a worker is being initialized.
+        with managed_pipeline.operation_lock:
+            managed_pipeline.command_queue.put((request_id, command))
+            response = get_response_ignoring_thrash(
+                responses_queue=managed_pipeline.responses_queue,
+                matching_request_id=request_id,
+                process=managed_pipeline.pipeline_manager,
+            )
         if response.get(STATUS_KEY) != OperationStatus.SUCCESS:
             # Failed initialization has no usable pipeline for the caller to close.
             with PROCESSES_TABLE_LOCK:
@@ -243,12 +246,15 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         managed_pipeline = get_or_spawn_pipeline_process(
             processes_table=self._processes_table,
         )
-        managed_pipeline.command_queue.put((request_id, command))
-        response = get_response_ignoring_thrash(
-            responses_queue=managed_pipeline.responses_queue,
-            matching_request_id=request_id,
-            process=managed_pipeline.pipeline_manager,
-        )
+        # Serialize with health checks: two readers must not consume and drop
+        # one another's responses while a worker is being initialized.
+        with managed_pipeline.operation_lock:
+            managed_pipeline.command_queue.put((request_id, command))
+            response = get_response_ignoring_thrash(
+                responses_queue=managed_pipeline.responses_queue,
+                matching_request_id=request_id,
+                process=managed_pipeline.pipeline_manager,
+            )
         serialised_response = prepare_response(
             request_id=request_id,
             response=response,
