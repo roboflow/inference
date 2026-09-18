@@ -53,7 +53,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 📦 Installing `inference` package...
-        run: pip install ./dist/inference_cli-*-py3-none-any.whl
+        run: pip install --find-links dist/ ./dist/inference_cli-*-py3-none-any.whl ./dist/inference_sdk-*-py3-none-any.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |

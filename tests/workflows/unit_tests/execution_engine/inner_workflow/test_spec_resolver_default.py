@@ -94,7 +94,7 @@ def test_reference_resolution_does_not_import_the_server() -> None:
     # tests/workflows/unit_tests/execution_engine/inner_workflow/
     path = (
         pathlib.Path(__file__).resolve().parents[5]
-        / "inference/core/workflows/execution_engine/v1/inner_workflow/reference_resolution.py"
+        / "workflows/roboflow_workflows/execution_engine/v1/inner_workflow/reference_resolution.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules = {

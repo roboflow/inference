@@ -17,7 +17,7 @@ from typing import Any
 import msgpack
 import pytest
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
     modal_executor as client,
 )
 
@@ -331,7 +331,7 @@ class TestErrorTypeContract:
 
         # The client must classify this as a TRANSPORT failure, not as the
         # user's block raising.
-        from inference.core.workflows.errors import (
+        from roboflow_workflows.errors import (
             DynamicBlockCodeError,
             DynamicBlockError,
         )
@@ -422,7 +422,7 @@ class TestErrorTypeContract:
         monkeypatch.setattr(client, "_WS_MAX_CHUNKS", 4)
         payload = b"z" * (8 * 4 + 1)
 
-        from inference.core.workflows.errors import DynamicBlockError
+        from roboflow_workflows.errors import DynamicBlockError
 
         with pytest.raises(DynamicBlockError, match="too large"):
             client._split_ws_frames(payload, msgpack)

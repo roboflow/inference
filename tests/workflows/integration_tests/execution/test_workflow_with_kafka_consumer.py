@@ -9,6 +9,9 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
+    KafkaConsumerBlockV1,
+)
 
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import (
@@ -24,9 +27,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
-)
-from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
-    KafkaConsumerBlockV1,
 )
 
 BOOTSTRAP = os.environ.get("KAFKA_TEST_BOOTSTRAP_SERVERS")

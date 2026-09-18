@@ -8,14 +8,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import pytest
-
-from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
+from roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
     KafkaConsumerBlockV1,
 )
-from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_producer.v1 import (
+from roboflow_workflows.enterprise_blocks.sinks.kafka_producer.v1 import (
     KafkaProducerSinkBlockV1,
 )
+
+from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 BOOTSTRAP = os.environ.get("KAFKA_TEST_BOOTSTRAP_SERVERS")
 
