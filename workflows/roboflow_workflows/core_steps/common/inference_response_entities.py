@@ -36,6 +36,34 @@ class InferenceResponseImage(BaseModel):
     )
 
 
+class ResolvedModel(BaseModel):
+    """Identity of the model and available package details used for inference.
+
+    Attributes:
+        model_id (str): ID of the loaded model, using the canonical ID when available.
+        model_package_id (Optional[str]): ID of the loaded model package.
+        backend (Optional[str]): Backend of the loaded package.
+        quantization (Optional[str]): Quantization of the loaded package.
+    """
+
+    model_config = ConfigDict(protected_namespaces=())
+    model_id: str = Field(
+        description="ID of the loaded model, using the canonical ID when available."
+    )
+    model_package_id: Optional[str] = Field(
+        default=None,
+        description="ID of the package that loaded successfully and produced this result, including after a loading fallback.",
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        description="Backend of the loaded package, such as onnx, trt, or torch.",
+    )
+    quantization: Optional[str] = Field(
+        default=None,
+        description="Package quantization, such as fp32 or fp16, or unknown when unavailable. This does not specify the input tensor dtype or the precision of every runtime operation.",
+    )
+
+
 class InferenceResponse(BaseModel):
     """Base inference response.
 
@@ -43,6 +71,7 @@ class InferenceResponse(BaseModel):
         inference_id (Optional[str]): Unique identifier of inference
         frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
+        resolved_model (Optional[ResolvedModel]): Model identity and available package details for this result.
     """
 
     model_config = ConfigDict(protected_namespaces=())
@@ -56,6 +85,10 @@ class InferenceResponse(BaseModel):
     time: Optional[float] = Field(
         default=None,
         description="The time in seconds it took to produce the predictions including image preprocessing",
+    )
+    resolved_model: Optional[ResolvedModel] = Field(
+        default=None,
+        description="Model identity and available package details for this result.",
     )
 
 

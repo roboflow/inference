@@ -55,6 +55,10 @@ class EngineConfiguration:
     allow_postgresql_sink_to_non_global_addresses: bool = True
     postgresql_sink_blacklisted_addresses: Optional[Tuple[str, ...]] = None
     postgresql_sink_whitelisted_addresses: Optional[Tuple[str, ...]] = None
+    # Kafka sinks bootstrap-server policy. Optional[Tuple] mirrors env.py's
+    # None-vs-list distinction; the facade rebuilds the ORDERED list.
+    allow_kafka_sinks_user_provided_bootstrap_servers: bool = True
+    kafka_sinks_whitelisted_bootstrap_servers: Optional[Tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)

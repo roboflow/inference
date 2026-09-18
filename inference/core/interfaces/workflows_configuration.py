@@ -71,6 +71,14 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
                 if env.POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is None
                 else tuple(sorted(env.POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES))
             ),
+            allow_kafka_sinks_user_provided_bootstrap_servers=env.KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS,
+            # NOT sorted: env.py keeps the operator's order and the Kafka
+            # client is given the list as written.
+            kafka_sinks_whitelisted_bootstrap_servers=(
+                None
+                if env.KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is None
+                else tuple(env.KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS)
+            ),
         ),
         tensor=TensorConfiguration(
             representation_enabled=env.ENABLE_TENSOR_DATA_REPRESENTATION,

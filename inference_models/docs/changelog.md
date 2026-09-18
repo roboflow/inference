@@ -2,13 +2,26 @@
 
 ## Unreleased
 
+---
+
+## `0.37.2`
+
+### Added
+
+- `AutoModel.from_pretrained` exposes `resolved_model` metadata for the loaded
+  package: canonical model ID, package ID, backend, and quantization. The public
+  `ResolvedModelMetadata` entity describes this metadata.
+
+- `Cosmos3EdgeActionRecognition` wrapped over an already loaded reasoner
+  (`from_reasoner`) exposes that reasoner's `resolved_model`.
+
 ### Fixed
 
 - `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
 
 ---
 
-## `0.37.0`
+## `0.37.1`
 
 ### Fixed
 

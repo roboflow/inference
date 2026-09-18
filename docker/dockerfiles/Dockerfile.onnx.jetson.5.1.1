@@ -119,7 +119,7 @@ RUN python -m pip install uv \
     && cd workflows \
     && uv build --out-dir /wheels \
     && cd - \
-    && python -m pip install --find-links /wheels /wheels/roboflow_workflows-*.whl
+    && python -m pip install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]"
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk

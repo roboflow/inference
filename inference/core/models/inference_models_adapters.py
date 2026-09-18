@@ -1508,6 +1508,7 @@ class InferenceModelsClassificationAdapter(Model):
         if not isinstance(request.image, list):
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
 
@@ -2040,12 +2041,14 @@ class InferenceModelsActionRecognitionAdapter(Model):
                     stride=max(1.0, source_fps / window.sample_fps),
                 )
         timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
-        return ActionRecognitionInferenceResponse(
+        response = ActionRecognitionInferenceResponse(
             timeline=timeline,
             source_fps=source_fps,
             frame_count=frame_count,
             windows_classified=windows_classified,
         )
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def preprocess(self, *args, **kwargs):
         raise NotImplementedError(

@@ -58,6 +58,16 @@ POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = (
     if _CONFIGURATION.engine.postgresql_sink_whitelisted_addresses is None
     else set(_CONFIGURATION.engine.postgresql_sink_whitelisted_addresses)
 )
+KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS = (
+    _CONFIGURATION.engine.allow_kafka_sinks_user_provided_bootstrap_servers
+)
+# A list, not a set: env.py keeps the operator's order, which is what the Kafka
+# client is handed when user-provided servers are not allowed.
+KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = (
+    None
+    if _CONFIGURATION.engine.kafka_sinks_whitelisted_bootstrap_servers is None
+    else list(_CONFIGURATION.engine.kafka_sinks_whitelisted_bootstrap_servers)
+)
 
 # --- tensor representation ---
 ENABLE_TENSOR_DATA_REPRESENTATION = _CONFIGURATION.tensor.representation_enabled
