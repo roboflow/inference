@@ -15,6 +15,7 @@ from tests.inference.hosted_platform_tests.conftest import (
     PlatformEnvironment,
     api_key_auth_headers,
     apply_auth_mode,
+    required_response_keys,
     without_api_key_in_header_mode,
 )
 
@@ -213,7 +214,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "image",
         "predictions",
         "time",
@@ -247,7 +248,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -281,7 +282,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization",
         "image",
         "predictions",
@@ -470,7 +471,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "image",
         "predictions",
         "time",
@@ -504,7 +505,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -538,7 +539,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization",
         "image",
         "predictions",
@@ -727,7 +728,7 @@ def test_infer_from_classification_model_when_valid_response_expected(
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "image",
         "predictions",
         "inference_id",
@@ -762,7 +763,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization"
     }, "Expected all required keys to be provided in response"
     assert isinstance(
@@ -796,7 +797,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
     # then
     assert isinstance(response, dict), "Expected dict as response"
-    assert set(response.keys()) == {
+    assert required_response_keys(response) == {
         "visualization",
         "image",
         "inference_id",
