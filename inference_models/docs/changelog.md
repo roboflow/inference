@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.37.3`
+
 ### Added
 
 - PatchCore and FoundAD anomaly detection models trained on Roboflow
