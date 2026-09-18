@@ -1,11 +1,22 @@
 from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+    validator,
+)
 from pydantic.json_schema import SkipJsonSchema
 
 from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference.core.entities.requests.model_selection import (
+    model_selection_kwargs,
+    validate_model_selection,
+)
 from inference_sdk.http.entities import Confidence
 
 
@@ -53,6 +64,23 @@ class InferenceRequest(BaseRequest):
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
+    model_package_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Exact model package ID.",
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package backend, such as trt or onnx.",
+    )
+    quantization: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Required package quantization, such as fp16 or fp32.",
+    )
+
+    validate_model_selection = model_validator(mode="after")(validate_model_selection)
 
 
 class InferenceRequestImage(BaseModel):
@@ -133,6 +161,14 @@ class DepthEstimationRequest(InferenceRequest):
         "another order of magnitude smaller - fine for visualization/thresholding, "
         "lossy for geometric use).",
     )
+
+    @model_validator(mode="after")
+    def reject_model_selection(self):
+        if model_selection_kwargs(self):
+            raise ValueError(
+                "Model package selection is not supported for depth estimation requests."
+            )
+        return self
 
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):

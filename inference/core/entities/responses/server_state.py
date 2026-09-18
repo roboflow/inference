@@ -76,6 +76,10 @@ class ModelDescriptionEntity(BaseModel):
 
 
 class ModelsDescriptions(BaseModel):
+    selected_model_id: Optional[str] = Field(
+        default=None,
+        description="Opaque identifier of the loaded entry for an explicit package selection.",
+    )
     models: List[ModelDescriptionEntity] = Field(
         description="List of models that are loaded by model manager.",
     )
