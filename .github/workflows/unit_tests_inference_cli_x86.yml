@@ -54,7 +54,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference CLI
         timeout-minutes: 30
         run: python -m pytest tests/inference_cli/unit_tests
