@@ -65,10 +65,33 @@ def test_no_resize_does_not_discard_image_preprocessing(tmp_path):
     with pytest.raises(CorruptedModelPackageError): parse(tmp_path, config)
 
 
-def test_missing_training_size_is_not_assumed_processor_owned(tmp_path):
+def test_missing_training_size_preserves_shared_any_size_parser(tmp_path):
     config = copy.deepcopy(NATIVE_NO_RESIZE)
     del config["network_input"]["training_input_size"]
-    with pytest.raises(CorruptedModelPackageError): parse(tmp_path, config)
+    result = parse(tmp_path, config)
+    # The shared schema permits omitted sizes for dynamic any-size inputs.
+    # Only explicit null enters the Smol-specific processor-owned shortcut;
+    # omission must retain the existing parsed preprocessing configuration.
+    assert result is not None
+    assert result.network_input.training_input_size is None
+    assert result.network_input.dynamic_spatial_size_supported is True
+    assert result.network_input.dynamic_spatial_size_mode.type == "any-size"
+
+
+def test_missing_training_size_still_rejects_static_inputs(tmp_path):
+    config = copy.deepcopy(NATIVE_NO_RESIZE)
+    del config["network_input"]["training_input_size"]
+    config["network_input"]["dynamic_spatial_size_supported"] = False
+    with pytest.raises(CorruptedModelPackageError):
+        parse(tmp_path, config)
+
+
+def test_missing_training_size_preserves_shared_normalization(tmp_path):
+    config = copy.deepcopy(NATIVE_NO_RESIZE)
+    del config["network_input"]["training_input_size"]
+    config["network_input"]["normalization"] = [[0.5] * 3, [0.25] * 3]
+    result = parse(tmp_path, config)
+    assert result.network_input.normalization == ([0.5] * 3, [0.25] * 3)
 
 
 def test_processor_receives_original_variable_image_dimensions(tmp_path):
