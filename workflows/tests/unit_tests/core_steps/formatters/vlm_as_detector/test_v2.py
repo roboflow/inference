@@ -703,6 +703,37 @@ def test_formatter_for_florence2_object_detection() -> None:
     assert "root_parent_id" in result["predictions"].data
 
 
+def test_formatter_for_florence2_empty_object_detection_keeps_image_dimensions() -> (
+    None
+):
+    # given
+    block = VLMAsDetectorBlockV2()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = '{"bboxes": [], "labels": []}'
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="florence-2",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    predictions = result["predictions"]
+    assert len(predictions) == 0
+    assert predictions.metadata[IMAGE_DIMENSIONS_KEY] == [192, 168]
+    assert serialise_sv_detections(predictions)["image"] == {
+        "width": 168,
+        "height": 192,
+    }, "Empty Florence results must not serialise as null dimensions"
+
+
 def test_formatter_for_florence2_open_vocabulary_object_detection() -> None:
     # given
     block = VLMAsDetectorBlockV2()
