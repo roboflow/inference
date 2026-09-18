@@ -168,7 +168,7 @@ def test_ensure_valid_numpy_image_accepts_and_rejects_like_the_server() -> None:
 
 
 def test_module_does_not_import_the_server_package_or_do_io() -> None:
-    source = Path("inference/core/workflows/utils/image_encoding.py").read_text(
+    source = Path("workflows/roboflow_workflows/utils/image_encoding.py").read_text(
         encoding="utf-8"
     )
     tree = ast.parse(source)

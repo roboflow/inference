@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_models_wheel create_isolation_wheels
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -8,7 +8,7 @@ serve-full:
 
 PYTHON=python
 export PYTHONPATH = .
-check_dirs := inference inference_sdk
+check_dirs := inference inference_sdk workflows
 
 style:
 	python3 -m black $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
@@ -42,10 +42,26 @@ start_test_docker_jetson:
 stop_test_docker:
 	docker rm -f inference-test
 
-create_wheels: download_fonts
+create_workflows_wheel: download_fonts
+	which uv || pip install uv
+	cd workflows && uv lock --check
+	cd workflows && uv build --out-dir ../dist
+
+create_models_wheel:
+	which uv || pip install uv
+	cd inference_models && uv build --wheel --out-dir ../dist
+
+# Build checkout artifacts; transitive dependencies still resolve from PyPI.
+create_isolation_wheels: create_workflows_wheel create_models_wheel
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
-	rm -f dist/*
+	python -m pip install setuptools wheel requests
+	rm -rf build/*
+	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	rm -rf build/*
+
+create_wheels: create_workflows_wheel create_models_wheel
+	python -m pip install --upgrade pip
+	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	rm -rf build/*
@@ -59,21 +75,27 @@ create_wheels: download_fonts
 	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
-create_wheels_for_gpu_notebook: download_fonts
+create_wheels_for_gpu_notebook: create_workflows_wheel
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests
-	rm -f dist/*
+	python -m pip install setuptools wheel twine requests
+	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 create_inference_cli_whl:
 	${PYTHON} -m pip install --upgrade pip
-	${PYTHON} -m pip install wheel twine requests
+	${PYTHON} -m pip install setuptools wheel requests
 	rm -f dist/*
+	rm -rf build/*
+	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel
+	rm -rf build/*
 	${PYTHON} .release/pypi/inference.cli.setup.py bdist_wheel
 
 
 upload_wheels:
-	twine upload dist/*.whl
+	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl),$(wildcard dist/*.whl))

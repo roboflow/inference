@@ -13,6 +13,7 @@ peft_datas, peft_bins, peft_hiddenimports                     = collect_all('pef
 cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
 inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
+roboflow_workflows_datas, roboflow_workflows_bins, roboflow_workflows_hidden = collect_all('roboflow_workflows', include_py_files=True)
 scipy_datas, scipy_binaries, scipy_hiddenimports              = collect_all('scipy')
 
 
@@ -31,6 +32,7 @@ a = Analysis(
         *cython_bins,
         *tldextract_binaries,
         *inference_bins,
+        *roboflow_workflows_bins,
         *scipy_binaries,
     ],
     datas=[
@@ -41,6 +43,7 @@ a = Analysis(
         *cython_datas,
         *tldextract_datas,
         *inference_datas,
+        *roboflow_workflows_datas,
         *scipy_datas,
         # Manually include editor.html for the builder interface
         ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder'),
@@ -72,6 +75,7 @@ a = Analysis(
         'scipy.linalg.cython_overflow',
         'scipy._lib.messagestream',
         *inference_hidden,
+        *roboflow_workflows_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
     hooksconfig={},

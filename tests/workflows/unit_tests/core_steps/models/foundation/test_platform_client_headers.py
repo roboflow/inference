@@ -40,7 +40,7 @@ BLOCKS = [
     ("segment_anything3_video.v1_tensor", "SegmentAnything3VideoBlockV1"),
 ]
 WORKFLOWS_ROOT = (
-    pathlib.Path(__file__).resolve().parents[6] / "inference" / "core" / "workflows"
+    pathlib.Path(__file__).resolve().parents[6] / "workflows" / "roboflow_workflows"
 )
 BANNED_SYMBOLS = {
     "build_roboflow_api_headers",
@@ -71,7 +71,9 @@ def test_no_workflows_module_imports_the_header_or_url_helpers() -> None:
     whole module.
     """
     offenders = []
-    for path in WORKFLOWS_ROOT.rglob("*.py"):
+    paths = list(WORKFLOWS_ROOT.rglob("*.py"))
+    assert paths, WORKFLOWS_ROOT
+    for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module in {
