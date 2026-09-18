@@ -4,6 +4,14 @@
 
 ---
 
+## `0.1.2`
+
+### Fixed
+
+- Webhook sink: SSRF hardening (destination validation, DNS pinning, redirect and proxy refusal) now applies only when `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=false`. The default restores the previous plain `requests` transport, so environment `HTTP_PROXY` / `HTTPS_PROXY` work again.
+
+---
+
 ## `0.1.1`
 
 ### Fixed
