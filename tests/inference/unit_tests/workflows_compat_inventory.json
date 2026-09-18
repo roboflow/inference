@@ -1,5 +1,5 @@
 {
-  "generated_from_revision": "1a9ce2c4218ef0d68c4ae3c1076a3ff3c5095387",
+  "generated_from_revision": "b77b7a08cb1e484742d9eaf5b48e48b534081289",
   "canonical_root_of_core_and_enterprise": "roboflow_workflows",
   "legacy_core_root": "inference.core.workflows",
   "legacy_enterprise_root": "inference.enterprise.workflows",
@@ -1422,6 +1422,10 @@
     {
       "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.outputs",
       "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.outputs"
+    },
+    {
+      "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.segmentation",
+      "canonical": "roboflow_workflows.core_steps.common.vlm_decoding.segmentation"
     },
     {
       "legacy": "inference.core.workflows.core_steps.common.vlm_decoding.tensor_native",

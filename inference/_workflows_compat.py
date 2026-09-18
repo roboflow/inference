@@ -15,7 +15,16 @@ Rules (see MOVE_WORKFLOWS_PLAN.MD Phase D):
   existed under ``inference.*`` before the move are aliased. A canonical
   subtree added later (e.g. ``roboflow_workflows.enterprise_blocks`` reached
   under the historically absent ``inference.core.workflows.enterprise_blocks``)
-  must raise ``ModuleNotFoundError``.
+  must raise ``ModuleNotFoundError`` when resolved as a dotted import.
+- The inventory gate applies to *dotted module resolution* only. Because an
+  aliased legacy package IS its canonical module, an already-imported
+  canonical child is visible as an attribute on the aliased parent — i.e.
+  ``from inference.core.workflows import <child>`` succeeds when
+  ``roboflow_workflows.<child>`` is already loaded. This shared-attribute
+  exposure is an accepted consequence of preserving module identity and
+  monkeypatch behavior (see MOVE_WORKFLOWS_PLAN.MD Phase D). Do not add
+  proxy packages, global import hooks, attribute deletion, or caller-frame
+  tricks to hide it.
 - ``sys.modules[legacy] is sys.modules[canonical]`` after the alias so
   module-level state, caches, monkeypatches and configuration singletons stay
   singular. The loader replaces its temporary legacy module in ``sys.modules``

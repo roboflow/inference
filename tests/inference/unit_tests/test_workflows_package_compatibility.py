@@ -7,6 +7,14 @@ not an environment gap. Baseline inventory lives next to this file
 (`workflows_compat_inventory.json`); it is FROZEN, not regenerated from the
 canonical tree, so a subpackage added to `roboflow_workflows` after the move
 can never leak in under a historic dotted name.
+
+Shared-attribute exposure (Phase D): because an aliased legacy package IS its
+canonical module, an already-imported canonical child is visible as a package
+attribute through the legacy name — e.g. ``from inference.core.workflows
+import enterprise_blocks`` succeeds when ``roboflow_workflows.enterprise_blocks``
+is already loaded. This is an accepted contract, not a leak. Tests in this
+file may share imports across parametrized cases; the subprocess tests isolate
+per-order load sequences in a fresh interpreter.
 """
 
 from __future__ import annotations
@@ -54,8 +62,88 @@ def test_inventory_baseline_matches_runtime_module() -> None:
 
 def test_inventory_pins_baseline_revision() -> None:
     assert _INVENTORY["generated_from_revision"] == (
-        "1a9ce2c4218ef0d68c4ae3c1076a3ff3c5095387"
+        "b77b7a08cb1e484742d9eaf5b48e48b534081289"
     )
+
+
+def test_inventory_matches_historical_git_tree() -> None:
+    # Independent check: reconstruct the historical package/module set from the
+    # pinned Git revision (not from the current canonical tree) and verify it
+    # equals the inventory. Skip only when Git/history is unavailable
+    # (installed-source archives or shallow checkouts); do not freeze only a
+    # count and never substitute the canonical source tree.
+    # Packages and modules are compared separately; the canonical field of
+    # every inventory entry is verified against the two documented prefix rules.
+    import shutil
+
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+    revision = _INVENTORY["generated_from_revision"]
+    repo_root = Path(__file__).resolve().parents[3]
+    try:
+        listing = subprocess.check_output(
+            ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", revision],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pytest.skip("baseline revision unreachable from local git history")
+
+    # Two documented prefix rules (longest prefix first).
+    _PREFIX_MAP = (
+        (
+            "inference.enterprise.workflows.enterprise_blocks",
+            "roboflow_workflows.enterprise_blocks",
+        ),
+        ("inference.core.workflows", "roboflow_workflows"),
+    )
+
+    def _to_canonical(legacy: str) -> str:
+        for lpfx, cpfx in _PREFIX_MAP:
+            if legacy == lpfx:
+                return cpfx
+            if legacy.startswith(lpfx + "."):
+                return cpfx + legacy[len(lpfx) :]
+        raise ValueError(f"no prefix rule for {legacy!r}")
+
+    historical_packages: set[str] = set()
+    historical_modules: set[str] = set()
+    for path in listing.splitlines():
+        if not path.endswith(".py"):
+            continue
+        if not (
+            path.startswith("inference/core/workflows/")
+            or path.startswith("inference/enterprise/workflows/enterprise_blocks/")
+        ):
+            continue
+        dotted = path[:-3].replace("/", ".")
+        if dotted.endswith(".__init__"):
+            dotted = dotted[: -len(".__init__")]
+            historical_packages.add(dotted)
+        else:
+            historical_modules.add(dotted)
+
+    inventory_packages = {entry["legacy"] for entry in _INVENTORY["packages"]}
+    inventory_modules = {entry["legacy"] for entry in _INVENTORY["modules"]}
+    assert historical_packages == inventory_packages, (
+        f"package mismatch: "
+        f"history-only={historical_packages - inventory_packages!r}, "
+        f"inventory-only={inventory_packages - historical_packages!r}"
+    )
+    assert historical_modules == inventory_modules, (
+        f"module mismatch: "
+        f"history-only={historical_modules - inventory_modules!r}, "
+        f"inventory-only={inventory_modules - historical_modules!r}"
+    )
+    # Every inventory canonical field must be derivable from the legacy field
+    # by the two documented prefix rules (not an arbitrary mapping).
+    for entry in _INVENTORY["packages"] + _INVENTORY["modules"]:
+        expected = _to_canonical(entry["legacy"])
+        assert entry["canonical"] == expected, (
+            f"{entry['legacy']!r}: expected canonical {expected!r}, "
+            f"got {entry['canonical']!r}"
+        )
+    assert historical_packages | historical_modules == set(_INVENTORY_LEGACY)
 
 
 def test_legacy_font_helper_exports_and_monkeypatches_work(monkeypatch, tmp_path):
@@ -393,6 +481,88 @@ def test_subprocess_legacy_first_then_canonical_shares_identity() -> None:
         env={"API_LOGGING_ENABLED": "False"},
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+
+@pytest.mark.parametrize("order", ["canonical", "legacy"])
+def test_subprocess_vlm_segmentation_shares_canonical_identity(order: str) -> None:
+    # Exercise the vlm_decoding.segmentation module explicitly, independently
+    # of the JSON-driven parameter list, in both canonical-first and
+    # legacy-first load orders.
+    legacy_name = "inference.core.workflows.core_steps.common.vlm_decoding.segmentation"
+    canonical_name = "roboflow_workflows.core_steps.common.vlm_decoding.segmentation"
+    result = _run_subprocess(
+        f"""
+        import importlib, sys
+        legacy_name = {legacy_name!r}
+        canonical_name = {canonical_name!r}
+        import os
+        if os.environ["WORKFLOWS_COMPAT_ORDER"] == "canonical":
+            canonical = importlib.import_module(canonical_name)
+            legacy = importlib.import_module(legacy_name)
+        else:
+            legacy = importlib.import_module(legacy_name)
+            canonical = importlib.import_module(canonical_name)
+        assert legacy is canonical, f"identity: {{legacy!r}} is not {{canonical!r}}"
+        assert sys.modules[legacy_name] is sys.modules[canonical_name]
+        assert legacy.__spec__ is not None
+        assert legacy.__spec__.name == canonical_name
+        print("ok")
+        """,
+        env={"API_LOGGING_ENABLED": "False", "WORKFLOWS_COMPAT_ORDER": order},
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip().endswith("ok")
+
+
+@pytest.mark.parametrize("first", ["canonical", "legacy"])
+def test_subprocess_shared_attribute_contract_both_orders(first) -> None:
+    # Fresh interpreter. Import the canonical enterprise_blocks first (or the
+    # legacy parent first), then confirm:
+    #   * `from inference.core.workflows import enterprise_blocks` literally
+    #     succeeds and yields the canonical module (shared attribute exposure
+    #     via the aliased parent — accepted per Phase D).
+    #   * The direct dotted `importlib.import_module` of the historic name
+    #     raises for both the subtree root and the loader submodule.
+    #   * Neither forbidden name is present in `sys.modules` afterwards.
+    result = _run_subprocess(
+        """
+        import importlib, os, sys
+        order = os.environ["WORKFLOWS_COMPAT_ORDER"]
+        if order == "canonical":
+            canonical = importlib.import_module("roboflow_workflows.enterprise_blocks")
+        else:
+            # Import legacy parent first, then canonical child so the attribute
+            # is available before the from-import below.
+            importlib.import_module("inference.core.workflows")
+            canonical = importlib.import_module("roboflow_workflows.enterprise_blocks")
+        # Literally use from-import syntax; the aliased parent exposes the
+        # already-imported canonical child as an attribute (Phase D contract).
+        from inference.core.workflows import enterprise_blocks
+        assert enterprise_blocks is canonical, (
+            f"identity: {enterprise_blocks!r} is not {canonical!r}"
+        )
+        # Dotted resolution stays gated for both the forbidden root and loader.
+        for forbidden in (
+            "inference.core.workflows.enterprise_blocks",
+            "inference.core.workflows.enterprise_blocks.loader",
+        ):
+            try:
+                importlib.import_module(forbidden)
+            except ModuleNotFoundError:
+                pass
+            else:
+                raise SystemExit(
+                    f"forbidden dotted import unexpectedly resolved: {forbidden!r}"
+                )
+            assert forbidden not in sys.modules, (
+                f"{forbidden!r} leaked into sys.modules"
+            )
+        print("ok")
+        """,
+        env={"API_LOGGING_ENABLED": "False", "WORKFLOWS_COMPAT_ORDER": first},
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip().endswith("ok")
 
 
 def test_subprocess_empty_enterprise_packages_do_not_bootstrap_server() -> None:
