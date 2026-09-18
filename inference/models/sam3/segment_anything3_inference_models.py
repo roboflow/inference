@@ -90,7 +90,7 @@ class InferenceModelsSAM3Adapter(Model):
         record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
-            return self.segment_image(
+            response = self.segment_image(
                 image=request.image,
                 prompts=request.prompts,
                 output_prob_thresh=request.output_prob_thresh or 0.5,
@@ -98,6 +98,8 @@ class InferenceModelsSAM3Adapter(Model):
                 nms_iou_threshold=request.nms_iou_threshold,
                 inference_start_timestamp=t1,
             )
+            self._attach_resolved_model_metadata(response)
+            return response
         raise ValueError(f"Invalid request type {type(request)}")
 
     def run_tensor_native_inference(self, **kwargs) -> List[List[Dict]]:

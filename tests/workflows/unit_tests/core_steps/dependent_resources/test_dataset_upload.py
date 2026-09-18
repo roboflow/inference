@@ -7,10 +7,10 @@ Roboflow platform project — literal values and selectors are returned
 verbatim.
 """
 
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v1 import (
     BlockManifest as DatasetUploadV1Manifest,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
     BlockManifest as DatasetUploadV2Manifest,
 )
 from inference.core.workflows.prototypes.block import roboflow_platform_project
