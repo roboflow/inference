@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Set
 
 from filelock import FileLock
-
 from roboflow_workflows.core_steps.visualizations.common.fonts.downloader import (
     FontDownloadError,
     compute_file_sha256,

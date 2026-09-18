@@ -1,7 +1,6 @@
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import Field
-
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     Kind,
@@ -9,10 +8,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     WorkflowParameterSelector,
 )
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
-from roboflow_workflows.prototypes.block import (
-    WorkflowBlock,
-    WorkflowBlockManifest,
-)
+from roboflow_workflows.prototypes.block import WorkflowBlock, WorkflowBlockManifest
 
 MY_KIND_1 = Kind(name="1")
 MY_KIND_2 = Kind(name="2")

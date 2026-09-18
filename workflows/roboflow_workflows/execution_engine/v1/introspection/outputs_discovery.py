@@ -1,7 +1,6 @@
 from typing import Dict, List, Tuple, Union
 
 from pydantic import TypeAdapter, ValidationError
-
 from roboflow_workflows.errors import WorkflowDefinitionError
 from roboflow_workflows.execution_engine.entities.base import (
     InputType,
