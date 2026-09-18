@@ -192,6 +192,8 @@ docs/openapi.json
 inference/core/workflows/core_steps/visualizations/common/fonts/assets/
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
 !tests/workflows/integration_tests/execution/assets/*.png
+!workflows/tests/assets/*.jpg
+!workflows/tests/unit_tests/core_steps/models/third_party/assets/*.png
 tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling
@@ -226,3 +228,6 @@ development/_private
 # but NOT ignored, so a single `git add -A` would have committed them.
 *.key
 modal/deploy_modal_*.sh
+
+# Font assets embedded in roboflow-workflows wheel — downloaded at build time, not committed
+workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets/
