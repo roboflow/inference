@@ -56,7 +56,7 @@ jobs:
       - name: 🏗️ Build roboflow-workflows + SDK + inference-models wheels
         run: make create_isolation_wheels
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
-        run: pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[test,enterprise]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl
+        run: pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[test,enterprise]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl
       - name: 🧪 Server unit tests (tensor-native)
         # ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with USE_INFERENCE_MODELS,
         # which defaults to True on Linux runners, so the tensor-native code path is exercised.
@@ -92,13 +92,13 @@ jobs:
       - name: Install only standalone package dependencies
         run: |
           pip install --find-links "${{ github.workspace }}/dist" \
-            "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[test,enterprise]" \
+            "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[test,enterprise]" \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
       - name: Package unit and installed-wheel isolation tests
         working-directory: workflows
         env:
-          WORKFLOWS_ISOLATION_WHEEL: ${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl
+          WORKFLOWS_ISOLATION_WHEEL: ${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl
           WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
         run: python -m pytest tests/unit_tests tests/isolation

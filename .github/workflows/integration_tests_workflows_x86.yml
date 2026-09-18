@@ -92,7 +92,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
       - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"

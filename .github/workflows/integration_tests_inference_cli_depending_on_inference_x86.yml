@@ -52,6 +52,6 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl"
+          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl"
       - name: 🧪 Integration Tests of Inference CLI
         run: RUN_TESTS_WITH_INFERENCE_PACKAGE=True INFERENCE_CLI_TESTS_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest tests/inference_cli/integration_tests/test_workflows.py

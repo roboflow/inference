@@ -67,7 +67,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
       - name: 🧪 Integration Tests of Workflows (tensor-native)
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.
