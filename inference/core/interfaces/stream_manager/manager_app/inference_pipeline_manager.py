@@ -18,6 +18,8 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core import logger
+from inference.core.cache import cache
+from inference.core.env import MAX_ACTIVE_MODELS
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPIConnectionError,
@@ -25,7 +27,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
 )
-from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.entities import UpdateSeverity, VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
@@ -56,12 +58,16 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     get_frame_from_workflow_output,
     init_rtc_peer_connection,
 )
+from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -90,6 +96,8 @@ class InferencePipelineManager(Process):
         self._inference_pipeline: Optional[InferencePipeline] = None
         self._watchdog: Optional[PipelineWatchDog] = None
         self._stop = False
+        self._model_manager = None
+        self._models_loaded_before_init = 0
         self._buffer_sink: Optional[InMemoryBufferSink] = None
         self._last_consume_time = (
             time.monotonic()
@@ -142,7 +150,10 @@ class InferencePipelineManager(Process):
             if command_type is CommandType.WEBRTC:
                 return self._start_webrtc(request_id=request_id, payload=payload)
             if command_type is CommandType.TERMINATE:
-                return self._terminate_pipeline(request_id=request_id)
+                return self._terminate_pipeline(
+                    request_id=request_id,
+                    keep_model_cache=payload.get("_keep_model_cache", False),
+                )
             if command_type is CommandType.MUTE:
                 return self._mute_pipeline(request_id=request_id)
             if command_type is CommandType.RESUME:
@@ -185,6 +196,18 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
+            # Set by the processes manager, never by the HTTP caller. The
+            # worker is leased exclusively to this API key and this clip.
+            if payload.get("_reuse_model_manager", False):
+                if self._model_manager is None:
+                    self._model_manager = WithFixedSizeCache(
+                        BackgroundTaskActiveLearningManager(
+                            model_registry=RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES),
+                            cache=cache,
+                        ),
+                        max_size=MAX_ACTIVE_MODELS,
+                    )
+                self._models_loaded_before_init = len(self._model_manager)
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=parsed_payload.video_configuration.video_reference,
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
@@ -208,6 +231,7 @@ class InferencePipelineManager(Process):
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
                 decoding_buffer_size=parsed_payload.decoding_buffer_size,
                 predictions_queue_size=parsed_payload.predictions_queue_size,
+                model_manager=self._model_manager,
             )
             self._consumption_timeout = parsed_payload.consumption_timeout
             self._last_consume_time = time.monotonic()
@@ -505,7 +529,9 @@ class InferencePipelineManager(Process):
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
 
-    def _terminate_pipeline(self, request_id: str) -> None:
+    def _terminate_pipeline(
+        self, request_id: str, keep_model_cache: bool = False
+    ) -> None:
         if self._inference_pipeline is None:
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
@@ -513,11 +539,12 @@ class InferencePipelineManager(Process):
             self._stop = True
             return None
         try:
-            self._execute_termination()
+            self._execute_termination(keep_model_cache=keep_model_cache)
             logger.info(f"Pipeline terminated. request_id={request_id}...")
-            self._responses_queue.put(
-                (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
-            )
+            response = {STATUS_KEY: OperationStatus.SUCCESS}
+            if keep_model_cache:
+                response["model_cache_retained"] = not self._stop
+            self._responses_queue.put((request_id, response))
         except StreamOperationNotAllowedError as error:
             self._handle_error(
                 request_id=request_id,
@@ -537,10 +564,25 @@ class InferencePipelineManager(Process):
         except Exception as error:
             logger.warning(f"Could not terminate pipeline gracefully. Error: {error}")
 
-    def _execute_termination(self) -> None:
+    def _execute_termination(self, keep_model_cache: bool = False) -> None:
         self._inference_pipeline.terminate()
         self._inference_pipeline.join()
-        self._stop = True
+        if keep_model_cache and self._watchdog is not None:
+            report = self._watchdog.get_report()
+            # A failed GPU operation may leave a model unusable. Recycle only
+            # workers whose completed clip has no source/inference errors.
+            if report is None or any(
+                update.severity == UpdateSeverity.ERROR
+                for update in report.video_source_status_updates
+            ):
+                keep_model_cache = False
+        # join closes the Workflow executors. Release sources, results, tracking
+        # state and Workflow blocks before making this worker available again.
+        self._inference_pipeline = None
+        self._watchdog = None
+        self._buffer_sink = None
+        self._consumption_timeout = None
+        self._stop = not keep_model_cache
 
     def _mute_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:
@@ -600,9 +642,16 @@ class InferencePipelineManager(Process):
                     error_type=ErrorType.OPERATION_ERROR,
                     public_error_message="Cannot retrieve InferencePipeline status. Try again later.",
                 )
+            report_payload = asdict(report)
+            if self._model_manager is not None:
+                report_payload["model_cache"] = {
+                    "worker_pid": os.getpid(),
+                    "models_loaded_before_init": self._models_loaded_before_init,
+                    "loaded_models": list(self._model_manager.keys()),
+                }
             response_payload = {
                 STATUS_KEY: OperationStatus.SUCCESS,
-                "report": asdict(report),
+                "report": report_payload,
             }
             self._responses_queue.put((request_id, response_payload))
             logger.info(f"Pipeline status returned. request_id={request_id}...")

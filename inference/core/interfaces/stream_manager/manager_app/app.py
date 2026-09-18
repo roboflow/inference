@@ -1,3 +1,4 @@
+import hashlib
 import os
 import signal
 import socket
@@ -19,7 +20,10 @@ import psutil
 
 from inference.core import logger
 from inference.core.env import (
+    API_KEY,
     STREAM_MANAGER_MAX_RAM_MB,
+    STREAM_MANAGER_MODEL_CACHE_SIZE,
+    STREAM_MANAGER_MODEL_CACHE_TTL,
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
 )
 from inference.core.interfaces.camera.video_source import StreamState
@@ -73,6 +77,8 @@ class ManagedInferencePipeline:
     )
     is_terminating: bool = False
     retain_results_on_eof: bool = False
+    model_cache_key: Optional[str] = None
+    idle_since: Optional[float] = None
 
 
 PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
@@ -187,9 +193,20 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         )
 
     def _initialise_pipeline(self, request_id: str, command: dict) -> None:
+        cache_key = None
+        if (
+            STREAM_MANAGER_MODEL_CACHE_SIZE > 0
+            and command.get("retain_results_on_eof") is True
+        ):
+            # Keep model credentials and model instances within one API key.
+            # Do not retain the credential itself in the parent process table.
+            api_key = command.get("api_key") or API_KEY or ""
+            cache_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
         managed_pipeline = get_or_spawn_pipeline_process(
             processes_table=self._processes_table,
+            model_cache_key=cache_key,
         )
+        command = {**command, "_reuse_model_manager": cache_key is not None}
         managed_pipeline.retain_results_on_eof = command.get(
             "retain_results_on_eof", False
         )
@@ -249,33 +266,34 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         self, request_id: str, pipeline_id: str, command: dict
     ) -> None:
         with PROCESSES_TABLE_LOCK:
-            # signal termination to avoid deadlock with health check
-            pipeline = self._processes_table[pipeline_id]
-            pipeline.is_terminating = True
-        response = handle_command(
-            processes_table=self._processes_table,
-            request_id=request_id,
-            pipeline_id=pipeline_id,
-            command=command,
-        )
-        if response[STATUS_KEY] is OperationStatus.SUCCESS:
-            logger.info(
-                f"Joining inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
+            pipeline = self._processes_table.get(pipeline_id)
+            if pipeline is None or pipeline.is_idle:
+                response = describe_error(
+                    exception=None,
+                    error_type=ErrorType.NOT_FOUND,
+                    public_error_message=f"Could not find InferencePipeline with id={pipeline_id}.",
+                )
+            else:
+                pipeline.is_terminating = True
+                response = None
+        if response is None:
+            keep_model_cache = (
+                STREAM_MANAGER_MODEL_CACHE_SIZE > 0
+                and pipeline.model_cache_key is not None
             )
-            join_inference_pipeline(
-                processes_table=self._processes_table, pipeline_id=pipeline_id
-            )
-            logger.info(
-                f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
+            response = handle_command(
+                processes_table=self._processes_table,
+                request_id=request_id,
+                pipeline_id=pipeline_id,
+                command={**command, "_keep_model_cache": keep_model_cache},
             )
             with PROCESSES_TABLE_LOCK:
-                # termination ended
-                if pipeline_id not in self._processes_table:
-                    logger.warning(
-                        f"Pipeline {pipeline_id} already removed from processes table."
-                    )
-                else:
-                    pipeline = self._processes_table[pipeline_id]
+                if response.get(STATUS_KEY) == OperationStatus.SUCCESS:
+                    if keep_model_cache and response.get("model_cache_retained"):
+                        cache_idle_worker(self._processes_table, pipeline_id)
+                    else:
+                        join_inference_pipeline(self._processes_table, pipeline_id)
+                elif pipeline_id in self._processes_table:
                     pipeline.is_terminating = False
         serialised_response = prepare_response(
             request_id=request_id, response=response, pipeline_id=pipeline_id
@@ -295,7 +313,7 @@ def handle_command(
     pipeline_id: str,
     command: dict,
 ) -> dict:
-    if pipeline_id not in processes_table:
+    if pipeline_id not in processes_table or processes_table[pipeline_id].is_idle:
         return describe_error(
             exception=None,
             error_type=ErrorType.NOT_FOUND,
@@ -392,6 +410,15 @@ def check_process_health() -> None:
                         "Process for pipeline_id=%s is above RAM limit.", pipeline_id
                     )
 
+                if (
+                    managed_pipeline.is_idle
+                    and managed_pipeline.idle_since is not None
+                    and time.monotonic() - managed_pipeline.idle_since
+                    >= STREAM_MANAGER_MODEL_CACHE_TTL
+                ):
+                    discard_worker(PROCESSES_TABLE, pipeline_id)
+                    continue
+
                 if managed_pipeline.is_idle or managed_pipeline.retain_results_on_eof:
                     # Retained results belong to the consumer. The worker enforces
                     # its bounded consumption timeout if the consumer disappears.
@@ -470,15 +497,76 @@ def _get_current_process_ram_usage_mb() -> int:
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
+def discard_worker(
+    processes_table: Dict[str, ManagedInferencePipeline], pipeline_id: str
+) -> None:
+    worker = processes_table.pop(pipeline_id).pipeline_manager
+    worker.terminate()
+    worker.join(timeout=5)
+    if worker.is_alive():
+        worker.kill()
+        worker.join()
+
+
+def cache_idle_worker(
+    processes_table: Dict[str, ManagedInferencePipeline], pipeline_id: str
+) -> None:
+    # Called under PROCESSES_TABLE_LOCK, after the worker has joined its clip.
+    # Retire the public ID now: stale consume/terminate requests must never
+    # reach a later clip assigned to the same OS process.
+    worker = processes_table.pop(pipeline_id)
+    cached = [
+        (key, value)
+        for key, value in processes_table.items()
+        if value.is_idle and value.model_cache_key is not None
+    ]
+    if len(cached) >= STREAM_MANAGER_MODEL_CACHE_SIZE:
+        oldest_id, _ = min(cached, key=lambda item: item[1].idle_since)
+        discard_worker(processes_table, oldest_id)
+    worker.pipeline_id = str(uuid4())
+    worker.is_idle = True
+    worker.is_terminating = False
+    worker.retain_results_on_eof = False
+    worker.idle_since = time.monotonic()
+    processes_table[worker.pipeline_id] = worker
+
+
 def get_or_spawn_pipeline_process(
     processes_table: Dict[str, ManagedInferencePipeline],
+    model_cache_key: Optional[str] = None,
 ) -> ManagedInferencePipeline:
     with PROCESSES_TABLE_LOCK:
-        idle_pipelines = get_idle_pipelines_id(processes_table=processes_table)
-        if len(idle_pipelines) > 0:
-            chosen_pipeline = processes_table[idle_pipelines[0]]
+        for key in get_idle_pipelines_id(processes_table=processes_table):
+            worker = processes_table[key]
+            if not worker.pipeline_manager.is_alive() or (
+                worker.idle_since is not None
+                and time.monotonic() - worker.idle_since
+                >= STREAM_MANAGER_MODEL_CACHE_TTL
+            ):
+                discard_worker(processes_table, key)
+        # Prefer models already loaded for this credential over empty preloads.
+        candidates = [
+            worker
+            for worker in processes_table.values()
+            if worker.is_idle
+            and (
+                worker.model_cache_key is None
+                or worker.model_cache_key == model_cache_key
+            )
+        ]
+        candidates.sort(key=lambda worker: worker.model_cache_key is None)
+        if candidates:
+            chosen_pipeline = candidates[0]
             chosen_pipeline.is_idle = False
+            chosen_pipeline.idle_since = None
+            chosen_pipeline.model_cache_key = model_cache_key
             return chosen_pipeline
+
+        # Evict incompatible idle model caches before allocating another worker.
+        # Never run one credential in a process retaining another's models.
+        for key in get_idle_pipelines_id(processes_table=processes_table):
+            if processes_table[key].model_cache_key is not None:
+                discard_worker(processes_table, key)
 
         current_ram_usage = (
             sum(
@@ -494,14 +582,8 @@ def get_or_spawn_pipeline_process(
         highest_pipeline_ram_usage = 0
         if processes_table:
             highest_pipeline_ram_usage = max(
-                max(
-                    (
-                        managed_pipeline.ram_usage_queue
-                        if managed_pipeline.ram_usage_queue
-                        else 0
-                    )
-                    for managed_pipeline in processes_table.values()
-                )
+                max(managed_pipeline.ram_usage_queue, default=0)
+                for managed_pipeline in processes_table.values()
             )
 
         if (
@@ -519,6 +601,7 @@ def get_or_spawn_pipeline_process(
             processes_table=processes_table,
             mark_as_idle=False,
         )
+        processes_table[new_pipeline_id].model_cache_key = model_cache_key
         return processes_table[new_pipeline_id]
 
 

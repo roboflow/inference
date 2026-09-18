@@ -110,7 +110,7 @@ def test_failed_initialization_reaps_the_unusable_worker(monkeypatch):
     handler._processes_table = table
     handler.request = MagicMock()
     monkeypatch.setattr(
-        app, "get_or_spawn_pipeline_process", lambda processes_table: pipeline
+        app, "get_or_spawn_pipeline_process", lambda processes_table, **kwargs: pipeline
     )
     monkeypatch.setattr(app, "send_data_trough_socket", MagicMock())
     handler._initialise_pipeline("request", {"retain_results_on_eof": True})

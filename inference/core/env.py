@@ -1070,6 +1070,14 @@ if OFFLINE_MODE and (
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
+# Opt-in, bounded model reuse for retained clip pipelines. Separate from the
+# import-only preloaded process pool. Idle workers expire after five minutes.
+STREAM_MANAGER_MODEL_CACHE_SIZE = max(
+    0, int(os.getenv("STREAM_MANAGER_MODEL_CACHE_SIZE", "0"))
+)
+STREAM_MANAGER_MODEL_CACHE_TTL = max(
+    1, int(os.getenv("STREAM_MANAGER_MODEL_CACHE_TTL", "300"))
+)
 
 RUNS_ON_JETSON = str2bool(
     os.getenv("RUNS_ON_JETSON", os.getenv("RUNNING_ON_JETSON", "False"))
