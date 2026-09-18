@@ -7,7 +7,6 @@ Copy of the root integration stub, rewritten for standalone imports. Use via
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import Field
-
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import Selector
 from roboflow_workflows.prototypes.block import (
