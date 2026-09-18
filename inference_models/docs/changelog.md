@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.37.2`
+
 ### Added
 
 - `AutoModel.from_pretrained` exposes `resolved_model` metadata for the loaded
@@ -17,7 +21,7 @@
 
 ---
 
-## `0.37.0`
+## `0.37.1`
 
 ### Fixed
 
