@@ -1196,6 +1196,17 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = str2bool(
     os.getenv("DISABLE_GSTREAMER_VIDEO_SOURCES", "False")
 )
 
+# Opt-out from capturing the process-wide stderr (fd 2) around native video
+# backend opens (FFmpeg/GStreamer). The capture is what turns an otherwise
+# silent `cv2.VideoCapture` failure into a classified stream error code, so it
+# is on by default; set this to True to leave fd 2 untouched at the cost of
+# losing the underlying error text in `SourceConnectionError` messages.
+# Note that while a capture is active, fd 2 belongs to it, so stderr written
+# by the rest of the process is captured rather than logged.
+DISABLE_NATIVE_STDERR_CAPTURE = str2bool(
+    os.getenv("DISABLE_NATIVE_STDERR_CAPTURE", "False")
+)
+
 # Instance-segmentation tensor blocks request dense (on-device) masks from the
 # inference_models adapter instead of the default RLE carrier. Dense masks let
 # GPU consumers (e.g. the mask-visualization compositor) skip the host-side
