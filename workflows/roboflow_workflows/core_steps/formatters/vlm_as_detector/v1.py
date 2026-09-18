@@ -341,9 +341,16 @@ def parse_florence2_object_detection_response(
         }
     )
     detections.confidence = np.array([1.0 for _ in detections])
-    return attach_parents_coordinates_to_sv_detections(
+    detections = attach_parents_coordinates_to_sv_detections(
         detections=detections, image=image
     )
+    if len(detections) == 0:
+        # ``data`` is per-row, so an empty Florence result keeps the dimensions
+        # only in a zero-row column the serialiser's loop never reads. Carry
+        # them in ``metadata``, which survives zero rows, so an empty result
+        # does not serialise as ``width: null, height: null``.
+        detections.metadata[IMAGE_DIMENSIONS_KEY] = [image_height, image_width]
+    return detections
 
 
 def get_4digit_from_md5(input_string):
