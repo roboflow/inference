@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import supervision as sv
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
 )
@@ -36,6 +37,27 @@ _TENSOR_ONLY = pytest.mark.skipif(
     not ENABLE_TENSOR_DATA_REPRESENTATION,
     reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
+
+
+@_NUMPY_ONLY
+@pytest.mark.parametrize("dtype", [str, object], ids=["unicode-array", "object-array"])
+@pytest.mark.parametrize("class_name", ["truck", "camión", ""])
+def test_extract_class_name_from_supervision_detection(dtype, class_name: str) -> None:
+    detections = sv.Detections(
+        xyxy=np.array([[0.0, 0.0, 50.0, 50.0]], dtype=np.float32),
+        confidence=np.array([0.9], dtype=np.float32),
+        class_id=np.array([1]),
+        data={"class_name": np.array([class_name], dtype=dtype)},
+    )
+
+    result = extract_detection_property(
+        value=next(iter(detections)),
+        property_name=DetectionsProperty.CLASS_NAME,
+        execution_context="<test>",
+    )
+
+    assert result == class_name
+    assert type(result) is str
 
 
 @_NUMPY_ONLY
@@ -157,6 +179,22 @@ def _single_tensor_native_detection() -> tuple:
         },
         {CLASS_NAMES_KEY: {1: "leaf"}},
     )
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("class_name", ["truck", "camión", ""])
+def test_extract_class_name_tensor_native(class_name: str) -> None:
+    detection = _single_tensor_native_detection()
+    detection[6][CLASS_NAMES_KEY][1] = class_name
+
+    result = extract_detection_property(
+        value=detection,
+        property_name=DetectionsProperty.CLASS_NAME,
+        execution_context="<test>",
+    )
+
+    assert result == class_name
+    assert type(result) is str
 
 
 @_TENSOR_ONLY
