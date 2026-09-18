@@ -126,6 +126,39 @@ if POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES is not None:
     POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES = set(
         POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES.split(",")
     )
+# Operator policy for the Kafka Consumer / Kafka Producer Workflow blocks, which
+# open an outbound connection to `bootstrap_servers` taken from the workflow
+# definition or its inputs. When True (default, preserves behaviour) that value
+# is honoured, subject to the allowlist below. When False the workflow-provided
+# value is ignored and the blocks connect to the operator-provided servers from
+# KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS instead; with no servers
+# configured there, the Kafka blocks are disabled (every run reports an error).
+KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS = str2bool(
+    os.getenv("KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS", True)
+)
+# Optional comma-separated list of `host:port` Kafka bootstrap servers the Kafka
+# Workflow blocks may connect to. When set and user-provided servers are allowed,
+# EVERY entry of the workflow's `bootstrap_servers` must be on this list or the
+# run reports an error. When user-provided servers are not allowed, this list is
+# what the blocks connect to. Entries are compared as `host:port` after trimming
+# whitespace and lowercasing the host; an entry without a port means port 9092;
+# there is no DNS resolution. Empty entries are ignored. A variable that is set
+# but holds no entries is an empty allowlist: nothing is permitted. Default None
+# (no allowlist). Limitation: a Kafka client follows broker-advertised addresses
+# after bootstrap, so this list governs the bootstrap connection only, not the
+# brokers the client talks to afterwards.
+KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = os.getenv(
+    "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS"
+)
+if KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is not None:
+    # a list, not a set: the operator's order is what the client is given
+    KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = list(
+        dict.fromkeys(
+            entry.strip()
+            for entry in KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS.split(",")
+            if entry.strip()
+        )
+    )
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")

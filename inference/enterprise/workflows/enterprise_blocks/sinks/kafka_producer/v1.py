@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
@@ -32,13 +32,16 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import 
     LIBRDKAFKA_LOG_LEVEL,
     PROVIDER_AWS_MSK,
     PROVIDER_SELF_HOSTED,
+    ClientErrorTracker,
     ConfigurationError,
     build_connection_config,
     coerce_timeout,
+    combine_messages,
     describe_error,
     is_selector,
     pop_auth_failure_message,
     preflight_token,
+    resolve_bootstrap_servers,
     wait_for_topic_metadata,
 )
 
@@ -113,6 +116,11 @@ HTTP API every request builds a fresh block instance and pays one connection.
 - `error_status` (boolean): `true` if the run failed, or if confirmed delivery failed.
 - `message` (string): what happened — scheduled, delivered, or the failure reason.
 
+When the Kafka client reports a broker problem after connecting (for example all
+brokers down), the block checks the broker at once. If the broker does not answer, the
+problem is surfaced as `error_status=true` on every run, fire-and-forget included, until
+the connection is proven healthy again; records are still queued for delivery meanwhile.
+
 Failures are logged and returned in the outputs; the workflow keeps running and the next
 run retries the connection. This block is not available on the Roboflow hosted platform.
 Self-hosted servers enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
@@ -142,7 +150,11 @@ class BlockManifest(WorkflowBlockManifest):
     # --- connection (identical to the Kafka Consumer block) ---
     bootstrap_servers: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Comma-separated list of Kafka broker addresses (`host:port`). "
-        "For AWS MSK use the bootstrap string from the console.",
+        "For AWS MSK use the bootstrap string from the console. The server operator can "
+        "restrict this value to an allowlist with "
+        "`KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS`, or replace it with that "
+        "list by setting "
+        "`KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS=False`.",
         examples=[
             "localhost:9092",
             "b-1.cluster.abc123.c2.kafka.us-east-1.amazonaws.com:9098",
@@ -228,7 +240,10 @@ class BlockManifest(WorkflowBlockManifest):
     ssl_ca_location: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Path to a CA certificate bundle on the machine running inference, "
-        "for TLS connections whose issuer is not in the system trust store.",
+        "for TLS connections whose issuer is not in the system trust store. Requires "
+        "local file system access for Workflow blocks "
+        "(`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`); otherwise the run "
+        "reports an error.",
         examples=["/etc/ssl/certs/ca-certificates.crt"],
         json_schema_extra={"additional_section": True},
     )
@@ -282,6 +297,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "On the Roboflow hosted platform every run returns "
+                    "`error_status=true` and publishes nothing; no Kafka connection is "
+                    "opened from the hosted platform."
+                ),
+                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+            ),
             RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
@@ -375,15 +399,19 @@ def _is_invalid_configuration(error: BaseException) -> bool:
 class _DeliveryReport:
     """Collects the delivery callback for the record published in this run."""
 
-    def __init__(self) -> None:
+    def __init__(self, client_errors: Optional[ClientErrorTracker] = None) -> None:
         self.error: Optional[Any] = None
         self.partition: Optional[int] = None
         self.offset: Optional[int] = None
         self.delivered = False
+        self._client_errors = client_errors
 
     def __call__(self, error: Any, message: Any) -> None:
         self.delivered = True
         self.error = error
+        if error is None and self._client_errors is not None:
+            # the broker took a record: proof of life
+            self._client_errors.clear()
         if error is None and message is not None:
             self.partition = message.partition()
             self.offset = message.offset()
@@ -399,13 +427,37 @@ def _log_background_delivery(error: Any, message: Any) -> None:
         )
 
 
+def _background_delivery_callback(
+    client_errors: ClientErrorTracker,
+) -> Callable[[Any, Any], None]:
+    # closes over the tracker only, not the block: librdkafka holds the callback for
+    # every queued record, and the block must stay collectable meanwhile
+    def on_delivery(error: Any, message: Any) -> None:
+        _log_background_delivery(error, message)
+        if error is None:
+            # the broker took a record: proof of life
+            client_errors.clear()
+
+    return on_delivery
+
+
 class KafkaProducerSinkBlockV1(WorkflowBlock):
     def __init__(
         self,
         background_tasks: Optional[BackgroundTasks] = None,
         thread_pool_executor: Optional[ThreadPoolExecutor] = None,
         disable_sinks: bool = False,
+        allow_access_to_file_system: bool = False,
     ):
+        # gates `ssl_ca_location`, a server-side path chosen by the workflow; False by
+        # default so a hand-constructed block is safe
+        self._allow_access_to_file_system = allow_access_to_file_system
+        # `error_cb` of the client: broker problems librdkafka reports out of band
+        self._client_errors = ClientErrorTracker("Kafka Producer")
+        self._on_background_delivery = _background_delivery_callback(
+            self._client_errors
+        )
+        self._bootstrap_override_logged = False
         # librdkafka delivers asynchronously on its own network thread, so the shared
         # executor / background tasks are accepted for parity with other sinks but unused
         self._background_tasks = background_tasks
@@ -423,7 +475,12 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["background_tasks", "thread_pool_executor", "disable_sinks"]
+        return [
+            "background_tasks",
+            "thread_pool_executor",
+            "disable_sinks",
+            "allow_access_to_file_system",
+        ]
 
     def close(self) -> None:
         with self._lifecycle_lock:
@@ -440,6 +497,9 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
                 producer.flush(self._last_timeout)
             except Exception as error:
                 logger.error("Failed to flush Kafka producer on close: %s", error)
+            finally:
+                # after the flush, whose callbacks still belong to the old client
+                self._client_errors.reset()
 
     def __del__(self):
         try:
@@ -484,6 +544,11 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
             topic = str(topic).strip()
             if not bootstrap_servers or not topic:
                 raise ConfigurationError("bootstrap_servers and topic must be set.")
+            # operator policy; from here on this is where the client connects
+            bootstrap_servers = resolve_bootstrap_servers(
+                bootstrap_servers, log_override=not self._bootstrap_override_logged
+            )
+            self._bootstrap_override_logged = True
             auth_failures: List[BaseException] = []
             username = username if username not in (None, "") else None
             password = password if password not in (None, "") else None
@@ -495,6 +560,7 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
                 aws_region=aws_region,
                 ssl_ca_location=ssl_ca_location,
                 auth_failures=auth_failures,
+                allow_access_to_file_system=self._allow_access_to_file_system,
             )
             value = _encode_value(message)
             encoded_key = _encode_key(key)
@@ -534,7 +600,7 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
                     f"Kafka broker not reachable ({describe_error(error)}). Raise "
                     "'timeout' if the broker needs longer to connect."
                 )
-            return self._publish(
+            result = self._publish(
                 topic=topic,
                 value=value,
                 key=encoded_key,
@@ -542,6 +608,7 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
                 fire_and_forget=fire_and_forget,
                 timeout=timeout,
             )
+            return self._report_client_problem(result, topic, fire_and_forget)
 
     # --- lifecycle -----------------------------------------------------------------
 
@@ -570,9 +637,14 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
         except Exception:
             self._raise_on_auth_failure()
             raise
+        # a new client starts clean: problems of a previous one are not its own
+        self._client_errors.reset()
         config = {
             "bootstrap.servers": bootstrap_servers,
             "acks": acks,
+            # global client errors (all brokers down, transport failures) arrive only
+            # here, served from inside poll() / flush(); produce() keeps succeeding
+            "error_cb": self._client_errors,
             # message.timeout.ms is left at librdkafka's default (300s): records survive
             # broker hiccups like any Kafka producer's; `timeout` bounds only connecting
             # and, in confirmed mode, waiting for the acknowledgement
@@ -596,6 +668,32 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
         if message is not None:
             raise ConfigurationError(message)
 
+    def _report_client_problem(
+        self, result: BlockResult, topic: str, fire_and_forget: bool
+    ) -> BlockResult:
+        """Add the broker problem the client reported, if one is still recorded, to this
+        run's result. Successful delivery reports have already cleared it by now. Runs
+        under the lifecycle lock, like publishing."""
+        problem = self._client_errors.check(client=self._producer, topic=topic)
+        if problem is None:
+            return result
+        if result["error_status"] or problem.fatal:
+            note = None
+        elif fire_and_forget:
+            note = (
+                "The record is queued in the client, which retries delivery for up to "
+                "five minutes, but the broker is currently unreachable."
+            )
+        else:
+            note = "This record was acknowledged before the problem was reported."
+        # a success text ("scheduled", "delivered") is replaced, a failure text is kept;
+        # the tracker logged the problem once, so nothing is logged per frame here
+        message = combine_messages(
+            result["message"] if result["error_status"] else None,
+            problem.message(note),
+        )
+        return {"error_status": True, "message": message}
+
     # --- publish -------------------------------------------------------------------
 
     def _publish(
@@ -608,8 +706,8 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
         timeout: float,
     ) -> BlockResult:
         producer = self._producer
-        report = _DeliveryReport()
-        on_delivery = report if not fire_and_forget else _log_background_delivery
+        report = _DeliveryReport(self._client_errors)
+        on_delivery = report if not fire_and_forget else self._on_background_delivery
         try:
             try:
                 producer.produce(

@@ -80,8 +80,40 @@ class FakeKafkaError:
         return self._text
 
 
+class FakeClientError:
+    """What librdkafka hands to `error_cb`: a KafkaError with name / code / fatal."""
+
+    def __init__(
+        self,
+        text: str = "2/2 brokers are down",
+        name: str = "_ALL_BROKERS_DOWN",
+        code: int = -187,
+        fatal: bool = False,
+    ):
+        self._text = text
+        self._name = name
+        self._code = code
+        self._fatal = fatal
+
+    def name(self) -> str:
+        return self._name
+
+    def code(self) -> int:
+        return self._code
+
+    def fatal(self) -> bool:
+        return self._fatal
+
+    def __str__(self) -> str:
+        return self._text
+
+
 class FakeBroker:
-    """Per-partition append-only logs. A `None` slot is a record removed by compaction."""
+    """Per-partition append-only logs. A `None` slot is a record removed by compaction.
+
+    `fail_connect` makes every metadata request (`list_topics`, which is also the
+    recovery probe) raise; `creating_topic_replies` makes it answer with a topic-level
+    error. Each request is counted in `metadata_calls`."""
 
     def __init__(self):
         self.creating_topic_replies = 0
@@ -312,20 +344,36 @@ def test_manifest_describe_outputs_order() -> None:
     assert [o.name for o in BlockManifest.describe_outputs()] == OUTPUT_KEYS
 
 
-def test_manifest_restrictions_are_soft_and_runtime_keyed() -> None:
+def test_manifest_restrictions_are_runtime_keyed() -> None:
     restrictions = [r.to_dict() for r in BlockManifest.get_restrictions()]
 
-    assert len(restrictions) == 1
-    assert restrictions[0]["severity"] == "soft"
-    assert set(restrictions[0]["applies_to_runtimes"]) == {
+    soft = [r for r in restrictions if r["severity"] == "soft"]
+    assert len(restrictions) == 2
+    assert len(soft) == 1
+    assert set(soft[0]["applies_to_runtimes"]) == {
         "self_hosted_cpu",
         "self_hosted_gpu",
         "dedicated_deployment",
     }
+    assert soft[0]["applies_to_input_modes"] == ["image"]
 
 
-def test_block_declares_no_init_parameters() -> None:
-    assert KafkaConsumerBlockV1.get_init_parameters() == []
+def test_manifest_declares_one_hard_restriction_for_hosted_serverless() -> None:
+    # run() refuses when GCP_SERVERLESS or LAMBDA is set; dedicated deployments are not
+    # refused, so they must not be listed
+    hard = [
+        r for r in BlockManifest.get_restrictions() if r.severity is v1.Severity.HARD
+    ]
+
+    assert len(hard) == 1
+    assert hard[0].applies_to_runtimes == [v1.Runtime.HOSTED_SERVERLESS]
+    assert hard[0].applies_to_step_execution_modes is None
+    assert hard[0].applies_to_input_modes is None
+    assert "error_status=true" in hard[0].note
+
+
+def test_block_init_parameters() -> None:
+    assert KafkaConsumerBlockV1.get_init_parameters() == ["allow_access_to_file_system"]
     assert KafkaConsumerBlockV1.get_manifest() is BlockManifest
 
 
@@ -941,9 +989,47 @@ def test_one_sided_credentials_fail_before_connecting(
 def test_ssl_ca_location_is_passed_through(broker: FakeBroker) -> None:
     broker.produce(TOPIC, "A")
 
-    run(KafkaConsumerBlockV1(), username="u", password="p", ssl_ca_location="/ca.pem")
+    result = run(
+        KafkaConsumerBlockV1(allow_access_to_file_system=True),
+        username="u",
+        password="p",
+        ssl_ca_location="/ca.pem",
+    )
 
+    assert result["error_status"] is False
     assert consumer_config(broker)["ssl.ca.location"] == "/ca.pem"
+
+
+def test_ssl_ca_location_is_refused_without_file_system_access(
+    broker: FakeBroker,
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    # the default: a hand-constructed block may not read server-side paths
+    result = run(
+        KafkaConsumerBlockV1(), username="u", password="p", ssl_ca_location="/ca.pem"
+    )
+
+    assert result["error_status"] is True
+    assert "ssl_ca_location" in result["error_message"]
+    assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in result["error_message"]
+    assert broker.consumers == []
+
+
+@pytest.mark.parametrize("ssl_ca_location", [None, ""])
+def test_file_system_flag_has_no_effect_without_ssl_ca_location(
+    broker: FakeBroker, ssl_ca_location: Optional[str]
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    result = run(
+        KafkaConsumerBlockV1(allow_access_to_file_system=False),
+        ssl_ca_location=ssl_ca_location,
+    )
+
+    assert result["error_status"] is False
+    assert result["value"] == "A"
+    assert "ssl.ca.location" not in consumer_config(broker)
 
 
 class FakeTokenProvider:
@@ -1567,3 +1653,445 @@ def test_unknown_read_mode_fails_before_connecting(broker: FakeBroker) -> None:
     assert result["error_status"] is True
     assert "read_mode" in result["error_message"]
     assert broker.consumers == []
+
+
+# --------------------------------------------------------------------------------------
+# Operator policy for bootstrap servers
+# --------------------------------------------------------------------------------------
+
+ALLOW_USER_SERVERS = "KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS"
+WHITELISTED_SERVERS = "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS"
+OPERATOR_SERVERS = ["kafka-internal-1:9092", "kafka-internal-2:9092"]
+
+
+def test_default_policy_passes_user_bootstrap_servers_through(
+    broker: FakeBroker,
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    result = run(KafkaConsumerBlockV1(), bootstrap_servers=" Broker-1:9092,broker-2 ")
+
+    assert result["error_status"] is False
+    assert consumer_config(broker)["bootstrap.servers"] == "Broker-1:9092,broker-2"
+
+
+def test_allowlist_accepts_user_servers_when_every_entry_is_listed(
+    broker: FakeBroker,
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    with patch.object(
+        kafka_common, WHITELISTED_SERVERS, ["broker-1:9092", "broker-2", "[::1]:9093"]
+    ):
+        # case, whitespace, a missing port (= 9092) and bracketed IPv6 all normalise
+        result = run(
+            KafkaConsumerBlockV1(),
+            bootstrap_servers="BROKER-1:9092 , broker-2:9092,[::1]:9093",
+        )
+
+    assert result["error_status"] is False
+    assert result["value"] == "A"
+    assert (
+        consumer_config(broker)["bootstrap.servers"]
+        == "BROKER-1:9092 , broker-2:9092,[::1]:9093"
+    )
+
+
+def test_allowlist_rejects_unlisted_entry_without_revealing_the_allowlist(
+    broker: FakeBroker,
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    with patch.object(kafka_common, WHITELISTED_SERVERS, OPERATOR_SERVERS):
+        result = run(
+            KafkaConsumerBlockV1(),
+            bootstrap_servers="kafka-internal-1:9092,evil.example.com:9092",
+        )
+
+    assert result["error_status"] is True
+    assert "evil.example.com:9092" in result["error_message"]
+    assert "kafka-internal" not in result["error_message"]
+    assert broker.consumers == []
+
+
+def test_allowlist_compares_the_port(broker: FakeBroker) -> None:
+    broker.produce(TOPIC, "A")
+
+    with patch.object(kafka_common, WHITELISTED_SERVERS, ["kafka-internal-1:9092"]):
+        result = run(KafkaConsumerBlockV1(), bootstrap_servers="kafka-internal-1:22")
+
+    assert result["error_status"] is True
+    assert broker.consumers == []
+
+
+def test_user_servers_disabled_connects_to_operator_servers(
+    broker: FakeBroker,
+) -> None:
+    broker.produce(TOPIC, "A")
+    block = KafkaConsumerBlockV1()
+
+    # the `inference` logger does not propagate, so caplog cannot see it
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, OPERATOR_SERVERS
+    ), patch.object(kafka_common.logger, "warning") as warning:
+        first = run(block, bootstrap_servers="evil.example.com:9092")
+        # a different workflow value is not a connection change: it is ignored
+        second = run(block, bootstrap_servers="other.example.com:9092")
+
+    assert first["error_status"] is False and first["value"] == "A"
+    assert second["error_status"] is False
+    assert len(broker.consumers) == 1
+    assert consumer_config(broker)["bootstrap.servers"] == ",".join(OPERATOR_SERVERS)
+    # one warning per block instance, not per run, and without the workflow's value
+    assert warning.call_count == 1
+    logged = warning.call_args.args[0] % warning.call_args.args[1:]
+    assert "operator-configured" in logged
+    assert "evil.example.com" not in logged
+
+
+@pytest.mark.parametrize("allowlist", [None, []])
+def test_user_servers_disabled_without_operator_servers_disables_the_block(
+    broker: FakeBroker, allowlist: Optional[List[str]]
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, allowlist
+    ):
+        result = run(KafkaConsumerBlockV1())
+
+    assert result["error_status"] is True
+    assert "disabled on this deployment" in result["error_message"]
+    assert broker.consumers == []
+
+
+def test_aws_msk_region_is_derived_from_the_operator_servers(
+    broker: FakeBroker, msk_signer
+) -> None:
+    broker.produce(TOPIC, "A")
+
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, [MSK_BOOTSTRAP.split(",")[0]]
+    ):
+        result = run(
+            KafkaConsumerBlockV1(),
+            bootstrap_servers="b-1.other.abc123.c2.kafka.us-east-1.amazonaws.com:9098",
+            provider="AWS MSK",
+        )
+
+    assert result["error_status"] is False
+    # the region of the cluster the client connects to, not of the ignored value
+    assert msk_signer.calls and set(msk_signer.calls) == {"eu-west-1"}
+
+
+# --------------------------------------------------------------------------------------
+# Broker problems reported by the client (error_cb)
+# --------------------------------------------------------------------------------------
+
+
+def connected_block(broker: FakeBroker):
+    """A block that read one record, plus the `error_cb` its client was given."""
+    broker.produce(TOPIC, state("RUNNING"))
+    block = KafkaConsumerBlockV1()
+    first = run(block)
+    assert first["error_status"] is False and first["is_new"] is True
+    return block, consumer_config(broker)["error_cb"]
+
+
+def take_broker_down(broker: FakeBroker) -> None:
+    """A real outage: metadata requests fail, so the recovery probe fails too. Records
+    already in the fake's log can still be polled, which lets a test prove that a
+    polled record clears the problem while the probe keeps failing."""
+    broker.fail_connect = RuntimeError("Local: Broker transport failure")
+
+
+def bring_broker_up(broker: FakeBroker) -> None:
+    broker.fail_connect = None
+
+
+def test_client_config_carries_an_error_callback(broker: FakeBroker) -> None:
+    _, error_cb = connected_block(broker)
+
+    assert callable(error_cb)
+
+
+def test_healthy_runs_never_probe_the_broker(broker: FakeBroker) -> None:
+    block, _ = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        for _ in range(3):
+            assert run(block)["error_status"] is False
+
+    assert broker.metadata_calls == calls_after_connect
+
+
+def test_client_reported_outage_is_reported_on_every_run(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+    take_broker_down(broker)
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    first = run(block)
+    # no new callback: the block must keep claiming the problem
+    second = run(block)
+
+    for result in (first, second):
+        assert list(result) == OUTPUT_KEYS
+        assert result["error_status"] is True
+        assert "reported a broker problem" in result["error_message"]
+        assert "2/2 brokers are down" in result["error_message"]
+        assert "_ALL_BROKERS_DOWN" in result["error_message"]
+        assert "may be stale" in result["error_message"]
+        # the last known record is still returned
+        assert result["is_new"] is False
+        assert result["payload"] == {"state": "RUNNING"}
+        assert result["offset"] == 0
+        # the probe's own failure is not what gets reported
+        assert "Broker transport failure" not in result["error_message"]
+    # the first run probed at once and failed; the second is inside the probe interval
+    assert broker.metadata_calls == calls_after_connect + 1
+
+
+def test_transient_client_error_on_a_healthy_cluster_is_never_reported(
+    broker: FakeBroker,
+) -> None:
+    # librdkafka also reports single-broker disconnects and idle-connection closes
+    # through error_cb; the broker answers the immediate probe, so nothing is claimed
+    block, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    error_cb(FakeClientError("broker-2:9092: Disconnected", name="_TRANSPORT"))
+    same_run = run(block)
+    after = run(block)
+
+    for result in (same_run, after):
+        assert result["error_status"] is False and result["error_message"] is None
+        assert result["is_new"] is False
+        assert result["payload"] == {"state": "RUNNING"}
+    # one probe for the blip, none once it is cleared
+    assert broker.metadata_calls == calls_after_connect + 1
+
+
+def test_transient_client_error_served_while_polling_is_never_reported(
+    broker: FakeBroker,
+) -> None:
+    block, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+    consumer = broker.consumers[0]
+    real_poll = consumer.poll
+
+    def poll_serving_the_error_callback(timeout: float):
+        # librdkafka serves error_cb from inside poll()
+        error_cb(FakeClientError("broker-2:9092: Disconnected", name="_TRANSPORT"))
+        return real_poll(timeout)
+
+    consumer.poll = poll_serving_the_error_callback
+    result = run(block)
+
+    assert result["error_status"] is False and result["error_message"] is None
+    assert broker.metadata_calls == calls_after_connect + 1
+
+
+def test_each_new_problem_streak_is_probed_at_once(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    # three blips in a row, all well inside one probe interval
+    for blip in range(1, 4):
+        error_cb(FakeClientError("broker-2:9092: Disconnected", name="_TRANSPORT"))
+        assert run(block)["error_status"] is False
+        assert broker.metadata_calls == calls_after_connect + blip
+
+
+def test_client_reported_outage_before_any_record_says_so(broker: FakeBroker) -> None:
+    broker.create_topic(TOPIC)
+    block = KafkaConsumerBlockV1()
+    assert run(block)["error_status"] is False
+    take_broker_down(broker)
+
+    consumer_config(broker)["error_cb"](FakeClientError())
+    result = run(block)
+
+    assert result["error_status"] is True
+    assert result["value"] is None
+    assert "No record has been read yet" in result["error_message"]
+
+
+def test_client_reported_outage_is_combined_with_a_polling_error(
+    broker: FakeBroker,
+) -> None:
+    block, error_cb = connected_block(broker)
+    take_broker_down(broker)
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    broker.logs[TOPIC][0].append((None, RuntimeError("Broker: Not leader")))
+    result = run(block)
+
+    assert result["error_status"] is True
+    assert "Broker: Not leader" in result["error_message"]
+    assert "2/2 brokers are down" in result["error_message"]
+
+
+def test_new_record_clears_the_client_reported_outage(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    # metadata stays down for the whole test: only the polled record can clear
+    take_broker_down(broker)
+    error_cb(FakeClientError())
+    assert run(block)["error_status"] is True
+    calls_after_failed_probe = broker.metadata_calls
+
+    broker.produce(TOPIC, state("STOPPED"))
+    cleared = run(block)
+    after = run(block)
+
+    # the run that proves the connection healthy reports normally
+    assert cleared["error_status"] is False and cleared["error_message"] is None
+    assert cleared["is_new"] is True
+    assert cleared["payload"] == {"state": "STOPPED"}
+    assert after["error_status"] is False and after["is_new"] is False
+    assert broker.metadata_calls == calls_after_failed_probe
+
+
+def test_error_reported_while_polling_a_new_record_is_not_cleared_by_it(
+    broker: FakeBroker,
+) -> None:
+    block, error_cb = connected_block(broker)
+    take_broker_down(broker)
+    broker.produce(TOPIC, state("STOPPED"))
+    consumer = broker.consumers[0]
+    real_poll = consumer.poll
+
+    def poll_serving_the_error_callback(timeout: float):
+        # librdkafka serves error_cb from inside poll()
+        message = real_poll(timeout)
+        if message is None:
+            error_cb(FakeClientError("2/2 brokers are down"))
+        return message
+
+    consumer.poll = poll_serving_the_error_callback
+    result = run(block)
+    consumer.poll = real_poll
+    after = run(block)
+
+    # record and error arrived in one run in unknown order: keep the claim
+    assert result["is_new"] is True
+    assert result["payload"] == {"state": "STOPPED"}
+    assert result["error_status"] is True
+    assert "during the same run" in result["error_message"]
+    assert after["error_status"] is True and after["is_new"] is False
+
+
+def test_successful_probe_clears_the_client_reported_outage(
+    broker: FakeBroker,
+) -> None:
+    block, error_cb = connected_block(broker)
+    take_broker_down(broker)
+    error_cb(FakeClientError())
+    assert run(block)["error_status"] is True
+    # still down and inside the probe interval: claimed again, without a probe
+    calls_before_probe = broker.metadata_calls
+    assert run(block)["error_status"] is True
+    assert broker.metadata_calls == calls_before_probe
+
+    bring_broker_up(broker)
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        cleared = run(block)
+        after = run(block)
+
+    assert cleared["error_status"] is False and cleared["error_message"] is None
+    assert cleared["is_new"] is False
+    assert cleared["payload"] == {"state": "RUNNING"}
+    assert after["error_status"] is False
+    # exactly one probe: once cleared, nothing is probed any more
+    assert broker.metadata_calls == calls_before_probe + 1
+
+
+@pytest.mark.parametrize("failure", ["raises", "topic_error"])
+def test_failing_probe_keeps_the_client_reported_outage(
+    broker: FakeBroker, failure: str
+) -> None:
+    block, error_cb = connected_block(broker)
+    error_cb(FakeClientError("2/2 brokers are down"))
+    calls_before_probe = broker.metadata_calls
+    if failure == "raises":
+        take_broker_down(broker)
+    else:
+        broker.creating_topic_replies = 2
+
+    # the immediate first probe and, with the interval elapsed, a second one
+    first = run(block)
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        result = run(block)
+
+    assert first["error_status"] is True
+    assert broker.metadata_calls == calls_before_probe + 2
+    assert result["error_status"] is True
+    # the message still describes the recorded problem, not the probe's failure
+    assert "2/2 brokers are down" in result["error_message"]
+    assert "Broker transport failure" not in result["error_message"]
+    assert result["payload"] == {"state": "RUNNING"}
+
+
+def test_fatal_client_error_is_never_probed_and_never_cleared(
+    broker: FakeBroker,
+) -> None:
+    block, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    error_cb(FakeClientError("Fatal error: fenced", name="_FATAL", fatal=True))
+    # a later non-fatal error must not downgrade it
+    error_cb(FakeClientError("2/2 brokers are down"))
+    broker.produce(TOPIC, state("STOPPED"))
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        results = [run(block) for _ in range(3)]
+
+    for result in results:
+        assert result["error_status"] is True
+        assert "fatal error" in result["error_message"]
+        assert "Fatal error: fenced" in result["error_message"]
+        assert "Restart the block (pipeline)" in result["error_message"]
+    assert broker.metadata_calls == calls_after_connect
+
+
+def test_close_resets_the_client_reported_outage(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    error_cb(FakeClientError("Fatal error: fenced", fatal=True))
+    assert run(block)["error_status"] is True
+
+    block.close()
+    result = run(block)
+
+    # a rebuilt client starts clean and gets the same tracker as its error_cb
+    assert len(broker.consumers) == 2
+    assert result["error_status"] is False
+    assert broker.consumers[1].config["error_cb"] is error_cb
+
+
+def test_each_block_instance_tracks_its_own_client(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    other = KafkaConsumerBlockV1()
+    assert run(other)["error_status"] is False
+    take_broker_down(broker)
+
+    error_cb(FakeClientError())
+
+    assert run(block)["error_status"] is True
+    assert run(other)["error_status"] is False
+
+
+def test_error_callback_never_raises(broker: FakeBroker) -> None:
+    block, error_cb = connected_block(broker)
+    take_broker_down(broker)
+
+    class Unprintable:
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    error_cb(object())
+    error_cb(None)
+    error_cb(Unprintable())
+    result = run(block)
+
+    assert result["error_status"] is True
+    assert "reported a broker problem" in result["error_message"]

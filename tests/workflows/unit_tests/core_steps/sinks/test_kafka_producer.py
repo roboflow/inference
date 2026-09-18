@@ -54,7 +54,38 @@ class FakeKafkaError:
         return self._text
 
 
+class FakeClientError:
+    """What librdkafka hands to `error_cb`: a KafkaError with name / code / fatal."""
+
+    def __init__(
+        self,
+        text: str = "2/2 brokers are down",
+        name: str = "_ALL_BROKERS_DOWN",
+        code: int = -187,
+        fatal: bool = False,
+    ):
+        self._text = text
+        self._name = name
+        self._code = code
+        self._fatal = fatal
+
+    def name(self) -> str:
+        return self._name
+
+    def code(self) -> int:
+        return self._code
+
+    def fatal(self) -> bool:
+        return self._fatal
+
+    def __str__(self) -> str:
+        return self._text
+
+
 class FakeBroker:
+    # `fail_connect` makes every metadata request (`list_topics`, which is also the
+    # recovery probe) raise; `creating_topic_replies` makes it answer with a
+    # topic-level error. Each request is counted in `metadata_calls`.
     def __init__(self):
         self.topics = {TOPIC}
         self.creating_topic_replies = 0  # transient "unknown topic" replies to serve
@@ -171,8 +202,15 @@ def msk_signer():
         yield FakeTokenProvider
 
 
-def block(disable_sinks: bool = False) -> KafkaProducerSinkBlockV1:
-    return KafkaProducerSinkBlockV1(None, None, disable_sinks=disable_sinks)
+def block(
+    disable_sinks: bool = False, allow_access_to_file_system: bool = False
+) -> KafkaProducerSinkBlockV1:
+    return KafkaProducerSinkBlockV1(
+        None,
+        None,
+        disable_sinks=disable_sinks,
+        allow_access_to_file_system=allow_access_to_file_system,
+    )
 
 
 def run(instance: KafkaProducerSinkBlockV1, **overrides) -> Dict[str, Any]:
@@ -288,8 +326,23 @@ def test_manifest_outputs_compatibility_and_restrictions() -> None:
     ]
     assert BlockManifest.get_execution_engine_compatibility() == ">=1.4.0,<2.0.0"
     restrictions = [r.to_dict() for r in BlockManifest.get_restrictions()]
-    assert len(restrictions) == 1 and restrictions[0]["severity"] == "soft"
-    assert restrictions[0]["applies_to_runtimes"] == ["inference_pipeline"]
+    soft = [r for r in restrictions if r["severity"] == "soft"]
+    assert len(restrictions) == 2 and len(soft) == 1
+    assert soft[0]["applies_to_runtimes"] == ["inference_pipeline"]
+
+
+def test_manifest_declares_one_hard_restriction_for_hosted_serverless() -> None:
+    # run() refuses when GCP_SERVERLESS or LAMBDA is set; dedicated deployments are not
+    # refused, so they must not be listed
+    hard = [
+        r for r in BlockManifest.get_restrictions() if r.severity is v1.Severity.HARD
+    ]
+
+    assert len(hard) == 1
+    assert hard[0].applies_to_runtimes == [v1.Runtime.HOSTED_SERVERLESS]
+    assert hard[0].applies_to_step_execution_modes is None
+    assert hard[0].applies_to_input_modes is None
+    assert "error_status=true" in hard[0].note
 
 
 def test_block_init_parameters() -> None:
@@ -297,6 +350,7 @@ def test_block_init_parameters() -> None:
         "background_tasks",
         "thread_pool_executor",
         "disable_sinks",
+        "allow_access_to_file_system",
     ]
     assert KafkaProducerSinkBlockV1.get_manifest() is BlockManifest
 
@@ -596,9 +650,44 @@ def test_one_sided_credentials_fail_before_connecting(
 
 
 def test_ssl_ca_location_is_passed_through(broker: FakeBroker) -> None:
-    run(block(), username="u", password="p", ssl_ca_location="/ca.pem")
+    result = run(
+        block(allow_access_to_file_system=True),
+        username="u",
+        password="p",
+        ssl_ca_location="/ca.pem",
+    )
 
+    assert result["error_status"] is False
     assert producer_config(broker)["ssl.ca.location"] == "/ca.pem"
+
+
+def test_ssl_ca_location_is_refused_without_file_system_access(
+    broker: FakeBroker,
+) -> None:
+    # the default: a hand-constructed block may not read server-side paths
+    result = run(
+        KafkaProducerSinkBlockV1(None, None),
+        username="u",
+        password="p",
+        ssl_ca_location="/ca.pem",
+    )
+
+    assert result["error_status"] is True
+    assert "ssl_ca_location" in result["message"]
+    assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in result["message"]
+    assert broker.producers == [] and broker.records == []
+
+
+@pytest.mark.parametrize("ssl_ca_location", [None, ""])
+def test_file_system_flag_has_no_effect_without_ssl_ca_location(
+    broker: FakeBroker, ssl_ca_location: Optional[str]
+) -> None:
+    result = run(
+        block(allow_access_to_file_system=False), ssl_ca_location=ssl_ca_location
+    )
+
+    assert result["error_status"] is False
+    assert "ssl.ca.location" not in producer_config(broker)
 
 
 def test_aws_msk_derives_region_and_uses_oauthbearer(
@@ -893,3 +982,412 @@ def test_json_encoding_matches_python_default(broker: FakeBroker) -> None:
     run(block(), message=payload)
 
     assert broker.records[0]["value"] == json.dumps(payload).encode("utf-8")
+
+
+# --------------------------------------------------------------------------------------
+# Operator policy for bootstrap servers
+# --------------------------------------------------------------------------------------
+
+ALLOW_USER_SERVERS = "KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS"
+WHITELISTED_SERVERS = "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS"
+OPERATOR_SERVERS = ["kafka-internal-1:9092", "kafka-internal-2:9092"]
+
+
+def test_default_policy_passes_user_bootstrap_servers_through(
+    broker: FakeBroker,
+) -> None:
+    result = run(block(), bootstrap_servers=" Broker-1:9092,broker-2 ")
+
+    assert result["error_status"] is False
+    assert producer_config(broker)["bootstrap.servers"] == "Broker-1:9092,broker-2"
+
+
+def test_allowlist_accepts_user_servers_when_every_entry_is_listed(
+    broker: FakeBroker,
+) -> None:
+    with patch.object(
+        kafka_common, WHITELISTED_SERVERS, ["broker-1:9092", "broker-2", "[::1]:9093"]
+    ):
+        # case, whitespace, a missing port (= 9092) and bracketed IPv6 all normalise
+        result = run(
+            block(), bootstrap_servers="BROKER-1:9092 , broker-2:9092,[::1]:9093"
+        )
+
+    assert result["error_status"] is False
+    assert len(broker.records) == 1
+    assert (
+        producer_config(broker)["bootstrap.servers"]
+        == "BROKER-1:9092 , broker-2:9092,[::1]:9093"
+    )
+
+
+def test_allowlist_rejects_unlisted_entry_without_revealing_the_allowlist(
+    broker: FakeBroker,
+) -> None:
+    with patch.object(kafka_common, WHITELISTED_SERVERS, OPERATOR_SERVERS):
+        result = run(
+            block(), bootstrap_servers="kafka-internal-1:9092,evil.example.com:9092"
+        )
+
+    assert result["error_status"] is True
+    assert "evil.example.com:9092" in result["message"]
+    assert "kafka-internal" not in result["message"]
+    assert broker.producers == [] and broker.records == []
+
+
+def test_allowlist_compares_the_port(broker: FakeBroker) -> None:
+    with patch.object(kafka_common, WHITELISTED_SERVERS, ["kafka-internal-1:9092"]):
+        result = run(block(), bootstrap_servers="kafka-internal-1:22")
+
+    assert result["error_status"] is True
+    assert broker.producers == []
+
+
+def test_user_servers_disabled_connects_to_operator_servers(
+    broker: FakeBroker,
+) -> None:
+    instance = block()
+
+    # the `inference` logger does not propagate, so caplog cannot see it
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, OPERATOR_SERVERS
+    ), patch.object(kafka_common.logger, "warning") as warning:
+        first = run(instance, bootstrap_servers="evil.example.com:9092")
+        # a different workflow value is not a connection change: it is ignored
+        second = run(instance, bootstrap_servers="other.example.com:9092")
+
+    assert first["error_status"] is False and second["error_status"] is False
+    assert len(broker.producers) == 1 and len(broker.records) == 2
+    assert producer_config(broker)["bootstrap.servers"] == ",".join(OPERATOR_SERVERS)
+    # one warning per block instance, not per run, and without the workflow's value
+    assert warning.call_count == 1
+    logged = warning.call_args.args[0] % warning.call_args.args[1:]
+    assert "operator-configured" in logged
+    assert "evil.example.com" not in logged
+
+
+@pytest.mark.parametrize("allowlist", [None, []])
+def test_user_servers_disabled_without_operator_servers_disables_the_block(
+    broker: FakeBroker, allowlist: Optional[List[str]]
+) -> None:
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, allowlist
+    ):
+        result = run(block())
+
+    assert result["error_status"] is True
+    assert "disabled on this deployment" in result["message"]
+    assert broker.producers == [] and broker.records == []
+
+
+def test_aws_msk_region_is_derived_from_the_operator_servers(
+    broker: FakeBroker, msk_signer
+) -> None:
+    with patch.object(kafka_common, ALLOW_USER_SERVERS, False), patch.object(
+        kafka_common, WHITELISTED_SERVERS, [MSK_BOOTSTRAP.split(",")[0]]
+    ):
+        result = run(
+            block(),
+            bootstrap_servers="b-1.other.abc123.c2.kafka.us-east-1.amazonaws.com:9098",
+            provider="AWS MSK",
+        )
+
+    assert result["error_status"] is False
+    # the region of the cluster the client connects to, not of the ignored value
+    assert msk_signer.calls and set(msk_signer.calls) == {"eu-west-1"}
+
+
+# --------------------------------------------------------------------------------------
+# Broker problems reported by the client (error_cb)
+# --------------------------------------------------------------------------------------
+
+
+def connected_block(broker: FakeBroker):
+    """A block that published one record, plus the `error_cb` its client was given."""
+    instance = block()
+    first = run(instance, fire_and_forget=True)
+    assert first == {"error_status": False, "message": "Message scheduled for delivery"}
+    return instance, producer_config(broker)["error_cb"]
+
+
+def take_broker_down(broker: FakeBroker, deliveries_hang: bool = True) -> None:
+    """A real outage: metadata requests fail, so the recovery probe fails too, and
+    (unless a test needs delivery reports) queued records get no answer."""
+    broker.fail_connect = RuntimeError("Local: Broker transport failure")
+    broker.hang_flush = deliveries_hang
+
+
+def test_client_config_carries_an_error_callback(broker: FakeBroker) -> None:
+    _, error_cb = connected_block(broker)
+
+    assert callable(error_cb)
+
+
+def test_healthy_runs_never_probe_the_broker(broker: FakeBroker) -> None:
+    instance, _ = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        for fire_and_forget in (True, False, True):
+            result = run(instance, fire_and_forget=fire_and_forget)
+            assert result["error_status"] is False
+
+    assert broker.metadata_calls == calls_after_connect
+
+
+def test_client_reported_outage_is_reported_on_every_fire_and_forget_run(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+    take_broker_down(broker)
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    first = run(instance, fire_and_forget=True)
+    # no new callback: the block must keep claiming the problem
+    second = run(instance, fire_and_forget=True)
+
+    for result in (first, second):
+        assert list(result) == ["error_status", "message"]
+        assert result["error_status"] is True
+        assert "reported a broker problem" in result["message"]
+        assert "2/2 brokers are down" in result["message"]
+        assert "_ALL_BROKERS_DOWN" in result["message"]
+        assert "queued" in result["message"]
+        assert "currently unreachable" in result["message"]
+        # the probe's own failure is not what gets reported
+        assert "Broker transport failure" not in result["message"]
+    # records are still handed to the client so librdkafka can retry them
+    assert len(broker.records) == 3
+    assert len(broker.producers[0].pending) == 2
+    # the first run probed at once and failed; the second is inside the probe interval
+    assert broker.metadata_calls == calls_after_connect + 1
+
+
+@pytest.mark.parametrize("delivery_reports_arrive", [False, True])
+def test_transient_client_error_on_a_healthy_cluster_is_never_reported(
+    broker: FakeBroker, delivery_reports_arrive: bool
+) -> None:
+    # librdkafka also reports single-broker disconnects and idle-connection closes
+    # through error_cb; the broker answers the immediate probe, so nothing is claimed
+    instance, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+    broker.hang_flush = not delivery_reports_arrive
+
+    error_cb(FakeClientError("broker-2:9092: Disconnected", name="_TRANSPORT"))
+    same_run = run(instance, fire_and_forget=True)
+    after = run(instance, fire_and_forget=True)
+
+    expected = {"error_status": False, "message": "Message scheduled for delivery"}
+    assert same_run == expected and after == expected
+    # without a delivery report the immediate probe clears the blip: exactly one
+    # probe. With one, the report clears it first and nothing is probed at all.
+    probes = 0 if delivery_reports_arrive else 1
+    assert broker.metadata_calls == calls_after_connect + probes
+
+
+def test_each_new_problem_streak_is_probed_at_once(broker: FakeBroker) -> None:
+    instance, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+    broker.hang_flush = True  # no delivery reports: only the probe can clear
+
+    # three blips in a row, all well inside one probe interval
+    for blip in range(1, 4):
+        error_cb(FakeClientError("broker-2:9092: Disconnected", name="_TRANSPORT"))
+        assert run(instance, fire_and_forget=True)["error_status"] is False
+        assert broker.metadata_calls == calls_after_connect + blip
+
+
+def test_client_reported_outage_is_combined_with_a_delivery_timeout(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker)
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    result = run(instance, fire_and_forget=False, timeout=0.5)
+
+    assert result["error_status"] is True
+    assert "Delivery not acknowledged within 0.5s" in result["message"]
+    assert "2/2 brokers are down" in result["message"]
+
+
+def test_client_reported_outage_is_combined_with_a_rejected_delivery(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker, deliveries_hang=False)
+    broker.delivery_error = "Local: Message timed out"
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    result = run(instance, fire_and_forget=False)
+
+    # a failed delivery report is no proof of life
+    assert result["error_status"] is True
+    assert "Kafka rejected the message: Local: Message timed out" in result["message"]
+    assert "2/2 brokers are down" in result["message"]
+
+
+def test_confirmed_delivery_clears_the_client_reported_outage(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker)
+    error_cb(FakeClientError())
+    assert run(instance, fire_and_forget=True)["error_status"] is True
+    calls_after_failed_probe = broker.metadata_calls
+
+    # metadata stays down for the rest of the test: only a delivery report can clear
+    broker.hang_flush = False
+    cleared = run(instance, fire_and_forget=False)
+    after = run(instance, fire_and_forget=True)
+
+    # the run that proves the connection healthy reports normally
+    assert cleared["error_status"] is False
+    assert cleared["message"].startswith("Message delivered to partition 0")
+    assert after == {"error_status": False, "message": "Message scheduled for delivery"}
+    assert broker.metadata_calls == calls_after_failed_probe
+
+
+def test_background_delivery_clears_the_client_reported_outage(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker)
+    error_cb(FakeClientError())
+    assert run(instance, fire_and_forget=True)["error_status"] is True
+    calls_after_failed_probe = broker.metadata_calls
+
+    # records flow again and the next poll() serves the queued records' delivery
+    # reports; metadata stays down, so only those reports can clear
+    broker.hang_flush = False
+    cleared = run(instance, fire_and_forget=True)
+
+    assert cleared == {
+        "error_status": False,
+        "message": "Message scheduled for delivery",
+    }
+    assert broker.metadata_calls == calls_after_failed_probe
+
+
+def test_failed_background_delivery_does_not_clear_the_client_reported_outage(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker, deliveries_hang=False)
+    broker.delivery_error = "Local: Message timed out"
+
+    error_cb(FakeClientError("2/2 brokers are down"))
+    result = run(instance, fire_and_forget=True)
+
+    assert result["error_status"] is True
+    assert "2/2 brokers are down" in result["message"]
+
+
+def test_successful_probe_clears_the_client_reported_outage(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker)
+    error_cb(FakeClientError())
+    assert run(instance, fire_and_forget=True)["error_status"] is True
+    # still down and inside the probe interval: claimed again, without a probe
+    calls_before_probe = broker.metadata_calls
+    assert run(instance, fire_and_forget=True)["error_status"] is True
+    assert broker.metadata_calls == calls_before_probe
+
+    # metadata answers again, records still get no delivery report: only the probe
+    # can clear
+    broker.fail_connect = None
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        cleared = run(instance, fire_and_forget=True)
+        after = run(instance, fire_and_forget=True)
+
+    assert cleared == {
+        "error_status": False,
+        "message": "Message scheduled for delivery",
+    }
+    assert after["error_status"] is False
+    # exactly one probe: once cleared, nothing is probed any more
+    assert broker.metadata_calls == calls_before_probe + 1
+
+
+@pytest.mark.parametrize("failure", ["raises", "topic_error"])
+def test_failing_probe_keeps_the_client_reported_outage(
+    broker: FakeBroker, failure: str
+) -> None:
+    instance, error_cb = connected_block(broker)
+    broker.hang_flush = True
+    error_cb(FakeClientError("2/2 brokers are down"))
+    calls_before_probe = broker.metadata_calls
+    if failure == "raises":
+        take_broker_down(broker)
+    else:
+        broker.creating_topic_replies = 2
+
+    # the immediate first probe and, with the interval elapsed, a second one
+    first = run(instance, fire_and_forget=True)
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        result = run(instance, fire_and_forget=True)
+
+    assert first["error_status"] is True
+    assert broker.metadata_calls == calls_before_probe + 2
+    assert result["error_status"] is True
+    # the message still describes the recorded problem, not the probe's failure
+    assert "2/2 brokers are down" in result["message"]
+    assert "Broker transport failure" not in result["message"]
+
+
+def test_fatal_client_error_is_never_probed_and_never_cleared(
+    broker: FakeBroker,
+) -> None:
+    instance, error_cb = connected_block(broker)
+    calls_after_connect = broker.metadata_calls
+
+    error_cb(FakeClientError("Fatal error: fenced", name="_FATAL", fatal=True))
+    # a later non-fatal error must not downgrade it
+    error_cb(FakeClientError("2/2 brokers are down"))
+    with patch.object(kafka_common, "CLIENT_RECOVERY_PROBE_INTERVAL", 0.0):
+        # the fake keeps delivering: not even a delivery report clears a fatal error
+        results = [
+            run(instance, fire_and_forget=fire_and_forget)
+            for fire_and_forget in (True, False, True)
+        ]
+
+    for result in results:
+        assert result["error_status"] is True
+        assert "fatal error" in result["message"]
+        assert "Fatal error: fenced" in result["message"]
+        assert "Restart the block (pipeline)" in result["message"]
+    assert broker.metadata_calls == calls_after_connect
+
+
+def test_close_resets_the_client_reported_outage(broker: FakeBroker) -> None:
+    instance, error_cb = connected_block(broker)
+    error_cb(FakeClientError("Fatal error: fenced", fatal=True))
+    assert run(instance, fire_and_forget=True)["error_status"] is True
+
+    instance.close()
+    result = run(instance, fire_and_forget=True)
+
+    # a rebuilt client starts clean and gets the same tracker as its error_cb
+    assert len(broker.producers) == 2
+    assert result["error_status"] is False
+    assert broker.producers[1].config["error_cb"] is error_cb
+
+
+def test_error_callback_never_raises(broker: FakeBroker) -> None:
+    instance, error_cb = connected_block(broker)
+    take_broker_down(broker)
+
+    class Unprintable:
+        def __str__(self) -> str:
+            raise RuntimeError("no text")
+
+    error_cb(object())
+    error_cb(None)
+    error_cb(Unprintable())
+    result = run(instance, fire_and_forget=True)
+
+    assert result["error_status"] is True
+    assert "reported a broker problem" in result["message"]

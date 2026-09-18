@@ -44,14 +44,17 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.kafka_common import 
     LIBRDKAFKA_LOG_LEVEL,
     PROVIDER_AWS_MSK,
     PROVIDER_SELF_HOSTED,
+    ClientErrorTracker,
     ConfigurationError,
     build_connection_config,
     coerce_non_negative_int,
     coerce_timeout,
+    combine_messages,
     describe_error,
     is_selector,
     pop_auth_failure_message,
     preflight_token,
+    resolve_bootstrap_servers,
     time_remaining,
     wait_for_topic_metadata,
 )
@@ -153,7 +156,10 @@ connection is opened once and reused for every frame.
 - `offset`, `partition` (integer): where the returned record lives, or `null`.
 - `error_status` (boolean) and `error_message` (string): broker, credential and input
   problems are reported here and logged; the workflow keeps running and the next run
-  retries.
+  retries. When the Kafka client reports a broker problem after connecting (for example
+  all brokers down), the block checks the broker at once. If the broker does not answer,
+  the problem is surfaced as `error_status=true` on every run, together with the last
+  record read, until the connection is proven healthy again.
 
 This block is not available on the Roboflow hosted platform. Self-hosted servers enable
 enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
@@ -184,7 +190,11 @@ class BlockManifest(WorkflowBlockManifest):
     # --- connection ---
     bootstrap_servers: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Comma-separated list of Kafka broker addresses (`host:port`). "
-        "For AWS MSK use the bootstrap string from the console.",
+        "For AWS MSK use the bootstrap string from the console. The server operator can "
+        "restrict this value to an allowlist with "
+        "`KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS`, or replace it with that "
+        "list by setting "
+        "`KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS=False`.",
         examples=[
             "localhost:9092",
             "b-1.cluster.abc123.c2.kafka.us-east-1.amazonaws.com:9098",
@@ -268,7 +278,10 @@ class BlockManifest(WorkflowBlockManifest):
     ssl_ca_location: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Path to a CA certificate bundle on the machine running inference, "
-        "for TLS connections whose issuer is not in the system trust store.",
+        "for TLS connections whose issuer is not in the system trust store. Requires "
+        "local file system access for Workflow blocks "
+        "(`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`); otherwise the run "
+        "reports an error.",
         examples=["/etc/ssl/certs/ca-certificates.crt"],
         json_schema_extra={"additional_section": True},
     )
@@ -332,6 +345,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "On the Roboflow hosted platform every run returns "
+                    "`error_status=true` with no record, and no Kafka connection is "
+                    "opened from the hosted platform."
+                ),
+                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+            ),
             RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
@@ -420,7 +442,13 @@ def _message_key_matches(message: Any, key_filter: Optional[str]) -> bool:
 
 
 class KafkaConsumerBlockV1(WorkflowBlock):
-    def __init__(self):
+    def __init__(self, allow_access_to_file_system: bool = False):
+        # gates `ssl_ca_location`, a server-side path chosen by the workflow; False by
+        # default so a hand-constructed block is safe
+        self._allow_access_to_file_system = allow_access_to_file_system
+        # `error_cb` of the client: broker problems librdkafka reports out of band
+        self._client_errors = ClientErrorTracker("Kafka Consumer")
+        self._bootstrap_override_logged = False
         self._consumer: Optional[Any] = None
         self._connection_identity: Optional[Tuple] = None
         self._topic: Optional[str] = None
@@ -445,10 +473,11 @@ class KafkaConsumerBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return []
+        return ["allow_access_to_file_system"]
 
     def close(self) -> None:
         with self._lifecycle_lock:
+            self._client_errors.reset()
             consumer = self._consumer
             self._consumer = None
             self._connection_identity = None
@@ -513,6 +542,11 @@ class KafkaConsumerBlockV1(WorkflowBlock):
             topic = str(topic).strip()
             if not bootstrap_servers or not topic:
                 raise ConfigurationError("bootstrap_servers and topic must be set.")
+            # operator policy; from here on this is where the client connects
+            bootstrap_servers = resolve_bootstrap_servers(
+                bootstrap_servers, log_override=not self._bootstrap_override_logged
+            )
+            self._bootstrap_override_logged = True
             auth_failures: List[BaseException] = []
             connection_config = build_connection_config(
                 provider=provider,
@@ -522,6 +556,7 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                 aws_region=aws_region,
                 ssl_ca_location=ssl_ca_location,
                 auth_failures=auth_failures,
+                allow_access_to_file_system=self._allow_access_to_file_system,
             )
         except ConfigurationError as error:
             return self._failure(str(error))
@@ -559,15 +594,20 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                     "Raise 'connect_timeout' if the broker needs longer to connect."
                 )
             self._reposition_timeout = connect_timeout
+            # errors the client reports from here on arrive during this run's polls
+            errors_before_read = self._client_errors.generation
             if read_mode == READ_MODE_SEQUENTIAL:
                 if applies_pointer:
-                    return self._read_at_pointer(
+                    result = self._read_at_pointer(
                         pointer, connect_timeout, continue_after=True
                     )
-                return self._read_next(poll_timeout, key_filter)
-            if pointer is not None:
-                return self._read_at_pointer(pointer, connect_timeout)
-            return self._drain_latest(poll_timeout, key_filter)
+                else:
+                    result = self._read_next(poll_timeout, key_filter)
+            elif pointer is not None:
+                result = self._read_at_pointer(pointer, connect_timeout)
+            else:
+                result = self._drain_latest(poll_timeout, key_filter)
+            return self._report_client_problem(result, errors_before_read)
 
     # --- lifecycle -----------------------------------------------------------------
 
@@ -590,6 +630,8 @@ class KafkaConsumerBlockV1(WorkflowBlock):
                     "connection configured on its first run."
                 )
             return
+        # a new client starts clean: problems of a previous one are not its own
+        self._client_errors.reset()
         config = {
             "bootstrap.servers": bootstrap_servers,
             # unique group per instance so every pipeline sees every message;
@@ -598,6 +640,9 @@ class KafkaConsumerBlockV1(WorkflowBlock):
             "enable.auto.commit": False,
             "auto.offset.reset": "latest",
             "log_level": LIBRDKAFKA_LOG_LEVEL,
+            # global client errors (all brokers down, transport failures) arrive only
+            # here, served from inside poll(); they are never returned by poll()
+            "error_cb": self._client_errors,
             **connection_config,
         }
         self._auth_failures = auth_failures
@@ -696,6 +741,32 @@ class KafkaConsumerBlockV1(WorkflowBlock):
     def _failure(self, message: str) -> BlockResult:
         logger.error("Kafka Consumer failure: %s", message)
         return _outputs(self._last, is_new=False, error_message=message)
+
+    def _report_client_problem(
+        self, result: BlockResult, errors_before_read: int
+    ) -> BlockResult:
+        """Add the broker problem the client reported, if one is still recorded, to this
+        run's result. Runs under the lifecycle lock, like the read paths."""
+        # a record new to this run came out of poll(): proof of life, unless the client
+        # reported an error during the same run (their order is then unknown)
+        problem = self._client_errors.check(
+            client=self._consumer,
+            topic=self._topic,
+            alive_since_generation=errors_before_read if result["is_new"] else None,
+        )
+        if problem is None:
+            return result
+        if result["is_new"]:
+            note = (
+                "The returned record is new, but the client reported the problem "
+                "during the same run."
+            )
+        elif self._last is not None:
+            note = "The returned record is the last one read and may be stale."
+        else:
+            note = "No record has been read yet."
+        error_message = combine_messages(result["error_message"], problem.message(note))
+        return {**result, "error_status": True, "error_message": error_message}
 
     # --- read paths -----------------------------------------------------------------
 
