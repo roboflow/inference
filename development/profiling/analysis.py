@@ -27,12 +27,12 @@ def build_profile_analysis(
     manifest: Mapping[str, Any],
     host_ranges: Sequence[HostRange],
     gpu_projected_ranges: Sequence[GpuProjectedRange],
+    kernel_summaries: Sequence[KernelSummary],
+    memory_transfers: Sequence[MemoryTransfer],
     nsys_version: str,
     run_dir: Path,
     trace_path: Path,
     report_paths: Mapping[str, Path],
-    kernel_summaries: Sequence[KernelSummary] = (),
-    memory_transfers: Sequence[MemoryTransfer] = (),
 ) -> dict[str, Any]:
     """Build a compact, manifest-linked analysis from parsed Nsight reports."""
     capture_range = manifest.get("capture_range")
