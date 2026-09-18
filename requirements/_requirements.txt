@@ -1,7 +1,6 @@
 aiortc>=1.9.0
 av==14.2.0 # pinning due to: https://github.com/PyAV-Org/PyAV/issues/2082
 APScheduler>=3.10.1,<4.0.0
-asyncua~=1.1.5
 cachetools<6.0.0
 cython~=3.0.0
 python-dotenv>=1.2.2,<2.0.0
@@ -13,7 +12,6 @@ opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as
 pillow>=12.3.0,<13.0.0
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
-psycopg[binary]>=3.2,<4
 redis~=5.0.0
 requests>=2.33.0,<3.0.0
 rich>=13.0.0,<15.0.0
@@ -38,7 +36,6 @@ tldextract~=5.1.2
 packaging~=24.0
 anthropic~=0.49.0
 pandas>=2.2.3,<3.0.0
-paho-mqtt~=1.6.1
 pytest>=9.0.3,<10.0.0  # this is not a joke, sam2 requires this as the fork we are using is dependent on that, yet
 # do not mark the dependency: https://github.com/SauravMaheshkar/samv2/blob/main/sam2/utils/download.py
 tokenizers>=0.19.0,<0.23.0
@@ -52,8 +49,6 @@ msgpack
 # websocket-client was previously only present transitively via the docker SDK,
 # which made an opt-in transport depend on an unrelated package's dependency.
 websocket-client~=1.9.0
-pylogix==1.0.5
-pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0
 filelock>=3.20.3,<=4.0.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs

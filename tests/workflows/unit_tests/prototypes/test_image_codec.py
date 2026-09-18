@@ -153,7 +153,7 @@ def test_default_never_imports_or_calls_pickle() -> None:
     # AST instead: no import of `pickle`, and no attribute call on a name
     # `pickle`.
     tree = ast.parse(
-        Path("inference/core/workflows/prototypes/image_codec.py").read_text(
+        Path("workflows/roboflow_workflows/prototypes/image_codec.py").read_text(
             encoding="utf-8"
         )
     )
@@ -376,7 +376,7 @@ def test_many_threads_installing_the_same_codec_all_succeed() -> None:
 
 
 def test_module_stays_free_of_the_server_package_and_of_io() -> None:
-    source = Path("inference/core/workflows/prototypes/image_codec.py").read_text(
+    source = Path("workflows/roboflow_workflows/prototypes/image_codec.py").read_text(
         encoding="utf-8"
     )
     tree = ast.parse(source)

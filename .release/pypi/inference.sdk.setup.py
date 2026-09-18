@@ -59,7 +59,11 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
