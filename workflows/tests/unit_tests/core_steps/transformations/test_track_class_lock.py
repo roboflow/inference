@@ -6,11 +6,11 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.transformations.track_class_lock.v1 import (
+    MAX_CLASSES_PER_TRACK,
     MAX_REATTACH_CANDIDATES,
     MAX_STATE_TTL,
     MAX_TRACKED_VIDEOS,
     MAX_TRACKS_PER_VIDEO,
-    MAX_CLASSES_PER_TRACK,
     BlockManifest,
     TrackClassLockBlockV1,
 )
