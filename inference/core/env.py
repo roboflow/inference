@@ -1193,6 +1193,17 @@ WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS = str2bool(
     os.getenv("WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS", "False")
 )
 
+# Upper bound on the vertices of one polygon that Workflows VLM blocks accept
+# when decoding an instance-segmentation answer (e.g. `open_ai@v7`). Polygons
+# above it are skipped before encoding: the COCO RLE encoder allocates memory
+# proportional to the outline length, so a single oversized (looping or
+# prompt-injected) model answer could otherwise cost gigabytes. At the
+# default, one worst-case polygon on a 4000x3000 image costs ~120 MB and
+# ~0.2 s; real outlines stay far below the bound.
+WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES = int(
+    os.getenv("WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES", "500")
+)
+
 DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
