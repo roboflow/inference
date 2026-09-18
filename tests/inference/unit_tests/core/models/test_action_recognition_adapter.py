@@ -114,6 +114,48 @@ def test_clip_response_reports_the_loaded_package(monkeypatch) -> None:
     assert response.model_dump()["resolved_model"] == vars(model.resolved_model)
 
 
+def test_clip_response_reports_the_package_of_a_wrapped_reasoner(monkeypatch) -> None:
+    from inference.core.models import base
+    from inference.core.models import inference_models_adapters as adapters
+    from inference_models.entities import ResolvedModelMetadata
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        Cosmos3EdgeActionRecognition,
+    )
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
+
+    monkeypatch.setattr(base, "USE_INFERENCE_MODELS", True)
+    # The registry hands a fine-tune over as a bare reasoner, and the
+    # auto-loader stamps the package on that reasoner, not on the wrapper.
+    reasoner = Cosmos3EdgeReasoner.__new__(Cosmos3EdgeReasoner)
+    reasoner._processor = SimpleNamespace(tokenizer=None)
+    reasoner.package_dir = None
+    reasoner.prompt_video = MagicMock(return_value="")
+    reasoner.resolved_model = ResolvedModelMetadata(
+        model_id="workspace/model",
+        model_package_id="video-package",
+        backend="hugging-face",
+        quantization="bf16",
+    )
+
+    with patch.object(adapters, "AutoModel") as auto_model:
+        auto_model.from_pretrained.return_value = reasoner
+        adapter = adapters.InferenceModelsActionRecognitionAdapter(
+            model_id="workspace/model", api_key="key"
+        )
+    with _clip(frame_count=3, source_fps=10.0):
+        response = adapter.infer_from_request(_request())
+
+    assert isinstance(adapter._model, Cosmos3EdgeActionRecognition)
+    assert adapter._model._reasoner is reasoner
+    assert reasoner.prompt_video.call_count == 1
+    assert response.model_dump()["resolved_model"] == {
+        "model_id": "workspace/model",
+        "model_package_id": "video-package",
+        "backend": "hugging-face",
+        "quantization": "bf16",
+    }
+
+
 def test_ranges_of_one_class_merge_across_windows() -> None:
     model = _FakeModel(
         responses=[

@@ -12,12 +12,20 @@ import inference.models
 from inference.core.entities.requests.clip import ClipTextEmbeddingRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.inference import (
+    ClassificationInferenceRequest,
+    InferenceRequestImage,
+)
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
 )
+from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
+)
 from inference.core.entities.responses.ocr import OCRInferenceResponse
+from inference.core.models.types import PreprocessReturnMetadata
 
 IMAGE = InferenceRequestImage(type="base64", value="unused")
 MODEL_ID = "foundation/model"
@@ -103,6 +111,65 @@ def test_legacy_ocr_request_metadata(
     assert len(responses) == (2 if batched else 1)
     for result in responses:
         assert result.result == "text"
+        assert result.model_dump()["resolved_model"] == METADATA
+
+
+@pytest.mark.parametrize("batched", [False, True], ids=["single-image", "image-list"])
+@pytest.mark.parametrize(
+    "multiclass,response_class",
+    [
+        (False, ClassificationInferenceResponse),
+        (True, MultiLabelClassificationInferenceResponse),
+    ],
+    ids=["single-label", "multi-label"],
+)
+@pytest.mark.parametrize(
+    "module_name,class_name",
+    [
+        ("yolov8.yolov8_classification", "YOLOv8Classification"),
+        ("resnet.resnet_classification", "ResNetClassification"),
+        ("vit.vit_classification", "VitClassification"),
+        ("dinov3.dinov3_classification", "DinoV3Classification"),
+    ],
+)
+def test_legacy_classification_request_metadata(
+    load_legacy_model, module_name, class_name, multiclass, response_class, batched
+):
+    batch_size = 2 if batched else 1
+    model = load_legacy_model(module_name, class_name)
+    model.multiclass = multiclass
+    model.class_names = ["cat", "dog"]
+    model.batching_enabled = False
+    model.batch_size = 1
+
+    def preprocess(image, **kwargs):
+        images_count = len(image) if isinstance(image, list) else 1
+        return (
+            np.zeros((images_count, 3, 2, 2), dtype=np.float32),
+            PreprocessReturnMetadata({"img_dims": [(2, 2)] * images_count}),
+        )
+
+    model.preprocess = Mock(side_effect=preprocess)
+    model.predict = Mock(
+        side_effect=lambda img_in, **kwargs: (
+            np.array([[[0.9, 0.1]]] * img_in.shape[0], dtype=np.float32),
+        )
+    )
+
+    response = model.infer_from_request(
+        ClassificationInferenceRequest(
+            id="test-request",
+            model_id=MODEL_ID,
+            image=[IMAGE, IMAGE] if batched else IMAGE,
+        )
+    )
+
+    assert isinstance(response, list) == batched
+    responses = response if batched else [response]
+    assert len(responses) == batch_size
+    for result in responses:
+        assert isinstance(result, response_class)
+        assert result.resolved_model.model_dump() == METADATA
         assert result.model_dump()["resolved_model"] == METADATA
 
 

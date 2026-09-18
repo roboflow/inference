@@ -9,8 +9,10 @@ from starlette.testclient import TestClient
 
 from inference.core import env
 from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
     InferenceResponseImage,
     LMMInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
 )
 from inference.core.interfaces.http import http_api
@@ -21,6 +23,10 @@ from inference.core.models import inference_models_adapters as adapters
 from inference.core.registries import roboflow as registry_module
 from inference.core.registries.base import ModelRegistry
 from inference.models import utils as model_utils
+from inference.models.dinov3.dinov3_classification import DinoV3Classification
+from inference.models.resnet.resnet_classification import ResNetClassification
+from inference.models.vit.vit_classification import VitClassification
+from inference.models.yolov8.yolov8_classification import YOLOv8Classification
 from inference.models.yolov8.yolov8_object_detection import YOLOv8ObjectDetection
 from inference_models.utils.content_addressed_artifact_cache import (
     NullContentAddressedArtifactCache,
@@ -172,6 +178,126 @@ def test_http_inference_reports_model_id_when_flag_is_disabled(monkeypatch):
         "predictions": [],
         "resolved_model": {"model_id": "test/1"},
     }
+
+
+def _legacy_classification_infer(multi_label):
+    def infer(self, image, **kwargs):
+        image_metadata = InferenceResponseImage(width=640, height=480)
+        if multi_label:
+            response = MultiLabelClassificationInferenceResponse(
+                image=image_metadata,
+                predictions={"cat": {"confidence": 0.9, "class_id": 0}},
+                predicted_classes=["cat"],
+            )
+        else:
+            response = ClassificationInferenceResponse(
+                image=image_metadata,
+                predictions=[{"class": "cat", "class_id": 0, "confidence": 0.9}],
+                top="cat",
+                confidence=0.9,
+            )
+        images = image if isinstance(image, list) else [image]
+        return [response.model_copy() for _ in images]
+
+    return infer
+
+
+def _build_legacy_classification_client(
+    monkeypatch, model_type, model_class, multi_label
+):
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", False)
+    model_types = runpy.run_path(model_utils.__file__)["ROBOFLOW_MODEL_TYPES"]
+    monkeypatch.setattr(
+        registry_module,
+        "get_model_type",
+        lambda *args, **kwargs: ("classification", model_type),
+    )
+
+    def initialize_legacy_model(self, model_id, **kwargs):
+        self.endpoint = model_id
+
+    monkeypatch.setattr(model_class, "__init__", initialize_legacy_model)
+    monkeypatch.setattr(model_class, "infer", _legacy_classification_infer(multi_label))
+    return build_client(
+        monkeypatch,
+        flag=False,
+        registry=registry_module.RoboflowModelRegistry(model_types),
+        preload=False,
+    )
+
+
+@pytest.mark.parametrize("multi_label", [False, True], ids=["single", "multi"])
+@pytest.mark.parametrize(
+    "model_type,model_class",
+    [
+        ("yolov8", YOLOv8Classification),
+        ("resnet18", ResNetClassification),
+        ("vit", VitClassification),
+        ("dinov3", DinoV3Classification),
+    ],
+)
+def test_http_classification_reports_model_id_when_flag_is_disabled(
+    monkeypatch, model_type, model_class, multi_label
+):
+    client, manager = _build_legacy_classification_client(
+        monkeypatch, model_type, model_class, multi_label
+    )
+
+    response = client.post(
+        "/infer/classification",
+        json={
+            "model_id": "test/1",
+            "image": {"type": "base64", "value": "image"},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert type(manager.models()["test/1"]) is model_class
+    payload = response.json()
+    assert payload["predicted_classes" if multi_label else "top"]
+    assert payload["resolved_model"] == {"model_id": "test/1"}
+
+
+def test_http_classification_batch_reports_model_id_when_flag_is_disabled(
+    monkeypatch,
+):
+    client, _ = _build_legacy_classification_client(
+        monkeypatch, "yolov8", YOLOv8Classification, multi_label=False
+    )
+
+    response = client.post(
+        "/infer/classification",
+        json={
+            "model_id": "test/1",
+            "image": [
+                {"type": "base64", "value": "first"},
+                {"type": "base64", "value": "second"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert [item["resolved_model"] for item in response.json()] == [
+        {"model_id": "test/1"},
+        {"model_id": "test/1"},
+    ]
+
+
+def test_legacy_route_classification_reports_model_id_when_flag_is_disabled(
+    monkeypatch,
+):
+    client, _ = _build_legacy_classification_client(
+        monkeypatch, "yolov8", YOLOv8Classification, multi_label=False
+    )
+
+    response = client.post(
+        "/test/1",
+        content="image",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["resolved_model"] == {"model_id": "test/1"}
 
 
 @pytest.mark.parametrize("api_version", ["v0", "v1"])
