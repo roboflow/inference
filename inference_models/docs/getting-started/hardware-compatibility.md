@@ -14,10 +14,11 @@ The following table shows the current testing and support status for different p
 | **NVIDIA GPU** | Ubuntu 22.04 LTS | Bare-metal, Docker | ✅ **Stable**                  |
 | **NVIDIA GPU** | Ubuntu 24.04 LTS | Bare-metal, Docker | ✅ **Stable**                  |
 | **NVIDIA GPU** | Other Linux distros | Bare-metal, Docker | ⚠️ **Requires verification**  |
-| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Docker | ✅ **Stable**                  |
-| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Bare-metal | ⚠️ **Experimental**           |
-| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Docker (custom build) | ✅ **Stable**                  |
-| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Bare-metal | ❌ **Not possible**            |
+| **Jetson (JetPack 7.2, Orin & Thor)** | Ubuntu 24.04 (Jetson) | Docker (production image) | ✅ **Stable**                  |
+| **Jetson (JetPack 6.2)** | Ubuntu 22.04 (Jetson) | Docker | ✅ **Stable (support ends 2027)** |
+| **Jetson (JetPack 6.2)** | Ubuntu 22.04 (Jetson) | Bare-metal | ⚠️ **Experimental (support ends 2027)** |
+| **Jetson (JetPack 5.1, deprecated)** | Ubuntu 20.04 (Jetson) | Docker (custom build) | ⚠️ **Deprecated — removed 2027** |
+| **Jetson (JetPack 5.1, deprecated)** | Ubuntu 20.04 (Jetson) | Bare-metal | ❌ **Not possible**            |
 | **Windows** | Windows 10/11 | Any | ❓ **Tested in limited scope** |
 
 !!! warning "Windows Support"
@@ -97,7 +98,23 @@ pip install inference-models
 
 ## 🤖 NVIDIA Jetson Support
 
-### JetPack 6.1 (Recommended)
+### JetPack 7.2 (Recommended)
+
+**Supported devices:**
+
+- Jetson Orin AGX
+- Jetson Orin NX
+- Jetson Orin Nano
+- Jetson AGX Thor
+
+**Installation:** Run the production Docker image
+`roboflow/roboflow-inference-server-jetson-7.2.0:latest` (built for JetPack 7.2 /
+CUDA 13). Bare-metal `inference-models` installation is not yet available for JetPack 7.2.
+
+### JetPack 6.2
+
+!!! info "Support ends 2027"
+    JetPack 6.2 is supported, but support will end in 2027. Migrate to JetPack 7.2 for new deployments.
 
 **Supported devices:**
 
@@ -126,7 +143,10 @@ uv pip install "inference-models[torch-jp6-cu126,onnx-jp6-cu126]"
 !!! warning "Bare-metal on Jetson"
     Bare-metal installation on Jetson devices is **experimental**. While `pip install` should work, it has not been extensively tested. We recommend using Docker for production deployments.
 
-### JetPack 5.1 (Legacy)
+### JetPack 5.1 (Deprecated)
+
+!!! warning "JetPack 5.1 is deprecated"
+    Support for JetPack 5.1.x will be removed in 2027. Migrate to JetPack 7.2.
 
 **Supported devices:**
 

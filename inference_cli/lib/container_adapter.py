@@ -109,25 +109,15 @@ _JETSON_IMAGES: List[_JetsonImage] = [
         39, 2, "7.2", "roboflow/roboflow-inference-server-jetson-7.2.0:latest"
     ),
     _JetsonImage(
-        38, 4, "7.1", "roboflow/roboflow-inference-server-jetson-7.1.0:latest"
-    ),
-    _JetsonImage(
         36, 4, "6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
     ),
-    _JetsonImage(
-        36, 3, "6.1", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
-    ),
-    _JetsonImage(
-        36, 0, "6.0", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
-    ),
     _JetsonImage(35, 0, "5", "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
-    _JetsonImage(
-        32, 6, "4.6", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
-    ),
-    _JetsonImage(
-        32, 0, "4.5", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
-    ),
 ]
+
+_SUPPORTED_JETPACK_HINT = (
+    "Supported JetPack versions: 7.2 (recommended), 6.2 and 5.1.x (deprecated). "
+    "Upgrade JetPack, or pass --image to choose a Docker image explicitly."
+)
 
 
 def get_image() -> str:
@@ -154,7 +144,10 @@ def _get_jetpack_image(jetpack_version: str) -> str:
     for entry in _JETSON_IMAGES:
         if jetpack_version.startswith(entry.jetpack_prefix):
             return entry.image
-    raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
+    raise RuntimeError(
+        f"Jetpack version: {jetpack_version} not supported. "
+        f"{_SUPPORTED_JETPACK_HINT}"
+    )
 
 
 def _image_for_l4t(l4t_major: int, l4t_minor: int) -> Optional[str]:
@@ -178,6 +171,16 @@ def _detect_jetson() -> Optional[Tuple[str, str]]:
     if dpkg_version is not None:
         return _get_jetpack_image(dpkg_version), "dpkg (nvidia-jetpack)"
 
+    if l4t is not None:
+        # This is a Jetson, but its L4T release has no supported image. Falling
+        # through to the generic GPU/CPU image selection would pull an image
+        # that cannot run here.
+        l4t_major, l4t_minor = l4t
+        raise RuntimeError(
+            f"Jetson with L4T R{l4t_major}.{l4t_minor} detected via "
+            f"/etc/nv_tegra_release, but this JetPack release is not supported. "
+            f"{_SUPPORTED_JETPACK_HINT}"
+        )
     return None
 
 
