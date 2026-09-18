@@ -426,6 +426,45 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
     assert saved["capture_gpu_work"]["memory_transfers"][0]["total_bytes"] == (1048576)
 
 
+def test_analyze_run_preserves_cpu_only_capture(tmp_path, monkeypatch):
+    run_dir = tmp_path / "cpu-run"
+    stats_dir = run_dir / "stats"
+    stats_dir.mkdir(parents=True)
+    (run_dir / "trace.nsys-rep").touch()
+    manifest = _manifest()
+    manifest["device"] = "cpu"
+    (run_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    report_paths = {
+        NVTX_PUSHPOP_TRACE_REPORT: stats_dir / "nsys_nvtx_pushpop_trace.csv",
+        NVTX_GPU_PROJECTION_TRACE_REPORT: stats_dir / "nsys_nvtx_gpu_proj_trace.csv",
+        CUDA_GPU_KERNEL_SUMMARY_REPORT: stats_dir / "nsys_cuda_gpu_kern_sum.csv",
+        CUDA_GPU_TRACE_REPORT: stats_dir / "nsys_cuda_gpu_trace.csv",
+    }
+    shutil.copy(
+        FIXTURES / "nvtx_pushpop_trace.csv", report_paths[NVTX_PUSHPOP_TRACE_REPORT]
+    )
+    for report in (
+        NVTX_GPU_PROJECTION_TRACE_REPORT,
+        CUDA_GPU_KERNEL_SUMMARY_REPORT,
+        CUDA_GPU_TRACE_REPORT,
+    ):
+        report_paths[report].touch()
+    monkeypatch.setattr(
+        "development.profiling.analyze.run_nsys_stats",
+        lambda **kwargs: NsysStatsArtifacts(
+            nsys_version=VALIDATED_NSYS_VERSION,
+            report_paths=report_paths,
+        ),
+    )
+
+    saved = json.loads(analyze_run(run_dir=run_dir).read_text(encoding="utf-8"))
+
+    assert saved["capture_gpu_work"] == {"kernels": [], "memory_transfers": []}
+    assert saved["gpu_projected_ranges"] == []
+    assert all(item["gpu_projection"] is None for item in saved["iterations"])
+    assert "Missing GPU projections for iterations: [0, 1]." in saved["warnings"]
+
+
 def _manifest():
     return {
         "profile_name": "smoke-tensor",
