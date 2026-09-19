@@ -78,7 +78,7 @@ jobs:
           export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
           export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
           wheel_name=`ls ./dist/inference_gpu-*-py3-none-any.whl | head -n 1`
-          pip install --find-links dist/ "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]" ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
+          pip install --find-links dist/ "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]" ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
           # Dependencies were resolved above; now replace any same-version
           # build-environment installs with the exact checkout artifacts.
           pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl

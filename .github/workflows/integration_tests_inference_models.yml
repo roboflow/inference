@@ -53,7 +53,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl"
+          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}"/dist/roboflow_workflows-*.whl
       - name: 🧪 Integration Tests of Inference models
         timeout-minutes: 45
         run: USE_INFERENCE_MODELS=False MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests
