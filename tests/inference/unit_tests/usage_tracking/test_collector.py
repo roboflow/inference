@@ -116,6 +116,56 @@ def test_merge_usage_dicts_raises_on_mismatched_resource_id():
         merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
 
 
+@pytest.mark.parametrize("queue_size", [1, 2, 10])
+def test_full_usage_queue_preserves_batches_across_repeated_saturation(
+    usage_collector_with_mocked_threads, monkeypatch, queue_size
+):
+    class NonBlockingQueue(Queue):
+        def put(self, item, block=True, timeout=None):
+            # Turn a would-be deadlock into a deterministic test failure.
+            super().put(item, block=False)
+
+    collector = usage_collector_with_mocked_threads
+    monkeypatch.setattr(collector, "_queue", NonBlockingQueue(maxsize=queue_size))
+
+    for cycle in range(2):
+        expected = {}
+        for index in range(4 * queue_size + 1):
+            # Revisit identities to check aggregation, while keeping more
+            # distinct sessions and outcomes than the queue can hold.
+            session = f"cycle-{cycle}-session-{index % (queue_size + 1)}"
+            api_key = f"test-key-{index % 2}"
+            fps = index % 2
+            key = usage_key(
+                "model", "test-model", outcome="error" if index % 3 else "success"
+            )
+            row = {
+                "resource_id": "test-model",
+                "api_key_hash": api_key,
+                "exec_session_id": session,
+                "fps": fps,
+                "processed_frames": 1,
+                "source_duration": 1,
+                "execution_duration": 2,
+            }
+            identity = (api_key, key, session, bool(fps))
+            expected[identity] = expected.get(identity, 0) + 1
+            collector._enqueue_payload({api_key: {key: row}})
+
+        payloads = collector._dump_usage_queue_with_lock()
+        assert collector._queue.empty()
+        actual = {}
+        for payload in payloads:
+            for api_key, rows in payload.items():
+                for key, row in rows.items():
+                    identity = (api_key, key, row["exec_session_id"], bool(row["fps"]))
+                    frames = row["processed_frames"]
+                    assert row["source_duration"] == frames
+                    assert row["execution_duration"] == 2 * frames
+                    actual[identity] = actual.get(identity, 0) + frames
+        assert actual == expected
+
+
 def test_merge_usage_dicts_merge_with_empty():
     # given
     usage_payload_1 = {
@@ -2822,3 +2872,32 @@ def test_source_tags_reach_nested_model_rows(usage_collector_with_mocked_threads
     assert request_details["source_info"] == "smart-polygon"
     assert model_details["source"] == "app"
     assert usage_source_tags.get() == {}
+
+
+def test_request_usage_falls_back_to_header_api_key(
+    usage_collector_with_mocked_threads,
+):
+    """Header-authenticated requests carry no key in any bound parameter.
+
+    Mirrors the legacy `/:dataset_id/:version_id` route: the `api_key` query
+    parameter is None, the request model is built inside the handler, and the
+    key lives only in the request-scoped `header_api_key` ContextVar set by the
+    middleware. Without the fallback `record_usage` drops the row.
+    """
+    from inference.core.interfaces.http.api_key_resolution import header_api_key
+
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def handler(dataset_id, version_id, api_key=None):
+        return "ok"
+
+    token = header_api_key.set("header-key")
+    try:
+        handler("project", "1")
+    finally:
+        header_api_key.reset(token)
+
+    api_key_hash = usage_collector._calculate_api_key_hash("header-key")
+    assert api_key_hash in usage_collector._usage
+    assert usage_key("request", "project/1") in usage_collector._usage[api_key_hash]

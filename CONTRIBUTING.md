@@ -46,12 +46,12 @@ conda activate inference-development
 
 Then, in repository root:
 ```bash
-repo_root$ (inference-development) pip install -e .
+repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e .
 ```
 
 That will install all requirements apart from SAM model. To install the latter:
 ```bash
-repo_root$ (inference-development) pip install -e ".[sam]"
+repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e ".[sam]"
 ```
 but in some OS (like MacOS) that would require installing additional libs ([this](https://medium.com/@vascofernandes_13322/how-to-install-gdal-on-macos-6a76fb5e24a4) guide should fix the issue for MacOS).
 

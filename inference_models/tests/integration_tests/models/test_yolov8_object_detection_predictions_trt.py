@@ -533,14 +533,12 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
         trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
-    pre_processed_single, _ = model.pre_process(dog_image_numpy)
-
     seen_shapes = set()
     capture_outputs = {}
     test_sequence = [1, 2, 1, 4, 2, 1, 4, 3, 3]
 
     for batch_size in test_sequence:
-        batch = pre_processed_single.repeat(batch_size, 1, 1, 1)
+        batch, _ = model.pre_process([dog_image_numpy] * batch_size)
         cache_key = (tuple(batch.shape), batch.dtype, device)
 
         cache_size_before = trt_cuda_graph_cache.get_current_size()

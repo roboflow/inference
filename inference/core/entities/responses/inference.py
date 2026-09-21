@@ -3,7 +3,22 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
+from pydantic import BaseModel, Field, ValidationError, field_serializer
+
+from inference.core.workflows.core_steps.common.inference_response_entities import (  # noqa: F401
+    CvInferenceResponse,
+    InferenceResponse,
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    ResolvedModel,
+    WithVisualizationResponse,
+)
+from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
+    InstanceSegmentationBasePrediction,
+    InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
+    Point,
+)
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -51,18 +66,6 @@ class ObjectDetectionPrediction(BaseModel):
     )
 
 
-class Point(BaseModel):
-    """Point coordinates.
-
-    Attributes:
-        x (float): The x-axis pixel coordinate of the point.
-        y (float): The y-axis pixel coordinate of the point.
-    """
-
-    x: float = Field(description="The x-axis pixel coordinate of the point")
-    y: float = Field(description="The y-axis pixel coordinate of the point")
-
-
 class Point3D(Point):
     """3D Point coordinates.
 
@@ -71,53 +74,6 @@ class Point3D(Point):
     """
 
     z: float = Field(description="The z-axis pixel coordinate of the point")
-
-
-class InstanceSegmentationBasePrediction(BaseModel):
-    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
-    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
-    width: float = Field(
-        description="The width of the prediction bounding box in number of pixels"
-    )
-    height: float = Field(
-        description="The height of the prediction bounding box in number of pixels"
-    )
-    confidence: float = Field(
-        description="The detection confidence as a fraction between 0 and 1"
-    )
-    class_name: str = Field(alias="class", description="The predicted class label")
-    class_id: int = Field(description="The class id of the prediction")
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
-    )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region",
-        default=None,
-    )
-
-
-class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
-    class_confidence: Union[float, None] = Field(
-        None, description="The class label confidence as a fraction between 0 and 1"
-    )
-    points: List[Point] = Field(
-        description="The list of points that make up the instance polygon"
-    )
-    mask_format: Literal["polygon"] = Field(
-        default="polygon",
-        description="Type of mask format",
-    )
-
-
-class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
-    rle: dict = Field(
-        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
-    )
-    mask_format: Literal["rle"] = Field(
-        default="rle",
-        description="Type of mask format",
-    )
 
 
 def _mask_to_base64_png(mask: Any) -> str:
@@ -203,72 +159,6 @@ class MultiLabelClassificationPrediction(BaseModel):
     class_id: int = Field(description="Numeric ID associated with the class label")
 
 
-class InferenceResponseImage(BaseModel):
-    """Inference response image information.
-
-    Attributes:
-        width (int): The original width of the image used in inference.
-        height (int): The original height of the image used in inference.
-    """
-
-    width: int = Field(description="The original width of the image used in inference")
-    height: int = Field(
-        description="The original height of the image used in inference"
-    )
-
-
-class InferenceResponse(BaseModel):
-    """Base inference response.
-
-    Attributes:
-        inference_id (Optional[str]): Unique identifier of inference
-        frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
-        time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
-    """
-
-    model_config = ConfigDict(protected_namespaces=())
-    inference_id: Optional[str] = Field(
-        description="Unique identifier of inference", default=None
-    )
-    frame_id: Optional[int] = Field(
-        default=None,
-        description="The frame id of the image used in inference if the input was a video",
-    )
-    time: Optional[float] = Field(
-        default=None,
-        description="The time in seconds it took to produce the predictions including image preprocessing",
-    )
-
-
-class CvInferenceResponse(InferenceResponse):
-    """Computer Vision inference response.
-
-    Attributes:
-        image (Union[List[inference.core.entities.responses.inference.InferenceResponseImage], inference.core.entities.responses.inference.InferenceResponseImage]): Image(s) used in inference.
-    """
-
-    image: Union[List[InferenceResponseImage], InferenceResponseImage]
-
-
-class WithVisualizationResponse(BaseModel):
-    """Response with visualization.
-
-    Attributes:
-        visualization (Optional[Any]): Base64 encoded string containing prediction visualization image data.
-    """
-
-    visualization: Optional[Any] = Field(
-        default=None,
-        description="Base64 encoded string containing prediction visualization image data",
-    )
-
-    @field_serializer("visualization", when_used="json")
-    def serialize_visualisation(self, visualization: Optional[Any]) -> Optional[str]:
-        if visualization is None:
-            return None
-        return base64.b64encode(visualization).decode("utf-8")
-
-
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Object Detection inference response.
 
@@ -295,23 +185,6 @@ class KeypointsDetectionInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):
     predictions: List[KeypointsPrediction]
-
-
-class InstanceSegmentationInferenceResponse(
-    CvInferenceResponse, WithVisualizationResponse
-):
-    """Instance Segmentation inference response.
-
-    Attributes:
-        predictions (List[Union[
-            inference.core.entities.responses.inference.InstanceSegmentationPrediction,
-            inference.core.entities.responses.inference.InstanceSegmentationRLEPrediction
-        ]]): List of instance segmentation predictions.
-    """
-
-    predictions: List[
-        Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
-    ]
 
 
 # Dataclass twins used on the workflow-local fast path in
@@ -360,11 +233,21 @@ class InstanceSegmentationInferenceResponseDC:
     frame_id: object = None
     time: object = None
     visualization: object = None
+    resolved_model: Optional[ResolvedModel] = None
     # Internal stream-pipeline fast path: lets workflow execution carry a
     # response future through Model.infer_from_request without blocking the
     # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
     _async_response_future: object = None
     _async_response_context_id: object = None
+
+    def to_dict(self) -> dict:
+        """Public form of `_is_response_dc_to_dict`.
+
+        The workflow instance-segmentation block and the workflows models
+        provider duck-type this so they do not import a private symbol across
+        the package boundary.
+        """
+        return _is_response_dc_to_dict(self)
 
 
 def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
@@ -402,6 +285,8 @@ def _is_response_dc_to_dict(r: InstanceSegmentationInferenceResponseDC) -> dict:
         d["time"] = r.time
     if r.visualization is not None:
         d["visualization"] = r.visualization
+    if r.resolved_model is not None:
+        d["resolved_model"] = r.resolved_model.model_dump()
     return d
 
 
@@ -437,6 +322,20 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
         default=None,
+    )
+
+
+class AnomalyDetectionResponse(ClassificationInferenceResponse):
+    anomaly_score: float = Field(
+        description="Raw anomaly score; larger means more anomalous"
+    )
+    anomaly_threshold: float = Field(
+        description="Decision threshold fitted on validation images"
+    )
+    is_anomalous: bool
+    anomaly_map: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Raw local anomaly evidence in original image coordinates",
     )
 
 
@@ -481,7 +380,7 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     landmarks: Union[List[Point], List[Point3D]]
 
 
-class DepthEstimationResponse(BaseModel):
+class DepthEstimationResponse(InferenceResponse):
     """Response for depth estimation inference.
 
     Attributes:

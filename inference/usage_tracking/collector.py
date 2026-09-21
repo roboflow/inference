@@ -38,6 +38,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
 )
+from inference.core.interfaces.http.api_key_resolution import header_api_key
 from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
@@ -420,8 +421,10 @@ class UsageCollector:
                 merged_usage_payloads = zip_usage_payloads(
                     usage_payloads=usage_payloads,
                 )
-                for usage_payload in merged_usage_payloads:
-                    self._queue.put(usage_payload)
+                # Distinct sessions may not compress below the queue capacity.
+                # Keep the merged payloads in one slot so enqueueing cannot
+                # block while holding the lock needed by the queue consumer.
+                self._queue.put(merged_usage_payloads)
 
     def record_resource_details(
         self,
@@ -960,6 +963,11 @@ class UsageCollector:
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
+            if not usage_api_key:
+                # `Authorization: Bearer` key lives only in the request-scoped
+                # ContextVar - routes that keep the resolved key in a local
+                # variable never expose it through any bound parameter.
+                usage_api_key = header_api_key.get() or ""
 
         roboflow_service_name = func_kwargs.get("source_info") or source_info
         roboflow_internal_secret = func_kwargs.get("service_secret")

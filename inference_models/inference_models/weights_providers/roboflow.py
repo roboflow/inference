@@ -16,6 +16,7 @@ from inference_models.configuration import (
     ROBOFLOW_API_KEY,
     SECURE_GATEWAY,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
 
 LOCAL_API_KEY = "local"
 
@@ -215,16 +216,7 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    # Mirror `inference.core.utils.url_utils.wrap_url`: keep the full gateway
-    # base, including any path component, so a SECURE_GATEWAY of
-    # "https://gw.local/edge" proxies through "https://gw.local/edge/proxy"
-    # instead of silently dropping "/edge". Bare host[:port] values keep the
-    # historical http:// scheme for legacy license servers.
-    gateway = SECURE_GATEWAY.rstrip("/")
-    if "://" in gateway:
-        gateway_base = gateway
-    else:
-        gateway_base = f"http://{gateway}"
+    gateway_base = validate_secure_gateway_url(SECURE_GATEWAY)
     gateway_prefix = f"{gateway_base}/proxy?url="
     # Idempotent: an already-wrapped URL (e.g. a download_url proxied upstream)
     # must not be proxied twice.

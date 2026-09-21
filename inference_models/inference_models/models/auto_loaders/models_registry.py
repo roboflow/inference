@@ -599,6 +599,22 @@ REGISTERED_MODELS: Dict[
         class_name="DinoV3ForClassificationTorch",
     ),
     (
+        "patchcore",
+        CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_models.models.patchcore.patchcore_anomaly_detection_torch",
+        class_name="PatchCoreForAnomalyDetectionTorch",
+    ),
+    (
+        "foundad",
+        CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_models.models.foundad.foundad_anomaly_detection_torch",
+        class_name="FoundADForAnomalyDetectionTorch",
+    ),
+    (
         "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,

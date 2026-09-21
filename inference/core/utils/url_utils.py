@@ -2,22 +2,14 @@ import urllib.parse
 from typing import Optional
 
 from inference.core.env import SECURE_GATEWAY
+from inference.core.utils.secure_gateway import validate_secure_gateway_url
 
 
 def get_secure_gateway_base_url() -> Optional[str]:
-    """Base URL of the configured secure gateway, or None when not configured.
-
-    The secure gateway serves TLS on 443 by default, so SECURE_GATEWAY may be
-    scheme-qualified (https://gateway.local). Bare host[:port] values keep the
-    historical http:// behaviour for legacy license servers. A trailing slash
-    is stripped so callers can append paths directly.
-    """
+    """Return the TLS gateway base; explicit loopback HTTP supports local tunnels."""
     if not SECURE_GATEWAY:
         return None
-    gateway = SECURE_GATEWAY.rstrip("/")
-    if "://" in gateway:
-        return gateway
-    return f"http://{gateway}"
+    return validate_secure_gateway_url(SECURE_GATEWAY)
 
 
 def wrap_url(url: str) -> str:
