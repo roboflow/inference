@@ -12,6 +12,7 @@ from inference_cli.lib.podman_adapter import (
     build_podman_launch_command,
     find_cdi_spec,
     find_running_podman_inference_containers,
+    pull_image_with_podman,
 )
 
 
@@ -343,6 +344,35 @@ class TestFindCdiSpec:
 
 
 class TestBuildPodmanLaunchCommand:
+    def test_docker_hub_short_names_are_qualified_for_pull(self) -> None:
+        # Fedora enforces podman short-name resolution: a bare
+        # `roboflow/...` pull fails without a TTY, so the CLI must qualify it.
+        assert (
+            podman_adapter._resolve_pull_ref(
+                "roboflow/roboflow-inference-server-cpu:latest"
+            )
+            == "docker.io/roboflow/roboflow-inference-server-cpu:latest"
+        )
+        assert (
+            podman_adapter._resolve_pull_ref("quay.io/ns/img:1") == "quay.io/ns/img:1"
+        )
+        assert podman_adapter._resolve_pull_ref("localhost/img:1") == "localhost/img:1"
+        assert (
+            podman_adapter._resolve_pull_ref("registry.local:5000/img:1")
+            == "registry.local:5000/img:1"
+        )
+
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_pull_qualifies_short_names(self, run_mock: MagicMock) -> None:
+        run_mock.return_value = MagicMock(returncode=1)  # image not present
+        pull_image_with_podman("roboflow/roboflow-inference-server-cpu:latest")
+        assert run_mock.call_args_list[0].args[0] == [
+            "podman",
+            "image",
+            "exists",
+            "docker.io/roboflow/roboflow-inference-server-cpu:latest",
+        ]
+
     def _args(self, device_requests=None, development=False):
         return dict(
             image="roboflow/roboflow-inference-server-gpu:latest",

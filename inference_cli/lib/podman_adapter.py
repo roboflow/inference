@@ -210,7 +210,25 @@ def _cdi_kind(path: Path) -> Optional[str]:
     return None
 
 
+def _resolve_pull_ref(image: str) -> str:
+    """Fully-qualify a Docker Hub reference before pulling.
+
+    Fedora ships podman with short-name resolution enforced: a name like
+    ``roboflow/roboflow-inference-server-cpu`` without a registry prefix is
+    ambiguous and `podman pull` refuses to resolve it without a TTY. The
+    docker SDK resolves such names against Docker Hub implicitly, so match
+    that behaviour here. Names that already carry a registry hint (a dot or
+    a port in the first path segment, or the ``localhost`` host) pass through
+    untouched.
+    """
+    first, _, _ = image.partition("/")
+    if "/" in image and ("." in first or ":" in first or first == "localhost"):
+        return image
+    return f"docker.io/{image}"
+
+
 def pull_image_with_podman(image: str, use_local_images: bool = False) -> None:
+    image = _resolve_pull_ref(image)
     exists = subprocess.run(
         ["podman", "image", "exists", image],
         capture_output=True,
