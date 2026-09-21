@@ -7,7 +7,7 @@ requires-python = ">=3.10,<3.13"
 dependencies = [
   "inference-models>=0.31.0,<1.0",
   "numpy",
-  "pillow-heif>=0.18.0",
+  "pillow-heif>=1.7.0",
   "imagecodecs",
   "filelock",
 ]

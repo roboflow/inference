@@ -1034,7 +1034,7 @@ requires-dist = [
     { name = "inference-models", extras = ["torch-jp6-cu126"], marker = "extra == 'torch-jp6-cu126'" },
     { name = "inference-models", extras = ["trt10-runtime"], marker = "extra == 'trt10-runtime'" },
     { name = "numpy" },
-    { name = "pillow-heif", specifier = ">=0.18.0" },
+    { name = "pillow-heif", specifier = ">=1.7.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.0" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.0.0" },
