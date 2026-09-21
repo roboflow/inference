@@ -77,7 +77,7 @@ class FakeGitHub:
             "id": 100,
             "run_attempt": 1,
             "path": bridge.WORKFLOW,
-            "name": "Claude PR Review",
+            "name": f"Claude review PR #2989 at {HEAD} using workflow {BASE}",
             "event": "pull_request_target",
             "head_branch": "contributor-branch",
             "head_sha": HEAD,
@@ -251,6 +251,15 @@ class HandoffTests(unittest.TestCase):
             self.github.result,
         )
         self.assertEqual(self.automatic()["key"], f"pass:{HEAD}")
+
+    def test_run_name_is_display_metadata(self):
+        """Accept both observed API names while authenticating the workflow source."""
+        for name in ("Claude PR Review", self.github.run["display_title"]):
+            with self.subTest(name=name):
+                self.github.run["name"] = name
+                handoff = self.automatic()
+                self.assertIsNotNone(handoff)
+                self.assertEqual(handoff["key"], f"pass:{HEAD}")
 
     def test_no_pass_for_findings_skip_or_missing_prompt(self):
         """Verify no pass for findings skip or missing prompt."""

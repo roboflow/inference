@@ -379,9 +379,10 @@ def automatic_handoff(github, *, event):
     trigger = event["workflow_run"]
     run_id, attempt = trigger["id"], trigger["run_attempt"]
     run = github.api(f"actions/runs/{run_id}/attempts/{attempt}")
+    # The attempts API can put the dynamic run-name in `name`. Authenticate
+    # the workflow path and trusted source below, not this display metadata.
     if (
         run["path"] != WORKFLOW
-        or run["name"] != "Claude PR Review"
         or run["event"] not in {"pull_request_target", "workflow_dispatch"}
         or run["id"] != run_id
         or run["head_repository"]["full_name"] != github.repo
