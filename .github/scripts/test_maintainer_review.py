@@ -606,6 +606,34 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         self.assertEqual(post.call_args.kwargs["payload"]["thread_ts"], "123.000001")
 
+    def test_user_and_group_ids_use_their_respective_mention_syntax(self):
+        """Render configured users and groups, including mixed whitespace-padded lists."""
+        for maintainers, expected in (
+            ("U123,W456", "<@U123> <@W456>"),
+            ("S123", "<!subteam^S123>"),
+            ("S123,S456", "<!subteam^S123> <!subteam^S456>"),
+            (" U123 , S456 , W789 ", "<@U123> <!subteam^S456> <@W789>"),
+        ):
+            with self.subTest(maintainers=maintainers):
+                self.github = FakeGitHub()
+                post = Mock(return_value={"channel": "C123", "ts": "123.000001"})
+                handoff = self.automatic()
+                bridge.publish(
+                    self.github,
+                    handoff=handoff,
+                    channel="C123",
+                    maintainers=maintainers,
+                    token="secret",
+                    post=post,
+                    now=NOW,
+                )
+
+                payload = post.call_args.kwargs["payload"]
+                self.assertEqual(
+                    payload["blocks"][0]["text"],
+                    {"type": "mrkdwn", "text": f"{expected}\n*{handoff['kind']}*"},
+                )
+
     def test_pass_after_escalation_updates_thread_without_repeated_mention(self):
         """An agent pass still appears during cooldown but does not ping again."""
         post = Mock(return_value={"channel": "C123", "ts": "123.000001"})
@@ -614,7 +642,7 @@ class HandoffTests(unittest.TestCase):
             self.github,
             handoff=escalation,
             channel="C123",
-            maintainers="U123",
+            maintainers="U123,S456",
             token="secret",
             post=post,
             now=NOW,
@@ -623,7 +651,7 @@ class HandoffTests(unittest.TestCase):
             self.github,
             handoff=self.automatic(),
             channel="C123",
-            maintainers="U123",
+            maintainers="U123,S456",
             token="secret",
             post=post,
             now=NOW + timedelta(hours=1),
@@ -633,6 +661,8 @@ class HandoffTests(unittest.TestCase):
         first, second = [call.kwargs["payload"] for call in post.call_args_list]
         self.assertIn("<@U123>", first["blocks"][0]["text"]["text"])
         self.assertNotIn("<@U123>", second["blocks"][0]["text"]["text"])
+        self.assertIn("<!subteam^S456>", first["blocks"][0]["text"]["text"])
+        self.assertNotIn("<!subteam^S456>", second["blocks"][0]["text"]["text"])
         self.assertEqual(second["thread_ts"], "123.000001")
 
     def test_forged_state_cannot_redirect_message(self):
@@ -734,6 +764,13 @@ class HandoffTests(unittest.TestCase):
             ("#release", "U123", "secret"),
             ("C123", "@everyone", "secret"),
             ("C123", "U123", ""),
+            ("C123", "", "secret"),
+            ("C123", "S", "secret"),
+            ("C123", "S123,", "secret"),
+            ("C123", "U123,,S456", "secret"),
+            ("C123", "S123,C456", "secret"),
+            ("C123", "S123|<!channel>", "secret"),
+            ("C123", "<!subteam^S123>", "secret"),
         ):
             post = Mock()
             with self.assertRaises(ValueError):

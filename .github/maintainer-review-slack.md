@@ -38,10 +38,15 @@ users who can change them without review can change the policy.
    | Variable | Value |
    | --- | --- |
    | `SLACK_REVIEW_CHANNEL_ID` | The channel's `C…` ID, not its name |
-   | `SLACK_REVIEW_MAINTAINER_IDS` | Comma-separated Slack user IDs, e.g. `U123,U456` |
+   | `SLACK_REVIEW_MAINTAINER_IDS` | Comma-separated user IDs (`U…` / `W…`) or user-group IDs (`S…`), e.g. `U123,S456` |
 
    Only these configured maintainers are mentioned. Select the reviewer rotation
    or individuals the team wants notified. The bot does not assign GitHub reviewers.
+   Supply raw IDs without `@` or mention markup; individual users and groups can
+   be mixed in one list. Group IDs are sent using Slack's `<!subteam^S…>` syntax,
+   so Slack handles the group's current membership. No additional scope is needed
+   when the group ID is configured directly. The same 24-hour mention cooldown
+   applies to both users and groups.
 5. After merging the code and completing setup, add the **repository variable**
    `MAINTAINER_REVIEW_SLACK_ENABLED=true`. It must be repository-level because
    the job condition is evaluated before environment variables are available.

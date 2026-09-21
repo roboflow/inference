@@ -669,7 +669,7 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post, no
         github (GitHub): Repository-scoped GitHub client.
         handoff (dict): Validated review or escalation with its PR and event key.
         channel (str): Configured Slack channel ID.
-        maintainers (str): Comma-separated Slack user IDs to mention.
+        maintainers (str): Comma-separated Slack user or user-group IDs to mention.
         token (str): Credential for this client or notification step; never logged.
         post (Callable): Message sender accepting token and payload keyword arguments.
         now (datetime | None): UTC delivery time, or None to use the current time.
@@ -683,9 +683,9 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post, no
     if not token or not re.fullmatch(r"C[A-Z0-9]+", channel):
         raise ValueError("Configure the Slack environment token and channel ID")
 
-    ids = maintainers.split(",")
-    if not ids or any(not re.fullmatch(r"[UW][A-Z0-9]+", item.strip()) for item in ids):
-        raise ValueError("Configure comma-separated maintainer Slack user IDs")
+    ids = [item.strip() for item in maintainers.split(",")]
+    if any(not re.fullmatch(r"[UWS][A-Z0-9]+", item) for item in ids):
+        raise ValueError("Configure comma-separated maintainer Slack user or group IDs")
 
     pr = handoff["pr"]
     number = pr["number"]
@@ -718,7 +718,12 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post, no
         or not state.get("last_mention_at")
         or (now - datetime.fromisoformat(state["last_mention_at"]) >= COOLDOWN)
     )
-    mentions = " ".join(f"<@{item.strip()}>" for item in ids) if mention_due else ""
+    mentions = ""
+    if mention_due:
+        mentions = " ".join(
+            f"<!subteam^{item}>" if item.startswith("S") else f"<@{item}>"
+            for item in ids
+        )
     payload = {
         "channel": channel,
         "text": f"Maintainer review requested for {github.repo} PR #{number}",
