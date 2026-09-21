@@ -41,7 +41,17 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
             number="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
             login="$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")"
-            permission="$(gh api "repos/${REPO}/collaborators/${login}/permission" --jq '.permission')"
+            if permission_response="$(gh api --include "repos/${REPO}/collaborators/${login}/permission" --jq '.permission')"; then
+              permission="$(printf '%s\n' "$permission_response" | tail -n 1)"
+            else
+              # Missing/inaccessible collaborator records are ineligible. Keep
+              # other API or transport failures visible so they can be retried.
+              status="$(printf '%s\n' "$permission_response" | awk 'NR == 1 { print $2 }')"
+              case "$status" in
+                403|404) echo "::notice::Cannot verify requester permission (HTTP ${status}); skipping."; exit 0 ;;
+                *) echo "::error::Requester permission lookup failed."; exit 1 ;;
+              esac
+            fi
             case "$permission" in write|maintain|admin) ;; *) exit 0 ;; esac
           else
             event="$(jq -r '.workflow_run.event' "$GITHUB_EVENT_PATH")"
@@ -60,6 +70,8 @@ jobs:
     needs: eligibility
     if: needs.eligibility.outputs.number != ''
     # Serialize state updates for each PR while retaining bursts of requests.
+    # GitHub supports queue: max for jobs and workflows (up to 100 pending):
+    # https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues/
     concurrency:
       group: ${{ github.workflow }}-${{ needs.eligibility.outputs.number }}
       cancel-in-progress: false
