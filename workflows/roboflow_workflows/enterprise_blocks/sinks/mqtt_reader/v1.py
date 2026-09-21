@@ -13,6 +13,11 @@ from typing_extensions import Annotated
 # handlers / filters / propagation still apply when installed, without
 # importing the server logger module.
 logger = logging.getLogger("inference")
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    MQTT_KEEPALIVE_SECONDS,
+    ConfigurationError,
+    resolve_broker_address,
+)
 from roboflow_workflows.environment import GCP_SERVERLESS, LAMBDA
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
@@ -74,6 +79,13 @@ for the background reconnect before reporting the failure.
 The block is not available on the Roboflow hosted platform (`GCP_SERVERLESS` or
 `LAMBDA`): every run fails there without opening a connection. It is intended for
 self-hosted inference servers and InferencePipelines that can reach the broker.
+
+The server operator may restrict which brokers the MQTT blocks connect to with
+`MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]` entries) and
+`MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (when False, the workflow's host and
+port are ignored and the first allowlist entry is used); a run the policy forbids is
+reported in the outputs. The connection uses a 15 s keepalive, so a broker that
+disappears without closing the connection is noticed within about 25 s.
 
 Outputs:
     - value (str): Raw message payload decoded as UTF-8, or None when nothing was
@@ -431,6 +443,14 @@ class MQTTReaderBlockV1(WorkflowBlock):
             return self._handle_failure(
                 "Password provided without username. Set username to enable MQTT authentication."
             )
+        try:
+            # the operator's broker policy; the RESOLVED address is what the
+            # block connects to and what the connection identity is built from
+            host, port = resolve_broker_address(
+                host, port, log_override=self._client is None
+            )
+        except ConfigurationError as e:
+            return self._handle_failure(str(e))
         with self._lifecycle_lock:
             return self._connect_and_read(
                 host=host,
@@ -492,7 +512,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 # the TCP connect happens here, bounded by _connect_timeout
                 # (DNS resolution is not - it runs under the OS resolver
                 # timeout); the CONNACK wait below covers the handshake rest
-                client.connect(host, port)
+                client.connect(host, port, keepalive=MQTT_KEEPALIVE_SECONDS)
                 client.loop_start()
             except OSError as e:
                 # broker unreachable: nothing is kept and no loop was started,

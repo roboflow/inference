@@ -68,6 +68,16 @@ KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS = (
     if _CONFIGURATION.engine.kafka_sinks_whitelisted_bootstrap_servers is None
     else list(_CONFIGURATION.engine.kafka_sinks_whitelisted_bootstrap_servers)
 )
+MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST = (
+    _CONFIGURATION.engine.allow_mqtt_blocks_user_provided_host
+)
+# A list, not a set: the first entry is the broker the MQTT blocks connect to
+# when user-provided hosts are not allowed.
+MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS = (
+    None
+    if _CONFIGURATION.engine.mqtt_blocks_whitelisted_hosts is None
+    else list(_CONFIGURATION.engine.mqtt_blocks_whitelisted_hosts)
+)
 
 # --- tensor representation ---
 ENABLE_TENSOR_DATA_REPRESENTATION = _CONFIGURATION.tensor.representation_enabled

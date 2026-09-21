@@ -12,6 +12,11 @@ from typing_extensions import Annotated
 # importing the server logger module.
 logger = logging.getLogger("inference")
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
+from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    MQTT_KEEPALIVE_SECONDS,
+    ConfigurationError,
+    resolve_broker_address,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -43,6 +48,14 @@ instance, so each request pays the bounded connect and a failed request is
 final for that request. One block instance publishes to a single broker
 connection: changing host, port, credentials or timeout between runs is
 rejected as a configuration error.
+
+The server operator may restrict which brokers the MQTT blocks connect to
+with `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]`
+entries) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (when False, the
+workflow's host and port are ignored and the first allowlist entry is used);
+a run the policy forbids is reported like any other failure. The connection
+uses a 15 s keepalive, so a broker that disappears without closing the
+connection is noticed within about 25 s.
 
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
@@ -278,6 +291,14 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 "Password provided without username. Set username to enable MQTT authentication.",
                 fail_fast=fail_fast,
             )
+        try:
+            # the operator's broker policy; the RESOLVED address is what the
+            # block connects to and what the connection identity is built from
+            host, port = resolve_broker_address(
+                host, port, log_override=self.mqtt_client is None
+            )
+        except ConfigurationError as e:
+            return self._handle_failure(str(e), fail_fast=fail_fast)
         with self._lifecycle_lock:
             return self._connect_and_publish(
                 host=host,
@@ -326,7 +347,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 # the TCP connect happens here, bounded by _connect_timeout
                 # (DNS resolution is not - it runs under the OS resolver
                 # timeout); the CONNACK wait below covers the handshake rest
-                client.connect(host, port)
+                client.connect(host, port, keepalive=MQTT_KEEPALIVE_SECONDS)
                 client.loop_start()
             except OSError as e:
                 # broker unreachable: nothing is kept and no loop was started,

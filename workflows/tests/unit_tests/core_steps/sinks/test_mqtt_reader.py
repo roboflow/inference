@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
+from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader import v1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import (
     LATEST_BUFFER_SIZE,
@@ -86,10 +87,11 @@ class FakeClient:
     def reconnect_delay_set(self, min_delay, max_delay):
         self.reconnect_delays = (min_delay, max_delay)
 
-    def connect(self, host, port):
+    def connect(self, host, port, keepalive=60):
         if self.connect_error is not None:
             raise self.connect_error
         self.connected_to = (host, port)
+        self.keepalive = keepalive
 
     def loop_start(self):
         self.loop_started = True
@@ -428,6 +430,7 @@ class TestConnectionLifecycle:
         assert client.on_disconnect is mqtt_on_disconnect
         assert client.reconnect_delays == (0.125, 0.5)
         assert client._connect_timeout == 0.25
+        assert client.keepalive == 15
 
     def test_client_reused_across_runs(self, clients, block):
         block.run(**run_kwargs())
@@ -789,3 +792,74 @@ class TestReading:
             block.close()
 
         mock_print.assert_not_called()
+
+
+class TestBrokerPolicy:
+    def test_allowlisted_broker_is_used(self, clients, block, monkeypatch):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["LocalHost"]
+        )
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        assert clients[0].connected_to == ("localhost", 1883)
+
+    def test_unlisted_broker_rejected_before_client_construction(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker.internal"]
+        )
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "not permitted" in result["error_message"]
+        assert "broker.internal" not in result["error_message"]
+        assert clients == []
+
+    def test_port_mismatch_rejected(self, clients, block, monkeypatch):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["localhost:8883"]
+        )
+
+        result = block.run(**run_kwargs(port=1883))
+
+        assert result["error_status"] is True
+        assert clients == []
+
+    def test_operator_broker_replaces_workflow_host_when_user_host_not_allowed(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", False
+        )
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["operator:8883"]
+        )
+
+        first = block.run(**run_kwargs(host="workflow-a"))
+        # identity is the resolved address: a different workflow host is not a change
+        second = block.run(**run_kwargs(host="workflow-b"))
+
+        assert first["error_status"] is False
+        assert second["error_status"] is False
+        assert len(clients) == 1
+        assert clients[0].connected_to == ("operator", 8883)
+
+    def test_user_host_not_allowed_without_operator_broker_disables_block(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", False
+        )
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", None
+        )
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "disabled" in result["error_message"]
+        assert clients == []
