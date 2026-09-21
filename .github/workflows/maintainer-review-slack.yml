@@ -1,0 +1,52 @@
+name: Maintainer Review Slack Handoff
+
+on:
+  workflow_run:
+    workflows: [Claude PR Review]
+    types: [completed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+# Preserve bursts of handoffs; ordinary concurrency retains only one pending
+# run and could silently discard an author's escalation.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  notify:
+    if: >-
+      vars.MAINTAINER_REVIEW_SLACK_ENABLED == 'true' &&
+      github.repository == 'roboflow/inference' &&
+      (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+         startsWith(github.event.comment.body, '/maintainer-review '))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Configure this environment to allow the main BRANCH only (no PR refs or
+    # tags). Store SLACK_REVIEW_BOT_TOKEN here, never as a repository secret.
+    environment: maintainer-review-slack
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      # workflow_run and issue_comment execute on the default branch. Never
+      # replace this with a checkout of the triggering PR or run's head SHA.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Notify the maintainer in Slack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLACK_REVIEW_BOT_TOKEN: ${{ secrets.SLACK_REVIEW_BOT_TOKEN }}
+          SLACK_REVIEW_CHANNEL_ID: ${{ vars.SLACK_REVIEW_CHANNEL_ID }}
+          SLACK_REVIEW_MAINTAINER_IDS: ${{ vars.SLACK_REVIEW_MAINTAINER_IDS }}
+        run: python3 .github/scripts/maintainer_review.py notify

@@ -38,7 +38,9 @@ def _triggers(document: dict) -> set[str]:
 def find_offenders(workflows_dir: Path) -> list[str]:
     offenders: list[str] = []
     names: dict[str, list[str]] = defaultdict(list)
-    for path in sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml")):
+    for path in sorted(workflows_dir.glob("*.yml")) + sorted(
+        workflows_dir.glob("*.yaml")
+    ):
         with path.open() as handle:
             document = yaml.safe_load(handle)
         if not isinstance(document, dict):
@@ -47,6 +49,21 @@ def find_offenders(workflows_dir: Path) -> list[str]:
         name = document.get("name")
         if name:
             names[str(name)].append(path.name)
+        concurrency = document.get("concurrency")
+        # actionlint 1.7.12 predates GitHub's queue option. Validate it here
+        # while the notifier carries a narrowly scoped parser waiver.
+        if isinstance(concurrency, dict) and "queue" in concurrency:
+            if concurrency["queue"] not in {"single", "max"}:
+                offenders.append(
+                    f"{path.name}: concurrency.queue must be single or max"
+                )
+            if (
+                concurrency["queue"] == "max"
+                and concurrency.get("cancel-in-progress", False) is not False
+            ):
+                offenders.append(
+                    f"{path.name}: queue max requires cancel-in-progress false"
+                )
         if not _triggers(document) & GUARDED_TRIGGERS:
             continue
         concurrency = document.get("concurrency")
@@ -57,9 +74,13 @@ def find_offenders(workflows_dir: Path) -> list[str]:
             continue
         group = str(concurrency.get("group", ""))
         if "github.workflow" not in group:
-            offenders.append(f"{path.name}: concurrency.group must be keyed by github.workflow")
+            offenders.append(
+                f"{path.name}: concurrency.group must be keyed by github.workflow"
+            )
         if "cancel-in-progress" not in concurrency:
-            offenders.append(f"{path.name}: concurrency block must set cancel-in-progress")
+            offenders.append(
+                f"{path.name}: concurrency block must set cancel-in-progress"
+            )
     for name, files in sorted(names.items()):
         if len(files) > 1:
             offenders.append(

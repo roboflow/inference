@@ -37,6 +37,30 @@ All pull requests will be reviewed by the maintainers of the project. We will pr
 
 PRs must pass all tests and linting requirements before they can be merged.
 
+### Automated review and maintainer handoff
+
+For eligible same-repository PRs, Claude performs an initial review after the PR
+is marked ready. Address its findings locally, then add the `claude-review` label
+to request another pass; pushes do not automatically restart review.
+
+When the Slack handoff integration is enabled, an agent sign-off for the current
+commit requests final maintainer review in the release channel. The PR receives
+a link to that Slack discussion. A sign-off for an older commit is not forwarded.
+
+If you disagree with the agent and need a maintainer decision, post a new PR comment:
+
+```text
+/maintainer-review Explain the disputed finding and why you need a human decision.
+```
+
+The PR author or a maintainer with repository write access can use this command
+on an open, non-draft PR targeting `main`, including a fork PR. Include a reason;
+editing an existing comment does not trigger it. Escalating does not dismiss
+findings or approve the PR. Maintainers coordinate in the Slack thread and record
+their final review and approval in GitHub. Slack replies are not synced to GitHub.
+
+See [maintainer setup](.github/maintainer-review-slack.md) for activation and recovery.
+
 ## :wrench: Development environment
 We recommend creating fresh conda environment:
 ```bash

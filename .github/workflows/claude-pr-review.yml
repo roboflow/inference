@@ -224,6 +224,8 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ needs.gate.outputs.number }}
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          REVIEW_RUN: ${{ github.run_id }}
+          REVIEW_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           # Posted once we know a review will actually run (prompt present). The gate
@@ -232,6 +234,7 @@ jobs:
           # how to request a re-review.
           body="$(printf '%s\n' \
             '<!-- claude-pr-review:run-marker -->' \
+            "<!-- claude-pr-review:run=${REVIEW_RUN}:${REVIEW_ATTEMPT} -->" \
             "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
             '' \
             'New commits are **not** auto-reviewed. Add the **`claude-review`** label to request a re-review — the label is consumed when the review starts, so just add it again next time.')"
@@ -270,3 +273,35 @@ jobs:
             --model claude-opus-4-8
             --max-turns 80
             --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/*/issues/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/reviews --paginate),Bash(gh api repos/*/*/pulls/*/commits --paginate),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+
+  handoff-result:
+    name: Record maintainer handoff result
+    needs: [gate, review]
+    if: needs.gate.outputs.should_review == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # A fresh runner, trusted base code, and NO Slack credentials. The agent's
+      # workspace and processes cannot affect this collector.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+          persist-credentials: false
+      - name: Record a fresh pass for the reviewed revision
+        id: result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.gate.outputs.number }}
+          REVIEW_HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          RESULT_PATH: ${{ runner.temp }}/result.json
+        run: python3 .github/scripts/maintainer_review.py collect
+      - name: Publish handoff data
+        if: steps.result.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintainer-review-result-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/result.json
+          retention-days: 7
+          if-no-files-found: error
