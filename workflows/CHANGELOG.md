@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
+  prompts in `classes` while constraining and decoding model output with stable labels.
+
 ---
 
 ## `0.1.2`
