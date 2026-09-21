@@ -111,7 +111,7 @@ _WORKFLOW_CACHE_PUBLIC_IDENTITY_HMAC_MESSAGE = (
     b"inference-workflow-cache-public-identity-v2"
 )
 _WORKFLOW_LEGACY_CANONICAL_SEGMENT = re.compile(r"[a-z0-9-]+")
-_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 _HEADER_IDENTITY_PATTERN = re.compile(r"[\x21-\x7e]+")
 _WORKFLOW_CANONICAL_CACHE_NAMESPACE = ".canonical-v2"
 _WORKFLOW_TENANT_CACHE_NAMESPACE = ".tenanted-v2"
@@ -589,11 +589,15 @@ class ModelEndpointType(Enum):
 def get_roboflow_model_data(
     api_key: str,
     model_id: str,
-    endpoint_type: ModelEndpointType,
+    endpoint_type: Union[str, ModelEndpointType],
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> dict:
+    # Workflow blocks pass the plain string `core_model` so they do not have to
+    # import this enum (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE).
+    # `ModelEndpointType(member)` is the identity for real members.
+    endpoint_type = ModelEndpointType(endpoint_type)
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
     if not MODELS_CACHE_AUTH_ENABLED:
