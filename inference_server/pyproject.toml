@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "inference-model-manager==0.2.0",
+  "inference-sdk>=1.6.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "orjson>=3.9.0",
@@ -28,15 +29,19 @@ onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
 onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 trt10-runtime = ["inference-model-manager[trt10-runtime]"]
+workflows = ["roboflow-workflows>=0.1.2"]
 test = [
   "pytest>=8.0.0",
   "pytest-asyncio>=1.0.0",
   "pytest-timeout>=2.3.0",
+  "httpx>=0.27",
+  "requests-mock>=1.12.1",
 ]
 
 [tool.uv.sources]
 inference-model-manager = { path = "../inference_model_manager", editable = true }
 inference-models = { path = "../inference_models", editable = true }
+roboflow-workflows = { path = "../workflows", editable = true }
 
 [tool.setuptools.packages.find]
 include = ["inference_server*"]

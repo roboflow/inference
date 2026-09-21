@@ -85,3 +85,29 @@ def test_l3_proxies_do_not_import_l1_or_routers(path):
     imports = _module_imports(path)
     bad = _violates(imports, _FORBIDDEN_FOR_L3)
     assert not bad, f"{path} imports forbidden L3 dependency: {sorted(bad)}"
+
+
+_REPO_ROOT = _PKG_ROOT.parents[1]
+_MANAGER_ROOT = _REPO_ROOT / "inference_model_manager" / "inference_model_manager"
+_MODELS_ROOT = _REPO_ROOT / "inference_models" / "inference_models"
+
+_PACKAGE_RULES = [
+    (_PKG_ROOT, {"inference"}),
+    (_PKG_ROOT / "legacy", {"roboflow_workflows"}),
+    (_MANAGER_ROOT, {"inference", "inference_server"}),
+    (_MODELS_ROOT, {"inference", "inference_server", "inference_model_manager"}),
+]
+
+
+def _package_cases():
+    for root, forbidden in _PACKAGE_RULES:
+        if not root.exists():
+            continue
+        for path in _iter_py_files(root):
+            yield pytest.param(path, forbidden, id=str(path.relative_to(_REPO_ROOT)))
+
+
+@pytest.mark.parametrize("path,forbidden", list(_package_cases()))
+def test_packages_respect_dependency_direction(path, forbidden):
+    bad = _violates(_module_imports(path), forbidden)
+    assert not bad, f"{path} imports forbidden package: {sorted(bad)}"

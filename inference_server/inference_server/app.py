@@ -112,6 +112,9 @@ _CONTROL_PLANE_ROUTES = frozenset(
     }
 )
 
+_V2_PREFIX = "/v2/"
+
+
 class _AuthMiddleware:
     """ASGI middleware for auth — does NOT buffer the request body.
 
@@ -137,6 +140,10 @@ class _AuthMiddleware:
         # the root path was always 401 despite being skip-listed.
         path = scope.get("path", "").rstrip("/") or "/"
         if path in _AUTH_SKIP_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        if not path.startswith(_V2_PREFIX):
             await self.app(scope, receive, send)
             return
 

@@ -10,7 +10,9 @@ or because two call sites use different defaults) are exposed as
 the ``os.environ.get`` so the read happens at the right moment.
 """
 
+import importlib.metadata
 import os
+import uuid
 from typing import Optional
 
 from inference_models.utils.environment import (
@@ -111,3 +113,102 @@ INFERENCE_GATEWAY_DEFAULT = "direct"
 
 # ── API key fallback (server._preload_models) ─────────────────────────────
 ROBOFLOW_API_KEY_ENV = "ROBOFLOW_API_KEY"
+
+# ── Legacy routes (legacy/, workflows/) ────────────────────────────────────
+LEGACY_ROUTES_ENABLED = get_boolean_from_env("LEGACY_ROUTES_ENABLED", default=True)
+LEGACY_CATCH_ALL_ROUTE_ENABLED = get_boolean_from_env(
+    "LEGACY_ROUTE_ENABLED", default=True
+)
+LEGACY_CONTROL_PLANE_ROUTES_ENABLED = get_boolean_from_env(
+    "LEGACY_CONTROL_PLANE_ROUTES_ENABLED", default=True
+)
+DISABLE_WORKFLOW_ENDPOINTS = get_boolean_from_env(
+    "DISABLE_WORKFLOW_ENDPOINTS", default=False
+)
+OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
+ALLOW_URL_INPUT = get_boolean_from_env("ALLOW_URL_INPUT", default=True)
+ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM = get_boolean_from_env(
+    "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", default=False
+)
+LEGACY_LOAD_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_LEGACY_LOAD_TIMEOUT_S", default=300.0
+)
+LEGACY_LOAD_POLL_INTERVAL_S = get_float_from_env(
+    "INFERENCE_LEGACY_LOAD_POLL_INTERVAL_S", default=0.5
+)
+LEGACY_ROUTE_METADATA_TTL_S = get_float_from_env(
+    "INFERENCE_LEGACY_ROUTE_METADATA_TTL_S", default=30.0
+)
+CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = get_float_from_env(
+    "CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", default=0.01
+)
+CLIP_MAX_BATCH_SIZE = get_integer_from_env("CLIP_MAX_BATCH_SIZE", default=8)
+ALLOW_ORIGINS = [o for o in os.environ.get("ALLOW_ORIGINS", "*").split(",") if o]
+DEFAULT_API_KEY = (
+    os.environ.get("ROBOFLOW_API_KEY") or os.environ.get("API_KEY") or None
+)
+INFERENCE_SERVER_ID = os.environ.get("INFERENCE_SERVER_ID") or None
+GET_MODEL_REGISTRY_ENABLED = get_boolean_from_env(
+    "GET_MODEL_REGISTRY_ENABLED", default=True
+)
+CORE_MODELS_ENABLED = get_boolean_from_env("CORE_MODELS_ENABLED", default=True)
+CORE_MODEL_CLIP_ENABLED = get_boolean_from_env("CORE_MODEL_CLIP_ENABLED", default=True)
+CORE_MODEL_PE_ENABLED = get_boolean_from_env("CORE_MODEL_PE_ENABLED", default=True)
+CORE_MODEL_SAM_ENABLED = get_boolean_from_env("CORE_MODEL_SAM_ENABLED", default=True)
+CORE_MODEL_SAM2_ENABLED = get_boolean_from_env("CORE_MODEL_SAM2_ENABLED", default=True)
+CORE_MODEL_SAM3_ENABLED = get_boolean_from_env("CORE_MODEL_SAM3_ENABLED", default=True)
+CORE_MODEL_OWLV2_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_OWLV2_ENABLED", default=False
+)
+CORE_MODEL_GAZE_ENABLED = get_boolean_from_env("CORE_MODEL_GAZE_ENABLED", default=True)
+CORE_MODEL_DOCTR_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_DOCTR_ENABLED", default=True
+)
+CORE_MODEL_EASYOCR_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_EASYOCR_ENABLED", default=True
+)
+CORE_MODEL_TROCR_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_TROCR_ENABLED", default=True
+)
+CORE_MODEL_PPOCR_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_PPOCR_ENABLED", default=True
+)
+CORE_MODEL_GROUNDINGDINO_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_GROUNDINGDINO_ENABLED", default=True
+)
+CORE_MODEL_YOLO_WORLD_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_YOLO_WORLD_ENABLED", default=True
+)
+LMM_ENABLED = get_boolean_from_env("LMM_ENABLED", default=False)
+MOONDREAM2_ENABLED = get_boolean_from_env("MOONDREAM2_ENABLED", default=True)
+DEPTH_ESTIMATION_ENABLED = get_boolean_from_env(
+    "DEPTH_ESTIMATION_ENABLED", default=True
+)
+SAM3_3D_OBJECTS_ENABLED = get_boolean_from_env("SAM3_3D_OBJECTS_ENABLED", default=False)
+ACTION_RECOGNITION_ENABLED = get_boolean_from_env(
+    "ACTION_RECOGNITION_ENABLED", default=True
+)
+_SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
+SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
+    "SAM3_FINE_TUNED_MODELS_ENABLED", default=_SAM3_EXEC_MODE != "remote"
+)
+WORKFLOWS_MAX_CONCURRENT_STEPS = get_integer_from_env(
+    "WORKFLOWS_MAX_CONCURRENT_STEPS", default=8
+)
+WORKFLOWS_THREAD_POOL_WORKERS = get_integer_from_env(
+    "HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", default=16
+)
+ENABLE_WORKFLOWS_PROFILING = get_boolean_from_env(
+    "ENABLE_WORKFLOWS_PROFILING", default=False
+)
+WORKFLOWS_PROFILER_BUFFER_SIZE = get_integer_from_env(
+    "WORKFLOWS_PROFILER_BUFFER_SIZE", default=64
+)
+WORKFLOWS_DEFINITION_CACHE_TTL_S = get_integer_from_env(
+    "WORKFLOWS_DEFINITION_CACHE_EXPIRY", default=15 * 60
+)
+try:
+    SERVER_VERSION = importlib.metadata.version("inference-server")
+except importlib.metadata.PackageNotFoundError:
+    SERVER_VERSION = "0.0.0"
+SERVER_ID = uuid.uuid4().hex
