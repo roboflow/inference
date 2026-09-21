@@ -143,6 +143,19 @@ CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = get_float_from_env(
     "CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", default=0.01
 )
 CLIP_MAX_BATCH_SIZE = get_integer_from_env("CLIP_MAX_BATCH_SIZE", default=8)
+CLIP_VERSION_ID = os.environ.get("CLIP_VERSION_ID", "ViT-B-16")
+PERCEPTION_ENCODER_VERSION_ID = os.environ.get(
+    "PERCEPTION_ENCODER_VERSION_ID", "PE-Core-L14-336"
+)
+SAM_VERSION_ID = os.environ.get("SAM_VERSION_ID", "vit_h")
+SAM2_VERSION_ID = os.environ.get("SAM2_VERSION_ID", "hiera_large")
+SAM3_MAX_PROMPT_BATCH_SIZE = get_integer_from_env(
+    "SAM3_MAX_PROMPT_BATCH_SIZE", default=16
+)
+EASYOCR_VERSION_ID = os.environ.get("EASYOCR_VERSION_ID", "english_g2")
+OWLV2_VERSION_ID = os.environ.get("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
+CLASS_AGNOSTIC_NMS = get_boolean_from_env("CLASS_AGNOSTIC_NMS", default=False)
+DEFAULT_CONFIDENCE = 0.4
 ALLOW_ORIGINS = [o for o in os.environ.get("ALLOW_ORIGINS", "*").split(",") if o]
 DEFAULT_API_KEY = (
     os.environ.get("ROBOFLOW_API_KEY") or os.environ.get("API_KEY") or None
