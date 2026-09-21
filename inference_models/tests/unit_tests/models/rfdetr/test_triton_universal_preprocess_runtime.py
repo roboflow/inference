@@ -309,6 +309,17 @@ def test_uint8_request_exceeding_source_budget_is_incompatible(
     assert "exceed the Triton preprocessing budget" in compatibility.reason
 
 
+def test_default_source_budget_accepts_full_8k_dci() -> None:
+    assert not triton_universal_preprocess_runtime._source_shape_exceeds_triton_budget(
+        height=4320,
+        width=8192,
+    )
+    assert triton_universal_preprocess_runtime._source_shape_exceeds_triton_budget(
+        height=4321,
+        width=8192,
+    )
+
+
 def test_float_request_is_not_subject_to_uint8_staging_budget(monkeypatch) -> None:
     monkeypatch.setattr(
         triton_universal_preprocess_runtime,
