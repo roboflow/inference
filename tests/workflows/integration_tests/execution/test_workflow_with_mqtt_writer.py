@@ -248,6 +248,38 @@ def test_second_broker_is_rejected_instead_of_publishing_to_first(fake_mqtt_brok
         other_broker.finish()
 
 
+@pytest.mark.timeout(15)
+def test_publish_over_tls_with_ca_certificate(mqtt_test_certificates):
+    # given
+    broker = FakeMQTTBroker(tls_context=mqtt_test_certificates.server_context)
+    broker.messages_count_to_wait_for = 1
+    broker_thread = threading.Thread(target=broker.start)
+    broker_thread.start()
+    block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+
+    try:
+        # when
+        result = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="encrypted payload",
+            timeout=2.0,
+            encryption="tls",
+            ca_certificate_path=mqtt_test_certificates.ca_path,
+        )
+        broker_thread.join(timeout=2)
+
+        # then
+        assert result["error_status"] is False
+        assert result["message"] == "Message published successfully"
+        assert b"encrypted payload" in broker.messages[-1]
+        assert broker.handshake_failures == 0
+    finally:
+        block.close()
+        broker.finish()
+
+
 MQTT_SINK_WORKFLOW = {
     "version": "1.0",
     "inputs": [

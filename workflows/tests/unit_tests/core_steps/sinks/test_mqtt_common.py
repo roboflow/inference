@@ -1,4 +1,5 @@
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
@@ -6,6 +7,7 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     DEFAULT_MQTT_PORT,
     MQTT_KEEPALIVE_SECONDS,
     ConfigurationError,
+    configure_tls,
     normalise_broker_address,
     resolve_broker_address,
     split_host_port,
@@ -147,3 +149,90 @@ def test_user_host_not_allowed_without_operator_broker_is_disabled(policy):
 
     with pytest.raises(ConfigurationError, match="disabled"):
         resolve_broker_address("workflow.host", 1883)
+
+
+class TestConfigureTLS:
+    @pytest.mark.parametrize("ca_certificate_path", [None, "", "/ca.pem"])
+    @pytest.mark.parametrize("allowed", [True, False])
+    def test_disabled_tls_touches_nothing(self, ca_certificate_path, allowed):
+        client = MagicMock()
+
+        configure_tls(
+            client,
+            use_tls=False,
+            ca_certificate_path=ca_certificate_path,
+            allow_access_to_file_system=allowed,
+        )
+
+        assert client.method_calls == []
+
+    @pytest.mark.parametrize("ca_certificate_path", [None, ""])
+    def test_tls_without_ca_path_uses_system_trust_store(self, ca_certificate_path):
+        client = MagicMock()
+
+        configure_tls(
+            client,
+            use_tls=True,
+            ca_certificate_path=ca_certificate_path,
+            allow_access_to_file_system=False,
+        )
+
+        client.tls_set.assert_called_once_with()
+        client.tls_insecure_set.assert_not_called()
+
+    def test_ca_path_used_with_file_system_access(self):
+        client = MagicMock()
+
+        configure_tls(
+            client,
+            use_tls=True,
+            ca_certificate_path="/etc/ssl/factory-ca.pem",
+            allow_access_to_file_system=True,
+        )
+
+        client.tls_set.assert_called_once_with(ca_certs="/etc/ssl/factory-ca.pem")
+        client.tls_insecure_set.assert_not_called()
+
+    def test_ca_path_refused_without_file_system_access(self):
+        client = MagicMock()
+
+        with pytest.raises(ConfigurationError) as error:
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path="/etc/passwd",
+                allow_access_to_file_system=False,
+            )
+
+        assert "ca_certificate_path" in str(error.value)
+        assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in str(error.value)
+        assert client.method_calls == []
+
+    def test_unloadable_ca_bundle_reported(self):
+        client = MagicMock()
+        client.tls_set.side_effect = FileNotFoundError("no such file")
+
+        with pytest.raises(
+            ConfigurationError, match="could not load CA bundle"
+        ) as error:
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path="/missing/ca.pem",
+                allow_access_to_file_system=True,
+            )
+
+        assert "/missing/ca.pem" in str(error.value)
+        assert "no such file" in str(error.value)
+
+    def test_system_store_failure_reported(self):
+        client = MagicMock()
+        client.tls_set.side_effect = ValueError("bad context")
+
+        with pytest.raises(ConfigurationError, match="TLS could not be configured"):
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path=None,
+                allow_access_to_file_system=False,
+            )

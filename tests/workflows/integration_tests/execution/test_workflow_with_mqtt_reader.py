@@ -233,6 +233,81 @@ def test_unreachable_broker_leaves_nothing_behind_and_later_run_recovers():
             thread.join(timeout=2)
 
 
+@pytest.fixture
+def tls_broker(mqtt_test_certificates):
+    broker = FakeMQTTBroker(
+        keep_serving=True, tls_context=mqtt_test_certificates.server_context
+    )
+    thread = threading.Thread(target=broker.start, daemon=True)
+    thread.start()
+    yield broker
+    broker.finish()
+    thread.join(timeout=2)
+
+
+@pytest.mark.timeout(15)
+def test_retained_message_over_tls_with_ca_certificate(
+    tls_broker, mqtt_test_certificates
+):
+    # given
+    tls_broker.retained["plc/state"] = RUNNING
+    block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+
+    try:
+        # when
+        result = block.run(
+            **reader_kwargs(
+                tls_broker,
+                encryption="tls",
+                ca_certificate_path=mqtt_test_certificates.ca_path,
+            )
+        )
+
+        # then
+        assert result["payload"] == {"state": "RUNNING"}
+        assert result["is_new"] is True
+        assert tls_broker.connections_accepted == 1
+        assert tls_broker.handshake_failures == 0
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(15)
+def test_tls_without_ca_certificate_is_rejected_by_verification(tls_broker):
+    # given - the test CA is not in the system trust store
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(**reader_kwargs(tls_broker, encryption="tls"))
+
+        # then - the client refused the certificate; nothing is kept
+        assert result["error_status"] is True
+        assert "not connected" in result["error_message"].lower()
+        assert block._client is None
+        assert wait_until(lambda: tls_broker.handshake_failures == 1)
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(15)
+def test_tls_against_plain_broker_reports_not_connected(broker):
+    # given - the broker never speaks TLS, so the handshake waits for a
+    # ServerHello that never comes and paho's connect times out
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(**reader_kwargs(broker, encryption="tls", timeout=1.0))
+
+        # then
+        assert result["error_status"] is True
+        assert "not connected" in result["error_message"].lower()
+        assert block._client is None
+    finally:
+        block.close()
+
+
 GATED_WORKFLOW = {
     "version": "1.0",
     "inputs": [

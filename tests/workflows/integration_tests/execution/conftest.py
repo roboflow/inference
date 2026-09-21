@@ -1,9 +1,12 @@
 import os
 import os.path
 import socket
+import ssl
 import tempfile
 import threading
-from typing import Generator
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Generator, Optional
 
 import cv2
 import numpy as np
@@ -219,6 +222,7 @@ class FakeMQTTBroker:
         listening: bool = True,
         suback_reason_code: int = 0,
         keep_serving: bool = False,
+        tls_context: Optional[ssl.SSLContext] = None,
     ):
         # Bind to "localhost" for maximum performance, as described in:
         # http://docs.python.org/howto/sockets.html#ipc
@@ -235,6 +239,10 @@ class FakeMQTTBroker:
         # keep_serving: ignore recv timeouts and the message count, serve until
         # finish() / drop_connection(); needed for subscriber tests
         self.keep_serving = keep_serving
+        # tls_context: a server-side SSLContext; the accepted connection is
+        # wrapped with it before any MQTT packet is read
+        self.tls_context = tls_context
+        self.handshake_failures = 0
         self.subscriptions = []
         self.retained = {}
         self.connections_accepted = 0
@@ -260,6 +268,15 @@ class FakeMQTTBroker:
 
         conn, address = self._sock.accept()
         conn.settimeout(1)
+        if self.tls_context is not None:
+            try:
+                conn = self.tls_context.wrap_socket(conn, server_side=True)
+            except (ssl.SSLError, OSError):
+                # the client refused our certificate or never spoke TLS:
+                # treat it like a closed connection
+                self.handshake_failures += 1
+                conn.close()
+                return
         self._conn = conn
         self.connections_accepted += 1
         self._stop = False
@@ -282,6 +299,13 @@ class FakeMQTTBroker:
             print(f"Received {chunk}")
             if not chunk:
                 break
+            # exact byte: CONNECT's flags nibble is 0; a TLS ClientHello starts 0x16
+            if not connack_sent and not buffer and chunk[0] != MQTT_CONNECT:
+                # not an MQTT CONNECT (e.g. a TLS ClientHello against this plain
+                # broker): a real broker drops the connection on the protocol
+                # error, which is what lets the client fail fast
+                self.drop_connection()
+                return
             buffer += chunk
             packets, buffer = _split_mqtt_packets(buffer)
             try:
@@ -404,6 +428,70 @@ class FakeMQTTBroker:
             if conn is None:
                 raise ValueError("Connection is not open")
             conn.sendall(data)
+
+
+def _write_test_certificate(tmp_path, name, issuer=None, dns_names=()):
+    """Self-signed CA (no issuer) or a leaf signed by `issuer`, written as PEM.
+
+    Mirrors `certificate()` in tests/inference/unit_tests/core/interfaces/http/
+    test_mtls_enforcement.py; the leaf carries subjectAltName entries so paho's
+    hostname verification accepts `localhost`.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
+    now = datetime.now(timezone.utc)
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer[0].subject if issuer else subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.BasicConstraints(ca=issuer is None, path_length=None), critical=True
+        )
+    )
+    if dns_names:
+        builder = builder.add_extension(
+            x509.SubjectAlternativeName(
+                [x509.DNSName(dns_name) for dns_name in dns_names]
+            ),
+            critical=False,
+        )
+    cert = builder.sign(issuer[1] if issuer else key, hashes.SHA256())
+    cert_path, key_path = tmp_path / (name + ".pem"), tmp_path / (name + ".key")
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return cert, key, cert_path, key_path
+
+
+@pytest.fixture(scope="function")
+def mqtt_test_certificates(tmp_path):
+    """A throwaway CA and a `localhost` server certificate for TLS broker tests.
+
+    Yields `ca_path` (PEM the blocks are pointed at through `ca_certificate_path`)
+    and `server_context` (what `FakeMQTTBroker(tls_context=...)` wraps with).
+    """
+    pytest.importorskip("cryptography")
+    ca = _write_test_certificate(tmp_path, "mqtt-test-ca")
+    server = _write_test_certificate(
+        tmp_path, "mqtt-test-server", issuer=ca, dns_names=("localhost",)
+    )
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(certfile=str(server[2]), keyfile=str(server[3]))
+    return SimpleNamespace(ca_path=str(ca[2]), server_context=server_context)
 
 
 @pytest.fixture(scope="function")

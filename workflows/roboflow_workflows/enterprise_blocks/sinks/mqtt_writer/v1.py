@@ -14,6 +14,7 @@ logger = logging.getLogger("inference")
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     ConfigurationError,
+    configure_tls,
     resolve_broker_address,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
@@ -54,6 +55,14 @@ entries) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (when False, the
 workflow's host and port are ignored and the first allowlist entry is used);
 a run the policy forbids is reported like any other failure.
 
+Set `encryption` to `tls` to encrypt the connection and verify the broker's
+certificate against the system trust store; the port is not switched
+automatically, so set it to the broker's TLS port (usually 8883). A broker
+signed by a private CA needs `ca_certificate_path`, a PEM bundle on the
+machine running inference, which requires local file system access for
+Workflow blocks (`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`).
+Certificate verification cannot be disabled.
+
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
                           True if there was an error, False if successful.
@@ -68,6 +77,9 @@ By default failures are returned in the outputs and logged, and the workflow
 keeps running. Set fail_fast to True to raise the failure instead, stopping
 the workflow run - intended for one-shot requests, not streaming pipelines.
 """
+
+
+TLS_RELEVANT = {"encryption": {"values": ["tls"], "required": True}}
 
 
 def mqtt_on_connect(client, userdata, flags, reason_code, properties=None):
@@ -166,6 +178,32 @@ class BlockManifest(WorkflowBlockManifest):
         "requests; in streaming pipelines it stops processing.",
         examples=[False],
     )
+    encryption: Literal["none", "tls"] = Field(
+        default="none",
+        description="Transport security for the broker connection. `tls` encrypts the "
+        "connection and verifies the broker's certificate; set port to the broker's "
+        "TLS port (usually 8883).",
+        examples=["none", "tls"],
+        json_schema_extra={
+            "values_metadata": {
+                "none": {"name": "None", "description": "Plain TCP (default)."},
+                "tls": {
+                    "name": "TLS",
+                    "description": "Encrypted, broker certificate verified.",
+                },
+            },
+        },
+    )
+    ca_certificate_path: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
+        description="Path to a PEM CA bundle on the machine running inference, for "
+        "brokers whose certificate issuer is not in the system trust store. Requires "
+        "local file system access for Workflow blocks "
+        "(`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`); otherwise the run "
+        "reports an error. Used only when encryption is `tls`.",
+        examples=["/etc/ssl/certs/factory-ca.pem"],
+        json_schema_extra={"relevant_for": TLS_RELEVANT},
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -180,7 +218,12 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class MQTTWriterSinkBlockV1(WorkflowBlock):
-    def __init__(self, disable_sinks: bool = False):
+    def __init__(
+        self, disable_sinks: bool = False, allow_access_to_file_system: bool = False
+    ):
+        # gates `ca_certificate_path`, a server-side path chosen by the workflow;
+        # False by default so a hand-constructed block is safe
+        self._allow_access_to_file_system = allow_access_to_file_system
         self.mqtt_client: Optional[mqtt.Client] = None
         self._connected = threading.Event()
         self._connection_identity: Optional[Tuple] = None
@@ -219,7 +262,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["disable_sinks"]
+        return ["disable_sinks", "allow_access_to_file_system"]
 
     def run(
         self,
@@ -233,6 +276,8 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         retain: bool = False,
         timeout: float = 0.5,
         fail_fast: bool = False,
+        encryption: str = "none",
+        ca_certificate_path: Optional[str] = None,
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
@@ -288,6 +333,18 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 "Password provided without username. Set username to enable MQTT authentication.",
                 fail_fast=fail_fast,
             )
+        if encryption not in ("none", "tls"):
+            return self._handle_failure(
+                f"Invalid encryption: {encryption!r}. Must be 'none' or 'tls'.",
+                fail_fast=fail_fast,
+            )
+        # an empty editor field is "unset"; anything but a string is a wiring error
+        if ca_certificate_path is not None and not isinstance(ca_certificate_path, str):
+            return self._handle_failure(
+                f"Invalid ca_certificate_path: {ca_certificate_path!r}. Must be a path.",
+                fail_fast=fail_fast,
+            )
+        ca_certificate_path = ca_certificate_path or None
         try:
             # the operator's broker policy; the RESOLVED address is what the
             # block connects to and what the connection identity is built from
@@ -308,6 +365,8 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 retain=retain,
                 timeout=timeout,
                 fail_fast=fail_fast,
+                encryption=encryption,
+                ca_certificate_path=ca_certificate_path,
             )
 
     def _connect_and_publish(
@@ -322,14 +381,32 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         retain: bool,
         timeout: float,
         fail_fast: bool,
+        encryption: str = "none",
+        ca_certificate_path: Optional[str] = None,
     ) -> BlockResult:
-        connection_identity = (host, port, username, password, timeout)
+        connection_identity = (
+            host,
+            port,
+            username,
+            password,
+            timeout,
+            encryption,
+            ca_certificate_path,
+        )
         if self.mqtt_client is None:
             client = None
             try:
                 client = mqtt.Client(userdata=self._connected)
                 if username is not None:
                     client.username_pw_set(username, password)
+                # TLS must be configured before connect(); the CA path is gated
+                # by the engine's file-system permission
+                configure_tls(
+                    client,
+                    use_tls=encryption == "tls",
+                    ca_certificate_path=ca_certificate_path,
+                    allow_access_to_file_system=self._allow_access_to_file_system,
+                )
                 client.on_connect = mqtt_on_connect
                 client.on_connect_fail = mqtt_on_connect_fail
                 client.on_disconnect = mqtt_on_disconnect
@@ -346,6 +423,9 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 # timeout); the CONNACK wait below covers the handshake rest
                 client.connect(host, port)
                 client.loop_start()
+            except ConfigurationError as e:
+                # TLS setup refused before any socket was opened: nothing kept
+                return self._handle_failure(str(e), fail_fast=fail_fast)
             except OSError as e:
                 # broker unreachable: nothing is kept and no loop was started,
                 # so a failed one-shot run leaves no background thread behind;

@@ -67,6 +67,8 @@ class FakeClient:
 
     def __init__(self, userdata=None):
         self.userdata = userdata
+        # ordered record of the calls that matter for TLS: must precede connect()
+        self.calls = []
         self.on_connect = None
         self.on_connect_fail = None
         self.on_subscribe = None
@@ -87,7 +89,14 @@ class FakeClient:
     def reconnect_delay_set(self, min_delay, max_delay):
         self.reconnect_delays = (min_delay, max_delay)
 
+    def tls_set(self, ca_certs=None, **kwargs):
+        self.calls.append(("tls_set", ca_certs))
+
+    def tls_insecure_set(self, value):
+        self.calls.append(("tls_insecure_set", value))
+
     def connect(self, host, port, keepalive=60):
+        self.calls.append(("connect", host, port))
         if self.connect_error is not None:
             raise self.connect_error
         self.connected_to = (host, port)
@@ -214,8 +223,10 @@ class TestManifest:
         ]
         assert restrictions[1].applies_to_input_modes == [v1.RuntimeInputMode.IMAGE]
 
-    def test_block_declares_no_init_parameters(self):
-        assert MQTTReaderBlockV1.get_init_parameters() == []
+    def test_block_declares_file_system_init_parameter_only(self):
+        assert MQTTReaderBlockV1.get_init_parameters() == [
+            "allow_access_to_file_system"
+        ]
 
 
 class TestCallbacks:
@@ -863,3 +874,132 @@ class TestBrokerPolicy:
         assert result["error_status"] is True
         assert "disabled" in result["error_message"]
         assert clients == []
+
+
+class TestTLS:
+    def test_manifest_defaults_and_dropdown_values(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+
+        assert manifest.encryption == "none"
+        assert manifest.ca_certificate_path is None
+        assert (
+            BlockManifest.model_validate(manifest_payload(encryption="tls")).encryption
+            == "tls"
+        )
+
+    @pytest.mark.parametrize("encryption", ["ssl", "TLS", True, None, ""])
+    def test_manifest_rejects_other_encryption_values(self, encryption):
+        with pytest.raises(ValidationError):
+            BlockManifest.model_validate(manifest_payload(encryption=encryption))
+
+    def test_ca_certificate_path_is_shown_only_for_tls(self):
+        schema = BlockManifest.model_json_schema()["properties"]
+
+        assert schema["ca_certificate_path"]["relevant_for"] == {
+            "encryption": {"values": ["tls"], "required": True}
+        }
+
+    @pytest.mark.parametrize("ca_certificate_path", [None, "", "/ca.pem"])
+    def test_default_encryption_never_configures_tls(
+        self, clients, block, ca_certificate_path
+    ):
+        result = block.run(**run_kwargs(ca_certificate_path=ca_certificate_path))
+
+        assert result["error_status"] is False
+        assert [name for name, *_ in clients[0].calls] == ["connect"]
+
+    def test_tls_without_ca_path_uses_system_store_before_connect(self, clients, block):
+        result = block.run(**run_kwargs(encryption="tls"))
+
+        assert result["error_status"] is False
+        assert clients[0].calls == [
+            ("tls_set", None),
+            ("connect", "localhost", 1883),
+        ]
+
+    def test_tls_with_ca_path_and_file_system_access(self, clients):
+        block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/etc/ssl/ca.pem")
+        )
+
+        assert result["error_status"] is False
+        assert clients[0].calls == [
+            ("tls_set", "/etc/ssl/ca.pem"),
+            ("connect", "localhost", 1883),
+        ]
+
+    def test_tls_with_ca_path_refused_without_file_system_access(self, clients, block):
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/etc/passwd")
+        )
+
+        assert result["error_status"] is True
+        assert "ca_certificate_path" in result["error_message"]
+        assert (
+            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in result["error_message"]
+        )
+        assert block._client is None
+        assert clients[0].calls == []
+        assert clients[0].loop_started is False
+
+    def test_unloadable_ca_bundle_reported_and_nothing_kept(self, clients, monkeypatch):
+        def failing_tls_set(client, ca_certs=None, **kwargs):
+            raise FileNotFoundError("no such file")
+
+        monkeypatch.setattr(FakeClient, "tls_set", failing_tls_set)
+        block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/missing.pem")
+        )
+
+        assert result["error_status"] is True
+        assert "could not load CA bundle" in result["error_message"]
+        assert "/missing.pem" in result["error_message"]
+        assert block._client is None
+        assert clients[0].loop_started is False
+
+    def test_next_run_after_tls_failure_retries_with_fresh_client(self, clients, block):
+        block.run(**run_kwargs(encryption="tls", ca_certificate_path="/etc/passwd"))
+
+        result = block.run(**run_kwargs(encryption="tls"))
+
+        assert result["error_status"] is False
+        assert len(clients) == 2
+
+    @pytest.mark.parametrize(
+        "change",
+        [{"encryption": "tls"}, {"ca_certificate_path": "/other.pem"}],
+    )
+    def test_changed_tls_parameters_rejected(self, clients, change):
+        block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+        block.run(**run_kwargs())
+
+        result = block.run(**run_kwargs(**change))
+
+        assert result["error_status"] is True
+        assert "changed between runs" in result["error_message"]
+        assert len(clients) == 1
+
+    def test_invalid_encryption_at_run_time_rejected(self, clients, block):
+        result = block.run(**run_kwargs(encryption="ssl"))
+
+        assert result["error_status"] is True
+        assert "encryption" in result["error_message"]
+        assert clients == []
+
+    def test_non_string_ca_path_rejected(self, clients, block):
+        result = block.run(**run_kwargs(encryption="tls", ca_certificate_path=5))
+
+        assert result["error_status"] is True
+        assert "ca_certificate_path" in result["error_message"]
+        assert clients == []
+
+    def test_tls_insecure_is_never_called(self, clients):
+        block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+
+        block.run(**run_kwargs(encryption="tls", ca_certificate_path="/ca.pem"))
+
+        assert all(name != "tls_insecure_set" for name, *_ in clients[0].calls)

@@ -701,3 +701,153 @@ class TestBrokerPolicy:
         assert result["error_status"] is True
         assert "disabled" in result["message"]
         mock_client_cls.assert_not_called()
+
+
+def _call_names(mock_client) -> list:
+    return [call[0] for call in mock_client.method_calls]
+
+
+class TestTLS:
+    def test_manifest_defaults_and_relevant_for(self):
+        manifest = BlockManifest.model_validate(
+            {
+                "type": "roboflow_enterprise/mqtt_writer_sink@v1",
+                "name": "mqtt",
+                "host": "localhost",
+                "port": 1883,
+                "topic": "test/topic",
+                "message": "Hello, MQTT!",
+            }
+        )
+        schema = BlockManifest.model_json_schema()["properties"]
+
+        assert manifest.encryption == "none"
+        assert manifest.ca_certificate_path is None
+        assert schema["ca_certificate_path"]["relevant_for"] == {
+            "encryption": {"values": ["tls"], "required": True}
+        }
+
+    @pytest.mark.parametrize("encryption", ["ssl", "TLS", True, None])
+    def test_manifest_rejects_other_encryption_values(self, encryption):
+        with pytest.raises(ValidationError):
+            BlockManifest.model_validate(
+                {
+                    "type": "roboflow_enterprise/mqtt_writer_sink@v1",
+                    "name": "mqtt",
+                    "host": "localhost",
+                    "port": 1883,
+                    "topic": "test/topic",
+                    "message": "Hello, MQTT!",
+                    "encryption": encryption,
+                }
+            )
+
+    def test_init_parameters_include_file_system_access(self):
+        assert MQTTWriterSinkBlockV1.get_init_parameters() == [
+            "disable_sinks",
+            "allow_access_to_file_system",
+        ]
+
+    @pytest.mark.parametrize("ca_certificate_path", [None, "", "/ca.pem"])
+    def test_default_encryption_never_configures_tls(
+        self, mock_client_cls, block, ca_certificate_path
+    ):
+        block._connected.set()
+
+        result = block.run(**run_kwargs(ca_certificate_path=ca_certificate_path))
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.tls_set.assert_not_called()
+        mock_client_cls.return_value.tls_insecure_set.assert_not_called()
+
+    def test_tls_without_ca_path_uses_system_store_before_connect(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(**run_kwargs(encryption="tls"))
+
+        assert result["error_status"] is False
+        mock_client.tls_set.assert_called_once_with()
+        names = _call_names(mock_client)
+        assert names.index("tls_set") < names.index("connect")
+        mock_client.tls_insecure_set.assert_not_called()
+
+    def test_tls_with_ca_path_and_file_system_access(self, mock_client_cls):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/etc/ssl/ca.pem")
+        )
+
+        assert result["error_status"] is False
+        mock_client.tls_set.assert_called_once_with(ca_certs="/etc/ssl/ca.pem")
+        names = _call_names(mock_client)
+        assert names.index("tls_set") < names.index("connect")
+
+    def test_tls_with_ca_path_refused_without_file_system_access(
+        self, mock_client_cls, block
+    ):
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/etc/passwd")
+        )
+
+        assert result["error_status"] is True
+        assert "ca_certificate_path" in result["message"]
+        assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in result["message"]
+        assert block.mqtt_client is None
+        mock_client.tls_set.assert_not_called()
+        mock_client.connect.assert_not_called()
+        mock_client.loop_start.assert_not_called()
+
+    def test_tls_refused_with_fail_fast_raises(self, mock_client_cls, block):
+        with pytest.raises(RuntimeError, match="ca_certificate_path"):
+            block.run(
+                **run_kwargs(
+                    encryption="tls", ca_certificate_path="/etc/passwd", fail_fast=True
+                )
+            )
+
+        assert block.mqtt_client is None
+
+    def test_unloadable_ca_bundle_reported_and_nothing_kept(self, mock_client_cls):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        mock_client = mock_client_cls.return_value
+        mock_client.tls_set.side_effect = FileNotFoundError("no such file")
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/missing.pem")
+        )
+
+        assert result["error_status"] is True
+        assert "could not load CA bundle" in result["message"]
+        assert block.mqtt_client is None
+        mock_client.connect.assert_not_called()
+        mock_client.loop_start.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "change",
+        [{"encryption": "tls"}, {"ca_certificate_path": "/other.pem"}],
+    )
+    def test_changed_tls_parameters_rejected(self, mock_client_cls, change):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        block._connected.set()
+        block.run(**run_kwargs())
+
+        result = block.run(**run_kwargs(**change))
+
+        assert result["error_status"] is True
+        assert "changed between runs" in result["message"]
+        mock_client_cls.assert_called_once()
+
+    def test_invalid_encryption_at_run_time_rejected(self, mock_client_cls, block):
+        result = block.run(**run_kwargs(encryption="ssl"))
+
+        assert result["error_status"] is True
+        assert "encryption" in result["message"]
+        mock_client_cls.assert_not_called()

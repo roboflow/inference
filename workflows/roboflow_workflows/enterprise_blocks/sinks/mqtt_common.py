@@ -8,7 +8,7 @@ before either block builds a client.
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from roboflow_workflows.environment import (
     MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST,
@@ -24,7 +24,52 @@ MQTT_KEEPALIVE_SECONDS = 15
 
 
 class ConfigurationError(ValueError):
-    """The operator's policy forbids the requested broker connection."""
+    """The operator's policy or the deployment's permissions forbid the connection."""
+
+
+def configure_tls(
+    client: Any,
+    *,
+    use_tls: bool,
+    ca_certificate_path: Optional[str],
+    allow_access_to_file_system: bool,
+) -> None:
+    """Enable server-verified TLS on a paho client before it connects.
+
+    Args:
+        client: The paho ``Client`` to configure; left untouched when ``use_tls``
+            is False or when an error is raised.
+        use_tls: Whether the connection must be wrapped in TLS.
+        ca_certificate_path: Optional PEM bundle for a broker whose issuer is not in
+            the system trust store. Ignored when ``use_tls`` is False.
+        allow_access_to_file_system: The engine's file-system permission; a CA path
+            is a server-side path chosen by the workflow and is refused without it.
+
+    Raises:
+        ConfigurationError: When the CA path is set but file-system access is
+            disabled, or when the CA bundle cannot be loaded.
+    """
+    if not use_tls:
+        return
+    if ca_certificate_path and not allow_access_to_file_system:
+        # the path is chosen by the workflow and read by the server process
+        raise ConfigurationError(
+            "ca_certificate_path needs access to the local file system, which is "
+            "disabled on this deployment (ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False)."
+        )
+    try:
+        if ca_certificate_path:
+            client.tls_set(ca_certs=str(ca_certificate_path))
+        else:
+            # system trust store; hostname verification stays on
+            client.tls_set()
+    except Exception as e:
+        raise ConfigurationError(
+            f"TLS could not be configured: could not load CA bundle "
+            f"{ca_certificate_path!r} ({e})."
+            if ca_certificate_path
+            else f"TLS could not be configured: {e}."
+        ) from e
 
 
 def _normalise_host(host: str) -> str:
