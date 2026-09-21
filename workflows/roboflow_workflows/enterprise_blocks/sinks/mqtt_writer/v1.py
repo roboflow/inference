@@ -13,7 +13,6 @@ from typing_extensions import Annotated
 logger = logging.getLogger("inference")
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
-    MQTT_KEEPALIVE_SECONDS,
     ConfigurationError,
     resolve_broker_address,
 )
@@ -53,9 +52,7 @@ The server operator may restrict which brokers the MQTT blocks connect to
 with `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]`
 entries) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (when False, the
 workflow's host and port are ignored and the first allowlist entry is used);
-a run the policy forbids is reported like any other failure. The connection
-uses a 15 s keepalive, so a broker that disappears without closing the
-connection is noticed within about 25 s.
+a run the policy forbids is reported like any other failure.
 
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
@@ -347,7 +344,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 # the TCP connect happens here, bounded by _connect_timeout
                 # (DNS resolution is not - it runs under the OS resolver
                 # timeout); the CONNACK wait below covers the handshake rest
-                client.connect(host, port, keepalive=MQTT_KEEPALIVE_SECONDS)
+                client.connect(host, port)
                 client.loop_start()
             except OSError as e:
                 # broker unreachable: nothing is kept and no loop was started,
