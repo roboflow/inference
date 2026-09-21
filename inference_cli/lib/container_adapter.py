@@ -9,10 +9,10 @@ from docker.models.containers import Container
 from rich.progress import Progress, TaskID
 
 import docker
+from inference_cli.lib import podman_adapter
 from inference_cli.lib.exceptions import DockerConnectionErrorException
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import read_env_file
-from inference_cli.lib import podman_adapter
 
 DEFAULT_BIND_ADDRESS = "127.0.0.1"
 LOOPBACK_BIND_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
@@ -51,7 +51,10 @@ def detect_container_runtime() -> str:
                 f"{CONTAINER_RUNTIME_ENV_VAR}={override!r} is not supported. "
                 f"Expected one of: {', '.join(_SUPPORTED_CONTAINER_RUNTIMES)}."
             )
-        if override == CONTAINER_RUNTIME_PODMAN and not podman_adapter.podman_is_installed():
+        if (
+            override == CONTAINER_RUNTIME_PODMAN
+            and not podman_adapter.podman_is_installed()
+        ):
             raise DockerConnectionErrorException(
                 f"{CONTAINER_RUNTIME_ENV_VAR}=podman was requested but the podman "
                 "binary was not found on PATH. Install podman "
@@ -71,11 +74,31 @@ def detect_container_runtime() -> str:
     try:
         client = docker.from_env()
         if _docker_endpoint_is_podman(client):
-            return CONTAINER_RUNTIME_PODMAN
-        return CONTAINER_RUNTIME_DOCKER
+            endpoint_runtime = CONTAINER_RUNTIME_PODMAN
+        else:
+            endpoint_runtime = CONTAINER_RUNTIME_DOCKER
     except docker.errors.DockerException:
         if podman_adapter.podman_is_installed():
             return CONTAINER_RUNTIME_PODMAN
+        endpoint_runtime = None
+    if endpoint_runtime == CONTAINER_RUNTIME_PODMAN:
+        # The podman CLI is used for the launch/kill paths even when the
+        # runtime was detected through the compat socket — a remote
+        # DOCKER_HOST pointing at podman without a local binary would
+        # otherwise surface a raw FileNotFoundError later.
+        if not podman_adapter.podman_is_installed():
+            raise DockerConnectionErrorException(
+                "The Docker-compatible endpoint at DOCKER_HOST is a Podman "
+                "socket, but the podman binary was not found on PATH. The "
+                "CLI drives podman through its command line, so install "
+                "podman locally, set "
+                f"{CONTAINER_RUNTIME_ENV_VAR}=docker to force the "
+                "compatibility API (GPU requests are ignored there), or "
+                "point DOCKER_HOST at a Docker daemon."
+            )
+        return CONTAINER_RUNTIME_PODMAN
+    if endpoint_runtime == CONTAINER_RUNTIME_DOCKER:
+        return CONTAINER_RUNTIME_DOCKER
     raise DockerConnectionErrorException(
         "Error connecting to Docker daemon and no podman binary was found. "
         "Install and start Docker (https://www.docker.com/get-started/) or "
@@ -358,7 +381,7 @@ def start_inference_container(
             bind_address=bind_address,
             port=port,
             volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}, **(volumes or {})},
-            labels=labels if isinstance(labels, dict) else None,
+            labels=labels,
             require_gpu=is_gpu,
         )
         return
@@ -463,7 +486,10 @@ def check_inference_server_status():
         for c in containers:
             container_name = c.attrs.get("Name", "")
             created = c.attrs.get("Created", "")
-            exposed_port = list(c.attrs.get("Config").get("ExposedPorts", {}).keys())[0]
+            # Containers started without published ports (e.g. host networking)
+            # expose an empty mapping; there is no published port to report.
+            exposed_ports = c.attrs.get("Config", {}).get("ExposedPorts") or {}
+            exposed_port = next(iter(exposed_ports), "not published")
             status = c.attrs.get("State", {}).get("Status", "unknown")
             image = c.attrs.get("Image", "")
             container_status_message = """

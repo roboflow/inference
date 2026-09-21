@@ -1,5 +1,5 @@
-import json
 import importlib
+import json
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -16,7 +16,10 @@ from inference_cli.lib.podman_adapter import (
 
 
 def _ps_row(
-    image: str, state: str = "running", cid: str = "abc123", name: str = "inference-server"
+    image: str,
+    state: str = "running",
+    cid: str = "abc123",
+    name: str = "inference-server",
 ) -> str:
     return json.dumps(
         {
@@ -25,8 +28,9 @@ def _ps_row(
             "Image": image,
             "State": state,
             "Created": "2026-09-15T15:29:09",
-            "Ports": [{"host_ip": "127.0.0.1", "container_port": 9001, "host_port": 9001}],
-            "Config": {"Env": ["PORT=9001"]},
+            "Ports": [
+                {"host_ip": "127.0.0.1", "container_port": 9001, "host_port": 9001}
+            ],
         }
     )
 
@@ -64,9 +68,7 @@ class TestDetectContainerRuntime:
         with mock.patch.dict(
             container_adapter.os.environ,
             {container_adapter.CONTAINER_RUNTIME_ENV_VAR: "podman"},
-        ), mock.patch.object(
-            podman_adapter, "podman_is_installed", return_value=False
-        ):
+        ), mock.patch.object(podman_adapter, "podman_is_installed", return_value=False):
             with pytest.raises(DockerConnectionErrorException):
                 container_adapter.detect_container_runtime()
 
@@ -81,7 +83,6 @@ class TestDetectContainerRuntime:
             with pytest.raises(DockerConnectionErrorException):
                 container_adapter.detect_container_runtime()
 
-
     @mock.patch.object(container_adapter, "docker")
     def test_plain_docker_endpoint_returns_docker(self, docker_mock: MagicMock) -> None:
         docker_mock.from_env.return_value.version.return_value = {
@@ -93,14 +94,34 @@ class TestDetectContainerRuntime:
         )
 
     @mock.patch.object(container_adapter, "docker")
-    def test_podman_compat_socket_detected_as_podman(self, docker_mock: MagicMock) -> None:
+    def test_podman_compat_socket_detected_as_podman(
+        self, docker_mock: MagicMock
+    ) -> None:
         docker_mock.from_env.return_value.version.return_value = {
             "Components": [{"Name": "Podman Engine"}]
         }
-        assert (
-            container_adapter.detect_container_runtime()
-            == container_adapter.CONTAINER_RUNTIME_PODMAN
-        )
+        # The compat-socket path requires a local podman binary (the CLI shells
+        # out to it), so stub the check here.
+        with mock.patch.object(
+            podman_adapter, "podman_is_installed", return_value=True
+        ):
+            assert (
+                container_adapter.detect_container_runtime()
+                == container_adapter.CONTAINER_RUNTIME_PODMAN
+            )
+
+    @mock.patch.object(container_adapter, "docker")
+    def test_podman_compat_socket_without_local_binary_fails(
+        self, docker_mock: MagicMock
+    ) -> None:
+        docker_mock.from_env.return_value.version.return_value = {
+            "Components": [{"Name": "Podman Engine"}]
+        }
+        with mock.patch.object(
+            podman_adapter, "podman_is_installed", return_value=False
+        ):
+            with pytest.raises(DockerConnectionErrorException):
+                container_adapter.detect_container_runtime()
 
     @mock.patch.object(podman_adapter, "podman_is_installed", return_value=True)
     @mock.patch("docker.from_env")
@@ -129,7 +150,9 @@ class TestDetectContainerRuntime:
 class TestGpuLaunchExtras:
     def test_gpu_command_adds_sys_admin_and_keep_groups(self) -> None:
         with mock.patch.object(
-            podman_adapter, "find_cdi_spec", return_value=(mock.MagicMock(), "nvidia.com/gpu=all")
+            podman_adapter,
+            "find_cdi_spec",
+            return_value=(mock.MagicMock(), "nvidia.com/gpu=all"),
         ), mock.patch.object(
             podman_adapter, "_warn_if_selinux_devices_denied", return_value=None
         ):
@@ -171,18 +194,92 @@ class TestFindRunningPodmanInferenceContainers:
         assert "9001/tcp" in containers[0].attrs["Config"]["ExposedPorts"]
 
     @mock.patch.object(podman_adapter.subprocess, "run")
-    def test_short_image_name_without_registry_is_matched(self, run_mock: MagicMock) -> None:
+    def test_null_ports_row_does_not_crash(self, run_mock: MagicMock) -> None:
+        # `podman ps --format {{json .}}` emits "Ports": null for containers
+        # without published ports (e.g. started with --network host).
+        row = json.loads(
+            _ps_row("docker.io/roboflow/roboflow-inference-server-cpu:latest")
+        )
+        row["Ports"] = None
+        run_mock.return_value = MagicMock(stdout=json.dumps(row))
+        containers = find_running_podman_inference_containers()
+        assert len(containers) == 1
+        assert containers[0].attrs["Config"]["Env"] == []
+        assert containers[0].attrs["Config"]["ExposedPorts"] == {}
+
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_env_port_comes_from_published_host_port(self, run_mock: MagicMock) -> None:
+        # When `podman inspect` yields no usable Config.Env, the port shown by
+        # the shared "already running" prompt falls back to Ports[].host_port.
+        row = json.loads(
+            _ps_row("docker.io/roboflow/roboflow-inference-server-cpu:latest")
+        )
+        row["Ports"] = [
+            {"host_ip": "127.0.0.1", "container_port": 9001, "host_port": 9123}
+        ]
+        # ps succeeds; inspect returns a document without Config.Env
+        run_mock.side_effect = [
+            MagicMock(stdout=json.dumps(row) + "\n"),
+            MagicMock(stdout=json.dumps({"Id": "abc123"})),
+        ]
+        containers = find_running_podman_inference_containers()
+        assert containers[0].attrs["Config"]["Env"] == ["PORT=9123"]
+
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_env_port_prefers_inspect_config(self, run_mock: MagicMock) -> None:
+        # `podman inspect` is authoritative for Config.Env; the Ports-based
+        # guess must not shadow it (e.g. dev mode publishing 9001 and 9002).
+        ps_row = json.loads(
+            _ps_row("docker.io/roboflow/roboflow-inference-server-cpu:latest")
+        )
+        ps_row["Ports"] = [
+            {"host_ip": "127.0.0.1", "container_port": 9002, "host_port": 9002},
+            {"host_ip": "127.0.0.1", "container_port": 9001, "host_port": 9123},
+        ]
+        inspect_doc = {"Id": "abc123", "Config": {"Env": ["PORT=9123", "FOO=bar"]}}
+        run_mock.side_effect = [
+            MagicMock(stdout=json.dumps(ps_row) + "\n"),
+            MagicMock(stdout=json.dumps(inspect_doc)),
+        ]
+        containers = find_running_podman_inference_containers()
+        assert containers[0].attrs["Config"]["Env"] == ["PORT=9123", "FOO=bar"]
+
+    @mock.patch.object(
+        container_adapter, "detect_container_runtime", return_value="podman"
+    )
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_status_survives_container_without_published_ports(
+        self, run_mock: MagicMock, _runtime_mock: MagicMock, capsys
+    ) -> None:
+        # --network host containers report "Ports": null; status must print a
+        # placeholder instead of indexing an empty exposed-port mapping.
+        row = json.loads(
+            _ps_row("docker.io/roboflow/roboflow-inference-server-cpu:latest")
+        )
+        row["Ports"] = None
+        run_mock.return_value = MagicMock(stdout=json.dumps(row))
+        container_adapter.check_inference_server_status()
+        assert "not published" in capsys.readouterr().out
+
+    @mock.patch.object(podman_adapter.subprocess, "run")
+    def test_short_image_name_without_registry_is_matched(
+        self, run_mock: MagicMock
+    ) -> None:
         run_mock.return_value = MagicMock(
             stdout=_ps_row("roboflow/roboflow-inference-server-cpu:latest")
         )
         assert len(find_running_podman_inference_containers()) == 1
 
     @mock.patch.object(podman_adapter.subprocess, "run")
-    def test_exited_and_foreign_containers_are_skipped(self, run_mock: MagicMock) -> None:
+    def test_exited_and_foreign_containers_are_skipped(
+        self, run_mock: MagicMock
+    ) -> None:
         run_mock.return_value = MagicMock(
             stdout="\n".join(
                 [
-                    _ps_row("roboflow/roboflow-inference-server-cpu:latest", state="exited"),
+                    _ps_row(
+                        "roboflow/roboflow-inference-server-cpu:latest", state="exited"
+                    ),
                     _ps_row("docker.io/library/nginx:latest", cid="other"),
                 ]
             )
@@ -207,6 +304,12 @@ class TestFindCdiSpec:
         directories = [str(d) for d in podman_adapter._cdi_search_directories()]
         assert "/etc/cdi" in directories
 
+    def test_per_user_directory_is_not_scanned(self) -> None:
+        # Podman only scans its configured cdi_spec_dirs (default /etc/cdi and
+        # /var/run/cdi); a spec under $XDG_DATA_HOME would never be honoured.
+        directories = [str(d) for d in podman_adapter._cdi_search_directories()]
+        assert all(".local" not in d and "XDG" not in d for d in directories)
+
     def test_nvidia_kind_spec_yields_all_devices(self, tmp_path) -> None:
         spec = tmp_path / "nvidia.yaml"
         spec.write_text('---\ncdiVersion: "0.7.0"\nkind: nvidia.com/gpu\ndevices: []\n')
@@ -228,15 +331,15 @@ class TestFindCdiSpec:
         ):
             assert find_cdi_spec() is None
 
-    def test_single_gpu_spec_uses_colon_syntax(self, tmp_path) -> None:
+    def test_nvidia_named_spec_of_other_kind_is_ignored(self, tmp_path) -> None:
+        # CDI device references are always vendor/class=device; only the
+        # nvidia.com/gpu kind can serve the GPU requirement.
         spec = tmp_path / "nvidia-i915.yaml"
         spec.write_text('{"kind": "intel.com/gpu"}\n')
         with mock.patch.object(
             podman_adapter, "_cdi_search_directories", return_value=[tmp_path]
         ):
-            found = find_cdi_spec()
-        assert found is not None
-        assert found[1] == "intel.com/gpu:all"
+            assert find_cdi_spec() is None
 
 
 class TestBuildPodmanLaunchCommand:
@@ -259,7 +362,9 @@ class TestBuildPodmanLaunchCommand:
 
     def test_gpu_uses_cdi_device_flag(self) -> None:
         with mock.patch.object(
-            podman_adapter, "find_cdi_spec", return_value=(mock.MagicMock(), "nvidia.com/gpu=all")
+            podman_adapter,
+            "find_cdi_spec",
+            return_value=(mock.MagicMock(), "nvidia.com/gpu=all"),
         ):
             command, mode = build_podman_launch_command(
                 **self._args(device_requests=["nvidia.com/gpu=all"])
@@ -294,7 +399,9 @@ class TestBuildPodmanLaunchCommand:
 
 
 class TestPodmanDispatch:
-    @mock.patch.object(container_adapter, "detect_container_runtime", return_value="podman")
+    @mock.patch.object(
+        container_adapter, "detect_container_runtime", return_value="podman"
+    )
     @mock.patch.object(podman_adapter, "launch_inference_container_with_podman")
     @mock.patch.object(container_adapter, "pull_image")
     @mock.patch.object(
@@ -310,14 +417,19 @@ class TestPodmanDispatch:
         _runtime_mock: MagicMock,
     ) -> None:
         container_adapter.start_inference_container(
-            image="roboflow/roboflow-inference-server-gpu:latest"
+            image="roboflow/roboflow-inference-server-gpu:latest",
+            labels=["managed-by=inference-cli"],
         )
         launch_mock.assert_called_once()
         assert launch_mock.call_args.kwargs["require_gpu"] is True
+        # list-form labels must not be silently dropped on the podman path
+        assert launch_mock.call_args.kwargs["labels"] == ["managed-by=inference-cli"]
         docker_mock.from_env.assert_not_called()
 
     @mock.patch.object(
-        container_adapter, "detect_container_runtime", return_value=container_adapter.CONTAINER_RUNTIME_PODMAN
+        container_adapter,
+        "detect_container_runtime",
+        return_value=container_adapter.CONTAINER_RUNTIME_PODMAN,
     )
     @mock.patch.object(podman_adapter, "launch_inference_container_with_podman")
     @mock.patch.object(container_adapter, "pull_image")
@@ -336,7 +448,9 @@ class TestPodmanDispatch:
                 image="roboflow/roboflow-inference-server-jetson-6.2.0:latest"
             )
 
-    @mock.patch.object(container_adapter, "detect_container_runtime", return_value="podman")
+    @mock.patch.object(
+        container_adapter, "detect_container_runtime", return_value="podman"
+    )
     @mock.patch.object(podman_adapter, "pull_image_with_podman")
     @mock.patch.object(container_adapter, "docker")
     def test_pull_uses_podman(
@@ -346,7 +460,9 @@ class TestPodmanDispatch:
         pull_mock.assert_called_once()
         docker_mock.from_env.assert_not_called()
 
-    @mock.patch.object(container_adapter, "detect_container_runtime", return_value="podman")
+    @mock.patch.object(
+        container_adapter, "detect_container_runtime", return_value="podman"
+    )
     @mock.patch.object(podman_adapter, "find_running_podman_inference_containers")
     def test_find_delegates_to_podman(
         self, find_mock: MagicMock, _runtime_mock: MagicMock

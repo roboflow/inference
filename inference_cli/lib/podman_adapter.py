@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -81,9 +80,9 @@ def find_running_podman_containers(
 
 
 def _is_inference_server_image(image_name: str) -> bool:
-    # `podman ps` reports the short name (no registry prefix) for images pulled
-    # from Docker Hub, while the docker SDK always reports the fully qualified
-    # tag. Accept both spellings.
+    # Depending on version and pull spelling, `podman ps` reports either the
+    # short name or the fully qualified `docker.io/...` tag for Docker Hub
+    # images (the docker SDK always reports the latter). Accept both spellings.
     for candidate in (image_name, f"docker.io/{image_name}"):
         bare = candidate.removeprefix("docker.io/")
         if bare.startswith("roboflow/roboflow-inference-server"):
@@ -91,24 +90,58 @@ def _is_inference_server_image(image_name: str) -> bool:
     return False
 
 
+def _inspect_env(container_id: str) -> List[str]:
+    """Read the real ``Config.Env`` of a container via ``podman inspect``.
+    ``podman ps --format {{json .}}`` has no Config key, so the docker-shaped
+    attrs handed to the shared code paths would otherwise always report the
+    default port in the "already running" prompt."""
+    try:
+        result = subprocess.run(
+            ["podman", "inspect", "--format", "{{json .}}", container_id],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        config = json.loads(result.stdout).get("Config") or {}
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError):
+        # Container vanished between ps and inspect, or inspect was refused.
+        return []
+    env = config.get("Env")
+    if not isinstance(env, list):
+        return []
+    return [entry for entry in env if isinstance(entry, str)]
+
+
 def _as_container(row: dict) -> PodmanContainer:
     names = row.get("Names") or [row.get("Name", "")]
-    config = row.get("Config") or {}
+    # `podman ps --format {{json .}}` emits "Ports": null for containers
+    # without published ports (e.g. --network host).
+    ports = row.get("Ports") or []
     exposed_ports = {
         "{}/{}".format(
             p.get("container_port") or p.get("containerPort"),
             p.get("protocol") or p.get("Type") or "tcp",
         )
-        for p in row.get("Ports", [])
+        for p in ports
         if p.get("container_port") or p.get("containerPort")
     }
+    env = _inspect_env(row.get("Id", ""))
+    if not env:
+        # Fallback (inspect failed / container gone): guess the served port
+        # from the first published host port so the shared "already running"
+        # prompt has something better than the default.
+        for p in ports:
+            host_port = p.get("host_port") or p.get("hostPort")
+            if host_port:
+                env = [f"PORT={host_port}"]
+                break
     attrs = {
         "Name": names[0] if names else "",
         "Created": row.get("Created", ""),
         "Image": row.get("Image", ""),
         "State": {"Status": row.get("State", "unknown")},
         "Config": {
-            "Env": config.get("Env", []),
+            "Env": env,
             "ExposedPorts": {port: {} for port in sorted(exposed_ports)},
         },
     }
@@ -134,22 +167,21 @@ def find_cdi_spec() -> Optional[Tuple[Path, str]]:
             if candidate.suffix not in (".yaml", ".yml", ".json"):
                 continue
             kind = _cdi_kind(candidate)
-            if kind is None:
+            # CDI device references are always vendor/class=device; a spec of
+            # any other kind cannot serve NVIDIA GPUs.
+            if kind != CDI_KIND_NVIDIA_GPU:
                 continue
-            device = f"{kind}=all" if kind == CDI_KIND_NVIDIA_GPU else f"{kind}:all"
-            return candidate, device
+            return candidate, f"{CDI_KIND_NVIDIA_GPU}=all"
     return None
 
 
 def _cdi_search_directories() -> List[Path]:
-    data_home = os.getenv(
-        "XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")
-    )
+    # Podman's default cdi_spec_dirs (see containers.conf) — a per-user
+    # directory is not scanned unless the user reconfigures podman.
     return [
         Path("/etc/cdi"),
         Path("/var/run/cdi"),
         Path("/run/cdi"),
-        Path(data_home) / "containers" / "cdi",
     ]
 
 
@@ -214,7 +246,9 @@ def build_podman_launch_command(
     if volumes:
         # SELinux enforcing denies container writes to bind mounts unless the
         # mount is relabelled or labelling is turned off for the container;
-        # the docker path relies on docker relabelling bind mounts itself.
+        # docker-ce containers run unconfined, so the docker path never hits
+        # this. Disabling labelling for the container matches that behaviour
+        # without relabelling host paths.
         command += ["--security-opt", "label=disable"]
     cap_add = ["NET_BIND_SERVICE"]
     if device_requests:
@@ -292,8 +326,7 @@ class PodmanGPUNotConfiguredError(CLIError):
         super().__init__(
             f"GPU container image ({image}) was requested with the podman "
             "runtime, but no NVIDIA CDI spec was found. Generate one and retry:\n"
-            "  nvidia-ctk cdi generate "
-            "--output=$XDG_DATA_HOME/containers/cdi/nvidia.yaml\n"
+            "  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml\n"
             "(docs: https://docs.podman.io/en/latest/markdown/podman.1.html"
             "#cdi-spec-dirs)"
         )
