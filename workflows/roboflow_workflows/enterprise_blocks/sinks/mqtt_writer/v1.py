@@ -46,8 +46,8 @@ while an established connection that later drops is re-established by the
 background loop. Over the HTTP API every request builds a fresh block
 instance, so each request pays the bounded connect and a failed request is
 final for that request. One block instance publishes to a single broker
-connection: changing host, port, credentials or timeout between runs is
-rejected as a configuration error.
+connection: changing host, port, credentials, timeout or the TLS settings
+between runs is rejected as a configuration error.
 
 The server operator may restrict which brokers the MQTT blocks connect to
 with `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]`
@@ -61,7 +61,10 @@ automatically, so set it to the broker's TLS port (usually 8883). A broker
 signed by a private CA needs `ca_certificate_path`, a PEM bundle on the
 machine running inference, which requires local file system access for
 Workflow blocks (`ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`).
-Certificate verification cannot be disabled.
+Certificate verification cannot be disabled. A peer that accepts the TCP
+connection but never completes the TLS handshake is given up on after the
+MQTT keepalive interval (60 s), not after `timeout`; real brokers close such
+a connection immediately.
 
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
@@ -80,6 +83,19 @@ the workflow run - intended for one-shot requests, not streaming pipelines.
 
 
 TLS_RELEVANT = {"encryption": {"values": ["tls"], "required": True}}
+
+
+def _not_connected_message(error: BaseException, encryption: str) -> str:
+    if encryption == "tls":
+        return (
+            f"MQTT broker not connected ({error}). TLS is enabled: check that port is "
+            "the broker's TLS port and that ca_certificate_path matches the broker's "
+            "certificate authority."
+        )
+    return (
+        f"MQTT broker not connected ({error}). Raise 'timeout' if the broker needs "
+        "longer to connect."
+    )
 
 
 def mqtt_on_connect(client, userdata, flags, reason_code, properties=None):
@@ -431,8 +447,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 # so a failed one-shot run leaves no background thread behind;
                 # the next run on this instance retries with a fresh client
                 return self._handle_failure(
-                    f"MQTT broker not connected ({e}). Raise 'timeout' if the "
-                    "broker needs longer to connect.",
+                    _not_connected_message(e, encryption=encryption),
                     fail_fast=fail_fast,
                 )
             except Exception as e:
@@ -448,8 +463,9 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
             self._connection_identity = connection_identity
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
-                "MQTT connection parameters (host, port, credentials or timeout) changed "
-                "between runs; this block publishes only to the connection configured "
+                "MQTT connection parameters (host, port, credentials, timeout, encryption "
+                "or ca_certificate_path) changed between runs; this block publishes only "
+                "to the connection configured on its first run."
                 "on its first run.",
                 fail_fast=fail_fast,
             )

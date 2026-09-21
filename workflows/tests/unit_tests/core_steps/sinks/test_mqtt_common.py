@@ -1,4 +1,5 @@
 import logging
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -180,17 +181,19 @@ class TestConfigureTLS:
         client.tls_set.assert_called_once_with()
         client.tls_insecure_set.assert_not_called()
 
-    def test_ca_path_used_with_file_system_access(self):
+    def test_ca_path_used_with_file_system_access(self, tmp_path):
         client = MagicMock()
+        ca_path = tmp_path / "factory-ca.pem"
+        ca_path.write_text("content is irrelevant: paho is faked here")
 
         configure_tls(
             client,
             use_tls=True,
-            ca_certificate_path="/etc/ssl/factory-ca.pem",
+            ca_certificate_path=str(ca_path),
             allow_access_to_file_system=True,
         )
 
-        client.tls_set.assert_called_once_with(ca_certs="/etc/ssl/factory-ca.pem")
+        client.tls_set.assert_called_once_with(ca_certs=str(ca_path))
         client.tls_insecure_set.assert_not_called()
 
     def test_ca_path_refused_without_file_system_access(self):
@@ -208,22 +211,44 @@ class TestConfigureTLS:
         assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in str(error.value)
         assert client.method_calls == []
 
-    def test_unloadable_ca_bundle_reported(self):
+    @pytest.mark.parametrize("kind", ["missing", "directory", "fifo"])
+    def test_ca_path_must_be_a_regular_file(self, tmp_path, kind):
+        # OpenSSL's loader blocks forever on a FIFO; the guard runs before it
         client = MagicMock()
-        client.tls_set.side_effect = FileNotFoundError("no such file")
+        if kind == "missing":
+            path = tmp_path / "missing.pem"
+        elif kind == "directory":
+            path = tmp_path
+        else:
+            path = tmp_path / "pipe"
+            os.mkfifo(path)
 
-        with pytest.raises(
-            ConfigurationError, match="could not load CA bundle"
-        ) as error:
+        with pytest.raises(ConfigurationError, match="is not a readable file"):
             configure_tls(
                 client,
                 use_tls=True,
-                ca_certificate_path="/missing/ca.pem",
+                ca_certificate_path=str(path),
                 allow_access_to_file_system=True,
             )
 
-        assert "/missing/ca.pem" in str(error.value)
-        assert "no such file" in str(error.value)
+        client.tls_set.assert_not_called()
+
+    def test_unloadable_ca_bundle_reported(self, tmp_path):
+        client = MagicMock()
+        client.tls_set.side_effect = ValueError("no certificate or crl found")
+        ca_path = tmp_path / "not-a-pem.pem"
+        ca_path.write_text("garbage")
+
+        with pytest.raises(ConfigurationError, match="could not load CA bundle") as e:
+            configure_tls(
+                client,
+                use_tls=True,
+                ca_certificate_path=str(ca_path),
+                allow_access_to_file_system=True,
+            )
+
+        assert str(ca_path) in str(e.value)
+        assert "no certificate or crl found" in str(e.value)
 
     def test_system_store_failure_reported(self):
         client = MagicMock()

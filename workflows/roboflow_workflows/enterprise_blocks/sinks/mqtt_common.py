@@ -4,10 +4,13 @@ Both blocks open an outbound connection to the broker named by the workflow.
 `resolve_broker_address()` applies the operator's policy from
 `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` and
 `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (see `roboflow_workflows.environment`)
-before either block builds a client.
+before either block builds a client, and `configure_tls()` enables
+server-verified TLS on the client, gating a workflow-chosen CA path behind the
+engine's file-system permission.
 """
 
 import logging
+import os
 from typing import Any, List, Optional, Tuple
 
 from roboflow_workflows.environment import (
@@ -55,7 +58,15 @@ def configure_tls(
         # the path is chosen by the workflow and read by the server process
         raise ConfigurationError(
             "ca_certificate_path needs access to the local file system, which is "
-            "disabled on this deployment (ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False)."
+            "disabled on this deployment (ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False "
+            "or the engine's allow_access_to_file_system init parameter)."
+        )
+    if ca_certificate_path and not os.path.isfile(ca_certificate_path):
+        # OpenSSL's loader blocks forever on a FIFO and errors on a directory;
+        # refuse anything that is not a regular file before it is opened
+        raise ConfigurationError(
+            f"TLS could not be configured: ca_certificate_path {ca_certificate_path!r} "
+            "is not a readable file."
         )
     try:
         if ca_certificate_path:

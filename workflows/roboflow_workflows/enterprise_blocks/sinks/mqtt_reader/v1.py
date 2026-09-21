@@ -73,8 +73,8 @@ there. There is no persistent session and no durable resume: messages published 
 the block was not subscribed are not delivered.
 
 One block instance subscribes on a single broker connection: changing host, port,
-credentials, timeout, topic, QoS or read mode between runs is rejected as a
-configuration error. While the broker is unreachable every run waits up to `timeout`
+credentials, timeout, topic, QoS, read mode or the TLS settings between runs is
+rejected as a configuration error. While the broker is unreachable every run waits up to `timeout`
 for the background reconnect before reporting the failure.
 
 The block is not available on the Roboflow hosted platform (`GCP_SERVERLESS` or
@@ -145,6 +145,19 @@ class MQTTReaderState:
         self.topic = topic
         self.qos = qos
         self.messages: Deque[ReceivedMessage] = deque(maxlen=buffer_size)
+
+
+def _not_connected_message(error: BaseException, encryption: str) -> str:
+    if encryption == "tls":
+        return (
+            f"MQTT broker not connected ({error}). TLS is enabled: check that port is "
+            "the broker's TLS port and that ca_certificate_path matches the broker's "
+            "certificate authority."
+        )
+    return (
+        f"MQTT broker not connected ({error}). Raise 'timeout' if the broker needs "
+        "longer to connect."
+    )
 
 
 def mqtt_on_connect(
@@ -587,8 +600,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 # so a failed one-shot run leaves no background thread behind;
                 # the next run on this instance retries with a fresh client
                 return self._handle_failure(
-                    f"MQTT broker not connected ({e}). Raise 'timeout' if the "
-                    "broker needs longer to connect."
+                    _not_connected_message(e, encryption=encryption)
                 )
             except Exception as e:
                 if client is not None:
@@ -604,8 +616,8 @@ class MQTTReaderBlockV1(WorkflowBlock):
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials, timeout, topic, "
-                "qos or read_mode) changed between runs; this block subscribes only "
-                "with the configuration of its first run."
+                "qos, read_mode, encryption or ca_certificate_path) changed between "
+                "runs; this block subscribes only with the configuration of its first run."
             )
         state = self._state
         # the background loop owns (re)connecting and (re)subscribing; runs

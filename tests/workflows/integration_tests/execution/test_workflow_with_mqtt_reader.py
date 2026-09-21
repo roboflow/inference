@@ -284,6 +284,7 @@ def test_tls_without_ca_certificate_is_rejected_by_verification(tls_broker):
         # then - the client refused the certificate; nothing is kept
         assert result["error_status"] is True
         assert "not connected" in result["error_message"].lower()
+        assert "TLS is enabled" in result["error_message"]
         assert block._client is None
         assert wait_until(lambda: tls_broker.handshake_failures == 1)
     finally:
@@ -291,9 +292,35 @@ def test_tls_without_ca_certificate_is_rejected_by_verification(tls_broker):
 
 
 @pytest.mark.timeout(15)
+def test_tls_with_unreadable_ca_bundle_is_reported_by_paho(tls_broker, tmp_path):
+    # given - a real file that is not a PEM bundle: this exercises paho's
+    # loader, not a mock
+    bad_bundle = tmp_path / "not-a-bundle.pem"
+    bad_bundle.write_text("this is not a certificate")
+    block = MQTTReaderBlockV1(allow_access_to_file_system=True)
+
+    try:
+        # when
+        result = block.run(
+            **reader_kwargs(
+                tls_broker, encryption="tls", ca_certificate_path=str(bad_bundle)
+            )
+        )
+
+        # then
+        assert result["error_status"] is True
+        assert "could not load CA bundle" in result["error_message"]
+        assert block._client is None
+        assert tls_broker.connections_accepted == 0
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(15)
 def test_tls_against_plain_broker_reports_not_connected(broker):
-    # given - the broker never speaks TLS, so the handshake waits for a
-    # ServerHello that never comes and paho's connect times out
+    # given - the broker never speaks TLS; like a real broker it drops a
+    # connection whose first bytes are not an MQTT CONNECT, so the client's
+    # handshake fails at once
     block = MQTTReaderBlockV1()
 
     try:

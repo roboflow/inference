@@ -707,6 +707,15 @@ def _call_names(mock_client) -> list:
     return [call[0] for call in mock_client.method_calls]
 
 
+@pytest.fixture
+def ca_file(tmp_path):
+    # a real regular file: configure_tls() refuses anything else before paho
+    # (faked in these tests) would read it
+    path = tmp_path / "ca.pem"
+    path.write_text("content is irrelevant: paho is faked in these tests")
+    return path
+
+
 class TestTLS:
     def test_manifest_defaults_and_relevant_for(self):
         manifest = BlockManifest.model_validate(
@@ -727,7 +736,7 @@ class TestTLS:
             "encryption": {"values": ["tls"], "required": True}
         }
 
-    @pytest.mark.parametrize("encryption", ["ssl", "TLS", True, None])
+    @pytest.mark.parametrize("encryption", ["ssl", "TLS", True, None, ""])
     def test_manifest_rejects_other_encryption_values(self, encryption):
         with pytest.raises(ValidationError):
             BlockManifest.model_validate(
@@ -774,17 +783,17 @@ class TestTLS:
         assert names.index("tls_set") < names.index("connect")
         mock_client.tls_insecure_set.assert_not_called()
 
-    def test_tls_with_ca_path_and_file_system_access(self, mock_client_cls):
+    def test_tls_with_ca_path_and_file_system_access(self, mock_client_cls, ca_file):
         block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
         block._connected.set()
         mock_client = mock_client_cls.return_value
 
         result = block.run(
-            **run_kwargs(encryption="tls", ca_certificate_path="/etc/ssl/ca.pem")
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
         )
 
         assert result["error_status"] is False
-        mock_client.tls_set.assert_called_once_with(ca_certs="/etc/ssl/ca.pem")
+        mock_client.tls_set.assert_called_once_with(ca_certs=str(ca_file))
         names = _call_names(mock_client)
         assert names.index("tls_set") < names.index("connect")
 
@@ -815,24 +824,27 @@ class TestTLS:
 
         assert block.mqtt_client is None
 
-    def test_unloadable_ca_bundle_reported_and_nothing_kept(self, mock_client_cls):
+    def test_unloadable_ca_bundle_reported_and_nothing_kept(
+        self, mock_client_cls, ca_file
+    ):
         block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
         mock_client = mock_client_cls.return_value
         mock_client.tls_set.side_effect = FileNotFoundError("no such file")
 
         result = block.run(
-            **run_kwargs(encryption="tls", ca_certificate_path="/missing.pem")
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
         )
 
         assert result["error_status"] is True
         assert "could not load CA bundle" in result["message"]
+        assert str(ca_file) in result["message"]
         assert block.mqtt_client is None
         mock_client.connect.assert_not_called()
         mock_client.loop_start.assert_not_called()
 
     @pytest.mark.parametrize(
         "change",
-        [{"encryption": "tls"}, {"ca_certificate_path": "/other.pem"}],
+        [{"encryption": "tls"}, {"ca_certificate_path": "other.pem"}],
     )
     def test_changed_tls_parameters_rejected(self, mock_client_cls, change):
         block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)

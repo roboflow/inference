@@ -876,6 +876,15 @@ class TestBrokerPolicy:
         assert clients == []
 
 
+@pytest.fixture
+def ca_file(tmp_path):
+    # a real regular file: configure_tls() refuses anything else before paho
+    # (faked in these tests) would read it
+    path = tmp_path / "ca.pem"
+    path.write_text("content is irrelevant: paho is faked in these tests")
+    return path
+
+
 class TestTLS:
     def test_manifest_defaults_and_dropdown_values(self):
         manifest = BlockManifest.model_validate(manifest_payload())
@@ -917,16 +926,16 @@ class TestTLS:
             ("connect", "localhost", 1883),
         ]
 
-    def test_tls_with_ca_path_and_file_system_access(self, clients):
+    def test_tls_with_ca_path_and_file_system_access(self, clients, ca_file):
         block = MQTTReaderBlockV1(allow_access_to_file_system=True)
 
         result = block.run(
-            **run_kwargs(encryption="tls", ca_certificate_path="/etc/ssl/ca.pem")
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
         )
 
         assert result["error_status"] is False
         assert clients[0].calls == [
-            ("tls_set", "/etc/ssl/ca.pem"),
+            ("tls_set", str(ca_file)),
             ("connect", "localhost", 1883),
         ]
 
@@ -944,7 +953,9 @@ class TestTLS:
         assert clients[0].calls == []
         assert clients[0].loop_started is False
 
-    def test_unloadable_ca_bundle_reported_and_nothing_kept(self, clients, monkeypatch):
+    def test_unloadable_ca_bundle_reported_and_nothing_kept(
+        self, clients, monkeypatch, ca_file
+    ):
         def failing_tls_set(client, ca_certs=None, **kwargs):
             raise FileNotFoundError("no such file")
 
@@ -952,12 +963,12 @@ class TestTLS:
         block = MQTTReaderBlockV1(allow_access_to_file_system=True)
 
         result = block.run(
-            **run_kwargs(encryption="tls", ca_certificate_path="/missing.pem")
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
         )
 
         assert result["error_status"] is True
         assert "could not load CA bundle" in result["error_message"]
-        assert "/missing.pem" in result["error_message"]
+        assert str(ca_file) in result["error_message"]
         assert block._client is None
         assert clients[0].loop_started is False
 
@@ -971,7 +982,7 @@ class TestTLS:
 
     @pytest.mark.parametrize(
         "change",
-        [{"encryption": "tls"}, {"ca_certificate_path": "/other.pem"}],
+        [{"encryption": "tls"}, {"ca_certificate_path": "other.pem"}],
     )
     def test_changed_tls_parameters_rejected(self, clients, change):
         block = MQTTReaderBlockV1(allow_access_to_file_system=True)
@@ -997,9 +1008,9 @@ class TestTLS:
         assert "ca_certificate_path" in result["error_message"]
         assert clients == []
 
-    def test_tls_insecure_is_never_called(self, clients):
+    def test_tls_insecure_is_never_called(self, clients, ca_file):
         block = MQTTReaderBlockV1(allow_access_to_file_system=True)
 
-        block.run(**run_kwargs(encryption="tls", ca_certificate_path="/ca.pem"))
+        block.run(**run_kwargs(encryption="tls", ca_certificate_path=str(ca_file)))
 
         assert all(name != "tls_insecure_set" for name, *_ in clients[0].calls)
