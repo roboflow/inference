@@ -48,6 +48,11 @@ Maintainers must already have access to that channel; a mention does not grant a
   comments and writes `maintainer-review-result-<attempt>/result.json`, containing
   repository, PR, reviewed SHA, run ID/attempt, verdict, and sign-off comment ID.
   It does not receive any Slack secret. The pass wording and review prompt are unchanged.
+- Both commands use Click, pinned in the script's PEP 723 metadata and adjacent
+  `uv` lockfile. Dependencies are synchronized from trusted code before credentials
+  are exposed, then commands run directly from that environment without invoking
+  dependency resolution. No repository
+  application package or PR dependency is installed in either job.
 - `Maintainer Review Slack Handoff` uses `workflow_run` because comments created
   with `GITHUB_TOKEN` do not trigger another `issue_comment` workflow. Human-written
   escalation comments do trigger it.
@@ -82,7 +87,10 @@ Maintainers must already have access to that channel; a mention does not grant a
 Local network-free tests run with:
 
 ```bash
-python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+uv venv work/handoff-tests
+uv export --locked --script .github/scripts/maintainer_review.py --format requirements-txt --output-file work/handoff-requirements.txt
+uv pip install --python work/handoff-tests/bin/python --require-hashes --requirements work/handoff-requirements.txt
+work/handoff-tests/bin/python -m unittest discover -s .github/scripts -p 'test_*.py'
 ```
 
 They also run in `Validate GitHub Actions`. No Slack messages are sent by these tests.
