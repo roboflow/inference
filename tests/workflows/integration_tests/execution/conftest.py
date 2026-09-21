@@ -266,7 +266,12 @@ class FakeMQTTBroker:
         if self._conn is not None:
             raise ValueError("Connection is already open")
 
-        conn, address = self._sock.accept()
+        try:
+            conn, address = self._sock.accept()
+        except OSError:
+            # finish() closed the listening socket while no client had
+            # connected (a test whose block fails before connecting)
+            return
         conn.settimeout(1)
         if self.tls_context is not None:
             try:

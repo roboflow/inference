@@ -264,14 +264,14 @@ def test_publish_over_tls_with_ca_certificate(mqtt_test_certificates):
             port=broker.port,
             topic="RoboflowTopic",
             message="encrypted payload",
-            timeout=2.0,
+            timeout=5.0,
             encryption="tls",
             ca_certificate_path=mqtt_test_certificates.ca_path,
         )
         broker_thread.join(timeout=2)
 
         # then
-        assert result["error_status"] is False
+        assert result["error_status"] is False, result["message"]
         assert result["message"] == "Message published successfully"
         assert b"encrypted payload" in broker.messages[-1]
         assert broker.handshake_failures == 0

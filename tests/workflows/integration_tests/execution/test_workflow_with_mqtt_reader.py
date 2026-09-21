@@ -260,10 +260,14 @@ def test_retained_message_over_tls_with_ca_certificate(
                 tls_broker,
                 encryption="tls",
                 ca_certificate_path=mqtt_test_certificates.ca_path,
+                # the TLS handshake, CONNACK, SUBACK and the retained message
+                # each get this budget; CI runners are slower than a laptop
+                timeout=5.0,
             )
         )
 
         # then
+        assert result["error_status"] is False, result["error_message"]
         assert result["payload"] == {"state": "RUNNING"}
         assert result["is_new"] is True
         assert tls_broker.connections_accepted == 1
