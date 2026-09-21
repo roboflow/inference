@@ -206,9 +206,7 @@ class TestRunValidation:
         result = block.run(**run_kwargs(port=port))
 
         assert result["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with(
-            "localhost", 1883, keepalive=15
-        )
+        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
 
     @pytest.mark.parametrize("qos", [-1, 3, "abc", 1.5, True, None])
     def test_invalid_qos_rejected_before_client_construction(
@@ -274,7 +272,7 @@ class TestClientSetup:
 
         assert result["error_status"] is False
         mock_client_cls.assert_called_once_with(userdata=block._connected)
-        mock_client.connect.assert_called_once_with("localhost", 1883, keepalive=15)
+        mock_client.connect.assert_called_once_with("localhost", 1883)
         mock_client.connect_async.assert_not_called()
         called_methods = [call[0] for call in mock_client.method_calls]
         assert called_methods.index("connect") < called_methods.index("loop_start")
@@ -426,7 +424,7 @@ class TestConnectionOwnership:
 
         assert result["error_status"] is True
         assert "parameters" in result["message"].lower()
-        mock_client.connect.assert_called_once_with("broker-a", 1883, keepalive=15)
+        mock_client.connect.assert_called_once_with("broker-a", 1883)
         mock_client.publish.assert_called_once()
 
     def test_changed_credentials_rejected(self, mock_client_cls, block):
@@ -633,9 +631,7 @@ class TestCleanup:
 
 
 class TestBrokerPolicy:
-    def test_allowlisted_broker_is_used_and_keepalive_passed(
-        self, mock_client_cls, block, monkeypatch
-    ):
+    def test_allowlisted_broker_is_used(self, mock_client_cls, block, monkeypatch):
         monkeypatch.setattr(
             mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["localhost:1883"]
         )
@@ -644,9 +640,7 @@ class TestBrokerPolicy:
         result = block.run(**run_kwargs())
 
         assert result["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with(
-            "localhost", 1883, keepalive=15
-        )
+        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
 
     def test_unlisted_broker_rejected_before_client_construction(
         self, mock_client_cls, block, monkeypatch
@@ -690,9 +684,7 @@ class TestBrokerPolicy:
 
         assert first["error_status"] is False
         assert second["error_status"] is False
-        mock_client_cls.return_value.connect.assert_called_once_with(
-            "operator", 8883, keepalive=15
-        )
+        mock_client_cls.return_value.connect.assert_called_once_with("operator", 8883)
 
     def test_user_host_not_allowed_without_operator_broker_disables_block(
         self, mock_client_cls, block, monkeypatch
