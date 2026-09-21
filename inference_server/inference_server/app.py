@@ -21,6 +21,7 @@ from fastapi import FastAPI, Response
 from inference_server import configuration as _cfg
 from inference_server.auth import extract_bearer, validate_api_key
 from inference_server.errors import AuthBackendUnavailable
+from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
 from inference_server.routers import v2_models, v2_server
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,9 @@ async def _lifespan(app: FastAPI):
         watchdog_daemons = start_enabled_watchdogs()
 
         app.state.model_manager = proxy
+        app.state.loop = asyncio.get_running_loop()
+        app.state.loop_bridge = LoopBridge(app.state.loop)
+        app.state.legacy_bridge = LegacyModelBridge(proxy)
         preload_ids = _cfg.preload_model_ids()
         preload_task = (
             asyncio.create_task(
@@ -88,7 +92,22 @@ async def _lifespan(app: FastAPI):
 # App + middleware
 # ---------------------------------------------------------------------------
 
-app = FastAPI(lifespan=_lifespan)
+app = FastAPI(
+    title="Roboflow Inference Server",
+    description="Roboflow inference server",
+    version=_cfg.SERVER_VERSION,
+    terms_of_service="https://roboflow.com/terms",
+    contact={
+        "name": "Roboflow Inc.",
+        "url": "https://roboflow.com/contact",
+        "email": "help@roboflow.com",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
+    lifespan=_lifespan,
+)
 
 _AUTH_SKIP_PATHS = frozenset(
     {
@@ -192,6 +211,15 @@ class _AuthMiddleware:
         await self.app(scope, receive, send)
 
 
+if _cfg.LEGACY_ROUTES_ENABLED:
+    from inference_server.legacy.errors import (
+        _BodyLimitMiddleware,
+        install_legacy_exception_handlers,
+    )
+
+    app.add_middleware(_BodyLimitMiddleware)
+    install_legacy_exception_handlers(app)
+
 app.add_middleware(_AuthMiddleware)
 
 
@@ -201,6 +229,17 @@ app.add_middleware(_AuthMiddleware)
 
 app.include_router(v2_models.router)
 app.include_router(v2_server.router)
+
+if _cfg.LEGACY_ROUTES_ENABLED:
+    from inference_server.legacy.router import (
+        include_legacy_catch_all,
+        include_legacy_routers,
+    )
+
+    include_legacy_routers(app)
+
+if _cfg.LEGACY_ROUTES_ENABLED:
+    include_legacy_catch_all(app)
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ from inference_server.framework.input_parsers.url_fetch import fetch_images_from
 from inference_server.framework.model_stat import stat_model_while_checking_auth
 from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy.common import ImagePayload
+from inference_server.legacy.entities import ResolvedModel
 from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
     LegacyHTTPError,
@@ -102,6 +103,12 @@ def registry_id_for(model_id: str) -> str:
     if alias is None:
         return resolved
     return f"{alias}{separator}{version}"
+
+
+def resolved_model_for(route: Route) -> ResolvedModel:
+    if route.resolved_model:
+        return ResolvedModel(**route.resolved_model)
+    return ResolvedModel(model_id=route.registry_id)
 
 
 class LoopBridge:

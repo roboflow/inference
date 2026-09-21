@@ -7,6 +7,7 @@ from inference_server.legacy.bridge import (
     LegacyModelBridge,
     LoopBridge,
     SyncLegacyBridge,
+    resolved_model_for,
 )
 from inference_server.legacy.common import ImagePayload
 from inference_server.legacy.errors import LegacyHTTPError
@@ -247,3 +248,15 @@ async def test_sync_bridge_runs_from_plain_thread_pool_worker(fake_stat):
     assert result.task_type == "object-detection"
     with pytest.raises(RuntimeError):
         sync.resolve("ds/1", None)
+
+
+@pytest.mark.asyncio
+async def test_resolved_model_for_falls_back_to_registry_id(fake_stat):
+    fake_stat["coco/3"] = ("object-detection", "infer")
+    bridge = LegacyModelBridge(FakeGateway())
+    route = await bridge.resolve("yolov8n-640", "k")
+    assert resolved_model_for(route).model_dump(exclude_none=True) == {
+        "model_id": "coco/3"
+    }
+    route.resolved_model = {"model_id": "coco/3", "backend": "onnx"}
+    assert resolved_model_for(route).backend == "onnx"

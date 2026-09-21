@@ -68,3 +68,26 @@ def fake_stat(monkeypatch):
         "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
     )
     return table
+
+
+@pytest.fixture
+def legacy_client(fake_stat, monkeypatch, request):
+    from fastapi.testclient import TestClient
+
+    import inference_server.app as app_mod
+
+    monkeypatch.setattr(
+        "inference_model_manager.watchdogs.start_enabled_watchdogs", lambda: []
+    )
+    monkeypatch.delenv("INFERENCE_PRELOAD_MODELS", raising=False)
+
+    def _make(gateway):
+        monkeypatch.setattr(
+            "inference_server.gateway_resolver.resolve_gateway", lambda: gateway
+        )
+        client = TestClient(app_mod.app, raise_server_exceptions=False)
+        client.__enter__()
+        request.addfinalizer(lambda: client.__exit__(None, None, None))
+        return client
+
+    return _make
