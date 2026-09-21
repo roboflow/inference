@@ -53,11 +53,14 @@ If you disagree with the agent and need a maintainer decision, post a new PR com
 /maintainer-review Explain the disputed finding and why you need a human decision.
 ```
 
-The PR author or a maintainer with repository write access can use this command
-on an open, non-draft PR targeting `main`, including a fork PR. Include a reason;
+This internal workflow requires repository write access and an open, non-draft
+same-repository PR targeting `main`. Fork PRs cannot trigger it. Include a reason;
 editing an existing comment does not trigger it. Escalating does not dismiss
 findings or approve the PR. Maintainers coordinate in the Slack thread and record
 their final review and approval in GitHub. Slack replies are not synced to GitHub.
+Repeated requests for the same revision are coalesced. New revisions have a
+24-hour escalation cooldown per PR; requests during that window are suppressed.
+Maintainers are mentioned at most once per PR per 24 hours.
 
 See [maintainer setup](.github/maintainer-review-slack.md) for activation and recovery.
 

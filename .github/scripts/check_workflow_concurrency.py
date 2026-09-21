@@ -67,21 +67,25 @@ def find_offenders(workflows_dir: Path) -> list[str]:
         name = document.get("name")
         if name:
             names[str(name)].append(path.name)
-        concurrency = document.get("concurrency")
+        concurrency_blocks = [document.get("concurrency")]
+        concurrency_blocks.extend(
+            job.get("concurrency") for job in document.get("jobs", {}).values()
+        )
         # actionlint 1.7.12 predates GitHub's queue option. Validate it here
         # while the notifier carries a narrowly scoped parser waiver.
-        if isinstance(concurrency, dict) and "queue" in concurrency:
-            if concurrency["queue"] not in {"single", "max"}:
-                offenders.append(
-                    f"{path.name}: concurrency.queue must be single or max"
-                )
-            if (
-                concurrency["queue"] == "max"
-                and concurrency.get("cancel-in-progress", False) is not False
-            ):
-                offenders.append(
-                    f"{path.name}: queue max requires cancel-in-progress false"
-                )
+        for concurrency in concurrency_blocks:
+            if isinstance(concurrency, dict) and "queue" in concurrency:
+                if concurrency["queue"] not in {"single", "max"}:
+                    offenders.append(
+                        f"{path.name}: concurrency.queue must be single or max"
+                    )
+                if (
+                    concurrency["queue"] == "max"
+                    and concurrency.get("cancel-in-progress", False) is not False
+                ):
+                    offenders.append(
+                        f"{path.name}: queue max requires cancel-in-progress false"
+                    )
         if not _triggers(document) & GUARDED_TRIGGERS:
             continue
 

@@ -1,11 +1,13 @@
 """Network-free behavior tests for the privileged review handoff."""
 
+import base64
 import copy
 import io
 import json
 import unittest
 import urllib.error
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
@@ -15,6 +17,8 @@ from click.testing import CliRunner
 
 REPO = "roboflow/inference"
 HEAD = "a" * 40
+BASE = "b" * 40
+NOW = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
 TIME = "2026-09-21T10:00:00Z"
 LATER = "2026-09-21T10:01:00Z"
 
@@ -74,7 +78,11 @@ class FakeGitHub:
             "run_attempt": 1,
             "path": bridge.WORKFLOW,
             "name": "Claude PR Review",
-            "event": "pull_request",
+            "event": "pull_request_target",
+            "head_branch": "contributor-branch",
+            "head_sha": HEAD,
+            "display_title": f"Claude review PR #2989 at {HEAD} using workflow {BASE}",
+            "pull_requests": [{"number": 2989, "head": {"sha": HEAD}}],
             "status": "completed",
             "conclusion": "success",
             "head_repository": {"full_name": REPO},
@@ -94,7 +102,11 @@ class FakeGitHub:
         self.artifacts = [
             {"id": 200, "name": "maintainer-review-result-1", "expired": False}
         ]
-        self.permission = "read"
+        self.permission = "write"
+        self.merge_base = BASE
+        self.definition = (
+            Path(__file__).resolve().parents[1] / "workflows/claude-pr-review.yml"
+        ).read_bytes()
         self.fail_save = False
 
     def api(self, path, *, data=None, method=None):
@@ -115,6 +127,18 @@ class FakeGitHub:
 
         if path == "actions/runs/100/attempts/1":
             return self.run
+
+        if path == "git/ref/heads/main":
+            return {"object": {"sha": BASE}}
+
+        if path.startswith("compare/"):
+            return {"merge_base_commit": {"sha": self.merge_base}}
+
+        if path.startswith(f"contents/{bridge.WORKFLOW}?ref="):
+            return {
+                "encoding": "base64",
+                "content": base64.b64encode(self.definition).decode(),
+            }
 
         if path.startswith("collaborators/"):
             return {"permission": self.permission}
@@ -201,7 +225,9 @@ class HandoffTests(unittest.TestCase):
         Returns:
             dict: Escalation webhook payload independent of subsequent fixture edits.
         """
-        request = comment(20, body=body, bot=False)
+        request = comment(
+            max(c["id"] for c in self.github.comments) + 10, body=body, bot=False
+        )
         self.github.comments.append(request)
         event = {
             "action": "created",
@@ -215,7 +241,12 @@ class HandoffTests(unittest.TestCase):
         """Verify collect and notify current pass."""
         self.assertEqual(
             bridge.collect(
-                self.github, number=2989, head_sha=HEAD, run_id=100, attempt=1
+                self.github,
+                number=2989,
+                head_sha=HEAD,
+                run_id=100,
+                attempt=1,
+                verdict={"verdict": "pass"},
             ),
             self.github.result,
         )
@@ -232,10 +263,30 @@ class HandoffTests(unittest.TestCase):
                 self.github.comments[1]["body"] = body
                 self.assertIsNone(
                     bridge.collect(
-                        self.github, number=2989, head_sha=HEAD, run_id=100, attempt=1
+                        self.github,
+                        number=2989,
+                        head_sha=HEAD,
+                        run_id=100,
+                        attempt=1,
+                        verdict={"verdict": "pass"},
                     )
                 )
                 self.assertIsNone(self.automatic())
+
+    def test_bot_pass_comment_without_claude_verdict_is_not_approval(self):
+        """A forged shared-bot comment cannot replace the action's own verdict."""
+        for verdict in ({}, {"verdict": "blocked"}, {"verdict": "skipped"}, None):
+            with self.subTest(verdict=verdict):
+                self.assertIsNone(
+                    bridge.collect(
+                        self.github,
+                        number=2989,
+                        head_sha=HEAD,
+                        run_id=100,
+                        attempt=1,
+                        verdict=verdict,
+                    )
+                )
 
     def test_success_without_result_is_not_approval(self):
         """Verify success without result is not approval."""
@@ -302,6 +353,8 @@ class HandoffTests(unittest.TestCase):
     def test_dispatch_result_does_not_depend_on_associated_pr_list(self):
         """Verify dispatch result does not depend on associated pr list."""
         self.github.run["event"] = "workflow_dispatch"
+        self.github.run["head_branch"] = "main"
+        self.github.run["head_sha"] = BASE
         self.github.run["pull_requests"] = []
         self.assertIsNotNone(self.automatic())
 
@@ -326,15 +379,97 @@ class HandoffTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.automatic()
 
+    def test_pr_modified_workflow_cannot_manufacture_approval(self):
+        """Reject PR-run artifacts even with matching comments and run names."""
+        self.github.run["event"] = "pull_request"
+        self.assertIsNone(self.automatic())
+
+    def test_modified_or_old_workflow_definition_is_rejected(self):
+        """Require the exact producer definition in the trusted notifier checkout."""
+        self.github.definition += b"\n# modified producer\n"
+        self.assertIsNone(self.automatic())
+
+    def test_run_source_must_belong_to_main_history(self):
+        """Reject a branch run even if it copies the current trusted workflow."""
+        self.github.run["display_title"] = (
+            f"Claude review PR #2989 at {HEAD} using workflow {'c' * 40}"
+        )
+        self.assertIsNone(self.automatic())
+
+    def test_rest_run_revision_must_match_original_review_binding(self):
+        """Authenticate the independent GitHub run SHA, not just the display title."""
+        self.github.run["head_sha"] = "c" * 40
+        self.assertIsNone(self.automatic())
+
+    def test_dispatch_cannot_claim_a_different_workflow_source(self):
+        """A branch dispatch cannot advertise main's workflow SHA as its own."""
+        self.github.run["event"] = "workflow_dispatch"
+        self.github.run["head_branch"] = "main"
+        self.github.run["head_sha"] = "c" * 40
+        self.assertIsNone(self.automatic())
+
+    def test_manual_dispatch_from_non_main_branch_is_rejected(self):
+        """Do not accept manual reviews launched from contributor branches."""
+        self.github.run["event"] = "workflow_dispatch"
+        self.github.run["head_branch"] = "contributor"
+        self.github.run["head_sha"] = BASE
+        self.assertIsNone(self.automatic())
+
+    def test_run_binding_cannot_be_replaced_by_artifact_claims(self):
+        """Reject a matching live PR and artifact for a different triggering PR/SHA."""
+        for title in (
+            f"Claude review PR #2990 at {HEAD} using workflow {BASE}",
+            f"Claude review PR #2989 at {'c' * 40} using workflow {BASE}",
+            "Unbound run title",
+        ):
+            with self.subTest(title=title):
+                self.github.run["display_title"] = title
+                self.assertIsNone(self.automatic())
+
+    def test_associated_pr_cannot_disagree_with_authenticated_binding(self):
+        """Reject contradictory PR metadata returned by GitHub."""
+        for association in (
+            {"number": 2990, "head": {"sha": HEAD}},
+            {"number": 2989, "head": {"sha": "c" * 40}},
+        ):
+            with self.subTest(association=association):
+                self.github.run["pull_requests"] = [association]
+                self.assertIsNone(self.automatic())
+
+    def test_run_identity_must_match_trigger(self):
+        """Reject a substituted run or attempt before inspecting its artifact."""
+        for field in ("id", "run_attempt"):
+            with self.subTest(field=field):
+                self.github = FakeGitHub()
+                self.github.run[field] += 1
+                self.assertIsNone(self.automatic())
+
+    def test_forks_and_deleted_head_repositories_cannot_enter_either_path(self):
+        """Reject fork authors and maintainers escalating on their behalf."""
+        for repository in ({"full_name": "author/fork"}, None):
+            with self.subTest(repository=repository):
+                self.github = FakeGitHub()
+                self.github.pr["head"]["repo"] = repository
+                self.assertIsNone(self.automatic())
+                self.assertIsNone(
+                    bridge.escalation_handoff(self.github, event=self.escalation())
+                )
+
+    def test_author_without_write_access_cannot_escalate(self):
+        """PR ownership never bypasses the internal contributor requirement."""
+        self.github.permission = "read"
+        self.assertIsNone(
+            bridge.escalation_handoff(self.github, event=self.escalation())
+        )
+
     def test_author_can_escalate(self):
         """Verify author can escalate."""
         result = bridge.escalation_handoff(self.github, event=self.escalation())
-        self.assertEqual(result["key"], "escalation:20")
+        self.assertEqual(result["key"], f"escalation:{HEAD}")
         self.assertTrue(result["reason"].startswith("I disagree"))
 
-    def test_author_can_escalate_fork_and_opt_out(self):
-        """Verify author can escalate fork and opt out."""
-        self.github.pr["head"]["repo"]["full_name"] = "author/fork"
+    def test_internal_author_can_escalate_opt_out(self):
+        """Keep explicit escalation available when automatic reviews are disabled."""
         self.github.pr["labels"] = [{"name": "skip-claude-review"}]
         self.assertIsNotNone(
             bridge.escalation_handoff(self.github, event=self.escalation())
@@ -358,6 +493,7 @@ class HandoffTests(unittest.TestCase):
         """Verify unrelated user cannot escalate but maintainer can."""
         event = self.escalation()
         self.github.pr["user"]["id"] = 999
+        self.github.permission = "read"
         self.assertIsNone(bridge.escalation_handoff(self.github, event=event))
         self.github.permission = "write"
         self.assertIsNotNone(bridge.escalation_handoff(self.github, event=event))
@@ -417,6 +553,87 @@ class HandoffTests(unittest.TestCase):
             "https://roboflow.slack.com/archives/C123/p12345000001",
             self.github.comments[2]["body"],
         )
+
+    def test_fresh_comment_ids_coalesce_for_same_revision(self):
+        """Three separate requests on one unchanged PR produce only one post."""
+        post = Mock(return_value={"channel": "C123", "ts": "123.000001"})
+        for offset in range(3):
+            handoff = bridge.escalation_handoff(self.github, event=self.escalation())
+            bridge.publish(
+                self.github,
+                handoff=handoff,
+                channel="C123",
+                maintainers="U123",
+                token="secret",
+                post=post,
+                now=NOW + timedelta(days=offset),
+            )
+
+        self.assertEqual(post.call_count, 1)
+
+    def test_new_revision_and_another_author_do_not_bypass_cooldown(self):
+        """A PR-wide cooldown covers repeated pushes and multiple requesters."""
+        post = Mock(return_value={"channel": "C123", "ts": "123.000001"})
+        for offset, revision in enumerate((HEAD, "c" * 40, "d" * 40)):
+            self.github.pr["head"]["sha"] = revision
+            event = self.escalation()
+            self.github.comments[-1]["user"]["id"] += offset
+            event["comment"]["user"]["id"] += offset
+            handoff = bridge.escalation_handoff(self.github, event=event)
+            bridge.publish(
+                self.github,
+                handoff=handoff,
+                channel="C123",
+                maintainers="U123",
+                token="secret",
+                post=post,
+                now=NOW + timedelta(hours=offset),
+            )
+
+        self.assertEqual(post.call_count, 1)
+        handoff = bridge.escalation_handoff(self.github, event=self.escalation())
+        self.assertTrue(
+            bridge.publish(
+                self.github,
+                handoff=handoff,
+                channel="C123",
+                maintainers="U123",
+                token="secret",
+                post=post,
+                now=NOW + timedelta(hours=24),
+            )
+        )
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args.kwargs["payload"]["thread_ts"], "123.000001")
+
+    def test_pass_after_escalation_updates_thread_without_repeated_mention(self):
+        """An agent pass still appears during cooldown but does not ping again."""
+        post = Mock(return_value={"channel": "C123", "ts": "123.000001"})
+        escalation = bridge.escalation_handoff(self.github, event=self.escalation())
+        bridge.publish(
+            self.github,
+            handoff=escalation,
+            channel="C123",
+            maintainers="U123",
+            token="secret",
+            post=post,
+            now=NOW,
+        )
+        bridge.publish(
+            self.github,
+            handoff=self.automatic(),
+            channel="C123",
+            maintainers="U123",
+            token="secret",
+            post=post,
+            now=NOW + timedelta(hours=1),
+        )
+
+        self.assertEqual(post.call_count, 2)
+        first, second = [call.kwargs["payload"] for call in post.call_args_list]
+        self.assertIn("<@U123>", first["blocks"][0]["text"]["text"])
+        self.assertNotIn("<@U123>", second["blocks"][0]["text"]["text"])
+        self.assertEqual(second["thread_ts"], "123.000001")
 
     def test_forged_state_cannot_redirect_message(self):
         """Verify forged state cannot redirect message."""
@@ -613,6 +830,7 @@ class CliTests(unittest.TestCase):
                 "GH_TOKEN": "test-token",
                 "PR_NUMBER": "2989",
                 "REVIEW_HEAD_SHA": HEAD,
+                "REVIEW_VERDICT": '{"verdict":"pass"}',
                 "GITHUB_RUN_ID": "100",
                 "GITHUB_RUN_ATTEMPT": "1",
                 "RESULT_PATH": str(result_path),

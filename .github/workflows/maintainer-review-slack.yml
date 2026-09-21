@@ -10,23 +10,60 @@ on:
 permissions:
   contents: read
 
-# Preserve bursts of handoffs; ordinary concurrency retains only one pending
-# run and could silently discard an author's escalation.
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-  queue: max
-
 jobs:
-  notify:
+  eligibility:
+    # This job has no Slack environment or shared queue. Unrelated comments and
+    # external contributors cannot compete with eligible notifications.
     if: >-
       vars.MAINTAINER_REVIEW_SLACK_ENABLED == 'true' &&
       github.repository == 'roboflow/inference' &&
       (
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
         (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+         github.event.comment.user.type == 'User' &&
+         contains(fromJSON('["MEMBER","OWNER","COLLABORATOR"]'), github.event.comment.author_association) &&
          startsWith(github.event.comment.body, '/maintainer-review '))
       )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.eligible.outputs.number }}
+    steps:
+      - name: Reject external and unrelated requests before queuing
+        id: eligible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+            number="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+            login="$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")"
+            permission="$(gh api "repos/${REPO}/collaborators/${login}/permission" --jq '.permission')"
+            case "$permission" in write|maintain|admin) ;; *) exit 0 ;; esac
+          else
+            event="$(jq -r '.workflow_run.event' "$GITHUB_EVENT_PATH")"
+            case "$event" in pull_request_target|workflow_dispatch) ;; *) exit 0 ;; esac
+            number="$(jq -r '.workflow_run.display_title | capture("^Claude review PR #(?<number>[1-9][0-9]*) at [0-9a-f]{40} using workflow [0-9a-f]{40}$").number' "$GITHUB_EVENT_PATH")"
+          fi
+          [[ "$number" =~ ^[1-9][0-9]*$ ]] || exit 0
+          pr="$(gh api "repos/${REPO}/pulls/${number}")"
+          echo "$pr" | jq -e --arg repo "$REPO" '
+            .state == "open" and .draft == false and .base.ref == "main" and
+            .base.repo.full_name == $repo and .head.repo.full_name == $repo
+          ' >/dev/null || exit 0
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+
+  notify:
+    needs: eligibility
+    if: needs.eligibility.outputs.number != ''
+    # Serialize state updates for each PR while retaining bursts of requests.
+    concurrency:
+      group: ${{ github.workflow }}-${{ needs.eligibility.outputs.number }}
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Configure this environment to allow the main BRANCH only (no PR refs or

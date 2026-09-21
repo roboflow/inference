@@ -14,6 +14,7 @@ Click supplies the CLI; the privileged job installs no PR packages.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import io
@@ -25,6 +26,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import click
@@ -35,6 +37,10 @@ STATE_MARKER = "<!-- maintainer-review-slack:v1 "
 BOT_ID = 41898282
 APP_ID = 15368
 SHA = re.compile(r"[0-9a-f]{40}")
+COOLDOWN = timedelta(hours=24)
+RUN_TITLE = re.compile(
+    r"Claude review PR #([1-9][0-9]*) at ([0-9a-f]{40}) using workflow ([0-9a-f]{40})"
+)
 COMMAND = re.compile(r"/maintainer-review[ \t]+(\S[\s\S]*)")
 
 
@@ -225,11 +231,11 @@ def eligible(pr, *, repo, automatic=False):
         and not pr["draft"]
         and pr["base"]["ref"] == "main"
         and pr["base"]["repo"]["full_name"] == repo
+        and (pr["head"].get("repo") or {}).get("full_name") == repo
         and (
             not automatic
             or (
-                pr["head"]["repo"]["full_name"] == repo
-                and not any(
+                not any(
                     label["name"].lower() == "skip-claude-review"
                     for label in pr["labels"]
                 )
@@ -286,7 +292,7 @@ def fresh_pass(comments, *, run_id, attempt, head_sha):
     return result
 
 
-def collect(github, *, number, head_sha, run_id, attempt):
+def collect(github, *, number, head_sha, run_id, attempt, verdict):
     """Record a fresh agent pass for the exact reviewed revision.
 
     Args:
@@ -295,10 +301,14 @@ def collect(github, *, number, head_sha, run_id, attempt):
         head_sha (str): Exact PR revision that the agent reviewed.
         run_id (int): ID of the workflow run that performed the review.
         attempt (int): Attempt number within the review workflow run.
+        verdict (dict): Structured result passed directly from the Claude action.
 
     Returns:
         dict | None: Handoff result, or None when no current pass is available.
     """
+    if verdict != {"verdict": "pass"}:
+        return None
+
     pr = github.api(f"pulls/{number}")
     if (
         not eligible(pr, repo=github.repo, automatic=True)
@@ -329,6 +339,33 @@ def collect(github, *, number, head_sha, run_id, attempt):
     return review_result
 
 
+def _trusted_run(github, *, run, binding):
+    """Authenticate the producer's definition against the trusted main checkout."""
+    source = binding[3]
+    # REST head_sha is the PR head for pull_request_target, but the workflow
+    # source for dispatch. Neither should be mistaken for the other.
+    expected_head = binding[2] if run["event"] == "pull_request_target" else source
+    if run.get("head_sha") != expected_head:
+        return False
+
+    if run["event"] == "workflow_dispatch" and run.get("head_branch") != "main":
+        return False
+
+    main = github.api("git/ref/heads/main")["object"]["sha"]
+    ancestry = github.api(f"compare/{source}...{main}")
+    if ancestry["merge_base_commit"]["sha"] != source:
+        return False
+
+    definition = github.api(f"contents/{WORKFLOW}?ref={source}")
+    trusted = Path(__file__).resolve().parents[1] / "workflows/claude-pr-review.yml"
+    if definition.get("encoding") != "base64":
+        return False
+
+    matches = base64.b64decode(definition["content"]) == trusted.read_bytes()
+
+    return matches
+
+
 def automatic_handoff(github, *, event):
     """Validate a completed review before requesting maintainer attention.
 
@@ -345,12 +382,20 @@ def automatic_handoff(github, *, event):
     if (
         run["path"] != WORKFLOW
         or run["name"] != "Claude PR Review"
-        or run["event"] not in {"pull_request", "workflow_dispatch"}
+        or run["event"] not in {"pull_request_target", "workflow_dispatch"}
+        or run["id"] != run_id
         or run["head_repository"]["full_name"] != github.repo
         or run["status"] != "completed"
         or run["conclusion"] != "success"
         or run["run_attempt"] != attempt
     ):
+        return None
+
+    # pull_request_target uses GitHub's default-branch definition. Authenticate
+    # its exact source version and the original PR binding carried in run-name;
+    # artifact claims and the mutable current PR head cannot replace either.
+    binding = RUN_TITLE.fullmatch(run.get("display_title", ""))
+    if not binding or not _trusted_run(github, run=run, binding=binding):
         return None
 
     artifacts = github.pages(f"actions/runs/{run_id}/artifacts", key="artifacts")
@@ -393,6 +438,14 @@ def automatic_handoff(github, *, event):
         raise ValueError("Invalid handoff result")
 
     number = result["pr_number"]
+    if number != int(binding[1]) or result["head_sha"] != binding[2]:
+        return None
+
+    # GitHub sometimes omits pull_requests. When present, it must also agree.
+    for associated in run.get("pull_requests", []):
+        if associated["number"] != number or associated["head"]["sha"] != binding[2]:
+            return None
+
     pr = github.api(f"pulls/{number}")
     if not eligible(pr, repo=github.repo, automatic=True):
         return None
@@ -454,20 +507,22 @@ def escalation_handoff(github, *, event):
     ):
         return None  # Deleted/edited requests cannot be replayed as new requests.
 
-    if current["user"]["id"] != pr["user"]["id"]:
-        login = urllib.parse.quote(current["user"]["login"], safe="")
-        try:
-            permission = github.api(f"collaborators/{login}/permission")["permission"]
-        except urllib.error.HTTPError as error:
-            if error.code not in {403, 404}:
-                raise
+    # Being the PR author does not grant access to this internal workflow.
+    login = urllib.parse.quote(current["user"]["login"], safe="")
+    try:
+        permission = github.api(f"collaborators/{login}/permission")["permission"]
+    except urllib.error.HTTPError as error:
+        if error.code not in {403, 404}:
+            raise
 
-            return None
-        if permission not in {"write", "maintain", "admin"}:
-            return None
+        return None
+
+    if permission not in {"write", "maintain", "admin"}:
+        return None
+
     handoff = {
         "pr": pr,
-        "key": f"escalation:{original['id']}",
+        "key": f"escalation:{pr['head']['sha']}",
         "kind": "Contributor escalation — maintainer decision requested",
         "comment_id": original["id"],
         "reason": match[1][:2000],
@@ -607,7 +662,7 @@ def slack_post(*, token, payload):
     return result
 
 
-def publish(github, *, handoff, channel, maintainers, token, post=slack_post):
+def publish(github, *, handoff, channel, maintainers, token, post=slack_post, now=None):
     """Post a current handoff and persist its deduplication state.
 
     Args:
@@ -617,6 +672,7 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post):
         maintainers (str): Comma-separated Slack user IDs to mention.
         token (str): Credential for this client or notification step; never logged.
         post (Callable): Message sender accepting token and payload keyword arguments.
+        now (datetime | None): UTC delivery time, or None to use the current time.
 
     Returns:
         bool: True after delivery, or False for a duplicate or stale handoff.
@@ -640,10 +696,16 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post):
     if state and handoff["key"] in state["delivered"]:
         return False
 
+    now = now or datetime.now(timezone.utc)
+    automatic = handoff["key"].startswith("pass:")
+    if state and not automatic and state.get("last_escalation_at"):
+        previous = datetime.fromisoformat(state["last_escalation_at"])
+        if now - previous < COOLDOWN:
+            return False
+
     # Recheck immediately before posting: a push/close/draft transition can occur
     # while the notification waits in the concurrency queue.
     latest = github.api(f"pulls/{number}")
-    automatic = handoff["key"].startswith("pass:")
     if (
         not eligible(latest, repo=github.repo, automatic=automatic)
         or latest["head"]["sha"] != pr["head"]["sha"]
@@ -651,7 +713,12 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post):
         return False
 
     url = f"https://github.com/{github.repo}/pull/{number}"
-    mentions = " ".join(f"<@{item.strip()}>" for item in ids)
+    mention_due = (
+        not state
+        or not state.get("last_mention_at")
+        or (now - datetime.fromisoformat(state["last_mention_at"]) >= COOLDOWN)
+    )
+    mentions = " ".join(f"<@{item.strip()}>" for item in ids) if mention_due else ""
     payload = {
         "channel": channel,
         "text": f"Maintainer review requested for {github.repo} PR #{number}",
@@ -702,6 +769,10 @@ def publish(github, *, handoff, channel, maintainers, token, post=slack_post):
             "delivered": [],
         }
     state["delivered"].append(handoff["key"])
+    if not automatic:
+        state["last_escalation_at"] = now.isoformat()
+    if mention_due:
+        state["last_mention_at"] = now.isoformat()
     print(f"Posted handoff for PR #{number}: channel={channel} ts={posted['ts']}")
     save_state(github, state=state, comment_id=comment_id, token=token)
     return True
@@ -754,6 +825,7 @@ def _collect_from_environment():
         head_sha=os.environ["REVIEW_HEAD_SHA"],
         run_id=int(os.environ["GITHUB_RUN_ID"]),
         attempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
+        verdict=json.loads(os.environ.get("REVIEW_VERDICT", "{}")),
     )
 
     if result:
