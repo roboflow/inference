@@ -31,6 +31,7 @@ WORKDIR /app
 COPY inference_models        /app/inference_models
 COPY inference_model_manager /app/inference_model_manager
 COPY inference_server        /app/inference_server
+COPY workflows                /app/workflows
 
 # CWD = inference_models so its [tool.uv] index/sources apply (jp6-cu126 index).
 # --system-site-packages exposes JetPack's system tensorrt + CUDA python bindings
@@ -40,7 +41,9 @@ RUN uv venv --python 3.10 --system-site-packages /opt/venv \
     && uv pip install \
         -e ".[torch-jp6-cu126,onnx-jp6-cu126]" \
         -e "../inference_model_manager" \
-        -e "../inference_server"
+        -e "../inference_server[workflows]"
+
+RUN python /app/workflows/build_scripts/download_fonts.py
 
 WORKDIR /app/inference_server
 

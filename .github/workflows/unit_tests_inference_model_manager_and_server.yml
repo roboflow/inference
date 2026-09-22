@@ -9,12 +9,14 @@ on:
       - inference_models/**
       - inference_model_manager/**
       - inference_server/**
+      - workflows/**
   push:
     branches: [main]
     paths:
       - inference_models/**
       - inference_model_manager/**
       - inference_server/**
+      - workflows/**
   workflow_dispatch:
 
 concurrency:
@@ -46,7 +48,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml', 'inference_model_manager/pyproject.toml', 'inference_server/pyproject.toml', 'workflows/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
@@ -61,7 +63,8 @@ jobs:
           python -m uv venv
           python -m uv pip install -e inference_models[test] --python .venv
           python -m uv pip install -e inference_model_manager[test] --python .venv
-          python -m uv pip install -e inference_server[test] --python .venv
+          python -m uv pip install -e workflows[test] --python .venv
+          python -m uv pip install -e inference_server[test,workflows] --python .venv
       - name: 🧪 Unit Tests of Inference Server
         timeout-minutes: 10
         working-directory: inference_server
@@ -70,3 +73,11 @@ jobs:
         timeout-minutes: 10
         working-directory: inference_model_manager
         run: ../.venv/bin/pytest tests/unit_tests
+      - name: 📦 Install dependencies (slim, no workflows extra)
+        run: |
+          python -m uv venv .venv-slim
+          python -m uv pip install -e inference_server[test] --python .venv-slim
+      - name: 🧪 Unit Tests of Inference Server (slim install guard)
+        timeout-minutes: 10
+        working-directory: inference_server
+        run: ../.venv-slim/bin/pytest tests/unit_tests/legacy tests/unit_tests/legacy/test_slim_install.py

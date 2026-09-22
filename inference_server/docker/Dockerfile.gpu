@@ -35,12 +35,15 @@ WORKDIR /app
 COPY inference_models/pyproject.toml        inference_models/README.md        /app/inference_models/
 COPY inference_model_manager/pyproject.toml inference_model_manager/README.md /app/inference_model_manager/
 COPY inference_server/pyproject.toml        inference_server/README.md        /app/inference_server/
+COPY workflows/pyproject.toml workflows/README.md workflows/LICENSE /app/workflows/
 RUN mkdir -p /app/inference_models/inference_models \
              /app/inference_model_manager/inference_model_manager \
              /app/inference_server/inference_server \
+             /app/workflows/roboflow_workflows \
     && touch /app/inference_models/inference_models/__init__.py \
              /app/inference_model_manager/inference_model_manager/__init__.py \
-             /app/inference_server/inference_server/__init__.py
+             /app/inference_server/inference_server/__init__.py \
+             /app/workflows/roboflow_workflows/__init__.py
 
 # CWD = inference_models so its [tool.uv] index/sources/dependency-metadata apply.
 WORKDIR /app/inference_models
@@ -50,13 +53,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install \
         -e ".[torch-cu124,onnx-cu12,trt10-runtime]" \
         -e "../inference_model_manager" \
-        -e "../inference_server"
+        -e "../inference_server[workflows]"
 
 # ── source layer: real packages over the stubs (editable finders already point
 #    at these dirs, so no reinstall needed) ─────────────────────────────────
 COPY inference_models        /app/inference_models
 COPY inference_model_manager /app/inference_model_manager
 COPY inference_server        /app/inference_server
+COPY workflows                /app/workflows
+RUN python /app/workflows/build_scripts/download_fonts.py
 
 # ───────────────────────────── runtime ──────────────────────────────────────
 FROM ${RUNTIME_BASE} AS runtime
