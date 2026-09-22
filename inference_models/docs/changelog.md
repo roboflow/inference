@@ -8,6 +8,13 @@
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.
 
+### Added
+
+- `inference_models.utils.performance` exposes `performance_profiler`, an opt-in
+  sampled wall-clock profiler for the model hot path. `inference-model-manager`
+  imports it, so it must ship in a release before that package can resolve
+  against PyPI.
+
 ---
 
 ## `0.38.0`
