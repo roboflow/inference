@@ -5,7 +5,7 @@
 ### Added
 
 - SpaceXAI block (`spacexai@v3`): `grok-4.7` model option with `low`/`medium`/`high`/`xhigh` reasoning effort. Detection reuses the Grok 4.5/4.6 prompt.
-- OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options with `none`..`max` reasoning effort. Detection reuses the GPT-6 Astra structured-absolute prompt.
+- OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options.
 
 ### Fixed
 

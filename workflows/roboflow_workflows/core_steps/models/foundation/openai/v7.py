@@ -97,8 +97,7 @@ STRUCTURED_ABSOLUTE_STYLE = "structured-absolute"
 NORMALIZED_LEGACY_STYLE = "normalized-legacy"
 PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 
-# GPT-6 Sol/Luna and the GPT-5.6 family share `none` through `max`
-# (docs describe those sets family-wide). Astra omits `none`.
+# GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
     {
         "id": "gpt-6-astra",
@@ -591,11 +590,10 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Controls reasoning. Reducing can result in faster responses and fewer tokens. "
-        "Supported values differ per model (see the model dropdown): GPT-6 Sol/Luna and "
-        "the GPT-5.6 family support 'none' through 'max' (default 'medium'), GPT-6 Astra "
-        "omits 'none', GPT-5.5/5.4/5.2 support 'none' through 'xhigh', GPT-5.1 supports "
-        "'none' through 'high' (default 'none'), and GPT-5 models support 'minimal' "
-        "through 'high' (default 'medium'). "
+        "Supported values differ per model (see the model dropdown): the GPT-5.6 family "
+        "supports 'none' through 'max' (default 'medium'), GPT-5.5/5.4/5.2 support 'none' "
+        "through 'xhigh', GPT-5.1 supports 'none' through 'high' (default 'none'), and "
+        "GPT-5 models support 'minimal' through 'high' (default 'medium'). "
         "When unset, the OpenAI default for the selected model is used.",
         json_schema_extra={
             "relevant_for": {

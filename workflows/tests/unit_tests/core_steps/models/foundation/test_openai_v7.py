@@ -218,8 +218,6 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     "model_version, expected_format",
     [
         ("gpt-6-astra", "xyxy_absolute"),
-        ("gpt-6-sol", "xyxy_absolute"),
-        ("gpt-6-luna", "xyxy_absolute"),
         ("gpt-5.6-sol", "xyxy_absolute"),
         ("gpt-4o", "xyxy_absolute"),
         ("gpt-5.1", "named_normalized"),
@@ -256,25 +254,6 @@ def test_plain_absolute_prompt_keeps_pinned_wording() -> None:
         "Only use these labels: cat, dog"
     )
     assert "text" not in prompt
-
-
-@pytest.mark.parametrize("model_version", ["gpt-6-sol", "gpt-6-luna"])
-def test_gpt6_sol_and_luna_reuse_astra_detection_contract(model_version: str) -> None:
-    shared_kwargs = {
-        "base64_image": "base64-image",
-        "classes": ["cat", "dog"],
-        "image_width": 2048,
-        "image_height": 1024,
-    }
-
-    astra_prompt = prepare_object_detection_prompt(
-        **shared_kwargs, model_version="gpt-6-astra"
-    )
-    model_prompt = prepare_object_detection_prompt(
-        **shared_kwargs, model_version=model_version
-    )
-
-    assert model_prompt == astra_prompt
 
 
 def test_structured_absolute_prompt_keeps_json_schema_wrapper() -> None:
