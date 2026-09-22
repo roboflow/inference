@@ -76,6 +76,10 @@ jobs:
       - name: 📦 Install dependencies (slim, no workflows extra)
         run: |
           python -m uv venv .venv-slim
+          # inference-models is transitive here (via inference-model-manager), so
+          # [tool.uv.sources] does not apply and it would come from PyPI; install
+          # the checkout first, as the full env above does.
+          python -m uv pip install -e inference_models --python .venv-slim
           python -m uv pip install -e inference_server[test] --python .venv-slim
       - name: 🧪 Unit Tests of Inference Server (slim install guard)
         timeout-minutes: 10

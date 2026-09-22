@@ -1,8 +1,5 @@
-import importlib.util
 import subprocess
 import sys
-
-import pytest
 
 
 def test_legacy_package_imports_without_roboflow_workflows():
@@ -32,17 +29,19 @@ def test_app_imports_and_drops_workflow_routes_without_roboflow_workflows():
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("roboflow_workflows") is None,
-    reason="asserts a broken install is fatal; slim installs have none",
-)
 def test_app_import_fails_when_roboflow_workflows_is_broken():
+    # Claim the package is installed, then break it: a broken install must crash
+    # the app, never degrade to the routes-dropped path. Faking find_spec keeps
+    # this meaningful on slim installs, where the package really is absent.
     code = (
-        "import sys; sys.modules['roboflow_workflows.http_contract'] = None; "
+        "import importlib.util, sys; _find = importlib.util.find_spec; "
+        "importlib.util.find_spec = lambda name, *a, **k: "
+        "object() if name == 'roboflow_workflows' else _find(name, *a, **k); "
+        "sys.modules['roboflow_workflows.http_contract'] = None; "
         "import inference_server.app"
     )
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True
     )
     assert result.returncode != 0, result.stdout
-    assert "roboflow_workflows.http_contract" in result.stderr, result.stderr
+    assert "roboflow_workflows" in result.stderr, result.stderr
