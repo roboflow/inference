@@ -17,6 +17,9 @@ from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v1 import 
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V4,
 )
+from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import (
+    EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V5,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +57,7 @@ def test_dated_wire_ids_used_by_block_versions_are_classified_like_labels() -> N
     for label, wire_id in {
         **EXACT_MODEL_VERSIONS_V1,
         **EXACT_MODEL_VERSIONS_V4,
+        **EXACT_MODEL_VERSIONS_V5,
     }.items():
         assert anthropic_model_supports_temperature(
             label
@@ -98,3 +102,15 @@ def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warn
     assert second == {"type": "adaptive"}
     assert len(caplog.records) == 1
     assert "thinking_budget_tokens=5000" in caplog.records[0].getMessage()
+
+
+def test_claude_opus_5_5_uses_new_generation_controls() -> None:
+    assert anthropic_model_supports_temperature("claude-opus-5-5") is False
+    assert anthropic_model_supports_manual_thinking("claude-opus-5-5") is False
+    assert resolve_temperature(0.3, model_version="claude-opus-5-5") is None
+    assert build_thinking_config(
+        extended_thinking=True,
+        thinking_budget_tokens=5000,
+        model_version="claude-opus-5-5",
+        model_max_output=128000,
+    ) == {"type": "adaptive"}

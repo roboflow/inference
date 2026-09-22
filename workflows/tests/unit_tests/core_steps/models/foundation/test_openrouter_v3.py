@@ -228,6 +228,7 @@ FORMAT_OUTPUTS = {
     "xyxy_0_1000": json.dumps([{"box_2d": [100, 250, 500, 750], "label": "cat"}]),
     "yxyx_0_1000": json.dumps([{"box_2d": [250, 100, 750, 500], "label": "cat"}]),
     "xyxy_absolute": json.dumps([{"box_2d": [80, 100, 400, 300], "label": "cat"}]),
+    "xyxy_absolute_bbox": json.dumps([{"bbox": [80, 100, 400, 300], "label": "cat"}]),
     "xyxy_percent": json.dumps([{"box_2d": [10, 25, 50, 75], "label": "cat"}]),
     "named_0_1000": json.dumps(
         [{"label": "cat", "x_min": 100, "y_min": 250, "x_max": 500, "y_max": 750}]
@@ -240,6 +241,7 @@ FORMAT_PROMPT_MARKERS = {
     "corners as integers between 0 and 1000",
     "yxyx_0_1000": "[y_min, x_min, y_max, x_max]",
     "xyxy_absolute": f"of the {IMAGE_WIDTH}x{IMAGE_HEIGHT} pixel image",
+    "xyxy_absolute_bbox": 'in the key "bbox"',
     "xyxy_percent": "as percentages of image width and height",
     "named_0_1000": "object grounding expert",
 }

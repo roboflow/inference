@@ -5,14 +5,14 @@ and classification answers are turned into workflow ``predictions`` next to
 the raw ``output`` string, so no separate "VLM as Detector" / "VLM as
 Classifier" formatter step is needed.
 
-The object-detection path is unchanged from v4 and follows the vlm-exam
-benchmark contract for Claude models: images for that task are pre-resized to
-the exact dimensions Claude's internal resize would produce (high-resolution
-tier) and sent as lossless PNG, and the prompt asks for a JSON list of
-``box_2d``/``label`` entries with ``[x_min, y_min, x_max, y_max]`` in absolute
-pixel coordinates of the uploaded image - the shared ``xyxy_absolute``
-coordinate contract - with the image placed before the text and no system
-prompt.
+The object-detection path follows the vlm-exam benchmark contract for Claude
+models: images for that task are pre-resized to the exact dimensions Claude's
+internal resize would produce (high-resolution tier) and sent as lossless PNG,
+and the prompt asks for a JSON list of ``box_2d``/``label`` entries with
+``[x_min, y_min, x_max, y_max]`` in absolute pixel coordinates of the uploaded
+image - the shared ``xyxy_absolute`` coordinate contract - with the image
+placed before the text and no system prompt. Claude Opus 5.5 uses the same
+coordinates with the key ``bbox`` instead of ``box_2d``.
 """
 
 import base64
@@ -44,6 +44,7 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.model_capabilities import (
     build_thinking_config,
+    normalize_anthropic_model_id,
     resolve_temperature,
 )
 from roboflow_workflows.environment import (
@@ -86,6 +87,12 @@ from roboflow_workflows.utils.images import (
 )
 
 CLAUDE_MODELS = [
+    {
+        "id": "claude-opus-5-5",
+        "name": "Claude Opus 5.5",
+        "exact_version": "claude-opus-5-5",
+        "max_output_tokens": 128000,
+    },
     {
         "id": "claude-fable-5-1",
         "name": "Claude Fable 5.1",
@@ -193,13 +200,40 @@ resolution, which keeps the coordinate contract intact.
 
 DETECTION_JPEG_FALLBACK_QUALITY = 95
 
-DETECTION_BOX_FORMAT = "xyxy_absolute"
-"""Box coordinate contract requested from Claude for object detection.
+DEFAULT_DETECTION_BOX_FORMAT = "xyxy_absolute"
+"""Default box coordinate contract requested from Claude for object detection.
 
 Claude returns pixel coordinates of the image as uploaded, so both the prompt
 and the decoder need the dimensions the upload path resized the image to (see
 ``compute_anthropic_upload_dimensions``).
 """
+
+MODEL_DETECTION_BOX_FORMATS = {
+    "claude-opus-5-5": "xyxy_absolute_bbox",
+}
+"""Per-model overrides of ``DEFAULT_DETECTION_BOX_FORMAT``.
+
+Claude Opus 5.5 scored best on vlm-exam with a ``bbox`` key instead of
+``box_2d``; other Claude models keep the shared ``xyxy_absolute`` contract.
+"""
+
+
+def resolve_detection_box_format(model_version: str) -> str:
+    """Resolve the object-detection box contract for a Claude model.
+
+    Args:
+        model_version: Model label or wire id as configured on the block.
+
+    Returns:
+        Registered box format name used to prompt and decode detections.
+    """
+    normalized_model = normalize_anthropic_model_id(model_version)
+    box_format = MODEL_DETECTION_BOX_FORMATS.get(
+        normalized_model, DEFAULT_DETECTION_BOX_FORMAT
+    )
+
+    return box_format
+
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -229,11 +263,13 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 The `object-detection` task asks Claude for a JSON list of
 `{{"box_2d": [x_min, y_min, x_max, y_max], "label": ...}}` entries where
-coordinates are absolute pixels of the uploaded image. The image is
-pre-resized to the exact dimensions Claude's internal resize would produce
-and sent as lossless PNG, matching the vlm-exam benchmark setup for Claude
-models; the `max_image_size` parameter is not applied to this task.
-Confidence scores are not requested, so decoded detections are assigned `1.0`.
+coordinates are absolute pixels of the uploaded image. Claude Opus 5.5 uses
+the same coordinate contract with the key `"bbox"` instead of `"box_2d"`,
+matching the vlm-exam evaluation. The image is pre-resized to the exact
+dimensions Claude's internal resize would produce and sent as lossless PNG,
+matching the vlm-exam benchmark setup for Claude models; the `max_image_size`
+parameter is not applied to this task. Confidence scores are not requested,
+so decoded detections are assigned `1.0`.
 
 ## Version Differences
 
@@ -369,7 +405,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="claude-sonnet-4-5",
         description="Model to be used",
-        examples=["claude-sonnet-4-5", "$inputs.claude_model"],
+        examples=["claude-opus-5-5", "claude-sonnet-4-5", "$inputs.claude_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -547,6 +583,7 @@ class AnthropicClaudeBlockV5(WorkflowBlock):
         api_key: str = "rf_key:account",
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
+        box_format = resolve_detection_box_format(model_version)
         raw_outputs = run_claude_prompting(
             platform_client=self._platform_client,
             roboflow_api_key=self._api_key,
@@ -563,6 +600,7 @@ class AnthropicClaudeBlockV5(WorkflowBlock):
             thinking_budget_tokens=thinking_budget_tokens,
             max_image_size=max_image_size,
             max_concurrent_requests=max_concurrent_requests,
+            box_format=box_format,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -576,7 +614,7 @@ class AnthropicClaudeBlockV5(WorkflowBlock):
                 image=image,
                 classes=classes,
                 inference_id=inference_id,
-                box_format=DETECTION_BOX_FORMAT,
+                box_format=box_format,
                 upload_width=upload_width,
                 upload_height=upload_height,
             )
@@ -635,6 +673,7 @@ def run_claude_prompting(
     thinking_budget_tokens: Optional[int],
     max_image_size: int,
     max_concurrent_requests: Optional[int],
+    box_format: str = DEFAULT_DETECTION_BOX_FORMAT,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -652,6 +691,7 @@ def run_claude_prompting(
             image_width=image_width,
             image_height=image_height,
             media_type=media_type,
+            box_format=box_format,
         )
         prompts.append(generated_prompt)
     return execute_claude_requests(
@@ -1210,6 +1250,7 @@ def prepare_object_detection_prompt(
     image_width: int,
     image_height: int,
     media_type: str = "image/png",
+    box_format: str = DEFAULT_DETECTION_BOX_FORMAT,
     **kwargs,
 ) -> Tuple[Optional[str], List[dict]]:
     """Build the absolute-pixel detection request used by Claude models.
@@ -1218,7 +1259,8 @@ def prepare_object_detection_prompt(
     prompt, no system prompt, and coordinates requested as absolute pixels of
     the uploaded ``image_width`` x ``image_height`` image. The image is
     lossless PNG unless its payload exceeded the size limit, in which case
-    it is JPEG at the same resolution.
+    it is JPEG at the same resolution. Most Claude models ask for ``box_2d``;
+    Claude Opus 5.5 asks for ``bbox``.
 
     Args:
         base64_image: Base64-encoded image.
@@ -1226,13 +1268,14 @@ def prepare_object_detection_prompt(
         image_width: Width of the uploaded image in pixels.
         image_height: Height of the uploaded image in pixels.
         media_type: Media type of the encoded image.
+        box_format: Registered box format used to render the prompt.
         **kwargs: Ignored builder arguments shared across task types.
 
     Returns:
         Tuple of the system prompt (``None``) and the request messages.
     """
     prompt_text = build_object_detection_prompt(
-        box_format=DETECTION_BOX_FORMAT,
+        box_format=box_format,
         classes=classes,
         upload_width=image_width,
         upload_height=image_height,
