@@ -1,6 +1,6 @@
 [project]
 name = "roboflow-workflows"
-version = "0.1.2"
+version = "0.2.0rc1"
 description = "Roboflow Workflows execution engine and block library"
 readme = "README.md"
 license = {file = "LICENSE"}
