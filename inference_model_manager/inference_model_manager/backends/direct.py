@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 import threading
 import time
@@ -280,6 +281,13 @@ class DirectBackend(Backend):
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,
             "model_class_name": type(self._model).__name__ if self._model else None,
+            "resolved_model": (
+                dataclasses.asdict(self._model.resolved_model)
+                if dataclasses.is_dataclass(
+                    getattr(self._model, "resolved_model", None)
+                )
+                else None
+            ),
         }
 
     @property
