@@ -10,6 +10,10 @@
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
 
+### Fixed
+
+- Expose native Qwen 3.8 VL 27B in Qwen VLM blocks v2–v4, including model discovery and thinking support.
+
 ---
 
 ## `0.1.2`
