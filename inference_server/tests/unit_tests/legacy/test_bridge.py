@@ -260,3 +260,22 @@ async def test_resolved_model_for_falls_back_to_registry_id(fake_stat):
     }
     route.resolved_model = {"model_id": "coco/3", "backend": "onnx"}
     assert resolved_model_for(route).backend == "onnx"
+
+
+@pytest.mark.asyncio
+async def test_route_carries_resolved_model_from_stats(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        model_info={
+            "ds/1": {
+                "resolved_model": {
+                    "model_id": "ds/1",
+                    "model_package_id": "pkg",
+                    "backend": "trt",
+                    "quantization": "fp16",
+                }
+            }
+        }
+    )
+    route = await LegacyModelBridge(gw).resolve("ds/1", None)
+    assert route.resolved_model["backend"] == "trt"

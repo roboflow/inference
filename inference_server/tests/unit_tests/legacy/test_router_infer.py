@@ -94,6 +94,36 @@ def test_infer_response_carries_resolved_model_and_registry_tracks_alias(
     assert entry["request_paths"] == ["/infer/object_detection"]
 
 
+def test_infer_response_carries_full_resolved_model_when_reported(
+    legacy_client, fake_stat
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={
+            "ds/1": {
+                "class_names": ["cat"],
+                "resolved_model": {
+                    "model_id": "ds/1",
+                    "model_package_id": "pkg",
+                    "backend": "onnx",
+                    "quantization": "fp32",
+                },
+            }
+        },
+    )
+    r = legacy_client(gw).post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "image": {"type": "base64", "value": _jpeg_b64()}},
+    )
+    assert r.json()["resolved_model"] == {
+        "model_id": "ds/1",
+        "model_package_id": "pkg",
+        "backend": "onnx",
+        "quantization": "fp32",
+    }
+
+
 def test_oversized_content_length_is_413(legacy_client, fake_stat, monkeypatch):
     monkeypatch.setattr("inference_server.configuration.MAX_BODY_BYTES", 10)
     r = legacy_client(FakeGateway()).post(

@@ -157,15 +157,6 @@ def test_stream_pipeline_members_report_no_pipeline():
     )
 
 
-def test_tensor_native_is_501():
-    from inference_server.legacy.errors import LegacyHTTPError
-
-    with pytest.raises(LegacyHTTPError):
-        GatewayModelsProvider(_od_bridge(), api_key=None).run_tensor_native_inference(
-            "ds/1"
-        )
-
-
 def test_artifact_cache_property_uses_shared_blob_cache(monkeypatch):
     sentinel = object()
     monkeypatch.setattr(

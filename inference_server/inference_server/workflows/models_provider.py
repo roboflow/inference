@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
+from roboflow_workflows import environment
 from roboflow_workflows.prototypes.models_provider import (
     UNSET,
     InferenceResultsDC,
@@ -69,11 +70,14 @@ from inference_server.legacy.translation import (
     requested_open_vocabulary_classes,
     resolve_request_action,
 )
+from inference_server.workflows.tensor_native import (
+    SUPPORTED_TASK_TYPES,
+    assemble_native_result,
+    native_image_payloads,
+    native_params,
+)
 
 _WORKFLOW_SOURCE = "workflow-execution"
-_TENSOR_NATIVE_UNAVAILABLE = (
-    "Tensor-native inference is not available on inference_server"
-)
 _SAM3_3D_UNAVAILABLE = (
     "SAM3 3D object reconstruction is not available on inference_server"
 )
@@ -537,8 +541,22 @@ class GatewayModelsProvider:
         raise LegacyHTTPError(501, f"{_SAM3_3D_UNAVAILABLE}.")
 
     def run_tensor_native_inference(self, model_id: str, **kwargs: Any) -> Any:
-        raise LegacyHTTPError(
-            501, f"{_TENSOR_NATIVE_UNAVAILABLE} for model '{model_id}'."
+        key = self._key_for(model_id)
+        route = self._resolve(model_id, key)
+        if route.task_type not in SUPPORTED_TASK_TYPES:
+            raise LegacyHTTPError(
+                501,
+                f"tensor-native execution is not available for {route.task_type} "
+                "on inference_server",
+            )
+        images = kwargs.pop("images")
+        payloads = native_image_payloads(
+            images, ndarray_ok=self._bridge.accepts_ndarray
+        )
+        params = native_params(route.task_type, kwargs)
+        raw = self._bridge.infer(route, key, route.action, payloads, params)
+        return assemble_native_result(
+            route.task_type, raw, environment.WORKFLOWS_IMAGE_TENSOR_DEVICE
         )
 
     def load_action_recognition_model(
