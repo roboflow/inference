@@ -201,9 +201,12 @@ SAM3_3D_OBJECTS_ENABLED = get_boolean_from_env("SAM3_3D_OBJECTS_ENABLED", defaul
 ACTION_RECOGNITION_ENABLED = get_boolean_from_env(
     "ACTION_RECOGNITION_ENABLED", default=True
 )
-_SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
+SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
 SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
-    "SAM3_FINE_TUNED_MODELS_ENABLED", default=_SAM3_EXEC_MODE != "remote"
+    "SAM3_FINE_TUNED_MODELS_ENABLED", default=SAM3_EXEC_MODE != "remote"
+)
+DISABLE_SAM3_LOGITS_CACHE = get_boolean_from_env(
+    "DISABLE_SAM3_LOGITS_CACHE", default=False
 )
 WORKFLOWS_MAX_CONCURRENT_STEPS = get_integer_from_env(
     "WORKFLOWS_MAX_CONCURRENT_STEPS", default=8

@@ -3,7 +3,6 @@ import io
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from tests.unit_tests.legacy.conftest import FakeGateway
@@ -60,21 +59,3 @@ def test_catch_all_does_not_shadow_two_segment_named_routes(legacy_client, fake_
     assert c.get("/model/registry").status_code == 200
     assert c.post("/model/clear").status_code == 200
     assert c.get("/clear_cache").status_code == 200
-
-
-@pytest.mark.parametrize("image_format", ["image", "image_and_json"])
-def test_catch_all_semantic_segmentation_visualization_is_501(
-    legacy_client, fake_stat, image_format
-):
-    fake_stat["ds/1"] = ("semantic-segmentation", "infer")
-    gw = _gw()
-    r = legacy_client(gw).post(
-        f"/ds/1?api_key=k&format={image_format}",
-        content=base64.b64encode(_jpeg()),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    assert r.status_code == 501
-    assert r.json() == {
-        "message": "Visualization is not available yet on inference_server"
-    }
-    assert not any(call[0] == "infer" for call in gw.calls)

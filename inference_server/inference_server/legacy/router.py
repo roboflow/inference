@@ -3,7 +3,16 @@ import logging
 import time
 from typing import Any, List, Literal, Optional, Tuple, Union
 
-from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import JSONResponse
 from starlette.datastructures import UploadFile
 
@@ -22,27 +31,77 @@ from inference_server.legacy.entities import (
     ClassificationInferenceRequest,
     ClassificationInferenceResponse,
     ClearModelRequest,
+    ClipCompareRequest,
+    ClipCompareResponse,
+    ClipEmbeddingResponse,
+    ClipImageEmbeddingRequest,
+    ClipTextEmbeddingRequest,
     Confidence,
+    DepthEstimationRequest,
+    DepthEstimationResponse,
+    DoctrOCRInferenceRequest,
+    EasyOCRInferenceRequest,
+    GroundingDINOInferenceRequest,
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceRequest,
     KeypointsDetectionInferenceResponse,
+    LMMInferenceRequest,
+    LMMInferenceResponse,
     ModelDescriptionEntity,
     ModelsDescriptions,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
+    OCRInferenceResponse,
+    PerceptionEncoderCompareRequest,
+    PerceptionEncoderCompareResponse,
+    PerceptionEncoderEmbeddingResponse,
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderTextEmbeddingRequest,
+    PPOCRInferenceRequest,
+    Sam2EmbeddingRequest,
+    Sam2EmbeddingResponse,
+    Sam2SegmentationRequest,
+    Sam2SegmentationResponse,
+    Sam3EmbeddingResponse,
+    Sam3SegmentationRequest,
+    Sam3SegmentationResponse,
+    SamEmbeddingRequest,
+    SamEmbeddingResponse,
+    SamSegmentationRequest,
+    SamSegmentationResponse,
     SemanticSegmentationInferenceRequest,
     SemanticSegmentationInferenceResponse,
     ServerVersionInfo,
+    TrOCRInferenceRequest,
+    YOLOWorldInferenceRequest,
 )
 from inference_server.legacy.errors import LegacyHTTPError, with_legacy_errors
 from inference_server.legacy.translation import (
+    build_embedding_calls,
+    build_interactive_segmentation_params,
+    build_open_vocabulary_params,
     build_task_params,
+    build_vlm_params,
+    encode_normalized_depth_to_png8,
+    encode_normalized_depth_to_png16,
+    ensure_ocr_request_supported,
     ensure_request_supported,
+    repack_depth_estimation,
+    repack_embedding_response,
+    repack_interactive_segmentation_response,
+    repack_moondream_detection,
+    repack_object_detection_response,
     repack_prediction,
+    repack_structured_ocr_response,
+    repack_text_ocr_response,
+    repack_vlm_response,
+    requested_open_vocabulary_classes,
+    resolve_request_action,
 )
+from inference_server.legacy.visualization import render_visualization
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +109,44 @@ router = APIRouter(tags=["legacy"])
 control_plane_router = APIRouter(tags=["legacy"])
 registry_router = APIRouter(tags=["legacy"])
 catch_all_router = APIRouter(tags=["legacy"])
+clip_router = APIRouter(tags=["legacy"])
+perception_encoder_router = APIRouter(tags=["legacy"])
+doctr_router = APIRouter(tags=["legacy"])
+easy_ocr_router = APIRouter(tags=["legacy"])
+trocr_router = APIRouter(tags=["legacy"])
+pp_ocr_router = APIRouter(tags=["legacy"])
+yolo_world_router = APIRouter(tags=["legacy"])
+grounding_dino_router = APIRouter(tags=["legacy"])
+owlv2_router = APIRouter(tags=["legacy"])
+gaze_router = APIRouter(tags=["legacy"])
+lmm_router = APIRouter(tags=["legacy"])
+depth_router = APIRouter(tags=["legacy"])
+sam_router = APIRouter(tags=["legacy"])
+sam2_router = APIRouter(tags=["legacy"])
+sam3_router = APIRouter(tags=["legacy"])
+sam3_3d_router = APIRouter(tags=["legacy"])
+action_recognition_router = APIRouter(tags=["legacy"])
 
-VISUALIZATION_UNAVAILABLE_MESSAGE = (
-    "Visualization is not available yet on inference_server"
+_CORE_MODEL_ROUTER_GROUPS = (
+    (("CORE_MODEL_CLIP_ENABLED",), clip_router),
+    (("CORE_MODEL_PE_ENABLED",), perception_encoder_router),
+    (("CORE_MODEL_DOCTR_ENABLED",), doctr_router),
+    (("CORE_MODEL_EASYOCR_ENABLED",), easy_ocr_router),
+    (("CORE_MODEL_TROCR_ENABLED",), trocr_router),
+    (("CORE_MODEL_PPOCR_ENABLED",), pp_ocr_router),
+    (("CORE_MODEL_YOLO_WORLD_ENABLED",), yolo_world_router),
+    (("CORE_MODEL_GROUNDINGDINO_ENABLED",), grounding_dino_router),
+    (("CORE_MODEL_OWLV2_ENABLED",), owlv2_router),
+    (("CORE_MODEL_GAZE_ENABLED",), gaze_router),
+    (("LMM_ENABLED", "MOONDREAM2_ENABLED"), lmm_router),
+    (("DEPTH_ESTIMATION_ENABLED",), depth_router),
+    (("CORE_MODEL_SAM_ENABLED",), sam_router),
+    (("CORE_MODEL_SAM2_ENABLED",), sam2_router),
+    (("CORE_MODEL_SAM3_ENABLED",), sam3_router),
+    (("SAM3_3D_OBJECTS_ENABLED",), sam3_3d_router),
+    (("ACTION_RECOGNITION_ENABLED",), action_recognition_router),
 )
+
 _VISUALIZATION_FORMATS = ("image", "image_and_json")
 _CONTENT_TYPE_MISSING_MESSAGE = "Request must include a Content-Type header"
 _MULTIPART_PART_MISSING_MESSAGE = (
@@ -64,6 +157,32 @@ _TASK_UNAVAILABLE_MESSAGE = (
     "{route} is not available on inference_server: no model class for this task is "
     "registered with the model manager"
 )
+SAM3_REMOTE_UNSUPPORTED_MESSAGE = (
+    "SAM3_EXEC_MODE=remote proxying is not available on inference_server"
+)
+SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
+    "SAM3 embedding is not supported in remote execution mode."
+)
+_DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM 3 models are not supported on Serverless. "
+    "Use the base SAM 3 model (sam3/sam3_final), a Dedicated Deployment, "
+    "or self-hosted Inference."
+)
+SAM3_INTERACTIVE_MODEL_ID = "sam3/sam3_interactive"
+_GAZE_DEPRECATION_BODY = {
+    "message": (
+        "Feature '/gaze/gaze_detection' has been removed from inference. Reason: "
+        "MediaPipe dependency removed from inference; endpoint is a 410 stub.. "
+        "Removed in end of Q2 2026. No drop-in replacement is provided; contact "
+        "Roboflow if you require this capability."
+    ),
+    "error_type": "FeatureDeprecatedError",
+    "feature": "/gaze/gaze_detection",
+    "removal_release": "end of Q2 2026",
+    "replacement": None,
+    "reason": "MediaPipe dependency removed from inference; endpoint is a 410 stub.",
+}
 
 
 def get_bridge(request: Request) -> LegacyModelBridge:
@@ -72,6 +191,10 @@ def get_bridge(request: Request) -> LegacyModelBridge:
 
 def include_legacy_routers(app: FastAPI) -> None:
     app.include_router(router)
+    if configuration.CORE_MODELS_ENABLED:
+        for flag_names, group_router in _CORE_MODEL_ROUTER_GROUPS:
+            if any(getattr(configuration, name) for name in flag_names):
+                app.include_router(group_router)
     if configuration.LEGACY_CONTROL_PLANE_ROUTES_ENABLED:
         app.include_router(control_plane_router)
         if configuration.GET_MODEL_REGISTRY_ENABLED:
@@ -253,10 +376,12 @@ async def _infer_and_repack(
     bridge: LegacyModelBridge,
     route: Route,
     api_key: Optional[str],
+    image_format: Optional[str] = None,
 ) -> Response:
     ensure_request_supported(inference_request.model_id, inference_request, route)
-    if getattr(inference_request, "visualize_predictions", False):
-        raise LegacyHTTPError(501, VISUALIZATION_UNAVAILABLE_MESSAGE)
+    visualize = image_format in _VISUALIZATION_FORMATS or bool(
+        getattr(inference_request, "visualize_predictions", False)
+    )
     images, is_batch = as_image_list(inference_request.image)
     payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
     params = build_task_params(route.task_type, route.action, inference_request, route)
@@ -276,7 +401,16 @@ async def _infer_and_repack(
         response.time = elapsed
         response.inference_id = inference_request.id
         response.resolved_model = resolved_model_for(route)
+        if visualize:
+            response.visualization = render_visualization(
+                route, inference_request, response, payload
+            )
         responses.append(response)
+    if image_format == "image":
+        return Response(
+            content=responses[0].visualization if responses else None,
+            media_type="image/jpeg",
+        )
     return orjson_response(responses if is_batch else responses[0])
 
 
@@ -400,37 +534,29 @@ async def infer_keypoints(
     )
 
 
-if configuration.CORE_MODELS_ENABLED:
+@action_recognition_router.post("/infer/action_recognition")
+@with_legacy_errors
+async def infer_action_recognition(request: Request) -> Response:
+    raise LegacyHTTPError(
+        501,
+        _TASK_UNAVAILABLE_MESSAGE.format(route="/infer/action_recognition"),
+    )
 
-    if configuration.ACTION_RECOGNITION_ENABLED:
 
-        @router.post("/infer/action_recognition")
-        @with_legacy_errors
-        async def infer_action_recognition(request: Request) -> Response:
-            raise LegacyHTTPError(
-                501,
-                _TASK_UNAVAILABLE_MESSAGE.format(route="/infer/action_recognition"),
-            )
+@sam3_3d_router.post("/sam3_3d/infer")
+@with_legacy_errors
+async def infer_sam3_3d(request: Request) -> Response:
+    raise LegacyHTTPError(501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer"))
 
-    if configuration.SAM3_3D_OBJECTS_ENABLED:
 
-        @router.post("/sam3_3d/infer")
-        @with_legacy_errors
-        async def infer_sam3_3d(request: Request) -> Response:
-            raise LegacyHTTPError(
-                501, _TASK_UNAVAILABLE_MESSAGE.format(route="/sam3_3d/infer")
-            )
-
-    if configuration.CORE_MODEL_OWLV2_ENABLED:
-
-        @router.post("/owlv2/infer")
-        @with_legacy_errors
-        async def infer_owlv2(request: Request) -> Response:
-            raise LegacyHTTPError(
-                501,
-                "/owlv2/infer few-shot detection with training_data is not available "
-                "on inference_server",
-            )
+@owlv2_router.post("/owlv2/infer")
+@with_legacy_errors
+async def infer_owlv2(request: Request) -> Response:
+    raise LegacyHTTPError(
+        501,
+        "/owlv2/infer few-shot detection with training_data is not available "
+        "on inference_server",
+    )
 
 
 async def _catch_all_image(
@@ -587,8 +713,6 @@ async def legacy_infer_from_request(
     request_image = await _catch_all_image(request, image, image_type)
     route = await bridge.resolve(model_id, resolved_key)
     bridge.record_request(route, model_id, request.scope["path"])
-    if format in _VISUALIZATION_FORMATS:
-        raise LegacyHTTPError(501, VISUALIZATION_UNAVAILABLE_MESSAGE)
     request_type = ObjectDetectionInferenceRequest
     extra_args: dict = {}
     if route.task_type == "instance-segmentation":
@@ -629,4 +753,748 @@ async def legacy_infer_from_request(
         disable_model_monitoring=disable_model_monitoring,
         **extra_args,
     )
-    return await _infer_and_repack(inference_request, bridge, route, resolved_key)
+    return await _infer_and_repack(
+        inference_request,
+        bridge,
+        route,
+        resolved_key,
+        image_format=format if format in _VISUALIZATION_FORMATS else None,
+    )
+
+
+async def _resolve_core_model(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+) -> Tuple[Route, str, Optional[str]]:
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
+    )
+    inference_request.api_key = api_key
+    core_model_id = f"{core}/{getattr(inference_request, f'{core}_version_id')}"
+    route = await bridge.resolve(core_model_id, api_key)
+    bridge.record_request(route, core_model_id, request.scope["path"])
+    return route, core_model_id, api_key
+
+
+async def _load_images(inference_request, bridge: LegacyModelBridge):
+    images, is_batch = as_image_list(inference_request.image)
+    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    return payloads, is_batch
+
+
+async def _run_embedding(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+) -> Any:
+    route, _, api_key = await _resolve_core_model(
+        request, inference_request, bridge, core
+    )
+    action = resolve_request_action(route, inference_request)
+    calls, prompt_keys = build_embedding_calls(action, inference_request)
+    image_positions = [
+        position for position, call in enumerate(calls) if call["image"] is not None
+    ]
+    payloads = await load_request_images(
+        [calls[position]["image"] for position in image_positions],
+        ndarray_ok=bridge.accepts_ndarray,
+    )
+    payload_by_position = dict(zip(image_positions, payloads))
+    started = time.perf_counter()
+    results = []
+    for position, call in enumerate(calls):
+        payload = payload_by_position.get(position)
+        if payload is None:
+            results.append(
+                await bridge.infer_params_only(
+                    route, api_key, call["task"], call["params"]
+                )
+            )
+            continue
+        results.extend(
+            await bridge.infer(route, api_key, call["task"], [payload], call["params"])
+        )
+    elapsed = time.perf_counter() - started
+    response = repack_embedding_response(
+        action, inference_request, results, prompt_keys
+    )
+    response.time = elapsed
+    response.resolved_model = resolved_model_for(route)
+    return response
+
+
+async def _run_ocr(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+    *,
+    structured: bool,
+) -> Response:
+    ensure_ocr_request_supported(inference_request)
+    route, _, api_key = await _resolve_core_model(
+        request, inference_request, bridge, core
+    )
+    payloads, is_batch = await _load_images(inference_request, bridge)
+    started = time.perf_counter()
+    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    elapsed = time.perf_counter() - started
+    responses = []
+    for prediction, payload in zip(predictions, payloads):
+        dims = (payload.width, payload.height)
+        if structured:
+            response = repack_structured_ocr_response(
+                prediction, dims, route.class_names, inference_request
+            )
+        else:
+            response = repack_text_ocr_response(prediction, dims)
+        response.time = elapsed
+        response.resolved_model = resolved_model_for(route)
+        responses.append(response)
+    return orjson_response(responses if is_batch else responses[0], keep_parent_id=True)
+
+
+async def _run_open_vocabulary_detection(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    core: str,
+) -> Any:
+    params = build_open_vocabulary_params(inference_request)
+    route, core_model_id, api_key = await _resolve_core_model(
+        request, inference_request, bridge, core
+    )
+    ensure_request_supported(core_model_id, inference_request, route)
+    class_names = requested_open_vocabulary_classes(inference_request)
+    payloads, is_batch = await _load_images(inference_request, bridge)
+    started = time.perf_counter()
+    predictions = await bridge.infer(route, api_key, route.action, payloads, params)
+    elapsed = time.perf_counter() - started
+    responses = []
+    for prediction, payload in zip(predictions, payloads):
+        response = repack_object_detection_response(
+            prediction, (payload.width, payload.height), class_names, inference_request
+        )
+        response.time = elapsed
+        response.inference_id = inference_request.id
+        response.resolved_model = resolved_model_for(route)
+        responses.append(response)
+    return responses if is_batch else responses[0]
+
+
+@clip_router.post(
+    "/clip/embed_image",
+    response_model=ClipEmbeddingResponse,
+    summary="CLIP Image Embeddings",
+    description="Run the Open AI CLIP model to embed image data.",
+)
+@with_legacy_errors
+async def clip_embed_image(
+    request: Request,
+    inference_request: ClipImageEmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(request, inference_request, bridge, "clip")
+
+
+@clip_router.post(
+    "/clip/embed_text",
+    response_model=ClipEmbeddingResponse,
+    summary="CLIP Text Embeddings",
+    description="Run the Open AI CLIP model to embed text data.",
+)
+@with_legacy_errors
+async def clip_embed_text(
+    request: Request,
+    inference_request: ClipTextEmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(request, inference_request, bridge, "clip")
+
+
+@clip_router.post(
+    "/clip/compare",
+    response_model=ClipCompareResponse,
+    summary="CLIP Compare",
+    description="Run the Open AI CLIP model to compute similarity scores.",
+)
+@with_legacy_errors
+async def clip_compare(
+    request: Request,
+    inference_request: ClipCompareRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(request, inference_request, bridge, "clip")
+
+
+@perception_encoder_router.post(
+    "/perception_encoder/embed_image",
+    response_model=PerceptionEncoderEmbeddingResponse,
+    summary="PE Image Embeddings",
+    description="Run the Meta Perception Encoder model to embed image data.",
+)
+@with_legacy_errors
+async def perception_encoder_embed_image(
+    request: Request,
+    inference_request: PerceptionEncoderImageEmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(
+        request, inference_request, bridge, "perception_encoder"
+    )
+
+
+@perception_encoder_router.post(
+    "/perception_encoder/embed_text",
+    response_model=PerceptionEncoderEmbeddingResponse,
+    summary="PE Text Embeddings",
+    description="Run the Meta Perception Encoder model to embed text data.",
+)
+@with_legacy_errors
+async def perception_encoder_embed_text(
+    request: Request,
+    inference_request: PerceptionEncoderTextEmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(
+        request, inference_request, bridge, "perception_encoder"
+    )
+
+
+@perception_encoder_router.post(
+    "/perception_encoder/compare",
+    response_model=PerceptionEncoderCompareResponse,
+    summary="PE Compare",
+    description="Run the Meta Perception Encoder model to compute similarity scores.",
+)
+@with_legacy_errors
+async def perception_encoder_compare(
+    request: Request,
+    inference_request: PerceptionEncoderCompareRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_embedding(
+        request, inference_request, bridge, "perception_encoder"
+    )
+
+
+@doctr_router.post(
+    "/doctr/ocr",
+    response_model=Union[OCRInferenceResponse, List[OCRInferenceResponse]],
+    summary="DocTR OCR response",
+    description="Run the DocTR OCR model to retrieve text in an image.",
+)
+@with_legacy_errors
+async def doctr_retrieve_text(
+    request: Request,
+    inference_request: DoctrOCRInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    return await _run_ocr(request, inference_request, bridge, "doctr", structured=True)
+
+
+@easy_ocr_router.post(
+    "/easy_ocr/ocr",
+    response_model=Union[OCRInferenceResponse, List[OCRInferenceResponse]],
+    summary="EasyOCR OCR response",
+    description="Run the EasyOCR model to retrieve text in an image.",
+)
+@with_legacy_errors
+async def easy_ocr_retrieve_text(
+    request: Request,
+    inference_request: EasyOCRInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    return await _run_ocr(
+        request, inference_request, bridge, "easy_ocr", structured=True
+    )
+
+
+@trocr_router.post(
+    "/ocr/trocr",
+    response_model=Union[OCRInferenceResponse, List[OCRInferenceResponse]],
+    summary="TrOCR OCR response",
+    description="Run the TrOCR model to retrieve text in an image.",
+)
+@with_legacy_errors
+async def trocr_retrieve_text(
+    request: Request,
+    inference_request: TrOCRInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    return await _run_ocr(request, inference_request, bridge, "trocr", structured=False)
+
+
+@pp_ocr_router.post(
+    "/ocr/pp-ocr",
+    response_model=Union[OCRInferenceResponse, List[OCRInferenceResponse]],
+    summary="PP-OCRv6 OCR response",
+    description="Run PP-OCRv6 two-stage OCR to retrieve text in an image.",
+)
+@with_legacy_errors
+async def pp_ocr_retrieve_text(
+    request: Request,
+    inference_request: PPOCRInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Response:
+    return await _run_ocr(request, inference_request, bridge, "pp_ocr", structured=True)
+
+
+@yolo_world_router.post(
+    "/yolo_world/infer",
+    response_model=Union[
+        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+    ],
+    summary="YOLO-World inference.",
+    description="Run the YOLO-World zero-shot object detection model.",
+    response_model_exclude_none=True,
+)
+@with_legacy_errors
+async def yolo_world_infer(
+    request: Request,
+    inference_request: YOLOWorldInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_open_vocabulary_detection(
+        request, inference_request, bridge, "yolo_world"
+    )
+
+
+@grounding_dino_router.post(
+    "/grounding_dino/infer",
+    response_model=Union[
+        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+    ],
+    summary="Grounding DINO inference.",
+    description="Run the Grounding DINO zero-shot object detection model.",
+)
+@with_legacy_errors
+async def grounding_dino_infer(
+    request: Request,
+    inference_request: GroundingDINOInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_open_vocabulary_detection(
+        request, inference_request, bridge, "grounding_dino"
+    )
+
+
+@gaze_router.post(
+    "/gaze/gaze_detection",
+    summary="Gaze Detection (deprecated)",
+    description=(
+        "Deprecated. Always returns HTTP 410 Gone. The endpoint stub will be "
+        "removed end of Q2 2026."
+    ),
+    deprecated=True,
+)
+async def gaze_detection_deprecated() -> Response:
+    return JSONResponse(status_code=410, content=_GAZE_DEPRECATION_BODY)
+
+
+async def _run_lmm(
+    request: Request,
+    inference_request: LMMInferenceRequest,
+    bridge: LegacyModelBridge,
+    model_id: Optional[str] = None,
+) -> Any:
+    if model_id is not None:
+        if (
+            inference_request.model_id is not None
+            and inference_request.model_id != model_id
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Model ID mismatch: path specifies '{model_id}' but request "
+                    f"body specifies '{inference_request.model_id}'"
+                ),
+            )
+        inference_request.model_id = model_id
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
+    )
+    inference_request.api_key = api_key
+    route = await bridge.resolve(inference_request.model_id, api_key)
+    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    ensure_request_supported(inference_request.model_id, inference_request, route)
+    action = resolve_request_action(route, inference_request)
+    if action == "detect":
+        params = {"classes": [getattr(inference_request, "prompt", None)]}
+    else:
+        params = build_vlm_params(inference_request)
+    payloads, is_batch = await _load_images(inference_request, bridge)
+    started = time.perf_counter()
+    predictions = await bridge.infer(route, api_key, action, payloads, params)
+    elapsed = time.perf_counter() - started
+    responses = []
+    for prediction, payload in zip(predictions, payloads):
+        dims = (payload.width, payload.height)
+        if action == "detect":
+            response = repack_moondream_detection(prediction, inference_request, dims)
+        else:
+            response = repack_vlm_response(prediction, dims)
+        response.time = elapsed
+        response.inference_id = inference_request.id
+        response.resolved_model = resolved_model_for(route)
+        responses.append(response)
+    return responses if is_batch else responses[0]
+
+
+@lmm_router.post(
+    "/infer/lmm",
+    response_model=Union[
+        LMMInferenceResponse,
+        List[LMMInferenceResponse],
+        ObjectDetectionInferenceResponse,
+        List[ObjectDetectionInferenceResponse],
+    ],
+    summary="Large multi-modal model infer",
+    description="Run inference with the specified large multi-modal model",
+    response_model_exclude_none=True,
+)
+@with_legacy_errors
+async def infer_lmm(
+    request: Request,
+    inference_request: LMMInferenceRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_lmm(request, inference_request, bridge)
+
+
+@lmm_router.post(
+    "/infer/lmm/{model_id:path}",
+    response_model=Union[
+        LMMInferenceResponse,
+        List[LMMInferenceResponse],
+        ObjectDetectionInferenceResponse,
+        List[ObjectDetectionInferenceResponse],
+    ],
+    summary="Large multi-modal model infer with model ID in path",
+    description=(
+        "Run inference with the specified large multi-modal model. Model ID is "
+        "specified in the URL path (can contain slashes)."
+    ),
+    response_model_exclude_none=True,
+)
+@with_legacy_errors
+async def infer_lmm_with_model_id(
+    request: Request,
+    inference_request: LMMInferenceRequest,
+    model_id: str = Path(description="Identifier of the model to run"),
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_lmm(request, inference_request, bridge, model_id=model_id)
+
+
+async def _run_depth_estimation(
+    request: Request,
+    inference_request: DepthEstimationRequest,
+    bridge: LegacyModelBridge,
+    model_id: Optional[str] = None,
+) -> Any:
+    images, is_batch = as_image_list(inference_request.image)
+    if is_batch:
+        raise LegacyHTTPError(400, _DEPTH_SINGLE_IMAGE_MESSAGE)
+    if model_id is not None:
+        fields_set = getattr(inference_request, "model_fields_set", set())
+        if (
+            "model_id" in fields_set
+            and inference_request.model_id is not None
+            and inference_request.model_id != model_id
+        ):
+            raise LegacyHTTPError(
+                400,
+                f"Model ID mismatch: path specifies '{model_id}' but request body "
+                f"specifies '{inference_request.model_id}'",
+            )
+        inference_request.model_id = model_id
+    if inference_request.model_id is None:
+        inference_request.model_id = (
+            f"depth-anything-v2/{inference_request.depth_version_id}"
+        )
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
+    )
+    inference_request.api_key = api_key
+    route = await bridge.resolve(inference_request.model_id, api_key)
+    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+    started = time.perf_counter()
+    predictions = await bridge.infer(route, api_key, route.action, payloads, {})
+    elapsed = time.perf_counter() - started
+    depth = repack_depth_estimation(predictions[0])
+    normalized_depth = depth["normalized_depth"]
+    if inference_request.depth_map_format == "png8":
+        serialized_depth = encode_normalized_depth_to_png8(normalized_depth)
+    elif inference_request.depth_map_format == "png16":
+        serialized_depth = encode_normalized_depth_to_png16(normalized_depth)
+    else:
+        serialized_depth = normalized_depth.tolist()
+    response = DepthEstimationResponse(
+        normalized_depth=serialized_depth,
+        depth_map_format=inference_request.depth_map_format,
+        image=depth["image"]["base64_image"],
+    )
+    response.time = elapsed
+    response.inference_id = inference_request.id
+    response.resolved_model = resolved_model_for(route)
+    return response
+
+
+@depth_router.post(
+    "/infer/depth-estimation",
+    response_model=DepthEstimationResponse,
+    summary="Depth Estimation",
+    description="Run the depth estimation model to generate a depth map.",
+)
+@with_legacy_errors
+async def depth_estimation(
+    request: Request,
+    inference_request: DepthEstimationRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_depth_estimation(request, inference_request, bridge)
+
+
+@depth_router.post(
+    "/infer/depth-estimation/{model_id:path}",
+    response_model=DepthEstimationResponse,
+    summary="Depth Estimation with model ID in path",
+    description=(
+        "Run depth estimation. Model ID is specified in the URL path and can "
+        "contain slashes."
+    ),
+)
+@with_legacy_errors
+async def depth_estimation_with_model_id(
+    request: Request,
+    inference_request: DepthEstimationRequest,
+    model_id: str = Path(description="Identifier of the model to run"),
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_depth_estimation(
+        request, inference_request, bridge, model_id=model_id
+    )
+
+
+def _ensure_sam3_local_execution() -> None:
+    if configuration.SAM3_EXEC_MODE == "remote":
+        raise LegacyHTTPError(501, SAM3_REMOTE_UNSUPPORTED_MESSAGE)
+
+
+async def _run_interactive_segmentation(
+    request: Request,
+    inference_request,
+    bridge: LegacyModelBridge,
+    model_id: str,
+) -> Any:
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
+    )
+    inference_request.api_key = api_key
+    route = await bridge.resolve(model_id, api_key)
+    bridge.record_request(route, model_id, request.scope["path"])
+    action = resolve_request_action(route, inference_request)
+    params = build_interactive_segmentation_params(action, inference_request, api_key)
+    image = getattr(inference_request, "image", None)
+    started = time.perf_counter()
+    if image is None:
+        prediction = await bridge.infer_params_only(route, api_key, action, params)
+    else:
+        images, _ = as_image_list(image)
+        payloads = await load_request_images(images, ndarray_ok=bridge.accepts_ndarray)
+        prediction = (await bridge.infer(route, api_key, action, payloads, params))[0]
+    elapsed = time.perf_counter() - started
+    response = repack_interactive_segmentation_response(
+        action, prediction, inference_request, api_key
+    )
+    response.time = elapsed
+    response.inference_id = inference_request.id
+    response.resolved_model = resolved_model_for(route)
+    return response
+
+
+@sam_router.post(
+    "/sam/embed_image",
+    response_model=SamEmbeddingResponse,
+    summary="SAM Image Embeddings",
+    description="Run the Meta AI Segment Anything Model to embed image data.",
+)
+@with_legacy_errors
+async def sam_embed_image(
+    request: Request,
+    inference_request: SamEmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    response = await _run_interactive_segmentation(
+        request,
+        inference_request,
+        bridge,
+        f"sam/{inference_request.sam_version_id}",
+    )
+    if inference_request.format == "binary":
+        return Response(
+            content=response.embeddings,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+    return response
+
+
+@sam_router.post(
+    "/sam/segment_image",
+    response_model=SamSegmentationResponse,
+    summary="SAM Image Segmentation",
+    description=(
+        "Run the Meta AI Segment Anything Model to generate segmentations for "
+        "image data."
+    ),
+)
+@with_legacy_errors
+async def sam_segment_image(
+    request: Request,
+    inference_request: SamSegmentationRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_interactive_segmentation(
+        request,
+        inference_request,
+        bridge,
+        f"sam/{inference_request.sam_version_id}",
+    )
+
+
+@sam2_router.post(
+    "/sam2/embed_image",
+    response_model=Sam2EmbeddingResponse,
+    summary="SAM2 Image Embeddings",
+    description="Run the Meta AI Segment Anything 2 Model to embed image data.",
+)
+@with_legacy_errors
+async def sam2_embed_image(
+    request: Request,
+    inference_request: Sam2EmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_interactive_segmentation(
+        request,
+        inference_request,
+        bridge,
+        f"sam2/{inference_request.sam2_version_id}",
+    )
+
+
+@sam2_router.post(
+    "/sam2/segment_image",
+    response_model=Sam2SegmentationResponse,
+    summary="SAM2 Image Segmentation",
+    description=(
+        "Run the Meta AI Segment Anything 2 Model to generate segmentations for "
+        "image data."
+    ),
+)
+@with_legacy_errors
+async def sam2_segment_image(
+    request: Request,
+    inference_request: Sam2SegmentationRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    return await _run_interactive_segmentation(
+        request,
+        inference_request,
+        bridge,
+        f"sam2/{inference_request.sam2_version_id}",
+    )
+
+
+@sam3_router.post(
+    "/sam3/embed_image",
+    response_model=Sam3EmbeddingResponse,
+    summary="SAM3 Image Embeddings",
+    description="Run the SAM3 interactive model to embed image data.",
+)
+@with_legacy_errors
+async def sam3_embed_image(
+    request: Request,
+    inference_request: Sam2EmbeddingRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    if configuration.SAM3_EXEC_MODE == "remote":
+        raise HTTPException(
+            status_code=501, detail=SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE
+        )
+    return await _run_interactive_segmentation(
+        request, inference_request, bridge, SAM3_INTERACTIVE_MODEL_ID
+    )
+
+
+@sam3_router.post(
+    "/sam3/concept_segment",
+    response_model=Sam3SegmentationResponse,
+    summary="SAM3 PCS (promptable concept segmentation)",
+    description=(
+        "Run the SAM3 PCS (promptable concept segmentation) to generate "
+        "segmentations for image data."
+    ),
+)
+@with_legacy_errors
+async def sam3_concept_segment(
+    request: Request,
+    inference_request: Sam3SegmentationRequest,
+    request_source: Optional[str] = Query(
+        None, alias="source", description="The source of the inference request"
+    ),
+    request_source_info: Optional[str] = Query(
+        None,
+        alias="source_info",
+        description="The detailed source information of the inference request",
+    ),
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    if request_source is not None:
+        inference_request.source = request_source
+    if request_source_info is not None:
+        inference_request.source_info = request_source_info
+    if not configuration.SAM3_FINE_TUNED_MODELS_ENABLED:
+        if not inference_request.model_id.startswith("sam3/"):
+            raise LegacyHTTPError(501, FINE_TUNED_SAM3_DEPLOYMENT_ERROR)
+    _ensure_sam3_local_execution()
+    return await _run_interactive_segmentation(
+        request, inference_request, bridge, inference_request.model_id
+    )
+
+
+@sam3_router.post(
+    "/sam3/visual_segment",
+    response_model=Sam2SegmentationResponse,
+    summary="SAM3 PVS (promptable visual segmentation)",
+    description=(
+        "Run the SAM3 PVS (promptable visual segmentation) to generate "
+        "segmentations for image data."
+    ),
+)
+@with_legacy_errors
+async def sam3_visual_segment(
+    request: Request,
+    inference_request: Sam2SegmentationRequest,
+    request_source: Optional[str] = Query(
+        None, alias="source", description="The source of the inference request"
+    ),
+    request_source_info: Optional[str] = Query(
+        None,
+        alias="source_info",
+        description="The detailed source information of the inference request",
+    ),
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    if request_source is not None:
+        inference_request.source = request_source
+    if request_source_info is not None:
+        inference_request.source_info = request_source_info
+    _ensure_sam3_local_execution()
+    return await _run_interactive_segmentation(
+        request, inference_request, bridge, SAM3_INTERACTIVE_MODEL_ID
+    )
