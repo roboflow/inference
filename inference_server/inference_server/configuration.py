@@ -27,6 +27,7 @@ def _host_set(raw: Optional[str]) -> Optional[frozenset[str]]:
         return None
     return frozenset(host.strip().lower() for host in raw.split(",") if host.strip())
 
+
 # ── State timeouts (gateway.py) ───────────────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
 INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
@@ -106,6 +107,7 @@ INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
 def preload_model_ids() -> list[str]:
     raw = os.environ.get(INFERENCE_PRELOAD_MODELS_ENV, "")
     return [m.strip() for m in raw.split(",") if m.strip()]
+
 
 # ── Gateway resolution (gateway_resolver.resolve_gateway) ─────────────────
 INFERENCE_GATEWAY_ENV = "INFERENCE_GATEWAY"
@@ -223,6 +225,16 @@ WORKFLOWS_PROFILER_BUFFER_SIZE = get_integer_from_env(
 WORKFLOWS_DEFINITION_CACHE_TTL_S = get_integer_from_env(
     "WORKFLOWS_DEFINITION_CACHE_EXPIRY", default=15 * 60
 )
+ALLOW_WORKFLOWS_FONTS_DOWNLOAD = get_boolean_from_env(
+    "ALLOW_WORKFLOWS_FONTS_DOWNLOAD", default=True
+)
+
+# ── Roboflow platform access (workflows/host.py) ──────────────────────────
+SECURE_GATEWAY = os.environ.get("SECURE_GATEWAY") or None
+MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/tmp/cache")
+ROBOFLOW_API_EXTRA_HEADERS = os.environ.get("ROBOFLOW_API_EXTRA_HEADERS")
+ROBOFLOW_INTERNAL_SERVICE_NAME = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_NAME")
+ROBOFLOW_INTERNAL_SERVICE_SECRET = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 try:
     SERVER_VERSION = importlib.metadata.version("inference-server")
 except importlib.metadata.PackageNotFoundError:
