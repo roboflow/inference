@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Python 3.13 support (`requires-python` is now `>=3.10,<3.14`). The Jetson
+  JetPack 6 extras (`torch-jp6-cu126`, `onnx-jp6-cu126`) keep `numpy<2.0.0` on
+  Python 3.10–3.12 and require `numpy>=2.1.0` on Python 3.13.
+
+### Fixed
+
+- RF-DETR Triton preprocessing now rejects request shapes that would create
+  unbounded pinned-host and CUDA staging buffers, falling back to the base
+  preprocessor when compatibility fallback is enabled.
+
 ---
 
 ## `0.37.4`

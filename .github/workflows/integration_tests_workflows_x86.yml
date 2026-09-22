@@ -17,6 +17,7 @@ on:
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
       use-inference-models:
         description: "USE_INFERENCE_MODELS value (or all)"
         type: choice
@@ -46,7 +47,7 @@ jobs:
       group: public-depot
     strategy:
       matrix:
-        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
+        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13"]' || format('["{0}"]', github.event.inputs.python-version)) }}
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
     services:
       postgres:

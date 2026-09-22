@@ -4,6 +4,7 @@
 
 ### Added
 
+- Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
 - Compile-time workload introspection: `describe_workflow_workload()` reports graph connectivity,
