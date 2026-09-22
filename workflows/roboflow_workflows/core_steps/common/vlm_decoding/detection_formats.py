@@ -16,7 +16,7 @@ out-of-range model output stays inside the image.
 
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from roboflow_workflows.core_steps.common.vlm_decoding.utils import scale_confidence
 
@@ -33,17 +33,6 @@ XYXY_ABSOLUTE_PROMPT_TEMPLATE = (
     "Output a JSON list where each entry contains the 2D bounding box "
     'in the key "box_2d" and the text label in the key "label". '
     'The "box_2d" value must be [x_min, y_min, x_max, y_max]: the '
-    "top-left and bottom-right corners in absolute pixel coordinates "
-    "of the {width}x{height} pixel image. "
-    "Return only the JSON list, with no extra text. "
-    "Only use these labels: {class_list}"
-)
-
-XYXY_ABSOLUTE_BBOX_PROMPT_TEMPLATE = (
-    "Detect all objects in this image. "
-    "Output a JSON list where each entry contains the 2D bounding box "
-    'in the key "bbox" and the text label in the key "label". '
-    'The "bbox" value must be [x_min, y_min, x_max, y_max]: the '
     "top-left and bottom-right corners in absolute pixel coordinates "
     "of the {width}x{height} pixel image. "
     "Return only the JSON list, with no extra text. "
@@ -98,7 +87,6 @@ PERCENT_SCALE = 100.0
 # Entry shape vocabulary. Models drift between the prompted keys and their
 # native grounding vocabulary, so every accepted alias is listed here once.
 BOX_2D_KEYS = ("box_2d", "bbox_2d")
-BBOX_KEYS = ("bbox",)
 NAMED_BOX_FIELDS = ("x_min", "y_min", "x_max", "y_max")
 LABEL_KEYS = ("label", "class_name", "class", "description")
 DETECTIONS_WRAPPER_KEY = "detections"
@@ -134,9 +122,9 @@ def _read_number(value: Any) -> Optional[float]:
     return value
 
 
-def _read_box_list(entry: dict, keys: Tuple[str, ...]) -> Optional[List[float]]:
-    """Read the first well-formed 4-element box list under ``keys``."""
-    for key in keys:
+def _read_box_2d(entry: dict) -> Optional[List[float]]:
+    """Read a 4-element ``box_2d``/``bbox_2d`` list from an entry."""
+    for key in BOX_2D_KEYS:
         box = entry.get(key)
         if not isinstance(box, list) or len(box) != 4:
             continue
@@ -145,16 +133,6 @@ def _read_box_list(entry: dict, keys: Tuple[str, ...]) -> Optional[List[float]]:
             continue
         return values
     return None
-
-
-def _read_box_2d(entry: dict) -> Optional[List[float]]:
-    """Read a 4-element ``box_2d``/``bbox_2d`` list from an entry."""
-    return _read_box_list(entry, BOX_2D_KEYS)
-
-
-def _read_bbox(entry: dict) -> Optional[List[float]]:
-    """Read a 4-element ``bbox`` list, falling back to ``box_2d`` aliases."""
-    return _read_box_list(entry, BBOX_KEYS + BOX_2D_KEYS)
 
 
 def _read_named_box(entry: dict) -> Optional[List[float]]:
@@ -179,23 +157,6 @@ def _require_upload_dimensions(
         )
 
 
-def _scale_absolute_box(
-    box: List[float],
-    image_width: int,
-    image_height: int,
-    upload_width: int,
-    upload_height: int,
-) -> List[float]:
-    scale_x = image_width / upload_width
-    scale_y = image_height / upload_height
-    x_min, y_min, x_max, y_max = box
-    x_min = _clamp(x_min, upload_width)
-    x_max = _clamp(x_max, upload_width)
-    y_min = _clamp(y_min, upload_height)
-    y_max = _clamp(y_max, upload_height)
-    return [x_min * scale_x, y_min * scale_y, x_max * scale_x, y_max * scale_y]
-
-
 def _convert_xyxy_absolute(
     entry: dict,
     image_width: int,
@@ -207,33 +168,14 @@ def _convert_xyxy_absolute(
     box = _read_box_2d(entry)
     if box is None:
         return _named_normalized_fallback(entry, image_width, image_height)
-    return _scale_absolute_box(
-        box,
-        image_width,
-        image_height,
-        upload_width,
-        upload_height,
-    )
-
-
-def _convert_xyxy_absolute_bbox(
-    entry: dict,
-    image_width: int,
-    image_height: int,
-    upload_width: Optional[int],
-    upload_height: Optional[int],
-) -> Optional[List[float]]:
-    _require_upload_dimensions(upload_width, upload_height)
-    box = _read_bbox(entry)
-    if box is None:
-        return _named_normalized_fallback(entry, image_width, image_height)
-    return _scale_absolute_box(
-        box,
-        image_width,
-        image_height,
-        upload_width,
-        upload_height,
-    )
+    scale_x = image_width / upload_width
+    scale_y = image_height / upload_height
+    x_min, y_min, x_max, y_max = box
+    x_min = _clamp(x_min, upload_width)
+    x_max = _clamp(x_max, upload_width)
+    y_min = _clamp(y_min, upload_height)
+    y_max = _clamp(y_max, upload_height)
+    return [x_min * scale_x, y_min * scale_y, x_max * scale_x, y_max * scale_y]
 
 
 def _convert_xyxy_0_1000(
@@ -416,12 +358,6 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
         requires_upload_dimensions=True,
         converter=_convert_xyxy_absolute,
     ),
-    "xyxy_absolute_bbox": DetectionBoxFormat(
-        name="xyxy_absolute_bbox",
-        prompt_template=XYXY_ABSOLUTE_BBOX_PROMPT_TEMPLATE,
-        requires_upload_dimensions=True,
-        converter=_convert_xyxy_absolute_bbox,
-    ),
     "xyxy_0_1000": DetectionBoxFormat(
         name="xyxy_0_1000",
         prompt_template=XYXY_0_1000_PROMPT_TEMPLATE,
@@ -462,7 +398,6 @@ DETECTION_BOX_FORMATS: Dict[str, DetectionBoxFormat] = {
 
 BoxFormatName = Literal[
     "xyxy_absolute",
-    "xyxy_absolute_bbox",
     "xyxy_0_1000",
     "yxyx_0_1000",
     "xyxy_percent",
@@ -569,7 +504,7 @@ def _entries_from_list(items: list) -> List[dict]:
 def _looks_like_detection_entry(entry: dict) -> bool:
     if all(field in entry for field in NAMED_BOX_FIELDS):
         return True
-    return any(key in entry for key in (*BOX_2D_KEYS, *BBOX_KEYS))
+    return any(key in entry for key in BOX_2D_KEYS)
 
 
 def get_detection_class_name(entry: dict) -> str:

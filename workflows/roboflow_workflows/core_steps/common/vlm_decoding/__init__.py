@@ -13,14 +13,12 @@ from roboflow_workflows.core_steps.common.vlm_decoding.classification import (
     parse_multi_label_classification_results,
 )
 from roboflow_workflows.core_steps.common.vlm_decoding.detection_formats import (
-    BBOX_KEYS,
     BOX_2D_KEYS,
     DETECTION_BOX_FORMATS,
     LABEL_KEYS,
     NAMED_0_1000_PROMPT_TEMPLATE,
     NAMED_BOX_FIELDS,
     XYXY_0_1000_PROMPT_TEMPLATE,
-    XYXY_ABSOLUTE_BBOX_PROMPT_TEMPLATE,
     XYXY_ABSOLUTE_PROMPT_TEMPLATE,
     XYXY_PERCENT_PROMPT_TEMPLATE,
     YXYX_0_1000_PROMPT_TEMPLATE,
@@ -69,7 +67,6 @@ from roboflow_workflows.core_steps.common.vlm_decoding.utils import (
 )
 
 __all__ = [
-    "BBOX_KEYS",
     "BOX_2D_KEYS",
     "CLASSIFICATION_TASKS",
     "DETECTION_BOX_FORMATS",
@@ -81,7 +78,6 @@ __all__ = [
     "NAMED_BOX_FIELDS",
     "SEGMENTATION_TASKS",
     "XYXY_0_1000_PROMPT_TEMPLATE",
-    "XYXY_ABSOLUTE_BBOX_PROMPT_TEMPLATE",
     "XYXY_ABSOLUTE_PROMPT_TEMPLATE",
     "XYXY_PERCENT_PROMPT_TEMPLATE",
     "YXYX_0_1000_PROMPT_TEMPLATE",

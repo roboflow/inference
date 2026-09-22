@@ -5,7 +5,7 @@
 ### Added
 
 - SpaceXAI block (`spacexai@v3`): `grok-4.7` model option with `low`/`medium`/`high`/`xhigh` reasoning effort. Detection reuses the Grok 4.5/4.6 prompt.
-- Anthropic Claude block (`anthropic_claude@v5`): `claude-opus-5-5` model option. Detection prompts for and decodes `{"bbox": [x_min, y_min, x_max, y_max]}` in uploaded-image pixels, per the vlm-exam Opus 5.5 evaluation; other Claude models keep `box_2d`.
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-opus-5-5` model option. Detection reuses the existing `box_2d` absolute-pixel contract.
 
 ### Fixed
 

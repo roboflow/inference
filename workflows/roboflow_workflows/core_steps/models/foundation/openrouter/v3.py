@@ -87,10 +87,6 @@ DETECTION_FORMAT_METADATA = {
         "name": "xyxy, pixels",
         "description": "`box_2d` list in pixels of the uploaded image.",
     },
-    "xyxy_absolute_bbox": {
-        "name": "xyxy, pixels (bbox)",
-        "description": "`bbox` list in pixels of the uploaded image.",
-    },
     "xyxy_percent": {
         "name": "xyxy, percent",
         "description": "`box_2d` list of floats as percent of image size.",

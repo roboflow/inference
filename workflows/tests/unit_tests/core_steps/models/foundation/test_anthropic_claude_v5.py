@@ -55,9 +55,6 @@ DETECTION_IMAGE_HEIGHT = 1600
 DETECTION_OUTPUT = json.dumps(
     [{"box_2d": [644, 322, 1288, 966], "label": "cat"}],
 )
-DETECTION_BBOX_OUTPUT = json.dumps(
-    [{"bbox": [644, 322, 1288, 966], "label": "cat"}],
-)
 EXPECTED_XYXY = [800.0, 400.0, 1600.0, 1200.0]
 
 
@@ -275,43 +272,6 @@ def test_run_decodes_object_detection_into_original_image_pixels() -> None:
     assert detection_class_ids(predictions) == [0]
     assert detection_class_names(predictions) == ["cat"]
     assert detection_inference_ids(predictions) == [result["inference_id"]]
-
-
-def test_run_prompts_and_decodes_opus_5_5_bbox_detections() -> None:
-    # Prompting with box_2d while decoding bbox (or the reverse) would
-    # silently drop every detection. A dated snapshot id also has to hit
-    # the same contract, or production wire ids would regress to box_2d.
-    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
-    block = AnthropicClaudeBlockV5(api_key="rf-key")
-
-    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
-        mock_execute.return_value = [(DETECTION_BBOX_OUTPUT, 11, 3)]
-        results = block.run(
-            images=Batch(content=[image], indices=[(0,)]),
-            task_type="object-detection",
-            prompt=None,
-            output_structure=None,
-            classes=["cat", "dog"],
-            model_version="claude-opus-5-5-20260922",
-            max_tokens=None,
-            temperature=None,
-            extended_thinking=None,
-            thinking_budget_tokens=None,
-            max_image_size=1024,
-            max_concurrent_requests=None,
-            api_key="sk-ant-test",
-        )
-
-    prompt_text = mock_execute.call_args.kwargs["prompts"][0][1][0]["content"][1]["text"]
-    assert '"bbox"' in prompt_text
-    assert "box_2d" not in prompt_text
-
-    result = results[0]
-    assert result["error_status"] is False
-    predictions = result["predictions"]
-    assert is_detection_prediction(predictions)
-    assert detection_count(predictions) == 1
-    assert detection_boxes(predictions)[0] == EXPECTED_XYXY
 
 
 def test_run_decodes_classification_output() -> None:
