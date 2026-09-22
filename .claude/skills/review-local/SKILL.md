@@ -11,6 +11,18 @@ Read root `AGENTS.md`, applicable subtree instructions, and applicable
 only when the contributor is internal; lack of internal Slack or Slab access is
 not a defect in an external contribution.
 
+For internal changes that require a plan under `AGENTS.md`, use the
+[repository plan template](../../../.github/implementation-plan-template.md)
+to assess the supplied plan without needing Slab access. Check that it explains
+the problem, compares before/after behavior with Mermaid diagrams, recommends
+an investigated approach, and supports unresolved questions with evidence and
+specific requests for input. Compare the implementation with the proposed
+behavior and flag material deviations or decisions still needing agreement.
+If no plan or decision record is available, report that limitation and ask for
+the relevant content; do not infer approval or block the code review. Do not
+require a plan for exempt changes or write one on the contributor's behalf
+during a review.
+
 ## Establish scope
 
 1. Honor the user's requested files, revision range, and base. Otherwise inspect

@@ -101,12 +101,13 @@ do not need access to Roboflow's Slack or Slab; follow the general guidelines ab
 
 - Before substantial implementation of a major feature or structural change,
   prepare an implementation plan and share it in `#discuss-inference-release`
-  for maintainer agreement on the approach. The
-  [implementation plan guide](https://roboflow.slab.com/posts/inference-contributions-implementation-plan-1sb5nyqz)
-  is the source of truth for the requirements and template. Agents can help
-  investigate and draft it, but the contributor must understand and own the
-  recommendation and unresolved questions. If the guide is inaccessible, ask
-  the contributor for its contents rather than inventing requirements.
+  for maintainer agreement on the approach. Use the
+  [repository plan template](.github/implementation-plan-template.md) to draft
+  or review a plan without Slab access. It contains the same requirements as the
+  [Slab guide](https://roboflow.slab.com/posts/inference-contributions-implementation-plan-1sb5nyqz);
+  keep both aligned when changing the process. Agents can help investigate and
+  draft a plan, but the contributor must understand and own the recommendation
+  and unresolved questions.
 - A plan is generally unnecessary for documentation corrections or examples of
   existing functionality, added tests or regression coverage, contained fixes
   restoring established behavior, and local refactoring that preserves behavior
