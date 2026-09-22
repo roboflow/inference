@@ -23,13 +23,48 @@
   Neither changes the decoded pixels on that path, so these packages no longer
   fall back to the reference preprocessor.
 
+---
+
+## `0.37.4`
+
+### Fixed
+
+- Bumped `anyio` to version above `4.14.2`
+
+---
+
+## `0.37.3`
+
+### Added
+
+- PatchCore and FoundAD anomaly detection models trained on Roboflow
+  (`patchcore` and `foundad` architectures, `classification` task, `torch`
+  backend). Predictions are `ClassificationPrediction` over `normal` and
+  `anomalous`; the raw score, the saved threshold, the decision and an
+  optional heatmap (`include_anomaly_map=True`) are returned in
+  `images_metadata`. Both models run on the base dependencies: PatchCore
+  nearest-neighbour search is done in PyTorch, so FAISS is not needed.
+
+---
+
+## `0.37.2`
+
+### Added
+
+- `AutoModel.from_pretrained` exposes `resolved_model` metadata for the loaded
+  package: canonical model ID, package ID, backend, and quantization. The public
+  `ResolvedModelMetadata` entity describes this metadata.
+
+- `Cosmos3EdgeActionRecognition` wrapped over an already loaded reasoner
+  (`from_reasoner`) exposes that reasoner's `resolved_model`.
+
 ### Fixed
 
 - `YOLONasForObjectDetectionTRT` concatenated TRT outputs on the default CUDA stream without ordering against the post-processing stream, which could yield phantom detections under GPU contention. Concatenation now runs on the inference stream and is synchronised before post-processing.
 
 ---
 
-## `0.37.0`
+## `0.37.1`
 
 ### Fixed
 

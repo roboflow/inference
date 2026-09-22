@@ -50,6 +50,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
+          pip install --no-deps ./inference_models
+      - name: 🏗️ Build and install roboflow-workflows wheel
+        run: |
+          make create_workflows_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference CLI
         timeout-minutes: 30
         run: python -m pytest tests/inference_cli/unit_tests

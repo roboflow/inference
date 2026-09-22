@@ -2872,3 +2872,32 @@ def test_source_tags_reach_nested_model_rows(usage_collector_with_mocked_threads
     assert request_details["source_info"] == "smart-polygon"
     assert model_details["source"] == "app"
     assert usage_source_tags.get() == {}
+
+
+def test_request_usage_falls_back_to_header_api_key(
+    usage_collector_with_mocked_threads,
+):
+    """Header-authenticated requests carry no key in any bound parameter.
+
+    Mirrors the legacy `/:dataset_id/:version_id` route: the `api_key` query
+    parameter is None, the request model is built inside the handler, and the
+    key lives only in the request-scoped `header_api_key` ContextVar set by the
+    middleware. Without the fallback `record_usage` drops the row.
+    """
+    from inference.core.interfaces.http.api_key_resolution import header_api_key
+
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def handler(dataset_id, version_id, api_key=None):
+        return "ok"
+
+    token = header_api_key.set("header-key")
+    try:
+        handler("project", "1")
+    finally:
+        header_api_key.reset(token)
+
+    api_key_hash = usage_collector._calculate_api_key_hash("header-key")
+    assert api_key_hash in usage_collector._usage
+    assert usage_key("request", "project/1") in usage_collector._usage[api_key_hash]
