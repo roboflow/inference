@@ -1,4 +1,4 @@
-from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 
 
 def test_info(legacy_client, monkeypatch):
@@ -89,7 +89,7 @@ def test_control_plane_routes_registered_per_flags(monkeypatch):
             monkeypatch.setattr(f"inference_server.configuration.{name}", value)
         app = FastAPI()
         include_legacy_routers(app)
-        return {route.path for route in app.routes}
+        return route_paths(app)
 
     assert {"/model/add", "/model/registry", "/clear_cache"} <= _paths(
         LEGACY_CONTROL_PLANE_ROUTES_ENABLED=True, GET_MODEL_REGISTRY_ENABLED=True

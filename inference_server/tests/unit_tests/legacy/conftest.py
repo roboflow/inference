@@ -55,6 +55,24 @@ class FakeGateway:
         return {"model_id": model_id, "tasks": self.loaded[model_id].get("tasks", {})}
 
 
+def route_paths(app) -> set[str]:
+    """Paths of every route on the app, including lazily included routers.
+
+    fastapi>=0.140 appends an _IncludedRouter wrapper to app.routes instead of
+    flattening the included routes; walk through it.
+    """
+
+    def _walk(routes):
+        for route in routes:
+            inner = getattr(route, "original_router", None)
+            if inner is not None:
+                yield from _walk(inner.routes)
+            else:
+                yield route.path
+
+    return set(_walk(app.routes))
+
+
 @pytest.fixture
 def fake_stat(monkeypatch):
     table = {}

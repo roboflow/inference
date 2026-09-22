@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from inference_models.errors import UnauthorizedModelAccessError
-from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 
 
 def _jpeg_b64():
@@ -280,10 +280,7 @@ def test_body_limit_guards_workflows_when_legacy_routes_disabled(monkeypatch):
         module = _reloaded_app(
             monkeypatch, LEGACY_ROUTES_ENABLED=False, MAX_BODY_BYTES=32
         )
-        assert any(
-            getattr(route, "path", None) == "/workflows/run"
-            for route in module.app.routes
-        )
+        assert "/workflows/run" in route_paths(module.app)
         client = TestClient(module.app, raise_server_exceptions=False)
 
         declared = client.post(

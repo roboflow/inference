@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 
-from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 
 
 def _jpeg_b64(w=8, h=6):
@@ -321,7 +321,7 @@ def test_optional_stubs_register_only_with_their_flags(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.CORE_MODEL_OWLV2_ENABLED", True)
     app = FastAPI()
     include_legacy_routers(app)
-    paths = {route.path for route in app.routes}
+    paths = route_paths(app)
     assert {"/sam3_3d/infer", "/owlv2/infer"} <= paths
     assert TestClient(app).post("/sam3_3d/infer", json={}).status_code == 501
 
@@ -335,7 +335,7 @@ def test_lmm_router_registers_with_lmm_flag_alone(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.MOONDREAM2_ENABLED", False)
     app = FastAPI()
     include_legacy_routers(app)
-    assert "/infer/lmm" in {route.path for route in app.routes}
+    assert "/infer/lmm" in route_paths(app)
 
 
 def test_disabled_group_flag_removes_its_routes(monkeypatch):
@@ -346,7 +346,7 @@ def test_disabled_group_flag_removes_its_routes(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.CORE_MODEL_CLIP_ENABLED", False)
     app = FastAPI()
     include_legacy_routers(app)
-    paths = {route.path for route in app.routes}
+    paths = route_paths(app)
     assert "/clip/embed_text" not in paths
     assert "/doctr/ocr" in paths
 

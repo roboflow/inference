@@ -204,7 +204,7 @@ class ModelManagerGateway:
         self, key: str, api_key: str, device: Optional[str], pinned: bool = False
     ) -> Optional[asyncio.Future]:
         future = self._pending_loads.get(key)
-        if future is not None:
+        if future is not None and not future.done():
             return future
         drop_dead = False
         if key in self.manager:
@@ -234,7 +234,15 @@ class ModelManagerGateway:
             self._model_executor, _reload
         )
         self._pending_loads[key] = future
-        future.add_done_callback(lambda _f: self._pending_loads.pop(key, None))
+
+        def _forget(_f: asyncio.Future) -> None:
+            # A finished future stays registered until this callback runs on
+            # the next loop tick; the lookup above already skips it, and the
+            # identity check keeps a stale callback from dropping a newer load.
+            if self._pending_loads.get(key) is future:
+                del self._pending_loads[key]
+
+        future.add_done_callback(_forget)
         return future
 
     async def _await_load(
