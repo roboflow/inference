@@ -4,7 +4,7 @@ Manages model lifecycle (load, unload, evict) and dispatches inference requests.
 
 ## Install
 
-Requires Python 3.10–3.12. From this directory:
+Requires Python 3.10–3.13. From this directory:
 
 ```bash
 python -m venv .venv

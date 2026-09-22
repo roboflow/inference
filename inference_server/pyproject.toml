@@ -3,7 +3,7 @@ name = "inference-server"
 version = "0.2.0"
 description = "FastAPI inference server — direct client for inference-model-manager"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 dependencies = [
   "inference-model-manager==0.2.0",
   "inference-sdk>=1.6.0",

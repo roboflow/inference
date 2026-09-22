@@ -3,7 +3,7 @@ name = "inference-model-manager"
 version = "0.2.0"
 description = "Model lifecycle management: load, unload, evict, and dispatch inference via direct in-process backends"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 dependencies = [
   "inference-models>=0.31.0,<1.0",
   "numpy",
