@@ -277,7 +277,7 @@ Roboflow's [pricing tiers](https://roboflow.com/pricing).
 | [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
 | [Serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |  | ✅
 | [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
-| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
+| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Enterprise
 | [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
 | [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
 
@@ -313,7 +313,7 @@ Visit our [documentation](https://inference.roboflow.com) to explore comprehensi
 
 The core of Inference is licensed under Apache 2.0.
 
-Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). Paid Roboflow accounts include a commercial license for some models (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
+Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). An Enterprise contract includes a commercial license for self-hosted deployment. On every other plan, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0 (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
 Cloud connected functionality (like our model and Workflows registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key & is metered based on usage.
 

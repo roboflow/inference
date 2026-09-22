@@ -21,6 +21,4 @@ These Blocks can be used to load a variety of architectures. Each
 underlying model has its own license which are listed in
 [the `models` directory](/inference/models).
 
-Roboflow's paid plans [offer commercial licenses for some models](https://roboflow.com/licensing),
-but outside of that it is your responsibility to ensure your code's
-compliance with the models you use.
+An [Enterprise contract](https://roboflow.com/licensing) includes a commercial license for self-hosted deployment of these models. On every other plan, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0. Outside that contract, it is your responsibility to ensure your code's compliance with the models you use.

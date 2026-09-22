@@ -18,8 +18,8 @@ YOLOv8 for classification provides fast and accurate image classification. Key f
 
 !!! info "Commercial Licensing"
     - **AGPL-3.0**: Free for open-source projects. Requires derivative works to be open-sourced.
-    - **Paid Roboflow customers**: Automatically get access to use any YOLOv8 models trained on or uploaded to the Roboflow platform for commercial use.
-    - **Free Roboflow customers**: Can use YOLOv8 via the serverless hosted API, or commercially self-hosted with a paid plan.
+    - **Enterprise**: A commercial license for self-hosted deployment is included with the Enterprise contract.
+    - **All other plans**: Self-hosted deployment follows this model's license. An AGPL-3.0 model must be used under AGPL-3.0.
 
     Learn more: [Roboflow Licensing](https://roboflow.com/licensing) | [YOLOv8 License Details](https://roboflow.com/model-licenses/yolov8)
 

@@ -18,8 +18,8 @@ YOLO26 for instance segmentation combines NMS-free object detection with pixel-l
 
 !!! info "Commercial Licensing"
     - **AGPL-3.0**: Free for open-source projects. Requires derivative works to be open-sourced.
-    - **Paid Roboflow customers**: Automatically get access to use any YOLO26 models trained on or uploaded to the Roboflow platform for commercial use.
-    - **Free Roboflow customers**: Can use YOLO26 via the serverless hosted API, or commercially self-hosted with a paid plan.
+    - **Enterprise**: A commercial license for self-hosted deployment is included with the Enterprise contract.
+    - **All other plans**: Self-hosted deployment follows this model's license. An AGPL-3.0 model must be used under AGPL-3.0.
 
     Learn more: [Roboflow Licensing](https://roboflow.com/licensing) | [YOLO26 License Details](https://roboflow.com/model-licenses/yolo26)
 
