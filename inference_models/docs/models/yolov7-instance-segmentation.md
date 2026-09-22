@@ -23,8 +23,8 @@ YOLOv7 for instance segmentation offers improved accuracy and speed compared to 
 
     For commercial-friendly alternatives, consider:
     - **RF-DETR Seg** (Apache 2.0) - Faster and more accurate
-    - **[YOLOv8 Seg](yolov8-instance-segmentation.md)** (AGPL-3.0). Roboflow provides a commercial license.
-    - **[YOLOv11 Seg](yolov11-instance-segmentation.md)** (AGPL-3.0). Roboflow provides a commercial license.
+    - **[YOLOv8 Seg](yolov8-instance-segmentation.md)** (AGPL-3.0). Roboflow offers a commercial license as an Enterprise add-on.
+    - **[YOLOv11 Seg](yolov11-instance-segmentation.md)** (AGPL-3.0). Roboflow offers a commercial license as an Enterprise add-on.
 
 ## Pre-trained Model IDs
 

@@ -277,7 +277,7 @@ Roboflow's [pricing tiers](https://roboflow.com/pricing).
 | [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
 | [Serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |  | ✅
 | [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
-| [Self-Hosted Commercial Model Licensing](https://roboflow.com/licensing) |  | Enterprise
+| [Self-Hosted Commercial Model Licensing](https://roboflow.com/licensing) |  | Enterprise add-on
 | [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
 | [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
 
@@ -313,7 +313,7 @@ Visit our [documentation](https://inference.roboflow.com) to explore comprehensi
 
 The core of Inference is licensed under Apache 2.0.
 
-Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for all models, for every user. An Enterprise or custom contract includes a commercial license for self-hosted deployment. On plans without that license, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0 (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
+Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for all models, for every user. A commercial license for self-hosted deployment is available as an Enterprise add-on. A custom contract can include it as well. Without that add-on or contract, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0 (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
 Cloud connected functionality (like our model and Workflows registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key & is metered based on usage.
 
