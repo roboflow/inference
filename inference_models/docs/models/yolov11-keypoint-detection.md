@@ -18,7 +18,7 @@ YOLOv11 for keypoint detection combines object detection with keypoint localizat
 
 !!! info "Commercial Licensing"
     - **AGPL-3.0**: Free for open-source projects. Requires derivative works to be open-sourced.
-    - **Roboflow Hosted**: [Roboflow Hosted products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for every user.
+    - **Roboflow Cloud**: [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for every user.
     - **Enterprise**: A commercial license for self-hosted deployment is included with an Enterprise or custom contract.
     - **Other plans**: Self-hosted deployment follows this model's license. An AGPL-3.0 model must be used under AGPL-3.0.
 
