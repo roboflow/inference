@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- SpaceXAI block (`roboflow_core/spacexai@v3`): `grok-4.7` model option with `low` / `medium` /
+  `high` / `xhigh` reasoning effort. Object detection reuses the existing percent-of-image
+  `box_2d` prompt.
+
 ---
 
 ## `0.1.2`

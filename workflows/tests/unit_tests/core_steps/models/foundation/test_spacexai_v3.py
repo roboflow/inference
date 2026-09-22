@@ -10,11 +10,13 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 from roboflow_workflows.core_steps.models.foundation.spacexai.v3 import (
     BlockManifest,
     SpaceXAIBlockV3,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
+from roboflow_workflows.prototypes.block import third_party_model
 
 from tests.unit_tests.core_steps._vlm_prediction_readers import (
     classification_top_class,
@@ -94,6 +96,27 @@ def test_manifest_parses_new_type():
         "error_status",
         "inference_id",
     }
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "low", "medium", "high", "xhigh"])
+def test_manifest_accepts_grok_4_7_with_every_reasoning_level(reasoning_effort):
+    manifest = _manifest(model_version="grok-4.7", reasoning_effort=reasoning_effort)
+
+    assert manifest.model_version == "grok-4.7"
+    assert manifest.reasoning_effort == reasoning_effort
+
+
+def test_manifest_discovers_grok_4_7_as_xai_dependent_resource():
+    manifest = _manifest(model_version="grok-4.7")
+
+    assert manifest.discover_dependent_resources() == [
+        third_party_model(provider="xai", model_id="grok-4.7")
+    ]
+
+
+def test_manifest_rejects_xhigh_for_grok_4_5():
+    with pytest.raises(ValidationError, match="support"):
+        _manifest(model_version="grok-4.5", reasoning_effort="xhigh")
 
 
 def test_manifest_recommends_parser_only_for_structured_answering():
