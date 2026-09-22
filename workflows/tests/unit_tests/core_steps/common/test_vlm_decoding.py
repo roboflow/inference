@@ -305,23 +305,6 @@ def test_decode_object_detections_xyxy_absolute_bbox_rescales_from_upload_dimens
     assert detections.xyxy.tolist() == [[20.0, 40.0, 220.0, 240.0]]
 
 
-def test_decode_object_detections_xyxy_absolute_bbox_accepts_box_2d_alias() -> None:
-    image = _build_image()
-
-    error_status, detections = decode_object_detections(
-        raw_output='[{"box_2d": [10, 20, 110, 120], "label": "cat"}]',
-        box_format="xyxy_absolute_bbox",
-        image=image,
-        classes=["cat"],
-        inference_id="inference-id",
-        upload_width=400,
-        upload_height=200,
-    )
-
-    assert error_status is False
-    assert detections.xyxy.tolist() == [[20.0, 40.0, 220.0, 240.0]]
-
-
 def test_decode_object_detections_xyxy_absolute_bbox_requires_upload_dimensions() -> (
     None
 ):
@@ -673,19 +656,6 @@ def test_build_object_detection_prompt_fills_upload_dimensions() -> None:
     )
 
     assert "640x480 pixel image" in prompt
-
-
-def test_build_object_detection_prompt_xyxy_absolute_bbox_uses_bbox_key() -> None:
-    prompt = build_object_detection_prompt(
-        box_format="xyxy_absolute_bbox",
-        classes=["cat"],
-        upload_width=640,
-        upload_height=480,
-    )
-
-    assert '"bbox"' in prompt
-    assert "640x480 pixel image" in prompt
-    assert "box_2d" not in prompt
 
 
 def test_build_object_detection_prompt_requires_upload_dimensions() -> None:

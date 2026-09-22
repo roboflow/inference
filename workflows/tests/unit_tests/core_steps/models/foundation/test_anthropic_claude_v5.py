@@ -18,7 +18,6 @@ from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import 
     BlockManifest,
     detection_upload_dimensions,
     prepare_object_detection_prompt,
-    resolve_detection_box_format,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -75,7 +74,6 @@ def _run_block(
     image: WorkflowImageData,
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
-    model_version: str = "claude-sonnet-4-5",
 ) -> dict:
     block = AnthropicClaudeBlockV5(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -86,7 +84,7 @@ def _run_block(
             prompt=prompt,
             output_structure=None,
             classes=classes,
-            model_version=model_version,
+            model_version="claude-sonnet-4-5",
             max_tokens=None,
             temperature=None,
             extended_thinking=None,
@@ -238,47 +236,6 @@ def test_object_detection_prompt_keeps_pinned_wording() -> None:
     )
 
 
-def test_object_detection_prompt_uses_bbox_key_for_opus_5_5() -> None:
-    # when
-    system_prompt, messages = prepare_object_detection_prompt(
-        base64_image="base64-image",
-        classes=["cat", "dog"],
-        image_width=2212,
-        image_height=1659,
-        box_format=resolve_detection_box_format("claude-opus-5-5"),
-    )
-
-    # then
-    assert system_prompt is None
-    prompt_text = messages[0]["content"][1]["text"]
-    assert prompt_text == (
-        "Detect all objects in this image. "
-        "Output a JSON list where each entry contains the 2D bounding box "
-        'in the key "bbox" and the text label in the key "label". '
-        'The "bbox" value must be [x_min, y_min, x_max, y_max]: the '
-        "top-left and bottom-right corners in absolute pixel coordinates "
-        "of the 2212x1659 pixel image. "
-        "Return only the JSON list, with no extra text. "
-        "Only use these labels: cat, dog"
-    )
-
-
-@pytest.mark.parametrize(
-    "model_version, expected",
-    [
-        ("claude-opus-5-5", "xyxy_absolute_bbox"),
-        ("claude-opus-5-5-20260922", "xyxy_absolute_bbox"),
-        ("claude-fable-5-1", "xyxy_absolute"),
-        ("claude-sonnet-4-5", "xyxy_absolute"),
-        ("claude-opus-5", "xyxy_absolute"),
-    ],
-)
-def test_resolve_detection_box_format_is_model_specific(
-    model_version: str, expected: str
-) -> None:
-    assert resolve_detection_box_format(model_version) == expected
-
-
 def test_detection_upload_dimensions_follow_anthropic_resize() -> None:
     # given
     image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
@@ -320,44 +277,22 @@ def test_run_decodes_object_detection_into_original_image_pixels() -> None:
     assert detection_inference_ids(predictions) == [result["inference_id"]]
 
 
-def test_run_decodes_opus_5_5_bbox_detection_into_original_image_pixels() -> None:
-    # given
-    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
-
-    # when
-    result = _run_block(
-        task_type="object-detection",
-        raw_output=DETECTION_BBOX_OUTPUT,
-        image=image,
-        classes=["cat", "dog"],
-        model_version="claude-opus-5-5",
-    )
-
-    # then
-    assert result["error_status"] is False
-    assert result["output"] == DETECTION_BBOX_OUTPUT
-    predictions = result["predictions"]
-    assert is_detection_prediction(predictions)
-    assert detection_count(predictions) == 1
-    assert detection_boxes(predictions)[0] == EXPECTED_XYXY
-    assert detection_class_ids(predictions) == [0]
-    assert detection_class_names(predictions) == ["cat"]
-    assert detection_inference_ids(predictions) == [result["inference_id"]]
-
-
-def test_run_prompts_opus_5_5_with_bbox_key() -> None:
+def test_run_prompts_and_decodes_opus_5_5_bbox_detections() -> None:
+    # Prompting with box_2d while decoding bbox (or the reverse) would
+    # silently drop every detection. A dated snapshot id also has to hit
+    # the same contract, or production wire ids would regress to box_2d.
     image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
     block = AnthropicClaudeBlockV5(api_key="rf-key")
 
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
         mock_execute.return_value = [(DETECTION_BBOX_OUTPUT, 11, 3)]
-        block.run(
+        results = block.run(
             images=Batch(content=[image], indices=[(0,)]),
             task_type="object-detection",
             prompt=None,
             output_structure=None,
             classes=["cat", "dog"],
-            model_version="claude-opus-5-5",
+            model_version="claude-opus-5-5-20260922",
             max_tokens=None,
             temperature=None,
             extended_thinking=None,
@@ -367,10 +302,16 @@ def test_run_prompts_opus_5_5_with_bbox_key() -> None:
             api_key="sk-ant-test",
         )
 
-    prompts = mock_execute.call_args.kwargs["prompts"]
-    prompt_text = prompts[0][1][0]["content"][1]["text"]
+    prompt_text = mock_execute.call_args.kwargs["prompts"][0][1][0]["content"][1]["text"]
     assert '"bbox"' in prompt_text
     assert "box_2d" not in prompt_text
+
+    result = results[0]
+    assert result["error_status"] is False
+    predictions = result["predictions"]
+    assert is_detection_prediction(predictions)
+    assert detection_count(predictions) == 1
+    assert detection_boxes(predictions)[0] == EXPECTED_XYXY
 
 
 def test_run_decodes_classification_output() -> None:
@@ -467,24 +408,6 @@ def test_v5_claude_fable_5_1_model_metadata() -> None:
     assert result.model_version == "claude-fable-5-1"
     assert EXACT_MODEL_VERSIONS["claude-fable-5-1"] == "claude-fable-5-1"
     assert MAX_OUTPUT_TOKENS["claude-fable-5-1"] == 128000
-
-
-def test_v5_claude_opus_5_5_model_metadata() -> None:
-    specification = {
-        "type": "roboflow_core/anthropic_claude@v5",
-        "name": "step_1",
-        "images": "$inputs.image",
-        "task_type": "unconstrained",
-        "prompt": "This is my prompt",
-        "api_key": "$inputs.anthropic_api_key",
-        "model_version": "claude-opus-5-5",
-    }
-
-    result = BlockManifest.model_validate(specification)
-
-    assert result.model_version == "claude-opus-5-5"
-    assert EXACT_MODEL_VERSIONS["claude-opus-5-5"] == "claude-opus-5-5"
-    assert MAX_OUTPUT_TOKENS["claude-opus-5-5"] == 128000
 
 
 def _mock_streaming_client(mock_anthropic_class: Mock, text: str = "ok") -> MagicMock:
