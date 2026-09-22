@@ -3,8 +3,7 @@
 Calls Grok vision models via xAI's OpenAI-compatible Responses API, either
 directly with a user-provided xAI key or through Roboflow's ``apiproxy/xai``
 managed-key proxy. Object-detection prompting uses the percent-of-image
-``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6;
-Grok 4.7 shares the same prompt contract.
+``box_2d`` contract validated in the vlm-exam benchmark for Grok 4.5/4.6.
 
 Same surface as ``spacexai@v2``, plus in-block decoding of the model
 answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
@@ -75,6 +74,7 @@ from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_ima
 XAI_BASE_URL = "https://api.x.ai/v1"
 
 # grok-4.5 `xhigh` excluded: xAI silently downgrades it to `high`.
+# grok-4.7 was not re-benchmarked; it reuses the 4.5/4.6 detection prompt.
 GROK_MODELS = [
     {
         "id": "grok-4.7",
@@ -108,8 +108,7 @@ REASONING_EFFORT_VALUES = ["low", "medium", "high", "xhigh"]
 
 # Grok grounds objects with `box_2d` percentages of image width and height
 # - the shared `xyxy_percent` contract, whose prompt wording is the
-# vlm-exam template this block was benchmarked with for Grok 4.5/4.6 and
-# reused unchanged for Grok 4.7.
+# vlm-exam template this block was benchmarked with for Grok 4.5/4.6.
 DETECTION_BOX_FORMAT = "xyxy_percent"
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -156,7 +155,7 @@ Confidence scores are optional; when absent decoded detections are assigned
 
 Images for object detection are sent at original resolution as lossless PNG
 with `detail: "high"`, matching the vlm-exam benchmark setup for Grok 4.5/4.6.
-Grok 4.7 uses the same detection prompt.
+Grok 4.7 uses the same prompt and image handling.
 
 ## Version Differences
 
@@ -301,8 +300,7 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "Optional reasoning effort passed to xAI as "
             '`reasoning: {"effort": ...}`. Grok models default to "high" and '
-            'cannot disable reasoning. "xhigh" is only supported by grok-4.7 '
-            "and grok-4.6. "
+            'cannot disable reasoning. "xhigh" is not supported by grok-4.5. '
             "For requests with a direct xAI key, the request is retried "
             "without reasoning when the model rejects the parameter."
         ),
@@ -1064,7 +1062,7 @@ def prepare_object_detection_prompt(
     classes: List[str],
     **kwargs,
 ) -> dict:
-    """Build the percent-format detection request used by Grok 4.5/4.6/4.7.
+    """Build the percent-format detection request used by Grok 4.5/4.6.
 
     Args:
         base64_image: Base64-encoded PNG image.
