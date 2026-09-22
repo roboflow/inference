@@ -6,6 +6,7 @@
 
 - SpaceXAI block (`spacexai@v3`): `grok-4.7` model option with `low`/`medium`/`high`/`xhigh` reasoning effort. Detection reuses the Grok 4.5/4.6 prompt.
 - OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options.
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-opus-5-5` model option.
 
 ### Fixed
 

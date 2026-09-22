@@ -105,7 +105,7 @@ def resolve_temperature(
         _TEMPERATURE_WARNINGS_EMITTED.add(normalized_model)
         logger.warning(
             "Anthropic model `%s` does not accept the `temperature` parameter "
-            "(Claude Opus 4.7 and newer, Sonnet 5, Opus 5 and Fable models reject "
+            "(Claude Opus 4.7 and newer, Sonnet 5, Opus 5.x and Fable models reject "
             "non-default sampling parameters); ignoring temperature=%s.",
             model_version,
             temperature,
