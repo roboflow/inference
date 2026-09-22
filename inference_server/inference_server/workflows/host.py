@@ -804,7 +804,7 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             "workflow_execution | step_execution | feature_deprecated",
         )
-    if isinstance(error, UnauthorizedModelAccessError):
+    if isinstance(error, (UnauthorizedModelAccessError, PermissionError)):
         _client_caused(
             step_name,
             401,
@@ -814,7 +814,9 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             _STEP_EXECUTION_CONTEXT,
         )
-    if isinstance(error, ModelNotFoundError):
+    if isinstance(error, ModelNotFoundError) or (
+        isinstance(error, LookupError) and not isinstance(error, (KeyError, IndexError))
+    ):
         _client_caused(
             step_name,
             404,

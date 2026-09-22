@@ -11,12 +11,15 @@ returns.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from inference_server import configuration as _cfg
 from inference_server.auth import extract_bearer, validate_api_key
@@ -25,6 +28,21 @@ from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
 from inference_server.routers import v2_models, v2_server
 
 logger = logging.getLogger(__name__)
+
+_WORKFLOWS_INSTALLED = importlib.util.find_spec("roboflow_workflows") is not None
+if _WORKFLOWS_INSTALLED:
+    from inference_server.workflows import host as _workflows_host
+else:
+    _workflows_host = None
+    logger.info(
+        "Workflows routes disabled: roboflow-workflows is not installed "
+        "(pip install 'inference-server[workflows]')"
+    )
+
+_WORKFLOWS_ROUTES_ENABLED = (
+    _workflows_host is not None and not _cfg.DISABLE_WORKFLOW_ENDPOINTS
+)
+_LEGACY_ERROR_HANDLING_ENABLED = _cfg.LEGACY_ROUTES_ENABLED or _WORKFLOWS_ROUTES_ENABLED
 
 # ---------------------------------------------------------------------------
 # Lifespan — initialize the per-process gateway
@@ -56,6 +74,10 @@ async def _lifespan(app: FastAPI):
     proxy = resolve_gateway()
     preload_task = None
     watchdog_daemons = []
+    workflows_executor = ThreadPoolExecutor(
+        max_workers=_cfg.WORKFLOWS_THREAD_POOL_WORKERS
+    )
+    app.state.workflows_executor = workflows_executor
     try:
         await proxy.start()
 
@@ -67,6 +89,8 @@ async def _lifespan(app: FastAPI):
         app.state.loop = asyncio.get_running_loop()
         app.state.loop_bridge = LoopBridge(app.state.loop)
         app.state.legacy_bridge = LegacyModelBridge(proxy)
+        if _workflows_host is not None:
+            _workflows_host.GUARDED_IMAGE_CODEC.bind_loop(app.state.loop_bridge)
         preload_ids = _cfg.preload_model_ids()
         preload_task = (
             asyncio.create_task(
@@ -86,6 +110,7 @@ async def _lifespan(app: FastAPI):
         finally:
             for daemon in watchdog_daemons:
                 daemon.stop(timeout=5)
+            workflows_executor.shutdown(wait=False, cancel_futures=True)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +236,7 @@ class _AuthMiddleware:
         await self.app(scope, receive, send)
 
 
-if _cfg.LEGACY_ROUTES_ENABLED:
+if _LEGACY_ERROR_HANDLING_ENABLED:
     from inference_server.legacy.errors import (
         _BodyLimitMiddleware,
         install_legacy_exception_handlers,
@@ -221,6 +246,15 @@ if _cfg.LEGACY_ROUTES_ENABLED:
     install_legacy_exception_handlers(app)
 
 app.add_middleware(_AuthMiddleware)
+
+if _cfg.ALLOW_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cfg.ALLOW_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +271,11 @@ if _cfg.LEGACY_ROUTES_ENABLED:
     )
 
     include_legacy_routers(app)
+
+if _WORKFLOWS_ROUTES_ENABLED:
+    from inference_server.workflows import router as workflows_router
+
+    app.include_router(workflows_router.router)
 
 if _cfg.LEGACY_ROUTES_ENABLED:
     include_legacy_catch_all(app)

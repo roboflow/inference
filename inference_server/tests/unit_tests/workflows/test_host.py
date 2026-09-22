@@ -251,6 +251,28 @@ def test_step_error_handler_maps_unauthorized():
     assert exc.value.status_code == 401
 
 
+def test_step_error_handler_maps_permission_error_to_401():
+    from roboflow_workflows.errors import ClientCausedStepExecutionError
+
+    import inference_server.workflows.host as host
+
+    with pytest.raises(ClientCausedStepExecutionError) as exc:
+        host.step_error_handler("step", PermissionError("nope"))
+    assert exc.value.status_code == 401
+    assert "Roboflow API key" in exc.value.public_message
+
+
+def test_step_error_handler_maps_lookup_error_to_404():
+    from roboflow_workflows.errors import ClientCausedStepExecutionError
+
+    import inference_server.workflows.host as host
+
+    with pytest.raises(ClientCausedStepExecutionError) as exc:
+        host.step_error_handler("step", LookupError("ds/1"))
+    assert exc.value.status_code == 404
+    assert "not existing model" in exc.value.public_message
+
+
 def test_step_error_handler_maps_legacy_http_error_and_sdk_error():
     from roboflow_workflows.errors import (
         ClientCausedStepExecutionError,
@@ -314,3 +336,10 @@ def test_configuration_is_installed_before_environment_is_imported():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_step_error_handler_leaves_key_and_index_errors_unmapped():
+    import inference_server.workflows.host as host
+
+    assert host.step_error_handler("step", KeyError("k")) is None
+    assert host.step_error_handler("step", IndexError("i")) is None
