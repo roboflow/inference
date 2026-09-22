@@ -137,6 +137,8 @@ async def test_unauthorized_returns_401():
         )
     assert r.status_code == 401
     assert b"UNAUTHORIZED" in r.body
+    # the registry's own wording stays server-side
+    assert b"bad key" not in r.body
 
 
 @pytest.mark.asyncio
@@ -146,6 +148,8 @@ async def test_unknown_model_returns_404():
             _request(query=b"model_id=m"), _mock_proxy()
         )
     assert r.status_code == 404
+    assert b"MODEL_NOT_FOUND" in r.body
+    assert b"no such" not in r.body
 
 
 @pytest.mark.asyncio

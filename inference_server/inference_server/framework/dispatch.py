@@ -163,9 +163,13 @@ async def handle_model_inference_request(
     try:
         model_type, action_default = await stat_model_while_checking_auth(common)
     except PermissionError as exc:
-        return error_response(401, "UNAUTHORIZED", str(exc) or "invalid api key")
+        # The registry's wording can carry request details, so it is logged
+        # rather than returned.
+        logger.warning("Model access denied: %s", exc)
+        return error_response(401, "UNAUTHORIZED", "invalid api key")
     except LookupError as exc:
-        return error_response(404, "MODEL_NOT_FOUND", str(exc) or "unknown model_id")
+        logger.warning("Model not found: %s", exc)
+        return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
     except RuntimeError as exc:
         logger.warning("Runtime error when calling stat_model_while_checking_auth: %s", exc)
         return error_response(
