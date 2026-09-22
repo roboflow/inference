@@ -88,11 +88,50 @@ make check_code_quality
 The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 
 ## Contribution / PR Guidelines
-- Ensure all relevant tests pass before opening a pull request.
+- Ensure all relevant tests pass before marking a pull request ready for review.
 - Keep commit messages concise and in the present tense, e.g. "Add model loader".
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
+
+### Internal contributions (Roboflow team only)
+
+These process requirements apply to internal contributors. External contributors
+do not need access to Roboflow's Slack or Slab; follow the general guidelines above.
+
+- Before substantial implementation of a major feature or structural change,
+  prepare an implementation plan and share it in `#discuss-inference-release`
+  for maintainer agreement on the approach. The
+  [implementation plan guide](https://roboflow.slab.com/posts/inference-contributions-implementation-plan-1sb5nyqz)
+  is the source of truth for the requirements and template. Agents can help
+  investigate and draft it, but the contributor must understand and own the
+  recommendation and unresolved questions. If the guide is inaccessible, ask
+  the contributor for its contents rather than inventing requirements.
+- A plan is generally unnecessary for documentation corrections or examples of
+  existing functionality, added tests or regression coverage, contained fixes
+  restoring established behavior, and local refactoring that preserves behavior
+  and interfaces. New workflow blocks also qualify when they follow existing
+  patterns and introduce no new execution behavior or execution-engine changes.
+  Discuss changes to shared infrastructure, compatibility, security, or package
+  dependencies with maintainers first, even for a small diff. If unsure, share a
+  short description in the channel to establish whether a plan is needed.
+- Keep unfinished work in a draft PR. Before marking it ready, inspect the diff,
+  run relevant checks, record the commands and results (including limitations),
+  and be available to address feedback. Plan exemptions do not waive testing or
+  review. Contributors remain responsible for follow-up issues after merge.
+- Use the optional [local pre-review skill](.claude/skills/review-local/SKILL.md)
+  to check work before requesting CI review. In Claude Code, invoke
+  `/review-local`; other agents can read and follow that file directly. Local
+  findings are advisory and do not replace CI review or maintainer approval.
+- Claude provides the first CI review. Address its findings and add the
+  `claude-review` label to request another pass; the label is consumed when review
+  starts, and new commits alone do not trigger another review. An eligible agent
+  pass requests maintainer review through the Slack handoff bot. If disagreeing
+  with a finding, explain why in a PR comment beginning
+  `/maintainer-review <reason>` to escalate. The handoff requires an open,
+  non-draft, same-repository PR; escalation also requires repository write access
+  or higher. Coordinate in the linked Slack thread and record final approval in
+  GitHub. See [handoff behavior](.github/maintainer-review-slack.md) for details.
 
 ## Workflows Package (roboflow-workflows)
 
