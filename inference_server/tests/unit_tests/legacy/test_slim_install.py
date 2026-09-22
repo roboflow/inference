@@ -1,5 +1,8 @@
+import importlib.util
 import subprocess
 import sys
+
+import pytest
 
 
 def test_legacy_package_imports_without_roboflow_workflows():
@@ -29,6 +32,10 @@ def test_app_imports_and_drops_workflow_routes_without_roboflow_workflows():
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("roboflow_workflows") is None,
+    reason="asserts a broken install is fatal; slim installs have none",
+)
 def test_app_import_fails_when_roboflow_workflows_is_broken():
     code = (
         "import sys; sys.modules['roboflow_workflows.http_contract'] = None; "
