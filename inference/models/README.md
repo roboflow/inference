@@ -1,6 +1,6 @@
 The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
 
-| model                                 |                                                                           license                                                                            | Enterprise self-hosted license |
+| model                                 |                                                                           license                                                                            | commercial license available |
 |:--------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------:|:----------------------------:|
 | `inference/models/clip`               |                                                   [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                                                    |              👍              |
 | `inference/models/cosmos3`            |                                                    [OpenMDW-1.1](https://openmdw.ai/license/1-1/)                                                    |              👍              |
@@ -52,6 +52,6 @@ Models listed with a 👍 above are permissively licensed for commercial use by 
 
 Models with a ✅ or ❌ have restrictive licensing that can be problematic for commercial use without procuring an additional license.
 
-For models marked with a ✅ above, an [Enterprise contract](https://roboflow.com/licensing) includes a commercial license for self-hosted deployment. That license covers commercial use without the obligations in the model's default open source license. On every other plan, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0.
+For models marked with a ✅ above, [Roboflow Hosted products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for every user. An [Enterprise contract](https://roboflow.com/licensing) includes a commercial license for self-hosted deployment. That license covers commercial use without the obligations in the model's default open source license. On every other plan, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0.
 
 Models with an ❌ above do not have a commercial license available (from anyone). You may wish to seek legal advice before using them commercially.
