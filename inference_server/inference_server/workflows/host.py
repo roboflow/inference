@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import stat
 import warnings
 from hashlib import sha256
 from pathlib import Path
@@ -399,6 +400,7 @@ from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
+    RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_models.weights_providers.roboflow import (  # noqa: E402
@@ -410,7 +412,10 @@ from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
 )
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
-from inference_server.legacy.errors import LegacyHTTPError  # noqa: E402
+from inference_server.legacy.errors import (  # noqa: E402
+    REGISTRY_UNREACHABLE_MESSAGE,
+    LegacyHTTPError,
+)
 
 API_REQUEST_TIMEOUT_S = get_float_from_env(
     "ROBOFLOW_API_REQUEST_TIMEOUT", default=120.0
@@ -452,6 +457,19 @@ def _is_successful(response: requests.Response) -> bool:
     return 200 <= response.status_code < 300
 
 
+def _platform_request(method: str, url: str, **kwargs: Any) -> requests.Response:
+    try:
+        return getattr(requests, method)(url=url, **kwargs)
+    except requests.exceptions.Timeout as error:
+        raise LegacyHTTPError(
+            504, "Timeout when attempting to connect to Roboflow API."
+        ) from error
+    except requests.exceptions.RequestException as error:
+        raise LegacyHTTPError(
+            503, "Internal error. Could not connect to Roboflow API."
+        ) from error
+
+
 def _api_error_message(response: requests.Response, api_key: Optional[str]) -> str:
     try:
         payload = response.json()
@@ -486,8 +504,9 @@ class ServerRoboflowPlatformClient:
             url=f"{configuration.API_BASE_URL.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
-        response = requests.post(
-            url=self.wrap_url(url),
+        response = _platform_request(
+            "post",
+            self.wrap_url(url),
             json=payload,
             headers=self.build_api_headers(),
             timeout=API_REQUEST_TIMEOUT_S,
@@ -541,16 +560,17 @@ class ServerWorkspaceResolver:
             params=[("api_key", api_key), ("nocache", "true")],
         )
         try:
-            response = requests.get(
-                url=PLATFORM_CLIENT.wrap_url(url),
+            response = _platform_request(
+                "get",
+                PLATFORM_CLIENT.wrap_url(url),
                 headers=PLATFORM_CLIENT.build_api_headers(),
                 timeout=API_REQUEST_TIMEOUT_S,
             )
             if not _is_successful(response):
                 return None
             workspace_id = response.json().get("workspace")
-        except Exception:
-            logger.warning("Could not resolve Roboflow workspace", exc_info=True)
+        except Exception as error:
+            logger.warning("Could not resolve Roboflow workspace: %s", error)
             return None
         if not isinstance(workspace_id, str) or not workspace_id:
             return None
@@ -664,16 +684,31 @@ def workflows_platform_bindings() -> Dict[str, Any]:
 def _local_workflow_response(workflow_id: str) -> dict:
     if not re.match(r"^[\w\-]+$", workflow_id):
         raise ValueError("Invalid workflow id")
-    path = (
-        Path(configuration.MODEL_CACHE_DIR)
-        / "workflow"
-        / "local"
-        / f"{sha256(workflow_id.encode()).hexdigest()}.json"
-    )
-    if not path.is_file():
-        raise FileNotFoundError(f"Local workflow file not found: {path}")
-    with open(path, "r") as source:
-        return {"workflow": json.load(source)}
+    cache_root = Path(configuration.MODEL_CACHE_DIR)
+    local_dir = cache_root / "workflow" / "local"
+    path = local_dir / f"{sha256(workflow_id.encode()).hexdigest()}.json"
+    not_found = FileNotFoundError(f"Local workflow file not found: {path}")
+    for entry in (cache_root / "workflow", local_dir, path):
+        if os.path.islink(entry):
+            raise not_found
+    path_status = os.lstat(path)
+    if not stat.S_ISREG(path_status.st_mode):
+        raise not_found
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_status.st_mode) or (
+            path_status.st_dev,
+            path_status.st_ino,
+        ) != (descriptor_status.st_dev, descriptor_status.st_ino):
+            raise not_found
+        source = os.fdopen(descriptor, "r", encoding="utf-8")
+        descriptor = -1
+        with source:
+            return {"workflow": json.load(source)}
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _fetch_workflow_response(
@@ -691,8 +726,9 @@ def _fetch_workflow_response(
         url=f"{configuration.API_BASE_URL.rstrip('/')}/{workspace_id}/workflows/{workflow_id}",
         params=params,
     )
-    response = requests.get(
-        url=PLATFORM_CLIENT.wrap_url(url),
+    response = _platform_request(
+        "get",
+        PLATFORM_CLIENT.wrap_url(url),
         headers=PLATFORM_CLIENT.build_api_headers(),
         timeout=API_REQUEST_TIMEOUT_S,
     )
@@ -796,6 +832,22 @@ def _runtime_limited(step_name: str, message: str, error: Exception) -> None:
 
 
 def step_error_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, RuntimeError) and isinstance(
+        error.__cause__, (RetryError, ModelRetrievalError, OSError)
+    ):
+        cause = error.__cause__
+        if (
+            isinstance(cause, ModelRetrievalError)
+            and getattr(cause, "status_code", None) in _MODEL_ACCESS_ERROR_MESSAGES
+        ):
+            return step_error_handler(step_name, cause)
+        _client_caused(
+            step_name,
+            503,
+            REGISTRY_UNREACHABLE_MESSAGE,
+            error,
+            _STEP_EXECUTION_CONTEXT,
+        )
     if isinstance(error, FeatureDeprecatedError):
         _client_caused(
             step_name,

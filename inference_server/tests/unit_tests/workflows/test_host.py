@@ -1,10 +1,14 @@
+import hashlib
 import json
+import logging
 import os
 import subprocess
 import sys
 
 import pytest
+import requests
 import requests_mock as rm
+from inference_models.errors import ModelRetrievalError
 
 
 def test_configuration_installed_on_import(monkeypatch):
@@ -343,3 +347,176 @@ def test_step_error_handler_leaves_key_and_index_errors_unmapped():
 
     assert host.step_error_handler("step", KeyError("k")) is None
     assert host.step_error_handler("step", IndexError("i")) is None
+
+
+def _raise_request_error(error):
+    def _raise(*args, **kwargs):
+        raise error
+
+    return _raise
+
+
+def _retrieval_error(status_code):
+    error = ModelRetrievalError("denied")
+    error.status_code = status_code
+    return error
+
+
+def test_platform_client_post_sanitizes_transport_errors(monkeypatch):
+    import inference_server.workflows.host as host
+    from inference_server.legacy.errors import LegacyHTTPError
+
+    monkeypatch.setattr(
+        requests,
+        "post",
+        _raise_request_error(
+            requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
+        ),
+    )
+    with pytest.raises(LegacyHTTPError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
+    assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
+
+
+def test_platform_client_post_maps_timeout_to_504(monkeypatch):
+    import inference_server.workflows.host as host
+    from inference_server.legacy.errors import LegacyHTTPError
+
+    monkeypatch.setattr(
+        requests,
+        "post",
+        _raise_request_error(requests.exceptions.Timeout("http://x/?api_key=SECRET")),
+    )
+    with pytest.raises(LegacyHTTPError) as exc:
+        host.PLATFORM_CLIENT.post("x/y", api_key="SECRET")
+    assert exc.value.status_code == 504 and "SECRET" not in exc.value.message
+
+
+def test_fetch_workflow_response_sanitizes_transport_errors(monkeypatch):
+    import inference_server.workflows.host as host
+    from inference_server.legacy.errors import LegacyHTTPError
+
+    monkeypatch.setattr(
+        requests,
+        "get",
+        _raise_request_error(
+            requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
+        ),
+    )
+    with pytest.raises(LegacyHTTPError) as exc:
+        host._fetch_workflow_response(
+            api_key="SECRET",
+            workspace_id="ws",
+            workflow_id="wf",
+            workflow_version_id=None,
+        )
+    assert exc.value.status_code == 503 and "SECRET" not in exc.value.message
+
+
+def test_workspace_resolver_does_not_log_the_api_key(monkeypatch, caplog):
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(
+        requests,
+        "get",
+        _raise_request_error(
+            requests.exceptions.ConnectionError("http://x/?api_key=SECRET")
+        ),
+    )
+    with caplog.at_level(logging.WARNING, logger="inference_server.workflows.host"):
+        assert host.WORKSPACE_RESOLVER.resolve_workspace("SECRET") is None
+    assert caplog.records and "SECRET" not in caplog.text
+
+
+def test_step_error_handler_unwraps_registry_model_access_error():
+    from roboflow_workflows.errors import ClientCausedStepExecutionError
+
+    import inference_server.workflows.host as host
+
+    try:
+        raise RuntimeError("denied") from _retrieval_error(403)
+    except RuntimeError as error:
+        wrapped = error
+    with pytest.raises(ClientCausedStepExecutionError) as exc:
+        host.step_error_handler("step", wrapped)
+    assert exc.value.status_code == 403 and exc.value.block_id == "step"
+
+
+def test_step_error_handler_unwraps_registry_os_error():
+    from roboflow_workflows.errors import ClientCausedStepExecutionError
+
+    import inference_server.workflows.host as host
+    from inference_server.legacy.errors import REGISTRY_UNREACHABLE_MESSAGE
+
+    try:
+        raise RuntimeError("unreachable") from OSError("down")
+    except RuntimeError as error:
+        wrapped = error
+    with pytest.raises(ClientCausedStepExecutionError) as exc:
+        host.step_error_handler("step", wrapped)
+    assert exc.value.status_code == 503
+    assert exc.value.public_message == REGISTRY_UNREACHABLE_MESSAGE
+
+
+def test_step_error_handler_leaves_plain_runtime_error_unmapped():
+    import inference_server.workflows.host as host
+
+    assert host.step_error_handler("step", RuntimeError("x")) is None
+
+
+def _local_workflow_path(cache_root, workflow_id):
+    return (
+        cache_root
+        / "workflow"
+        / "local"
+        / f"{hashlib.sha256(workflow_id.encode()).hexdigest()}.json"
+    )
+
+
+def test_local_workflow_response_reads_regular_file(monkeypatch, tmp_path):
+    import inference_server.workflows.host as host
+    from inference_server import configuration
+
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
+    path = _local_workflow_path(tmp_path, "wf")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"config": "{}"}))
+    assert host._local_workflow_response("wf") == {"workflow": {"config": "{}"}}
+
+
+def test_local_workflow_response_refuses_symlinked_file(monkeypatch, tmp_path):
+    import inference_server.workflows.host as host
+    from inference_server import configuration
+
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
+    target = tmp_path / "elsewhere.json"
+    target.write_text(json.dumps({"config": "{}"}))
+    path = _local_workflow_path(tmp_path, "wf")
+    path.parent.mkdir(parents=True)
+    path.symlink_to(target)
+    with pytest.raises(FileNotFoundError):
+        host._local_workflow_response("wf")
+
+
+def test_local_workflow_response_refuses_symlinked_directory(monkeypatch, tmp_path):
+    import inference_server.workflows.host as host
+    from inference_server import configuration
+
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
+    real_dir = tmp_path / "elsewhere"
+    real_dir.mkdir()
+    path = _local_workflow_path(tmp_path, "wf")
+    (tmp_path / "workflow").mkdir()
+    path.parent.symlink_to(real_dir, target_is_directory=True)
+    (real_dir / path.name).write_text(json.dumps({"config": "{}"}))
+    with pytest.raises(FileNotFoundError):
+        host._local_workflow_response("wf")
+
+
+def test_local_workflow_response_missing_file(monkeypatch, tmp_path):
+    import inference_server.workflows.host as host
+    from inference_server import configuration
+
+    monkeypatch.setattr(configuration, "MODEL_CACHE_DIR", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        host._local_workflow_response("wf")

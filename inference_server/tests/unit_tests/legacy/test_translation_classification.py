@@ -69,7 +69,7 @@ def test_semantic_segmentation_png_masks():
         class_names=["bg", "fg"],
     )
     pred = SimpleNamespace(
-        segmentation_map=np.array([[0, 1], [1, 0]]),
+        segmentation_map=np.array([[0, 2], [5, 0]]),
         confidence=np.array([[1.0, 0.5], [0.5, 1.0]]),
     )
     resp = repack_prediction(
@@ -86,3 +86,4 @@ def test_semantic_segmentation_png_masks():
     )
     assert decoded.size == (2, 2)
     assert d["predictions"]["class_map"] == {"0": "bg", "1": "fg"}
+    assert d["predictions"]["present_class_ids"] == [0, 2, 5]

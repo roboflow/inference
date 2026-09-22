@@ -449,6 +449,7 @@ def repack_semantic_segmentation_response(
         segmentation_mask=_png_b64(segmentation_map),
         confidence_mask=_png_b64(confidence_map),
         class_map=class_map,
+        present_class_ids=np.unique(segmentation_map).astype(int).tolist(),
     )
     return SemanticSegmentationInferenceResponse(
         predictions=response_predictions,

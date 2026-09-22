@@ -13,6 +13,7 @@ the ``os.environ.get`` so the read happens at the right moment.
 import importlib.metadata
 import os
 import uuid
+import warnings
 from typing import Optional
 
 from inference_models.utils.environment import (
@@ -207,6 +208,13 @@ SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
 SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
     "SAM3_FINE_TUNED_MODELS_ENABLED", default=SAM3_EXEC_MODE != "remote"
 )
+if OFFLINE_MODE and SAM3_EXEC_MODE == "remote":
+    warnings.warn(
+        "SAM3_EXEC_MODE=remote is not available while OFFLINE_MODE is enabled. "
+        "Forcing local SAM3 execution.",
+        stacklevel=1,
+    )
+    SAM3_EXEC_MODE = "local"
 DISABLE_SAM3_LOGITS_CACHE = get_boolean_from_env(
     "DISABLE_SAM3_LOGITS_CACHE", default=False
 )
