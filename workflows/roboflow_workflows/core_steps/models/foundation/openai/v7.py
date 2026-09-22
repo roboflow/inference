@@ -106,6 +106,18 @@ OPENAI_MODELS = [
         "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
+        "id": "gpt-6-sol",
+        "name": "GPT-6 Sol",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
         "id": "gpt-5.6-sol",
         "name": "GPT-5.6 Sol",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
@@ -565,7 +577,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="gpt-5.1",
         description="Model to be used",
-        examples=["gpt-5.1", "$inputs.openai_model"],
+        examples=["gpt-6-sol", "gpt-5.1", "$inputs.openai_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
