@@ -17,6 +17,8 @@ on:
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
@@ -34,7 +36,7 @@ jobs:
       group: public-depot
     strategy:
       matrix:
-        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
+        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13","3.14"]' || format('["{0}"]', github.event.inputs.python-version)) }}
     timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout

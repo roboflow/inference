@@ -95,5 +95,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.13"
+    python_requires=">=3.10,<3.15"
 )
