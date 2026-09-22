@@ -82,4 +82,5 @@ class TrOCR(RoboflowCoreModel):
         text = self.infer(**request.model_dump())
         t2 = perf_counter()
         response = OCRInferenceResponse(result=text[0], time=t2 - t1)
+        self._attach_resolved_model_metadata(response)
         return response

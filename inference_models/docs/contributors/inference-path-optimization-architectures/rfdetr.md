@@ -77,6 +77,8 @@ arguments:
 |---|---|---|
 | `INFERENCE_MODELS_RFDETR_PREPROCESSOR` | preprocessing | `triton-universal-v1` |
 | `INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS` | threaded preprocessing | `4` |
+| `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS` | Triton preprocessing | `35389440` |
+| `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION` | Triton preprocessing | `8192` |
 | `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` | postprocessing | `triton-fused-v1` |
 
 An explicit plan has the clearest provenance and takes precedence over environment

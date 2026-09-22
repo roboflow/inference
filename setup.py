@@ -33,15 +33,15 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
         ),
     ),
     package_data={
         "inference.models.perception_encoder.vision_encoder": [
             "bpe_simple_vocab_16e6.txt.gz"
-        ],
-        "inference.core.workflows.core_steps.visualizations.common.fonts": [
-            "assets/*/*",
-            "README.md",
         ],
     },
     entry_points={
@@ -65,6 +65,7 @@ setuptools.setup(
             "requirements/requirements.test.unit.txt",
             "requirements/requirements.test.integration.txt",
             "requirements/requirements.transformers.txt",
+            "requirements/requirements.workflows.txt",
         ]
     ),
     extras_require={
@@ -76,5 +77,5 @@ setuptools.setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10,<3.14",
 )

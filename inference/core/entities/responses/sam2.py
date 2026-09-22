@@ -1,13 +1,14 @@
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
     Sam2SegmentationPrediction,
 )
 
 
-class Sam2EmbeddingResponse(BaseModel):
+class Sam2EmbeddingResponse(InferenceResponse):
     """SAM embedding response.
 
     Attributes:
@@ -21,7 +22,7 @@ class Sam2EmbeddingResponse(BaseModel):
     )
 
 
-class Sam2SegmentationResponse(BaseModel):
+class Sam2SegmentationResponse(InferenceResponse):
     predictions: List[Sam2SegmentationPrediction] = Field()
     time: float = Field(
         description="The time in seconds it took to produce the segmentation including preprocessing"

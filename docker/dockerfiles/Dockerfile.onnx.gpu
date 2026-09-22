@@ -290,7 +290,8 @@ COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 RUN /bin/make create_wheels_for_gpu_notebook && \
-    python3 -m pip install --no-cache-dir \
+    python3 -m pip install --no-cache-dir --find-links dist/ \
+        dist/roboflow_workflows*.whl \
         dist/inference_cli*.whl \
         dist/inference_core*.whl \
         dist/inference_gpu*.whl \
@@ -452,8 +453,6 @@ COPY examples/notebooks .
 
 WORKDIR /app
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh

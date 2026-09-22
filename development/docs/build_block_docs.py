@@ -501,15 +501,26 @@ def _escape_jinja2_dollar_expression(match: re.Match) -> str:
 def get_source_link_for_block_class(block_class: Type[WorkflowBlock]) -> str:
     try:
         filepath = inspect.getfile(block_class)
-        # Resolve the path relative to the `inference` package root so that both
-        # core blocks (inference/core/workflows/...) and enterprise blocks
-        # (inference/enterprise/workflows/...) produce valid links.
-        marker = f"{os.sep}inference{os.sep}"
-        idx = filepath.rfind(marker)
-        if idx == -1:
-            return None
-        relative_path = filepath[idx + 1 :].replace(os.sep, "/")
-        return f"https://github.com/roboflow/inference/blob/main/{relative_path}"
+        # Map block source paths back to their repository location:
+        #   1. In-source checkout  -> workflows/roboflow_workflows/...
+        #   2. Installed wheel     -> .../site-packages/roboflow_workflows/...
+        #   3. Legacy inference    -> inference/...
+        checkout_marker = f"{os.sep}workflows{os.sep}roboflow_workflows{os.sep}"
+        idx = filepath.rfind(checkout_marker)
+        if idx != -1:
+            relative_path = filepath[idx + 1 :].replace(os.sep, "/")
+            return f"https://github.com/roboflow/inference/blob/main/{relative_path}"
+        wheel_marker = f"{os.sep}roboflow_workflows{os.sep}"
+        idx = filepath.rfind(wheel_marker)
+        if idx != -1:
+            tail = filepath[idx + 1 :].replace(os.sep, "/")
+            return f"https://github.com/roboflow/inference/blob/main/workflows/{tail}"
+        legacy_marker = f"{os.sep}inference{os.sep}"
+        idx = filepath.rfind(legacy_marker)
+        if idx != -1:
+            relative_path = filepath[idx + 1 :].replace(os.sep, "/")
+            return f"https://github.com/roboflow/inference/blob/main/{relative_path}"
+        return None
     except Exception:
         return None
 
