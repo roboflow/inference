@@ -15,6 +15,11 @@ on:
         default: ""
         type: string
 
+# build-candidates only reads the checkout; publish-gated widens this for
+# trusted publishing.
+permissions:
+  contents: read
+
 jobs:
   build-candidates:
     if: ${{ !inputs.publish }}
