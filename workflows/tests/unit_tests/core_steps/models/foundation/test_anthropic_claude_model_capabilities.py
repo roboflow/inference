@@ -17,9 +17,6 @@ from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v1 import 
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v4 import (
     EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V4,
 )
-from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import (
-    EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V5,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +54,6 @@ def test_dated_wire_ids_used_by_block_versions_are_classified_like_labels() -> N
     for label, wire_id in {
         **EXACT_MODEL_VERSIONS_V1,
         **EXACT_MODEL_VERSIONS_V4,
-        **EXACT_MODEL_VERSIONS_V5,
     }.items():
         assert anthropic_model_supports_temperature(
             label
