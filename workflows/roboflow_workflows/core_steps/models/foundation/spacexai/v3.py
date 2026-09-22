@@ -571,7 +571,15 @@ def encode_image_for_task(
 
 
 def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
-    _, encoded_image = cv2.imencode(".png", image)
+    # OpenCV's default PNG compression (level 1) puts the large drone frames
+    # in the detection benchmark over xAI's 25MB upload limit, so those
+    # requests 400. Level 9 is still lossless and stays under the limit,
+    # matching the benchmark's PIL encoder.
+    _, encoded_image = cv2.imencode(
+        ".png",
+        image,
+        [cv2.IMWRITE_PNG_COMPRESSION, 9],
+    )
     return encoded_image.tobytes()
 
 
