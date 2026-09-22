@@ -69,6 +69,14 @@ Bundled execution engine: `1.15.2`.
   prompts in `classes` while constraining and decoding model output with stable labels.
 ---
 
+## `0.2.0`
+
+### Added
+
+- `roboflow_workflows.http_contract`: HTTP request/response entities and framework-free describe/error helpers, moved from `inference.core` (which now re-exports them).
+
+---
+
 ## `0.1.2`
 
 ### Fixed
