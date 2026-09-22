@@ -11,6 +11,7 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini import (
 )
 from roboflow_workflows.core_steps.models.foundation.meta_vlm import v2 as meta_vlm_v2
 from roboflow_workflows.core_steps.models.foundation.openai import v6 as openai_v6
+from roboflow_workflows.core_steps.models.foundation.openai import v7 as openai_v7
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v3 as qwen_vlm_v3
 from roboflow_workflows.core_steps.models.foundation.spacexai import v2 as spacexai_v2
 from roboflow_workflows.core_steps.models.foundation.spacexai import v3 as spacexai_v3
@@ -58,6 +59,12 @@ BLOCK_CONTRACTS = {
         openai_v6.MODEL_REASONING_EFFORT_VALUES,
         openai_v6.REASONING_EFFORT_VALUES,
         openai_v6.MODEL_VERSION_METADATA,
+        None,
+    ),
+    "open_ai@v7": (
+        openai_v7.MODEL_REASONING_EFFORT_VALUES,
+        openai_v7.REASONING_EFFORT_VALUES,
+        openai_v7.MODEL_VERSION_METADATA,
         None,
     ),
     "google_gemini@v5": (
@@ -146,6 +153,7 @@ def test_block_default_level_is_valid_for_every_model(block):
 
 _MANIFESTS = {
     "open_ai@v6": openai_v6.BlockManifest,
+    "open_ai@v7": openai_v7.BlockManifest,
     "google_gemini@v5": gemini_v5.BlockManifest,
     "spacexai@v2": spacexai_v2.BlockManifest,
     "spacexai@v3": spacexai_v3.BlockManifest,
@@ -173,6 +181,8 @@ def _manifest(block_type: str, **overrides):
     [
         ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
         ("open_ai@v6", {"model_version": "gpt-4o"}),
+        ("open_ai@v7", {"model_version": "gpt-6-sol", "reasoning_effort": "none"}),
+        ("open_ai@v7", {"model_version": "gpt-6-luna", "reasoning_effort": "max"}),
         ("qwen_vlm@v3", {"backend": "native"}),
         ("spacexai@v3", {"model_version": "grok-4.7", "reasoning_effort": "xhigh"}),
     ],
@@ -186,6 +196,7 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
     [
         ("open_ai@v6", {"model_version": "gpt-5.4", "reasoning_effort": "max"}),
         ("open_ai@v6", {"model_version": "gpt-4o", "reasoning_effort": "high"}),
+        ("open_ai@v7", {"model_version": "gpt-6-astra", "reasoning_effort": "none"}),
         (
             "google_gemini@v5",
             {"model_version": "gemini-3.1-pro-preview", "thinking_level": "minimal"},
