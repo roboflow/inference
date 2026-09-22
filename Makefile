@@ -15,6 +15,9 @@ style:
 	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
 
 check_code_quality:
+	which uv || pip install uv
+	# four GPU/TRT dockerfiles build with `uv sync --locked`; a stale lock fails there, not here
+	cd inference_models && uv lock --check
 	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
 	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
 	# stop the build if there are Python syntax errors or undefined names
