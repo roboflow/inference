@@ -22,6 +22,9 @@ from roboflow_workflows.execution_engine.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
+from roboflow_workflows.execution_engine.introspection.blocks_loader import (
+    load_all_defined_kinds,
+)
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RestrictionCondition,
@@ -29,9 +32,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Severity,
     WorkOperation,
     incomplete_discovery,
-)
-from roboflow_workflows.execution_engine.introspection.blocks_loader import (
-    load_all_defined_kinds,
 )
 from roboflow_workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,

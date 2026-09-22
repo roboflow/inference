@@ -194,6 +194,7 @@ class HaloVisualizationBlockV2(ColorableVisualizationBlock):
             opacity,
             kernel_size,
         )
+        predictions = ensure_dense_masks(predictions)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()

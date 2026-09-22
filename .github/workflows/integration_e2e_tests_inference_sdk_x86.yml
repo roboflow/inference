@@ -105,7 +105,7 @@ jobs:
         run: |
           make create_isolation_wheels
           pip install --find-links "${{ github.workspace }}/dist" \
-            "${{ github.workspace }}/dist/roboflow_workflows-0.1.0-py3-none-any.whl[enterprise]" \
+            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
 

@@ -145,19 +145,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aioresponses"
-version = "0.7.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/28/fb/e3f08af812b3e66fca511ea1babb9dfddeca5965dea2a4d13b6926e0b1c2/aioresponses-0.7.9.tar.gz", hash = "sha256:1dcfa28938fc006f046a98383a7c07ac180be7a492c1ed557f5cd7b0805357d3", size = 34072, upload-time = "2026-06-23T21:23:23.828Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/55/4c77cda7e69c1ac81a32e6895a361e0da9350eb7835a2ddb161a37ef1ce9/aioresponses-0.7.9-py2.py3-none-any.whl", hash = "sha256:94f9617f841c5bd7ee088ed783284f2cf4e6acc85d3933d92fc2fc7bd572a1b0", size = 12832, upload-time = "2026-06-23T21:23:22.426Z" },
-]
-
-[[package]]
 name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -280,6 +267,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/82a0fe20a541c03148528be8cac2408564a6c9a0cc7e9171802bc1d26985/attrs-26.1.0.tar.gz", hash = "sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32", size = 952055, upload-time = "2026-03-19T14:22:25.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl", hash = "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309", size = 67548, upload-time = "2026-03-19T14:22:23.645Z" },
+]
+
+[[package]]
+name = "aws-msk-iam-sasl-signer-python"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "click" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/8b/9af0a7def4ba357afadc89c06019d3735944cb3d6065a455f41580ba7fd6/aws_msk_iam_sasl_signer_python-1.0.2.tar.gz", hash = "sha256:3432d88a7c6db4887ceb1130ebaed0113bfda48b79ea811537add5f1d25fa13f", size = 24034, upload-time = "2025-03-05T20:49:48.582Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/43/f3ffd79fc4941b8d610530d81e1f600cfa1b8651affc25cb929fd0f2f2c9/aws_msk_iam_sasl_signer_python-1.0.2-py2.py3-none-any.whl", hash = "sha256:310eb2db9ca0ff55ed06a24212739b87533e7f1cf6f34e43aabbd97a3b21290e", size = 13279, upload-time = "2025-03-05T20:49:46.611Z" },
 ]
 
 [[package]]
@@ -510,6 +511,32 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "confluent-kafka"
+version = "2.15.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/fd/e8204b211ce0f32d4d03f9c3423b1244c2dc7fae45babbf98979c00a9e11/confluent_kafka-2.15.1.tar.gz", hash = "sha256:99d1223020e27854e75981333983c5120d64762268f8afcc805fbd62e7de49aa", size = 325065, upload-time = "2026-09-10T15:27:59.367Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/6d/27fb748ffafef03b3b3a78a477172571860cc8ce4742772b01ad1adb6775/confluent_kafka-2.15.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:328be3d445b17bc8df7a22d810f0d44f3ef97e9ec157ad73282f17acf2c86c12", size = 4376272, upload-time = "2026-09-10T15:27:01.921Z" },
+    { url = "https://files.pythonhosted.org/packages/51/41/7241d11c035fba3f3897c8571fb39aeb6951b4689bd22bc85c373af34096/confluent_kafka-2.15.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:6bb7cdd82df28d2027dfb38d52ad6f3e362c1e9a9694514a736714c5eeff2a6c", size = 4346405, upload-time = "2026-09-10T15:27:04.943Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/e3/47146b19500d78cc8930bb598ac72860118dd403192078e0ee9466a1417a/confluent_kafka-2.15.1-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:545184b557915a06ab4fc8c2820036dd6f0a5307c1f94fe3efea0d3d79f98c31", size = 4989695, upload-time = "2026-09-10T15:27:06.396Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/9e/b78a9afb8befcc6ad6c6846ec03933568217d96a45ca2b84dfcb16290c4d/confluent_kafka-2.15.1-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:c410e97bc41bc54f88a258324673bcc4f32531d9bce0fccac8c91ecd4e2327ae", size = 4801798, upload-time = "2026-09-10T15:27:07.783Z" },
+    { url = "https://files.pythonhosted.org/packages/78/a2/f2396f4ca7b0aa0d1afc85f89ad75d0f913a64fb1e8741f7c5b21ae32bad/confluent_kafka-2.15.1-cp310-cp310-win_amd64.whl", hash = "sha256:6a5381603885caefc6ba1331cf6438fd2e1aaa94604135905bdda1aa5e350690", size = 4564953, upload-time = "2026-09-10T15:27:09.359Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/19/b74eab7df53c28dda7440abe3d9e2898b806cd14055fceae68cbb9d1808f/confluent_kafka-2.15.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:19e94f063c1d2f6a46ee56b4a33a2990bbaa879c66622c4a872e7832b26339ca", size = 4375956, upload-time = "2026-09-10T15:27:10.933Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/1c/ca5f19b968d115ac082a3ddd2ac1fdc5219a4789c337074404e82b53afc6/confluent_kafka-2.15.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:84fd9868b825ceec3b027dabc9e40e62951eab20dc72a6b53fbfca0a584df074", size = 4346051, upload-time = "2026-09-10T15:27:12.432Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/d5/b01aad0c4938822b5697648e0ae5ab87729138a59fdc078b00a983aac90c/confluent_kafka-2.15.1-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:3a6a11c4d19eecdf51990adfa9e05e238f500b9888253230b158370c482a60cc", size = 4989151, upload-time = "2026-09-10T15:27:13.823Z" },
+    { url = "https://files.pythonhosted.org/packages/22/43/de7ba18948792e128a86236ed5c5d6e4bab6c5bfc2be1b003880afa6dcbb/confluent_kafka-2.15.1-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:44b849e0b375ff4c7a2e5e7af27a48d808933b53f3a8bf8e84b5c81eef9463ec", size = 4801449, upload-time = "2026-09-10T15:27:15.443Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/ca/0eb8d48ecf3b241a62fba10a3ad83a95248ba53058b272a63a5be75e9c23/confluent_kafka-2.15.1-cp311-cp311-win_amd64.whl", hash = "sha256:80251e20c52e469b9bb066eca9b885d787b4be13356950a880198889cd215bfc", size = 4564958, upload-time = "2026-09-10T15:27:17.069Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/e6/79cc2bb61cf05f00e4b367e2aa4cb940e5eddbfa4adeb4177115791f4a7d/confluent_kafka-2.15.1-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:79749b23a3ad751546f9de5bae3651116cbd0df449afc86d122c80359d6453ca", size = 4381400, upload-time = "2026-09-10T15:27:18.564Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/6d/67e59d6807d472ad5f2ac831e735da5ffd321da98adf64cef4cc0bf5f6ed/confluent_kafka-2.15.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:64fbcb0c6ee95d0baee2b238d177595c7baa8ccd74df96bea086103dfbfd254d", size = 4350483, upload-time = "2026-09-10T15:27:20.019Z" },
+    { url = "https://files.pythonhosted.org/packages/25/08/8c404bb5849f98e8468b24f1f336360cc37802bb058ff750255621fea484/confluent_kafka-2.15.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2d2d876c83214f2651d92c557d5057be1356dd3fbb31f26d50863f610655e2fe", size = 4994340, upload-time = "2026-09-10T15:27:21.431Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/a3/31112ce258d74be4636e6d1f73717587e19fd311c70477ae807136f3a48c/confluent_kafka-2.15.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:326e237f6b25587d7dc96854e3a1315979843bacbe48d76a50412f12e49328e1", size = 4806262, upload-time = "2026-09-10T15:27:22.822Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/b8/d07ef7c72f55c01d13de4873e86e49eb6ebd8989cb104cb982fa365d389b/confluent_kafka-2.15.1-cp312-cp312-win_amd64.whl", hash = "sha256:b6c73dcb91d5f84ed0d24b37817944f44b5d661f02ec8cc7a3c6d497c03bdc7c", size = 4565312, upload-time = "2026-09-10T15:27:24.321Z" },
 ]
 
 [[package]]
@@ -879,7 +906,7 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.128.8"
+version = "0.141.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
@@ -888,9 +915,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/72/0df5c58c954742f31a7054e2dd1143bae0b408b7f36b59b85f928f9b456c/fastapi-0.128.8.tar.gz", hash = "sha256:3171f9f328c4a218f0a8d2ba8310ac3a55d1ee12c28c949650288aee25966007", size = 375523, upload-time = "2026-02-11T15:19:36.69Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/02/91e3416a8fdd715abb903a952a6bec7cdd8d14eed55d415fc8595524c319/fastapi-0.141.1.tar.gz", hash = "sha256:e8822fc40db1e1858054d7a949a888695bc9bdce70139178e33bd2871a453ca1", size = 425799, upload-time = "2026-07-29T17:18:05.568Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/37/37b07e276f8923c69a5df266bfcb5bac4ba8b55dfe4a126720f8c48681d1/fastapi-0.128.8-py3-none-any.whl", hash = "sha256:5618f492d0fe973a778f8fec97723f598aa9deee495040a8d51aaf3cf123ecf1", size = 103630, upload-time = "2026-02-11T15:19:35.209Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl", hash = "sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3", size = 131954, upload-time = "2026-07-29T17:18:04.364Z" },
 ]
 
 [[package]]
@@ -2253,24 +2280,6 @@ wheels = [
 ]
 
 [[package]]
-name = "opencv-contrib-python"
-version = "4.11.0.86"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ef/51/3ceb85ecff5f26994b7aae2922b1aa38148dbfe88cab13d63bc6facbac88/opencv-contrib-python-4.11.0.86.tar.gz", hash = "sha256:4ff773dab44911da366b906621c9592d4eb96f6ad3777098933a23f064aab38e", size = 150559874, upload-time = "2025-01-16T13:53:08.425Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/78/b504ca8f7a312918d184e0b8093c62bc9a110d8154f658b591ef5c020d65/opencv_contrib_python-4.11.0.86-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:d911cedc511d98f79994580b245d59fc97f57f0f9923a99945d8b92c7ac671f6", size = 46276766, upload-time = "2025-01-16T13:52:46.131Z" },
-    { url = "https://files.pythonhosted.org/packages/8c/07/68e0b24217671b65c23e105bb7afd4ef4fd01507670cf5e61373d9efd6b5/opencv_contrib_python-4.11.0.86-cp37-abi3-macosx_13_0_x86_64.whl", hash = "sha256:e10a293af18aa5f842d012fa14e87345b3ee06db4c29bd592ff94b51f7ffca2b", size = 66524088, upload-time = "2025-01-16T13:55:33.887Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/7b/7e1471aa92f9f3c1bd8dbe624622b62add6f734db34fbbb9974e2ec70c34/opencv_contrib_python-4.11.0.86-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f21034bc8b00eb286a0a0a92b99767bf596bfe426cf4bc2e79647d64ad0dd6da", size = 47870560, upload-time = "2025-01-16T13:51:48.592Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/13/756b13b8d5d417a0b4c3bf6ceafb59df0ed05cec7fedc2490bbbf5e60ebc/opencv_contrib_python-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c47c0ef1098461cdc6fa1cdce4c942b8ec974c87423f4b5951443d26bb9ae407", size = 69098423, upload-time = "2025-01-16T13:52:46.84Z" },
-    { url = "https://files.pythonhosted.org/packages/fd/8b/4f63d2fdcfceab528bff10c9d8d2a4e6230098e0b0af54e3e8e91b420ea0/opencv_contrib_python-4.11.0.86-cp37-abi3-win32.whl", hash = "sha256:194841c664ceaa0692410b4ed0af557425608e33db3a181ded28b87acb66748d", size = 35156028, upload-time = "2025-01-16T13:52:30.133Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/c6/146487546adc4726f0be591a65b466973feaa58cc3db711087e802e940fb/opencv_contrib_python-4.11.0.86-cp37-abi3-win_amd64.whl", hash = "sha256:654758a9ae8ca9a75fca7b64b19163636534f0eedffe1e14c3d7218988625c8d", size = 46185163, upload-time = "2025-01-16T13:52:39.745Z" },
-]
-
-[[package]]
 name = "opencv-python"
 version = "4.11.0.86"
 source = { registry = "https://pypi.org/simple" }
@@ -2883,30 +2892,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-asyncio"
-version = "0.21.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/85/d39ef5f69d5597a206f213ce387bcdfa47922423875829f7a98a87d33281/pytest-asyncio-0.21.1.tar.gz", hash = "sha256:40a7eae6dded22c7b604986855ea48400ab15b069ae38116e8c01238e9eeb64d", size = 30492, upload-time = "2023-07-12T10:19:59.698Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/2c/2e5ab8708667972ee31b88bb6fed680ed5ba92dfc2db28e07d0d68d8b3b1/pytest_asyncio-0.21.1-py3-none-any.whl", hash = "sha256:8666c1c8ac02631d7c51ba282e0c69a8a452b211ffedf2599099845da5c5c37b", size = 13228, upload-time = "2023-07-12T10:19:57.81Z" },
-]
-
-[[package]]
-name = "pytest-timeout"
-version = "2.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/82/4c9ecabab13363e72d880f2fb504c5f750433b2b6f16e99f4ec21ada284c/pytest_timeout-2.4.0.tar.gz", hash = "sha256:7e68e90b01f9eff71332b25001f85c75495fc4e3a836701876183c4bcfd0540a", size = 17973, upload-time = "2025-05-05T19:44:34.99Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/b6/3127540ecdf1464a00e5a01ee60a1b09175f6913f0644ac748494d9c4b21/pytest_timeout-2.4.0-py3-none-any.whl", hash = "sha256:c42667e5cdadb151aeb5b26d114aff6bdf5a907f176a007a30b940d3d865b5c2", size = 14382, upload-time = "2025-05-05T19:44:33.502Z" },
-]
-
-[[package]]
 name = "python-bidi"
 version = "0.6.11"
 source = { registry = "https://pypi.org/simple" }
@@ -3416,7 +3401,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.1.0"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -3435,7 +3420,6 @@ dependencies = [
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "onvif-zeep-async" },
     { name = "openai" },
-    { name = "opencv-contrib-python" },
     { name = "opencv-python" },
     { name = "packaging" },
     { name = "pandas" },
@@ -3445,7 +3429,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "qrcode" },
     { name = "requests" },
-    { name = "requests-toolbelt" },
     { name = "scikit-image" },
     { name = "shapely" },
     { name = "simple-pid" },
@@ -3465,6 +3448,8 @@ dependencies = [
 [package.optional-dependencies]
 enterprise = [
     { name = "asyncua" },
+    { name = "aws-msk-iam-sasl-signer-python" },
+    { name = "confluent-kafka" },
     { name = "fastapi" },
     { name = "paho-mqtt" },
     { name = "psycopg", extra = ["binary"] },
@@ -3472,21 +3457,19 @@ enterprise = [
     { name = "pymodbus" },
 ]
 test = [
-    { name = "aioresponses" },
     { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-timeout" },
     { name = "requests-mock" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "aioresponses", marker = "extra == 'test'" },
     { name = "anthropic", specifier = "~=0.49.0" },
     { name = "asyncua", marker = "extra == 'enterprise'", specifier = "~=1.1.5" },
+    { name = "aws-msk-iam-sasl-signer-python", marker = "extra == 'enterprise'", specifier = ">=1.0.2,<2" },
     { name = "boto3", specifier = ">=1.40.0,<=1.41.5" },
     { name = "botocore", specifier = ">=1.40.0,<=1.41.5" },
-    { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.100,<0.129" },
+    { name = "confluent-kafka", marker = "extra == 'enterprise'", specifier = ">=2.5,<3" },
+    { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.134,<0.142" },
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.37.1" },
@@ -3497,7 +3480,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26,<2.4" },
     { name = "onvif-zeep-async", specifier = "==2.0.0" },
     { name = "openai", specifier = ">=1.17.0,<2.0.0" },
-    { name = "opencv-contrib-python", specifier = ">=4.8.1.78,<4.13.0" },
     { name = "opencv-python", specifier = ">=4.8.1.78,<4.13.0" },
     { name = "packaging", specifier = "~=24.0" },
     { name = "paho-mqtt", marker = "extra == 'enterprise'", specifier = "~=1.6.1" },
@@ -3510,12 +3492,9 @@ requires-dist = [
     { name = "pylogix", marker = "extra == 'enterprise'", specifier = "==1.0.5" },
     { name = "pymodbus", marker = "extra == 'enterprise'", specifier = ">=3.6.9,<=3.8.3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "<=0.21.1" },
-    { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "qrcode", specifier = "~=8.0.0" },
     { name = "requests", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "requests-toolbelt", specifier = "~=1.0.0" },
     { name = "scikit-image", specifier = ">=0.19.0,<=0.25.2" },
     { name = "shapely", specifier = ">=2.0.4,<2.1.0" },
     { name = "simple-pid", specifier = "~=2.0.1" },
@@ -3866,15 +3845,15 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "0.52.1"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/68/79977123bb7be889ad680d79a40f339082c1978b5cfcf62c2d8d196873ac/starlette-0.52.1.tar.gz", hash = "sha256:834edd1b0a23167694292e94f597773bc3f89f362be6effee198165a35d62933", size = 2653702, upload-time = "2026-01-18T13:34:11.062Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/0d/13d1d239a25cbfb19e740db83143e95c772a1fe10202dda4b76792b114dd/starlette-0.52.1-py3-none-any.whl", hash = "sha256:0029d43eb3d273bc4f83a08720b4912ea4b071087a3b48db01b7c839f7954d74", size = 74272, upload-time = "2026-01-18T13:34:09.188Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
 ]
 
 [[package]]

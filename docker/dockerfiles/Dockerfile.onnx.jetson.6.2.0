@@ -529,7 +529,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python -m pip install wheel && \
     rm -f dist/* && \
     # Build workflows wheel first so inference wheels can resolve
-    # roboflow-workflows==0.1.0 from --find-links dist/ (pre-publication).
+    # roboflow-workflows from --find-links dist/ instead of PyPI.
     python workflows/build_scripts/download_fonts.py && \
     (cd workflows && uv build --out-dir ../dist) && \
     rm -rf build/* && \

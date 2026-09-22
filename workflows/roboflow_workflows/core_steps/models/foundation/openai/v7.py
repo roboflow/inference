@@ -19,6 +19,7 @@ defaults to.
 
 import base64
 import json
+from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -431,6 +432,12 @@ filtering is not meaningful for these formats.
 Images are downscaled so that their longest edge does not exceed
 {DETECTION_MAX_EDGE_PIXELS}px and are sent as lossless PNG for this task.
 
+For object detection and instance segmentation, optional `output_classes`
+separate the stable output vocabulary from the visual prompts in `classes`.
+The two lists are paired by position. Structured-output models constrain the
+returned label to `output_classes`, and decoded predictions use those stable
+labels. Omitting `output_classes` preserves the original `classes` contract.
+
 The `instance-segmentation` task asks for one outline polygon per instance of
 the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
 pixel coordinates of the uploaded image, enforced via structured outputs - and
@@ -482,6 +489,56 @@ TASKS_REQUIRING_CLASSES = {
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
+
+TASKS_SUPPORTING_OUTPUT_CLASSES = {
+    "object-detection",
+    INSTANCE_SEGMENTATION_TASK,
+}
+
+
+def validate_output_classes(
+    classes: Optional[List[str]], output_classes: Optional[List[str]]
+) -> Optional[List[str]]:
+    """Validate and resolve the labels used by model output and decoding."""
+    if output_classes is None:
+        return classes
+    if classes is None or len(classes) != len(output_classes):
+        raise ValueError("`output_classes` must have the same length as `classes`")
+    if any(not isinstance(label, str) or not label.strip() for label in output_classes):
+        raise ValueError("`output_classes` must contain non-empty strings")
+    return output_classes
+
+
+def serialise_detection_classes(
+    classes: List[str], output_classes: Optional[List[str]]
+) -> Tuple[str, str]:
+    """Return the output vocabulary and optional prompt-to-label context."""
+    resolved_output_classes = validate_output_classes(classes, output_classes)
+    if resolved_output_classes is None:
+        raise ValueError("`classes` must be provided for detection tasks")
+    serialised_classes = ", ".join(resolved_output_classes)
+    if output_classes is None:
+        return serialised_classes, ""
+    descriptions = [
+        {"label": label, "description": description}
+        for description, label in zip(classes, output_classes)
+    ]
+    return (
+        serialised_classes,
+        ". Use these visual descriptions to identify each label: "
+        f"{json.dumps(descriptions, ensure_ascii=False)}. "
+        "Return the label, never its description.",
+    )
+
+
+def constrain_output_labels(output_format: dict, output_classes: List[str]) -> dict:
+    """Copy a structured-output schema and constrain its label vocabulary."""
+    constrained = deepcopy(output_format)
+    schema = constrained["format"]["schema"]
+    collection_name = constrained["format"]["name"]
+    label_schema = schema["properties"][collection_name]["items"]["properties"]["label"]
+    label_schema["enum"] = list(dict.fromkeys(output_classes))
+    return constrained
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -554,6 +611,25 @@ class BlockManifest(WorkflowBlockManifest):
                 },
             },
         },
+    )
+    output_classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = (
+        Field(
+            default=None,
+            description=(
+                "Optional stable output labels paired by position with `classes`. "
+                "When set for detection or segmentation, `classes` remain the visual "
+                "prompts while model output and decoded predictions use these labels."
+            ),
+            examples=[["cat", "dog"], "$inputs.output_classes"],
+            json_schema_extra={
+                "relevant_for": {
+                    "task_type": {
+                        "values": TASKS_SUPPORTING_OUTPUT_CLASSES,
+                        "required": False,
+                    },
+                },
+            },
+        )
     )
     api_key: Union[
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
@@ -644,6 +720,14 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`classes` parameter required to be set for task `{self.task_type}`"
             )
+        if self.output_classes is not None:
+            if self.task_type not in TASKS_SUPPORTING_OUTPUT_CLASSES:
+                raise ValueError(
+                    "`output_classes` is only supported for object-detection and "
+                    "instance-segmentation"
+                )
+            if isinstance(self.classes, list) and isinstance(self.output_classes, list):
+                validate_output_classes(self.classes, self.output_classes)
         if (
             self.task_type in TASKS_REQUIRING_OUTPUT_STRUCTURE
             and self.output_structure is None
@@ -742,8 +826,10 @@ class OpenAIBlockV7(WorkflowBlock):
         max_tokens: Optional[int],
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
+        output_classes: Optional[List[str]] = None,
         api_key: str = "rf_key:account",
     ) -> BlockResult:
+        resolved_output_classes = validate_output_classes(classes, output_classes)
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
             platform_client=self._platform_client,
@@ -753,6 +839,7 @@ class OpenAIBlockV7(WorkflowBlock):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            output_classes=output_classes,
             openai_api_key=api_key,
             model_version=model_version,
             reasoning_effort=reasoning_effort,
@@ -772,7 +859,7 @@ class OpenAIBlockV7(WorkflowBlock):
                 task_type=task_type,
                 raw_output=content,
                 image=image,
-                classes=classes,
+                classes=resolved_output_classes,
                 inference_id=inference_id,
                 box_format=box_format,
                 upload_width=upload_width,
@@ -781,7 +868,7 @@ class OpenAIBlockV7(WorkflowBlock):
             results.append(
                 {
                     "output": content,
-                    "classes": classes,
+                    "classes": resolved_output_classes,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "predictions": predictions,
@@ -830,6 +917,7 @@ def run_openai_prompting(
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
+    output_classes: Optional[List[str]],
     openai_api_key: str,
     model_version: str,
     reasoning_effort: Optional[str],
@@ -852,7 +940,8 @@ def run_openai_prompting(
         task_type: Task determining preprocessing and prompt construction.
         prompt: Free-form text prompt for tasks that accept one.
         output_structure: Field descriptions for structured answering.
-        classes: Class names for classification and detection tasks.
+        classes: Class names or visual prompts for classification and detection tasks.
+        output_classes: Optional stable detection labels paired with ``classes``.
         openai_api_key: OpenAI API key or Roboflow-proxied ``rf_key:`` key.
         model_version: OpenAI model identifier.
         reasoning_effort: Reasoning effort for models that support it.
@@ -881,6 +970,7 @@ def run_openai_prompting(
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            output_classes=output_classes,
             image_detail=image_detail,
             image_width=image_width,
             image_height=image_height,
@@ -1554,6 +1644,7 @@ def prepare_object_detection_prompt(
     image_width: int,
     image_height: int,
     model_version: str = "",
+    output_classes: Optional[List[str]] = None,
     **kwargs,
 ) -> dict:
     """Build the detection request using the model's preferred prompt style.
@@ -1571,17 +1662,20 @@ def prepare_object_detection_prompt(
 
     Args:
         base64_image: Base64-encoded PNG of the (possibly downscaled) image.
-        classes: Class names the model may use as labels.
+        classes: Visual prompts describing the classes to detect.
         image_width: Width of the encoded image in pixels.
         image_height: Height of the encoded image in pixels.
         model_version: OpenAI model identifier used to resolve the style.
+        output_classes: Optional stable labels paired by position with ``classes``.
         **kwargs: Ignored builder arguments shared across task types.
 
     Returns:
         Request payload with an ``input`` key and, depending on the style,
         ``instructions`` and a structured-output ``text`` key.
     """
-    serialised_classes = ", ".join(classes)
+    serialised_classes, descriptions = serialise_detection_classes(
+        classes, output_classes
+    )
     style = get_detection_prompt_style(model_version)
     if style == NORMALIZED_LEGACY_STYLE:
         return {
@@ -1592,7 +1686,10 @@ def prepare_object_detection_prompt(
                     "content": [
                         {
                             "type": "input_text",
-                            "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                            "text": (
+                                "List of all classes to be recognised by model: "
+                                f"{serialised_classes}{descriptions}"
+                            ),
                         },
                         {
                             "type": "input_image",
@@ -1603,17 +1700,26 @@ def prepare_object_detection_prompt(
             ],
         }
     if style == STRUCTURED_ABSOLUTE_STYLE:
-        prompt_text = STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
-            width=image_width,
-            height=image_height,
-            class_list=serialised_classes,
+        prompt_text = (
+            STRUCTURED_OBJECT_DETECTION_PROMPT_TEMPLATE.format(
+                width=image_width,
+                height=image_height,
+                class_list=serialised_classes,
+            )
+            + descriptions
         )
     else:
-        prompt_text = build_object_detection_prompt(
-            box_format=ABSOLUTE_BOX_FORMAT,
-            classes=classes,
-            upload_width=image_width,
-            upload_height=image_height,
+        resolved_output_classes = validate_output_classes(classes, output_classes)
+        if resolved_output_classes is None:
+            raise ValueError("`classes` must be provided for object-detection")
+        prompt_text = (
+            build_object_detection_prompt(
+                box_format=ABSOLUTE_BOX_FORMAT,
+                classes=resolved_output_classes,
+                upload_width=image_width,
+                upload_height=image_height,
+            )
+            + descriptions
         )
     prompt: dict = {
         "input": [
@@ -1630,7 +1736,13 @@ def prepare_object_detection_prompt(
         ],
     }
     if style == STRUCTURED_ABSOLUTE_STYLE:
-        prompt["text"] = STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT
+        prompt["text"] = (
+            STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT
+            if output_classes is None
+            else constrain_output_labels(
+                STRUCTURED_OBJECT_DETECTION_OUTPUT_FORMAT, output_classes
+            )
+        )
     return prompt
 
 
@@ -1640,6 +1752,7 @@ def prepare_instance_segmentation_prompt(
     image_width: int,
     image_height: int,
     image_detail: str,
+    output_classes: Optional[List[str]] = None,
     **kwargs,
 ) -> dict:
     """Build the instance-segmentation request.
@@ -1651,19 +1764,27 @@ def prepare_instance_segmentation_prompt(
 
     Args:
         base64_image: Base64-encoded JPEG of the original image.
-        classes: Class names the model may use as labels.
+        classes: Visual prompts describing the classes to segment.
         image_width: Width of the encoded image in pixels.
         image_height: Height of the encoded image in pixels.
         image_detail: Requested image detail level.
+        output_classes: Optional stable labels paired by position with ``classes``.
         **kwargs: Ignored builder arguments shared across task types.
 
     Returns:
         Request payload with ``input`` and structured-output ``text`` keys.
     """
-    prompt_text = build_instance_segmentation_prompt(
-        classes=classes,
-        upload_width=image_width,
-        upload_height=image_height,
+    resolved_output_classes = validate_output_classes(classes, output_classes)
+    if resolved_output_classes is None:
+        raise ValueError("`classes` must be provided for instance-segmentation")
+    _, descriptions = serialise_detection_classes(classes, output_classes)
+    prompt_text = (
+        build_instance_segmentation_prompt(
+            classes=resolved_output_classes,
+            upload_width=image_width,
+            upload_height=image_height,
+        )
+        + descriptions
     )
     return {
         "input": [
@@ -1679,7 +1800,13 @@ def prepare_instance_segmentation_prompt(
                 ],
             }
         ],
-        "text": STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
+        "text": (
+            STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT
+            if output_classes is None
+            else constrain_output_labels(
+                STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT, output_classes
+            )
+        ),
     }
 
 

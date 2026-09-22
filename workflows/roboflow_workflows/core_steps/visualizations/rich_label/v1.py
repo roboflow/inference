@@ -20,7 +20,10 @@ from roboflow_workflows.core_steps.visualizations.common.label_text import (
     build_detection_labels,
     compute_adaptive_rich_font_size,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    ensure_dense_masks,
+    str_to_color,
+)
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import (
     INTEGER_KIND,
@@ -367,6 +370,8 @@ class RichLabelVisualizationBlockV1(ColorableVisualizationBlock):
             border_radius,
             max_line_length,
         )
+        if text_position == "CENTER_OF_MASS":
+            predictions = ensure_dense_masks(predictions)
         labels = build_detection_labels(predictions, text)
 
         annotated_image = annotator.annotate(

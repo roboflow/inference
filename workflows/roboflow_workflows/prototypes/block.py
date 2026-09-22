@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
+
 from roboflow_workflows.errors import BlockInterfaceError
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -38,12 +39,6 @@ class AirGappedAvailability:
 
     available: bool = True
     reason: Optional[str] = None
-
-
-# ``Severity``, ``Runtime``, ``RuntimeInputMode`` and ``StepExecutionMode``
-# are defined in ``roboflow_workflows.execution_engine.entities.workload``
-# (dependency-light, shared with the portable restriction entities) and
-# re-exported here unchanged - this module stays their public import path.
 
 
 @dataclass(frozen=True)
@@ -141,14 +136,6 @@ STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
     ),
     applies_to_input_modes=[RuntimeInputMode.IMAGE],
 )
-
-
-# ----------------------------------------------------------------------------
-# Portable counterparts of the presets above, for
-# ``WorkflowBlockManifest.discover_portable_restrictions()``. They carry a
-# stable code and a condition instead of a human note; ``get_restrictions()``
-# and the legacy presets are unchanged.
-# ----------------------------------------------------------------------------
 
 
 STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(

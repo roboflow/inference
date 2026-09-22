@@ -1,8 +1,9 @@
 """Baseline inventory of legacy Workflows module names.
 
-Frozen at rev 1a9ce2c4218ef0d68c4ae3c1076a3ff3c5095387 (main). Do NOT regenerate
-from the canonical `roboflow_workflows` tree: aliasing paths that never
-existed under `inference.*` would leak new APIs under historic dotted names.
+Frozen at rev b77b7a08cb1e484742d9eaf5b48e48b534081289 (merge-base with
+origin/main for the extraction branch). Do NOT regenerate from the canonical
+`roboflow_workflows` tree: aliasing paths that never existed under
+`inference.*` would leak new APIs under historic dotted names.
 Mirror of `tests/inference/unit_tests/workflows_compat_inventory.json`; the
 test suite pins both to the same set.
 """
@@ -175,6 +176,7 @@ _INVENTORY_LEGACY = frozenset(
         "inference.core.workflows.core_steps.common.vlm_decoding.detections",
         "inference.core.workflows.core_steps.common.vlm_decoding.json_extraction",
         "inference.core.workflows.core_steps.common.vlm_decoding.outputs",
+        "inference.core.workflows.core_steps.common.vlm_decoding.segmentation",
         "inference.core.workflows.core_steps.common.vlm_decoding.tensor_native",
         "inference.core.workflows.core_steps.common.vlm_decoding.utils",
         "inference.core.workflows.core_steps.common.vlm_json",

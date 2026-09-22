@@ -3,6 +3,12 @@ from typing import List, Type
 from roboflow_workflows.enterprise_blocks.sinks.event_writer.v1 import (
     EventWriterSinkBlockV1,
 )
+from roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
+    KafkaConsumerBlockV1,
+)
+from roboflow_workflows.enterprise_blocks.sinks.kafka_producer.v1 import (
+    KafkaProducerSinkBlockV1,
+)
 from roboflow_workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
     MicrosoftSQLServerSinkBlockV1,
 )
@@ -44,4 +50,6 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         MicrosoftSQLServerSinkBlockV1,
         PostgreSQLSinkBlockV1,
         EventWriterSinkBlockV1,
+        KafkaConsumerBlockV1,
+        KafkaProducerSinkBlockV1,
     ]
