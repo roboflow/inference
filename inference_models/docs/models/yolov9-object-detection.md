@@ -17,7 +17,7 @@ YOLOv9 for object detection introduces novel architectural improvements:
 
 !!! info "Licensing Options"
     - **GPL-3.0**: Free for open-source projects. Requires derivative works to be open-sourced.
-    - Self-hosted deployment follows this model's GPL-3.0 license on every plan. Roboflow does not provide a commercial license for YOLOv9, including as an Enterprise add-on or through a custom contract.
+    - Self-hosted deployment follows this model's GPL-3.0 license on every plan. Roboflow does not provide a commercial license for YOLOv9, including as an Enterprise add-on.
 
     See [Roboflow Model Licenses - YOLOv9](https://roboflow.com/model-licenses/yolov9) for details.
 

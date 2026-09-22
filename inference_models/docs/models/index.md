@@ -20,7 +20,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 **Legend:** ✅ Available | ❌ Not available | 🔑 Requires API key | 📤 Upload only
 
-**Self-hosted commercial license:** Enterprise add-on means a commercial license for self-hosted deployment is available as an add-on, not included with Enterprise by default. A custom contract can include it as well. Without that add-on or contract, self-hosted deployment follows the model license, so an AGPL-3.0 model must be used under AGPL-3.0. Those same models include a commercial license for every user on [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api). N/A means that license already allows commercial use. ❌ means Roboflow does not offer a commercial license for that model.
+**Self-hosted commercial license:** Enterprise add-on means a commercial license for self-hosted deployment is available as an add-on, not included with Enterprise by default. Without that add-on, self-hosted deployment follows the model license, so an AGPL-3.0 model must be used under AGPL-3.0. Those same models include a commercial license for every user on [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api). N/A means that license already allows commercial use. ❌ means Roboflow does not offer a commercial license for that model.
 
 ### Object Detection
 
