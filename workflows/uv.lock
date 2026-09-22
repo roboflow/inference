@@ -1454,7 +1454,7 @@ wheels = [
 
 [[package]]
 name = "inference-sdk"
-version = "1.6.0"
+version = "1.7.0rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1471,7 +1471,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/3a/05f042afd587c3b89eea183f9039192128d58f988f9838398acd0e80315b/inference_sdk-1.6.0-py3-none-any.whl", hash = "sha256:40bc56daaa02cd89c7b274a7e9924103d5d756f33e64e3a30b21d254a01dcf0f", size = 102195, upload-time = "2026-09-11T18:53:12.192Z" },
+    { url = "https://files.pythonhosted.org/packages/11/e7/096729373b6e59e88c6b1e8aceef47c94fc1041e12c8126b6f32f64551f7/inference_sdk-1.7.0rc1-py3-none-any.whl", hash = "sha256:3f649119cda2560d029ff4f3513b23f9c7a09f6558b4c2f4d4c091fc93adaecd", size = 102267, upload-time = "2026-09-22T08:13:33.578Z" },
 ]
 
 [[package]]
@@ -4028,7 +4028,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.37.1" },
-    { name = "inference-sdk", specifier = ">=1.6.0" },
+    { name = "inference-sdk", specifier = "~=1.7.0rc1" },
     { name = "matplotlib" },
     { name = "msgpack" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },

@@ -24,7 +24,7 @@ dependencies = [
   "torch>=2.0.1,<3.0.0",
   "torchvision",
   "inference-models>=0.37.1",
-  "inference-sdk>=1.6.0",
+  "inference-sdk~=1.7.0rc1",
   "msgpack",
   "websocket-client~=1.9.0",
   "openai>=1.17.0,<2.0.0",
