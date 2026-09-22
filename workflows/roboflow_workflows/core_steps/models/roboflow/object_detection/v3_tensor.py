@@ -122,7 +122,7 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": {
                 "best": {
                     "name": "Best (Recommended)",
-                    "description": "Use F1-optimal thresholds from model evaluation.",
+                    "description": "Use F1-optimal per-class thresholds from model evaluation.",
                 },
                 "default": {
                     "name": "Default",

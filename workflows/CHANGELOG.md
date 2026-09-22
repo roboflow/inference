@@ -6,6 +6,12 @@
 
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
+- Compile-time workload introspection: `describe_workflow_workload()` reports graph connectivity,
+  per-step work operations, portable restrictions, dependent resources and model inventory without
+  initialising blocks, loading models or evaluating custom Python. Blocks declare these facts via
+  `discover_work_operations()`, `discover_portable_restrictions()` and
+  `discover_dependent_resources()` on `WorkflowBlockManifest`; all built-in blocks are annotated, including
+  the Kafka Consumer and Kafka Producer enterprise sinks.
 
 ---
 

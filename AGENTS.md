@@ -7,7 +7,7 @@ This guide governs the entire repository. If a subfolder provides its own
 Roboflow Inference is a set of Python packages that run computer vision models
 locally and expose them via an HTTP API and command line interface. The repo
 contains the core library, CLI, SDK, and Dockerfiles for building CPU or GPU
-images. Target Python version is 3.10 (minimum 3.8).
+images. Supported Python versions are 3.10–3.12.
 
 ## Project Structure
 - `inference/` – core library with model loading and streaming utilities.

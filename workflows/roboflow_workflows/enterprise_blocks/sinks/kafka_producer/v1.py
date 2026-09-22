@@ -7,6 +7,9 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Un
 
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from roboflow_workflows.core_steps.common.workload_presets import (
+    FIRE_AND_FORGET_PORTABLE_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.kafka_common import (
     LIBRDKAFKA_LOG_LEVEL,
@@ -34,8 +37,16 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionCondition,
+    RestrictionMetadata,
+    WorkOperation,
+    incomplete_discovery,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeRestriction,
     Severity,
@@ -124,6 +135,17 @@ Failures are logged and returned in the outputs; the workflow keeps running and 
 run retries the connection. This block is not available on the Roboflow hosted platform.
 Self-hosted servers enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
+
+
+# Portable counterpart of the legacy hard restriction declared below.
+#
+# `run()` short-circuits on the Roboflow hosted platform, so the condition names
+# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION = RestrictionMetadata(
+    code="unavailable_on_hosted_platform",
+    severity=Severity.HARD,
+    when=RestrictionCondition(runtimes=[Runtime.HOSTED_SERVERLESS]),
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -314,6 +336,35 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # Broker I/O: metadata on the first run, then queuing, retrying and
+        # (in confirmed mode) awaiting the acknowledgement.
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def discover_portable_restrictions(
+        self,
+    ) -> Union[List[RestrictionMetadata], Discovery[RestrictionMetadata]]:
+        # The hosted-platform restriction is unconditional; the delivery caveat
+        # exists only when the run does not wait for the acknowledgement.
+        if is_selector(self.fire_and_forget):
+            # A runtime value decides whether delivery is awaited, so the
+            # caveat MAY apply. Claiming it applies would be as wrong as
+            # claiming it does not: keep the restriction that IS known and
+            # declare nothing complete.
+            return incomplete_discovery(
+                items=[KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION],
+                reasons=[f"fire_and_forget_selector_unresolved:$steps.{self.name}"],
+            )
+        if self.fire_and_forget:
+            return [
+                KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION,
+                FIRE_AND_FORGET_PORTABLE_RESTRICTION,
+            ]
+        return [KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _failure(message: str) -> BlockResult:
