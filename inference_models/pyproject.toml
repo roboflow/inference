@@ -3,7 +3,7 @@ name = "inference-models"
 version = "0.38.0rc1"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.10,<3.14"
 dependencies = [
   "numpy",
   "torch>=2.0.0,<3.0.0",
