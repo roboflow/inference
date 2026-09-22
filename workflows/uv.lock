@@ -1454,7 +1454,7 @@ wheels = [
 
 [[package]]
 name = "inference-sdk"
-version = "1.7.0rc2"
+version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1471,7 +1471,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/26/60/eb1dd7846dafd1ebe11bd8c0a2b40db58eb2f3d40df83beacd728d1d912d/inference_sdk-1.7.0rc2-py3-none-any.whl", hash = "sha256:e739ad89d62ca6d9b0c64e349b7f726960d5926e945d3a60d7b9071347137309", size = 102269, upload-time = "2026-09-22T09:18:40.938Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/22/b3d54e89fe243cb7a293b1dfadf6511a9b961ee7ce59f79fec476f96a94e/inference_sdk-1.7.0-py3-none-any.whl", hash = "sha256:642d2f0f1619ddd5bf6ec7b67e2cff90c60585662c842046040ef585053855bb", size = 102224, upload-time = "2026-09-22T14:14:17.909Z" },
 ]
 
 [[package]]
@@ -3956,7 +3956,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.0rc2"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -4028,7 +4028,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.37.1" },
-    { name = "inference-sdk", specifier = "~=1.7.0rc2" },
+    { name = "inference-sdk", specifier = ">=1.7.0" },
     { name = "matplotlib" },
     { name = "msgpack" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },

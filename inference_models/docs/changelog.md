@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## `0.38.0`
+
 ### Added
 
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`). The Jetson
