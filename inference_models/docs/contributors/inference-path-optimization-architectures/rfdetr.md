@@ -15,6 +15,19 @@ Architecture and device-type metadata reject incompatible targets before native
 construction. Missing SIMD or unsupported requests resolve to `base`; standard
 Pillow is never replaced. The reference NumPy path swaps channels after resizing.
 
+The five x86 ONNX Docker images share the pin in
+`requirements/requirements.pillow-simd.txt`, currently an HTTPS Git commit. Their
+standalone build verifier checks that standard Pillow loads outside the isolated
+SIMD directory, the aliased SIMD modules load inside it, and their native
+extensions are separate. It verifies that loading SIMD and performing one small
+RGB resize leaves standard Pillow unchanged, allowing at most one uint8 level of
+resize difference. Standard Pillow's compatible version range comes from
+`requirements/_requirements.txt`. Broader numerical coverage lives in the native
+preprocessor tests, not the Docker build check. The verifier does not audit package
+hashes or installation provenance. To adopt a published release, replace the shared
+pin with `pillow-simd==VERSION`; the verifier is independent of the installation
+source. Runtime selection and fallback policies are unchanged.
+
 Torch/ONNX register only `base` for the four non-preprocessing stages. In composed
 CUDA execution, preprocessing records readiness for the exact returned tensor;
 the backend consumer stream waits on it and records allocator ownership. Public

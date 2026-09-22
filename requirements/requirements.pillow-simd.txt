@@ -1,0 +1,3 @@
+# Shared by the five isolated Docker installs; switch to pillow-simd==VERSION
+# when adopting a published release. Standard Pillow remains installed separately.
+pillow-simd @ git+https://github.com/uploadcare/pillow-simd.git@d50c9d40e84b6cdbe3bcde19b6c77ccdff2421f7

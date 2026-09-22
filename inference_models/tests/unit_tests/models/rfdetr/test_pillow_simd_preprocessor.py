@@ -178,25 +178,46 @@ def test_selected_simd_is_separate_from_reference_and_reports_numerics(monkeypat
     assert calls == [(97, 83, 3)]
 
 
-@pytest.mark.parametrize("shape", [(32, 32, 3), (160, 200, 3), (480, 640, 3)])
-def test_real_simd_resize_tolerance_when_installed(shape):
+@pytest.mark.parametrize(
+    "shape,target",
+    [
+        ((32, 32, 3), (32, 32)),  # exact no-op
+        ((160, 200, 3), (32, 32)),
+        ((480, 640, 3), (32, 32)),
+        ((96, 128, 3), (32, 32)),
+        ((17, 23, 3), (61, 47)),  # upscale; target is (width, height)
+        ((97, 83, 3), (31, 29)),  # odd dimensions
+        ((1, 1, 3), (7, 5)),  # tiny source
+    ],
+)
+@pytest.mark.parametrize("pattern", ["random", "checkerboard", "constant"])
+def test_real_simd_resize_tolerance_when_installed(shape, target, pattern):
     """Check native resize tolerance and exact no-op behavior when available.
 
     Args:
         shape (tuple[int, int, int]): Source image shape.
+        target (tuple[int, int]): Target width and height.
+        pattern (str): Source pixel pattern.
     """
     try:
         simd = loader.load_pillow_simd_image()
     except ImportError as error:
         pytest.skip(str(error))
 
-    source = np.random.default_rng(23).integers(0, 256, shape, dtype=np.uint8)
+    if pattern == "random":
+        source = np.random.default_rng(23).integers(0, 256, shape, dtype=np.uint8)
+    elif pattern == "checkerboard":
+        checkerboard = (np.indices(shape[:2]).sum(axis=0) % 2 * 255).astype(np.uint8)
+        source = np.repeat(checkerboard[:, :, None], 3, axis=2)
+    else:
+        source = np.full(shape, 127, dtype=np.uint8)
+
     standard = np.asarray(
-        Image.fromarray(source).resize((32, 32), Image.BILINEAR)
+        Image.fromarray(source).resize(target, Image.Resampling.BILINEAR)
     ).astype(np.int16)
-    actual = np.asarray(simd.fromarray(source).resize((32, 32), simd.BILINEAR)).astype(
-        np.int16
-    )
+    actual = np.asarray(
+        simd.fromarray(source).resize(target, simd.Resampling.BILINEAR)
+    ).astype(np.int16)
     assert np.abs(actual - standard).max() <= 1
-    if shape[:2] == (32, 32):
+    if (shape[1], shape[0]) == target:
         np.testing.assert_array_equal(actual, standard)
