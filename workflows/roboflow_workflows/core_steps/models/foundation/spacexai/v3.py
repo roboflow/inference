@@ -301,8 +301,9 @@ class BlockManifest(WorkflowBlockManifest):
             "Optional reasoning effort passed to xAI as "
             '`reasoning: {"effort": ...}`. Grok models default to "high" and '
             'cannot disable reasoning. "xhigh" is not supported by grok-4.5. '
-            "For requests with a direct xAI key, the request is retried "
-            "without reasoning when the model rejects the parameter."
+            "With a direct xAI key, if the model rejects the `reasoning` "
+            "parameter the request is retried without it, so the model falls "
+            "back to its default effort."
         ),
         examples=["low", "high"],
     )
