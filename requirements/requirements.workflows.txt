@@ -1,2 +1,2 @@
 # keep in sync with workflows/pyproject.toml version
-roboflow-workflows[enterprise]==0.1.2
+roboflow-workflows[enterprise]==0.1.2.post1
