@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+## `0.2.1`
+
+### Fixed
+
+- Expose native Qwen 3.8 VL 27B in Qwen VLM blocks v2–v4, including model discovery and thinking support.
+- SpaceXAI object detection encodes PNG at compression level 9. OpenCV's default compression put large frames over xAI's 25MB upload limit.
+
+### Added
+
+- SpaceXAI block (`spacexai@v3`): `grok-4.7` model option with `low`/`medium`/`high`/`xhigh` reasoning effort. Detection reuses the Grok 4.5/4.6 prompt.
+
 ---
 
 ## `0.2.0`
@@ -9,18 +22,6 @@
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
-
-### Fixed
-
-- Expose native Qwen 3.8 VL 27B in Qwen VLM blocks v2–v4, including model discovery and thinking support.
-
-### Added
-
-- SpaceXAI block (`spacexai@v3`): `grok-4.7` model option with `low`/`medium`/`high`/`xhigh` reasoning effort. Detection reuses the Grok 4.5/4.6 prompt.
-
-### Fixed
-
-- SpaceXAI object detection encodes PNG at compression level 9. OpenCV's default compression put large frames over xAI's 25MB upload limit.
 
 ---
 
