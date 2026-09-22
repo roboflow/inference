@@ -363,6 +363,11 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
     init_mock.return_value = dummy_source
 
     # when
+    # The DROP limiter's bound is "capacity + max_fps * D" over the interval D
+    # it observed. Its first arrival is admitted before the first timestamp
+    # below is taken, so the interval is measured from before the loop; using
+    # the first yielded timestamp under-measures D and makes the bound flaky.
+    started_at = time.monotonic()
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
         video="source-ref",
@@ -372,7 +377,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
         results.append(result)
 
     # then
-    elapsed = results_timestamp[-1] - results_timestamp[0]
+    elapsed = results_timestamp[-1] - started_at
     assert 0 < len(results) <= 10 + 50 * elapsed
     assert (
         dummy_source.start_called is True
@@ -464,6 +469,8 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_
     local_video_path: str,
 ) -> None:
     # when
+    # Measured from before the loop: see the note on the 50 FPS modulation test.
+    started_at = time.monotonic()
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
         video=local_video_path, max_fps=200, limiter_strategy=FPSLimiterStrategy.DROP
@@ -472,7 +479,7 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_
         results.append(result)
 
     # then
-    elapsed = results_timestamp[-1] - results_timestamp[0]
+    elapsed = results_timestamp[-1] - started_at
     assert len(results) <= 40 + 200 * elapsed
     assert (
         0 <= len(results) <= 431

@@ -461,33 +461,54 @@ def test_workspace_metadata_does_not_change_reference_decoded_pixel_contract(
 @pytest.mark.trt_extras
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
 @pytest.mark.parametrize("tensor_input", [False, True])
-@pytest.mark.parametrize("dataset_size", [32, 64, 128])
+@pytest.mark.parametrize("input_color_format", ["rgb", "bgr"])
+@pytest.mark.parametrize("auto_orient", [False, True])
+@pytest.mark.parametrize(
+    "dataset_dimensions", [(32, 32), (64, 64), (128, 128), (96, 48), (48, 96)]
+)
+@pytest.mark.parametrize("image_shape", [(48, 80), (91, 37)])
 def test_workspace_configs_execute_actual_triton_preprocessor(
-    tensor_input, dataset_size
+    tensor_input, input_color_format, auto_orient, dataset_dimensions, image_shape
 ):
-    image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
+    """CUDA leg of the preprocessing compatibility matrix.
+
+    The configurations exercised here are exactly the ones the widened
+    `check_model_compatibility` gate started accepting: `STRETCH_TO` packages
+    carrying `dataset_version_resize_dimensions` and/or an `auto-orient` flag.
+    The CPU-executable half of the matrix lives in
+    `test_preprocessor_compatibility_matrix.py`; this test is the only place the
+    Triton kernel itself is compared against the reference, so it can only be
+    trusted when it actually runs. Collecting it as SKIPPED proves nothing.
+    """
+    height, width = image_shape
+    image = np.random.default_rng(7).integers(
+        0, 256, (height, width, 3), dtype=np.uint8
+    )
     if tensor_input:
         image = torch.from_numpy(image).permute(2, 0, 1).cuda()
+    dataset_height, dataset_width = dataset_dimensions
     network = _network_input().model_copy(
         update={
             "dataset_version_resize_dimensions": TrainingInputSize(
-                height=dataset_size, width=dataset_size
+                height=dataset_height, width=dataset_width
             )
         }
     )
-    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    transforms = ImagePreProcessing.model_validate(
+        {"auto-orient": {"enabled": auto_orient}}
+    )
     expected, expected_metadata = pre_process_network_input(
         images=image,
         image_pre_processing=transforms,
         network_input=network,
         target_device=torch.device("cuda"),
-        input_color_format="rgb",
+        input_color_format=input_color_format,
     )
     runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
     stream = torch.cuda.Stream(device=torch.device("cuda"))
     actual = runtime.preprocess(
         images=image,
-        input_color_format=ColorMode.RGB,
+        input_color_format=ColorMode(input_color_format),
         image_pre_processing=transforms,
         network_input=network,
         pre_processing_overrides=None,

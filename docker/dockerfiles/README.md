@@ -99,16 +99,25 @@ latest-call diagnostic, not per-stream attribution or a performance counter.
 It is disabled by default. It allocates a small metadata snapshot per completed call;
 no tensor copies does not mean zero CPU overhead.
 
-`INFERENCE_MODELS_PERFORMANCE_DIAGNOSTICS=true` additionally samples every tenth
-RF-DETR TensorRT call into a bounded history exposed as
-`RFDetrForObjectDetectionTRT.runtime_performance_diagnostics`. CUDA stream
-intervals are recorded without synchronization and include enqueue idle time, so
-they are not isolated kernel busy time. It is disabled by default.
-
 `ENABLE_RUNTIME_DIAGNOSTICS=true` (or `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true`)
 also enables per-source frame accounting (captured, enqueued, returned and dropped
 by cause) and a one-time sanitized first-frame timeout report from the Jetson
 producer. Neither includes pixels, source URLs or exception messages.
+
+**This image provides no per-stage timing facility, and no environment flag
+enables one.** The inference path carries no timing instrumentation and no NVTX
+annotations. Neither the diagnostics above nor any other flag reports how long
+preprocessing, TensorRT execution or postprocessing took. End-to-end request
+latency remains observable the usual ways (client-side timing, the server's
+request metrics); per-stage attribution is not available in the image.
+
+Stage-level profiling is a developer activity performed outside this image,
+against a repository checkout, with `development/profiling/` (Nsight Systems;
+see `development/profiling/README.md`). That directory is excluded from every
+published package and is not copied into the runtime stage of this Dockerfile,
+so it cannot be used from a deployed container. It also ships only a smoke
+target today: profiling RF-DETR means a developer writing a target snippet
+against a local checkout and a compiled engine on the target GPU.
 
 `VIDEO_SOURCE_ALLOW_CPU_FALLBACK=false` makes video sources fail instead of
 silently falling back to the cv2 CPU decoder when tensor media is disabled or no
