@@ -1,12 +1,12 @@
 ---
 name: create-workflow-block
-description: Author a new Roboflow Workflows block under `inference/core/workflows/core_steps/**`. Trigger on a new/changed `vN.py` or `vN_tensor.py` defining a `WorkflowBlockManifest` + `WorkflowBlock` pair; new `load_blocks()`/`KINDS_SERIALIZERS` entries in `core_steps/loader.py` (either flag branch); new `Kind(...)` in `execution_engine/entities/types.py`; or a request to "create/add a workflow block" or "expose X as a workflow step" (model / transform / sink / visualization / flow control).
+description: "Author a new Roboflow Workflows block under `workflows/roboflow_workflows/core_steps/**`. Trigger on a new/changed `vN.py` or `vN_tensor.py` defining a `WorkflowBlockManifest` + `WorkflowBlock` pair; new `load_blocks()`/`KINDS_SERIALIZERS` entries in `core_steps/loader.py` (either flag branch); new `Kind(...)` in `execution_engine/entities/types.py`; or a request to \"create/add a workflow block\" or \"expose X as a workflow step\" (model / transform / sink / visualization / flow control)."
 ---
 
 # Creating a Workflow block
 
 The playbook for authoring a new Roboflow **Workflows block** — a
-`roboflow_core/{family}@v{N}` step under `inference/core/workflows/core_steps/`.
+`roboflow_core/{family}@v{N}` step under `workflows/roboflow_workflows/core_steps/`.
 
 **How to use this skill.** Read *What a Workflow is* and *Anatomy of a block*, run the
 *New-block checklist*, then open the one *Block category* reference under `references/`
@@ -15,20 +15,27 @@ Always match an existing sibling block before writing a line. Authoritative dept
 `docs/workflows/**`; this skill is a **map** into it. Reviewer-side counterpart:
 `review-workflows-blocks`.
 
+For engine capability history, use the package changelog's engine entries and
+bundled engine versions. For capabilities predating that record, consult the
+[historical engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+New engine entries go only in `workflows/CHANGELOG.md`; no parallel docs-repository PR
+is required. The engine compatibility version remains separate from the package
+version.
+
 ## What a Workflow is (mental model)
 
 A Workflow is a JSON **definition** (inputs + steps + outputs) written in the Workflows language. It is not run directly — a **Compiler** parses it against the pool of installed blocks, and an **Execution Engine** (EE) runs the resulting DAG. As a block author you never touch the EE internals; you write a Python class the EE instantiates and calls.
 
 - **Definition → Compiler → Execution Engine.** Each definition declares an EE version (`version: 1.x` means `>=1.x,<2.0.0`). A **step** is one instance of a **block** (`{"type": "...@v1", "name": "my_step", ...}`); step inputs are either literals or **selectors** (`$inputs.<name>`, `$steps.<step>.<output>`) resolved at runtime. Concepts: `docs/workflows/understanding.md`, `docs/workflows/workflow_execution.md`, `docs/workflows/definitions.md`.
-- **Data flows as typed `kinds`.** A step output has a `kind` (e.g. `image`, `object_detection_prediction`); a downstream input declaring the same kind is assumed compatible — compile-time verification without runtime checks. Kinds are defined as `Kind(...)` constants in `inference/core/workflows/execution_engine/entities/types.py` (the per-kind docs under `docs/workflows/kinds/` are build-time generated).
+- **Data flows as typed `kinds`.** A step output has a `kind` (e.g. `image`, `object_detection_prediction`); a downstream input declaring the same kind is assumed compatible — compile-time verification without runtime checks. Kinds are defined as `Kind(...)` constants in `workflows/roboflow_workflows/execution_engine/entities/types.py` (the per-kind docs under `docs/workflows/kinds/` are build-time generated).
 - **Batch orientation & dimensionality.** The EE is batch-oriented: it fans data through steps as batches, and each datapoint sits at a **dimensionality level**. A block can keep, increase (crop-per-detection), or decrease that level — the single most important concept for non-trivial blocks. See `docs/workflows/workflow_execution.md` and `docs/workflows/create_workflow_block.md`.
 - Compiler/EE roles: `docs/workflows/workflows_compiler.md`, `docs/workflows/workflows_execution_engine.md`.
 
 ## Anatomy of a block
 
-A block is **two classes in a `vN.py` module**: a `WorkflowBlockManifest` (the schema/prototype for a step declaration) and a `WorkflowBlock` (the logic). Primary guide: `docs/workflows/create_workflow_block.md`. Confirmed real shape: `inference/core/workflows/core_steps/transformations/detection_offset/v1.py`.
+A block is **two classes in a `vN.py` module**: a `WorkflowBlockManifest` (the schema/prototype for a step declaration) and a `WorkflowBlock` (the logic). Primary guide: `docs/workflows/create_workflow_block.md`. Confirmed real shape: `workflows/roboflow_workflows/core_steps/transformations/detection_offset/v1.py`.
 
-**Manifest** — a `pydantic` model subclassing `WorkflowBlockManifest` (from `inference.core.workflows.prototypes.block`):
+**Manifest** — a `pydantic` model subclassing `WorkflowBlockManifest` (from `roboflow_workflows.prototypes.block`):
 
 - `type: Literal["roboflow_core/<family>@v1", "<Alias>"]` — the **discriminator** the Compiler uses to pick this manifest when parsing a step. The `Literal` may carry a legacy alias as a second value (see the `type` field in `detection_offset/v1.py`, `["roboflow_core/detection_offset@v1", "DetectionOffset"]`).
 - **Inputs** are ordinary fields. Use `Selector(kind=[...])` for data references and `Union[<literal type>, Selector(kind=[...])]` when a value may be hardcoded or selected (e.g. `Union[PositiveInt, Selector(kind=[INTEGER_KIND])]`). Wrap each with pydantic `Field(description=..., examples=...)` — **the user-facing docs are generated from these descriptions/examples** (see *Docs are autogenerated* below). `model_config = ConfigDict(json_schema_extra={...})` carries UI metadata (name, block_type, icon).
@@ -40,18 +47,18 @@ A block is **two classes in a `vN.py` module**: a `WorkflowBlockManifest` (the s
 
 - `@classmethod get_manifest() -> Type[WorkflowBlockManifest]` returns the manifest class.
 - `def run(self, ...) -> BlockResult` — the EE calls this with kwargs matching manifest input names. Image inputs arrive as `WorkflowImageData` (use `.numpy_image`); scalar params arrive as plain values; batch params (if declared) arrive as `Batch[...]`. Return a dict `{output_name: value}` (or, for batch/dimensionality-increasing blocks, a **list** of such dicts — a `None` entry drops that datapoint downstream). `__init__` may hold reusable state (persists across `run()` calls, e.g. per-frame video).
-- Imports: `WorkflowBlock`, `WorkflowBlockManifest`, `BlockResult` from `inference.core.workflows.prototypes.block`; `Batch`, `OutputDefinition`, `WorkflowImageData` from `inference.core.workflows.execution_engine.entities.base`.
+- Imports: `WorkflowBlock`, `WorkflowBlockManifest`, `BlockResult` from `roboflow_workflows.prototypes.block`; `Batch`, `OutputDefinition`, `WorkflowImageData` from `roboflow_workflows.execution_engine.entities.base`.
 
 ## Universal invariants (every category)
 
 These hold regardless of category — the per-category references only add nuance on top.
 
 - **Output keys == `describe_outputs()`.** Every key your `run()` returns must be named in `describe_outputs()`, on **every** return path (empty / error / early-exit branches included), and the names must stay stable across versions — downstream steps bind to them.
-- **A block is invisible until registered.** For `roboflow_core`, add the import + `load_blocks()` list entry in `inference/core/workflows/core_steps/loader.py` (see `DetectionOffsetBlockV1`). External plugins expose it via `load_blocks()` in the plugin `__init__.py` (`WORKFLOWS_PLUGINS="plugin_a,plugin_b"`). Forgetting this means the block does not exist to the EE.
+- **A block is invisible until registered.** For `roboflow_core`, add the import + `load_blocks()` list entry in `workflows/roboflow_workflows/core_steps/loader.py` (see `DetectionOffsetBlockV1`). External plugins expose it via `load_blocks()` in the plugin `__init__.py` (`WORKFLOWS_PLUGINS="plugin_a,plugin_b"`). Forgetting this means the block does not exist to the EE.
 - **New kind ⇒ serializer.** A kind not already round-trippable needs a serializer/deserializer pair registered in `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS` in `loader.py` (e.g. `deserialize_rgb_color_kind` for `RGB_COLOR_KIND`), or a new key written into `sv.Detections.data` handled in `core_steps/common/serializers.py`. Unregistered kinds fall through to `serialize_wildcard_kind` and may be dropped on the REMOTE / API boundary. Reuse existing detection/image kinds unless you truly need a new one.
 - **Model/resource dependencies are declared.** Any block that loads a model or external resource overrides `discover_dependent_resources()` on its manifest (helpers `roboflow_platform_model()` / `third_party_model()`; see `google_gemini/v3.py`) so workflow resource discovery and model pre-loading see the dependency before execution starts. This is a general block contract — not a tensor-native feature — and video pipelines rely on it to pre-load models ahead of the first frame.
 - **Parent-coordinate attach is load-bearing.** Any block that produces or moves `sv.Detections` must attach parent-coordinate metadata (`attach_parents_coordinates_to_batch_of_sv_detections` / `attach_parents_coordinates_to_sv_detections` in `core_steps/common/utils.py`, or `WorkflowImageData.create_crop(...)`). Omitting it silently breaks re-projecting boxes onto the original frame for cropped/tiled inputs.
-- **Stateful ⇒ restrictions + LOCAL-only where required.** A block holding cross-frame state must key it by `image.video_metadata.video_identifier`, evict it (bounded cache), and declare `get_restrictions()` returning the relevant `RuntimeRestriction` constants from `inference/core/workflows/prototypes/block.py` — `STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION`, `STILL_IMAGE_INPUT_SOFT_RESTRICTION`, `COOLDOWN_HTTP_SOFT_RESTRICTION` (SOFT), or a `Severity.HARD` restriction on `StepExecutionMode.REMOTE` when remote execution is incoherent (then also `raise NotImplementedError` in `run()`). State silently no-ops behind stateless/multi-replica HTTP.
+- **Stateful ⇒ restrictions + LOCAL-only where required.** A block holding cross-frame state must key it by `image.video_metadata.video_identifier`, evict it (bounded cache), and declare `get_restrictions()` returning the relevant `RuntimeRestriction` constants from `workflows/roboflow_workflows/prototypes/block.py` — `STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION`, `STILL_IMAGE_INPUT_SOFT_RESTRICTION`, `COOLDOWN_HTTP_SOFT_RESTRICTION` (SOFT), or a `Severity.HARD` restriction on `StepExecutionMode.REMOTE` when remote execution is incoherent (then also `raise NotImplementedError` in `run()`). State silently no-ops behind stateless/multi-replica HTTP.
 - **LOCAL vs REMOTE parity.** Model blocks with a `run_locally`/`run_remotely` split must mirror every knob into `InferenceConfiguration` on the REMOTE path (note renames like `confidence` → `confidence_threshold`). A knob wired to only one path is a correctness bug, not a style nit.
 - **Docs are autogenerated — do NOT hand-write them.** `docs/workflows/blocks/<block>.md` (and `docs/workflows/kinds/index.md`) are generated by `development/docs/build_block_docs.py` (`write_individual_block_pages` / `write_kinds_docs`). A hand-written page gets overwritten. Instead, put rich content into `Field(description=..., examples=...)` and the manifest long-description — the generator renders the page from those.
 
@@ -73,16 +80,16 @@ Since the tensor-data-representation merge (#2357), blocks that consume or produ
 - [ ] `type` Literal `roboflow_core/{family}@v{N}` (+ legacy alias if replacing one).
 - [ ] Inputs are `Selector(kind=[...])` / `Union[literal, Selector(...)]` with rich `Field(description=, examples=)` (docs are generated from these).
 - [ ] `describe_outputs()` matches every key `run()` emits — on every path (empty / error branches included).
-- [ ] `get_execution_engine_compatibility()` set to the TRUE minimum EE version you rely on — look up which EE version introduced each capability you use in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`); do not copy-paste the default range. If a capability you need is still under `## Unreleased`, the EE version must be placed and bumped first (maintainer-coordinated) so your range can reference it.
+- [ ] `get_execution_engine_compatibility()` set to the TRUE minimum EE version you rely on — look up which EE version introduced each capability you use in the `### Execution engine` subsection of `workflows/CHANGELOG.md`; do not copy-paste the default range. If a capability you need is still under `## Unreleased`, the EE version must be placed and bumped first (maintainer-coordinated) so your range can reference it.
 - [ ] Batch / dimensionality hooks declared if the block batches inputs or changes nesting level.
 - [ ] Registered in `core_steps/loader.py` (`load_blocks()`); any new kind in `types.py` + `load_kinds()` + a serializer/deserializer pair.
 - [ ] Block loads a model/external resource: `discover_dependent_resources()` overridden on the manifest.
 - [ ] Producing/moving detections: parent-coordinate metadata attached.
 - [ ] Stateful block: state keyed by `video_identifier` + evicted; `get_restrictions()` declared; `NotImplementedError` on `StepExecutionMode.REMOTE` if remote is incoherent.
-- [ ] Unit test under `tests/workflows/unit_tests/core_steps/...` + integration test under `tests/workflows/integration_tests/execution/...`.
+- [ ] Unit test under `workflows/tests/unit_tests/core_steps/...` + integration test under `tests/workflows/integration_tests/execution/...`.
 - [ ] Image/prediction block: tensor sibling `vN_tensor.py` authored per *Tensor-native siblings* (manifest surface + kind order identical; `discover_dependent_resources()` and, for sinks, `disable_sinks` on both) and registered in `loader.py`'s flag-on branch.
 - [ ] Tests pass in BOTH flag directions (CI runs both): per-file `_TENSOR_ONLY`/`_NUMPY_ONLY` skipif markers for one-mode tests; tensor-native integration tests take the shared `image_as_workflow_input` conftest fixture so every image input is exercised as numpy AND `torch.Tensor` submission; assertions mirrored across siblings.
-- [ ] If the EE itself changed, add its user-facing entry under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`); maintainers bump the EE version at release time.
+- [ ] If the EE itself changed, add its user-facing entry under `## Unreleased` in the `### Execution engine` subsection of `workflows/CHANGELOG.md`; maintainers bump the EE version at release time.
 - [ ] Do NOT hand-write `docs/workflows/blocks/<block>.md` — it is generated from manifest field descriptions.
 
 Reviewer's checklist for block PRs: `review-workflows-blocks`.
@@ -91,7 +98,7 @@ Reviewer's checklist for block PRs: `review-workflows-blocks`.
 
 **Kinds** are the Workflows type system. Each kind pairs a **semantic name** (`image`, `point`), a **Python representation** blocks receive (e.g. `object_detection_prediction` → `sv.Detections`), and an optional **serialized representation** for the wire. No polymorphism — express alternatives as a **union**, i.e. `Selector(kind=[A_KIND, B_KIND])` (see the multi-kind predictions input in `detection_offset/v1.py`).
 
-- **Where kinds live:** `Kind(...)` constants in `inference/core/workflows/execution_engine/entities/types.py` (e.g. `IMAGE_KIND`, `OBJECT_DETECTION_PREDICTION_KIND`, `FLOAT_ZERO_TO_ONE_KIND`, `WILDCARD_KIND`). Per-kind docs pages under `docs/workflows/kinds/` are build-time generated from these.
+- **Where kinds live:** `Kind(...)` constants in `workflows/roboflow_workflows/execution_engine/entities/types.py` (e.g. `IMAGE_KIND`, `OBJECT_DETECTION_PREDICTION_KIND`, `FLOAT_ZERO_TO_ONE_KIND`, `WILDCARD_KIND`). Per-kind docs pages under `docs/workflows/kinds/` are build-time generated from these.
 - **Selector vs literal.** `Selector(kind=[...])` accepts only runtime references (`$inputs.*` / `$steps.*.*`); a bare Python type accepts only hardcoded values; `Union[type, Selector(kind=[...])]` accepts both. `StepSelector` (`$steps.<step>`, no output) marks a **flow-control** block.
 - **Batch vs non-batch kinds.** A kind name is orthogonal to batching — whether a param arrives as a scalar or `Batch[...]` is decided by `get_parameters_accepting_batches()`, not the kind. (Historically `Batch[X]` vs `X` were separate kinds; unified in inference `0.18.0`.) Deeper representation notes: `docs/workflows/internal_data_types.md`.
 
@@ -101,12 +108,12 @@ Rules from `docs/workflows/versioning.md` and `docs/workflows/blocks_bundling.md
 
 - **Bug-fix in place; anything else is a new version.** Only patch the existing `vN.py` for bug fixes. Behavioral/interface changes create `v(N+1).py` in a new module under the block package — **stability over DRY**; code duplication is accepted and blocks stay independent.
 - **Type identifiers & aliases.** Convention `{plugin}/{block_family}@v{X}` (e.g. `roboflow_core/detection_offset@v1`). The `type` `Literal` may list a legacy alias (`"DetectionOffset"`) so old definitions keep parsing.
-- **EE compatibility.** Every manifest returns a semver range from `get_execution_engine_compatibility()`; if a block needs a feature added in `1.3.7`, declare `">=1.3.7,<2.0.0"` — derive the floor from the changelog, never copy-paste the default. A feature still under `## Unreleased` has no version to declare against: the EE version must be placed and bumped (maintainer-coordinated) before the block ships. A definition's `version: 1.1.0` resolves to `>=1.1.0,<2.0.0`. History: the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`).
+- **EE compatibility.** Every manifest returns a semver range from `get_execution_engine_compatibility()`; if a block needs a feature added in `1.3.7`, declare `">=1.3.7,<2.0.0"` — derive the floor from the changelog, never copy-paste the default. A feature still under `## Unreleased` has no version to declare against: the EE version must be placed and bumped (maintainer-coordinated) before the block ships. A definition's `version: 1.1.0` resolves to `>=1.1.0,<2.0.0`. History: the `### Execution engine` subsection of `workflows/CHANGELOG.md`.
 - **Plugin layout & the `__init__.py` requirement.** A plugin is a Python package: `{plugin}/{block_name}/v1.py` per block, plus a main `__init__.py` exposing `load_blocks()` (required), optionally `load_kinds()`, `REGISTERED_INITIALIZERS`, and `KINDS_SERIALIZERS`/`KINDS_DESERIALIZERS`. See `docs/workflows/blocks_bundling.md`.
 
 ## Block categories (per-category references)
 
-Blocks live under `inference/core/workflows/core_steps/<category>/`. The 16 dirs (~210
+Blocks live under `workflows/roboflow_workflows/core_steps/<category>/`. The 16 dirs (~210
 versioned blocks) group into 8 category maps — open the one matching what you're building:
 
 | Category (dir) | ~blocks | Reference |
@@ -135,4 +142,4 @@ Curated index — read the doc for the matching need:
 - `docs/workflows/internal_data_types.md` — `WorkflowImageData`, `Batch`, and the concrete Python types behind each kind.
 - `docs/workflows/blocks_bundling.md` + `docs/workflows/versioning.md` — plugin packaging, loaders, (de)serializers, version lifecycle.
 - `docs/workflows/batch_processing/` and `docs/workflows/video_processing/` — batch-heavy and video/stateful block patterns.
-- the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`) — which EE version introduced a feature (pin `get_execution_engine_compatibility()` accordingly).
+- the `### Execution engine` subsection of `workflows/CHANGELOG.md` — which EE version introduced a feature (pin `get_execution_engine_compatibility()` accordingly).

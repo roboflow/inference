@@ -1,24 +1,31 @@
 ---
 name: review-workflows-execution-engine
-description: Review guidance for PRs touching inference/core/workflows/execution_engine/**, inference/core/workflows/errors.py, inference/core/workflows/prototypes/block.py, or .cursor/rules/execution-engine-version-changelog.mdc. Diff signals: EXECUTION_ENGINE_V1_VERSION, REGISTERED_ENGINES, COMPILATION_CACHE, contains_future/resolve_futures, ClientCausedStepExecutionError, get_output_dimensionality_offset. NOT core_steps block implementations.
+description: "Review guidance for PRs touching workflows/roboflow_workflows/execution_engine/**, workflows/roboflow_workflows/errors.py, workflows/roboflow_workflows/prototypes/block.py, or .cursor/rules/execution-engine-version-changelog.mdc. Diff signals: EXECUTION_ENGINE_V1_VERSION, REGISTERED_ENGINES, COMPILATION_CACHE, contains_future/resolve_futures, ClientCausedStepExecutionError, get_output_dimensionality_offset. NOT core_steps block implementations."
 ---
 
 # Reviewing workflows-execution-engine changes
 
+For engine capability history, use the package changelog's engine entries and
+bundled engine versions. For capabilities predating that record, consult the
+[historical engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+New engine entries go only in `workflows/CHANGELOG.md`; no parallel docs-repository PR
+is required. The engine compatibility version remains separate from the package
+version.
+
 ## Scope
 Trigger when a PR changes any of:
-- `inference/core/workflows/execution_engine/**` — compiler, executor, introspection, profiling, inner-workflows, dynamic blocks, engine entities (`execution_engine/entities/{engine.py,base.py,types.py}`).
-- `inference/core/workflows/errors.py`, `inference/core/workflows/prototypes/block.py` — the workflow-core contracts the engine depends on.
-- the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`), and the Workflows developer guide on docs.roboflow.com (versioning, compiler, workflow execution): <https://docs.roboflow.com/workflows/developer-guide/developer-guide>.
+- `workflows/roboflow_workflows/execution_engine/**` — compiler, executor, introspection, profiling, inner-workflows, dynamic blocks, engine entities (`execution_engine/entities/{engine.py,base.py,types.py}`).
+- `workflows/roboflow_workflows/errors.py`, `workflows/roboflow_workflows/prototypes/block.py` — the workflow-core contracts the engine depends on.
+- the `### Execution engine` subsection of `workflows/CHANGELOG.md`, and the Workflows developer guide on docs.roboflow.com (versioning, compiler, workflow execution): <https://docs.roboflow.com/workflows/developer-guide/developer-guide>.
 
-**Out of scope** (other skills own these): block implementations under `inference/core/workflows/core_steps/**` (block-authoring skill) and the query-language (`core_steps/common/query_language/**`). A `core_steps` change enters scope only when it *forces* an engine behavior change (then EE versioning rules apply — e.g. #2106 bumped EE + touched query-language together).
+**Out of scope** (other skills own these): block implementations under `workflows/roboflow_workflows/core_steps/**` (block-authoring skill) and the query-language (`core_steps/common/query_language/**`). A `core_steps` change enters scope only when it *forces* an engine behavior change (then EE versioning rules apply — e.g. #2106 bumped EE + touched query-language together).
 
-Note: there is no `inference/core/workflows/entities/` directory — the engine entities live under `execution_engine/entities/`.
+Note: there is no `workflows/roboflow_workflows/entities/` directory — the engine entities live under `execution_engine/entities/`.
 
 ## Review checklist
 Severity-tagged. Verify each against the linked Standard before raising.
 
-- **BLOCK** — Diff changes compile or run **behavior** but has no user-facing entry under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`). Do not ask the contributor to bump a version. (Standard: Versioning.)
+- **BLOCK** — Diff changes compile or run **behavior** but has no user-facing entry under `## Unreleased` in the `### Execution engine` subsection of `workflows/CHANGELOG.md`. Do not ask the contributor to bump a version. (Standard: Versioning.)
 - **BLOCK** — Compile behavior depends on an input that is NOT part of the `COMPILATION_CACHE` hash key (`workflow_definition` + `execution_engine_version` only). Stale graphs get served on a cache hit. (Standard: Compilation cache.)
 - **BLOCK** — Dict-key access on external/JSON input (`introspection/schema_parser.py`, definition parsing) checks presence but not type — must be `isinstance(..., dict/list)`. (Standard: Defensive parsing; broke in #1122.)
 - **BLOCK** — Emptiness check on an index/batch/collection uses truthiness instead of `is not None` / `len(...) > 0`. (Standard: None-vs-falsy; broke in #777.)
@@ -37,12 +44,12 @@ Severity-tagged. Verify each against the linked Standard before raising.
 ### Not blocking
 - Comment/type-only refactors, formatting, and pure test/doc mirroring with **no** behavior change do NOT require a changelog entry or maintainer release notice (explicit exemption in `.cursor/rules/execution-engine-version-changelog.mdc`).
 - A pure bug fix to a scenario already covered by an integration test does not require a *new* test file — an assertion added to the existing scenario is fine.
-- Never demand an `EXECUTION_ENGINE_V1_VERSION` or `inference/core/version.py` bump from a contributor — maintainers handle both at release time (sole EE exception: a Workflow block gating on unreleased capabilities needs the version placed early — see Versioning).
+- Never demand an `EXECUTION_ENGINE_V1_VERSION` or `workflows/pyproject.toml` bump from a contributor — maintainers handle both at release time (sole EE exception: a Workflow block gating on unreleased capabilities needs the version placed early — see Versioning).
 - Do not demand `flush_stream_pipeline` mirroring on the ABC — it is intentionally not part of `BaseExecutionEngine` (see Public engine API).
 
 ## Standards
 
-**Versioning.** Any behavior change to compile or run MUST add user-facing behavior bullets (not file lists) under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`). Contributors do not choose or change a version. At release time, maintainers choose the bump (patch = bug fix, minor = new capability, major = breaking and rare), update `EXECUTION_ENGINE_V1_VERSION` and mirrored assertions, and replace `## Unreleased` with the final `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` heading. Codified in `.cursor/rules/execution-engine-version-changelog.mdc`. One exception to release-time bumping: when a Workflow block must gate on a capability still under `## Unreleased` via `get_execution_engine_compatibility()`, the version is placed and bumped early (final heading + `EXECUTION_ENGINE_V1_VERSION` + mirrored assertions, maintainer-coordinated) so the block can declare its floor — see `review-workflows-blocks`.
+**Versioning.** Follow `.cursor/rules/execution-engine-version-changelog.mdc`: add engine behavior notes under `Unreleased` → `Execution engine` in `workflows/CHANGELOG.md` once. Maintainers own both package and engine releases, record the bundled engine version for every package release, and update mirrored engine assertions when necessary. A block needing an unreleased capability uses the maintainer-coordinated early engine-version exception in that rule; package release notes remain under `Unreleased` until release.
 
 **Compilation cache.** `COMPILATION_CACHE` (a `BasicWorkflowsCache`, defined in `compiler/core.py`, class in `compiler/cache.py`) memoizes the compiled graph. Its hash key is built from exactly two hash functions: `workflow_definition` (`json.dumps(sort_keys=True)`) and `execution_engine_version`. Any new compile-time input that changes the resulting graph MUST be added to the cache's `hash_functions`, or a cache hit will serve a stale graph. The cache is size-bounded (`cache_size=256`, LRU-style eviction via `_keys_buffer`) — do not swap in an unbounded dict. Dynamic-blocks-allowed is re-validated on every hit (`ensure_dynamic_blocks_allowed`); preserve that so a cached graph cannot bypass the guard.
 
@@ -75,8 +82,8 @@ Severity-tagged. Verify each against the linked Standard before raising.
 - **The tensor wildcard serializer is THE single container walker** for both HTTP output and stream-manager IPC (`serialise_single_workflow_result_element` in `orjson_utils.py` resolves it at call time). Its arms: dicts and lists recurse; tuples convert element-wise with namedtuple splat (added after a CUDA-tensor-inside-a-tuple crossed IPC and crashed on Jetson — CUDA IPC is unsupported on Tegra); the `(KeyPoints, Detections)` pair is a semantic LEAF checked before generic tuple recursion. Any new container shape reaching wildcard outputs needs an explicit arm or a loud error — never silent pass-through of device tensors.
 - **The dynamic-block representation boundary** (`v1/dynamic_blocks/representation_boundary.py`) converts native↔legacy around `legacy_compatibility` custom-Python blocks: kind-driven converter selection, best-effort sniffing for wildcard inputs, and a LOUD-error contract for ambiguous values (bare tensors, bare `KeyPoints`, unknown native dataclasses). It is a strict identity flag-off. Its documented lossy corners are deliberate — classification confidence vectors rebuild SPARSE from thresholded dicts, and the class-name id→name map is first-seen-wins with per-box overrides on collision — do not "fix" them casually; changes need round-trip tests in both directions.
 Block a behavior-changing EE PR that is missing:
-1. **Changelog** — a user-facing entry under `## Unreleased` in the EE changelog in the roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`).
-2. **Tests** — unit test in the matching `tests/workflows/unit_tests/execution_engine/{compiler,executor,inner_workflow,introspection,profiling,...}` dir AND an integration test under `tests/workflows/integration_tests/execution/` reproducing the fixed scenario (#777, #2352, #645).
+1. **Changelog** — a user-facing entry under `## Unreleased` in the `### Execution engine` subsection of `workflows/CHANGELOG.md`.
+2. **Tests** — unit test in the matching `workflows/tests/unit_tests/execution_engine/{compiler,executor,inner_workflow,introspection,profiling,...}` dir AND an integration test under `tests/workflows/integration_tests/execution/` reproducing the fixed scenario (#777, #2352, #645).
 
 (See `### Not blocking` for version-bump and exemption carve-outs.)
 
@@ -87,7 +94,8 @@ addressed to maintainers: **Execution Engine requires a version bump for
 release**. This notice is required even when the contributor supplied the
 changelog entry. Maintainers choose the version, update
 `EXECUTION_ENGINE_V1_VERSION` and mirrored version assertions, move the entries
-into the final version section, and leave a fresh `## Unreleased` section for
+into the final package version section with its bundled engine version, and
+leave a fresh `## Unreleased` section for
 subsequent contributions.
 
 ## Key files & entry points

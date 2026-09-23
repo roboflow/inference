@@ -7,6 +7,17 @@ powers [Roboflow Inference](https://github.com/roboflow/inference).  It can be
 installed independently for use in standalone pipelines or embedded in the
 full Inference server.
 
+## Changelog and versions
+
+[CHANGELOG.md](CHANGELOG.md) records package changes, including an Execution
+engine subsection for compile/run behavior changes. Each release records its
+bundled engine version, starting with package `0.2.2`. The package version
+identifies the distribution; the separate engine version controls workflow and
+block compatibility. Block-only releases can leave the engine version unchanged.
+
+Earlier engine changes and migration examples remain in the
+[historical engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+
 ## Installation
 
 ```bash
