@@ -10,6 +10,7 @@ from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader import v1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import (
     LATEST_BUFFER_SIZE,
+    NOT_CONNECTED_WITHIN_TIMEOUT,
     SEQUENTIAL_BUFFER_SIZE,
     SUBSCRIPTION_REFUSED_QOS,
     BlockManifest,
@@ -310,6 +311,47 @@ class TestCallbacks:
 
         assert client.subscriptions == []
         assert not state.connected.is_set()
+        assert state.connack.is_set()
+        assert state.refused_code == reason_code
+
+    @pytest.mark.parametrize("reason_code", [1, 2, 4, 5])
+    def test_on_connect_stops_the_loop_for_a_permanent_refusal(self, reason_code):
+        state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
+        client = FakeClient(userdata=state)
+
+        mqtt_on_connect(client, state, {}, reason_code)
+
+        assert client.disconnected is True
+
+    def test_on_connect_keeps_the_loop_for_broker_unavailable(self):
+        state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
+        client = FakeClient(userdata=state)
+
+        mqtt_on_connect(client, state, {}, 3)
+
+        assert client.disconnected is False
+        assert state.refused_code == 3
+
+    def test_on_connect_logs_the_refusal_reason(self, caplog):
+        state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
+
+        with caplog.at_level("ERROR", logger="inference"):
+            mqtt_on_connect(FakeClient(userdata=state), state, {}, 5)
+
+        assert "not authorised" in caplog.text
+        assert "code 5" in caplog.text
+
+    def test_accepted_connack_after_broker_unavailable_resets_refusal(self):
+        state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
+        client = FakeClient(userdata=state)
+        client.on_subscribe = mqtt_on_subscribe
+
+        mqtt_on_connect(client, state, {}, 3)
+        mqtt_on_connect(client, state, {}, 0)
+
+        assert state.refused_code is None
+        assert state.connected.is_set()
+        assert state.connack.is_set()
 
     def test_on_connect_fail_matches_paho_two_argument_signature(self):
         state = MQTTReaderState(topic="t", qos=0, buffer_size=1)
@@ -364,6 +406,24 @@ class TestCallbacks:
 
         assert not state.connected.is_set()
         assert not state.subscribed.is_set()
+
+    def test_on_disconnect_after_transport_drop_clears_connack(self):
+        state = MQTTReaderState(topic="t", qos=0, buffer_size=1)
+        state.connack.set()
+
+        mqtt_on_disconnect(FakeClient(), state, 1)
+
+        assert not state.connack.is_set()
+
+    def test_on_disconnect_after_refusal_keeps_connack(self):
+        state = MQTTReaderState(topic="t", qos=0, buffer_size=1)
+        client = FakeClient(userdata=state)
+        mqtt_on_connect(client, state, {}, 5)
+
+        mqtt_on_disconnect(client, state, 0)
+
+        assert state.connack.is_set()
+        assert state.refused_code == 5
 
     def test_on_disconnect_accepts_mqtt5_properties_argument(self):
         state = MQTTReaderState(topic="t", qos=0, buffer_size=1)
@@ -576,14 +636,101 @@ class TestConnectionLifecycle:
         assert "not connected" in result["error_message"].lower()
         assert block._client is clients[0]
 
-    def test_rejected_connack_reported_as_not_connected(
-        self, clients, block, monkeypatch
-    ):
+    def test_rejected_connack_reported_as_a_refusal(self, clients, block, monkeypatch):
         monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
         result = block.run(**run_kwargs())
 
         assert result["error_status"] is True
+        assert "not authorised" in result["error_message"]
+        assert "code 5" in result["error_message"]
+        assert "client_id" in result["error_message"]
+        assert "Raise 'timeout'" not in result["error_message"]
         assert clients[0].subscriptions == []
+        assert clients[0].disconnected is True
+
+    @pytest.mark.parametrize(
+        "reason_code, reason",
+        [
+            (1, "unacceptable protocol version"),
+            (2, "identifier rejected"),
+            (4, "bad user name or password"),
+        ],
+    )
+    def test_other_permanent_refusals_name_their_reason(
+        self, clients, block, monkeypatch, reason_code, reason
+    ):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", reason_code)
+        result = block.run(**run_kwargs())
+
+        assert reason in result["error_message"]
+        assert clients[0].disconnected is True
+
+    def test_refusal_is_reported_without_waiting_for_timeout(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=2.0))
+
+        assert result["error_status"] is True
+        assert time.monotonic() - started < 0.5
+
+    def test_next_run_after_refusal_repeats_it_without_a_new_connection(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
+        first = block.run(**run_kwargs(timeout=2.0))
+
+        started = time.monotonic()
+        second = block.run(**run_kwargs(timeout=2.0))
+
+        assert second == first
+        assert time.monotonic() - started < 0.5
+        assert len(clients) == 1
+        assert [call for call in clients[0].calls if call[0] == "connect"] == [
+            ("connect", "localhost", 1883)
+        ]
+
+    def test_broker_unavailable_keeps_retrying_and_names_the_reason(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", 3)
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "broker unavailable" in result["error_message"]
+        assert "retrying in the background" in result["error_message"]
+        assert clients[0].disconnected is False
+
+    def test_run_succeeds_once_an_unavailable_broker_accepts(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", 3)
+        block.run(**run_kwargs())
+        client = clients[0]
+        client.on_connect(client, client.userdata, {}, 0)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        assert block._state.refused_code is None
+
+    def test_no_connack_at_all_reports_not_connected(self, clients, block, monkeypatch):
+        monkeypatch.setattr(FakeClient, "fire_on_connect", False)
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert result["error_message"] == NOT_CONNECTED_WITHIN_TIMEOUT
+
+    def test_close_after_refusal_completes(self, clients, block, monkeypatch):
+        monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert block._client is None
+        assert clients[0].loop_stopped is True
 
     def test_refused_subscription_reported_and_client_kept(
         self, clients, block, monkeypatch

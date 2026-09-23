@@ -15,8 +15,11 @@ from typing_extensions import Annotated
 logger = logging.getLogger("inference")
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     MQTT_KEEPALIVE_SECONDS,
+    PERMANENT_CONNACK_CODES,
+    TRANSIENT_CONNACK_CODE,
     ConfigurationError,
     configure_tls,
+    connection_refused_message,
     normalise_client_id,
     resolve_broker_address,
 )
@@ -103,6 +106,13 @@ port are ignored and the first allowlist entry is used); a run the policy forbid
 reported in the outputs. The connection uses a 15 s keepalive, so a broker that
 disappears without closing the connection is noticed within about 25 s.
 
+A broker that refuses the connection (bad user name or password, not authorised, a
+rejected client id or an unacceptable protocol version) is reported in the outputs with
+the broker's reason, and the block stops reconnecting: retrying with the same credentials
+cannot succeed and would only trip the broker's authentication rate limiting. Fix the
+configuration and restart the pipeline. A broker answering "unavailable" is a passing
+condition, so the client keeps retrying in the background.
+
 Set `encryption` to `tls` to encrypt the connection and verify the broker's certificate
 against the system trust store; the port is not switched automatically, so set it to the
 broker's TLS port (usually 8883). A broker signed by a private CA needs
@@ -126,6 +136,12 @@ Failures are returned in the outputs and logged; the workflow keeps running.
 """
 
 SUBSCRIPTION_REFUSED_QOS = 0x80
+READER_CONNECTION_INPUTS = "username, password and client_id"
+NOT_CONNECTED_WITHIN_TIMEOUT = (
+    "MQTT broker not connected (connection was not established within timeout); "
+    "the client keeps retrying in the background. Raise 'timeout' if the "
+    "broker needs longer to connect."
+)
 TLS_RELEVANT = {"encryption": {"values": ["tls"], "required": True}}
 LATEST_BUFFER_SIZE = 1
 SEQUENTIAL_BUFFER_SIZE = 1000
@@ -142,6 +158,12 @@ class MQTTReaderState:
 
     Attributes:
         connected: Set once the broker accepted the session; cleared on disconnect.
+        connack: Set on every CONNACK, accepted or refused, so the first run can
+            stop waiting as soon as the broker answered; cleared on a transport
+            disconnect, kept while a refusal is recorded.
+        refused_code: The CONNACK return code of the last refusal, or None after an
+            accepted CONNACK. A permanent code (see ``PERMANENT_CONNACK_CODES``) means
+            the network loop was stopped and every run reports the refusal.
         subscribed: Set once the broker granted the subscription; cleared on disconnect.
         subscribe_failed: True when the broker refused the subscription.
         topic: Topic filter to subscribe to on every (re)connect.
@@ -154,6 +176,8 @@ class MQTTReaderState:
 
     def __init__(self, topic: str, qos: int, buffer_size: int):
         self.connected = threading.Event()
+        self.connack = threading.Event()
+        self.refused_code: Optional[int] = None
         self.subscribed = threading.Event()
         self.message_received = threading.Event()
         self.subscribe_failed = False
@@ -180,11 +204,23 @@ def mqtt_on_connect(
 ):
     # paho invokes on_connect for accepted and rejected CONNACK alike;
     # only reason_code 0 means an established MQTT session
+    state.connack.set()
     if reason_code != 0:
-        logger.error("MQTT connection refused, result code %s", reason_code)
+        state.refused_code = reason_code
+        logger.error(
+            "MQTT connection refused: %s (code %s)",
+            mqtt.connack_string(reason_code),
+            reason_code,
+        )
         state.connected.clear()
+        if reason_code in PERMANENT_CONNACK_CODES:
+            # paho would otherwise reconnect with the same credentials forever;
+            # disconnect() puts it in the disconnecting state, so its loop ends
+            # after this CONNACK instead of retrying
+            client.disconnect()
         return
 
+    state.refused_code = None
     logger.info(
         "MQTT client connected (session present: %s)",
         bool(flags.get("session present")),
@@ -234,6 +270,10 @@ def mqtt_on_disconnect(client, state: MQTTReaderState, reason_code, properties=N
     logger.info("MQTT client disconnected, result code %s", reason_code)
     state.connected.clear()
     state.subscribed.clear()
+    if state.refused_code is None:
+        # a transport drop: the next run waits for the reconnect's CONNACK; after
+        # a refusal the answer stays visible so run() reports it without waiting
+        state.connack.clear()
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -681,14 +721,33 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 "first run."
             )
         state = self._state
-        # the background loop owns (re)connecting and (re)subscribing; runs
-        # only wait for readiness
-        if not state.connected.wait(timeout=timeout):
+        # a permanent refusal stopped the network loop: report it on every run
+        # without waiting and without touching the broker again
+        if state.refused_code in PERMANENT_CONNACK_CODES:
             return self._handle_failure(
-                "MQTT broker not connected (connection was not established within timeout); "
-                "the client keeps retrying in the background. Raise 'timeout' if the "
-                "broker needs longer to connect."
+                connection_refused_message(
+                    state.refused_code, block_inputs=READER_CONNECTION_INPUTS
+                )
             )
+        # the background loop owns (re)connecting and (re)subscribing; runs
+        # only wait for readiness. The wait ends on any CONNACK, so a refusal is
+        # reported as soon as the broker answers instead of after the timeout
+        if not state.connack.wait(timeout=timeout):
+            return self._handle_failure(NOT_CONNECTED_WITHIN_TIMEOUT)
+        if state.refused_code in PERMANENT_CONNACK_CODES:
+            return self._handle_failure(
+                connection_refused_message(
+                    state.refused_code, block_inputs=READER_CONNECTION_INPUTS
+                )
+            )
+        if not state.connected.wait(timeout=timeout):
+            if state.refused_code == TRANSIENT_CONNACK_CODE:
+                return self._handle_failure(
+                    connection_refused_message(
+                        state.refused_code, block_inputs=READER_CONNECTION_INPUTS
+                    )
+                )
+            return self._handle_failure(NOT_CONNECTED_WITHIN_TIMEOUT)
         # a known refusal is permanent for this configuration: report it
         # without paying the acknowledgement wait on every run
         if state.subscribe_failed or (

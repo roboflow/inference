@@ -233,6 +233,71 @@ def test_unreachable_broker_leaves_nothing_behind_and_later_run_recovers():
             thread.join(timeout=2)
 
 
+def refusing_broker(reason_code: int):
+    """A broker that answers every CONNECT with `reason_code`, accepting any
+    number of connections so retries, if any, are counted."""
+    broker = FakeMQTTBroker(connack_reason_code=reason_code, keep_serving=True)
+    thread = threading.Thread(target=broker.serve, daemon=True)
+    thread.start()
+    return broker, thread
+
+
+@pytest.mark.timeout(15)
+def test_refused_connection_is_reported_once_and_not_retried():
+    # given - a broker that refuses the credentials
+    broker, thread = refusing_broker(5)
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when - the first run hits the refusal, then the block lives on past
+        # several reconnect intervals (max delay is 2 * timeout)
+        started = time.monotonic()
+        first = block.run(**reader_kwargs(broker, timeout=0.5))
+        first_elapsed = time.monotonic() - started
+        time.sleep(2.5)
+        started = time.monotonic()
+        second = block.run(**reader_kwargs(broker, timeout=0.5))
+        second_elapsed = time.monotonic() - started
+
+        # then - the refusal is named at once, the loop stopped, no retry happened
+        assert first["error_status"] is True
+        assert "not authorised" in first["error_message"]
+        assert "code 5" in first["error_message"]
+        assert "client_id" in first["error_message"]
+        assert "Raise 'timeout'" not in first["error_message"]
+        assert first_elapsed < 0.4
+        assert second == first
+        assert second_elapsed < 0.1
+        assert broker.connections_accepted == 1
+        assert broker.subscriptions == []
+    finally:
+        block.close()
+        broker.finish()
+        thread.join(timeout=2)
+
+
+@pytest.mark.timeout(15)
+def test_unavailable_broker_keeps_retrying_and_is_named():
+    # given - a broker that answers "unavailable", a passing condition
+    broker, thread = refusing_broker(3)
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(**reader_kwargs(broker, timeout=0.5))
+        time.sleep(2.5)
+
+        # then - the reason is reported and the client kept reconnecting
+        assert result["error_status"] is True
+        assert "broker unavailable" in result["error_message"]
+        assert "retrying in the background" in result["error_message"]
+        assert broker.connections_accepted >= 2
+    finally:
+        block.close()
+        broker.finish()
+        thread.join(timeout=2)
+
+
 @pytest.fixture
 def tls_broker(mqtt_test_certificates):
     broker = FakeMQTTBroker(

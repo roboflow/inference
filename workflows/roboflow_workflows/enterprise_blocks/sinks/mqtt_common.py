@@ -7,13 +7,17 @@ Both blocks open an outbound connection to the broker named by the workflow.
 before either block builds a client, and `configure_tls()` enables
 server-verified TLS on the client, gating a workflow-chosen CA path behind the
 engine's file-system permission. `normalise_client_id()` turns the reader's
-optional `client_id` into either a usable id or "unset".
+optional `client_id` into either a usable id or "unset", and
+`connection_refused_message()` with `PERMANENT_CONNACK_CODES` turn a broker's
+CONNACK refusal into the outputs' error text and the decision whether paho may
+keep reconnecting.
 """
 
 import logging
 import os
 from typing import Any, List, Optional, Tuple
 
+import paho.mqtt.client as mqtt
 from roboflow_workflows.environment import (
     MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST,
     MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS,
@@ -109,6 +113,39 @@ def normalise_client_id(value: Any) -> Optional[str]:
         )
     value = value.strip()
     return value or None
+
+
+# CONNACK refusals a retry cannot change: unacceptable protocol version (1),
+# identifier rejected (2), bad user name or password (4), not authorised (5).
+# 3 (broker unavailable) is transient and keeps paho's reconnect.
+PERMANENT_CONNACK_CODES = frozenset({1, 2, 4, 5})
+TRANSIENT_CONNACK_CODE = 3
+
+
+def connection_refused_message(reason_code: int, *, block_inputs: str) -> str:
+    """Return the outputs' error text for a broker that refused the CONNECT.
+
+    Args:
+        reason_code: The CONNACK return code, 1 or higher.
+        block_inputs: The block's inputs the user should check, for example
+            ``"username and password"``.
+
+    Returns:
+        A message naming the broker's reason. For a permanent refusal it says the
+        client does not retry; for "broker unavailable" it says the client keeps
+        retrying in the background.
+    """
+    reason = mqtt.connack_string(reason_code)
+    if reason_code == TRANSIENT_CONNACK_CODE:
+        return (
+            f"MQTT broker refused the connection: {reason} (code {reason_code}); "
+            "the client keeps retrying in the background."
+        )
+    return (
+        f"MQTT broker refused the connection: {reason} (code {reason_code}). "
+        f"Check {block_inputs}; the client does not retry until the block is closed "
+        "or the pipeline restarted."
+    )
 
 
 def _normalise_host(host: str) -> str:

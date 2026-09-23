@@ -13,8 +13,11 @@ from typing_extensions import Annotated
 logger = logging.getLogger("inference")
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
+    PERMANENT_CONNACK_CODES,
+    TRANSIENT_CONNACK_CODE,
     ConfigurationError,
     configure_tls,
+    connection_refused_message,
     resolve_broker_address,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
@@ -66,6 +69,14 @@ connection but never completes the TLS handshake is given up on after the
 MQTT keepalive interval (60 s), not after `timeout`; real brokers close such
 a connection immediately.
 
+A broker that refuses the connection (bad user name or password, not
+authorised, an unacceptable protocol version) is reported in the outputs with
+the broker's reason, and the block stops reconnecting: retrying with the same
+credentials cannot succeed and would only trip the broker's authentication
+rate limiting. Fix the configuration and restart the pipeline. A broker
+answering "unavailable" is a passing condition, so the client keeps retrying
+in the background.
+
 Outputs:
     - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
                           True if there was an error, False if successful.
@@ -98,26 +109,79 @@ def _not_connected_message(error: BaseException, encryption: str) -> str:
     )
 
 
-def mqtt_on_connect(client, userdata, flags, reason_code, properties=None):
+WRITER_CONNECTION_INPUTS = "username and password"
+NOT_CONNECTED_WITHIN_TIMEOUT = (
+    "MQTT broker not connected (connection was not established within timeout); "
+    "the client keeps retrying in the background. Raise 'timeout' if the "
+    "broker needs longer to connect."
+)
+
+
+class MQTTWriterState:
+    """Connection state shared between paho's network thread and the engine thread.
+
+    Passed to paho as ``userdata`` so the callbacks never hold a reference to the
+    block itself.
+
+    Attributes:
+        connected: Set once the broker accepted the session; cleared on disconnect.
+        connack: Set on every CONNACK, accepted or refused, so a run can stop
+            waiting as soon as the broker answered; cleared on a transport
+            disconnect, kept while a refusal is recorded.
+        refused_code: The CONNACK return code of the last refusal, or None after an
+            accepted CONNACK. A permanent code (see ``PERMANENT_CONNACK_CODES``) means
+            the network loop was stopped and every run reports the refusal.
+    """
+
+    def __init__(self):
+        self.connected = threading.Event()
+        self.connack = threading.Event()
+        self.refused_code: Optional[int] = None
+
+    def reset(self) -> None:
+        self.connected.clear()
+        self.connack.clear()
+        self.refused_code = None
+
+
+def mqtt_on_connect(
+    client, state: MQTTWriterState, flags, reason_code, properties=None
+):
     # paho invokes on_connect for accepted and rejected CONNACK alike;
     # only reason_code 0 means an established MQTT session
+    state.connack.set()
     if reason_code == 0:
+        state.refused_code = None
         logger.info("MQTT client connected")
-        userdata.set()
-    else:
-        logger.error("MQTT connection refused, result code %s", reason_code)
-        userdata.clear()
+        state.connected.set()
+        return
+    state.refused_code = reason_code
+    logger.error(
+        "MQTT connection refused: %s (code %s)",
+        mqtt.connack_string(reason_code),
+        reason_code,
+    )
+    state.connected.clear()
+    if reason_code in PERMANENT_CONNACK_CODES:
+        # paho would otherwise reconnect with the same credentials forever;
+        # disconnect() puts it in the disconnecting state, so its loop ends
+        # after this CONNACK instead of retrying
+        client.disconnect()
 
 
-def mqtt_on_connect_fail(client, userdata):
+def mqtt_on_connect_fail(client, state: MQTTWriterState):
     # paho 1.6.1 invokes this callback with exactly (client, userdata)
     logger.error("MQTT client failed to establish connection with broker")
-    userdata.clear()
+    state.connected.clear()
 
 
-def mqtt_on_disconnect(client, userdata, reason_code, properties=None):
+def mqtt_on_disconnect(client, state: MQTTWriterState, reason_code, properties=None):
     logger.info("MQTT client disconnected, result code %s", reason_code)
-    userdata.clear()
+    state.connected.clear()
+    if state.refused_code is None:
+        # a transport drop: the next run waits for the reconnect's CONNACK; after
+        # a refusal the answer stays visible so run() reports it without waiting
+        state.connack.clear()
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -241,7 +305,9 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         # False by default so a hand-constructed block is safe
         self._allow_access_to_file_system = allow_access_to_file_system
         self.mqtt_client: Optional[mqtt.Client] = None
-        self._connected = threading.Event()
+        self._connection = MQTTWriterState()
+        # the same Event object as the state's, kept under its historical name
+        self._connected = self._connection.connected
         self._connection_identity: Optional[Tuple] = None
         self._lifecycle_lock = threading.Lock()
         self._disable_sinks = disable_sinks
@@ -263,8 +329,9 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                     # accepted so the thread never outlives the block
                     client.loop_stop()
                 finally:
-                    # only after the join can no callback re-set the event
-                    self._connected.clear()
+                    # only after the join can no callback re-set the events; a
+                    # client rebuilt by a later run starts without a stale refusal
+                    self._connection.reset()
 
     def __del__(self):
         try:
@@ -412,7 +479,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         if self.mqtt_client is None:
             client = None
             try:
-                client = mqtt.Client(userdata=self._connected)
+                client = mqtt.Client(userdata=self._connection)
                 if username is not None:
                     client.username_pw_set(username, password)
                 # TLS must be configured before connect(); the CA path is gated
@@ -465,18 +532,45 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials, timeout, encryption "
                 "or ca_certificate_path) changed between runs; this block publishes only "
-                "to the connection configured on its first run."
-                "on its first run.",
+                "to the connection configured on its first run.",
                 fail_fast=fail_fast,
             )
-        # the background loop owns (re)connecting; runs only wait for readiness
-        if not self._connected.wait(timeout=timeout):
+        state = self._connection
+        # a permanent refusal stopped the network loop: report it on every run
+        # without waiting and without touching the broker again
+        if state.refused_code in PERMANENT_CONNACK_CODES:
             return self._handle_failure(
-                "MQTT broker not connected (connection was not established within timeout); "
-                "the client keeps retrying in the background. Raise 'timeout' if the "
-                "broker needs longer to connect.",
+                connection_refused_message(
+                    state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
+                ),
                 fail_fast=fail_fast,
             )
+        # the background loop owns (re)connecting; runs only wait for readiness.
+        # The wait ends on any CONNACK, so a refusal is reported as soon as the
+        # broker answers instead of after the timeout
+        if not state.connected.is_set():
+            if not state.connack.wait(timeout=timeout):
+                return self._handle_failure(
+                    NOT_CONNECTED_WITHIN_TIMEOUT, fail_fast=fail_fast
+                )
+            if state.refused_code in PERMANENT_CONNACK_CODES:
+                return self._handle_failure(
+                    connection_refused_message(
+                        state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
+                    ),
+                    fail_fast=fail_fast,
+                )
+            if not state.connected.wait(timeout=timeout):
+                if state.refused_code == TRANSIENT_CONNACK_CODE:
+                    return self._handle_failure(
+                        connection_refused_message(
+                            state.refused_code, block_inputs=WRITER_CONNECTION_INPUTS
+                        ),
+                        fail_fast=fail_fast,
+                    )
+                return self._handle_failure(
+                    NOT_CONNECTED_WITHIN_TIMEOUT, fail_fast=fail_fast
+                )
         try:
             res: mqtt.MQTTMessageInfo = self.mqtt_client.publish(
                 topic, message, qos=qos, retain=retain

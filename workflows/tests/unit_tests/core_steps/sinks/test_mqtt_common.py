@@ -7,8 +7,10 @@ from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     DEFAULT_MQTT_PORT,
     MQTT_KEEPALIVE_SECONDS,
+    PERMANENT_CONNACK_CODES,
     ConfigurationError,
     configure_tls,
+    connection_refused_message,
     normalise_broker_address,
     normalise_client_id,
     resolve_broker_address,
@@ -78,6 +80,48 @@ def test_normalise_client_id_treats_blank_as_unset_and_strips(value, expected):
 def test_normalise_client_id_rejects_non_strings_naming_the_field(value):
     with pytest.raises(ConfigurationError, match="client_id"):
         normalise_client_id(value)
+
+
+def test_permanent_connack_codes_exclude_success_and_broker_unavailable():
+    assert PERMANENT_CONNACK_CODES == {1, 2, 4, 5}
+    assert 0 not in PERMANENT_CONNACK_CODES
+    assert 3 not in PERMANENT_CONNACK_CODES
+
+
+@pytest.mark.parametrize(
+    "code, reason",
+    [
+        (1, "unacceptable protocol version"),
+        (2, "identifier rejected"),
+        (4, "bad user name or password"),
+        (5, "not authorised"),
+    ],
+)
+def test_permanent_refusal_message_names_reason_inputs_and_no_retry(code, reason):
+    message = connection_refused_message(code, block_inputs="username and password")
+
+    assert reason in message
+    assert f"code {code}" in message
+    assert "Check username and password" in message
+    assert "does not retry" in message
+    assert "Raise 'timeout'" not in message
+
+
+def test_broker_unavailable_message_says_retrying():
+    message = connection_refused_message(3, block_inputs="username and password")
+
+    assert "broker unavailable" in message
+    assert "code 3" in message
+    assert "retrying in the background" in message
+    assert "does not retry" not in message
+
+
+def test_unknown_refusal_code_uses_permanent_wording():
+    message = connection_refused_message(7, block_inputs="username and password")
+
+    assert "unknown reason" in message
+    assert "code 7" in message
+    assert "does not retry" in message
 
 
 def test_keepalive_is_shorter_than_paho_default():

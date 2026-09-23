@@ -1,4 +1,4 @@
-import threading
+import time
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
@@ -7,8 +7,10 @@ from pydantic import ValidationError
 from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
+    NOT_CONNECTED_WITHIN_TIMEOUT,
     BlockManifest,
     MQTTWriterSinkBlockV1,
+    MQTTWriterState,
     mqtt_on_connect,
     mqtt_on_connect_fail,
     mqtt_on_disconnect,
@@ -128,45 +130,231 @@ class TestManifest:
 
 class TestCallbacks:
     def test_on_connect_sets_event_only_for_accepted_connack(self):
-        event = threading.Event()
+        state = MQTTWriterState()
 
-        mqtt_on_connect(MagicMock(), event, {}, 0)
+        mqtt_on_connect(MagicMock(), state, {}, 0)
 
-        assert event.is_set()
+        assert state.connected.is_set()
+        assert state.connack.is_set()
+        assert state.refused_code is None
 
     @pytest.mark.parametrize("reason_code", [1, 2, 3, 4, 5])
     def test_on_connect_clears_event_for_rejected_connack(self, reason_code):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_connect(MagicMock(), event, {}, reason_code)
+        mqtt_on_connect(MagicMock(), state, {}, reason_code)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+        assert state.connack.is_set()
+        assert state.refused_code == reason_code
+
+    @pytest.mark.parametrize("reason_code", [1, 2, 4, 5])
+    def test_on_connect_stops_the_loop_for_a_permanent_refusal(self, reason_code):
+        client = MagicMock()
+
+        mqtt_on_connect(client, MQTTWriterState(), {}, reason_code)
+
+        client.disconnect.assert_called_once_with()
+
+    def test_on_connect_keeps_the_loop_for_broker_unavailable(self):
+        client = MagicMock()
+        state = MQTTWriterState()
+
+        mqtt_on_connect(client, state, {}, 3)
+
+        client.disconnect.assert_not_called()
+        assert state.refused_code == 3
+
+    def test_on_connect_logs_the_refusal_reason(self, caplog):
+        with caplog.at_level("ERROR", logger="inference"):
+            mqtt_on_connect(MagicMock(), MQTTWriterState(), {}, 4)
+
+        assert "bad user name or password" in caplog.text
+        assert "code 4" in caplog.text
+
+    def test_accepted_connack_after_broker_unavailable_resets_refusal(self):
+        state = MQTTWriterState()
+
+        mqtt_on_connect(MagicMock(), state, {}, 3)
+        mqtt_on_connect(MagicMock(), state, {}, 0)
+
+        assert state.refused_code is None
+        assert state.connected.is_set()
 
     def test_on_connect_fail_matches_paho_two_argument_signature(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
         # paho 1.6.1 invokes on_connect_fail with exactly (client, userdata)
-        mqtt_on_connect_fail(MagicMock(), event)
+        mqtt_on_connect_fail(MagicMock(), state)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
 
     def test_on_disconnect_clears_event(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_disconnect(MagicMock(), event, 1)
+        mqtt_on_disconnect(MagicMock(), state, 1)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+
+    def test_on_disconnect_after_transport_drop_clears_connack(self):
+        state = MQTTWriterState()
+        state.connack.set()
+
+        mqtt_on_disconnect(MagicMock(), state, 1)
+
+        assert not state.connack.is_set()
+
+    def test_on_disconnect_after_refusal_keeps_connack(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 5)
+
+        mqtt_on_disconnect(MagicMock(), state, 0)
+
+        assert state.connack.is_set()
+        assert state.refused_code == 5
 
     def test_on_disconnect_accepts_mqtt5_properties_argument(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_disconnect(MagicMock(), event, 1, properties=None)
+        mqtt_on_disconnect(MagicMock(), state, 1, properties=None)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+
+    def test_reset_clears_everything(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 5)
+
+        state.reset()
+
+        assert not state.connected.is_set()
+        assert not state.connack.is_set()
+        assert state.refused_code is None
+
+
+def _answer_connect_with(mock_client_cls, reason_code: int) -> None:
+    """Make the mocked client's loop_start deliver a CONNACK with `reason_code`
+    to the state the block handed paho as userdata."""
+    mock_client = mock_client_cls.return_value
+
+    def fire_connack():
+        state = mock_client_cls.call_args.kwargs["userdata"]
+        mqtt_on_connect(mock_client, state, {}, reason_code)
+
+    mock_client.loop_start.side_effect = fire_connack
+
+
+class TestRefusedConnection:
+    def test_refusal_reported_with_reason_and_inputs(self, mock_client_cls, block):
+        _answer_connect_with(mock_client_cls, 5)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "not authorised" in result["message"]
+        assert "code 5" in result["message"]
+        assert "Check username and password" in result["message"]
+        assert "Raise 'timeout'" not in result["message"]
+        mock_client_cls.return_value.disconnect.assert_called_once_with()
+        mock_client_cls.return_value.publish.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "reason_code, reason",
+        [
+            (1, "unacceptable protocol version"),
+            (2, "identifier rejected"),
+            (4, "bad user name or password"),
+        ],
+    )
+    def test_other_permanent_refusals_name_their_reason(
+        self, mock_client_cls, block, reason_code, reason
+    ):
+        _answer_connect_with(mock_client_cls, reason_code)
+
+        result = block.run(**run_kwargs())
+
+        assert reason in result["message"]
+        mock_client_cls.return_value.disconnect.assert_called_once_with()
+
+    def test_refusal_is_reported_without_waiting_for_timeout(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=2.0))
+
+        assert result["error_status"] is True
+        assert time.monotonic() - started < 0.5
+
+    def test_next_run_after_refusal_repeats_it_without_a_new_connection(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+        first = block.run(**run_kwargs(timeout=2.0))
+
+        started = time.monotonic()
+        second = block.run(**run_kwargs(timeout=2.0))
+
+        assert second == first
+        assert time.monotonic() - started < 0.5
+        assert mock_client_cls.call_count == 1
+        mock_client_cls.return_value.connect.assert_called_once()
+
+    def test_refusal_with_fail_fast_raises_with_the_reason(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+
+        with pytest.raises(Exception, match="not authorised"):
+            block.run(**run_kwargs(fail_fast=True))
+
+    def test_broker_unavailable_keeps_retrying_and_names_the_reason(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 3)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "broker unavailable" in result["message"]
+        assert "retrying in the background" in result["message"]
+        mock_client_cls.return_value.disconnect.assert_not_called()
+
+    def test_run_succeeds_once_an_unavailable_broker_accepts(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 3)
+        block.run(**run_kwargs())
+        state = mock_client_cls.call_args.kwargs["userdata"]
+        mqtt_on_connect(mock_client_cls.return_value, state, {}, 0)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        assert state.refused_code is None
+
+    def test_no_connack_at_all_reports_not_connected(self, mock_client_cls, block):
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert result["message"] == NOT_CONNECTED_WITHIN_TIMEOUT
+
+    def test_close_after_refusal_completes_and_resets_state(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert block.mqtt_client is None
+        assert block._connection.refused_code is None
+        assert not block._connection.connack.is_set()
+        mock_client_cls.return_value.loop_stop.assert_called_once()
 
 
 class TestRunValidation:
@@ -271,7 +459,7 @@ class TestClientSetup:
         result = block.run(**run_kwargs())
 
         assert result["error_status"] is False
-        mock_client_cls.assert_called_once_with(userdata=block._connected)
+        mock_client_cls.assert_called_once_with(userdata=block._connection)
         mock_client.connect.assert_called_once_with("localhost", 1883)
         mock_client.connect_async.assert_not_called()
         called_methods = [call[0] for call in mock_client.method_calls]
