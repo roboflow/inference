@@ -94,7 +94,7 @@ def test_repeated_calls_union_into_the_same_timeline_identically() -> None:
 def test_the_module_imports_only_allowed_packages() -> None:
     path = (
         pathlib.Path(__file__).resolve().parents[4]
-        / "inference/core/workflows/utils/action_recognition.py"
+        / "workflows/roboflow_workflows/utils/action_recognition.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
@@ -120,7 +120,7 @@ def test_syntactic_parser_returns_a_plain_dict() -> None:
 def test_syntactic_parser_does_not_import_server_entities() -> None:
     path = (
         pathlib.Path(__file__).resolve().parents[4]
-        / "inference/core/workflows/execution_engine/v1/compiler/syntactic_parser.py"
+        / "workflows/roboflow_workflows/execution_engine/v1/compiler/syntactic_parser.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules = {
