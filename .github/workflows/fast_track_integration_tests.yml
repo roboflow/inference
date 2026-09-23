@@ -159,7 +159,9 @@ jobs:
     if: ${{ !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
     uses: ./.github/workflows/integration_tests_inference_server_x86.yml
     with:
-      image_tag: ${{ needs.resolve.outputs.image_tag }}
+      # The tag the build actually pushed wins; the resolved tag is the
+      # fallback for resume runs, where no build happened.
+      image_tag: ${{ needs.build-cpu.outputs.image_tag || needs.resolve.outputs.image_tag }}
       use-inference-models: ${{ inputs.use_inference_models }}
     secrets: inherit
 
@@ -169,7 +171,7 @@ jobs:
     if: ${{ !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
     uses: ./.github/workflows/test.nvidia_t4.yml
     with:
-      image_tag: ${{ needs.resolve.outputs.image_tag }}
+      image_tag: ${{ needs.build-gpu.outputs.image_tag || needs.resolve.outputs.image_tag }}
       use-inference-models: ${{ inputs.use_inference_models }}
       test_name: ${{ inputs.t4_test_name }}
     secrets: inherit
@@ -194,6 +196,8 @@ jobs:
       - name: Report
         env:
           IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+          BUILT_CPU_TAG: ${{ needs.build-cpu.outputs.image_tag }}
+          BUILT_GPU_TAG: ${{ needs.build-gpu.outputs.image_tag }}
           R_BUILD_CPU: ${{ needs.build-cpu.result }}
           R_BUILD_GPU: ${{ needs.build-gpu.result }}
           R_SERVER_CPU: ${{ needs.server-cpu.result }}
@@ -212,6 +216,12 @@ jobs:
             echo
             echo "Resume a failed suite: re-dispatch with the same custom_tag, build_images=false, and only that suite enabled (image $IMAGE_TAG is already published)."
           } >> "$GITHUB_STEP_SUMMARY"
+          for built in "$BUILT_CPU_TAG" "$BUILT_GPU_TAG"; do
+            if [ -n "$built" ] && [ "$built" != "$IMAGE_TAG" ]; then
+              echo "::error::build pushed tag '$built' but this run resolved '$IMAGE_TAG'; the suites tested the built tag, fix the tag derivation before trusting the deploy tag"
+              exit 1
+            fi
+          done
           for r in "$R_BUILD_CPU" "$R_BUILD_GPU" "$R_SERVER_CPU" "$R_T4" "$R_MODELS_GPU"; do
             case "$r" in
               failure|cancelled|timed_out) echo "::error::a job ended with $r"; exit 1 ;;

@@ -62,7 +62,10 @@ jobs:
     steps:
       - name: Refuse a called build without a custom tag
         # Inside a called workflow github.workflow is the caller's name.
-        if: ${{ github.workflow != 'Build and Push GPU Container' && inputs.custom_tag == '' }}
+        # Also refuse a called build outside a manual dispatch: determine-tags
+        # derives the tag from the caller's event, so only workflow_dispatch
+        # callers produce <VERSION>-<custom_tag>.
+        if: ${{ github.workflow != 'Build and Push GPU Container' && (inputs.custom_tag == '' || github.event_name != 'workflow_dispatch') }}
         run: |
           echo "::error::custom_tag is required when this workflow is called; an empty tag would overwrite the released :VERSION image"
           exit 1
