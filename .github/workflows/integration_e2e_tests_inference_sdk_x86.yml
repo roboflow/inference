@@ -7,27 +7,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_call:
-    # Fast-track CI (fast_track_ci.yml) calls this workflow for a branch that
-    # deliberately diverged from main. `ref` is the PR head SHA to test; empty
-    # keeps the default checkout for every other trigger.
-    inputs:
-      ref:
-        description: "Git ref to check out (fast-track CI). Empty = default for the event."
-        type: string
-        required: false
-        default: ""
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  # The literal file id keeps groups distinct when this workflow is *called*
-  # (workflow_call): inside a called workflow github.workflow resolves to the
-  # caller's name, so without it every workflow called by one caller would
-  # share a single group and serialize.
-  group: ${{ github.workflow }}-integration_e2e_tests_inference_sdk_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -48,8 +34,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.ref }}
 
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
@@ -91,8 +75,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.ref }}
 
       - name: 📦 Cache Python packages
         uses: actions/cache@v5

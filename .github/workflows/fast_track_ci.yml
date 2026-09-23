@@ -9,17 +9,22 @@ name: Fast-track CI
 #
 # This workflow fires when a maintainer puts the `fast-track-deploy-approved`
 # label on the umbrella PR (and on every later push to the branch while the
-# label is present). A gate verifies the branch really is a fast-track branch,
-# then the same workflows that run on a PR to main are called with the PR head
-# SHA. Results show up as check runs on the PR.
+# label is present). A gate verifies the branch really is a fast-track branch.
+# Then every workflow that a PR to main would run is DISPATCHED on the
+# fast-track branch itself (workflow_dispatch), so the tests run in the
+# branch's own context: its own workflow definitions, its own cache scope.
+# Nothing from the branch executes inside this (main-context) run, which is
+# what keeps main's Actions cache out of reach of the branch code. Each
+# dispatched run is reported back as a commit status on the PR head.
 #
-# Runs with `pull_request_target`, i.e. with secrets and the base-branch
-# workflow definitions. The gate only admits same-repository PRs, and the
-# label can only be applied by users with triage rights.
+# Runs with `pull_request_target` (main-branch definition, secrets). The gate
+# only admits same-repository PRs, and the label needs triage rights.
 
 permissions:
   contents: read
   pull-requests: read
+  actions: write   # dispatch the test workflows
+  statuses: write  # report each dispatched run on the PR head commit
 
 on:
   pull_request_target:
@@ -33,12 +38,30 @@ on:
         required: true
 
 concurrency:
-  # One live run per umbrella PR; a newer push supersedes the older run.
+  # One live run per umbrella PR; a newer push supersedes the older run (and
+  # the superseded run cancels the test runs it dispatched).
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 env:
   FAST_TRACK_LABEL: fast-track-deploy-approved
+  # Workflows a PR to main runs (pull_request trigger, branches: [main]).
+  # Every one of them has a workflow_dispatch trigger on main. On an older
+  # fast-track branch some may lack it or not exist; those are reported as
+  # skipped, not failed.
+  TEST_WORKFLOWS: >-
+    static_code_analysis.yml
+    unit_tests_inference_x86.yml
+    unit_tests_inference_cli_x86.yml
+    unit_tests_inference_sdk_x86.yml
+    unit_tests_workflows_x86.yml
+    unit_tests_workflows_tensor_native_x86.yml
+    unit_tests_inference_experimental.yml
+    unit_tests_inference_model_manager_and_server.yml
+    integration_tests_inference_experimental_cpu.yml
+    integration_tests_workflows_x86.yml
+    integration_tests_workflows_tensor_native_x86.yml
+    integration_e2e_tests_inference_sdk_x86.yml
 
 jobs:
   gate:
@@ -122,75 +145,127 @@ jobs:
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
-  static-code-analysis:
+  run-tests:
+    name: Dispatch and wait for the PR test workflows
     needs: gate
-    uses: ./.github/workflows/static_code_analysis.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-inference:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_inference_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-inference-cli:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_inference_cli_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-inference-sdk:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_inference_sdk_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-workflows:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_workflows_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-workflows-tensor-native:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_workflows_tensor_native_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-inference-models:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_inference_experimental.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  unit-tests-model-manager-and-server:
-    needs: gate
-    uses: ./.github/workflows/unit_tests_inference_model_manager_and_server.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  integration-tests-inference-models-cpu:
-    needs: gate
-    uses: ./.github/workflows/integration_tests_inference_experimental_cpu.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  integration-tests-workflows:
-    needs: gate
-    uses: ./.github/workflows/integration_tests_workflows_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  integration-tests-workflows-tensor-native:
-    needs: gate
-    uses: ./.github/workflows/integration_tests_workflows_tensor_native_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
-  integration-e2e-tests-inference-sdk:
-    needs: gate
-    uses: ./.github/workflows/integration_e2e_tests_inference_sdk_x86.yml
-    with:
-      ref: ${{ needs.gate.outputs.head_sha }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      HEAD_REF: ${{ needs.gate.outputs.head_ref }}
+      PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+      ORCHESTRATOR_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Dispatch every PR workflow on the fast-track branch
+        id: dispatch
+        run: |
+          set -euo pipefail
+          runs_file="$RUNNER_TEMP/runs.tsv"   # workflow<TAB>run_id<TAB>url
+          : > "$runs_file"
+          skipped=()
+
+          status() {  # context state description [target_url]
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $1" -f state="$2" -f description="$3" -f target_url="${4:-$ORCHESTRATOR_URL}"
+          }
+
+          for wf in $TEST_WORKFLOWS; do
+            name="${wf%.yml}"
+            # Runs created before this instant belong to somebody else.
+            since=$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ)
+            if ! out=$(gh workflow run "$wf" --repo "$REPO" --ref "$HEAD_REF" 2>&1); then
+              echo "::warning::$wf could not be dispatched on $HEAD_REF: $out"
+              skipped+=("$name")
+              continue
+            fi
+            run_id=""
+            for _ in $(seq 1 30); do
+              sleep 3
+              run_id=$(gh run list --repo "$REPO" --workflow "$wf" --branch "$HEAD_REF" --event workflow_dispatch \
+                --limit 5 --json databaseId,createdAt \
+                --jq --arg since "$since" '[.[] | select(.createdAt >= $since)] | sort_by(.createdAt) | last | .databaseId // empty')
+              [ -n "$run_id" ] && break
+            done
+            if [ -z "$run_id" ]; then
+              echo "::error::$wf was dispatched but no run appeared within 90 s"
+              status "$name" error "dispatched, run not found"
+              exit 1
+            fi
+            url="${{ github.server_url }}/$REPO/actions/runs/$run_id"
+            printf '%s\t%s\t%s\n' "$name" "$run_id" "$url" >> "$runs_file"
+            status "$name" pending "running on $HEAD_REF" "$url"
+            echo "dispatched $wf -> run $run_id"
+          done
+
+          echo "runs_file=$runs_file" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${skipped[@]:-}" > "$RUNNER_TEMP/skipped.txt"
+
+      - name: Wait for the dispatched runs
+        id: wait
+        run: |
+          set -euo pipefail
+          runs_file="${{ steps.dispatch.outputs.runs_file }}"
+          results_file="$RUNNER_TEMP/results.tsv"   # workflow<TAB>run_id<TAB>url<TAB>conclusion
+          : > "$results_file"
+          pending=$(cut -f2 "$runs_file" | tr '\n' ' ')
+          while [ -n "${pending// /}" ]; do
+            still=""
+            for run_id in $pending; do
+              info=$(gh run view "$run_id" --repo "$REPO" --json status,conclusion 2>/dev/null || echo '{}')
+              st=$(jq -r '.status // "unknown"' <<<"$info")
+              if [ "$st" = "completed" ]; then
+                conclusion=$(jq -r '.conclusion // "unknown"' <<<"$info")
+                line=$(awk -F'\t' -v id="$run_id" '$2==id' "$runs_file")
+                printf '%s\t%s\n' "$line" "$conclusion" >> "$results_file"
+                echo "run $run_id finished: $conclusion"
+              else
+                still="$still $run_id"
+              fi
+            done
+            pending="$still"
+            if [ -n "${pending// /}" ]; then sleep 60; fi
+          done
+          echo "results_file=$results_file" >> "$GITHUB_OUTPUT"
+
+      - name: Report statuses and summary
+        if: ${{ always() && steps.dispatch.outputs.runs_file != '' }}
+        run: |
+          set -euo pipefail
+          runs_file="${{ steps.dispatch.outputs.runs_file }}"
+          results_file="${{ steps.wait.outputs.results_file }}"
+          [ -n "$results_file" ] && [ -f "$results_file" ] || results_file=/dev/null
+          failed=0
+          {
+            echo "## Fast-track CI for #$PR_NUMBER (\`$HEAD_REF\` @ \`$HEAD_SHA\`)"
+            echo "| Workflow | Result | Run |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r name run_id url; do
+            [ -n "$name" ] || continue
+            conclusion=$(awk -F'\t' -v id="$run_id" '$2==id {print $4}' "$results_file")
+            case "$conclusion" in
+              success) state=success ;;
+              "")      state=error; conclusion="not finished (orchestrator stopped)" ;;
+              *)       state=failure; failed=1 ;;
+            esac
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $name" -f state="$state" -f description="$conclusion" -f target_url="$url"
+            echo "| $name | $conclusion | $url |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$runs_file"
+          while read -r name; do
+            [ -n "$name" ] || continue
+            echo "| $name | skipped: not dispatchable on this branch | – |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$RUNNER_TEMP/skipped.txt"
+          [ "$failed" = 0 ] || { echo "::error::at least one dispatched workflow failed"; exit 1; }
+
+      - name: Cancel dispatched runs if this run was cancelled
+        if: ${{ cancelled() && steps.dispatch.outputs.runs_file != '' }}
+        run: |
+          while IFS=$'\t' read -r name run_id url; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$REPO" || true
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $name" -f state="error" -f description="cancelled: superseded by a newer push" -f target_url="$url" || true
+          done < "${{ steps.dispatch.outputs.runs_file }}"
