@@ -118,10 +118,18 @@ are dropped at startup instead of registered.
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `8` | Max concurrent steps per workflow run |
 | `LANDING_DIR` | `<checkout>/inference/landing/out` | Directory of the exported legacy landing page served at `/`; the Docker images set it to `/app/landing` |
 | `ENABLE_DASHBOARD` | `false` | Serves `/dashboard.html` instead of 404 |
+| `ENABLE_BUILDER` | `false` | Mounts the Workflow Builder at `/build` |
+| `BUILDER_ORIGIN` | `https://app.roboflow.com`, or `https://app.roboflow.one` when `PROJECT=roboflow-staging` | Origin allowed to call `/build/api/*` and `/workflows/*` from the browser |
 
 `/` serves the legacy landing page from `LANDING_DIR`; its dashboard tab calls
 `/metrics`, `/logs`, and `/inference_pipelines`, which are not ported here and
 answer 404.
+
+`/build` serves the Workflow Builder; local workflows are stored under
+`MODEL_CACHE_DIR/workflow/local` and run through `/workflows/run` with
+workspace `local`; the model picker lists models loaded in the model manager,
+models present in the `inference_models` cache (`INFERENCE_HOME/models-cache`),
+and cached foundation models.
 
 Authentication differs by surface: `/v2/*` keeps Bearer-token auth plus
 `ENABLE_CONTROL_PLANE_ROUTES` gating. Legacy routes instead take an API key

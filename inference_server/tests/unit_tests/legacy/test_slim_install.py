@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -45,3 +46,32 @@ def test_app_import_fails_when_roboflow_workflows_is_broken():
     )
     assert result.returncode != 0, result.stdout
     assert "roboflow_workflows" in result.stderr, result.stderr
+
+
+def test_app_imports_with_builder_enabled_without_roboflow_workflows(tmp_path):
+    code = (
+        "import asyncio, importlib.util, sys; _find = importlib.util.find_spec; "
+        "importlib.util.find_spec = lambda name, *a, **k: "
+        "None if name == 'roboflow_workflows' else _find(name, *a, **k); "
+        "sys.modules['roboflow_workflows'] = None; "
+        "import inference_server.app as app_mod; "
+        "paths = {r.path for r in app_mod.app.routes if hasattr(r, 'path')}; "
+        "assert '/build' in paths, sorted(paths); "
+        "from inference_server.builder import models; "
+        "bridge = type('B', (), "
+        "{'describe': lambda self: asyncio.sleep(0, result=[])})(); "
+        "listed = asyncio.run(models.list_models(bridge)); "
+        "assert not any(m['is_foundation'] for m in listed), listed; "
+        "assert all(m['compatible_block_types'] == [] for m in listed), listed; "
+        "print('ok')"
+    )
+    environment = os.environ.copy()
+    environment["ENABLE_BUILDER"] = "true"
+    environment["MODEL_CACHE_DIR"] = str(tmp_path / "cache")
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr

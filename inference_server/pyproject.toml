@@ -47,6 +47,9 @@ roboflow-workflows = { path = "../workflows", editable = true }
 include = ["inference_server*"]
 exclude = ["tests*"]
 
+[tool.setuptools.package-data]
+"inference_server.builder" = ["editor.html"]
+
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"

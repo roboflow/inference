@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from inference_server import configuration as _cfg
 from inference_server.auth import extract_bearer, validate_api_key
+from inference_server.cors import PathAwareCORSMiddleware
 from inference_server.errors import AuthBackendUnavailable
 from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
 from inference_server.routers import v2_models, v2_server
@@ -257,6 +258,17 @@ if _cfg.ALLOW_ORIGINS:
         allow_headers=["*"],
     )
 
+if _cfg.ENABLE_BUILDER:
+    app.add_middleware(
+        PathAwareCORSMiddleware,
+        match_paths=r"^/(build/api|workflows/).*",
+        allow_origins=[_cfg.BUILDER_ORIGIN],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_credentials=True,
+        allow_private_network=True,
+    )
+
 
 def mount_landing_assets(app: FastAPI) -> bool:
     if not os.path.isdir(_cfg.LANDING_DIR):
@@ -318,6 +330,11 @@ if _WORKFLOWS_ROUTES_ENABLED:
     from inference_server.workflows import router as workflows_router
 
     app.include_router(workflows_router.router)
+
+if _cfg.ENABLE_BUILDER:
+    from inference_server.builder.routes import router as builder_router
+
+    app.include_router(builder_router, prefix="/build", tags=["builder"])
 
 if _cfg.LEGACY_ROUTES_ENABLED:
     include_legacy_catch_all(app)

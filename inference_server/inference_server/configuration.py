@@ -110,6 +110,19 @@ LANDING_DIR = os.environ.get(
 )
 ENABLE_DASHBOARD = get_boolean_from_env("ENABLE_DASHBOARD", default=False)
 
+# ── Workflow Builder (app.py, builder/) ───────────────────────────────────
+# NOTE: legacy resolves the builder origin from region + project; EU regions
+# set BUILDER_ORIGIN explicitly.
+ENABLE_BUILDER = get_boolean_from_env("ENABLE_BUILDER", default=False)
+BUILDER_ORIGIN = os.environ.get(
+    "BUILDER_ORIGIN",
+    (
+        "https://app.roboflow.one"
+        if os.environ.get("PROJECT", "roboflow-platform") == "roboflow-staging"
+        else "https://app.roboflow.com"
+    ),
+)
+
 # ── App lifespan (app.py) ─────────────────────────────────────────────────
 MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", default=32)
 
