@@ -153,3 +153,19 @@ A few legacy behaviours are not (yet) available here:
 - Usage tracking, model-monitoring pingback, active learning, and other
   telemetry/usage reporting side effects of the legacy server are not yet
   ported.
+
+## Running the legacy integration suite against this image
+
+The black-box suite in `tests/inference/integration_tests/` reaches the server only through `BASE_URL` and `PORT`, so it runs unchanged against `inference_server`. In CI pick `server-image: new` when dispatching `INTEGRATION TESTS - Inference Server CPU x86` or `Code Quality & Regression Tests - NVIDIA T4`. Locally, from the repository root:
+
+```bash
+docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
+PORT=9101 USE_INFERENCE_MODELS=true INFERENCE_SERVER_REPO=inference-server-experimental make start_test_docker_cpu
+export API_KEY=... asl_instance_segmentation_API_KEY=... asl_poly_instance_seg_API_KEY=... bccd_favz3_API_KEY=... \
+  bccd_i4nym_API_KEY=... cats_and_dogs_smnpl_API_KEY=... coins_xaz9i_API_KEY=... melee_API_KEY=... yolonas_test_API_KEY=...
+USE_INFERENCE_MODELS=true PORT=9101 SKIP_LMM_TEST=True \
+  python -m pytest tests/inference/integration_tests --ignore=tests/inference/integration_tests/test_video_processing_endpoints.py
+make stop_test_docker
+```
+
+The nine key variables are the ones the CI workflows pass (`tests/inference/integration_tests/README.md` explains the `<project_slug>_API_KEY` convention). `USE_INFERENCE_MODELS=true` on the client side selects the `*_inference_models.json` expectation files. `test_video_processing_endpoints.py` targets `/inference_pipelines/*`, which this server does not serve yet. Failures elsewhere are parity findings; do not regenerate the expectation files from this server.
