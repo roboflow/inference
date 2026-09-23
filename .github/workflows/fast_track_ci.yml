@@ -10,6 +10,9 @@ name: Fast-track CI
 # This workflow fires when a maintainer puts the `fast-track-deploy-approved`
 # label on the umbrella PR (and on every later push to the branch while the
 # label is present). A gate verifies the branch really is a fast-track branch.
+# It also stands down once the branch has been aligned with main (end of the
+# fast-track lineage, before upstreaming): from then on the PR is mergeable,
+# the regular `pull_request` workflows run, and a second copy would be waste.
 # Then every workflow that a PR to main would run is DISPATCHED on the
 # fast-track branch itself (workflow_dispatch), so the tests run in the
 # branch's own context: its own workflow definitions, its own cache scope.
@@ -88,6 +91,7 @@ jobs:
       head_sha: ${{ steps.verify.outputs.head_sha }}
       head_ref: ${{ steps.verify.outputs.head_ref }}
       pr_number: ${{ steps.verify.outputs.pr_number }}
+      aligned_with_main: ${{ steps.verify.outputs.aligned_with_main }}
     steps:
       - name: Verify PR, label, branch name, and merge base
         id: verify
@@ -125,6 +129,27 @@ jobs:
           pt="${BASH_REMATCH[2]}"
           tag="v$release"
 
+          # Stand down once the branch contains main. That is the upstreaming
+          # step at the end of the lineage: the PR no longer conflicts, the
+          # mergeability check passes, and the regular pull_request workflows
+          # cover it. Only a branch that diverged from main needs this CI.
+          main_status=$(gh api "repos/$REPO/compare/main...$head_sha" --jq .status)
+          echo "compare main...$head_sha: status=$main_status"
+          if [ "$main_status" != "diverged" ]; then
+            echo "::notice::branch is '$main_status' relative to main: aligned for upstreaming, regular PR CI applies; fast-track CI stands down"
+            {
+              echo "## Fast-track gate"
+              echo "- PR: #$PR_NUMBER \`$head_ref\` -> \`$base\` @ \`$head_sha\`"
+              echo "- branch is **$main_status** relative to main: aligned for upstreaming, regular PR CI applies. Nothing dispatched."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "aligned_with_main=true" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+            echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "aligned_with_main=false" >> "$GITHUB_OUTPUT"
+
           tag_sha=$(gh api "repos/$REPO/commits/$tag" --jq .sha) || fail "release tag $tag not found"
           compare=$(gh api "repos/$REPO/compare/$tag...$head_sha")
           status=$(jq -r .status <<<"$compare")
@@ -156,6 +181,7 @@ jobs:
   run-tests:
     name: Dispatch and wait for the PR test workflows
     needs: gate
+    if: ${{ needs.gate.outputs.aligned_with_main != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
