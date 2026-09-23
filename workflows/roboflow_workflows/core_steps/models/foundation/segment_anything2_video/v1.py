@@ -71,11 +71,14 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
+    ModelExecutionLocation,
+    ModelRequiredAction,
     Runtime,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
     actual_restrictions_of,
+    roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.prototypes.observer import (
@@ -241,10 +244,27 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
-        # Loaded with AutoModel.from_pretrained(), not the model_manager.add_model()
-        # registration the dependency pre-loader performs; declaring `model_id` here
-        # would pre-load through a path this block never uses.
-        return None
+        """Declare the streaming tracker model of the block's local run path.
+
+        The block supports LOCAL step execution only (its run path rejects any
+        other mode) and owns its model loading: it calls
+        `AutoModel.from_pretrained()` itself, sharing the model provider's
+        artifact cache, rather than the generic `add_model()` registration.
+        The declared dependency describes that supported execution path, so it
+        is LOCAL and kept away from the generic preloader. The configured id is
+        returned verbatim, selector included.
+
+        Returns:
+            The configured SAM2 video model.
+        """
+        return [
+            roboflow_platform_model(
+                self.model_id,
+                required_action=ModelRequiredAction.EXECUTION,
+                execution_location=ModelExecutionLocation.LOCAL,
+                preloadable=False,
+            )
+        ]
 
     def discover_work_operations(self) -> List[WorkOperation]:
         return [
@@ -276,10 +296,6 @@ class BlockManifest(WorkflowBlockManifest):
             node_id=f"$steps.{getattr(self, 'name', '')}",
             ignore_environment_restrictions=ignore_environment_restrictions,
         )
-
-    # `discover_dependent_resources()` deliberately not implemented: this
-    # block loads its weights via AutoModel.from_pretrained, not the model
-    # manager — dependencies stay undeclared (None) for now.
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):

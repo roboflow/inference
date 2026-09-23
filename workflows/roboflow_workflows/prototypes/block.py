@@ -221,6 +221,18 @@ class RoboflowPlatformModelMetadata(BaseModel):
     model_registration_kwargs: SkipJsonSchema[Optional[Dict[str, Any]]] = Field(
         default=None, exclude=True, repr=False
     )
+    # In-process loader-policy aid — excluded from serialization, JSON schema
+    # and equality, like the two aids above.
+    preloadable: SkipJsonSchema[bool] = Field(
+        default=True,
+        exclude=True,
+        repr=False,
+        description="Whether the generic Execution Engine model-manager "
+        "preloader may register this model before the workflow runs. False for "
+        "blocks that load and own their model in-process (e.g. streaming video "
+        "trackers). It does not say whether the block loads weights or runs "
+        "remotely.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -389,12 +401,31 @@ def roboflow_platform_model(
     execution_location: Optional[ModelExecutionLocation] = None,
     model_id_resolver: Optional[Callable[[str], Optional[str]]] = None,
     model_registration_kwargs: Optional[Dict[str, Any]] = None,
+    *,
+    preloadable: bool = True,
 ) -> DependentResource:
+    """Declare a Roboflow platform model the step depends on.
+
+    Args:
+        model_id: Literal model id, or the workflow selector that feeds it.
+        required_action: What the step needs from the model.
+        execution_location: Where an EXECUTION model runs; defaults to
+            ENVIRONMENT_DEFINED for EXECUTION when omitted.
+        model_id_resolver: In-process aid turning a substituted `$inputs`
+            value into the final model id.
+        model_registration_kwargs: Extra model-manager registration kwargs.
+        preloadable: In-process aid; False keeps the generic Execution Engine
+            model-manager preloader away from this model. Never serialized.
+
+    Returns:
+        The dependent resource declaration.
+    """
     metadata_kwargs: Dict[str, Any] = {
         "model_id": model_id,
         "required_action": required_action,
         "model_id_resolver": model_id_resolver,
         "model_registration_kwargs": model_registration_kwargs,
+        "preloadable": preloadable,
     }
     if execution_location is not None:
         metadata_kwargs["execution_location"] = execution_location

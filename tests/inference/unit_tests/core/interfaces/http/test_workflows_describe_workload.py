@@ -273,7 +273,7 @@ def test_inline_route_describes_workload_with_the_body_api_key(
     assert response.status_code == 200
     body = response.json()
     assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "2"
+    assert body["schema_version"] == "1"
     assert [step["node_id"] for step in body["steps"]] == ["$steps.detection"]
 
 

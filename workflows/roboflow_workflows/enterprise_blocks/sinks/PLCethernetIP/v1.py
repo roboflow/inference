@@ -9,6 +9,9 @@ from typing_extensions import Literal
 # handlers / filters / propagation still apply when installed, without
 # importing the server logger module.
 logger = logging.getLogger("inference")
+from roboflow_workflows.core_steps.common.workload_presets import (
+    PLC_LAN_ACCESS_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
@@ -30,6 +33,7 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -138,8 +142,26 @@ class PLCBlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        return Discovery[RuntimeRestriction](
-            items=[], complete=True, unknown_reasons=[]
+        """Declare that the target process must reach the PLC over the network.
+
+        The block opens a direct EtherNet/IP connection to ``plc_ip``. This
+        corrects an earlier known-empty declaration; the legacy editor
+        ``get_restrictions()`` stays unchanged.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[PLC_LAN_ACCESS_ACTUAL_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
 
     def discover_dependent_resources(self) -> List[DependentResource]:

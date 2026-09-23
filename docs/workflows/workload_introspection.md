@@ -64,7 +64,7 @@ The response is a `WorkflowIntrospection` document. Every entity object in it ca
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | `"2"`. Bumped only for an incompatible change of this document. Version `"2"` replaced the `unknown_reasons` strings of version `"1"` with structured `DiscoveryProblem` objects. It is independent of the workflow-definition `version` and of `execution_engine_version`. |
+| `schema_version` | `"1"`. Bumped only for an incompatible change of this document. It is independent of the workflow-definition `version` and of `execution_engine_version`. |
 | `execution_engine_version` | the Execution Engine version that compiled the definition. |
 | `nodes` | one entry per input, step and output, with `kind` in `input` / `step` / `output`. Ids are canonical selectors (`$inputs.image`, `$steps.detection`, `$outputs.predictions`). Internal compiler nodes are never exposed. |
 | `edges` | deduplicated `(source, target, kind)` triples, `kind` in `data` / `control`. The same node pair may carry both. This is connectivity, not a schedule. |
@@ -112,7 +112,13 @@ Every declaration is wrapped in a `Discovery`. A complete declaration with no it
 * `complete: false` means the list may be incomplete; `unknown_reasons` then carries at least one `DiscoveryProblem` object saying why.
 * A complete result never carries reasons, and reasons never carry exception traces or secrets.
 
-A block that declares nothing (a third-party plugin that has not been annotated) is reported as unknown, never as empty. Every block registered in this repository — core, enterprise and the server's own plugin — declares all three hooks explicitly; the one deliberate exception is `roboflow_core/inner_workflow@v1`, whose dispatched child may pull anything. For restrictions the hook is `get_actual_restrictions()`; see [How a block declares a restriction](#how-a-block-declares-a-restriction).
+A block that declares nothing (a third-party plugin that has not been annotated) is reported as unknown, never as empty. Every block registered in this repository — core, enterprise and the server's own plugin — writes all three hooks explicitly in its manifest; the one exception is `roboflow_core/inner_workflow@v1`, which does not write the resources hook because its dispatched child may pull anything. For restrictions the hook is `get_actual_restrictions()`; see [How a block declares a restriction](#how-a-block-declares-a-restriction).
+
+Writing a hook is not the same as knowing its answer. An explicitly written hook may still answer "unknown" or "partly known":
+
+* **Audited unknown.** Some model blocks write the resources hook and return `None` on purpose, because their model has no identity they could declare truthfully. Four model families do this today: Google Vision OCR, Seg Preview, Stability AI inpainting and Stability AI outpainting. Their steps report `resources.complete: false` with `declaration_unavailable`. No id is guessed for them.
+* **Conditional declarations.** Some blocks declare a resource only under a condition in their own configuration, for example an active-learning target project that matters only while active learning is enabled. A literal condition is evaluated by the block. When the condition itself comes from a selector (for example `disable_active_learning: "$inputs.flag"`), the block declares the resource it might use; the document does not model whether the condition will hold at run time.
+* **Unknown identities.** A declared resource whose identity is a selector or a blank literal makes the step's resources incomplete. See [Resources](#resources).
 
 ### Discovery problems
 
@@ -153,15 +159,15 @@ Details the built-in problems carry:
 | Key | Present on | Meaning |
 | --- | --- | --- |
 | `node_id` | every built-in problem | the canonical `$steps.<name>` id of the step the problem belongs to. |
-| `declaration` | every built-in problem | which declaration the problem is **about**: `resources`, `operations` or `restrictions`. It names the subject of the problem, not the state of a field: it does not say that the step's own `Discovery` of that domain has `complete: false`. A problem carried by the model inventory keeps the `resources` of the step it came from, while that step's `resources.complete` may still be `true` (see [Resources](#resources)). |
+| `declaration` | every built-in problem | which declaration the problem is **about**: `resources`, `operations` or `restrictions`. A problem carried by the model inventory keeps the `resources` of the step it came from. |
 | `block_type` | `declaration_unavailable`, `declaration_failed` | the canonical manifest identifier, where the reporter knows it. |
-| `field` | `unresolved_selector`, `invalid_resource_identifier` | the manifest field whose value caused the problem, or — when `resource_type` is present — the resource metadata field. The identity fields currently reported are `model_id` and `provider`. |
+| `field` | `unresolved_selector`, `invalid_resource_identifier` | the manifest field whose value caused the problem, or — when `resource_type` is present — the resource metadata field. The identity fields reported are `model_id`, `provider` and `project_url`. |
 | `selector` | `unresolved_selector` | the selector as written in the definition (`$inputs.model`, `$steps.a.b`). It is never resolved and never guessed from an input's default value. |
-| `resource_type` | `unresolved_selector` on a resource identity field, `invalid_resource_identifier` | the values currently emitted are `roboflow_platform_model` and `third_party_model`. |
+| `resource_type` | `unresolved_selector` on a resource identity field, `invalid_resource_identifier` | the values emitted are `roboflow_platform_model`, `third_party_model` and `roboflow_platform_project`. |
 | `source` | `declaration_unavailable` on a restriction declaration | present, and equal to `"get_restrictions"`, when the answer came from the legacy `get_restrictions()` fallback — whether the block overrode that classmethod or inherited its empty default. It marks the fallback; absent otherwise. |
 | `configuration_keys` | `declaration_unavailable` on a restriction declaration | the sorted, de-duplicated NAMES of the configuration keys the local (`ignore_environment_restrictions=False`) view could not evaluate. Never the host's values for them. |
 
-The rows above describe what the built-in problems emit **today**. `resource_type` and `field` are general keys of the convention — a future producer may use them for another resource kind — but no problem is currently emitted for a `roboflow_platform_project` or for its `project_url`. Read the keys you know and ignore the rest; do not assume a key is present because the convention allows it.
+The rows above describe what the built-in problems emit **today**. `resource_type` and `field` are general keys of the convention — a future producer may use them for another resource kind. Read the keys you know and ignore the rest; do not assume a key is present because the convention allows it.
 
 `field` names where the problem was seen; it is not a lineage and does not claim to name the original input binding. An `invalid_resource_identifier` deliberately does **not** echo the invalid value back. Neither a description nor a details map ever contains raw exception text, a traceback, a credential or an authorization header — a block hook that raises with a secret in its message yields a plain `declaration_failed` problem.
 
@@ -198,14 +204,34 @@ A Roboflow model reference declares what the step needs from the model:
 
 A model id or project url supplied through a selector (`$inputs.model`) is preserved verbatim in the per-step declaration and is never resolved by introspection.
 
-#### Current limitation: where a selector-valued identity is reported
+#### Per-step completeness of resource identities
 
-A selector-valued resource identity does **not**, by itself, make the step's own `resources` discovery incomplete: the step still reports `complete: true` with the selector preserved in the item. The diagnosis appears one level up instead:
+A step may know which resources it uses without knowing who they are. Each declared resource has identity fields:
 
-* a selector in a model identity (`model_id` on a Roboflow platform model, `model_id` or `provider` on a third-party model) makes `summary.models` incomplete and carries an `unresolved_selector` problem naming the step, the field and the selector;
-* a selector in a project identity (`project_url`) is currently not diagnosed at all — neither the step's `resources` nor any summary reports it.
+| `resource_type` | Identity fields |
+| --- | --- |
+| `roboflow_platform_model` | `model_id` |
+| `third_party_model` | `provider`, `model_id` |
+| `roboflow_platform_project` | `project_url` |
 
-This is a known pending completeness correction, not the intended long-term semantics; the structured-problem format described above did not change it. Until it is fixed, do not read `StepMetadata.resources.complete == true` as "every resource of this step is fully identified" — check `summary.models` as well.
+For every identity field of every declared item:
+
+* a selector value adds an `unresolved_selector` problem with `field`, `selector` and `resource_type`;
+* a blank literal (empty or whitespace-only) adds an `invalid_resource_identifier` problem with `field` and `resource_type`, never the value.
+
+Either problem makes the step's `resources` `complete: false`. The item itself stays in `items`, verbatim. Problems the block reported itself stay next to the new ones. Selectors are never resolved and no default id is guessed. So `StepMetadata.resources.complete == true` means every declared resource of the step is identified by a literal.
+
+The model inventory is about **models** only (see [Model inventory](#model-inventory)):
+
+* model identity problems (`roboflow_platform_model`, `third_party_model`) make `summary.models` incomplete too;
+* project identity problems (`roboflow_platform_project`) keep the step incomplete but do **not** make `summary.models` incomplete: a project is not a model;
+* every other step problem — an unavailable or failed declaration, an opaque remote workflow — still makes `summary.models` incomplete.
+
+#### Declaring resources (block authors)
+
+`discover_dependent_resources()` returns a plain list (a complete declaration), a `Discovery` (explicit completeness with reasons) or `None` (unknown). Return the configured id verbatim, selector included; introspection reports its completeness. Do not return a guessed default.
+
+`roboflow_platform_model()` accepts a keyword-only `preloadable` argument, default `True`. It is an in-process aid for the Execution Engine, like `model_id_resolver` and `model_registration_kwargs`: it never appears in this document, in `to_dict()` or in the JSON schema. `preloadable=False` means "the generic Execution Engine model-manager preloader must not register this model". Use it for a block that loads and owns its model itself. It says nothing about whether the block loads weights or runs remotely. The streaming video blocks (SAM2 video, SAM3 video, action recognition) declare their model this way, with `required_action: "execution"` and `execution_location: "local"`. SAM3 video declares only the model its literal `tracking_mode` selects: `model_id` for `concept`, `visual_model_id` for `visual`.
 
 Per-step `resources` and the inventory at `summary.models.items` answer different questions. The per-step declaration says what *this step* needs and whether it executes the model or only needs access to it. The inventory deduplicates model references across steps and may carry an optional enriched `metadata` block (`model_type`, `model_variant`, `task_type`) that per-step declarations never carry. See [Model inventory](#model-inventory).
 
@@ -362,7 +388,7 @@ def get_actual_restrictions(
 * `steps_by_dimensionality` is the per-model counterpart of the summary histogram: for every step in `used_by_steps`, its compiled **input** depth (the reference-lineage depth described above) is counted once. Here the model is referenced by `detection` at depth 1 and by `crop_detection` on the crops at depth 2. Keys are strings on the wire and sorted ascending, values are positive, depths with no referring step are omitted, and the values always sum to the length of `used_by_steps`. The field is always populated from compilation; it does not depend on the metadata gate.
 * A step is counted **once** per model whatever it declares: a step that lists the same model twice (for example once with `required_action: "execution"` and once with `"access"`) is one entry in `used_by_steps` and one count in the histogram, while a step that references two different models contributes one count to each of the two entries. Different providers with the same model id remain separate entries with separate histograms.
 * Roboflow platform references use the provider `roboflow`; an explicit third-party provider is preserved as declared. Roboflow *projects* are not model entries.
-* A model id supplied through a selector (`$inputs.model`) is never invented into an id and never sent to a metadata lookup: it stays a per-step unresolved reference and makes the inventory incomplete with an `unresolved_selector` problem naming the step, the resource field and the selector. A blank literal id or provider yields an `invalid_resource_identifier` problem naming the field. A step whose resources are unknown or incomplete propagates its own problems into the inventory unchanged, with all the context they carry. Unresolved and unknown references contribute nothing to any histogram; only literal, known references are counted, so an incomplete inventory carries exact counts for what it does list.
+* A model id supplied through a selector (`$inputs.model`) is never invented into an id and never sent to a metadata lookup: it stays a per-step unresolved reference and makes the inventory incomplete with an `unresolved_selector` problem naming the step, the resource field and the selector. A blank literal id or provider yields an `invalid_resource_identifier` problem naming the field. A step whose resources are unknown or incomplete propagates its own problems into the inventory unchanged, with all the context they carry — except selector or blank problems about a project identity, which keep only the step incomplete (see [Per-step completeness of resource identities](#per-step-completeness-of-resource-identities)). Literal models of a partly known step are still listed. Unresolved and unknown references contribute nothing to any histogram; only literal, known references are counted, so an incomplete inventory carries exact counts for what it does list.
 * Being listed is not a claim that the reference executes at runtime — a step may only need access to the model. The per-step `resources` entry keeps that distinction in `required_action`. Access-only references are inventoried and counted like every other reference: the histogram counts referring steps, not model calls.
 
 `metadata_status` is `disabled`, `available` or `unavailable`:
@@ -406,6 +432,16 @@ Two consequences of reusing that helper, which is shared with the loading paths 
 
 Each `ModelSummary` carries a `steps_by_dimensionality` of its own with the same encoding, restricted to that model's `used_by_steps` (see [Model inventory](#model-inventory)). The per-model maps are not a partition of the summary map: a step that references two models appears in both of their histograms, and a step that references no model appears in neither.
 
+#### Dimensionality is not multiplicity
+
+Dimensionality is the nesting depth of the data, not the number of items. In `image -> dynamic crop -> classifier` the classifier sits at depth 2 whether the crop step yields 3 crops or 300.
+
+* Counts per depth count **graph steps**, not inference items. `{"2": 1}` means one step works on depth-2 data. It does not mean one model call.
+* A step at depth 2 that classifies N items may batch them into fewer model calls than N.
+* The work under nested expansion depends on the actual child counts: their sum over parents at one level, and their products across levels. Input sizes and the number of detections decide those counts at run time; this document does not know them.
+
+The document carries no item counts, cardinality estimate, work expression or cost score. A service that needs them supplies its own assumptions, for example target-service heuristics about typical detection counts.
+
 ## What this is not
 
 This is compile-time introspection, not an estimator and not a profiler. The document deliberately contains **no**:
@@ -447,7 +483,7 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
 ```json
 {
   "type": "workflow_introspection",
-  "schema_version": "2",
+  "schema_version": "1",
   "execution_engine_version": "1.15.2",
   "nodes": [
     {"type": "graph_node", "id": "$inputs.image", "kind": "input"},

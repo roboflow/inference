@@ -28,9 +28,7 @@ from roboflow_workflows.prototypes.block import DependentResource
 GraphNodeKind = Literal["input", "step", "output"]
 GraphEdgeKind = Literal["data", "control"]
 
-# "2": `Discovery.unknown_reasons` carries structured `DiscoveryProblem`
-# objects instead of the `<code>:<context>` strings of version "1".
-WORKLOAD_INTROSPECTION_SCHEMA_VERSION = "2"
+WORKLOAD_INTROSPECTION_SCHEMA_VERSION = "1"
 
 
 class GraphNode(BaseModel):
@@ -174,12 +172,12 @@ class WorkflowSummary(BaseModel):
 
 
 class WorkflowIntrospection(BaseModel):
-    """Top-level workload introspection response (schema version 2)."""
+    """Top-level workload introspection response (schema version 1)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     type: Literal["workflow_introspection"] = "workflow_introspection"
-    schema_version: Literal["2"] = WORKLOAD_INTROSPECTION_SCHEMA_VERSION
+    schema_version: Literal["1"] = WORKLOAD_INTROSPECTION_SCHEMA_VERSION
     execution_engine_version: str = Field(min_length=1)
     nodes: List[GraphNode]
     edges: List[GraphEdge]

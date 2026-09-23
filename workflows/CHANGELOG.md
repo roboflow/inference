@@ -16,7 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-TODO
+### Execution engine
+
+- Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions.
+- Report unresolved resource identities explicitly and include streaming-video models without changing how they load.
+- Correct stateful-block and industrial-sink restrictions while preserving the editor's existing declarations.
 
 ---
 

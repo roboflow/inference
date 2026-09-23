@@ -632,6 +632,24 @@ PORTABLE_WITHOUT_LEGACY = {
         "files and conditioned on ENABLE_TENSOR_DATA_REPRESENTATION, so it is "
         "inactive in numpy mode and active in tensor mode (DECISIONS D020)"
     ),
+    (
+        "roboflow_enterprise/opc_writer_sink@v1",
+        "cooldown_timer_resets_on_stateless_http",
+    ): (
+        "the cooldown timer lives in the block instance, but the block never "
+        "declared the caveat in get_restrictions(); the actual declaration "
+        "corrects the omission and the editor method stays unchanged"
+    ),
+    ("roboflow_core/modbus_tcp@v1", "requires_lan_access_to_device"): (
+        "opens a direct Modbus TCP connection to the PLC but never declared "
+        "the reachability requirement in get_restrictions(); the actual "
+        "declaration corrects the omission and the editor method stays unchanged"
+    ),
+    ("roboflow_core/sinks@v1", "requires_lan_access_to_device"): (
+        "opens a direct EtherNet/IP connection to the PLC but never declared "
+        "the reachability requirement in get_restrictions(); the actual "
+        "declaration corrects the omission and the editor method stays unchanged"
+    ),
 }
 
 # Legacy entries with no active portable counterpart, keyed by

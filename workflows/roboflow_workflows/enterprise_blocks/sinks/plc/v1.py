@@ -2,6 +2,9 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
+from roboflow_workflows.core_steps.common.workload_presets import (
+    PLC_LAN_ACCESS_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.enterprise_blocks.sinks.plc.client import (
     DEFAULT_RELAY_PORT,
     WRITE_FAILURE,
@@ -40,6 +43,7 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Literal
 
@@ -391,9 +395,35 @@ class PLCReaderBlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        return Discovery[RuntimeRestriction](
-            items=[], complete=True, unknown_reasons=[]
+        """Declare PLC reachability for the direct connection modes.
+
+        Direct EtherNet/IP and Modbus modes connect straight to the PLC, so the
+        target process must reach it over the network. Relay mode talks HTTP to
+        a configurable relay address and declares nothing here. This corrects an
+        earlier known-empty declaration; the legacy editor ``get_restrictions()``
+        stays unchanged.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        declared = []
+        if self.connection_mode in ("ethernet_ip", "modbus"):
+            declared = [PLC_LAN_ACCESS_ACTUAL_RESTRICTION]
+
+        restrictions = actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
+
+        return restrictions
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []
@@ -548,9 +578,35 @@ class PLCWriterBlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        return Discovery[RuntimeRestriction](
-            items=[], complete=True, unknown_reasons=[]
+        """Declare PLC reachability for the direct connection modes.
+
+        Direct EtherNet/IP and Modbus modes connect straight to the PLC, so the
+        target process must reach it over the network. Relay mode talks HTTP to
+        a configurable relay address and declares nothing here. This corrects an
+        earlier known-empty declaration; the legacy editor ``get_restrictions()``
+        stays unchanged.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        declared = []
+        if self.connection_mode in ("ethernet_ip", "modbus"):
+            declared = [PLC_LAN_ACCESS_ACTUAL_RESTRICTION]
+
+        restrictions = actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
+
+        return restrictions
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

@@ -21,7 +21,11 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
-from roboflow_workflows.prototypes.block import WorkflowBlockManifest
+from roboflow_workflows.prototypes.block import (
+    ModelExecutionLocation,
+    ModelRequiredAction,
+    WorkflowBlockManifest,
+)
 
 from tests.unit_tests.workload_declaration_helpers import portable_restrictions
 
@@ -91,19 +95,27 @@ AUDITED_NO_DEPENDENT_RESOURCE = {
 
 # Model-scope blocks whose dependent resource exists but has no declarable
 # identity, so the audited answer is an explicit None (unknown). Guessing an
-# identifier here would be worse than admitting it is unknown.
+# identifier here would be worse than admitting it is unknown. Four model
+# families remain: Google Vision OCR, Seg Preview, Stability AI inpainting and
+# Stability AI outpainting.
 AUDITED_UNKNOWN_DEPENDENT_RESOURCE = {
     "roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1",
     "roboflow_workflows.core_steps.models.foundation.google_vision_ocr.v1_tensor",
     "roboflow_workflows.core_steps.models.foundation.seg_preview.v1",
     "roboflow_workflows.core_steps.models.foundation.seg_preview.v1_tensor",
+    "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1",
+    "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor",
+    "roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting.v1",
+}
+
+# Streaming video blocks that load and own their model in-process. They declare
+# the real model as LOCAL EXECUTION, kept away from the generic model-manager
+# preloader with the in-process `preloadable=False` aid.
+AUDITED_NON_PRELOADABLE_DEPENDENT_RESOURCE = {
     "roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1",
     "roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor",
     "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1",
     "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor",
-    "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1",
-    "roboflow_workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor",
-    "roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting.v1",
     "roboflow_workflows.core_steps.models.roboflow.action_recognition.v1",
 }
 
@@ -341,6 +353,42 @@ def test_the_audited_none_blocks_return_none(
         resources = _instance(by_module[module]).discover_dependent_resources()
 
         assert resources is None, f"{module} claims {resources}"
+
+
+def test_the_audited_unknown_set_covers_four_model_families() -> None:
+    # then - numpy / tensor siblings of one family count once
+    families = {
+        module.rsplit(".", 1)[0] for module in AUDITED_UNKNOWN_DEPENDENT_RESOURCE
+    }
+    assert len(families) == 4
+
+
+def test_the_audited_non_preloadable_blocks_declare_a_local_model(
+    model_block_manifests: List[Type[WorkflowBlockManifest]],
+) -> None:
+    by_module = {
+        manifest_class.__module__: manifest_class
+        for manifest_class in model_block_manifests
+    }
+    # The process registry loads one representation (numpy or tensor) per
+    # family, so only the registered siblings are checked here; the
+    # dependent-resource tests import both representation modules directly.
+    registered = AUDITED_NON_PRELOADABLE_DEPENDENT_RESOURCE & set(by_module)
+    assert {module.rsplit(".", 1)[0] for module in registered} == {
+        "roboflow_workflows.core_steps.models.foundation.segment_anything2_video",
+        "roboflow_workflows.core_steps.models.foundation.segment_anything3_video",
+        "roboflow_workflows.core_steps.models.roboflow.action_recognition",
+    }
+    for module in registered:
+
+        resources = _instance(by_module[module]).discover_dependent_resources()
+
+        assert resources is not None, f"{module} returned unknown"
+        assert len(resources) == 1, f"{module} claims {resources}"
+        metadata = resources[0].metadata
+        assert metadata.required_action is ModelRequiredAction.EXECUTION
+        assert metadata.execution_location is ModelExecutionLocation.LOCAL
+        assert metadata.preloadable is False
 
 
 def test_the_audited_empty_blocks_return_an_empty_list(

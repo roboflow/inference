@@ -415,6 +415,65 @@ class GarbageHooksManifest(WorkflowBlockManifest):
         return [{"code": 1}]
 
 
+class PartiallyKnownModelsManifest(WorkflowBlockManifest):
+    """A block's own Discovery: a prior problem, a literal model and a
+    selector-fed model in one declaration."""
+
+    type: Literal["test/partially_known@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="image", kind=[IMAGE_KIND])]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    def discover_dependent_resources(self):
+        return incomplete_discovery(
+            [
+                roboflow_platform_model(model_id="known/1"),
+                roboflow_platform_model(model_id="$inputs.model"),
+            ],
+            [
+                declaration_unavailable_problem(
+                    node_id=f"$steps.{self.name}", declaration="resources"
+                )
+            ],
+        )
+
+
+RESOLVER_CALLS: List[str] = []
+
+
+def _recording_resolver(value: str) -> str:
+    RESOLVER_CALLS.append(value)
+    return f"resolved/{value}"
+
+
+class ResolverModelManifest(WorkflowBlockManifest):
+    """A legacy list with a selector-fed model carrying a resolver aid."""
+
+    type: Literal["test/resolver_model@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="image", kind=[IMAGE_KIND])]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(
+                model_id="$inputs.model", model_id_resolver=_recording_resolver
+            )
+        ]
+
+
 class ExplicitDiscoveryManifest(WorkflowBlockManifest):
     type: Literal["test/explicit@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector]
@@ -751,6 +810,8 @@ AVAILABLE_BLOCKS = [
         SecretLeakingHooksManifest,
         GarbageHooksManifest,
         ExplicitDiscoveryManifest,
+        PartiallyKnownModelsManifest,
+        ResolverModelManifest,
         CropManifest,
         CollapseManifest,
         ReplacementManifest,
@@ -1354,7 +1415,17 @@ def test_declared_items_are_kept_verbatim_including_selectors_and_access() -> No
     )
     introspection = build_workflow_introspection(compilation_result=result)
     model = _step(introspection, "$steps.model")
-    assert model.resources.complete is True
+    # the item is kept verbatim, but its identity is only known at run time
+    assert model.resources.complete is False
+    assert model.resources.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.model",
+            declaration="resources",
+            field="model_id",
+            selector="$inputs.model",
+            resource_type="roboflow_platform_model",
+        )
+    ]
     assert model.resources.items == [roboflow_platform_model(model_id="$inputs.model")]
     assert model.operations.items == [WorkOperation.MODEL_INFERENCE]
     assert model.restrictions.items == [GPU_RESTRICTION_METADATA]
@@ -2066,8 +2137,17 @@ def test_blank_platform_model_id_is_declared_but_never_inventoried(
 
     # then - kept per step as declared, excluded from the inventory, no lookup
     blank = _step(introspection, "$steps.blank")
-    assert blank.resources.complete is True
+    assert blank.resources.complete is False
+    assert blank.resources.unknown_reasons == [
+        invalid_resource_identifier_problem(
+            node_id="$steps.blank",
+            declaration="resources",
+            field="model_id",
+            resource_type="roboflow_platform_model",
+        )
+    ]
     assert blank.resources.items[0].metadata.model_id == blank_model_id
+    assert _step(introspection, "$steps.valid").resources.complete is True
     models = introspection.summary.models
     assert models.complete is False
     assert models.unknown_reasons == [
@@ -2201,3 +2281,293 @@ def test_inventory_problem_order_does_not_depend_on_step_order() -> None:
         return list(introspection.summary.models.unknown_reasons)
 
     assert build(["alpha", "beta"]) == build(["beta", "alpha"])
+
+
+# ---------------------------------------------------------------------------
+# per-step resource identity completeness
+# ---------------------------------------------------------------------------
+
+
+def _problem_keys(problems: List[DiscoveryProblem]) -> List[str]:
+    return sorted(problem.model_dump_json() for problem in problems)
+
+
+def test_fully_literal_resources_stay_complete_per_step() -> None:
+    # given
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            _model("model", model_id="project/1"),
+            ThirdPartyManifest(
+                type="test/third_party@v1", name="llm", images="$inputs.image"
+            ),
+            ProjectSinkManifest(
+                type="test/project_sink@v1", name="sink", images="$inputs.image"
+            ),
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    for step in introspection.steps:
+        assert step.resources.complete is True, step.node_id
+        assert step.resources.unknown_reasons == []
+    assert introspection.summary.models.complete is True
+
+
+@pytest.mark.parametrize(
+    "provider_value, model_value, expected_fields",
+    [
+        ("$inputs.provider", "gpt-x", [("provider", "$inputs.provider")]),
+        ("openai", "$inputs.model", [("model_id", "$inputs.model")]),
+        (
+            "$inputs.provider",
+            "$inputs.model",
+            [("model_id", "$inputs.model"), ("provider", "$inputs.provider")],
+        ),
+    ],
+)
+def test_selector_fed_third_party_identity_makes_step_resources_incomplete(
+    provider_value: str, model_value: str, expected_fields: list
+) -> None:
+    # given
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            ThirdPartyManifest(
+                type="test/third_party@v1",
+                name="llm",
+                images="$inputs.image",
+                provider=provider_value,
+                model=model_value,
+            )
+        ],
+    )
+    provider = RecordingProvider(answers={})
+
+    # when
+    introspection = build_workflow_introspection(
+        compilation_result=result, model_metadata_provider=provider
+    )
+
+    # then - the item is kept, one problem per selector-valued field
+    llm = _step(introspection, "$steps.llm")
+    expected = [
+        unresolved_selector_problem(
+            node_id="$steps.llm",
+            declaration="resources",
+            field=field,
+            selector=selector,
+            resource_type="third_party_model",
+        )
+        for field, selector in expected_fields
+    ]
+    assert llm.resources.complete is False
+    assert llm.resources.items == [
+        third_party_model(provider=provider_value, model_id=model_value)
+    ]
+    assert llm.resources.unknown_reasons == expected
+    # the model inventory carries the same problems once each, with no lookup
+    models = introspection.summary.models
+    assert models.items == []
+    assert models.complete is False
+    assert models.unknown_reasons == expected
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize(
+    "project_url, expected_problem",
+    [
+        (
+            "$inputs.project",
+            unresolved_selector_problem(
+                node_id="$steps.sink",
+                declaration="resources",
+                field="project_url",
+                selector="$inputs.project",
+                resource_type="roboflow_platform_project",
+            ),
+        ),
+        (
+            "",
+            invalid_resource_identifier_problem(
+                node_id="$steps.sink",
+                declaration="resources",
+                field="project_url",
+                resource_type="roboflow_platform_project",
+            ),
+        ),
+        (
+            "   ",
+            invalid_resource_identifier_problem(
+                node_id="$steps.sink",
+                declaration="resources",
+                field="project_url",
+                resource_type="roboflow_platform_project",
+            ),
+        ),
+    ],
+)
+def test_unknown_project_identity_is_step_incomplete_but_not_model_incomplete(
+    project_url: str, expected_problem: DiscoveryProblem
+) -> None:
+    # given
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            ProjectSinkManifest(
+                type="test/project_sink@v1",
+                name="sink",
+                images="$inputs.image",
+                project_url=project_url,
+            )
+        ],
+    )
+    provider = RecordingProvider(answers={})
+
+    # when
+    introspection = build_workflow_introspection(
+        compilation_result=result, model_metadata_provider=provider
+    )
+
+    # then - the step keeps both items and reports the project problem
+    sink = _step(introspection, "$steps.sink")
+    assert sink.resources.complete is False
+    assert sink.resources.unknown_reasons == [expected_problem]
+    assert set(sink.resources.items) == {
+        roboflow_platform_project(project_url=project_url),
+        roboflow_platform_model(
+            model_id="monitored/1", required_action=ModelRequiredAction.ACCESS
+        ),
+    }
+    # the fully known model inventory stays complete
+    models = introspection.summary.models
+    assert models.complete is True
+    assert models.unknown_reasons == []
+    assert [(m.provider, m.model_id) for m in models.items] == [
+        ("roboflow", "monitored/1")
+    ]
+    assert provider.calls == [("roboflow", "monitored/1")]
+
+
+def test_project_uncertainty_does_not_hide_other_inventory_problems() -> None:
+    # given
+    result = _compile(
+        inputs=[
+            _image_input(),
+            WorkflowParameter(type="WorkflowParameter", name="model"),
+        ],
+        steps=[
+            ProjectSinkManifest(
+                type="test/project_sink@v1",
+                name="sink",
+                images="$inputs.image",
+                project_url="$inputs.project",
+            ),
+            _model("dynamic", model_id="$inputs.model"),
+            UnknownManifest(
+                type="test/unknown@v1", name="mystery", images="$inputs.image"
+            ),
+        ],
+    )
+
+    # when
+    models = build_workflow_introspection(compilation_result=result).summary.models
+
+    # then - model and declaration problems propagate; the project one does not
+    assert models.complete is False
+    assert models.unknown_reasons == [
+        declaration_unavailable_problem(
+            node_id="$steps.mystery",
+            declaration="resources",
+            block_type="test/unknown@v1",
+        ),
+        unresolved_selector_problem(
+            node_id="$steps.dynamic",
+            declaration="resources",
+            field="model_id",
+            selector="$inputs.model",
+            resource_type="roboflow_platform_model",
+        ),
+    ]
+    assert [m.model_id for m in models.items] == ["monitored/1"]
+
+
+def test_identity_problems_are_added_next_to_prior_declared_reasons() -> None:
+    # given
+    result = _compile(
+        inputs=[
+            _image_input(),
+            WorkflowParameter(type="WorkflowParameter", name="model"),
+        ],
+        steps=[
+            PartiallyKnownModelsManifest(
+                type="test/partially_known@v1",
+                name="partial",
+                images="$inputs.image",
+            )
+        ],
+    )
+    prior_problem = declaration_unavailable_problem(
+        node_id="$steps.partial", declaration="resources"
+    )
+    selector_problem = unresolved_selector_problem(
+        node_id="$steps.partial",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.model",
+        resource_type="roboflow_platform_model",
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then - items and the prior reason are kept; the identity problem is added
+    partial = _step(introspection, "$steps.partial")
+    assert partial.resources.complete is False
+    assert {item.metadata.model_id for item in partial.resources.items} == {
+        "known/1",
+        "$inputs.model",
+    }
+    assert _problem_keys(partial.resources.unknown_reasons) == _problem_keys(
+        [prior_problem, selector_problem]
+    )
+    # the literal model of the partially known step is still inventoried, and
+    # the inventory carries each reason exactly once
+    models = introspection.summary.models
+    assert [m.model_id for m in models.items] == ["known/1"]
+    assert _problem_keys(models.unknown_reasons) == _problem_keys(
+        [prior_problem, selector_problem]
+    )
+
+
+def test_identity_problems_never_run_the_model_id_resolver() -> None:
+    # given
+    RESOLVER_CALLS.clear()
+    result = _compile(
+        inputs=[
+            _image_input(),
+            WorkflowParameter(type="WorkflowParameter", name="model"),
+        ],
+        steps=[
+            ResolverModelManifest(
+                type="test/resolver_model@v1",
+                name="resolver",
+                images="$inputs.image",
+            )
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    assert RESOLVER_CALLS == []
+    step = _step(introspection, "$steps.resolver")
+    assert step.resources.complete is False
+    assert step.resources.items[0].metadata.model_id == "$inputs.model"
+    assert [reason.code for reason in step.resources.unknown_reasons] == [
+        DiscoveryProblemCode.UNRESOLVED_SELECTOR
+    ]

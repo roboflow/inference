@@ -361,7 +361,7 @@ def test_branched_example_without_metadata_enrichment(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "2"
+    assert body["schema_version"] == "1"
     assert len(body["nodes"]) == 9
     assert [node["kind"] for node in body["nodes"]].count("step") == 5
     assert {

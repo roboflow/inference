@@ -669,7 +669,7 @@ def test_tracker_state_caveat_does_not_depend_on_model_execution_mode() -> None:
         "input_modes": ["video"],
         "configuration_equals": {},
     }
-    assert introspection.schema_version == "2"
+    assert introspection.schema_version == "1"
 
 
 def test_malformed_definition_raises_existing_error_type() -> None:

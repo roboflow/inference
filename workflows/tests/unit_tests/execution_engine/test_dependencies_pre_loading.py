@@ -5,6 +5,7 @@ declared through `$inputs.<name>` selectors).
 """
 
 import inspect
+import json
 from unittest.mock import MagicMock, NonCallableMagicMock
 
 import networkx as nx
@@ -673,3 +674,219 @@ def test_preloading_helpers_are_typed_against_the_port() -> None:
     ):
         annotation = inspect.signature(fn).parameters["model_manager"].annotation
         assert annotation is ModelsProvider, (fn.__name__, annotation)
+
+
+# ---------------------------------------------------------------------------
+# preloadable=False: known models the generic preloader must not register
+# ---------------------------------------------------------------------------
+
+
+def _non_preloadable(model_id: str):
+    return roboflow_platform_model(
+        model_id,
+        required_action=ModelRequiredAction.EXECUTION,
+        execution_location=ModelExecutionLocation.LOCAL,
+        preloadable=False,
+    )
+
+
+class _RecordingResolver:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def __call__(self, value: str):
+        self.calls.append(value)
+        return value
+
+
+def test_preloadable_defaults_to_true_for_existing_callers() -> None:
+    # positional arguments keep their meaning; the new flag is keyword-only
+    resource = roboflow_platform_model(
+        "my_project/3",
+        ModelRequiredAction.EXECUTION,
+        ModelExecutionLocation.LOCAL,
+    )
+
+    assert resource.metadata.preloadable is True
+    assert resource.metadata.execution_location is ModelExecutionLocation.LOCAL
+    assert (
+        inspect.signature(roboflow_platform_model).parameters["preloadable"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+
+
+def test_preloadable_is_internal_and_leaves_serialized_shapes_unchanged() -> None:
+    # given
+    ordinary = roboflow_platform_model(
+        "sam2video/small", execution_location=ModelExecutionLocation.LOCAL
+    )
+    internal = _non_preloadable("sam2video/small")
+
+    # then - same wire shape, same schema, same equality and hash
+    assert (
+        internal.to_dict()
+        == ordinary.to_dict()
+        == {
+            "resource_type": "roboflow_platform_model",
+            "metadata": {
+                "model_id": "sam2video/small",
+                "required_action": "execution",
+                "execution_location": "local",
+            },
+        }
+    )
+    assert internal.model_dump(mode="json") == ordinary.model_dump(mode="json")
+    assert "preloadable" not in internal.model_dump_json()
+    assert "preloadable" not in json.dumps(type(internal.metadata).model_json_schema())
+    assert internal == ordinary
+    assert hash(internal) == hash(ordinary)
+    assert "preloadable" not in repr(internal)
+
+
+def test_pre_load_skips_non_preloadable_literal_and_input_dependencies() -> None:
+    # given
+    model_manager = MagicMock()
+    resolver = _RecordingResolver()
+    input_fed = roboflow_platform_model(
+        "$inputs.tracker",
+        execution_location=ModelExecutionLocation.LOCAL,
+        model_id_resolver=resolver,
+        preloadable=False,
+    )
+
+    # when
+    pending = _pre_load_roboflow_platform_models(
+        dependencies=[_non_preloadable("sam2video/small"), input_fed],
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=[input_fed],
+        runtime_parameters={"tracker": "sam2video/large"},
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then - never pending, never resolved, never registered
+    assert pending == []
+    assert resolver.calls == []
+    model_manager.add_model.assert_not_called()
+    model_manager.__contains__.assert_not_called()
+
+
+def test_non_preloadable_declaration_does_not_suppress_an_ordinary_one() -> None:
+    # given - two steps declare the same id; only one opts out
+    model_manager = MagicMock()
+
+    # when
+    pending = _pre_load_roboflow_platform_models(
+        dependencies=[
+            _non_preloadable("shared/1"),
+            roboflow_platform_model(model_id="shared/1"),
+            _non_preloadable("$inputs.model"),
+            roboflow_platform_model(model_id="$inputs.model"),
+        ],
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=[
+            _non_preloadable("$inputs.model"),
+            *pending,
+        ],
+        runtime_parameters={"model": "runtime/2"},
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert pending == [roboflow_platform_model(model_id="$inputs.model")]
+    assert all(dependency.metadata.preloadable for dependency in pending)
+    assert model_manager.add_model.call_count == 2
+    model_manager.add_model.assert_any_call(model_id="shared/1", api_key="api-key")
+    model_manager.add_model.assert_any_call(model_id="runtime/2", api_key="api-key")
+
+
+def test_ordinary_local_declarations_are_still_preloaded() -> None:
+    # given
+    model_manager = MagicMock()
+
+    # when
+    pending = _pre_load_roboflow_platform_models(
+        dependencies=[
+            roboflow_platform_model(
+                "local/1", execution_location=ModelExecutionLocation.LOCAL
+            )
+        ],
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert pending == []
+    model_manager.add_model.assert_called_once_with(
+        model_id="local/1", api_key="api-key"
+    )
+
+
+def test_real_video_manifest_declarations_are_never_preloaded() -> None:
+    # given - the declarations the streaming video blocks really make
+    from roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        BlockManifest as SAM2VideoManifest,
+    )
+    from roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+        BlockManifest as SAM3VideoManifest,
+    )
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
+        BlockManifest as ActionRecognitionManifest,
+    )
+
+    dependencies = [
+        *SAM2VideoManifest.model_validate(
+            {
+                "type": "roboflow_core/segment_anything_2_video@v1",
+                "name": "sam2",
+                "images": "$inputs.image",
+            }
+        ).discover_dependent_resources(),
+        *SAM3VideoManifest.model_validate(
+            {
+                "type": "roboflow_core/sam3_video@v1",
+                "name": "sam3",
+                "images": "$inputs.image",
+                "class_names": ["person"],
+                "model_id": "$inputs.sam3_model",
+            }
+        ).discover_dependent_resources(),
+        *ActionRecognitionManifest.model_validate(
+            {
+                "type": "roboflow_core/roboflow_action_recognition_model@v1",
+                "name": "actions",
+                "images": "$inputs.image",
+                "model_id": "my-actions/2",
+            }
+        ).discover_dependent_resources(),
+    ]
+    model_manager = MagicMock()
+
+    # when
+    pending = _pre_load_roboflow_platform_models(
+        dependencies=dependencies,
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then - declared (visible to introspection) but never registered
+    assert [dependency.metadata.model_id for dependency in dependencies] == [
+        "sam2video/small",
+        "$inputs.sam3_model",
+        "my-actions/2",
+    ]
+    assert pending == []
+    model_manager.add_model.assert_not_called()

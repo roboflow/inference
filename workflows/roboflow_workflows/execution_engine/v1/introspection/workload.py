@@ -23,6 +23,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
     DeclarationDomain,
     Discovery,
     DiscoveryProblem,
+    DiscoveryProblemCode,
     ModelMetadataLookup,
     ModelMetadataProvider,
     RestrictionMetadata,
@@ -238,21 +239,26 @@ def describe_step(
     opaque = is_dispatched_inner_workflow(
         block_type=block_type, step_manifest=step_manifest
     )
+    declared_resources = collect_declaration(
+        step_manifest=step_manifest,
+        hook_name=RESOURCES_HOOK,
+        discovery_type=Discovery[DependentResource],
+        declaration="resources",
+        step_selector=step_selector,
+        block_type=block_type,
+        opaque=opaque,
+    )
+    resources = add_resource_identity_problems(
+        discovery=declared_resources,
+        step_selector=step_selector,
+    )
     return StepMetadata(
         node_id=step_selector,
         block_type=block_type,
         input_dimensionality=step_node.reference_dimensionality,
         output_dimensionality=step_node.output_dimensionality,
         accepts_batch_input=bool(step_manifest.accepts_batch_input()),
-        resources=collect_declaration(
-            step_manifest=step_manifest,
-            hook_name=RESOURCES_HOOK,
-            discovery_type=Discovery[DependentResource],
-            declaration="resources",
-            step_selector=step_selector,
-            block_type=block_type,
-            opaque=opaque,
-        ),
+        resources=resources,
         restrictions=collect_restrictions(
             step_manifest=step_manifest,
             step_selector=step_selector,
@@ -432,6 +438,75 @@ def add_opaque_problem(
     )
 
 
+def add_resource_identity_problems(
+    discovery: Discovery[DependentResource],
+    step_selector: str,
+) -> Discovery[DependentResource]:
+    """Mark a step's resources incomplete when a resource identity is unknown.
+
+    A legacy hook returns a plain list, which `collect_declaration` reads as
+    complete. The list's shape may be known while a resource identity is not:
+    an identity field fed by a workflow selector is only known at run time,
+    and a blank literal names nothing. Every declared item is kept; each such
+    field adds one `unresolved_selector` or `invalid_resource_identifier`
+    problem, next to the reasons already reported. Selectors are never
+    resolved, `model_id_resolver` never runs, and no default id is guessed.
+
+    Args:
+        discovery: The step's collected resources.
+        step_selector: Canonical `$steps.<name>` id of the step.
+
+    Returns:
+        The same discovery when every identity is a non-blank literal,
+        otherwise an incomplete copy carrying the identity problems.
+    """
+    problems: List[DiscoveryProblem] = []
+    for resource in discovery.items:
+        resource_type = resource.resource_type.value
+        for field, value in resource_identity_fields(resource=resource):
+            if is_workflow_selector(value):
+                problems.append(
+                    unresolved_selector_problem(
+                        node_id=step_selector,
+                        declaration="resources",
+                        field=field,
+                        selector=value,
+                        resource_type=resource_type,
+                    )
+                )
+            elif not str(value).strip():
+                problems.append(
+                    invalid_resource_identifier_problem(
+                        node_id=step_selector,
+                        declaration="resources",
+                        field=field,
+                        resource_type=resource_type,
+                    )
+                )
+    if not problems:
+        return discovery
+
+    return Discovery[DependentResource](
+        items=list(discovery.items),
+        complete=False,
+        unknown_reasons=list(discovery.unknown_reasons) + problems,
+    )
+
+
+def _is_project_identity_problem(problem: DiscoveryProblem) -> bool:
+    """A selector / blank project identity says nothing about models."""
+    return (
+        problem.code
+        in (
+            DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+            DiscoveryProblemCode.INVALID_RESOURCE_IDENTIFIER,
+        )
+        and problem.details.get("declaration") == "resources"
+        and problem.details.get("resource_type")
+        == DependentResourceType.ROBOFLOW_PLATFORM_PROJECT.value
+    )
+
+
 def build_models_inventory(
     steps: List[StepMetadata],
     model_metadata_provider: Optional[ModelMetadataProvider],
@@ -448,7 +523,9 @@ def build_models_inventory(
       provider, and add an `invalid_resource_identifier` problem naming the
       blank field (never its value) - an id is never fabricated;
     * a step with unknown / incomplete resources propagates its problems
-      unchanged, with all the context they carry;
+      unchanged, with all the context they carry - except selector / blank
+      problems about a project identity: projects are not models, so they
+      keep the step's resources incomplete but not the model inventory;
     * entries are unique per `(provider, model_id)` with sorted referring
       steps; metadata lookup outcomes never change `complete`;
     * `steps_by_dimensionality` is derived from that same deduplicated set of
@@ -462,7 +539,11 @@ def build_models_inventory(
     problems: List[DiscoveryProblem] = []
     for step in steps:
         if not step.resources.complete:
-            problems.extend(step.resources.unknown_reasons)
+            problems.extend(
+                reason
+                for reason in step.resources.unknown_reasons
+                if not _is_project_identity_problem(problem=reason)
+            )
         for resource in step.resources.items:
             reference = model_reference_of(resource=resource)
             if reference is None:
@@ -527,12 +608,21 @@ def build_models_inventory(
     return Discovery[ModelSummary](items=items, complete=True, unknown_reasons=[])
 
 
-def model_identity_fields(resource: DependentResource) -> List[Tuple[str, str]]:
-    """The `(metadata field, value)` pairs that identify the model a resource
-    refers to - the fields `model_reference_of()` reads, and exactly the ones
-    `requires_runtime_resolution()` inspects. A blank (empty / whitespace-only)
-    value names nothing: `ModelSummary` rejects it and no metadata lookup could
-    resolve it."""
+def resource_identity_fields(resource: DependentResource) -> List[Tuple[str, str]]:
+    """List the metadata fields that identify a declared resource.
+
+    For models these are the fields `model_reference_of()` reads; for every
+    resource they are exactly the ones `requires_runtime_resolution()`
+    inspects. A blank (empty / whitespace-only) value names nothing:
+    `ModelSummary` rejects it and no metadata lookup could resolve it.
+
+    Args:
+        resource: One declared resource.
+
+    Returns:
+        `(metadata field, value)` pairs, in a fixed order per resource type;
+        empty for any other resource type.
+    """
     if resource.resource_type is DependentResourceType.ROBOFLOW_PLATFORM_MODEL:
         return [("model_id", resource.metadata.model_id)]
     if resource.resource_type is DependentResourceType.THIRD_PARTY_MODEL:
@@ -540,6 +630,8 @@ def model_identity_fields(resource: DependentResource) -> List[Tuple[str, str]]:
             ("provider", resource.metadata.provider),
             ("model_id", resource.metadata.model_id),
         ]
+    if resource.resource_type is DependentResourceType.ROBOFLOW_PLATFORM_PROJECT:
+        return [("project_url", resource.metadata.project_url)]
     return []
 
 
@@ -550,7 +642,7 @@ def selector_valued_identity_fields(
     problem per field, so two different selectors never collapse into one."""
     return [
         (field, value)
-        for field, value in model_identity_fields(resource=resource)
+        for field, value in resource_identity_fields(resource=resource)
         if is_workflow_selector(value)
     ]
 
@@ -560,7 +652,7 @@ def blank_identity_fields(resource: DependentResource) -> List[str]:
     Only the field names are reported - the invalid value never is."""
     return [
         field
-        for field, value in model_identity_fields(resource=resource)
+        for field, value in resource_identity_fields(resource=resource)
         if not str(value).strip()
     ]
 

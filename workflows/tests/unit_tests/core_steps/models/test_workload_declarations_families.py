@@ -584,14 +584,17 @@ def test_a_vendor_api_without_a_model_identity_stays_unknown() -> None:
     assert "discover_dependent_resources" in vars(StabilityInpaintingV1Manifest)
 
 
-def test_a_dedicated_loader_path_stays_unknown() -> None:
+def test_a_dedicated_loader_path_declares_a_non_preloadable_model() -> None:
     # given - the block loads with model_manager.load_action_recognition_model(),
-    # not the add_model() registration the dependency pre-loader performs
+    # not the add_model() registration the generic dependency pre-loader performs
     manifest = _build(ActionRecognitionV1Manifest, model_id="my-action-model/1")
 
     # when
     resources = manifest.discover_dependent_resources()
 
-    # then
-    assert resources is None
+    # then - the real model is known; only generic preloading is opted out of
+    assert [resource.metadata.model_id for resource in resources] == [
+        "my-action-model/1"
+    ]
+    assert resources[0].metadata.preloadable is False
     assert "discover_dependent_resources" in vars(ActionRecognitionV1Manifest)

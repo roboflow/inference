@@ -381,7 +381,7 @@ def test_workflow_introspection_schema_shows_type_on_every_entity() -> None:
         type_property = definition["properties"]["type"]
         assert "const" in type_property and "default" in type_property, name
         assert type_property["const"] == type_property["default"], name
-    assert schema["properties"]["schema_version"]["const"] == "2"
+    assert schema["properties"]["schema_version"]["const"] == "1"
 
 
 def test_schema_has_no_rejected_field_names() -> None:
@@ -956,10 +956,8 @@ def test_max_dimensionality_may_exceed_every_step() -> None:
     assert introspection.summary.max_dimensionality == 3
 
 
-@pytest.mark.parametrize("schema_version", ["1", "3", "2.0", ""])
+@pytest.mark.parametrize("schema_version", ["2", "3", "1.0", ""])
 def test_rejects_every_schema_version_but_the_current_one(schema_version: str) -> None:
-    # "1" is the retired string-reason format: it must be rejected, not
-    # silently accepted as if the reasons still parsed
     base = _introspection()
     with pytest.raises(ValidationError):
         WorkflowIntrospection.model_validate(
@@ -967,11 +965,11 @@ def test_rejects_every_schema_version_but_the_current_one(schema_version: str) -
         )
 
 
-def test_current_schema_version_is_two_and_engine_version_is_separate() -> None:
+def test_current_schema_version_is_one_and_engine_version_is_separate() -> None:
     introspection = _introspection()
 
-    assert introspection.schema_version == "2"
-    assert WORKLOAD_INTROSPECTION_SCHEMA_VERSION == "2"
+    assert introspection.schema_version == "1"
+    assert WORKLOAD_INTROSPECTION_SCHEMA_VERSION == "1"
     assert introspection.execution_engine_version == "1.7.0"
     with pytest.raises(ValidationError):
         _introspection(execution_engine_version="")

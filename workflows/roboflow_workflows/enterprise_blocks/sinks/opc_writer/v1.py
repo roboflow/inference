@@ -848,6 +848,9 @@ USER_CONFIG_ERROR_TYPES = (
 )
 
 
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -872,6 +875,7 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
@@ -1141,8 +1145,26 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        return Discovery[RuntimeRestriction](
-            items=[], complete=True, unknown_reasons=[]
+        """Declare the cooldown-timer state-loss caveat for the target deployment.
+
+        The cooldown timer lives in the block instance, so it does not throttle
+        across stateless HTTP requests. This corrects an earlier known-empty
+        declaration; the legacy editor ``get_restrictions()`` stays unchanged.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[COOLDOWN_ACTUAL_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
 
     def discover_dependent_resources(self) -> List[DependentResource]:

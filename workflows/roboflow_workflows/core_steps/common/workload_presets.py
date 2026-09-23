@@ -27,7 +27,9 @@ Two rules hold for everything in this module:
 
 Presets that already have a sibling constant living next to their block
 (``core_steps/cache/common.py`` and ``core_steps/sinks/onvif_movement/v1.py``)
-stay next to that sibling, so the note and the code cannot drift apart.
+stay next to that sibling, so the note and the code cannot drift apart. The PLC
+LAN preset below reuses the ONVIF code but not its camera note, so it lives
+here instead of importing the ONVIF block.
 """
 
 from typing import Tuple
@@ -159,6 +161,27 @@ ENVIRONMENT_VARIABLE_ACCESS_DISABLED_RESTRICTION = RuntimeRestriction(
     applies_to_configuration={
         "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": False
     },
+)
+
+
+# Direct PLC connections (Modbus TCP, EtherNet/IP) are opened from this process
+# regardless of where model steps execute, so only network reachability of the
+# PLC restricts the block. Same code and axes as the ONVIF camera restriction
+# (core_steps/sinks/onvif_movement/v1.py), with a PLC-specific note. No legacy
+# twin: these blocks never declared it in get_restrictions().
+PLC_LAN_ACCESS_ACTUAL_RESTRICTION = RuntimeRestriction(
+    code="requires_lan_access_to_device",
+    severity=Severity.HARD,
+    note=(
+        "Block connects directly to a PLC, so the process running the "
+        "workflow must reach the PLC's address over the network. Hosted "
+        "Serverless and Roboflow Dedicated Deployments cannot reach customer "
+        "LANs."
+    ),
+    applies_to_runtimes=[
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    ],
 )
 
 
