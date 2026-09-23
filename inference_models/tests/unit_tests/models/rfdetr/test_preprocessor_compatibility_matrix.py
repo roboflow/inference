@@ -76,6 +76,24 @@ from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
 )
 
+# Importing an ONNX entry point pulls in `onnxruntime`, which arrives with the
+# `onnx-*` extras. The inference-models unit-test job installs only
+# `[torch-cpu,test,model-blob-cache]`, so those imports raise there. The PyTorch
+# entry point below carries the same assertion and still runs everywhere, and the
+# ONNX ones run wherever the extra is installed. A skip here is an environment
+# fact, not a pass.
+try:
+    import onnxruntime  # noqa: F401
+
+    _ONNXRUNTIME_AVAILABLE = True
+except ImportError:
+    _ONNXRUNTIME_AVAILABLE = False
+
+requires_onnxruntime = pytest.mark.skipif(
+    not _ONNXRUNTIME_AVAILABLE,
+    reason="onnxruntime is not installed (requires the onnx-* extra)",
+)
+
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
 _NON_STRETCH_RESIZE_MODES = (
@@ -364,10 +382,10 @@ def test_registry_exposes_exactly_three_preprocessor_implementations() -> None:
 @pytest.mark.parametrize(
     "module_name",
     [
-        "rfdetr_object_detection_onnx",
+        pytest.param("rfdetr_object_detection_onnx", marks=requires_onnxruntime),
         "rfdetr_object_detection_pytorch",
-        "rfdetr_instance_segmentation_onnx",
-        "rfdetr_key_points_detection_onnx",
+        pytest.param("rfdetr_instance_segmentation_onnx", marks=requires_onnxruntime),
+        pytest.param("rfdetr_key_points_detection_onnx", marks=requires_onnxruntime),
     ],
 )
 def test_importable_non_tensorrt_backends_bind_the_reference_preprocessor(
