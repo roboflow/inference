@@ -8,11 +8,13 @@ inside the block from Grok's percent-of-image ``box_2d`` format.
 
 from unittest.mock import MagicMock, patch
 
+import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.models.foundation.spacexai.v3 import (
     BlockManifest,
     SpaceXAIBlockV3,
+    _encode_image_to_png_bytes,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -174,3 +176,12 @@ def test_run_reports_error_status_for_undecodable_detection_output(mock_promptin
 
     assert result[0]["predictions"] is None
     assert result[0]["error_status"] is True
+
+
+def test_detection_png_uses_compression_that_fits_xai_upload_limit():
+    image = np.random.default_rng(0).integers(0, 256, (128, 128, 3), dtype=np.uint8)
+
+    encoded = _encode_image_to_png_bytes(image)
+    _, compressed = cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+
+    assert encoded == compressed.tobytes()
