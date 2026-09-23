@@ -19,7 +19,6 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Response
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from inference_server import configuration as _cfg
@@ -44,7 +43,9 @@ else:
 _WORKFLOWS_ROUTES_ENABLED = (
     _workflows_host is not None and not _cfg.DISABLE_WORKFLOW_ENDPOINTS
 )
-_LEGACY_ERROR_HANDLING_ENABLED = _cfg.LEGACY_ROUTES_ENABLED or _WORKFLOWS_ROUTES_ENABLED
+_LEGACY_ERROR_HANDLING_ENABLED = (
+    _cfg.LEGACY_ROUTES_ENABLED or _WORKFLOWS_ROUTES_ENABLED or _cfg.ENABLE_BUILDER
+)
 
 # ---------------------------------------------------------------------------
 # Lifespan — initialize the per-process gateway
@@ -251,7 +252,8 @@ app.add_middleware(_AuthMiddleware)
 
 if _cfg.ALLOW_ORIGINS:
     app.add_middleware(
-        CORSMiddleware,
+        PathAwareCORSMiddleware,
+        match_paths=r"^(?!/build).*",
         allow_origins=_cfg.ALLOW_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],

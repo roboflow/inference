@@ -443,3 +443,26 @@ def test_models_route_returns_models_and_caches_them(
     refreshed = client.get("/build/api/models", headers={"X-CSRF": builder_env.csrf})
     assert refreshed.json() == {"models": [{"model_id": "second", "name": "second"}]}
     assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_model_in_both_manager_and_cache_keeps_cached_architecture(
+    monkeypatch, models_cache_dir
+):
+    _install_blocks(monkeypatch, _task_blocks())
+    _write_package(
+        models_cache_dir,
+        "ws/od/1",
+        "pkga",
+        {
+            "model_id": "ws/od/1",
+            "task_type": "object-detection",
+            "model_architecture": "yolov8",
+        },
+    )
+    bridge = FakeBridge([make_route("ws/od/1", "object-detection")])
+
+    listed = await models.list_models(bridge)
+
+    assert [entry["model_id"] for entry in listed] == ["ws/od/1"]
+    assert listed[0]["model_architecture"] == "yolov8"

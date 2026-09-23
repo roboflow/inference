@@ -291,19 +291,18 @@ async def list_models(bridge) -> List[Dict[str, Any]]:
     for alias, canonical in REGISTERED_ALIASES.items():
         reverse_aliases.setdefault(canonical, []).append(alias)
 
-    user_models: List[Dict[str, Any]] = [
-        {
-            "model_id": route.model_id,
-            "name": route.model_id,
-            "task_type": route.task_type or "",
-            "model_architecture": "",
-            "is_foundation": False,
-        }
-        for route in await bridge.describe()
-    ]
-    user_models.extend(_scan_inference_models_cache())
-
-    seen = _collect_unambiguous_user_models(user_models=user_models)
+    seen = _collect_unambiguous_user_models(user_models=_scan_inference_models_cache())
+    for route in await bridge.describe():
+        seen.setdefault(
+            route.model_id,
+            {
+                "model_id": route.model_id,
+                "name": route.model_id,
+                "task_type": route.task_type or "",
+                "model_architecture": "",
+                "is_foundation": False,
+            },
+        )
     for m in get_cached_foundation_models(blocks=blocks):
         seen[m["model_id"]] = m
 
