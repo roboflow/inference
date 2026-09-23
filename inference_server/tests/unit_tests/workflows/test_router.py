@@ -1,5 +1,6 @@
 import base64
 import io
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 from PIL import Image
 
 from inference_models.errors import UnauthorizedModelAccessError
+from inference_server.workflows import host
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 
 
@@ -304,3 +306,92 @@ def test_body_limit_guards_workflows_when_legacy_routes_disabled(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(app_mod)
+
+
+_CUSTOM_MODEL_RUN_FUNCTION = """
+def infer(self, image: WorkflowImageData) -> BlockResult:
+    model = self._init_results["model"]
+    return {"predictions": sv.Detections.empty()}
+"""
+
+_CUSTOM_MODEL_INIT_FUNCTION = """
+def init_model() -> Dict[str, Any]:
+    return {"model": AutoModel}
+"""
+
+
+def _custom_model_workflow(imports):
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "dynamic_blocks_definitions": [
+            {
+                "type": "DynamicBlockDefinition",
+                "manifest": {
+                    "type": "ManifestDescription",
+                    "block_type": "CustomModel",
+                    "inputs": {
+                        "image": {
+                            "type": "DynamicInputDefinition",
+                            "selector_types": ["input_image"],
+                        },
+                    },
+                    "outputs": {
+                        "predictions": {
+                            "type": "DynamicOutputDefinition",
+                            "kind": ["object_detection_prediction"],
+                        }
+                    },
+                },
+                "code": {
+                    "type": "PythonCode",
+                    "run_function_code": _CUSTOM_MODEL_RUN_FUNCTION,
+                    "run_function_name": "infer",
+                    "init_function_code": _CUSTOM_MODEL_INIT_FUNCTION,
+                    "init_function_name": "init_model",
+                    "imports": imports,
+                },
+            },
+        ],
+        "steps": [
+            {"type": "CustomModel", "name": "model", "image": "$inputs.image"},
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.model.predictions",
+            },
+        ],
+    }
+
+
+def test_validate_custom_python_block_with_inference_models_import(legacy_client):
+    assert host.SERVER_WORKFLOWS_CONFIGURATION.engine.allow_custom_python_execution
+
+    workflow = _custom_model_workflow(
+        imports=["from inference_models.models.auto_loaders.core import AutoModel"]
+    )
+
+    response = legacy_client(FakeGateway()).post("/workflows/validate", json=workflow)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+
+
+def test_validate_custom_python_block_rejects_legacy_inference_import(
+    legacy_client, monkeypatch
+):
+    assert host.SERVER_WORKFLOWS_CONFIGURATION.engine.allow_custom_python_execution
+    monkeypatch.setitem(sys.modules, "inference", None)
+
+    workflow = _custom_model_workflow(
+        imports=["from inference.models.yolov8 import YOLOv8ObjectDetection"]
+    )
+
+    response = legacy_client(FakeGateway()).post("/workflows/validate", json=workflow)
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_type"] == "DynamicBlockCodeError"
+    assert "ModuleNotFoundError" in body["message"]

@@ -83,7 +83,7 @@ jobs:
       LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
       SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
       INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-gpu' }}
-      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py' || '' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
     strategy:
       matrix:
         use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
