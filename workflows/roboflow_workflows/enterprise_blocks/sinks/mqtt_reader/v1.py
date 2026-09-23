@@ -390,8 +390,11 @@ class BlockManifest(WorkflowBlockManifest):
                 note=(
                     "The subscription and message buffer live in this block "
                     "instance. Over HTTP every request builds a fresh instance, so "
-                    "only a retained message can be returned. Use an "
-                    "InferencePipeline for a live subscription."
+                    "only a retained message can be returned; with client_id set, "
+                    "each request resumes the persistent session, consumes its whole "
+                    "backlog and returns one message, and concurrent requests with "
+                    "the same id disconnect each other. Use an InferencePipeline "
+                    "for a live subscription or a persistent session."
                 ),
                 applies_to_runtimes=[
                     Runtime.SELF_HOSTED_CPU,

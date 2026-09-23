@@ -244,6 +244,9 @@ class TestManifest:
             v1.Runtime.DEDICATED_DEPLOYMENT,
         ]
         assert restrictions[1].applies_to_input_modes == [v1.RuntimeInputMode.IMAGE]
+        # the HTTP note must warn about persistent sessions, not only retained messages
+        assert "client_id" in restrictions[1].note
+        assert "InferencePipeline" in restrictions[1].note
 
     def test_block_declares_file_system_init_parameter_only(self):
         assert MQTTReaderBlockV1.get_init_parameters() == [
