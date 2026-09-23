@@ -13,6 +13,12 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from inference_model_manager.pipelines import (
+    DISABLED_STAGE,
+    default_stage_tokens,
+    pipeline_model_id,
+    stage_tokens,
+)
 from inference_server import configuration
 from inference_server.legacy.prompts import Sam2Prompt, Sam2PromptSet, Sam3Prompt
 
@@ -940,7 +946,7 @@ class TrOCRInferenceRequest(BaseRequest):
         return f"trocr/{values['trocr_version_id']}"
 
 
-PP_OCR_STAGE_VALUES = {"none", "tiny", "small", "medium"}
+PP_OCR_FAMILY = "pp_ocr"
 
 _STAGE_UNSET = "__unset__"
 
@@ -974,22 +980,28 @@ class PPOCRInferenceRequest(BaseRequest):
                     raise ValueError(
                         f"Invalid PP-OCR pp_ocr_version_id value: {self.pp_ocr_version_id}"
                     )
-        det = ("small" if text_detection is _STAGE_UNSET else text_detection) or "none"
+        default_detection, default_recognition = default_stage_tokens(PP_OCR_FAMILY)
+        det = (
+            default_detection if text_detection is _STAGE_UNSET else text_detection
+        ) or DISABLED_STAGE
         rec = (
-            "small" if text_recognition is _STAGE_UNSET else text_recognition
-        ) or "none"
+            default_recognition
+            if text_recognition is _STAGE_UNSET
+            else text_recognition
+        ) or DISABLED_STAGE
         det = det.lower()
         rec = rec.lower()
-        if det not in PP_OCR_STAGE_VALUES:
+        valid_tokens = stage_tokens(PP_OCR_FAMILY)
+        if det not in valid_tokens:
             raise ValueError(f"Invalid PP-OCR text_detection value: {det}")
-        if rec not in PP_OCR_STAGE_VALUES:
+        if rec not in valid_tokens:
             raise ValueError(f"Invalid PP-OCR text_recognition value: {rec}")
-        if det == "none" and rec == "none":
+        if det == DISABLED_STAGE and rec == DISABLED_STAGE:
             raise ValueError("PP-OCR requires at least one of detection or recognition")
         self.text_detection = det
         self.text_recognition = rec
         self.pp_ocr_version_id = f"{det}-{rec}"
-        self.model_id = f"pp_ocr/{det}-{rec}"
+        self.model_id = pipeline_model_id(PP_OCR_FAMILY, (det, rec))
         return self
 
 

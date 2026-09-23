@@ -279,3 +279,98 @@ async def test_route_carries_resolved_model_from_stats(fake_stat):
     )
     route = await LegacyModelBridge(gw).resolve("ds/1", None)
     assert route.resolved_model["backend"] == "trt"
+
+
+def _recording_stat(monkeypatch, table, calls):
+    async def _stat(common):
+        calls.append((common.model_id, common.api_key))
+        if common.model_id.startswith("pp_ocr"):
+            raise AssertionError(f"synthetic id statted: {common.model_id}")
+        outcome = table.get(common.model_id)
+        if outcome is None:
+            raise LookupError(common.model_id)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_pipeline_id_stats_every_stage_with_the_callers_key(monkeypatch):
+    calls = []
+    _recording_stat(
+        monkeypatch,
+        {
+            "pp-ocrv6-det/small": ("object-detection", "infer"),
+            "pp-ocrv6-rec/medium": ("text-only-ocr", "infer"),
+        },
+        calls,
+    )
+    route = await LegacyModelBridge(FakeGateway()).resolve(
+        "pp_ocr/small-medium", "key-1"
+    )
+    assert route.task_type == "structured-ocr" and route.action == "infer"
+    assert route.registry_id == "pp_ocr/small-medium"
+    assert sorted(calls) == [
+        ("pp-ocrv6-det/small", "key-1"),
+        ("pp-ocrv6-rec/medium", "key-1"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resolve_pipeline_id_is_lookup_error_when_a_stage_is_missing(monkeypatch):
+    calls = []
+    _recording_stat(
+        monkeypatch, {"pp-ocrv6-det/small": ("object-detection", "infer")}, calls
+    )
+    with pytest.raises(LookupError):
+        await LegacyModelBridge(FakeGateway()).resolve("pp_ocr/small-small", "k")
+    assert ("pp-ocrv6-rec/small", "k") in calls
+
+
+@pytest.mark.asyncio
+async def test_resolve_pipeline_id_is_permission_error_when_a_stage_is_denied(
+    monkeypatch,
+):
+    _recording_stat(
+        monkeypatch,
+        {
+            "pp-ocrv6-det/small": ("object-detection", "infer"),
+            "pp-ocrv6-rec/small": PermissionError("pp-ocrv6-rec/small"),
+        },
+        [],
+    )
+    with pytest.raises(PermissionError):
+        await LegacyModelBridge(FakeGateway()).resolve("pp_ocr/small-small", "k")
+
+
+@pytest.mark.asyncio
+async def test_resolve_pipeline_id_skips_a_disabled_stage(monkeypatch):
+    calls = []
+    _recording_stat(
+        monkeypatch, {"pp-ocrv6-det/small": ("object-detection", "infer")}, calls
+    )
+    route = await LegacyModelBridge(FakeGateway()).resolve("pp_ocr/small-none", "k")
+    assert route.task_type == "structured-ocr"
+    assert calls == [("pp-ocrv6-det/small", "k")]
+
+
+@pytest.mark.asyncio
+async def test_loaded_pipeline_is_reauthorized_on_every_resolve(monkeypatch):
+    table = {
+        "pp-ocrv6-det/small": ("object-detection", "infer"),
+        "pp-ocrv6-rec/small": ("text-only-ocr", "infer"),
+    }
+    calls = []
+    _recording_stat(monkeypatch, table, calls)
+    bridge = LegacyModelBridge(FakeGateway())
+    await bridge.resolve("pp_ocr/small-small", "good")
+    assert "pp_ocr/small-small" in bridge
+    table["pp-ocrv6-rec/small"] = PermissionError("revoked")
+    with pytest.raises(PermissionError):
+        await bridge.resolve("pp_ocr/small-small", "good")
+    assert calls.count(("pp-ocrv6-det/small", "good")) == 2
+    assert calls.count(("pp-ocrv6-rec/small", "good")) == 2

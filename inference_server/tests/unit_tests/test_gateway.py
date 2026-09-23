@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import gc
+import weakref
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inference_server.gateway import (
-    ModelManagerGateway,
-    routed_model_id,
-    routing_key,
-)
+from inference_models.errors import ModelNotFoundError
+from inference_server.gateway import ModelManagerGateway, routed_model_id, routing_key
 
 
 def _fake_manager(process_return=None):
@@ -91,9 +90,7 @@ async def test_stats_rekeys_models_list_into_dict():
     wrapper = ModelManagerGateway(mgr)
     out = await wrapper.stats()
     assert out["a"] == 1
-    assert out["models"] == {
-        "acme/1": {"model_id": "acme/1", "tasks": {"infer": {}}}
-    }
+    assert out["models"] == {"acme/1": {"model_id": "acme/1", "tasks": {"infer": {}}}}
 
 
 @pytest.mark.asyncio
@@ -281,7 +278,9 @@ def test_budget_attrs_default_and_override():
     assert wrapper.infer_timeout_s == configuration.INFER_TIMEOUT_S
     assert wrapper.n_slots == 32
 
-    wrapper_override = ModelManagerGateway(mgr, load_wait_s=600.0, infer_timeout_s=300.0)
+    wrapper_override = ModelManagerGateway(
+        mgr, load_wait_s=600.0, infer_timeout_s=300.0
+    )
     assert wrapper_override.load_wait_s == 600.0
     assert wrapper_override.infer_timeout_s == 300.0
 
@@ -1081,3 +1080,39 @@ class TestInferRetriesLostModel:
             await wrapper.infer(model_id="m", image=b"x")
         assert mgr.process_calls == 1
         assert mgr.load_calls == 0
+
+
+class _Stage:
+    pass
+
+
+@pytest.mark.asyncio
+async def test_failed_pipeline_stage_is_released_without_cyclic_gc():
+    from inference_model_manager.model_manager import ModelManager
+
+    created = []
+
+    def _det_then_fail(model_id, **kwargs):
+        if model_id.startswith("pp-ocrv6-det/"):
+            created.append(_Stage())
+            return created[-1]
+        raise ModelNotFoundError("rec")
+
+    manager = ModelManager()
+    gc.disable()
+    try:
+        wrapper = ModelManagerGateway(manager)
+        with patch(
+            "inference_models.models.auto_loaders.core.AutoModel.from_pretrained",
+            side_effect=_det_then_fail,
+        ):
+            assert await wrapper.ensure_loaded("pp_ocr/small-small", api_key="k") == (
+                "error",
+                5,
+            )
+        ref = weakref.ref(created[0])
+        created.clear()
+        assert ref() is None
+    finally:
+        gc.enable()
+        manager.shutdown()

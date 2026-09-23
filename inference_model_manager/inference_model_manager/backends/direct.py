@@ -36,7 +36,7 @@ class DirectBackend(Backend):
         **kwargs,
     ) -> None:
         from inference_model_manager.backends.decode import make_decoder
-        from inference_models.models.auto_loaders.core import AutoModel
+        from inference_model_manager.pipelines import load_model
 
         # batch_max_size / batch_max_delay_ms accepted for API parity with
         # other backend kinds (ModelManager.load passes them generically).
@@ -67,9 +67,7 @@ class DirectBackend(Backend):
         )
         gpu_before = self._gpu_mem_snapshot()
         try:
-            self._model = AutoModel.from_pretrained(
-                model_id, api_key=api_key, **load_kwargs
-            )
+            self._model = load_model(model_id, api_key, **load_kwargs)
             attach_model_caches(self._model)
         except Exception:
             self._model = None

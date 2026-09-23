@@ -135,6 +135,8 @@ def test_trocr_returns_text_only_response(legacy_client, fake_stat):
 
 
 def test_pp_ocr_resolves_versioned_model_id(legacy_client, fake_stat):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    fake_stat["pp-ocrv6-rec/small"] = ("text-only-ocr", "infer")
     gw = FakeGateway(
         predictions={
             ("pp_ocr/small-small", "infer"): (
@@ -153,6 +155,47 @@ def test_pp_ocr_resolves_versioned_model_id(legacy_client, fake_stat):
     r = legacy_client(gw).post("/ocr/pp-ocr", json={"image": _image()})
     assert r.status_code == 200, r.text
     assert r.json()["result"] == "ocr"
+
+
+def _ocr_det(texts):
+    return SimpleNamespace(
+        xyxy=np.array([[0, 0, 2, 2]] * len(texts), dtype=float),
+        confidence=np.array([0.9] * len(texts)),
+        class_id=np.array([0] * len(texts)),
+        bboxes_metadata=[{"text": t} for t in texts],
+    )
+
+
+def test_pp_ocr_always_returns_boxes_with_recognized_text(legacy_client, fake_stat):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    fake_stat["pp-ocrv6-rec/small"] = ("text-only-ocr", "infer")
+    gw = FakeGateway(
+        predictions={("pp_ocr/small-small", "infer"): (["ocr"], [_ocr_det(["ocr"])])},
+        model_info={"pp_ocr/small-small": {"tasks": {"infer": {}}}},
+    )
+    r = legacy_client(gw).post("/ocr/pp-ocr", json={"image": _image()})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["result"] == "ocr"
+    assert (
+        body["predictions"][0]["class"] == "ocr"
+        and body["predictions"][0]["class_id"] == 0
+    )
+    assert body["image"] == {"width": 8, "height": 6}
+
+
+def test_pp_ocr_detect_only_returns_boxes_and_empty_result(legacy_client, fake_stat):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("pp_ocr/small-none", "infer"): ([""], [_ocr_det(["", ""])])},
+        model_info={"pp_ocr/small-none": {"tasks": {"infer": {}}}},
+    )
+    r = legacy_client(gw).post(
+        "/ocr/pp-ocr", json={"image": _image(), "text_recognition": "none"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["result"] == "" and len(body["predictions"]) == 2
 
 
 def test_yolo_world_uses_requested_classes(legacy_client, fake_stat):
@@ -517,3 +560,40 @@ def test_clip_embed_image_loads_every_image_in_one_call(
     infer_calls = [c for c in gw.calls if c[0] == "infer"]
     assert [c[2] for c in infer_calls] == ["embed_images", "embed_images"]
     assert [image_dims(c[4]) for c in infer_calls] == [(8, 6), (4, 4)]
+
+
+def _pp_ocr_gateway():
+    return FakeGateway(
+        predictions={
+            ("pp_ocr/small-small", "infer"): (
+                ["ocr"],
+                [
+                    SimpleNamespace(
+                        xyxy=np.zeros((0, 4)),
+                        confidence=np.zeros(0),
+                        class_id=np.zeros(0),
+                    )
+                ],
+            )
+        },
+        model_info={"pp_ocr/small-small": {"tasks": {"infer": {}}}},
+    )
+
+
+def test_pp_ocr_missing_stage_is_404(legacy_client, fake_stat):
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    r = legacy_client(_pp_ocr_gateway()).post("/ocr/pp-ocr", json={"image": _image()})
+    assert r.status_code == 404 and "message" in r.json()
+
+
+def test_pp_ocr_denied_stage_is_401(legacy_client, monkeypatch):
+    async def _stat(common):
+        if common.model_id == "pp-ocrv6-rec/small":
+            raise PermissionError(common.model_id)
+        return ("object-detection", "infer")
+
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
+    )
+    r = legacy_client(_pp_ocr_gateway()).post("/ocr/pp-ocr", json={"image": _image()})
+    assert r.status_code == 401

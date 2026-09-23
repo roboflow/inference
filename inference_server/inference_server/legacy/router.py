@@ -833,6 +833,8 @@ async def _run_ocr(
     core: str,
     *,
     structured: bool,
+    generate_bounding_boxes: Optional[bool] = None,
+    class_from_text: bool = False,
 ) -> Response:
     ensure_ocr_request_supported(inference_request)
     route, _, api_key = await _resolve_core_model(
@@ -847,7 +849,12 @@ async def _run_ocr(
         dims = (payload.width, payload.height)
         if structured:
             response = repack_structured_ocr_response(
-                prediction, dims, route.class_names, inference_request
+                prediction,
+                dims,
+                route.class_names,
+                inference_request,
+                generate_bounding_boxes=generate_bounding_boxes,
+                class_from_text=class_from_text,
             )
         else:
             response = repack_text_ocr_response(prediction, dims)
@@ -1040,7 +1047,15 @@ async def pp_ocr_retrieve_text(
     inference_request: PPOCRInferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
-    return await _run_ocr(request, inference_request, bridge, "pp_ocr", structured=True)
+    return await _run_ocr(
+        request,
+        inference_request,
+        bridge,
+        "pp_ocr",
+        structured=True,
+        generate_bounding_boxes=True,
+        class_from_text=True,
+    )
 
 
 @yolo_world_router.post(

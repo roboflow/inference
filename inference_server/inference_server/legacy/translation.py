@@ -858,6 +858,8 @@ def repack_structured_ocr_response(
     dims: Tuple[int, int],
     class_names: Optional[List[str]],
     request: Any,
+    generate_bounding_boxes: Optional[bool] = None,
+    class_from_text: bool = False,
 ) -> OCRInferenceResponse:
     if not (isinstance(prediction, tuple) and len(prediction) == 2):
         raise LegacyHTTPError(
@@ -871,10 +873,19 @@ def repack_structured_ocr_response(
         result=text if isinstance(text, str) else str(text),
         time=0.0,
     )
-    if getattr(request, "generate_bounding_boxes", False):
-        boxes = repack_object_detection_response(
-            unwrap_single_prediction(detections), dims, class_names, request
-        )
+    if generate_bounding_boxes is None:
+        generate_bounding_boxes = getattr(request, "generate_bounding_boxes", False)
+    if generate_bounding_boxes:
+        detections = unwrap_single_prediction(detections)
+        boxes = repack_object_detection_response(detections, dims, class_names, request)
+        if class_from_text:
+            box_texts = [
+                meta.get("text")
+                for meta in (getattr(detections, "bboxes_metadata", None) or [])
+            ]
+            for box, box_text in zip(boxes.predictions, box_texts):
+                if box_text is not None:
+                    box.class_name = box_text
         response.predictions = boxes.predictions
         response.image = InferenceResponseImage(width=width, height=height)
     return response

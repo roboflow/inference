@@ -168,6 +168,17 @@ Then reference by name in `_TASK_CONFIGS`:
 ],
 ```
 
+### Case 4: Multi-model pipelines
+
+A pipeline registered in `inference_models` (`REGISTERED_PIPELINES`) is loaded as one manager entry. `inference_model_manager/pipelines.py` maps the serving id family to the pipeline: `pp_ocr/{det}-{rec}` loads `pp-ocrv6-det/{det}` and `pp-ocrv6-rec/{rec}` (`none` disables a stage, a single token applies to both, bare `pp_ocr` uses the library defaults) and composes them with `resolve_pipeline_class(...).with_models(...)`. The composed object is wrapped in a facade whose class name carries the `_TASK_CONFIGS` entry, so dispatch, validation and serialization work as for any model:
+
+```python
+mm.load("pp_ocr/small-small", api_key="YOUR_KEY")
+texts, detections = mm.process("pp_ocr/small-small", images=image, serialize=False)
+```
+
+To add a pipeline: one `PipelineFamily` row in `PIPELINE_FAMILIES`, one facade adapting the pipeline result to a registered task contract, one `_TASK_CONFIGS` entry keyed by the facade class name.
+
 ### How it works
 
 Registration is lazy. Nothing is imported until `ModelManager.load()` is called. At that point:

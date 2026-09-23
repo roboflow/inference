@@ -225,6 +225,57 @@ def test_structured_ocr_without_boxes_has_no_image():
     assert resp.image is None and resp.predictions is None
 
 
+def test_structured_ocr_boxes_can_be_forced_without_request_field():
+    det = SimpleNamespace(
+        xyxy=np.array([[0, 0, 2, 2]], dtype=float),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        bboxes_metadata=[{"polygon": [], "text": "hi"}],
+    )
+    req = SimpleNamespace(class_filter=None)
+    resp = repack_structured_ocr_response(
+        (["hi"], [det]),
+        (4, 4),
+        None,
+        req,
+        generate_bounding_boxes=True,
+        class_from_text=True,
+    )
+    assert resp.predictions[0].class_name == "hi"
+    assert resp.predictions[0].class_id == 0
+    assert resp.image.width == 4 and resp.image.height == 4
+
+
+def test_structured_ocr_box_text_replaces_class_only_when_requested():
+    det = SimpleNamespace(
+        xyxy=np.array([[0, 0, 2, 2], [0, 3, 2, 5]], dtype=float),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 0]),
+        bboxes_metadata=[{"text": "first"}, {"text": ""}],
+    )
+    req = SimpleNamespace(generate_bounding_boxes=True, class_filter=None)
+    resp = repack_structured_ocr_response(
+        (["first"], [det]), (4, 8), ["text"], req, class_from_text=True
+    )
+    assert [p.class_name for p in resp.predictions] == ["first", ""]
+    resp = repack_structured_ocr_response((["first"], [det]), (4, 8), ["text"], req)
+    assert [p.class_name for p in resp.predictions] == ["text", "text"]
+
+
+def test_doctr_boxes_keep_block_line_word_classes_despite_text_metadata():
+    det = SimpleNamespace(
+        xyxy=np.array([[0, 0, 4, 4], [0, 0, 4, 2], [0, 0, 2, 2]], dtype=float),
+        confidence=np.array([0.9, 0.9, 0.9]),
+        class_id=np.array([0, 1, 2]),
+        bboxes_metadata=[{"text": "hi there"}, {"text": "hi there"}, {"text": "hi"}],
+    )
+    req = SimpleNamespace(generate_bounding_boxes=True, class_filter=None)
+    resp = repack_structured_ocr_response(
+        (["hi there"], [det]), (4, 4), ["block", "line", "word"], req
+    )
+    assert [p.class_name for p in resp.predictions] == ["block", "line", "word"]
+
+
 def test_text_ocr():
     assert repack_text_ocr_response(["abc"], (1, 1)).result == "abc"
 

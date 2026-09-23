@@ -445,7 +445,7 @@ class GatewayModelsProvider:
             api_key=api_key,
             **_passed(text_detection=text_detection, text_recognition=text_recognition),
         )
-        core_model_id = f"pp_ocr/{request.pp_ocr_version_id}"
+        core_model_id = request.model_id
         self.add_model(core_model_id, api_key)
         return self._dump(self._run_ocr(core_model_id, request, api_key))[0]
 

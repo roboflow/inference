@@ -487,6 +487,17 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-structured-ocr-compact-v1",
         ),
     ],
+    "PPOCRv6StructuredOCR": [
+        (
+            "infer",
+            "infer",
+            True,
+            _p(_P_IMAGES),
+            "validate_images_required",
+            "serialize_structured_ocr_compact",
+            "roboflow-structured-ocr-compact-v1",
+        ),
+    ],
     # --- Embeddings ---
     "TextImageEmbeddingModel": [
         (
