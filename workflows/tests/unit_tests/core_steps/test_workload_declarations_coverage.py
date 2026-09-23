@@ -600,6 +600,9 @@ def test_inner_workflow_reports_its_child_as_opaque(
 # deployment", carrying the flag in the condition instead of evaluating it. The two must agree once the portable conditions are
 # evaluated against the same flag values the legacy method sees: a migration
 # that quietly drops or invents a caveat is a regression, not a refactor.
+# Entries are matched on code, severity and the three condition axes, so a
+# legacy caveat that keeps the default `generic_restriction` code while its
+# actual twin names the caveat is a mismatch, not a match.
 #
 # Divergences are allowed only where they were recorded as judgment calls, and
 # only by name. The registry below is kept tight by
@@ -653,11 +656,17 @@ PORTABLE_WITHOUT_LEGACY = {
 }
 
 # Legacy entries with no active portable counterpart, keyed by
-# (block type, (severity, runtimes, step_execution_modes, input_modes)).
+# (block type, (code, severity, runtimes, step_execution_modes, input_modes)).
 LEGACY_WITHOUT_PORTABLE = {
     (
         "roboflow_core/s3_sink@v1",
-        ("soft", ("dedicated_deployment", "hosted_serverless"), ("remote",), ()),
+        (
+            "s3_append_buffer_resets_on_stateless_http",
+            "soft",
+            ("dedicated_deployment", "hosted_serverless"),
+            ("remote",),
+            (),
+        ),
     ): (
         "get_restrictions() is a CLASSMETHOD and cannot see output_mode, so it "
         "declares the append-log caveat unconditionally; after Codex F003 the "
@@ -669,7 +678,13 @@ LEGACY_WITHOUT_PORTABLE = {
     ),
     (
         "roboflow_core/local_file_sink@v1",
-        ("soft", ("dedicated_deployment",), (), ()),
+        (
+            "writes_to_deployment_volume_not_retrievable",
+            "soft",
+            ("dedicated_deployment",),
+            (),
+            (),
+        ),
     ): (
         "legacy emits 'files land on the deployment volume but are not "
         "retrievable' on BOTH branches of the storage flag; the portable "
@@ -697,6 +712,7 @@ FLAG_CONSTANTS_UNDER_TEST = ("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",)
 
 def _legacy_axes(restriction: Any) -> Tuple[Any, ...]:
     return (
+        restriction.code,
         restriction.severity.value,
         tuple(sorted(item.value for item in (restriction.applies_to_runtimes or ()))),
         tuple(
@@ -714,6 +730,7 @@ def _legacy_axes(restriction: Any) -> Tuple[Any, ...]:
 def _portable_axes(restriction: RestrictionMetadata) -> Tuple[Any, ...]:
     condition = restriction.when
     return (
+        restriction.code,
         restriction.severity.value,
         tuple(sorted(item.value for item in (condition.runtimes or ()))),
         tuple(sorted(item.value for item in (condition.step_execution_modes or ()))),
@@ -724,8 +741,8 @@ def _portable_axes(restriction: RestrictionMetadata) -> Tuple[Any, ...]:
 # Intentional legacy/actual split for these state-loss codes only: the editor's
 # get_restrictions() keeps its historic REMOTE step-execution scope, while
 # get_actual_restrictions() omits the mode because block state is lost wherever
-# the model runs. Only the mode axis may differ; severity, runtimes and input
-# modes are still compared.
+# the model runs. Only the mode axis may differ; code, severity, runtimes and
+# input modes are still compared.
 STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE = frozenset(
     {
         "stateful_video_state_resets_on_stateless_http",
@@ -746,9 +763,9 @@ def _portable_axes_in_legacy_terms(restriction: RestrictionMetadata) -> Tuple[An
         f"{restriction.code} must not depend on the step execution mode, got "
         f"{restriction.when.step_execution_modes}"
     )
-    severity, runtimes, _, input_modes = axes
+    code, severity, runtimes, _, input_modes = axes
 
-    return severity, runtimes, ("remote",), input_modes
+    return code, severity, runtimes, ("remote",), input_modes
 
 
 def _flag_value(block_module: Any, key: str) -> Any:

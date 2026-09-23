@@ -347,8 +347,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         return [
             RuntimeRestriction(
+                code="fire_and_forget_hides_persistence_failures",
                 severity=Severity.SOFT,
                 note="Use fire_and_forget=false to observe persistence failures and avoid accumulating background writes when the database is slower than the stream.",
                 applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],

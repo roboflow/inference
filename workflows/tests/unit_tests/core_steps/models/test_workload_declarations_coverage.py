@@ -10,12 +10,14 @@ plugins) is owned elsewhere; this file only covers
 `roboflow_workflows.core_steps.models.**` in the current process.
 """
 
+import sys
 from typing import Any, Dict, List, Set, Type
 
 import pytest
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RestrictionMetadata,
+    Severity,
     WorkOperation,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
@@ -266,20 +268,48 @@ def test_no_model_block_declares_more_than_one_endpoint_flag(
 
 def test_a_legacy_restriction_declaration_is_mirrored_by_a_portable_one(
     model_block_manifests: List[Type[WorkflowBlockManifest]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A model manifest that overrides get_restrictions() inside the models
     # package carries a real caveat, so its portable list cannot be empty.
+    # Every legacy caveat also carries the (code, severity) of a portable one,
+    # on a host with the endpoint flag on and on a host with it off. Only the
+    # flag-off host adds a caveat, and that caveat is the disabled endpoint.
+    # The legacy editor payload never gains the code.
+    flag_disabled_key = ("hosted_endpoint_disabled_by_flag", Severity.HARD)
     for manifest_class in model_block_manifests:
         declaring_module = getattr(manifest_class.get_restrictions, "__module__", "")
         if not declaring_module.startswith(MODELS_PACKAGE):
             continue
+        module = sys.modules[declaring_module]
+        host_flags = [flag for flag in ENDPOINT_FLAGS if hasattr(module, flag)]
 
         restrictions = portable_restrictions(_instance(manifest_class))
+        legacy_by_flag_value = {}
+        for flag_value in (True, False):
+            for flag in host_flags:
+                monkeypatch.setattr(module, flag, flag_value)
+            legacy_by_flag_value[flag_value] = manifest_class.get_restrictions()
 
         assert restrictions, (
             f"{manifest_class.__module__} overrides get_restrictions() but declares "
             f"no portable restriction"
         )
+        portable_keys = {(item.code, item.severity) for item in restrictions}
+        legacy_keys = {
+            flag_value: [(item.code, item.severity) for item in legacy]
+            for flag_value, legacy in legacy_by_flag_value.items()
+        }
+        assert set(legacy_keys[False]) <= portable_keys, (
+            f"{manifest_class.__module__} legacy codes "
+            f"{set(legacy_keys[False]) - portable_keys} have no portable counterpart"
+        )
+        expected_flag_off_keys = legacy_keys[True] + (
+            [flag_disabled_key] if host_flags else []
+        )
+        assert legacy_keys[False] == expected_flag_off_keys, manifest_class.__module__
+        for legacy in legacy_by_flag_value.values():
+            assert all("code" not in item.to_dict() for item in legacy)
 
 
 def test_model_blocks_without_a_legacy_declaration_declare_no_caveat(

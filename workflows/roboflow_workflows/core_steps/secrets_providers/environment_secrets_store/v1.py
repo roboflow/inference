@@ -103,10 +103,17 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restrictions = []
         if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES:
             restrictions.append(
                 RuntimeRestriction(
+                    code="environment_variable_access_disabled",
                     severity=Severity.HARD,
                     note=(
                         "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"

@@ -140,8 +140,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
@@ -151,6 +157,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not DEPTH_ESTIMATION_ENABLED:
             restrictions.append(
                 RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
                     severity=Severity.HARD,
                     note=(
                         "DEPTH_ESTIMATION_ENABLED=False on Roboflow Hosted "

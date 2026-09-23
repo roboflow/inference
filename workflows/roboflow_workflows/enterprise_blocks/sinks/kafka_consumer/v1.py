@@ -390,8 +390,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         return [
             RuntimeRestriction(
+                code="unavailable_on_hosted_platform",
                 severity=Severity.HARD,
                 note=(
                     "On the Roboflow hosted platform every run returns "
@@ -401,6 +408,7 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
             RuntimeRestriction(
+                code="connection_and_state_rebuilt_per_request",
                 severity=Severity.SOFT,
                 note=(
                     "The consumer and the last-returned record live in this block "

@@ -172,7 +172,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restriction = RuntimeRestriction(
+            code="stateful_video_state_resets_on_stateless_http",
             severity=Severity.SOFT,
             note=(
                 "Frame stack is stored in process memory per video_identifier. "

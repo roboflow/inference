@@ -94,6 +94,33 @@ def test_moondream2_portable_restrictions_ignore_the_host_flag(
     assert len(legacy_with_flag_on) == 1
     assert len(legacy_with_flag_off) == 2
     assert "MOONDREAM2_ENABLED=False" in legacy_with_flag_off[1].note
+    # ... and carries the codes of its portable counterparts
+    assert [item.code for item in legacy_with_flag_on] == [
+        "requires_gpu_for_local_execution",
+    ]
+    assert [item.code for item in legacy_with_flag_off] == [
+        "requires_gpu_for_local_execution",
+        "hosted_endpoint_disabled_by_flag",
+    ]
+    # ... without the code reaching the legacy editor payload
+    assert [item.to_dict() for item in legacy_with_flag_off] == [
+        {
+            "severity": "hard",
+            "note": "Requires a GPU; run_locally() loads a model that needs CUDA.",
+            "applies_to_runtimes": ["self_hosted_cpu"],
+            "applies_to_step_execution_modes": ["local"],
+        },
+        {
+            "severity": "hard",
+            "note": (
+                "MOONDREAM2_ENABLED=False on Roboflow Hosted Serverless: "
+                "the Moondream2 endpoint is not registered, so "
+                "run_remotely() returns 404."
+            ),
+            "applies_to_runtimes": ["hosted_serverless"],
+            "applies_to_step_execution_modes": ["remote"],
+        },
+    ]
 
 
 def test_lmm_portable_restrictions_ignore_the_host_flag(
@@ -116,6 +143,8 @@ def test_lmm_portable_restrictions_ignore_the_host_flag(
     assert portable_with_flag_off == expected
     assert legacy_with_flag_on == []
     assert len(legacy_with_flag_off) == 1
+    assert legacy_with_flag_off[0].code == "hosted_endpoint_disabled_by_flag"
+    assert "code" not in legacy_with_flag_off[0].to_dict()
 
 
 def test_sam3_portable_restrictions_ignore_the_host_flag(

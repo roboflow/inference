@@ -20,7 +20,7 @@ for contributor and maintainer responsibilities.
 
 - Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions.
 - Report unresolved resource identities explicitly and include streaming-video models without changing how they load.
-- Correct stateful-block and industrial-sink restrictions while preserving the editor's existing declarations.
+- Align static and actual restriction codes, and correct stateful-block and industrial-sink caveats without changing editor payloads.
 - Reject cyclic saved inner-workflow references during resolution with a composition
   error instead of `RecursionError`. Enforce nesting depth and total inner-workflow
   count limits during reference expansion, before fetching or expanding children

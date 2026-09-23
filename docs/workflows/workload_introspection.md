@@ -264,11 +264,13 @@ The builder asks the block for that portable view explicitly, with
 
 ### How a block declares a restriction
 
-A block authors restrictions with ONE entity type, `RuntimeRestriction`, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see [below](#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose)). Nothing here changes the editor: `get_restrictions()` returns what it always returned, in the same order, with the same notes and the same `to_dict()` payload.
+A block authors restrictions with ONE entity type, `RuntimeRestriction`, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see [below](#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose)). For the editor, `get_restrictions()` keeps its notes, severity, ordering and condition scopes, and its `to_dict()` payload is unchanged.
+
+When both methods describe the same caveat, they give it the same `code`. Their scopes can still differ on purpose: the state-loss mode axis below, and storage caveats that the editor view emits per host flag while the actual view pins the flag in `applies_to_configuration`. `to_dict()` still omits `code` and `applies_to_configuration`, so the editor payload is unchanged.
 
 | Method | Level | Returns | Filtered against this host? |
 | --- | --- | --- | --- |
-| `get_restrictions()` | classmethod | `List[RuntimeRestriction]` | yes — the legacy, editor-facing view, unchanged (state-loss caveats differ from the actual view on purpose, see below) |
+| `get_restrictions()` | classmethod | `List[RuntimeRestriction]` | yes — the legacy, editor-facing view; it evaluates this host's flags itself and emits only the matching branch (state-loss caveats differ from the actual view on purpose, see below) |
 | `get_actual_restrictions(*, ignore_environment_restrictions=False)` | instance | `Discovery[RuntimeRestriction]` | only when the flag is `False`, and only the configuration predicates |
 
 `RuntimeRestriction` keeps `severity`, `note` and its three `applies_to_*` axes, and adds two defaulted fields at the end, so every existing constructor call is still valid:
@@ -286,7 +288,7 @@ Some blocks keep state in their workflow block instance: trackers and other per-
 
 | | `get_restrictions()` (editor) | `get_actual_restrictions()` (this document) |
 | --- | --- | --- |
-| code | unchanged (several custom declarations use `generic_restriction`) | unchanged (specific codes, e.g. `stateful_video_state_resets_on_stateless_http`) |
+| code | same code as the actual view (e.g. `stateful_video_state_resets_on_stateless_http`); not part of `to_dict()` | same code as the editor view |
 | severity, runtimes, input modes | unchanged | same values as the editor view |
 | step execution modes | `["remote"]`, as before | `null` — applies to either mode |
 | note | unchanged | explains state loss independently of the model execution mode |

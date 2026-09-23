@@ -142,8 +142,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         return [
             RuntimeRestriction(
+                code="roboflow_internal_endpoint_only",
                 severity=Severity.HARD,
                 note=(
                     "Seg Preview calls the Roboflow-internal "

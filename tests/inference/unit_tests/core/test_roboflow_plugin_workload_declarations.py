@@ -363,11 +363,12 @@ def test_state_loss_caveat_keeps_the_editor_scope_only_in_the_legacy_view(
     scope, while the actual declaration drops only the step-execution mode,
     because the state is lost wherever the model runs."""
     manifest_cls = plugin_manifests[block_type]
-    legacy = [
-        restriction.to_dict()
+    legacy_restrictions = [
+        restriction
         for restriction in manifest_cls.get_restrictions()
         if restriction.applies_to_step_execution_modes is not None
     ]
+    legacy = [restriction.to_dict() for restriction in legacy_restrictions]
     actual = [
         restriction
         for restriction in _portable_view(manifest_cls.model_construct())
@@ -375,6 +376,10 @@ def test_state_loss_caveat_keeps_the_editor_scope_only_in_the_legacy_view(
     ]
 
     assert len(legacy) == 1 and len(actual) == 1
+    # the same caveat shares its code across both methods, while the editor
+    # payload still omits it
+    assert legacy_restrictions[0].code == code
+    assert "code" not in legacy[0]
     assert legacy[0]["applies_to_step_execution_modes"] == ["remote"]
     assert actual[0].when.step_execution_modes is None
     assert actual[0].severity.value == legacy[0]["severity"]
@@ -551,8 +556,8 @@ def test_declarations_are_identical_in_both_representation_modes() -> None:
 # answers "what applies on a target deployment" - it carries the flag in
 # `configuration_equals` instead.
 # Once the portable conditions are evaluated against the same flag values the
-# legacy method reads, the two must agree, entry for entry, on severity and on
-# all three condition axes. A migration that quietly drops or invents a caveat
+# legacy method reads, the two must agree, entry for entry, on code, severity
+# and all three condition axes. A migration that quietly drops or invents a caveat
 # is a regression, not a refactor.
 # ---------------------------------------------------------------------------
 
@@ -561,11 +566,17 @@ def test_declarations_are_identical_in_both_representation_modes() -> None:
 PORTABLE_WITHOUT_LEGACY: dict = {}
 
 # Legacy entries with no ACTIVE portable counterpart, keyed by
-# (block type, (severity, runtimes, step_execution_modes, input_modes)).
+# (block type, (code, severity, runtimes, step_execution_modes, input_modes)).
 LEGACY_WITHOUT_PORTABLE = {
     (
         "roboflow_core/vision_event_bundle@v1",
-        ("soft", ("dedicated_deployment",), (), ()),
+        (
+            "writes_to_deployment_volume_not_retrievable",
+            "soft",
+            ("dedicated_deployment",),
+            (),
+            (),
+        ),
     ): (
         "legacy emits 'bundles land on the deployment volume but are not "
         "retrievable through the Roboflow API' on BOTH branches of the storage "
@@ -585,6 +596,7 @@ FLAG_CONSTANTS_UNDER_TEST = ("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",)
 
 def _legacy_axes(restriction) -> tuple:
     return (
+        restriction.code,
         restriction.severity.value,
         tuple(sorted(item.value for item in (restriction.applies_to_runtimes or ()))),
         tuple(
@@ -602,6 +614,7 @@ def _legacy_axes(restriction) -> tuple:
 def _portable_axes(restriction) -> tuple:
     condition = restriction.when
     return (
+        restriction.code,
         restriction.severity.value,
         tuple(sorted(item.value for item in (condition.runtimes or ()))),
         tuple(sorted(item.value for item in (condition.step_execution_modes or ()))),
@@ -646,8 +659,8 @@ def _portable_restrictions_of(manifest_cls) -> list:
 # Intentional legacy/actual split for these state-loss codes only: the editor's
 # get_restrictions() keeps its historic REMOTE step-execution scope, while
 # get_actual_restrictions() omits the mode because block state is lost wherever
-# the model runs. Only the mode axis may differ; severity, runtimes and input
-# modes are still compared.
+# the model runs. Only the mode axis may differ; code, severity, runtimes and
+# input modes are still compared.
 STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE = frozenset(
     {
         "cooldown_timer_resets_on_stateless_http",
@@ -667,9 +680,9 @@ def _portable_axes_in_legacy_terms(restriction) -> tuple:
         f"{restriction.code} must not depend on the step execution mode, got "
         f"{restriction.when.step_execution_modes}"
     )
-    severity, runtimes, _, input_modes = axes
+    code, severity, runtimes, _, input_modes = axes
 
-    return severity, runtimes, ("remote",), input_modes
+    return code, severity, runtimes, ("remote",), input_modes
 
 
 def _raw_divergence(block_type: str, manifest_cls) -> tuple:
@@ -814,7 +827,13 @@ def test_the_recorded_divergence_is_flag_specific(plugin_manifests) -> None:
     bundle = plugin_manifests["roboflow_core/vision_event_bundle@v1"]
     divergence_key = (
         "roboflow_core/vision_event_bundle@v1",
-        ("soft", ("dedicated_deployment",), (), ()),
+        (
+            "writes_to_deployment_volume_not_retrievable",
+            "soft",
+            ("dedicated_deployment",),
+            (),
+            (),
+        ),
     )
     assert divergence_key in LEGACY_WITHOUT_PORTABLE
 
