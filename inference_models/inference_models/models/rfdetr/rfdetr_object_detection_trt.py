@@ -192,10 +192,16 @@ class RFDetrForObjectDetectionTRT(
             Loaded RF-DETR TensorRT model.
 
         Raises:
+            TypeError: If the removed rfdetr_execution_plan argument is supplied.
             ValueError: If a serialized execution plan is invalid.
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
+        if "rfdetr_execution_plan" in kwargs:
+            raise TypeError(
+                "'rfdetr_execution_plan' has been removed; use 'execution_plan' instead."
+            )
+
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",

@@ -4,6 +4,7 @@ import threading
 from importlib.machinery import ModuleSpec
 from types import MethodType, ModuleType, SimpleNamespace
 from typing import List
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -147,6 +148,35 @@ def test_model_boundary_accepts_typed_plan_and_rejects_invalid_mapping(
         rfdetr_trt_model_class._resolve_requested_execution_plan(
             execution_plan={},
         )
+
+
+@pytest.mark.parametrize("legacy_plan", [None, RFDetrExecutionPlan()])
+@pytest.mark.parametrize("include_execution_plan", [False, True])
+def test_loader_rejects_removed_plan_argument_before_loading(
+    rfdetr_trt_model_class,
+    monkeypatch,
+    legacy_plan,
+    include_execution_plan,
+) -> None:
+    load_package = Mock(side_effect=AssertionError("Model loading must not start"))
+    monkeypatch.setattr(
+        sys.modules[_MODEL_MODULE], "get_model_package_contents", load_package
+    )
+    kwargs = {"rfdetr_execution_plan": legacy_plan}
+    if include_execution_plan:
+        kwargs["execution_plan"] = RFDetrExecutionPlan()
+
+    with pytest.raises(
+        TypeError,
+        match="'rfdetr_execution_plan' has been removed; use 'execution_plan' instead",
+    ):
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            **kwargs,
+        )
+
+    load_package.assert_not_called()
 
 
 class _RuntimeStage:
