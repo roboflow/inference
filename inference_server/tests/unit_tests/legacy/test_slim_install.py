@@ -21,7 +21,7 @@ def test_app_imports_and_drops_workflow_routes_without_roboflow_workflows():
         "importlib.util.find_spec = lambda name, *a, **k: "
         "None if name == 'roboflow_workflows' else _find(name, *a, **k); "
         "import inference_server.app as app_mod; "
-        "paths = {r.path for r in app_mod.app.routes if hasattr(r, 'path')}; "
+        "paths = set(app_mod.app.openapi()['paths']); "
         "assert '/workflows/run' not in paths, sorted(paths); print('ok')"
     )
     result = subprocess.run(
@@ -55,7 +55,7 @@ def test_app_imports_with_builder_enabled_without_roboflow_workflows(tmp_path):
         "None if name == 'roboflow_workflows' else _find(name, *a, **k); "
         "sys.modules['roboflow_workflows'] = None; "
         "import inference_server.app as app_mod; "
-        "paths = {r.path for r in app_mod.app.routes if hasattr(r, 'path')}; "
+        "paths = set(app_mod.app.openapi()['paths']); "
         "assert '/build' in paths, sorted(paths); "
         "from inference_server.builder import models; "
         "bridge = type('B', (), "
