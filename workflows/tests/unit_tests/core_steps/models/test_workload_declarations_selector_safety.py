@@ -42,6 +42,7 @@ from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v4 import (
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     WorkOperation,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
@@ -54,7 +55,7 @@ MODELS_PACKAGE = "roboflow_workflows.core_steps.models"
 # purpose: its documented contract is to return a selector VERBATIM inside the
 # resource metadata (with a resolver), so reading an unresolved field there is
 # correct rather than a gap.
-OWNED_HOOKS = ("discover_work_operations", "discover_portable_restrictions")
+OWNED_HOOKS = ("discover_work_operations", "get_actual_restrictions")
 
 SELECTOR_PROBE = "$inputs.probe"
 
@@ -215,7 +216,14 @@ def test_lmm_type_is_selector_capable_and_never_falls_back_to_a_default(
     assert isinstance(operations, Discovery)
     assert operations.complete is False
     assert list(operations.items) == [WorkOperation.MODEL_INFERENCE]
-    assert operations.unknown_reasons == ["lmm_type_selector_unresolved:$steps.step"]
+    assert operations.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.step",
+            declaration="operations",
+            field="lmm_type",
+            selector="$inputs.lmm_type",
+        )
+    ]
     # and the gpt_4v answer is NOT silently reused
     assert WorkOperation.EXTERNAL_REQUEST not in operations.items
 

@@ -22,6 +22,8 @@ from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
 
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
+
 STATEFUL_VISUALIZATION_CODES = [
     "stateful_video_state_resets_on_stateless_http",
     "temporal_block_no_benefit_on_still_image",
@@ -80,7 +82,7 @@ def test_a_plain_annotator_declares_only_visualization() -> None:
         predictions="$steps.model.predictions",
     )
     assert manifest.discover_work_operations() == [WorkOperation.VISUALIZATION]
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 def test_the_grid_block_also_declares_composition() -> None:
@@ -114,6 +116,5 @@ def test_heatmap_and_trace_declare_their_cross_frame_state() -> None:
             WorkOperation.TEMPORAL_BUFFERING,
         ]
         assert [
-            restriction.code
-            for restriction in manifest.discover_portable_restrictions()
+            restriction.code for restriction in portable_restrictions(manifest)
         ] == STATEFUL_VISUALIZATION_CODES

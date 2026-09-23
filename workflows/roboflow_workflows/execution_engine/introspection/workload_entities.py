@@ -28,7 +28,9 @@ from roboflow_workflows.prototypes.block import DependentResource
 GraphNodeKind = Literal["input", "step", "output"]
 GraphEdgeKind = Literal["data", "control"]
 
-WORKLOAD_INTROSPECTION_SCHEMA_VERSION = "1"
+# "2": `Discovery.unknown_reasons` carries structured `DiscoveryProblem`
+# objects instead of the `<code>:<context>` strings of version "1".
+WORKLOAD_INTROSPECTION_SCHEMA_VERSION = "2"
 
 
 class GraphNode(BaseModel):
@@ -79,10 +81,37 @@ class StepMetadata(BaseModel):
     operations: Discovery[WorkOperation]
 
 
+def canonicalise_dimensionality_histogram(value: Dict[int, int]) -> Dict[int, int]:
+    """Shared rule for every ``steps_by_dimensionality`` map: non-negative
+    integer depths, positive counts (zero-count depths are omitted, never
+    stored), keys sorted ascending."""
+    for dimensionality, count in value.items():
+        if dimensionality < 0:
+            raise ValueError(
+                "`steps_by_dimensionality` keys must be non-negative "
+                f"dimensionalities, got {dimensionality}."
+            )
+        if count < 1:
+            raise ValueError(
+                "`steps_by_dimensionality` values must be positive counts "
+                f"(omit zero-count dimensions), got {count} for "
+                f"dimensionality {dimensionality}."
+            )
+    return dict(sorted(value.items()))
+
+
 class ModelSummary(BaseModel):
     """One entry of the model inventory: a model reference and the steps that
     refer to it. Inventory membership is not a claim that the model executes;
-    per-step resources keep ACCESS vs EXECUTION."""
+    per-step resources keep ACCESS vs EXECUTION.
+
+    ``steps_by_dimensionality`` maps input depth -> number of steps in
+    ``used_by_steps`` compiled at that depth (same reference-depth semantics
+    and string-keyed wire encoding as ``WorkflowSummary.steps_by_dimensionality``).
+    Each referring step counts exactly once, whatever the number of resource
+    declarations it makes for this model, so the counts always sum to
+    ``len(used_by_steps)``. These are reference counts, not call estimates.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", protected_namespaces=())
 
@@ -90,6 +119,7 @@ class ModelSummary(BaseModel):
     provider: str = Field(min_length=1)
     model_id: str = Field(min_length=1)
     used_by_steps: List[str]
+    steps_by_dimensionality: Dict[int, int]
     metadata: Optional[ModelMetadata] = None
     metadata_status: ModelMetadataStatus
 
@@ -105,11 +135,22 @@ class ModelSummary(BaseModel):
                 raise ValueError("`used_by_steps` entries must be non-empty ids.")
         return sorted(value)
 
+    @field_validator("steps_by_dimensionality", mode="after")
+    @classmethod
+    def _validate_histogram(cls, value: Dict[int, int]) -> Dict[int, int]:
+        return canonicalise_dimensionality_histogram(value)
+
     @model_validator(mode="after")
-    def _enforce_status_metadata_consistency(self) -> "ModelSummary":
+    def _enforce_cross_field_consistency(self) -> "ModelSummary":
         ensure_model_metadata_status_consistent(
             status=self.metadata_status, metadata=self.metadata
         )
+        total = sum(self.steps_by_dimensionality.values())
+        if total != len(self.used_by_steps):
+            raise ValueError(
+                "`steps_by_dimensionality` counts must sum to the number of "
+                f"`used_by_steps` ({len(self.used_by_steps)}), got {total}."
+            )
         return self
 
 
@@ -129,28 +170,16 @@ class WorkflowSummary(BaseModel):
     @field_validator("steps_by_dimensionality", mode="after")
     @classmethod
     def _validate_histogram(cls, value: Dict[int, int]) -> Dict[int, int]:
-        for dimensionality, count in value.items():
-            if dimensionality < 0:
-                raise ValueError(
-                    "`steps_by_dimensionality` keys must be non-negative "
-                    f"dimensionalities, got {dimensionality}."
-                )
-            if count < 1:
-                raise ValueError(
-                    "`steps_by_dimensionality` values must be positive counts "
-                    f"(omit zero-count dimensions), got {count} for "
-                    f"dimensionality {dimensionality}."
-                )
-        return dict(sorted(value.items()))
+        return canonicalise_dimensionality_histogram(value)
 
 
 class WorkflowIntrospection(BaseModel):
-    """Top-level workload introspection response (schema version 1)."""
+    """Top-level workload introspection response (schema version 2)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     type: Literal["workflow_introspection"] = "workflow_introspection"
-    schema_version: Literal["1"] = WORKLOAD_INTROSPECTION_SCHEMA_VERSION
+    schema_version: Literal["2"] = WORKLOAD_INTROSPECTION_SCHEMA_VERSION
     execution_engine_version: str = Field(min_length=1)
     nodes: List[GraphNode]
     edges: List[GraphEdge]
@@ -165,7 +194,13 @@ class WorkflowIntrospection(BaseModel):
             node_id for node_id, kind in node_kinds.items() if kind == "step"
         }
         _validate_steps(steps=self.steps, step_node_ids=step_node_ids)
-        _validate_models(models=self.summary.models, step_node_ids=step_node_ids)
+        _validate_models(
+            models=self.summary.models,
+            step_node_ids=step_node_ids,
+            input_dimensionality_by_step={
+                step.node_id: step.input_dimensionality for step in self.steps
+            },
+        )
         _validate_summary_dimensionality(summary=self.summary, steps=self.steps)
         return self
 
@@ -216,7 +251,11 @@ def _validate_steps(steps: List[StepMetadata], step_node_ids: Set[str]) -> None:
         raise ValueError(f"Step nodes without StepMetadata: {sorted(missing)!r}.")
 
 
-def _validate_models(models: Discovery[ModelSummary], step_node_ids: Set[str]) -> None:
+def _validate_models(
+    models: Discovery[ModelSummary],
+    step_node_ids: Set[str],
+    input_dimensionality_by_step: Dict[str, int],
+) -> None:
     seen: Set[Tuple[str, str]] = set()
     for model in models.items:
         key = (model.provider, model.model_id)
@@ -229,6 +268,18 @@ def _validate_models(models: Discovery[ModelSummary], step_node_ids: Set[str]) -
         if unknown_steps:
             raise ValueError(
                 f"Model {key!r} is used by unknown steps: {unknown_steps!r}."
+            )
+        # every id is a known step node and `_validate_steps` guaranteed each
+        # step node exactly one StepMetadata, so the lookup cannot miss
+        histogram = Counter(
+            input_dimensionality_by_step[step_id] for step_id in model.used_by_steps
+        )
+        if dict(histogram) != model.steps_by_dimensionality:
+            raise ValueError(
+                f"Model {key!r} `steps_by_dimensionality` must equal the histogram "
+                "of the input dimensionalities of its `used_by_steps` "
+                f"{dict(sorted(histogram.items()))!r}, got "
+                f"{model.steps_by_dimensionality!r}."
             )
 
 

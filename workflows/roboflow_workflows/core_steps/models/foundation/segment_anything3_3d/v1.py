@@ -31,7 +31,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
@@ -40,10 +41,10 @@ from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
@@ -156,11 +157,17 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.MODEL_INFERENCE]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [
-            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-            hosted_endpoint_disabled_by_flag("SAM3_3D_OBJECTS_ENABLED"),
-        ]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("SAM3_3D_OBJECTS_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):

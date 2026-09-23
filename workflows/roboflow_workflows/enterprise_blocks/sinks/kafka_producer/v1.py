@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Un
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from roboflow_workflows.core_steps.common.workload_presets import (
-    FIRE_AND_FORGET_PORTABLE_RESTRICTION,
+    FIRE_AND_FORGET_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.kafka_common import (
@@ -39,19 +39,19 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionCondition,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
     incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Annotated
 
@@ -137,14 +137,20 @@ Self-hosted servers enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
 
 
-# Portable counterpart of the legacy hard restriction declared below.
+# The unconditional hard restriction this block declares through
+# `get_actual_restrictions()`.
 #
 # `run()` short-circuits on the Roboflow hosted platform, so the condition names
 # the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
-KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION = RestrictionMetadata(
+KAFKA_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
     code="unavailable_on_hosted_platform",
     severity=Severity.HARD,
-    when=RestrictionCondition(runtimes=[Runtime.HOSTED_SERVERLESS]),
+    note=(
+        "On the Roboflow hosted platform every run returns "
+        "`error_status=true` and publishes nothing; no Kafka connection is "
+        "opened from the hosted platform."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
 )
 
 
@@ -342,26 +348,40 @@ class BlockManifest(WorkflowBlockManifest):
         # (in confirmed mode) awaiting the acknowledgement.
         return [WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(
-        self,
-    ) -> Union[List[RestrictionMetadata], Discovery[RestrictionMetadata]]:
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
         # The hosted-platform restriction is unconditional; the delivery caveat
         # exists only when the run does not wait for the acknowledgement.
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
         if is_selector(self.fire_and_forget):
             # A runtime value decides whether delivery is awaited, so the
             # caveat MAY apply. Claiming it applies would be as wrong as
             # claiming it does not: keep the restriction that IS known and
             # declare nothing complete.
-            return incomplete_discovery(
-                items=[KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION],
-                reasons=[f"fire_and_forget_selector_unresolved:$steps.{self.name}"],
+            declared = incomplete_discovery(
+                items=[KAFKA_HOSTED_PLATFORM_RESTRICTION],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
             )
-        if self.fire_and_forget:
-            return [
-                KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION,
-                FIRE_AND_FORGET_PORTABLE_RESTRICTION,
+        elif self.fire_and_forget:
+            declared = [
+                KAFKA_HOSTED_PLATFORM_RESTRICTION,
+                FIRE_AND_FORGET_RESTRICTION,
             ]
-        return [KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION]
+        else:
+            declared = [KAFKA_HOSTED_PLATFORM_RESTRICTION]
+        return actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

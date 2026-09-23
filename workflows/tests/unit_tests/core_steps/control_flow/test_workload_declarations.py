@@ -16,9 +16,17 @@ from roboflow_workflows.core_steps.flow_control.rate_limiter.v1 import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
+    DiscoveryProblemCode,
     WorkOperation,
+    opaque_remote_workflow_problem,
 )
-from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
+from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
+
+from tests.unit_tests.workload_declaration_helpers import (
+    declared_restrictions,
+    portable_restrictions,
+    portable_restrictions_discovery,
+)
 
 
 def test_rate_limiter_declares_flow_control_and_the_cooldown_caveat() -> None:
@@ -29,9 +37,7 @@ def test_rate_limiter_declares_flow_control_and_the_cooldown_caveat() -> None:
         next_steps=["$steps.sink"],
     )
     assert manifest.discover_work_operations() == [WorkOperation.FLOW_CONTROL]
-    assert manifest.discover_portable_restrictions() == [
-        COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
-    ]
+    assert declared_restrictions(manifest) == [COOLDOWN_HTTP_SOFT_RESTRICTION]
 
 
 def test_delta_filter_declares_the_state_it_keeps_between_frames() -> None:
@@ -46,9 +52,7 @@ def test_delta_filter_declares_the_state_it_keeps_between_frames() -> None:
         WorkOperation.FLOW_CONTROL,
         WorkOperation.TEMPORAL_BUFFERING,
     ]
-    assert [
-        restriction.code for restriction in manifest.discover_portable_restrictions()
-    ] == [
+    assert [restriction.code for restriction in portable_restrictions(manifest)] == [
         "stateful_video_state_resets_on_stateless_http",
         "temporal_block_no_benefit_on_still_image",
     ]
@@ -66,16 +70,22 @@ def test_inner_workflow_declares_its_child_as_opaque() -> None:
     assert isinstance(operations, Discovery)
     assert operations.complete is False
     assert operations.items == [WorkOperation.EXTERNAL_REQUEST]
-    assert operations.unknown_reasons == ["remote_dispatch_child_opaque:$steps.child"]
-    restrictions = manifest.discover_portable_restrictions()
+    assert operations.unknown_reasons == [
+        opaque_remote_workflow_problem(node_id="$steps.child", declaration="operations")
+    ]
+    restrictions = portable_restrictions_discovery(manifest)
     assert isinstance(restrictions, Discovery)
     assert restrictions.complete is False
     assert restrictions.items == []
-    assert restrictions.unknown_reasons == ["remote_dispatch_child_opaque:$steps.child"]
+    assert restrictions.unknown_reasons == [
+        opaque_remote_workflow_problem(
+            node_id="$steps.child", declaration="restrictions"
+        )
+    ]
 
 
 def test_inner_workflow_reason_carries_the_step_it_belongs_to() -> None:
-    """The reason is a stable code plus step context, never a traceback."""
+    """The reason is a stable code with structured context, never a traceback."""
     manifest = InnerWorkflowManifest(
         type="roboflow_core/inner_workflow@v1",
         name="other_step",
@@ -83,6 +93,10 @@ def test_inner_workflow_reason_carries_the_step_it_belongs_to() -> None:
         workflow_workspace_id="workspace",
         workflow_id="child-workflow",
     )
-    assert manifest.discover_work_operations().unknown_reasons == [
-        "remote_dispatch_child_opaque:$steps.other_step"
-    ]
+    reason = manifest.discover_work_operations().unknown_reasons[0]
+    assert reason.code is DiscoveryProblemCode.OPAQUE_REMOTE_WORKFLOW
+    assert reason.details == {
+        "node_id": "$steps.other_step",
+        "declaration": "operations",
+    }
+    assert "$steps.other_step" in reason.description

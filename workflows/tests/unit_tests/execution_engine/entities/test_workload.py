@@ -1,10 +1,12 @@
 """Contract tests for ``roboflow_workflows.execution_engine.entities.workload``.
 
 Covers the dependency-light declaration primitives: enum relocation
-(identity through ``prototypes.block``), the closed ``WorkOperation`` set,
-``Discovery`` completeness/dedup/sort rules, ``RestrictionCondition`` /
-``RestrictionMetadata`` validation, model-metadata status rules,
-``normalize_declaration`` and JSON-schema/roundtrip for every entity.
+(identity through ``prototypes.block``), the closed ``WorkOperation`` set, the
+``DiscoveryProblem`` contract (closed codes, open JSON details, identity-based
+deduplication), ``Discovery`` completeness/dedup/sort rules,
+``RestrictionCondition`` / ``RestrictionMetadata`` validation, model-metadata
+status rules, ``normalize_declaration`` and JSON-schema/roundtrip for every
+entity.
 """
 
 import json
@@ -16,6 +18,8 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
+    DiscoveryProblem,
+    DiscoveryProblemCode,
     ModelMetadata,
     ModelMetadataLookup,
     ModelMetadataProvider,
@@ -27,9 +31,15 @@ from roboflow_workflows.execution_engine.entities.workload import (
     StepExecutionMode,
     WorkOperation,
     complete_discovery,
+    custom_python_internals_unknown_problem,
+    declaration_failed_problem,
+    declaration_unavailable_problem,
     ensure_model_metadata_status_consistent,
     incomplete_discovery,
+    invalid_resource_identifier_problem,
     normalize_declaration,
+    opaque_remote_workflow_problem,
+    unresolved_selector_problem,
 )
 
 EXPECTED_WORK_OPERATIONS = {
@@ -176,6 +186,222 @@ def test_work_operation_has_exactly_the_contract_members() -> None:
 
 
 # ---------------------------------------------------------------------------
+# DiscoveryProblem
+# ---------------------------------------------------------------------------
+
+
+def _problem(
+    code: DiscoveryProblemCode = DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
+    description: str = "Step `$steps.a` does not declare its operations.",
+    **details: Any,
+) -> DiscoveryProblem:
+    return DiscoveryProblem(code=code, description=description, details=details)
+
+
+def test_discovery_problem_code_has_exactly_the_contract_members() -> None:
+    assert {member.name: member.value for member in DiscoveryProblemCode} == {
+        "DECLARATION_UNAVAILABLE": "declaration_unavailable",
+        "DECLARATION_FAILED": "declaration_failed",
+        "UNRESOLVED_SELECTOR": "unresolved_selector",
+        "INVALID_RESOURCE_IDENTIFIER": "invalid_resource_identifier",
+        "OPAQUE_REMOTE_WORKFLOW": "opaque_remote_workflow",
+        "CUSTOM_PYTHON_INTERNALS_UNKNOWN": "custom_python_internals_unknown",
+    }
+    assert issubclass(DiscoveryProblemCode, str)
+
+
+def test_discovery_problem_serializes_code_description_and_details() -> None:
+    problem = _problem(
+        code=DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+        description="Field `lmm_type` of step `$steps.a` is set by a selector.",
+        node_id="$steps.a",
+        declaration="operations",
+        field="lmm_type",
+        selector="$inputs.model",
+    )
+
+    payload = json.loads(problem.model_dump_json())
+
+    assert payload == {
+        "type": "discovery_problem",
+        "code": "unresolved_selector",
+        "description": "Field `lmm_type` of step `$steps.a` is set by a selector.",
+        "details": {
+            "node_id": "$steps.a",
+            "declaration": "operations",
+            "field": "lmm_type",
+            "selector": "$inputs.model",
+        },
+    }
+    assert DiscoveryProblem.model_validate(payload) == problem
+    assert DiscoveryProblem.model_validate_json(json.dumps(payload)) == problem
+
+
+def test_discovery_problem_details_default_to_an_empty_map() -> None:
+    problem = DiscoveryProblem(
+        code=DiscoveryProblemCode.DECLARATION_FAILED, description="Hook failed."
+    )
+
+    assert problem.details == {}
+    assert problem.type == "discovery_problem"
+
+
+def test_discovery_problem_details_keep_nested_json_data() -> None:
+    # `details` is a loose-end contract: an open JSON map, understood per code,
+    # with no per-code model constraining its shape.
+    details = {
+        "node_id": "$steps.a",
+        "declaration": "resources",
+        "offending_fields": ["model_id", "provider"],
+        "context": {"nested": {"depth": 2}, "flag": False, "missing": None},
+    }
+
+    problem = DiscoveryProblem(
+        code=DiscoveryProblemCode.INVALID_RESOURCE_IDENTIFIER,
+        description="Blank identifiers.",
+        details=details,
+    )
+
+    assert problem.details == details
+    assert json.loads(problem.model_dump_json())["details"] == details
+    assert DiscoveryProblem.model_validate(json.loads(problem.model_dump_json())) == (
+        problem
+    )
+
+
+@pytest.mark.parametrize("description", ["", "   ", "\n\t"])
+def test_discovery_problem_rejects_blank_description(description: str) -> None:
+    with pytest.raises(ValidationError):
+        DiscoveryProblem(
+            code=DiscoveryProblemCode.DECLARATION_FAILED, description=description
+        )
+
+
+def test_discovery_problem_rejects_invalid_values() -> None:
+    with pytest.raises(ValidationError):
+        DiscoveryProblem(code="made_up_code", description="x")
+    with pytest.raises(ValidationError):
+        # details must be JSON data - a python object is not
+        DiscoveryProblem(
+            code=DiscoveryProblemCode.DECLARATION_FAILED,
+            description="x",
+            details={"callback": object()},
+        )
+    with pytest.raises(ValidationError):
+        DiscoveryProblem(
+            code=DiscoveryProblemCode.DECLARATION_FAILED,
+            description="x",
+            details={"": "blank key"},
+        )
+    with pytest.raises(ValidationError):
+        DiscoveryProblem(
+            code=DiscoveryProblemCode.DECLARATION_FAILED,
+            description="x",
+            severity="hard",
+        )
+    with pytest.raises(ValidationError):
+        DiscoveryProblem.model_validate(
+            {
+                "type": "not_a_problem",
+                "code": "declaration_failed",
+                "description": "x",
+                "details": {},
+            }
+        )
+
+
+def test_discovery_problem_is_frozen() -> None:
+    problem = _problem()
+    with pytest.raises(ValidationError):
+        problem.description = "other"  # type: ignore[misc]
+
+
+def test_discovery_problem_identity_ignores_description_and_key_order() -> None:
+    first = _problem(description="A wording.", node_id="$steps.a", field="model_id")
+    reordered = _problem(
+        description="Another wording.", field="model_id", node_id="$steps.a"
+    )
+    other_details = _problem(description="A wording.", node_id="$steps.b")
+
+    assert first.identity() == reordered.identity()
+    assert first.identity() != other_details.identity()
+
+
+def test_discovery_problem_factories_carry_the_documented_details() -> None:
+    unavailable = declaration_unavailable_problem(
+        node_id="$steps.a", declaration="operations", block_type="plugin/block@v1"
+    )
+    failed = declaration_failed_problem(node_id="$steps.a", declaration="resources")
+    selector = unresolved_selector_problem(
+        node_id="$steps.a",
+        declaration="restrictions",
+        field="fire_and_forget",
+        selector="$inputs.wait",
+    )
+    resource_selector = unresolved_selector_problem(
+        node_id="$steps.a",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.model",
+        resource_type="roboflow_platform_model",
+    )
+    invalid = invalid_resource_identifier_problem(
+        node_id="$steps.a",
+        declaration="resources",
+        field="model_id",
+        resource_type="third_party_model",
+    )
+    opaque = opaque_remote_workflow_problem(
+        node_id="$steps.a", declaration="operations"
+    )
+    custom_python = custom_python_internals_unknown_problem(
+        node_id="$steps.a", declaration="operations"
+    )
+
+    assert unavailable.code is DiscoveryProblemCode.DECLARATION_UNAVAILABLE
+    assert unavailable.details == {
+        "node_id": "$steps.a",
+        "declaration": "operations",
+        "block_type": "plugin/block@v1",
+    }
+    assert failed.code is DiscoveryProblemCode.DECLARATION_FAILED
+    assert failed.details == {"node_id": "$steps.a", "declaration": "resources"}
+    assert selector.code is DiscoveryProblemCode.UNRESOLVED_SELECTOR
+    assert selector.details == {
+        "node_id": "$steps.a",
+        "declaration": "restrictions",
+        "field": "fire_and_forget",
+        "selector": "$inputs.wait",
+    }
+    assert resource_selector.details["resource_type"] == "roboflow_platform_model"
+    assert invalid.code is DiscoveryProblemCode.INVALID_RESOURCE_IDENTIFIER
+    assert invalid.details == {
+        "node_id": "$steps.a",
+        "declaration": "resources",
+        "field": "model_id",
+        "resource_type": "third_party_model",
+    }
+    assert opaque.code is DiscoveryProblemCode.OPAQUE_REMOTE_WORKFLOW
+    assert opaque.details == {"node_id": "$steps.a", "declaration": "operations"}
+    assert custom_python.code is DiscoveryProblemCode.CUSTOM_PYTHON_INTERNALS_UNKNOWN
+    assert custom_python.details == {
+        "node_id": "$steps.a",
+        "declaration": "operations",
+    }
+    for problem in (
+        unavailable,
+        failed,
+        selector,
+        resource_selector,
+        invalid,
+        opaque,
+        custom_python,
+    ):
+        assert problem.description.strip() == problem.description
+        assert len(problem.description) > 20, problem.code
+
+
+# ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
 
@@ -195,16 +421,15 @@ def test_complete_empty_discovery_is_known_absence() -> None:
 
 
 def test_incomplete_discovery_keeps_known_items_and_reasons() -> None:
-    discovery = incomplete_discovery(
-        [WorkOperation.CUSTOM_PYTHON],
-        ["custom_python_internal_operations_unknown:$steps.custom"],
+    problem = custom_python_internals_unknown_problem(
+        node_id="$steps.custom", declaration="operations"
     )
+
+    discovery = incomplete_discovery([WorkOperation.CUSTOM_PYTHON], [problem])
 
     assert discovery.items == [WorkOperation.CUSTOM_PYTHON]
     assert discovery.complete is False
-    assert discovery.unknown_reasons == [
-        "custom_python_internal_operations_unknown:$steps.custom"
-    ]
+    assert discovery.unknown_reasons == [problem]
 
 
 def test_incomplete_discovery_without_reasons_is_rejected() -> None:
@@ -216,15 +441,55 @@ def test_incomplete_discovery_without_reasons_is_rejected() -> None:
 
 def test_complete_discovery_with_reasons_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        Discovery(items=[], complete=True, unknown_reasons=["x:$steps.a"])
+        Discovery(items=[], complete=True, unknown_reasons=[_problem()])
 
 
-def test_discovery_rejects_blank_reasons() -> None:
+def test_discovery_rejects_reasons_that_are_not_problems() -> None:
     with pytest.raises(ValidationError):
-        Discovery(items=[], complete=False, unknown_reasons=["   "])
+        # the version "1" wire format (a bare string) is no longer accepted
+        Discovery(
+            items=[],
+            complete=False,
+            unknown_reasons=["step_resources_unknown:$steps.a"],
+        )
+    with pytest.raises(ValidationError):
+        Discovery(
+            items=[],
+            complete=False,
+            unknown_reasons=[{"code": "declaration_failed", "description": "  "}],
+        )
+
+
+def test_discovery_accepts_problems_from_their_wire_form() -> None:
+    discovery = Discovery[WorkOperation].model_validate(
+        {
+            "items": ["tracking"],
+            "complete": False,
+            "unknown_reasons": [
+                {
+                    "code": "declaration_failed",
+                    "description": "The operations declaration could not be read.",
+                    "details": {"node_id": "$steps.a", "declaration": "operations"},
+                }
+            ],
+        }
+    )
+
+    reason = discovery.unknown_reasons[0]
+    assert isinstance(reason, DiscoveryProblem)
+    assert reason.code is DiscoveryProblemCode.DECLARATION_FAILED
+    assert reason.details == {"node_id": "$steps.a", "declaration": "operations"}
 
 
 def test_discovery_deduplicates_and_sorts_enum_items_and_reasons() -> None:
+    first = _problem(node_id="$steps.x", declaration="operations")
+    second = _problem(
+        code=DiscoveryProblemCode.OPAQUE_REMOTE_WORKFLOW,
+        description="Child is remote.",
+        node_id="$steps.x",
+        declaration="operations",
+    )
+
     discovery = Discovery[WorkOperation](
         items=[
             WorkOperation.TRACKING,
@@ -233,7 +498,7 @@ def test_discovery_deduplicates_and_sorts_enum_items_and_reasons() -> None:
             "image_crop",
         ],
         complete=False,
-        unknown_reasons=["b:$steps.x", "a:$steps.x", "b:$steps.x"],
+        unknown_reasons=[second, first, second],
     )
 
     assert discovery.items == [
@@ -241,7 +506,82 @@ def test_discovery_deduplicates_and_sorts_enum_items_and_reasons() -> None:
         WorkOperation.MODEL_INFERENCE,
         WorkOperation.TRACKING,
     ]
-    assert discovery.unknown_reasons == ["a:$steps.x", "b:$steps.x"]
+    # sorted by (code, canonical details): `declaration_unavailable` first
+    assert discovery.unknown_reasons == [first, second]
+
+
+def test_discovery_reason_identity_ignores_details_insertion_order() -> None:
+    one_order = _problem(
+        code=DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+        description="Selector unresolved.",
+        node_id="$steps.a",
+        field="model_id",
+        selector="$inputs.model",
+    )
+    other_order = _problem(
+        code=DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+        description="Selector unresolved.",
+        selector="$inputs.model",
+        field="model_id",
+        node_id="$steps.a",
+    )
+
+    discovery = incomplete_discovery([], [one_order, other_order])
+
+    assert discovery.unknown_reasons == [one_order]
+
+
+def test_discovery_reasons_with_equal_identity_pick_one_description() -> None:
+    louder = _problem(description="Zulu wording.", node_id="$steps.a")
+    quieter = _problem(description="Alpha wording.", node_id="$steps.a")
+
+    forwards = incomplete_discovery([], [louder, quieter])
+    backwards = incomplete_discovery([], [quieter, louder])
+
+    assert forwards.unknown_reasons == backwards.unknown_reasons
+    assert [reason.description for reason in forwards.unknown_reasons] == (
+        ["Alpha wording."]
+    )
+
+
+def test_discovery_keeps_distinct_contexts_apart() -> None:
+    first_step = unresolved_selector_problem(
+        node_id="$steps.a",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.model",
+    )
+    second_step = unresolved_selector_problem(
+        node_id="$steps.b",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.model",
+    )
+    other_field = unresolved_selector_problem(
+        node_id="$steps.a",
+        declaration="resources",
+        field="provider",
+        selector="$inputs.model",
+    )
+    other_selector = unresolved_selector_problem(
+        node_id="$steps.a",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.other_model",
+    )
+
+    discovery = incomplete_discovery(
+        [], [other_selector, second_step, other_field, first_step]
+    )
+
+    # four distinct problems, ordered by (code, canonical details JSON): the
+    # details keys compare in sorted order, so `field` decides before `node_id`
+    assert discovery.unknown_reasons == [
+        first_step,
+        other_selector,
+        second_step,
+        other_field,
+    ]
 
 
 def test_discovery_sorts_restriction_metadata_by_code_severity_condition() -> None:
@@ -314,29 +654,39 @@ def test_discovery_is_frozen() -> None:
 
 
 def test_normalize_declaration_maps_none_to_unknown() -> None:
-    result = normalize_declaration(None, "step_declaration_missing:$steps.crop")
-
-    assert result == Discovery(
-        items=[],
-        complete=False,
-        unknown_reasons=["step_declaration_missing:$steps.crop"],
+    unavailable = declaration_unavailable_problem(
+        node_id="$steps.crop", declaration="operations"
     )
+
+    result = normalize_declaration(None, unavailable)
+
+    assert result == Discovery(items=[], complete=False, unknown_reasons=[unavailable])
 
 
 def test_normalize_declaration_maps_list_to_complete() -> None:
-    assert normalize_declaration([], "unused:$steps.a") == complete_discovery([])
+    unused = declaration_unavailable_problem(
+        node_id="$steps.a", declaration="operations"
+    )
+    assert normalize_declaration([], unused) == complete_discovery([])
     assert normalize_declaration(
-        [WorkOperation.TRACKING, WorkOperation.IMAGE_CROP], "unused:$steps.a"
+        [WorkOperation.TRACKING, WorkOperation.IMAGE_CROP], unused
     ) == complete_discovery([WorkOperation.IMAGE_CROP, WorkOperation.TRACKING])
 
 
 def test_normalize_declaration_revalidates_discovery_preserving_items() -> None:
     declared = incomplete_discovery(
         [WorkOperation.CUSTOM_PYTHON],
-        ["custom_python_internal_operations_unknown:$steps.c"],
+        [
+            custom_python_internals_unknown_problem(
+                node_id="$steps.c", declaration="operations"
+            )
+        ],
     )
 
-    result = normalize_declaration(declared, "unused:$steps.c")
+    result = normalize_declaration(
+        declared,
+        declaration_unavailable_problem(node_id="$steps.c", declaration="operations"),
+    )
 
     assert result == declared
     assert result is not declared
@@ -484,6 +834,10 @@ def test_restriction_metadata_has_no_note_field_and_rejects_extras() -> None:
         RestrictionCondition(runtimes=None, score=1.0)
     with pytest.raises(ValidationError):
         Discovery(items=[], complete=True, unknown_reasons=[], weight=2)
+    with pytest.raises(ValidationError):
+        DiscoveryProblem(
+            code=DiscoveryProblemCode.DECLARATION_FAILED, description="x", score=1.0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +904,13 @@ def test_model_metadata_provider_protocol_is_structural() -> None:
 
 ENTITY_EXAMPLES: List[BaseModel] = [
     complete_discovery([WorkOperation.TRACKING, WorkOperation.MODEL_INFERENCE]),
-    incomplete_discovery([], ["step_declaration_missing:$steps.a"]),
+    incomplete_discovery(
+        [],
+        [declaration_unavailable_problem(node_id="$steps.a", declaration="resources")],
+    ),
+    declaration_failed_problem(
+        node_id="$steps.a", declaration="operations", block_type="plugin/block@v1"
+    ),
     RestrictionCondition(
         runtimes=[Runtime.HOSTED_SERVERLESS],
         step_execution_modes=[StepExecutionMode.REMOTE],
@@ -585,6 +945,7 @@ def test_entity_roundtrips_through_json_with_type_discriminator(
     [
         Discovery[WorkOperation],
         Discovery[RestrictionMetadata],
+        DiscoveryProblem,
         RestrictionCondition,
         RestrictionMetadata,
         ModelMetadata,

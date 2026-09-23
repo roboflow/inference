@@ -27,8 +27,19 @@ import inference.core.env  # noqa: F401
 
 # isort: split
 
+from roboflow_workflows.execution_engine.entities.workload import (
+    restriction_metadata_of,
+)
+
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 from inference.roboflow_workflows_plugin import loader as plugin_loader
+
+
+def _portable_view(instance) -> list:
+    """The step's restrictions as the wire DTO, through the PUBLIC hook."""
+    declared = instance.get_actual_restrictions(ignore_environment_restrictions=True)
+    return [restriction_metadata_of(item) for item in declared.items]
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
 PLUGIN_ROOT = REPO_ROOT / "inference" / "roboflow_workflows_plugin"
@@ -36,7 +47,7 @@ PLUGIN_ROOT = REPO_ROOT / "inference" / "roboflow_workflows_plugin"
 # The two portable declaration hooks: plain data, no branching at all.
 DECLARATION_HOOK_NAMES = (
     "discover_work_operations",
-    "discover_portable_restrictions",
+    "get_actual_restrictions",
 )
 # D022: every registered manifest must ALSO carry an explicit, audited
 # `discover_dependent_resources` override - the base `None` (unknown) is
@@ -113,7 +124,7 @@ def _declarations(manifest_cls) -> dict:
         "operations": [op.value for op in instance.discover_work_operations()],
         "restrictions": [
             restriction.model_dump(mode="json")
-            for restriction in instance.discover_portable_restrictions()
+            for restriction in _portable_view(instance)
         ],
     }
 
@@ -152,11 +163,14 @@ def test_every_plugin_block_declares_a_concrete_list(plugin_manifests) -> None:
     for block_type, manifest_cls in plugin_manifests.items():
         instance = manifest_cls.model_construct()
         operations = instance.discover_work_operations()
-        restrictions = instance.discover_portable_restrictions()
+        # The restriction hook answers with a COMPLETE discovery - the answer
+        # the census wants, as opposed to the base "unknown" default.
+        published = instance.get_actual_restrictions(
+            ignore_environment_restrictions=True
+        )
         assert isinstance(operations, list), block_type
-        assert isinstance(restrictions, list), block_type
-        # A plain list means "complete declaration", the answer the census wants.
-        assert operations is not None and restrictions is not None, block_type
+        assert operations is not None, block_type
+        assert published.complete, block_type
 
 
 def test_declarations_normalise_into_complete_discoveries(plugin_manifests) -> None:
@@ -169,8 +183,8 @@ def test_declarations_normalise_into_complete_discoveries(plugin_manifests) -> N
         operations = normalize_declaration(
             instance.discover_work_operations(), "unused_reason:$steps.x"
         )
-        restrictions = normalize_declaration(
-            instance.discover_portable_restrictions(), "unused_reason:$steps.x"
+        restrictions = instance.get_actual_restrictions(
+            ignore_environment_restrictions=True
         )
         assert operations.complete, block_type
         assert operations.unknown_reasons == [], block_type
@@ -227,9 +241,15 @@ def test_legacy_restriction_api_is_untouched(plugin_manifests) -> None:
         "Aggregation buffers are stored in process memory" in restriction.note
         for restriction in legacy
     )
-    # ... and the new entities carry no note at all
-    portable = aggregator.model_construct().discover_portable_restrictions()
+    # ... the authored entities keep that note ...
+    authored = aggregator.model_construct().get_actual_restrictions(
+        ignore_environment_restrictions=True
+    )
+    assert all(restriction.note for restriction in authored.items)
+    # ... and the wire DTO projected from them carries none at all
+    portable = _portable_view(aggregator.model_construct())
     assert all(not hasattr(restriction, "note") for restriction in portable)
+    assert all("note" not in restriction.model_dump() for restriction in portable)
 
 
 def test_vision_event_bundle_declares_both_local_storage_flag_branches(
@@ -377,6 +397,9 @@ import json
 
 import inference.core.env as env_module
 from inference.roboflow_workflows_plugin import loader as plugin_loader
+from roboflow_workflows.execution_engine.entities.workload import (
+    restriction_metadata_of,
+)
 
 declarations = {}
 for block in plugin_loader.load_blocks():
@@ -387,8 +410,10 @@ for block in plugin_loader.load_blocks():
         "module": manifest_cls.__module__,
         "operations": [op.value for op in instance.discover_work_operations()],
         "restrictions": [
-            restriction.model_dump(mode="json")
-            for restriction in instance.discover_portable_restrictions()
+            restriction_metadata_of(restriction).model_dump(mode="json")
+            for restriction in instance.get_actual_restrictions(
+                ignore_environment_restrictions=True
+            ).items
         ],
     }
 
@@ -469,8 +494,9 @@ def test_declarations_are_identical_in_both_representation_modes() -> None:
 # `inference.*`).
 #
 # `get_restrictions()` answers "what applies on THIS host" - it evaluates the
-# flags itself. `discover_portable_restrictions()` answers "what applies on a
-# target deployment" - it carries the flag in `configuration_equals` instead.
+# flags itself. `get_actual_restrictions(ignore_environment_restrictions=True)`
+# answers "what applies on a target deployment" - it carries the flag in
+# `configuration_equals` instead.
 # Once the portable conditions are evaluated against the same flag values the
 # legacy method reads, the two must agree, entry for entry, on severity and on
 # all three condition axes. A migration that quietly drops or invents a caveat
@@ -557,8 +583,11 @@ def _condition_is_satisfied_here(restriction, block_module) -> bool:
 def _portable_restrictions_of(manifest_cls) -> list:
     from roboflow_workflows.execution_engine.entities.workload import Discovery
 
-    declared = _construct(manifest_cls).discover_portable_restrictions()
-    return list(declared.items) if isinstance(declared, Discovery) else list(declared)
+    declared = _construct(manifest_cls).get_actual_restrictions(
+        ignore_environment_restrictions=True
+    )
+    assert isinstance(declared, Discovery)
+    return [restriction_metadata_of(item) for item in declared.items]
 
 
 def _raw_divergence(block_type: str, manifest_cls) -> tuple:

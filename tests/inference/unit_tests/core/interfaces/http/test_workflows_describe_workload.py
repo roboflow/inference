@@ -37,7 +37,9 @@ REGISTRY_PAYLOAD = {
 }
 
 # `dicts` in the response that are NOT entities and therefore carry no `type`.
-PLAIN_DICT_FIELDS = {"steps_by_dimensionality", "configuration_equals"}
+# plain JSON maps, not entities: they carry no `type` discriminator and their
+# contents (a discovery problem's open `details` included) are arbitrary data
+PLAIN_DICT_FIELDS = {"steps_by_dimensionality", "configuration_equals", "details"}
 
 
 class _DummyInstrumentator:
@@ -67,6 +69,15 @@ def interface(monkeypatch):
     model_manager.pingback = None
     model_manager.num_errors = 0
     return http_api.HttpInterface(model_manager=model_manager)
+
+
+@pytest.fixture(autouse=True)
+def isolated_metadata_cache():
+    """The adapter's metadata cache is process wide: no test may inherit another
+    test's mocked payloads or credentials."""
+    workflows_workload_metadata.clear_model_metadata_cache()
+    yield
+    workflows_workload_metadata.clear_model_metadata_cache()
 
 
 @pytest.fixture
@@ -262,7 +273,7 @@ def test_inline_route_describes_workload_with_the_body_api_key(
     assert response.status_code == 200
     body = response.json()
     assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "1"
+    assert body["schema_version"] == "2"
     assert [step["node_id"] for step in body["steps"]] == ["$steps.detection"]
 
 
@@ -412,8 +423,13 @@ def test_flag_off_disables_every_model_metadata_and_makes_no_registry_call(
         "my-project/3",
         "my-other-project/1",
     }
+    # the per-model histogram is compile-time data: populated with the gate off
+    by_id = _models_by_id(body)
+    assert by_id["my-project/3"]["steps_by_dimensionality"] == {"1": 1}
+    assert by_id["my-other-project/1"]["steps_by_dimensionality"] == {"2": 1}
     assert all(
-        reason.startswith("step_resources_unknown:")
+        reason["code"] == "declaration_unavailable"
+        and reason["details"]["declaration"] == "resources"
         for reason in body["summary"]["models"]["unknown_reasons"]
     )
     registry_call.assert_not_called()
@@ -423,6 +439,9 @@ def test_flag_off_disables_every_model_metadata_and_makes_no_registry_call(
         simple = _post_inline(client, _single_model_definition()).json()
     assert simple["summary"]["models"]["complete"] is True
     assert simple["summary"]["models"]["items"][0]["metadata_status"] == "disabled"
+    assert simple["summary"]["models"]["items"][0]["steps_by_dimensionality"] == {
+        "1": 1
+    }
 
 
 def test_flag_on_enriches_roboflow_models_with_mapped_fields(
@@ -447,6 +466,9 @@ def test_flag_on_enriches_roboflow_models_with_mapped_fields(
         }
     assert models["my-project/3"]["used_by_steps"] == ["$steps.detection"]
     assert models["my-other-project/1"]["used_by_steps"] == ["$steps.classification"]
+    # enrichment does not touch the compile-time histogram
+    assert models["my-project/3"]["steps_by_dimensionality"] == {"1": 1}
+    assert models["my-other-project/1"]["steps_by_dimensionality"] == {"2": 1}
     # one lookup per unique model id, not per referring step
     assert registry_call.call_count == 2
     assert {call.kwargs["model_id"] for call in registry_call.call_args_list} == {
@@ -614,6 +636,17 @@ def test_branching_crop_workflow_reports_graph_dimensions_and_counts(
     assert sum(histogram.values()) == len(body["steps"])
     assert body["summary"]["max_dimensionality"] == 2
 
+    # per-model: the detection model is referenced at depth 1 only, the
+    # classification model at depth 2 only; each sums to its used_by_steps
+    models = _models_by_id(body)
+    assert models["my-project/3"]["steps_by_dimensionality"] == {"1": 1}
+    assert models["my-other-project/1"]["steps_by_dimensionality"] == {"2": 1}
+    for model in models.values():
+        assert sum(model["steps_by_dimensionality"].values()) == len(
+            model["used_by_steps"]
+        )
+        assert all(isinstance(key, str) for key in model["steps_by_dimensionality"])
+
 
 def test_every_nested_object_carries_its_type_discriminator(
     interface, enrichment_enabled, registry_call
@@ -649,7 +682,7 @@ def test_response_round_trips_through_the_response_model(
     assert parsed.model_dump(mode="json") == response.json()
 
 
-def test_response_never_leaks_the_api_key_or_its_scope_digest(
+def test_response_never_leaks_the_api_key(
     interface, enrichment_enabled, registry_call
 ) -> None:
     # when
@@ -657,12 +690,17 @@ def test_response_never_leaks_the_api_key_or_its_scope_digest(
         response = _post_inline(client, _crop_and_classify_definition())
 
     # then
-    digest = workflows_workload_metadata.credential_scope_digest(API_KEY)
     assert API_KEY not in response.text
-    assert digest not in response.text
-    assert workflows_workload_metadata.WORKLOAD_CACHE_PREFIX_ROOT not in response.text
-    # ... but the lookup really did run under that scope
-    assert registry_call.call_args.kwargs["cache_prefix"].endswith(digest)
+    # ... but the lookups really did run under that credential, and the helper
+    # was called with its default cache prefix: nothing credential-derived is
+    # passed to it, so nothing credential-derived can reach the shared cache
+    assert registry_call.call_count == 2
+    assert {call.kwargs["api_key"] for call in registry_call.call_args_list} == {
+        API_KEY
+    }
+    assert {tuple(sorted(call.kwargs)) for call in registry_call.call_args_list} == {
+        ("api_key", "model_id")
+    }
 
 
 def test_existing_describe_interface_route_is_unchanged(
@@ -735,25 +773,26 @@ def test_routes_follow_the_workflow_endpoints_kill_switch(monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Codex round-001 R001-F001: the registry cache must be partitioned by the
-# EFFECTIVE TRUSTED SCOPE of the lookup, not by the api key alone.
+# the identity a lookup is served under, through the REAL middleware.
 #
 # The auth middleware resolves the caller from query > header > body; this route
 # only ever materialises header/body. So two requests can carry the SAME body
-# key and still be authorised as different workspaces, and the registry call is
-# authorised against the workspace, via the
-# `x-assume-identity-authorised-workspace` header that
-# `_add_assume_identity_headers` reads off a per-request ContextVar. With
-# `MODELS_CACHE_AUTH_ENABLED=False` the helper's cache is read for every caller,
-# so an api-key-only partition would hand workspace A's metadata to workspace B
-# without a lookup.
+# key and still be authorised as different workspaces, and the registry call
+# carries that workspace in the `x-assume-identity-authorised-workspace` header
+# `_add_assume_identity_headers` fills from a per-request ContextVar. The
+# adapter's in-memory cache therefore keys on that workspace as well as on the
+# api key, the model id and `MODELS_CACHE_AUTH_ENABLED` - every request identity
+# input, whatever precedence the platform gives the header over the body key.
 #
-# The reproducer below is the reviewer's, adopted verbatim in substance: real
-# middleware, real routing, real compiler, real adapter, real registry cache;
-# only the external authentication and registry HTTP calls are stubbed.
+# Both authorization policies are exercised below - real middleware, real
+# routing, real compiler, real adapter, real registry helper and its real shared
+# cache; only the external authentication and registry HTTP calls are stubbed.
 # ---------------------------------------------------------------------------
 
 ASSUME_IDENTITY_TOKEN = "dummy-assume-token"
+WORKSPACE_SCOPED_MODEL_ID = "project/1"
+DEFAULT_REGISTRY_CACHE_PREFIX = "roboflow_api_data:inference_models_registry"
+SHARED_CACHE_KEY = f"{DEFAULT_REGISTRY_CACHE_PREFIX}:{WORKSPACE_SCOPED_MODEL_ID}"
 
 
 def _workspace_scoped_definition() -> dict:
@@ -765,19 +804,19 @@ def _workspace_scoped_definition() -> dict:
                 "type": OBJECT_DETECTION_MODEL,
                 "name": "det",
                 "images": "$inputs.image",
-                "model_id": "project/1",
+                "model_id": WORKSPACE_SCOPED_MODEL_ID,
             }
         ],
         "outputs": [],
     }
 
 
-@pytest.fixture
-def serverless_assume_identity(monkeypatch):
+def _serverless_assume_identity(monkeypatch, models_cache_auth_enabled: bool):
     """Serverless interface whose middleware fills the assume-identity context.
 
     Returns `(interface, fetched, store)`: the list of authorised-workspace
-    scopes that actually reached the registry, and the backing cache dict.
+    scopes that actually reached the registry, and the shared cache dict the
+    registry helper reads and writes.
     """
     import inference.core.interfaces.http.http_api as http_api
     from inference.core import roboflow_api
@@ -808,7 +847,9 @@ def serverless_assume_identity(monkeypatch):
         )
 
     monkeypatch.setattr(http_api, "get_serverless_usage_check_async", authorize)
-    monkeypatch.setattr(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", False)
+    monkeypatch.setattr(
+        roboflow_api, "MODELS_CACHE_AUTH_ENABLED", models_cache_auth_enabled
+    )
     monkeypatch.setattr(roboflow_api, "GCP_SERVERLESS", True)
     monkeypatch.setattr(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", False)
     monkeypatch.setattr(roboflow_api, "ROBOFLOW_INTERNAL_SERVICE_SECRET", None)
@@ -848,26 +889,45 @@ def serverless_assume_identity(monkeypatch):
     return http_api.HttpInterface(model_manager=model_manager), fetched, store
 
 
+@pytest.fixture
+def serverless_auth_enforced(monkeypatch):
+    """`MODELS_CACHE_AUTH_ENABLED=True` - authorization enforced per lookup."""
+    return _serverless_assume_identity(monkeypatch, models_cache_auth_enabled=True)
+
+
+@pytest.fixture
+def serverless_auth_not_enforced(monkeypatch):
+    """`MODELS_CACHE_AUTH_ENABLED=False` - the shared-cache default policy."""
+    return _serverless_assume_identity(monkeypatch, models_cache_auth_enabled=False)
+
+
 def _model_type_of(response) -> str:
     return response.json()["summary"]["models"]["items"][0]["metadata"]["model_type"]
 
 
-def test_metadata_cache_isolated_across_actual_authorized_workspace_contexts(
-    serverless_assume_identity,
-) -> None:
-    interface, fetched, _ = serverless_assume_identity
-    definition = _workspace_scoped_definition()
+def _post_as(client, query_key: str, body_key: str = "query-b"):
+    return client.post(
+        INLINE_ROUTE,
+        params={"api_key": query_key},
+        json={"api_key": body_key, "specification": _workspace_scoped_definition()},
+    )
 
-    # when - the SAME body credential, two different query credentials, so the
-    # middleware authorises the two requests as two different workspaces
+
+def test_enforced_auth_isolates_lookups_per_authorized_workspace(
+    serverless_auth_enforced,
+) -> None:
+    """The same body credential, two different authorised workspaces.
+
+    With enforcement on, the registry helper does not read its shared cache, and
+    the adapter's memory key carries the authorised workspace - so each request
+    reaches the platform with the identity headers its own middleware filled.
+    """
+    interface, fetched, _ = serverless_auth_enforced
+
+    # when - same body key, two query keys, so two authorised workspaces
     with TestClient(interface.app) as client:
         responses = [
-            client.post(
-                INLINE_ROUTE,
-                params={"api_key": query_key},
-                json={"api_key": "query-b", "specification": definition},
-            )
-            for query_key in ("query-a", "query-b")
+            _post_as(client, query_key) for query_key in ("query-a", "query-b")
         ]
 
     # then
@@ -880,59 +940,71 @@ def test_metadata_cache_isolated_across_actual_authorized_workspace_contexts(
     ]
 
 
-def test_same_authorized_workspace_still_hits_the_metadata_cache(
-    serverless_assume_identity,
+def test_enforced_auth_reuses_the_memory_entry_within_one_workspace(
+    serverless_auth_enforced,
 ) -> None:
-    """The partition must not degenerate into "never cache": two requests in the
-    same trusted scope still share one registry lookup inside the 10 s expiry."""
-    interface, fetched, store = serverless_assume_identity
-    definition = _workspace_scoped_definition()
+    """The key must not degenerate into "never cache": two requests in the same
+    identity share one registry lookup for the TTL."""
+    interface, fetched, store = serverless_auth_enforced
 
-    # when - same query credential twice, so the same authorised workspace
+    # when - the same query credential twice, so the same authorised workspace
     with TestClient(interface.app) as client:
-        responses = [
-            client.post(
-                INLINE_ROUTE,
-                params={"api_key": "query-a"},
-                json={"api_key": "query-b", "specification": definition},
-            )
-            for _ in range(2)
-        ]
+        responses = [_post_as(client, "query-a") for _ in range(2)]
 
     # then
     for response in responses:
         assert response.status_code == 200, response.text
-    assert fetched == ["workspace-db-a"], "the second request must be a cache hit"
+    assert fetched == ["workspace-db-a"], "the second request must be a memory hit"
     assert [_model_type_of(response) for response in responses] == [
         "workspace-db-a",
         "workspace-db-a",
     ]
-    assert len(store) == 1
+    # the helper still writes its own shared entry, keyed by model id only
+    assert sorted(store) == [SHARED_CACHE_KEY]
 
 
-def test_workspace_scope_never_reaches_the_response(
-    serverless_assume_identity,
+def test_unenforced_auth_keeps_the_helpers_shared_model_id_cache_policy(
+    serverless_auth_not_enforced,
 ) -> None:
-    """Neither the workspace id nor any digest of the trusted scope is public."""
-    interface, _, store = serverless_assume_identity
-    definition = _workspace_scoped_definition()
+    """The accepted behaviour of `MODELS_CACHE_AUTH_ENABLED=False`.
 
+    The registry helper READS its shared, model-id-keyed cache for every caller.
+    A memory miss in another workspace is therefore answered from the entry the
+    first workspace populated, with no second lookup. That is the helper's
+    pre-existing policy for all of its callers and is unchanged by workload
+    introspection; hosted per-workspace isolation relies on enabling
+    `MODELS_CACHE_AUTH_ENABLED`.
+    """
+    interface, fetched, store = serverless_auth_not_enforced
+
+    # when - two different authorised workspaces, same model id
     with TestClient(interface.app) as client:
-        response = client.post(
-            INLINE_ROUTE,
-            params={"api_key": "query-a"},
-            json={"api_key": "query-b", "specification": definition},
-        )
+        responses = [
+            _post_as(client, query_key) for query_key in ("query-a", "query-b")
+        ]
 
+    # then - one platform call; the shared entry answered the second workspace
+    for response in responses:
+        assert response.status_code == 200, response.text
+    assert fetched == ["workspace-db-a"]
+    assert [_model_type_of(response) for response in responses] == [
+        "workspace-db-a",
+        "workspace-db-a",
+    ]
+    # and the shared key carries no credential material - just the model id
+    assert sorted(store) == [SHARED_CACHE_KEY]
+
+
+def test_credentials_never_reach_the_response(serverless_auth_enforced) -> None:
+    """Neither api key that took part in the request is public."""
+    # given
+    interface, _, _ = serverless_auth_enforced
+
+    # when
+    with TestClient(interface.app) as client:
+        response = _post_as(client, "query-a")
+
+    # then
     assert response.status_code == 200
-    digest = workflows_workload_metadata.credential_scope_digest(
-        "query-b", "workspace-db-a"
-    )
-    assert digest not in response.text
-    assert workflows_workload_metadata.credential_scope_digest("query-b") not in (
-        response.text
-    )
     assert "query-a" not in response.text
     assert "query-b" not in response.text
-    # the cache key carries the scoped digest, the response carries none of it
-    assert any(digest in key for key in store)

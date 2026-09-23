@@ -4,7 +4,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.workload_presets import (
-    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
 )
 from roboflow_workflows.core_steps.visualizations.common.base import OUTPUT_IMAGE_KEY
 from roboflow_workflows.core_steps.visualizations.common.base_colorable import (
@@ -18,7 +18,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
@@ -27,9 +28,9 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from supervision.annotators.base import BaseAnnotator
 
@@ -165,8 +166,14 @@ class TraceManifest(ColorableVisualizationManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.VISUALIZATION, WorkOperation.TEMPORAL_BUFFERING]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

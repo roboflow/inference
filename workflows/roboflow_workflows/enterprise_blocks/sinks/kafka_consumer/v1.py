@@ -48,8 +48,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionCondition,
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
@@ -57,10 +57,10 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Annotated
 
@@ -171,14 +171,20 @@ enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
 
 
-# Portable counterparts of the two legacy restrictions declared below.
+# The two restrictions this block declares through
+# `get_actual_restrictions()`.
 #
 # `run()` short-circuits on the Roboflow hosted platform, so the condition names
 # the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
-KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION = RestrictionMetadata(
+KAFKA_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
     code="unavailable_on_hosted_platform",
     severity=Severity.HARD,
-    when=RestrictionCondition(runtimes=[Runtime.HOSTED_SERVERLESS]),
+    note=(
+        "On the Roboflow hosted platform every run returns "
+        "`error_status=true` with no record, and no Kafka connection is "
+        "opened from the hosted platform."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
 )
 
 
@@ -187,17 +193,22 @@ KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION = RestrictionMetadata(
 # request pays its own broker connection and any record it returns is new to
 # that instance (a run that reads nothing, or fails, still reports
 # `is_new=False`).
-KAFKA_CONSUMER_PER_REQUEST_PORTABLE_RESTRICTION = RestrictionMetadata(
+KAFKA_CONSUMER_PER_REQUEST_RESTRICTION = RuntimeRestriction(
     code="connection_and_state_rebuilt_per_request",
     severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[
-            Runtime.SELF_HOSTED_CPU,
-            Runtime.SELF_HOSTED_GPU,
-            Runtime.DEDICATED_DEPLOYMENT,
-        ],
-        input_modes=[RuntimeInputMode.IMAGE],
+    note=(
+        "The consumer and the last-returned record live in this block "
+        "instance. Over HTTP every request builds a fresh instance, so each "
+        "request pays a broker connection and `is_new` is always True. "
+        "Results are still correct; a long-lived InferencePipeline avoids "
+        "the per-request connection."
     ),
+    applies_to_runtimes=[
+        Runtime.SELF_HOSTED_CPU,
+        Runtime.SELF_HOSTED_GPU,
+        Runtime.DEDICATED_DEPLOYMENT,
+    ],
+    applies_to_input_modes=[RuntimeInputMode.IMAGE],
 )
 
 
@@ -414,12 +425,18 @@ class BlockManifest(WorkflowBlockManifest):
         # (with `is_new=False`) when nothing new arrived.
         return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.TEMPORAL_BUFFERING]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
         # Both apply unconditionally: no manifest field switches either on.
-        return [
-            KAFKA_HOSTED_PLATFORM_PORTABLE_RESTRICTION,
-            KAFKA_CONSUMER_PER_REQUEST_PORTABLE_RESTRICTION,
-        ]
+        return actual_restrictions_of(
+            declared=[
+                KAFKA_HOSTED_PLATFORM_RESTRICTION,
+                KAFKA_CONSUMER_PER_REQUEST_RESTRICTION,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

@@ -561,8 +561,13 @@ def test_dynamic_manifest_declares_custom_python_operation_as_incomplete(
     assert result.items == [workload.WorkOperation.CUSTOM_PYTHON]
     assert result.complete is False
     assert result.unknown_reasons == [
-        "custom_python_internal_operations_unknown:$steps.custom"
+        workload.custom_python_internals_unknown_problem(
+            node_id="$steps.custom", declaration="operations"
+        )
     ]
+    assert result.unknown_reasons[0].code is (
+        workload.DiscoveryProblemCode.CUSTOM_PYTHON_INTERNALS_UNKNOWN
+    )
 
 
 @pytest.mark.parametrize("structural", [True, False])
@@ -582,15 +587,24 @@ def test_dynamic_manifest_declares_execution_disabled_restriction(
     manifest = _manifest_instance(specification, name="my_step")
 
     # when
-    result = manifest.discover_portable_restrictions()
+    result = manifest.get_actual_restrictions(ignore_environment_restrictions=True)
 
     # then
     assert isinstance(result, workload.Discovery)
     assert result.complete is False
     assert result.unknown_reasons == [
-        "custom_python_internal_restrictions_unknown:$steps.my_step"
+        workload.custom_python_internals_unknown_problem(
+            node_id="$steps.my_step", declaration="restrictions"
+        )
     ]
-    assert result.items == [
+    assert [item.code for item in result.items] == ["custom_python_execution_disabled"]
+    assert result.items[0].severity is workload.Severity.HARD
+    assert result.items[0].applies_to_configuration == {
+        "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": False,
+        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
+    }
+    # the portable projection the workload document carries
+    assert [workload.restriction_metadata_of(item) for item in result.items] == [
         workload.RestrictionMetadata(
             code="custom_python_execution_disabled",
             severity=workload.Severity.HARD,
@@ -619,7 +633,7 @@ def test_tensor_native_dynamic_manifest_declares_tensor_restrictions(
     manifest = _manifest_instance(specification, name="native")
 
     # when
-    result = manifest.discover_portable_restrictions()
+    result = manifest.get_actual_restrictions(ignore_environment_restrictions=True)
 
     # then
     assert result.complete is False
@@ -630,15 +644,12 @@ def test_tensor_native_dynamic_manifest_declares_tensor_restrictions(
     }
     by_code = {item.code: item for item in result.items}
     assert all(item.severity is workload.Severity.HARD for item in result.items)
-    assert by_code["tensor_native_requires_tensor_representation"].when == (
-        workload.RestrictionCondition(
-            configuration_equals={"ENABLE_TENSOR_DATA_REPRESENTATION": False}
-        )
-    )
-    assert by_code["tensor_native_unsupported_in_modal"].when == (
-        workload.RestrictionCondition(
-            configuration_equals={"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"}
-        )
+    assert all(item.note for item in result.items)
+    assert by_code[
+        "tensor_native_requires_tensor_representation"
+    ].applies_to_configuration == ({"ENABLE_TENSOR_DATA_REPRESENTATION": False})
+    assert by_code["tensor_native_unsupported_in_modal"].applies_to_configuration == (
+        {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"}
     )
 
 
@@ -671,7 +682,9 @@ def test_dynamic_manifest_declarations_are_independent_of_host_flags(
             results.append(
                 (
                     manifest.discover_work_operations(),
-                    manifest.discover_portable_restrictions(),
+                    manifest.get_actual_restrictions(
+                        ignore_environment_restrictions=True
+                    ),
                 )
             )
 
@@ -689,7 +702,9 @@ def test_dynamic_manifest_never_reports_selected_backend(workload, marker_path):
         structural=True,
     )
     manifest = _manifest_instance(specification)
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = manifest.get_actual_restrictions(
+        ignore_environment_restrictions=True
+    )
     operations = manifest.discover_work_operations()
     dumped = restrictions.model_dump_json() + operations.model_dump_json()
     assert "selected_backend" not in dumped

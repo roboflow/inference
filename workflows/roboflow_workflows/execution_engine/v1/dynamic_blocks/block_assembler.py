@@ -24,10 +24,10 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionCondition,
-    RestrictionMetadata,
+    RuntimeRestriction,
     Severity,
     WorkOperation,
+    custom_python_internals_unknown_problem,
     incomplete_discovery,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
@@ -55,7 +55,10 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     TensorCompatibility,
     ValueType,
 )
-from roboflow_workflows.prototypes.block import WorkflowBlockManifest
+from roboflow_workflows.prototypes.block import (
+    WorkflowBlockManifest,
+    actual_restrictions_of,
+)
 from roboflow_workflows.prototypes.workspace_resolver import (
     NULL_WORKSPACE_RESOLVER,
     WorkspaceResolver,
@@ -558,9 +561,9 @@ def assembly_manifest_class_methods(
     )
     # Workload declarations (same for executable and structural compilation):
     # the block IS custom Python, whatever else it does inside is unknown, and
-    # its portable restrictions are the gates the executable path enforces -
-    # expressed as conditions on the TARGET configuration, never evaluated
-    # against this host's flags.
+    # its restrictions are the gates the executable path enforces - expressed
+    # as conditions on the TARGET configuration, never evaluated against this
+    # host's flags by the declaration itself.
     tensor_native = (
         manifest_description.tensor_compatibility is TensorCompatibility.TENSOR_NATIVE
     )
@@ -568,66 +571,88 @@ def assembly_manifest_class_methods(
     def discover_work_operations(self):
         return _dynamic_block_work_operations(step_name=self.name)
 
-    def discover_portable_restrictions(self):
-        return _dynamic_block_portable_restrictions(
-            step_name=self.name, tensor_native=tensor_native
+    # A dynamic manifest does not subclass `WorkflowBlockManifest`, so the
+    # public restriction API has to be patched on; it builds the same
+    # declaration and applies the flag the same way a built-in manifest does.
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=_dynamic_block_restrictions(
+                step_name=self.name, tensor_native=tensor_native
+            ),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
 
     setattr(manifest_class, "discover_work_operations", discover_work_operations)
-    setattr(
-        manifest_class,
-        "discover_portable_restrictions",
-        discover_portable_restrictions,
-    )
+    setattr(manifest_class, "get_actual_restrictions", get_actual_restrictions)
     return manifest_class
 
 
 def _dynamic_block_work_operations(step_name: str) -> Discovery[WorkOperation]:
     return incomplete_discovery(
         [WorkOperation.CUSTOM_PYTHON],
-        [f"custom_python_internal_operations_unknown:$steps.{step_name}"],
+        [
+            custom_python_internals_unknown_problem(
+                node_id=f"$steps.{step_name}", declaration="operations"
+            )
+        ],
     )
 
 
-def _dynamic_block_portable_restrictions(
+def _dynamic_block_restrictions(
     step_name: str, tensor_native: bool
-) -> Discovery[RestrictionMetadata]:
+) -> Discovery[RuntimeRestriction]:
     items = [
-        RestrictionMetadata(
+        RuntimeRestriction(
             code="custom_python_execution_disabled",
             severity=Severity.HARD,
-            when=RestrictionCondition(
-                configuration_equals={
-                    "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": False,
-                    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
-                }
+            note=(
+                "Local custom Python execution is refused when "
+                "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS is False: the "
+                "block cannot be compiled or run."
             ),
+            applies_to_configuration={
+                "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": False,
+                "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
+            },
         )
     ]
     if tensor_native:
         items.append(
-            RestrictionMetadata(
+            RuntimeRestriction(
                 code="tensor_native_requires_tensor_representation",
                 severity=Severity.HARD,
-                when=RestrictionCondition(
-                    configuration_equals={"ENABLE_TENSOR_DATA_REPRESENTATION": False}
+                note=(
+                    "The block declares itself tensor-native, so it cannot run "
+                    "on a server using the numpy image representation "
+                    "(ENABLE_TENSOR_DATA_REPRESENTATION=False)."
                 ),
+                applies_to_configuration={"ENABLE_TENSOR_DATA_REPRESENTATION": False},
             )
         )
         items.append(
-            RestrictionMetadata(
+            RuntimeRestriction(
                 code="tensor_native_unsupported_in_modal",
                 severity=Severity.HARD,
-                when=RestrictionCondition(
-                    configuration_equals={
-                        "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"
-                    }
+                note=(
+                    "A tensor-native custom Python block cannot be dispatched "
+                    "to the Modal executor "
+                    "(WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal)."
                 ),
+                applies_to_configuration={
+                    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"
+                },
             )
         )
     return incomplete_discovery(
         items,
-        [f"custom_python_internal_restrictions_unknown:$steps.{step_name}"],
+        [
+            custom_python_internals_unknown_problem(
+                node_id=f"$steps.{step_name}", declaration="restrictions"
+            )
+        ],
     )
 
 

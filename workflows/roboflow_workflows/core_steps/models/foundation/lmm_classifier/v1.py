@@ -36,19 +36,20 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
     incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
     third_party_model,
 )
@@ -176,7 +177,14 @@ class BlockManifest(WorkflowBlockManifest):
         if is_workflow_selector(self.lmm_type):
             return incomplete_discovery(
                 [WorkOperation.MODEL_INFERENCE],
-                [f"lmm_type_selector_unresolved:$steps.{self.name}"],
+                [
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{self.name}",
+                        declaration="operations",
+                        field="lmm_type",
+                        selector=self.lmm_type,
+                    )
+                ],
             )
         if self.lmm_type == GPT_4V_MODEL_TYPE:
             return [
@@ -186,8 +194,14 @@ class BlockManifest(WorkflowBlockManifest):
             ]
         return []
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [hosted_endpoint_disabled_by_flag("LMM_ENABLED")]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[hosted_endpoint_disabled_by_flag("LMM_ENABLED")],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class LMMForClassificationBlockV1(WorkflowBlock):

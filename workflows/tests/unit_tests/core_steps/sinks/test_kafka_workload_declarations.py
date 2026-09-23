@@ -18,7 +18,7 @@ import pytest
 import roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 as consumer_module
 import roboflow_workflows.enterprise_blocks.sinks.kafka_producer.v1 as producer_module
 from roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
-    KAFKA_CONSUMER_PER_REQUEST_PORTABLE_RESTRICTION,
+    KAFKA_CONSUMER_PER_REQUEST_RESTRICTION,
 )
 from roboflow_workflows.enterprise_blocks.sinks.kafka_consumer.v1 import (
     BlockManifest as ConsumerManifest,
@@ -39,10 +39,17 @@ from roboflow_workflows.execution_engine.entities.workload import (
     RuntimeInputMode,
     Severity,
     WorkOperation,
+    restriction_metadata_of,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection import blocks_loader
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
+)
+
+from tests.unit_tests.workload_declaration_helpers import (
+    portable_restrictions,
+    portable_restrictions_discovery,
 )
 
 ENTERPRISE_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
@@ -261,13 +268,14 @@ def test_describing_the_workflow_builds_no_client_and_no_block_instance(
 
 def test_consumer_declares_the_per_instance_connection_caveat() -> None:
     """The cross-run state is declared with the runtimes and the input mode."""
-    declared = _consumer().discover_portable_restrictions()
-    assert isinstance(declared, list), "nothing about this block is conditional"
-    assert _codes(declared) == [
-        HOSTED_RESTRICTION_CODE,
+    discovery = portable_restrictions_discovery(_consumer())
+    assert discovery.complete is True, "nothing about this block is conditional"
+    # the canonical discovery order: sorted by code
+    assert _codes(discovery.items) == [
         CONSUMER_STATE_RESTRICTION_CODE,
+        HOSTED_RESTRICTION_CODE,
     ]
-    state = KAFKA_CONSUMER_PER_REQUEST_PORTABLE_RESTRICTION
+    state = restriction_metadata_of(KAFKA_CONSUMER_PER_REQUEST_RESTRICTION)
     assert state.severity is Severity.SOFT
     assert set(state.when.runtimes) == {
         Runtime.SELF_HOSTED_CPU,
@@ -298,7 +306,12 @@ def test_producer_fire_and_forget_branches_through_the_public_api(
         assert not restrictions.complete
         assert FIRE_AND_FORGET_CODE not in codes
         assert restrictions.unknown_reasons == [
-            "fire_and_forget_selector_unresolved:$steps.producer"
+            unresolved_selector_problem(
+                node_id="$steps.producer",
+                declaration="restrictions",
+                field="fire_and_forget",
+                selector="$inputs.fire_and_forget",
+            )
         ]
 
 
@@ -320,18 +333,18 @@ def test_portable_declarations_ignore_this_host_hosted_platform_flags(
     and what ``run()`` genuinely reads.
     """
     baseline = (
-        _consumer().discover_portable_restrictions(),
-        _producer(True).discover_portable_restrictions(),
-        _producer(False).discover_portable_restrictions(),
+        portable_restrictions(_consumer()),
+        portable_restrictions(_producer(True)),
+        portable_restrictions(_producer(False)),
     )
     for module in (consumer_module, producer_module):
         for flag, value in zip(HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)):
             assert hasattr(module, flag), flag
             monkeypatch.setattr(module, flag, value)
     assert (
-        _consumer().discover_portable_restrictions(),
-        _producer(True).discover_portable_restrictions(),
-        _producer(False).discover_portable_restrictions(),
+        portable_restrictions(_consumer()),
+        portable_restrictions(_producer(True)),
+        portable_restrictions(_producer(False)),
     ) == baseline
 
 
@@ -346,7 +359,7 @@ def test_every_legacy_axis_survives_in_the_portable_declaration() -> None:
         (_producer(), ProducerManifest),
     ):
         legacy = manifest_class.get_restrictions()
-        portable = manifest.discover_portable_restrictions()
+        portable = portable_restrictions(manifest)
         assert len(legacy) == len(portable) == 2
         legacy_axes: Set[Tuple[Any, ...]] = {
             _legacy_axes(restriction) for restriction in legacy

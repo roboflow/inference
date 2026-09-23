@@ -26,13 +26,19 @@ from roboflow_workflows.core_steps.classical_cv.sift_comparison.v2 import (
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     WorkOperation,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
 )
 from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+)
+
+from tests.unit_tests.workload_declaration_helpers import (
+    declared_restrictions,
+    portable_restrictions,
 )
 
 
@@ -59,7 +65,7 @@ def test_image_preprocessing_geometry_declares_a_transform(task_type: str) -> No
 
 
 def test_image_preprocessing_declares_no_caveat() -> None:
-    assert _preprocessing("resize").discover_portable_restrictions() == []
+    assert portable_restrictions(_preprocessing("resize")) == []
 
 
 def _sift_comparison(visualize) -> SIFTComparisonBlockManifest:
@@ -95,7 +101,12 @@ def test_sift_comparison_reports_a_selector_as_unknown_not_as_absence() -> None:
     assert declared.complete is False
     assert declared.items == [WorkOperation.IMAGE_ANALYSIS]
     assert declared.unknown_reasons == [
-        "visualize_selector_unresolved:$steps.comparison"
+        unresolved_selector_problem(
+            node_id="$steps.comparison",
+            declaration="operations",
+            field="visualize",
+            selector="$inputs.visualize",
+        )
     ]
 
 
@@ -145,10 +156,10 @@ def test_motion_detection_declares_its_cross_frame_history() -> None:
         WorkOperation.IMAGE_ANALYSIS,
         WorkOperation.TEMPORAL_BUFFERING,
     ]
-    restrictions: List = manifest.discover_portable_restrictions()
+    restrictions: List = declared_restrictions(manifest)
     assert restrictions == [
-        STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-        STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+        STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+        STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     ]
 
 
@@ -157,9 +168,9 @@ def test_the_shared_preset_list_cannot_be_mutated_through_a_block() -> None:
     manifest = MotionDetectionManifest(
         type="roboflow_core/motion_detection@v1", name="motion", image="$inputs.image"
     )
-    first = manifest.discover_portable_restrictions()
+    first = portable_restrictions(manifest)
     first.clear()
-    assert len(manifest.discover_portable_restrictions()) == 2
+    assert len(portable_restrictions(manifest)) == 2
 
 
 # Adopted from the Codex round-001 reviewer reproducer: the same expectation,
@@ -202,6 +213,11 @@ def test_selector_controlled_visualization_through_the_public_api(visualize) -> 
         # the input's default_value is True; the declaration must NOT adopt it
         assert not operations.complete
         assert operations.unknown_reasons == [
-            "visualize_selector_unresolved:$steps.compare"
+            unresolved_selector_problem(
+                node_id="$steps.compare",
+                declaration="operations",
+                field="visualize",
+                selector="$inputs.visualize",
+            )
         ]
         assert operations.items == [WorkOperation.IMAGE_ANALYSIS]

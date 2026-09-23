@@ -1,10 +1,4 @@
-from roboflow_workflows.prototypes.block import (
-    RestrictionCondition,
-    RestrictionMetadata,
-    Runtime,
-    RuntimeRestriction,
-    Severity,
-)
+from roboflow_workflows.prototypes.block import Runtime, RuntimeRestriction, Severity
 
 # Cache Get / Cache Set keep entries in this process's memory. They have no
 # remote code path, so *where model steps execute* (step_execution_mode) is
@@ -14,6 +8,7 @@ from roboflow_workflows.prototypes.block import (
 # narrowed to a step execution mode or an input mode: a still-image request
 # degrades the same way a video frame does.
 IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="in_process_cache_not_shared_across_workers",
     severity=Severity.SOFT,
     note=(
         "Cache entries live in this worker's process memory, namespaced by "
@@ -27,17 +22,4 @@ IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "worker."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-)
-
-
-# Portable counterpart of the preset above. The condition mirrors it exactly:
-# runtime only - no step execution mode and no input mode - because the cache
-# degrades on a stateless HTTP runtime regardless of where model steps execute
-# and regardless of whether the request carries a video frame or a still image.
-IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
-    code="in_process_cache_not_shared_across_workers",
-    severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    ),
 )

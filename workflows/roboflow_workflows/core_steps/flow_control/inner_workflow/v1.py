@@ -31,9 +31,10 @@ from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import WILDCARD_KIND, Selector
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
     incomplete_discovery,
+    opaque_remote_workflow_problem,
 )
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
     INNER_WORKFLOW_EXECUTION_MODE_EMBEDDED,
@@ -46,6 +47,7 @@ from roboflow_workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 logger = get_logger(__name__)
@@ -205,13 +207,28 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> Discovery[WorkOperation]:
         return incomplete_discovery(
             items=[WorkOperation.EXTERNAL_REQUEST],
-            reasons=[f"remote_dispatch_child_opaque:$steps.{self.name}"],
+            reasons=[
+                opaque_remote_workflow_problem(
+                    node_id=f"$steps.{self.name}", declaration="operations"
+                )
+            ],
         )
 
-    def discover_portable_restrictions(self) -> Discovery[RestrictionMetadata]:
-        return incomplete_discovery(
-            items=[],
-            reasons=[f"remote_dispatch_child_opaque:$steps.{self.name}"],
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=incomplete_discovery(
+                items=[],
+                reasons=[
+                    opaque_remote_workflow_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                    )
+                ],
+            ),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
 
 

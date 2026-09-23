@@ -23,6 +23,8 @@ from roboflow_workflows.core_steps.transformations.perspective_correction.v1 imp
 )
 from roboflow_workflows.execution_engine.entities.workload import WorkOperation
 
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
+
 
 def test_crop_blocks_declare_cropping_not_a_generic_transform() -> None:
     absolute = AbsoluteStaticCropManifest(
@@ -81,7 +83,7 @@ def test_byte_tracker_declares_tracking_and_the_legacy_state_caveat() -> None:
     )
     assert manifest.discover_work_operations() == [WorkOperation.TRACKING]
     portable_codes = [
-        restriction.code for restriction in manifest.discover_portable_restrictions()
+        restriction.code for restriction in portable_restrictions(manifest)
     ]
     assert portable_codes == [
         "stateful_video_state_resets_on_stateless_http",

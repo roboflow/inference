@@ -1,10 +1,10 @@
 """Workload declarations of the sink blocks.
 
-Sinks are where the portable declaration differs most from the legacy one:
+Sinks are where the portable view differs most from the legacy one:
 ``get_restrictions()`` evaluates this host's flags and returns human notes,
-while ``discover_portable_restrictions()`` must return every branch, each with
-the flag pinned in its condition, so a caller can answer the question for a
-DIFFERENT deployment than the one being asked.
+while ``get_actual_restrictions(ignore_environment_restrictions=True)`` must
+return every branch, each with the flag pinned in its condition, so a caller
+can answer the question for a DIFFERENT deployment than the one being asked.
 """
 
 from typing import Any, List
@@ -31,11 +31,18 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Severity,
     StepExecutionMode,
     WorkOperation,
+    restriction_metadata_of,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
 )
-from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
+from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
+
+from tests.unit_tests.workload_declaration_helpers import (
+    portable_restrictions,
+    portable_restrictions_discovery,
+)
 
 LOCAL_STORAGE_FLAG = "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE"
 
@@ -90,7 +97,7 @@ def test_local_file_sink_declares_a_storage_write() -> None:
 def test_local_file_sink_declares_both_branches_of_the_storage_flag() -> None:
     by_code = {
         restriction.code: restriction
-        for restriction in _local_file().discover_portable_restrictions()
+        for restriction in portable_restrictions(_local_file())
     }
     assert by_code["local_storage_access_disabled"].severity is Severity.HARD
     assert by_code["local_storage_access_disabled"].when.configuration_equals == {
@@ -113,10 +120,10 @@ def test_local_file_declaration_is_independent_of_this_host_flag(monkeypatch) ->
     """The legacy hook branches on the flag; the portable one must not."""
     manifest = _local_file()
     monkeypatch.setattr(local_file_module, LOCAL_STORAGE_FLAG, True, raising=False)
-    with_storage = manifest.discover_portable_restrictions()
+    with_storage = portable_restrictions(manifest)
     legacy_with_storage = LocalFileManifest.get_restrictions()
     monkeypatch.setattr(local_file_module, LOCAL_STORAGE_FLAG, False, raising=False)
-    without_storage = manifest.discover_portable_restrictions()
+    without_storage = portable_restrictions(manifest)
     legacy_without_storage = LocalFileManifest.get_restrictions()
     assert with_storage == without_storage
     # the legacy API keeps its environment-dependent behaviour untouched
@@ -129,7 +136,7 @@ def test_s3_sink_declares_storage_and_transport() -> None:
         WorkOperation.STORAGE_WRITE,
         WorkOperation.EXTERNAL_REQUEST,
     ]
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
     assert [restriction.code for restriction in restrictions] == [
         "s3_append_buffer_resets_on_stateless_http"
     ]
@@ -139,15 +146,15 @@ def test_s3_sink_declares_storage_and_transport() -> None:
 def test_a_notification_sink_declares_the_cooldown_caveat() -> None:
     manifest = _webhook()
     assert manifest.discover_work_operations() == [WorkOperation.EXTERNAL_REQUEST]
-    assert manifest.discover_portable_restrictions() == [
-        COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
+    assert portable_restrictions(manifest) == [
+        restriction_metadata_of(COOLDOWN_HTTP_SOFT_RESTRICTION)
     ]
 
 
 def test_onvif_sink_declares_the_lan_requirement() -> None:
     manifest = _onvif()
     assert manifest.discover_work_operations() == [WorkOperation.EXTERNAL_REQUEST]
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
     assert [restriction.code for restriction in restrictions] == [
         "requires_lan_access_to_device"
     ]
@@ -194,7 +201,7 @@ def test_s3_append_caveat_follows_the_literal_output_mode(
         output_mode=output_mode,
         bucket_name="bucket",
     )
-    declared = manifest.discover_portable_restrictions()
+    declared = portable_restrictions(manifest)
     assert isinstance(declared, list), "a literal mode is fully knowable"
     assert [restriction.code for restriction in declared] == expected
 
@@ -237,7 +244,7 @@ def _postgresql(fire_and_forget: Any) -> PostgreSQLManifest:
 def test_postgresql_caveat_follows_the_literal_fire_and_forget(
     fire_and_forget: bool, expected: List[str]
 ) -> None:
-    declared = _postgresql(fire_and_forget).discover_portable_restrictions()
+    declared = portable_restrictions(_postgresql(fire_and_forget))
     assert isinstance(declared, list), "a literal switch is fully knowable"
     assert [restriction.code for restriction in declared] == expected
 
@@ -248,12 +255,17 @@ def test_postgresql_reports_a_selector_as_unknown_not_as_absence() -> None:
     Declaring it would be as wrong as declaring its absence, so nothing is
     claimed complete and the reason names the field and the step.
     """
-    declared = _postgresql("$inputs.fire_and_forget").discover_portable_restrictions()
+    declared = portable_restrictions_discovery(_postgresql("$inputs.fire_and_forget"))
     assert isinstance(declared, Discovery)
     assert declared.complete is False
     assert declared.items == []
     assert declared.unknown_reasons == [
-        "fire_and_forget_selector_unresolved:$steps.database"
+        unresolved_selector_problem(
+            node_id="$steps.database",
+            declaration="restrictions",
+            field="fire_and_forget",
+            selector="$inputs.fire_and_forget",
+        )
     ]
 
 
@@ -351,5 +363,10 @@ def test_postgresql_restriction_through_the_public_api(fire_and_forget) -> None:
         assert not restrictions.complete
         assert restrictions.items == []
         assert restrictions.unknown_reasons == [
-            "fire_and_forget_selector_unresolved:$steps.sink"
+            unresolved_selector_problem(
+                node_id="$steps.sink",
+                declaration="restrictions",
+                field="fire_and_forget",
+                selector="$inputs.fire_and_forget",
+            )
         ]

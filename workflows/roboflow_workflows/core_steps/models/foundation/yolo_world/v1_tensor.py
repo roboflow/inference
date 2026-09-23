@@ -31,7 +31,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
@@ -39,6 +40,7 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
     roboflow_platform_model,
 )
@@ -145,11 +147,17 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.MODEL_INFERENCE]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
         # The tensor-native sibling of this block raises
         # FeatureDeprecatedError: there is no inference_models path for
         # YOLO-World.
-        return [UNSUPPORTED_IN_TENSOR_REPRESENTATION]
+        return actual_restrictions_of(
+            declared=[UNSUPPORTED_IN_TENSOR_REPRESENTATION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

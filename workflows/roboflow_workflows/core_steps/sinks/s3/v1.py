@@ -9,7 +9,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.workload_presets import (
-    S3_APPEND_BUFFER_PORTABLE_RESTRICTION,
+    S3_APPEND_BUFFER_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
@@ -20,17 +20,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 CONTENT_TYPES = {
@@ -252,16 +253,23 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.STORAGE_WRITE, WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
         # The append-log buffer only exists in append_log mode; separate_files
         # uploads each entry on its own and carries no such caveat.
         # `output_mode` is a plain Literal (no Selector in its union), so it is
         # always known here - `test_output_mode_cannot_hold_a_selector` pins
         # that, and turns a future widening of the field into a failure rather
         # than a silent wrong answer.
+        declared: List[RuntimeRestriction] = []
         if self.output_mode == "append_log":
-            return [S3_APPEND_BUFFER_PORTABLE_RESTRICTION]
-        return []
+            declared = [S3_APPEND_BUFFER_RESTRICTION]
+        return actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

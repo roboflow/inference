@@ -49,7 +49,7 @@ from typing import Any, List, Optional, Type, Union
 
 from pydantic import ConfigDict
 from roboflow_workflows.core_steps.common.workload_presets import (
-    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
 )
 from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
     LONG_DESCRIPTION as NUMPY_LONG_DESCRIPTION,
@@ -62,13 +62,15 @@ from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 TENSOR_MODE_ADDENDUM = """
@@ -102,8 +104,14 @@ class BlockManifest(NumpyBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.TEMPORAL_BUFFERING]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

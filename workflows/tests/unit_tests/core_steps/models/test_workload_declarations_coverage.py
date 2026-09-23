@@ -23,6 +23,8 @@ from roboflow_workflows.execution_engine.introspection.blocks_loader import (
 )
 from roboflow_workflows.prototypes.block import WorkflowBlockManifest
 
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
+
 MODELS_PACKAGE = "roboflow_workflows.core_steps.models"
 
 # Codes minted for the model blocks. A new meaning gets a new code and is added
@@ -151,16 +153,17 @@ def model_block_manifests() -> List[Type[WorkflowBlockManifest]]:
 def test_every_registered_model_block_overrides_both_hooks(
     model_block_manifests: List[Type[WorkflowBlockManifest]],
 ) -> None:
-    # given
+    # given - a block must AUTHOR its declarations, not inherit the base
+    # "unknown" default of either hook.
     base_operations = WorkflowBlockManifest.discover_work_operations
-    base_restrictions = WorkflowBlockManifest.discover_portable_restrictions
+    base_restrictions = WorkflowBlockManifest.get_actual_restrictions
 
     # when
     not_declaring = [
         f"{manifest.__module__}.{manifest.__name__}"
         for manifest in model_block_manifests
         if manifest.discover_work_operations is base_operations
-        or manifest.discover_portable_restrictions is base_restrictions
+        or manifest.get_actual_restrictions is base_restrictions
     ]
 
     # then
@@ -210,7 +213,7 @@ def test_every_model_block_returns_known_restriction_codes(
     for manifest_class in model_block_manifests:
         manifest = _instance(manifest_class)
 
-        restrictions = manifest.discover_portable_restrictions()
+        restrictions = portable_restrictions(manifest)
 
         assert isinstance(restrictions, list)
         for restriction in restrictions:
@@ -241,7 +244,7 @@ def test_no_model_block_declares_more_than_one_endpoint_flag(
 
         flags = [
             flag
-            for restriction in manifest.discover_portable_restrictions()
+            for restriction in portable_restrictions(manifest)
             for flag in restriction.when.configuration_equals
             if flag in ENDPOINT_FLAGS
         ]
@@ -259,7 +262,7 @@ def test_a_legacy_restriction_declaration_is_mirrored_by_a_portable_one(
         if not declaring_module.startswith(MODELS_PACKAGE):
             continue
 
-        restrictions = _instance(manifest_class).discover_portable_restrictions()
+        restrictions = portable_restrictions(_instance(manifest_class))
 
         assert restrictions, (
             f"{manifest_class.__module__} overrides get_restrictions() but declares "
@@ -281,7 +284,7 @@ def test_model_blocks_without_a_legacy_declaration_declare_no_caveat(
         if manifest_class.__module__ in PORTABLE_ONLY_CAVEAT_MODULES:
             continue
 
-        restrictions = _instance(manifest_class).discover_portable_restrictions()
+        restrictions = portable_restrictions(_instance(manifest_class))
 
         assert (
             restrictions == []
@@ -300,9 +303,7 @@ def test_the_deprecated_blocks_declare_the_always_raises_caveat(
 
         codes = [
             restriction.code
-            for restriction in _instance(
-                by_module[module]
-            ).discover_portable_restrictions()
+            for restriction in portable_restrictions(_instance(by_module[module]))
         ]
 
         assert "deprecated_block_always_raises" in codes

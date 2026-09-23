@@ -27,18 +27,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
-    RestrictionCondition,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.utils.text import experimental
 from simple_pid import PID
@@ -125,6 +125,7 @@ This block requires an ONVIF-compatible PTZ camera with network access. The came
 # execute (step_execution_mode), so only network reachability of the camera
 # restricts the block. Shared with v1_tensor so the two cannot drift.
 NO_LAN_FROM_HOSTED_RESTRICTION = RuntimeRestriction(
+    code="requires_lan_access_to_device",
     severity=Severity.HARD,
     note=(
         "Block requires LAN access to a PTZ camera. Hosted Serverless "
@@ -134,20 +135,6 @@ NO_LAN_FROM_HOSTED_RESTRICTION = RuntimeRestriction(
         Runtime.HOSTED_SERVERLESS,
         Runtime.DEDICATED_DEPLOYMENT,
     ],
-)
-
-
-# Portable counterpart of the preset above; shared with v1_tensor for the same
-# reason. The condition mirrors the legacy declaration exactly: runtimes only.
-NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION = RestrictionMetadata(
-    code="requires_lan_access_to_device",
-    severity=Severity.HARD,
-    when=RestrictionCondition(
-        runtimes=[
-            Runtime.HOSTED_SERVERLESS,
-            Runtime.DEDICATED_DEPLOYMENT,
-        ],
-    ),
 )
 
 
@@ -284,8 +271,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[NO_LAN_FROM_HOSTED_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

@@ -57,13 +57,14 @@ REGISTRY_PAYLOAD = {
 }
 
 # dicts in the response that are plain mappings, not entities
-PLAIN_DICT_FIELDS = {"steps_by_dimensionality", "configuration_equals"}
+# plain JSON maps, not entities: no `type` discriminator, arbitrary data
+PLAIN_DICT_FIELDS = {"steps_by_dimensionality", "configuration_equals", "details"}
 
 ENTERPRISE_LOADER = "roboflow_workflows.enterprise_blocks.loader"
 HOST_PLUGIN_LOADER = "inference.roboflow_workflows_plugin.loader"
 DECLARATION_HOOKS = (
     "discover_work_operations",
-    "discover_portable_restrictions",
+    "get_actual_restrictions",
     "discover_dependent_resources",
 )
 # The only registered manifest allowed to answer "unknown" for resources: a
@@ -181,6 +182,15 @@ def interface(monkeypatch):
     model_manager.pingback = None
     model_manager.num_errors = 0
     return http_api.HttpInterface(model_manager=model_manager)
+
+
+@pytest.fixture(autouse=True)
+def isolated_metadata_cache():
+    """The adapter's metadata cache is process wide: no test may inherit another
+    test's mocked payloads or credentials."""
+    workflows_workload_metadata.clear_model_metadata_cache()
+    yield
+    workflows_workload_metadata.clear_model_metadata_cache()
 
 
 @pytest.fixture
@@ -351,7 +361,7 @@ def test_branched_example_without_metadata_enrichment(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "1"
+    assert body["schema_version"] == "2"
     assert len(body["nodes"]) == 9
     assert [node["kind"] for node in body["nodes"]].count("step") == 5
     assert {
@@ -411,7 +421,15 @@ def test_branched_example_without_metadata_enrichment(
     assert counter["operations"]["items"] == ["custom_python"]
     assert counter["operations"]["complete"] is False
     assert counter["operations"]["unknown_reasons"] == [
-        "custom_python_internal_operations_unknown:$steps.counter"
+        {
+            "type": "discovery_problem",
+            "code": "custom_python_internals_unknown",
+            "description": (
+                "Step `$steps.counter` runs custom Python code, so its "
+                "internals may add operations beyond the declared ones."
+            ),
+            "details": {"node_id": "$steps.counter", "declaration": "operations"},
+        }
     ]
     assert counter["restrictions"]["items"] == [
         {
@@ -431,7 +449,19 @@ def test_branched_example_without_metadata_enrichment(
         }
     ]
     assert body["summary"]["models"]["unknown_reasons"] == [
-        "step_resources_unknown:$steps.counter"
+        {
+            "type": "discovery_problem",
+            "code": "declaration_unavailable",
+            "description": (
+                "Step `$steps.counter` does not declare its resources, so they "
+                "are unknown rather than absent."
+            ),
+            "details": {
+                "node_id": "$steps.counter",
+                "declaration": "resources",
+                "block_type": "CountDetections",
+            },
+        }
     ]
 
     # then - one inventory entry per model id, both referring steps preserved
@@ -442,6 +472,14 @@ def test_branched_example_without_metadata_enrichment(
         "$steps.detection",
     ]
     assert models[CLASSIFIER_MODEL_ID]["used_by_steps"] == ["$steps.classification"]
+    # then - per-model histogram: the shared model once at depth 1 (detection)
+    # and once at depth 2 (crop_detection); string keys; sums to used_by_steps
+    assert models[SHARED_MODEL_ID]["steps_by_dimensionality"] == {"1": 1, "2": 1}
+    assert models[CLASSIFIER_MODEL_ID]["steps_by_dimensionality"] == {"2": 1}
+    for model in models.values():
+        assert sum(model["steps_by_dimensionality"].values()) == len(
+            model["used_by_steps"]
+        )
     assert {model["provider"] for model in models.values()} == {"roboflow"}
     assert {model["metadata_status"] for model in models.values()} == {"disabled"}
     assert all(model["metadata"] is None for model in models.values())
@@ -485,17 +523,33 @@ def test_branched_example_with_metadata_enrichment(
         "$steps.detection",
     ]
 
-    # then - enrichment changes nothing structural
+    # then - enrichment changes nothing structural, per-model histogram included
     assert body["summary"]["steps_by_dimensionality"] == {"1": 2, "2": 3}
+    assert models[SHARED_MODEL_ID]["steps_by_dimensionality"] == {"1": 1, "2": 1}
+    assert models[CLASSIFIER_MODEL_ID]["steps_by_dimensionality"] == {"2": 1}
     assert body["summary"]["models"]["complete"] is False
     assert body["summary"]["models"]["unknown_reasons"] == [
-        "step_resources_unknown:$steps.counter"
+        {
+            "type": "discovery_problem",
+            "code": "declaration_unavailable",
+            "description": (
+                "Step `$steps.counter` does not declare its resources, so they "
+                "are unknown rather than absent."
+            ),
+            "details": {
+                "node_id": "$steps.counter",
+                "declaration": "resources",
+                "block_type": "CountDetections",
+            },
+        }
     ]
 
-    # then - no credential and no cache scope reaches the client
-    digest = workflows_workload_metadata.credential_scope_digest(API_KEY)
+    # then - no credential reaches the client, and the registry helper was
+    # called with its default cache prefix (nothing credential-derived)
     assert API_KEY not in response.text
-    assert digest not in response.text
+    assert {tuple(sorted(call.kwargs)) for call in registry_call.call_args_list} == {
+        ("api_key", "model_id")
+    }
     assert all("type" in entity for entity in _entity_dicts(body))
     assert (
         WorkflowIntrospection.model_validate_json(response.text).model_dump(mode="json")
@@ -552,7 +606,10 @@ def test_describe_workload_over_a_real_socket(interface, enrichment_disabled) ->
     assert body["type"] == "workflow_introspection"
     assert len(body["steps"]) == 5
     assert body["summary"]["steps_by_dimensionality"] == {"1": 2, "2": 3}
-    assert sorted(_models_by_id(body)) == [CLASSIFIER_MODEL_ID, SHARED_MODEL_ID]
+    models = _models_by_id(body)
+    assert sorted(models) == [CLASSIFIER_MODEL_ID, SHARED_MODEL_ID]
+    assert models[SHARED_MODEL_ID]["steps_by_dimensionality"] == {"1": 1, "2": 1}
+    assert models[CLASSIFIER_MODEL_ID]["steps_by_dimensionality"] == {"2": 1}
     assert (
         WorkflowIntrospection.model_validate_json(response.text).model_dump(mode="json")
         == body

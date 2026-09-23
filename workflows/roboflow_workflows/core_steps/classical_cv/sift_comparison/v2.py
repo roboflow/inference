@@ -20,9 +20,10 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
     incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -205,14 +206,25 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
             # substitute the input's default value.
             return incomplete_discovery(
                 items=[WorkOperation.IMAGE_ANALYSIS],
-                reasons=[f"visualize_selector_unresolved:$steps.{self.name}"],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{self.name}",
+                        declaration="operations",
+                        field="visualize",
+                        selector=self.visualize,
+                    )
+                ],
             )
         if self.visualize:
             return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
         return [WorkOperation.IMAGE_ANALYSIS]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return []
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

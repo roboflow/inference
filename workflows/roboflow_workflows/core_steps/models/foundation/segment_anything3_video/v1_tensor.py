@@ -59,8 +59,8 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.vis
 )
 from roboflow_workflows.core_steps.models.workload_presets import (
     REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 from roboflow_workflows.environment import (
     GCP_SERVERLESS,
@@ -94,19 +94,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.prototypes.platform_client import (
@@ -386,12 +385,18 @@ class BlockManifest(WorkflowBlockManifest):
             WorkOperation.TRACKING,
         ]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [
-            STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-            STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
-        ]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):

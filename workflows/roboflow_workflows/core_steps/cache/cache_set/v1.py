@@ -3,7 +3,6 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.cache.common import (
-    IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION,
     IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION,
 )
 from roboflow_workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
@@ -20,15 +19,16 @@ from roboflow_workflows.execution_engine.entities.types import (
     WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
-    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -143,8 +143,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.CACHE_WRITE]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

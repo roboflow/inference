@@ -21,13 +21,17 @@ from pydantic import (
     field_validator,
 )
 from roboflow_workflows.core_steps.common.workload_presets import (
-    LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS,
+    LOCAL_FILE_SINK_RESTRICTIONS,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
-from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
+from roboflow_workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
+    actual_restrictions_of,
+)
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
@@ -54,11 +58,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
-    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -538,11 +540,17 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.IMAGE_ENCODING, WorkOperation.STORAGE_WRITE]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [
-            COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION,
-            *LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS,
-        ]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                COOLDOWN_HTTP_SOFT_RESTRICTION,
+                *LOCAL_FILE_SINK_RESTRICTIONS,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         # Writes the event bundle to the local volume; `solution` is a Vision

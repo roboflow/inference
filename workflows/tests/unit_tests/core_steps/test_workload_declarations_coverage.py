@@ -32,10 +32,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pytest
 from roboflow_workflows.execution_engine.entities.workload import (
+    DeclarationDomain,
     Discovery,
     RestrictionMetadata,
     WorkOperation,
+    declaration_unavailable_problem,
     normalize_declaration,
+    opaque_remote_workflow_problem,
 )
 from roboflow_workflows.execution_engine.introspection import blocks_loader
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
@@ -44,11 +47,18 @@ from roboflow_workflows.execution_engine.introspection.blocks_loader import (
 )
 from roboflow_workflows.prototypes.block import WorkflowBlockManifest
 
+from tests.unit_tests.workload_declaration_helpers import (
+    portable_restrictions,
+    portable_restrictions_discovery,
+)
+
 WORK_OPERATIONS_HOOK = "discover_work_operations"
-PORTABLE_RESTRICTIONS_HOOK = "discover_portable_restrictions"
+# the public restriction hook; the census checks ownership of this one, and the
+# behaviour checks below call it too
+RESTRICTIONS_HOOK = "get_actual_restrictions"
 DEPENDENT_RESOURCES_HOOK = "discover_dependent_resources"
 # the two workload hooks - they share the Discovery return convention
-HOOKS = (WORK_OPERATIONS_HOOK, PORTABLE_RESTRICTIONS_HOOK)
+HOOKS = (WORK_OPERATIONS_HOOK, RESTRICTIONS_HOOK)
 # everything a block declares about itself; all three must stay in step between
 # the numpy and the tensor implementation
 DECLARATION_HOOKS = HOOKS + (DEPENDENT_RESOURCES_HOOK,)
@@ -339,6 +349,15 @@ def _manifest_instance(block: _LoadedBlock) -> Any:
     return block.manifest_class.model_construct(**values)
 
 
+def _unavailable(block: _LoadedBlock, declaration: DeclarationDomain):
+    """The problem the builder would attach to a block declaring nothing."""
+    return declaration_unavailable_problem(
+        node_id="$steps.workload_census_step",
+        declaration=declaration,
+        block_type=block.block_type,
+    )
+
+
 def test_every_hook_returns_a_valid_declaration(
     loaded_blocks: List[_LoadedBlock],
 ) -> None:
@@ -348,12 +367,9 @@ def test_every_hook_returns_a_valid_declaration(
         try:
             operations = normalize_declaration(
                 manifest.discover_work_operations(),
-                f"work_operations_unknown:{block.block_type}",
+                _unavailable(block, "operations"),
             )
-            restrictions = normalize_declaration(
-                manifest.discover_portable_restrictions(),
-                f"portable_restrictions_unknown:{block.block_type}",
-            )
+            restrictions = portable_restrictions_discovery(manifest)
         except Exception as error:  # noqa: BLE001 - the message IS the report
             failures.append(f"{block.block_type}: {type(error).__name__}: {error}")
             continue
@@ -380,7 +396,7 @@ def test_declared_operations_are_not_a_blanket_label(
         manifest = _manifest_instance(block)
         discovery = normalize_declaration(
             manifest.discover_work_operations(),
-            f"work_operations_unknown:{block.block_type}",
+            _unavailable(block, "operations"),
         )
         declared_sets.add(tuple(sorted(item.value for item in discovery.items)))
         for item in set(discovery.items):
@@ -420,10 +436,7 @@ def _portable_restrictions_by_block(
     result: Dict[str, List[Dict[str, Any]]] = {}
     for block in blocks:
         manifest = _manifest_instance(block)
-        discovery = normalize_declaration(
-            manifest.discover_portable_restrictions(),
-            f"portable_restrictions_unknown:{block.block_type}",
-        )
+        discovery = portable_restrictions_discovery(manifest)
         result[block.block_type] = discovery.model_dump(mode="json")["items"]
     return result
 
@@ -477,7 +490,7 @@ def test_flag_conditional_declarations_pin_the_flag_in_the_condition(
     """The local-file and environment-secrets blocks carry BOTH branches."""
     by_type = {block.block_type: block for block in loaded_blocks}
     local_file = by_type["roboflow_core/local_file_sink@v1"]
-    restrictions = _manifest_instance(local_file).discover_portable_restrictions()
+    restrictions = portable_restrictions(_manifest_instance(local_file))
     by_code = {restriction.code: restriction for restriction in restrictions}
     assert set(by_code) == {
         "local_storage_access_disabled",
@@ -496,7 +509,7 @@ def test_flag_conditional_declarations_pin_the_flag_in_the_condition(
         }
 
     secrets = by_type["roboflow_core/environment_secrets_store@v1"]
-    secret_restrictions = _manifest_instance(secrets).discover_portable_restrictions()
+    secret_restrictions = portable_restrictions(_manifest_instance(secrets))
     assert [restriction.code for restriction in secret_restrictions] == [
         "environment_variable_access_disabled"
     ]
@@ -531,10 +544,7 @@ def test_restriction_codes_are_authored_not_slugified(
     configuration_keys_by_code: Dict[str, Set[Tuple[str, ...]]] = {}
     for block in loaded_blocks:
         manifest = _manifest_instance(block)
-        discovery = normalize_declaration(
-            manifest.discover_portable_restrictions(),
-            f"portable_restrictions_unknown:{block.block_type}",
-        )
+        discovery = portable_restrictions_discovery(manifest)
         for restriction in discovery.items:
             axes_by_code.setdefault(restriction.code, set()).add(
                 _restriction_axes(restriction)
@@ -566,14 +576,18 @@ def test_inner_workflow_reports_its_child_as_opaque(
     assert operations.complete is False
     assert operations.items == [WorkOperation.EXTERNAL_REQUEST]
     assert operations.unknown_reasons == [
-        "remote_dispatch_child_opaque:$steps.workload_census_step"
+        opaque_remote_workflow_problem(
+            node_id="$steps.workload_census_step", declaration="operations"
+        )
     ]
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions_discovery(manifest)
     assert isinstance(restrictions, Discovery)
     assert restrictions.complete is False
     assert restrictions.items == []
     assert restrictions.unknown_reasons == [
-        "remote_dispatch_child_opaque:$steps.workload_census_step"
+        opaque_remote_workflow_problem(
+            node_id="$steps.workload_census_step", declaration="restrictions"
+        )
     ]
 
 
@@ -581,9 +595,9 @@ def test_inner_workflow_reports_its_child_as_opaque(
 # Legacy / portable consistency (deep-review finding F4)
 #
 # `get_restrictions()` answers "what applies on THIS host", evaluating the flag
-# constants its module imported. `discover_portable_restrictions()` answers
-# "what applies on a target deployment", carrying the flag in the condition
-# instead of evaluating it. The two must agree once the portable conditions are
+# constants its module imported. `get_actual_restrictions(
+# ignore_environment_restrictions=True)` answers "what applies on a target
+# deployment", carrying the flag in the condition instead of evaluating it. The two must agree once the portable conditions are
 # evaluated against the same flag values the legacy method sees: a migration
 # that quietly drops or invents a caveat is a regression, not a refactor.
 #
@@ -718,7 +732,7 @@ def _condition_is_satisfied_here(
 
 
 def _portable_restrictions_of(block: _LoadedBlock) -> List[RestrictionMetadata]:
-    declared = _manifest_instance(block).discover_portable_restrictions()
+    declared = portable_restrictions(_manifest_instance(block))
     return list(declared.items) if isinstance(declared, Discovery) else list(declared)
 
 

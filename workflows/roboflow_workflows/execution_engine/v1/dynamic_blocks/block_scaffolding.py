@@ -326,8 +326,9 @@ def assembly_structural_placeholder_block(
     Carries the same manifest, init-parameter contract and usage identity as
     the executable class (so the compiled graph looks the same to introspection),
     but the user code is never turned into a module: `__init__` and `run` refuse
-    to execute. `skip_class_eval` is not enough for this - it still runs the
-    allowance / tensor gates and, in Modal mode, remote validation.
+    to execute. `skip_class_eval` also skips code evaluation and Modal validation,
+    but still enforces the allowance / tensor gates and returns a block class
+    that does not explicitly prohibit initialisation or execution.
     """
     message = STRUCTURAL_PLACEHOLDER_MESSAGE.format(block_type_name=block_type_name)
 

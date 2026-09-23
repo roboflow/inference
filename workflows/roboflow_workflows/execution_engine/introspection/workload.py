@@ -56,12 +56,6 @@ def describe_workflow_workload(
     The request dict is never mutated and the result is built fresh per call.
     Compilation errors raise the existing compiler error types.
     """
-    if not isinstance(workflow_definition, dict):
-        raise WorkflowDefinitionError(
-            public_message="Workflow definition must be a JSON object (dict), got "
-            f"{type(workflow_definition).__name__}.",
-            context="describing_workflow_workload",
-        )
     requested_version = _resolve_requested_execution_engine_version(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,

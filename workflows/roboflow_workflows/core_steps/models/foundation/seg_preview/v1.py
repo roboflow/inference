@@ -41,7 +41,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
@@ -50,10 +51,10 @@ from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
@@ -158,8 +159,14 @@ class BlockManifest(WorkflowBlockManifest):
             WorkOperation.IMAGE_ENCODING,
         ]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [ROBOFLOW_INTERNAL_ENDPOINT_ONLY]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[ROBOFLOW_INTERNAL_ENDPOINT_ONLY],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegPreviewBlockV1(WorkflowBlock):

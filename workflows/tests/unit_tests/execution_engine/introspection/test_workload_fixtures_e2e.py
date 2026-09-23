@@ -48,7 +48,7 @@ DYNAMIC_CROP = "roboflow_core/dynamic_crop@v1"
 
 DECLARATION_HOOKS = (
     "discover_work_operations",
-    "discover_portable_restrictions",
+    "get_actual_restrictions",
     "discover_dependent_resources",
 )
 # The single registered manifest allowed to keep the base `None` for dependent
@@ -88,13 +88,18 @@ workflows_configuration.configure_process(
 
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
+    declaration_unavailable_problem,
     normalize_declaration,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     get_manifest_type_identifiers,
     load_workflow_blocks,
+)
+
+UNAVAILABLE = declaration_unavailable_problem(
+    node_id="$steps.step", declaration="operations"
 )
 
 
@@ -104,7 +109,12 @@ def declared_value(instance, hook, wrapper):
     # instance does not carry) records its error instead - that, too, must
     # match between the numpy and the tensor sibling.
     try:
-        raw = getattr(instance, hook)()
+        if hook == "get_actual_restrictions":
+            # the PORTABLE view: a parity check asks what the block declares,
+            # never what the machine running the test is configured for
+            raw = instance.get_actual_restrictions(ignore_environment_restrictions=True)
+        else:
+            raw = getattr(instance, hook)()
     except Exception as error:
         return {"error": f"{type(error).__name__}: {error}"}
     if hook == "discover_dependent_resources":
@@ -114,12 +124,14 @@ def declared_value(instance, hook, wrapper):
             return {
                 "value": {
                     "complete": raw.complete,
-                    "unknown_reasons": list(raw.unknown_reasons),
+                    "unknown_reasons": [
+                        reason.model_dump(mode="json") for reason in raw.unknown_reasons
+                    ],
                     "items": [item.to_dict() for item in raw.items],
                 }
             }
         return {"value": [item.to_dict() for item in raw]}
-    normalised = normalize_declaration(raw, "unknown:step")
+    normalised = normalize_declaration(raw, UNAVAILABLE)
     rewrapped = wrapper(
         items=list(normalised.items),
         complete=normalised.complete,
@@ -131,7 +143,7 @@ def declared_value(instance, hook, wrapper):
 HOOKS = json.loads(sys.argv[2])
 WRAPPERS = {
     "discover_work_operations": Discovery[WorkOperation],
-    "discover_portable_restrictions": Discovery[RestrictionMetadata],
+    "get_actual_restrictions": Discovery[RuntimeRestriction],
     "discover_dependent_resources": None,
 }
 rows = []
@@ -359,6 +371,22 @@ def test_branched_reference_example_has_the_documented_shape() -> None:
         "$steps.detection",
     ]
     assert models["my-other-project/1"]["used_by_steps"] == ["$steps.classification"]
+    # then - per-model histogram over the compiled input depth of each
+    # referring step: the shared model at depth 1 (detection) and depth 2
+    # (crop_detection); string keys on the wire, sums equal used_by_steps
+    assert models["my-project/3"]["steps_by_dimensionality"] == {"1": 1, "2": 1}
+    assert models["my-other-project/1"]["steps_by_dimensionality"] == {"2": 1}
+    for model in models.values():
+        assert sum(model["steps_by_dimensionality"].values()) == len(
+            model["used_by_steps"]
+        )
+    assert {
+        (model.provider, model.model_id): model.steps_by_dimensionality
+        for model in result.summary.models.items
+    } == {
+        ("roboflow", "my-project/3"): {1: 1, 2: 1},
+        ("roboflow", "my-other-project/1"): {2: 1},
+    }
     # no provider was supplied to the standalone call: nothing is claimed
     assert {model["metadata_status"] for model in models.values()} == {"unavailable"}
     assert all(model["metadata"] is None for model in models.values())
@@ -370,10 +398,30 @@ def test_branched_reference_example_has_the_documented_shape() -> None:
     assert custom_step["operations"]["items"] == ["custom_python"]
     assert custom_step["operations"]["complete"] is False
     assert custom_step["operations"]["unknown_reasons"] == [
-        "custom_python_internal_operations_unknown:$steps.counter"
+        {
+            "type": "discovery_problem",
+            "code": "custom_python_internals_unknown",
+            "description": (
+                "Step `$steps.counter` runs custom Python code, so its "
+                "internals may add operations beyond the declared ones."
+            ),
+            "details": {"node_id": "$steps.counter", "declaration": "operations"},
+        }
     ]
     assert body["summary"]["models"]["unknown_reasons"] == [
-        "step_resources_unknown:$steps.counter"
+        {
+            "type": "discovery_problem",
+            "code": "declaration_unavailable",
+            "description": (
+                "Step `$steps.counter` does not declare its resources, so they "
+                "are unknown rather than absent."
+            ),
+            "details": {
+                "node_id": "$steps.counter",
+                "declaration": "resources",
+                "block_type": "CountDetections",
+            },
+        }
     ]
     assert body["summary"]["models"]["complete"] is False
     for step in body["steps"]:
@@ -481,7 +529,7 @@ def test_every_registered_manifest_declares_the_hooks_in_the_loaded_registry() -
     # then - counts are derived from the registry, never hardcoded
     assert len(rows) > 200, f"registry looks truncated: {len(rows)} blocks"
     assert _missing(rows, "discover_work_operations") == []
-    assert _missing(rows, "discover_portable_restrictions") == []
+    assert _missing(rows, "get_actual_restrictions") == []
     assert set(_missing(rows, "discover_dependent_resources")) <= (
         RESOURCES_INTENTIONALLY_UNKNOWN
     )
@@ -503,7 +551,7 @@ def test_registry_census_in_a_fresh_subprocess(
     # then
     assert len(rows) > 200, f"{label}/{tensor_mode}: only {len(rows)} blocks loaded"
     assert _missing(rows, "discover_work_operations") == []
-    assert _missing(rows, "discover_portable_restrictions") == []
+    assert _missing(rows, "get_actual_restrictions") == []
     assert set(_missing(rows, "discover_dependent_resources")) <= (
         RESOURCES_INTENTIONALLY_UNKNOWN
     )

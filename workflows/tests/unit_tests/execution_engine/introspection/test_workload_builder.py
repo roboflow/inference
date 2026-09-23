@@ -40,17 +40,27 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
+    DiscoveryProblem,
+    DiscoveryProblemCode,
     ModelMetadata,
     ModelMetadataLookup,
     ModelMetadataProvider,
     RestrictionCondition,
     RestrictionMetadata,
     Runtime,
+    RuntimeRestriction,
     Severity,
     StepExecutionMode,
     WorkOperation,
     complete_discovery,
+    custom_python_internals_unknown_problem,
+    declaration_failed_problem,
+    declaration_unavailable_problem,
+    environment_filtered_declaration_problem,
     incomplete_discovery,
+    invalid_resource_identifier_problem,
+    opaque_remote_workflow_problem,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.utils import get_full_type_name
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
@@ -74,6 +84,7 @@ from roboflow_workflows.prototypes.block import (
     ModelRequiredAction,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
     roboflow_platform_project,
     third_party_model,
@@ -83,7 +94,17 @@ from roboflow_workflows.prototypes.block import (
 # test-local blocks
 # ---------------------------------------------------------------------------
 
-GPU_RESTRICTION = RestrictionMetadata(
+# What a block AUTHORS ...
+GPU_RESTRICTION = RuntimeRestriction(
+    code="requires_gpu_for_local_execution",
+    severity=Severity.HARD,
+    note="Requires a GPU; local execution loads a model that needs CUDA.",
+    applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+    applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+)
+
+# ... and what the workload document carries for it.
+GPU_RESTRICTION_METADATA = RestrictionMetadata(
     code="requires_gpu_for_local_execution",
     severity=Severity.HARD,
     when=RestrictionCondition(
@@ -117,8 +138,12 @@ class ModelManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.MODEL_INFERENCE]
 
-    def discover_portable_restrictions(self):
-        return [GPU_RESTRICTION]
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return actual_restrictions_of(
+            declared=[GPU_RESTRICTION],
+            node_id=f"$steps.{self.name}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class ClassifierManifest(WorkflowBlockManifest):
@@ -143,8 +168,10 @@ class ClassifierManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.MODEL_INFERENCE]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class ThirdPartyManifest(WorkflowBlockManifest):
@@ -167,8 +194,10 @@ class ThirdPartyManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.MODEL_INFERENCE, WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class ProjectSinkManifest(WorkflowBlockManifest):
@@ -195,8 +224,84 @@ class ProjectSinkManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.STORAGE_WRITE, WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+
+class DuplicateModelManifest(WorkflowBlockManifest):
+    """Declares the SAME model twice (execution + access) - one step, one
+    model, two resource entries."""
+
+    model_config = ConfigDict(protected_namespaces=())
+    type: Literal["test/duplicate_model@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector]
+    model_id: str = "dup/1"
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            )
+        ]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(model_id=self.model_id),
+            roboflow_platform_model(
+                model_id=self.model_id, required_action=ModelRequiredAction.ACCESS
+            ),
+        ]
+
+    def discover_work_operations(self):
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+
+class TwoModelsManifest(WorkflowBlockManifest):
+    """One step referencing two DIFFERENT models."""
+
+    model_config = ConfigDict(protected_namespaces=())
+    type: Literal["test/two_models@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector]
+    primary_model_id: str = "primary/1"
+    secondary_model_id: str = "secondary/1"
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            )
+        ]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [
+            roboflow_platform_model(model_id=self.primary_model_id),
+            roboflow_platform_model(model_id=self.secondary_model_id),
+        ]
+
+    def discover_work_operations(self):
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class UnknownManifest(WorkflowBlockManifest):
@@ -232,8 +337,10 @@ class NoopManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return []
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class FailingHooksManifest(WorkflowBlockManifest):
@@ -254,8 +361,36 @@ class FailingHooksManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         raise RuntimeError("operations hook exploded")
 
-    def discover_portable_restrictions(self):
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
         raise RuntimeError("restrictions hook exploded")
+
+
+SECRET_IN_HOOK_EXCEPTION = "sk-live-super-secret-token"
+
+
+class SecretLeakingHooksManifest(WorkflowBlockManifest):
+    """Every hook raises with a secret in the message: nothing the block put
+    into the exception may reach the response."""
+
+    type: Literal["test/secret_leak@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="image", kind=[IMAGE_KIND])]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        raise RuntimeError(f"cannot reach registry with {SECRET_IN_HOOK_EXCEPTION}")
+
+    def discover_work_operations(self):
+        raise RuntimeError(f"Authorization: Bearer {SECRET_IN_HOOK_EXCEPTION}")
+
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        raise RuntimeError(f"db://user:{SECRET_IN_HOOK_EXCEPTION}@host/db")
 
 
 class GarbageHooksManifest(WorkflowBlockManifest):
@@ -276,7 +411,7 @@ class GarbageHooksManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return ["not-an-operation"]
 
-    def discover_portable_restrictions(self):
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
         return [{"code": 1}]
 
 
@@ -295,17 +430,36 @@ class ExplicitDiscoveryManifest(WorkflowBlockManifest):
     def discover_dependent_resources(self):
         return incomplete_discovery(
             [roboflow_platform_model(model_id="explicit/1")],
-            [f"explicit_partial:$steps.{self.name}"],
+            [
+                DiscoveryProblem(
+                    code=DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+                    description="A second model is chosen by a runtime value.",
+                    details={
+                        "node_id": f"$steps.{self.name}",
+                        "declaration": "resources",
+                        "field": "secondary_model",
+                        "selector": "$inputs.secondary",
+                    },
+                )
+            ],
         )
 
     def discover_work_operations(self):
         return incomplete_discovery(
             [WorkOperation.CUSTOM_PYTHON],
-            [f"custom_python_internal_operations_unknown:$steps.{self.name}"],
+            [
+                custom_python_internals_unknown_problem(
+                    node_id=f"$steps.{self.name}", declaration="operations"
+                )
+            ],
         )
 
-    def discover_portable_restrictions(self):
-        return complete_discovery([])
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return actual_restrictions_of(
+            declared=complete_discovery([]),
+            node_id=f"$steps.{self.name}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class CropManifest(WorkflowBlockManifest):
@@ -331,8 +485,10 @@ class CropManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.IMAGE_CROP]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class CollapseManifest(WorkflowBlockManifest):
@@ -357,8 +513,10 @@ class CollapseManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.DATA_AGGREGATION]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class ReplacementManifest(WorkflowBlockManifest):
@@ -396,8 +554,10 @@ class ReplacementManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.DETECTION_PROCESSING]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class ScalarSourceManifest(WorkflowBlockManifest):
@@ -416,8 +576,10 @@ class ScalarSourceManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.DATA_TRANSFORMATION]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class BatchOnlyManifest(WorkflowBlockManifest):
@@ -440,8 +602,43 @@ class BatchOnlyManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.DATA_TRANSFORMATION]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+
+class BatchOnlyModelManifest(WorkflowBlockManifest):
+    """Batch-only step that declares a model: with a scalar plugged in it is
+    auto-batch-casted, so its compiled reference depth is 0."""
+
+    model_config = ConfigDict(protected_namespaces=())
+    type: Literal["test/batch_only_model@v1"]
+    data: StepOutputSelector()
+    model_id: str = "project/1"
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            )
+        ]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["data"]
+
+    def discover_dependent_resources(self):
+        return [roboflow_platform_model(model_id=self.model_id)]
+
+    def discover_work_operations(self):
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class ConditionManifest(WorkflowBlockManifest):
@@ -459,8 +656,10 @@ class ConditionManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.FLOW_CONTROL]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class SwitchManifest(WorkflowBlockManifest):
@@ -478,8 +677,10 @@ class SwitchManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.FLOW_CONTROL]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class GateWithOutputManifest(WorkflowBlockManifest):
@@ -504,8 +705,10 @@ class GateWithOutputManifest(WorkflowBlockManifest):
     def discover_work_operations(self):
         return [WorkOperation.FLOW_CONTROL]
 
-    def discover_portable_restrictions(self):
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 TEST_PLUGIN = "test_workload_plugin"
@@ -540,9 +743,12 @@ AVAILABLE_BLOCKS = [
         ClassifierManifest,
         ThirdPartyManifest,
         ProjectSinkManifest,
+        DuplicateModelManifest,
+        TwoModelsManifest,
         UnknownManifest,
         NoopManifest,
         FailingHooksManifest,
+        SecretLeakingHooksManifest,
         GarbageHooksManifest,
         ExplicitDiscoveryManifest,
         CropManifest,
@@ -550,6 +756,7 @@ AVAILABLE_BLOCKS = [
         ReplacementManifest,
         ScalarSourceManifest,
         BatchOnlyManifest,
+        BatchOnlyModelManifest,
         ConditionManifest,
         SwitchManifest,
         GateWithOutputManifest,
@@ -617,6 +824,31 @@ def _assert_reference_depth_consistent(
         )
         assert step.input_dimensionality == node.reference_dimensionality
         assert step.input_dimensionality == expected, step.node_id
+
+
+def _assert_model_histograms_consistent(introspection: WorkflowIntrospection) -> None:
+    """Every inventory entry's histogram is exactly the input depths of its
+    `used_by_steps`, one count per step, and sums to their number."""
+    depth_of = {step.node_id: step.input_dimensionality for step in introspection.steps}
+    for model in introspection.summary.models.items:
+        expected: Dict[int, int] = {}
+        for step_id in model.used_by_steps:
+            expected[depth_of[step_id]] = expected.get(depth_of[step_id], 0) + 1
+        assert model.steps_by_dimensionality == dict(sorted(expected.items())), (
+            model.provider,
+            model.model_id,
+        )
+        assert sum(model.steps_by_dimensionality.values()) == len(model.used_by_steps)
+        assert list(model.steps_by_dimensionality) == sorted(
+            model.steps_by_dimensionality
+        )
+
+
+def _model_histograms(introspection: WorkflowIntrospection) -> Dict[Any, Dict]:
+    return {
+        (model.provider, model.model_id): model.steps_by_dimensionality
+        for model in introspection.summary.models.items
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -844,6 +1076,9 @@ def test_dimensionality_expansion_nesting_and_reduction() -> None:
     _assert_reference_depth_consistent(result, introspection)
     assert introspection.summary.steps_by_dimensionality == {1: 2, 2: 3}
     assert introspection.summary.max_dimensionality == 3
+    # `model` (depth 1) and `model_on_crops` (depth 2) share `project/1`
+    assert _model_histograms(introspection) == {("roboflow", "project/1"): {1: 1, 2: 1}}
+    _assert_model_histograms_consistent(introspection)
 
 
 def test_mixed_depth_inputs_with_explicit_reference_property() -> None:
@@ -888,6 +1123,11 @@ def test_mixed_depth_inputs_with_explicit_reference_property() -> None:
     _assert_reference_depth_consistent(result, introspection)
     assert introspection.summary.steps_by_dimensionality == {1: 3, 2: 1}
     assert introspection.summary.max_dimensionality == 2
+    assert _model_histograms(introspection) == {
+        ("roboflow", "project/1"): {1: 1},
+        ("roboflow", "classifier/1"): {2: 1},
+    }
+    _assert_model_histograms_consistent(introspection)
 
 
 def test_scalar_step_with_auto_batch_casted_input_reports_reference_depth_zero() -> (
@@ -952,6 +1192,48 @@ def test_control_only_scalar_step_takes_control_lineage_depth() -> None:
     assert (gate.input_dimensionality, gate.output_dimensionality) == (1, 1)
     _assert_reference_depth_consistent(result, introspection)
     assert introspection.summary.steps_by_dimensionality == {0: 1, 1: 3}
+    assert _model_histograms(introspection) == {("roboflow", "project/1"): {1: 1}}
+
+
+def test_model_referenced_by_a_scalar_step_reports_depth_zero() -> None:
+    # given: a model on a depth-2 batch input plus a model-declaring step fed
+    # by a scalar-producing step (auto-batch-casted, so executor depth 1 but
+    # compiled reference depth 0) - the per-model histogram must use the same
+    # reference depth as `StepMetadata.input_dimensionality`
+    result = _compile(
+        inputs=[
+            WorkflowBatchInput(
+                type="WorkflowBatchInput",
+                name="crops",
+                kind=[IMAGE_KIND],
+                dimensionality=2,
+            )
+        ],
+        steps=[
+            _model("deep", images="$inputs.crops", model_id="project/1"),
+            ScalarSourceManifest(type="test/scalar_source@v1", name="scalar"),
+            BatchOnlyModelManifest(
+                type="test/batch_only_model@v1",
+                name="on_scalar",
+                data="$steps.scalar.output",
+                model_id="project/1",
+            ),
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    assert _step_node(result, "$steps.on_scalar").step_execution_dimensionality == 1
+    assert _step(introspection, "$steps.on_scalar").input_dimensionality == 0
+    assert _step(introspection, "$steps.deep").input_dimensionality == 2
+    assert _model_histograms(introspection) == {("roboflow", "project/1"): {0: 1, 2: 1}}
+    assert introspection.summary.models.items[0].used_by_steps == [
+        "$steps.deep",
+        "$steps.on_scalar",
+    ]
+    _assert_model_histograms_consistent(introspection)
 
 
 def test_no_step_input_to_output_workflow() -> None:
@@ -1004,20 +1286,45 @@ def test_unannotated_block_yields_incomplete_declarations() -> None:
     )
     step = _step(build_workflow_introspection(compilation_result=result), "$steps.x")
     assert step.resources == Discovery[DependentResource](
-        items=[], complete=False, unknown_reasons=["step_resources_unknown:$steps.x"]
+        items=[],
+        complete=False,
+        unknown_reasons=[
+            declaration_unavailable_problem(
+                node_id="$steps.x",
+                declaration="resources",
+                block_type="test/unknown@v1",
+            )
+        ],
     )
-    assert step.operations.model_dump() == {
+    assert step.operations.model_dump(mode="json") == {
         "type": "discovery",
         "items": [],
         "complete": False,
-        "unknown_reasons": ["step_operations_unknown:$steps.x"],
+        "unknown_reasons": [
+            {
+                "type": "discovery_problem",
+                "code": "declaration_unavailable",
+                "description": (
+                    "Step `$steps.x` does not declare its operations, so they "
+                    "are unknown rather than absent."
+                ),
+                "details": {
+                    "node_id": "$steps.x",
+                    "declaration": "operations",
+                    "block_type": "test/unknown@v1",
+                },
+            }
+        ],
     }
-    assert step.restrictions.model_dump() == {
-        "type": "discovery",
-        "items": [],
-        "complete": False,
-        "unknown_reasons": ["step_restrictions_unknown:$steps.x"],
-    }
+    # restrictions fall back to the legacy `get_restrictions()` - here the
+    # inherited one - so the reason names that source
+    assert step.restrictions.unknown_reasons == [
+        environment_filtered_declaration_problem(
+            node_id="$steps.x",
+            declaration="restrictions",
+            block_type="test/unknown@v1",
+        )
+    ]
 
 
 def test_empty_declarations_are_complete_known_absence() -> None:
@@ -1050,7 +1357,7 @@ def test_declared_items_are_kept_verbatim_including_selectors_and_access() -> No
     assert model.resources.complete is True
     assert model.resources.items == [roboflow_platform_model(model_id="$inputs.model")]
     assert model.operations.items == [WorkOperation.MODEL_INFERENCE]
-    assert model.restrictions.items == [GPU_RESTRICTION]
+    assert model.restrictions.items == [GPU_RESTRICTION_METADATA]
     sink = _step(introspection, "$steps.sink")
     assert sink.resources.complete is True
     assert set(sink.resources.items) == {
@@ -1085,10 +1392,21 @@ def test_explicit_discovery_declarations_pass_through() -> None:
     )
     assert step.resources.complete is False
     assert step.resources.items == [roboflow_platform_model(model_id="explicit/1")]
-    assert step.resources.unknown_reasons == ["explicit_partial:$steps.custom"]
+    # the block's own problem object survives the builder untouched
+    assert step.resources.unknown_reasons[0].code is (
+        DiscoveryProblemCode.UNRESOLVED_SELECTOR
+    )
+    assert step.resources.unknown_reasons[0].details == {
+        "node_id": "$steps.custom",
+        "declaration": "resources",
+        "field": "secondary_model",
+        "selector": "$inputs.secondary",
+    }
     assert step.operations.items == [WorkOperation.CUSTOM_PYTHON]
     assert step.operations.unknown_reasons == [
-        "custom_python_internal_operations_unknown:$steps.custom"
+        custom_python_internals_unknown_problem(
+            node_id="$steps.custom", declaration="operations"
+        )
     ]
     assert step.restrictions.complete is True
 
@@ -1104,13 +1422,21 @@ def test_failing_hooks_become_incomplete_declarations_not_errors() -> None:
     )
     step = _step(build_workflow_introspection(compilation_result=result), "$steps.x")
     assert step.resources.unknown_reasons == [
-        "discover_dependent_resources_failed:$steps.x"
+        declaration_failed_problem(
+            node_id="$steps.x", declaration="resources", block_type="test/failing@v1"
+        )
     ]
     assert step.operations.unknown_reasons == [
-        "discover_work_operations_failed:$steps.x"
+        declaration_failed_problem(
+            node_id="$steps.x", declaration="operations", block_type="test/failing@v1"
+        )
     ]
     assert step.restrictions.unknown_reasons == [
-        "discover_portable_restrictions_failed:$steps.x"
+        declaration_failed_problem(
+            node_id="$steps.x",
+            declaration="restrictions",
+            block_type="test/failing@v1",
+        )
     ]
     for discovery in (step.resources, step.operations, step.restrictions):
         assert discovery.complete is False
@@ -1127,15 +1453,39 @@ def test_garbage_hook_answers_become_incomplete_declarations() -> None:
         ],
     )
     step = _step(build_workflow_introspection(compilation_result=result), "$steps.x")
-    assert step.resources.unknown_reasons == [
-        "discover_dependent_resources_failed:$steps.x"
-    ]
-    assert step.operations.unknown_reasons == [
-        "discover_work_operations_failed:$steps.x"
-    ]
-    assert step.restrictions.unknown_reasons == [
-        "discover_portable_restrictions_failed:$steps.x"
-    ]
+    for declaration, discovery in (
+        ("resources", step.resources),
+        ("operations", step.operations),
+        ("restrictions", step.restrictions),
+    ):
+        assert discovery.unknown_reasons == [
+            declaration_failed_problem(
+                node_id="$steps.x",
+                declaration=declaration,
+                block_type="test/garbage@v1",
+            )
+        ]
+
+
+def test_failing_hook_never_leaks_the_exception_text() -> None:
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            SecretLeakingHooksManifest(
+                type="test/secret_leak@v1", name="x", images="$inputs.image"
+            )
+        ],
+    )
+    step = _step(build_workflow_introspection(compilation_result=result), "$steps.x")
+    rendered = step.resources.model_dump_json() + step.operations.model_dump_json()
+    rendered += step.restrictions.model_dump_json()
+
+    assert SECRET_IN_HOOK_EXCEPTION not in rendered
+    assert "Traceback" not in rendered
+    for discovery in (step.resources, step.operations, step.restrictions):
+        assert [reason.code for reason in discovery.unknown_reasons] == [
+            DiscoveryProblemCode.DECLARATION_FAILED
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -1148,13 +1498,16 @@ def test_five_independent_model_branches_yield_five_entries() -> None:
         inputs=[_image_input()],
         steps=[_model(f"model_{i}", model_id=f"project/{i}") for i in range(5)],
     )
-    models = build_workflow_introspection(compilation_result=result).summary.models
+    introspection = build_workflow_introspection(compilation_result=result)
+    models = introspection.summary.models
     assert models.complete is True
     assert {(m.provider, m.model_id, tuple(m.used_by_steps)) for m in models.items} == {
         ("roboflow", f"project/{i}", (f"$steps.model_{i}",)) for i in range(5)
     }
+    assert all(m.steps_by_dimensionality == {1: 1} for m in models.items)
     assert all(m.metadata_status == "unavailable" for m in models.items)
     assert all(m.metadata is None for m in models.items)
+    _assert_model_histograms_consistent(introspection)
 
 
 def test_shared_model_id_across_two_steps_is_one_entry() -> None:
@@ -1168,12 +1521,154 @@ def test_shared_model_id_across_two_steps_is_one_entry() -> None:
             ),
         ],
     )
-    models = build_workflow_introspection(compilation_result=result).summary.models
+    introspection = build_workflow_introspection(compilation_result=result)
+    models = introspection.summary.models
     assert models.complete is True
     assert [(m.provider, m.model_id, m.used_by_steps) for m in models.items] == [
         ("openai", "gpt-x", ["$steps.llm"]),
         ("roboflow", "shared/1", ["$steps.a", "$steps.b"]),
     ]
+    # two steps at the SAME depth accumulate into one bucket
+    assert [m.steps_by_dimensionality for m in models.items] == [{1: 1}, {1: 2}]
+    _assert_model_histograms_consistent(introspection)
+
+
+def test_shared_model_across_mixed_depths_reports_one_count_per_depth() -> None:
+    # given: `shared/1` at depth 1 (image), twice at depth 2 (crops)
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            _model("model", model_id="shared/1"),
+            CropManifest(
+                type="test/crop@v1",
+                name="crop",
+                images="$inputs.image",
+                predictions="$steps.model.predictions",
+            ),
+            _model("first_on_crops", images="$steps.crop.crops", model_id="shared/1"),
+            _model("second_on_crops", images="$steps.crop.crops", model_id="shared/1"),
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    (model,) = introspection.summary.models.items
+    assert model.used_by_steps == [
+        "$steps.first_on_crops",
+        "$steps.model",
+        "$steps.second_on_crops",
+    ]
+    assert model.steps_by_dimensionality == {1: 1, 2: 2}
+    assert sum(model.steps_by_dimensionality.values()) == len(model.used_by_steps)
+    assert introspection.summary.steps_by_dimensionality == {1: 2, 2: 2}
+    _assert_model_histograms_consistent(introspection)
+
+
+def test_duplicate_resources_for_one_model_in_one_step_count_that_step_once() -> None:
+    # given: the step declares `dup/1` twice (execution + access)
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            DuplicateModelManifest(
+                type="test/duplicate_model@v1", name="twice", images="$inputs.image"
+            )
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then - both declarations are kept per step, the inventory counts one step
+    step = _step(introspection, "$steps.twice")
+    assert len(step.resources.items) == 2
+    assert {item.metadata.required_action for item in step.resources.items} == {
+        ModelRequiredAction.ACCESS,
+        ModelRequiredAction.EXECUTION,
+    }
+    (model,) = introspection.summary.models.items
+    assert (model.provider, model.model_id) == ("roboflow", "dup/1")
+    assert model.used_by_steps == ["$steps.twice"]
+    assert model.steps_by_dimensionality == {1: 1}
+    assert introspection.summary.models.complete is True
+    _assert_model_histograms_consistent(introspection)
+
+
+def test_one_step_referencing_two_models_counts_once_for_each() -> None:
+    # given: one step at depth 2 referencing two different models, plus a
+    # depth-1 step sharing one of them
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            _model("model", model_id="primary/1"),
+            CropManifest(
+                type="test/crop@v1",
+                name="crop",
+                images="$inputs.image",
+                predictions="$steps.model.predictions",
+            ),
+            TwoModelsManifest(
+                type="test/two_models@v1", name="pair", images="$steps.crop.crops"
+            ),
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    assert [
+        (m.model_id, m.used_by_steps, m.steps_by_dimensionality)
+        for m in introspection.summary.models.items
+    ] == [
+        ("primary/1", ["$steps.model", "$steps.pair"], {1: 1, 2: 1}),
+        ("secondary/1", ["$steps.pair"], {2: 1}),
+    ]
+    _assert_model_histograms_consistent(introspection)
+
+
+def test_same_model_id_under_different_providers_stays_separate() -> None:
+    # given: two third-party steps with the same model id, different providers
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            ThirdPartyManifest(
+                type="test/third_party@v1",
+                name="first",
+                images="$inputs.image",
+                provider="openai",
+                model="shared-id",
+            ),
+            ThirdPartyManifest(
+                type="test/third_party@v1",
+                name="second",
+                images="$inputs.image",
+                provider="anthropic",
+                model="shared-id",
+            ),
+            ThirdPartyManifest(
+                type="test/third_party@v1",
+                name="third",
+                images="$inputs.image",
+                provider="anthropic",
+                model="shared-id",
+            ),
+        ],
+    )
+
+    # when
+    introspection = build_workflow_introspection(compilation_result=result)
+
+    # then
+    assert [
+        (m.provider, m.model_id, m.used_by_steps, m.steps_by_dimensionality)
+        for m in introspection.summary.models.items
+    ] == [
+        ("anthropic", "shared-id", ["$steps.second", "$steps.third"], {1: 2}),
+        ("openai", "shared-id", ["$steps.first"], {1: 1}),
+    ]
+    _assert_model_histograms_consistent(introspection)
 
 
 def test_shared_ancestor_model_is_counted_once() -> None:
@@ -1196,9 +1691,9 @@ def test_shared_ancestor_model_is_counted_once() -> None:
         ],
     )
     models = build_workflow_introspection(compilation_result=result).summary.models
-    assert [(m.model_id, m.used_by_steps) for m in models.items] == [
-        ("project/1", ["$steps.model"])
-    ]
+    assert [
+        (m.model_id, m.used_by_steps, m.steps_by_dimensionality) for m in models.items
+    ] == [("project/1", ["$steps.model"], {1: 1})]
 
 
 def test_projects_and_access_only_models_are_not_fabricated_but_access_is_inventory() -> (
@@ -1215,9 +1710,12 @@ def test_projects_and_access_only_models_are_not_fabricated_but_access_is_invent
     models = build_workflow_introspection(compilation_result=result).summary.models
     # the project is not a model; the ACCESS model reference IS an inventory
     # entry (inventory != execution claim; per-step resources keep the action)
+    # and it is counted in the histogram like any other reference
     assert [(m.provider, m.model_id) for m in models.items] == [
         ("roboflow", "monitored/1")
     ]
+    assert models.items[0].used_by_steps == ["$steps.sink"]
+    assert models.items[0].steps_by_dimensionality == {1: 1}
     assert models.complete is True
 
 
@@ -1235,10 +1733,20 @@ def test_selector_model_ids_stay_per_step_and_make_inventory_incomplete() -> Non
     introspection = build_workflow_introspection(compilation_result=result)
     models = introspection.summary.models
     assert models.complete is False
-    assert models.unknown_reasons == ["unresolved_model_selector:$steps.dynamic"]
-    assert [(m.model_id, m.used_by_steps) for m in models.items] == [
-        ("project/1", ["$steps.static"])
+    assert models.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.dynamic",
+            declaration="resources",
+            field="model_id",
+            selector="$inputs.model",
+            resource_type="roboflow_platform_model",
+        )
     ]
+    # only the known reference contributes; the unresolved one is neither an
+    # entry nor a count anywhere
+    assert [
+        (m.model_id, m.used_by_steps, m.steps_by_dimensionality) for m in models.items
+    ] == [("project/1", ["$steps.static"], {1: 1})]
     dynamic = _step(introspection, "$steps.dynamic")
     assert dynamic.resources.items == [
         roboflow_platform_model(model_id="$inputs.model")
@@ -1260,13 +1768,27 @@ def test_unknown_step_resources_propagate_to_inventory_reasons() -> None:
     )
     models = build_workflow_introspection(compilation_result=result).summary.models
     assert models.complete is False
-    assert models.unknown_reasons == [
-        "explicit_partial:$steps.partial",
-        "step_resources_unknown:$steps.mystery",
+    # both step problems are propagated with the context they carry - the
+    # declaration-level unknown AND the block's own unresolved selector
+    assert [
+        (reason.code, reason.details.get("node_id"))
+        for reason in models.unknown_reasons
+    ] == [
+        (DiscoveryProblemCode.DECLARATION_UNAVAILABLE, "$steps.mystery"),
+        (DiscoveryProblemCode.UNRESOLVED_SELECTOR, "$steps.partial"),
     ]
-    assert [(m.model_id, m.used_by_steps) for m in models.items] == [
-        ("explicit/1", ["$steps.partial"]),
-        ("project/1", ["$steps.model"]),
+    assert models.unknown_reasons[0] == declaration_unavailable_problem(
+        node_id="$steps.mystery",
+        declaration="resources",
+        block_type="test/unknown@v1",
+    )
+    # unknown resources make the inventory incomplete but never fabricate a
+    # count; the known references keep their histograms
+    assert [
+        (m.model_id, m.used_by_steps, m.steps_by_dimensionality) for m in models.items
+    ] == [
+        ("explicit/1", ["$steps.partial"], {1: 1}),
+        ("project/1", ["$steps.model"], {1: 1}),
     ]
 
 
@@ -1342,6 +1864,14 @@ def test_metadata_provider_called_once_per_unique_literal_reference() -> None:
     assert by_id["shared/1"].metadata_status == "available"
     assert by_id["shared/1"].metadata.model_type == "yolov8n"
     assert by_id["shared/1"].used_by_steps == ["$steps.a", "$steps.b"]
+    assert by_id["shared/1"].steps_by_dimensionality == {1: 2}
+    # the histogram comes from compilation, never from the metadata provider
+    assert all(
+        m.steps_by_dimensionality == {1: 1}
+        for m in by_id.values()
+        if m.model_id != "shared/1"
+    )
+    _assert_model_histograms_consistent(introspection)
     assert by_id["disabled/1"].metadata_status == "disabled"
     assert by_id["disabled/1"].metadata is None
     assert by_id["partial/1"].metadata_status == "available"
@@ -1350,7 +1880,13 @@ def test_metadata_provider_called_once_per_unique_literal_reference() -> None:
     assert by_id["gpt-x"].metadata_status == "unavailable"
     assert introspection.summary.models.complete is False, "selector, not lookups"
     assert introspection.summary.models.unknown_reasons == [
-        "unresolved_model_selector:$steps.selector"
+        unresolved_selector_problem(
+            node_id="$steps.selector",
+            declaration="resources",
+            field="model_id",
+            selector="$inputs.model",
+            resource_type="roboflow_platform_model",
+        )
     ]
 
 
@@ -1407,17 +1943,29 @@ def test_remote_dispatch_inner_workflow_is_opaque() -> None:
     # then
     dispatch = _step(introspection, "$steps.dispatch")
     assert dispatch.block_type == "roboflow_core/inner_workflow@v1"
-    for discovery in (dispatch.resources, dispatch.operations, dispatch.restrictions):
+    for declaration, discovery in (
+        ("resources", dispatch.resources),
+        ("operations", dispatch.operations),
+        ("restrictions", dispatch.restrictions),
+    ):
         assert discovery.complete is False
         assert (
-            "remote_dispatch_child_opaque:$steps.dispatch" in discovery.unknown_reasons
+            opaque_remote_workflow_problem(
+                node_id="$steps.dispatch", declaration=declaration
+            )
+            in discovery.unknown_reasons
         )
     models = introspection.summary.models
     assert models.complete is False
-    assert "remote_dispatch_child_opaque:$steps.dispatch" in models.unknown_reasons
-    assert [(m.model_id, m.used_by_steps) for m in models.items] == [
-        ("project/1", ["$steps.model"])
-    ]
+    assert (
+        opaque_remote_workflow_problem(
+            node_id="$steps.dispatch", declaration="resources"
+        )
+        in models.unknown_reasons
+    )
+    assert [
+        (m.model_id, m.used_by_steps, m.steps_by_dimensionality) for m in models.items
+    ] == [("project/1", ["$steps.model"], {1: 1})]
 
 
 # ---------------------------------------------------------------------------
@@ -1448,6 +1996,9 @@ def test_response_carries_engine_version_and_roundtrips_json() -> None:
     dumped = introspection.model_dump(mode="json")
     assert dumped["type"] == "workflow_introspection"
     assert dumped["summary"]["steps_by_dimensionality"] == {"1": 2}
+    assert dumped["summary"]["models"]["items"][0]["steps_by_dimensionality"] == {
+        "1": 1
+    }
     assert all(step["type"] == "step_metadata" for step in dumped["steps"])
 
 
@@ -1519,10 +2070,25 @@ def test_blank_platform_model_id_is_declared_but_never_inventoried(
     assert blank.resources.items[0].metadata.model_id == blank_model_id
     models = introspection.summary.models
     assert models.complete is False
-    assert models.unknown_reasons == ["blank_model_identifier:$steps.blank"]
-    assert [(m.provider, m.model_id, m.used_by_steps) for m in models.items] == [
-        ("roboflow", "project/1", ["$steps.valid"])
+    assert models.unknown_reasons == [
+        invalid_resource_identifier_problem(
+            node_id="$steps.blank",
+            declaration="resources",
+            field="model_id",
+            resource_type="roboflow_platform_model",
+        )
     ]
+    # the problem names the field, never the invalid value
+    assert set(models.unknown_reasons[0].details) == {
+        "node_id",
+        "declaration",
+        "field",
+        "resource_type",
+    }
+    assert [
+        (m.provider, m.model_id, m.used_by_steps, m.steps_by_dimensionality)
+        for m in models.items
+    ] == [("roboflow", "project/1", ["$steps.valid"], {1: 1})]
     assert provider.calls == [("roboflow", "project/1")]
 
 
@@ -1552,8 +2118,86 @@ def test_blank_third_party_provider_or_model_is_never_inventoried(
     models = introspection.summary.models
     assert models.items == []
     assert models.complete is False
-    assert models.unknown_reasons == ["blank_model_identifier:$steps.llm"]
+    # one problem per blank identity field, naming that field
+    assert models.unknown_reasons == [
+        invalid_resource_identifier_problem(
+            node_id="$steps.llm",
+            declaration="resources",
+            field="model_id" if not model_value.strip() else "provider",
+            resource_type="third_party_model",
+        )
+    ]
     assert provider.calls == []
     llm = _step(introspection, "$steps.llm")
     assert llm.resources.items[0].metadata.provider == provider_value
     assert llm.resources.items[0].metadata.model_id == model_value
+
+
+def test_two_blank_identity_fields_yield_one_problem_each() -> None:
+    result = _compile(
+        inputs=[_image_input()],
+        steps=[
+            ThirdPartyManifest(
+                type="test/third_party@v1",
+                name="llm",
+                images="$inputs.image",
+                provider="",
+                model="  ",
+            )
+        ],
+    )
+
+    models = build_workflow_introspection(compilation_result=result).summary.models
+
+    assert models.unknown_reasons == [
+        invalid_resource_identifier_problem(
+            node_id="$steps.llm",
+            declaration="resources",
+            field="model_id",
+            resource_type="third_party_model",
+        ),
+        invalid_resource_identifier_problem(
+            node_id="$steps.llm",
+            declaration="resources",
+            field="provider",
+            resource_type="third_party_model",
+        ),
+    ]
+
+
+def test_two_steps_with_the_same_selector_stay_two_problems() -> None:
+    result = _compile(
+        inputs=[
+            _image_input(),
+            WorkflowParameter(type="WorkflowParameter", name="model"),
+        ],
+        steps=[
+            _model("first", model_id="$inputs.model"),
+            _model("second", model_id="$inputs.model"),
+        ],
+    )
+
+    models = build_workflow_introspection(compilation_result=result).summary.models
+
+    assert [reason.details["node_id"] for reason in models.unknown_reasons] == [
+        "$steps.first",
+        "$steps.second",
+    ]
+    assert {reason.code for reason in models.unknown_reasons} == {
+        DiscoveryProblemCode.UNRESOLVED_SELECTOR
+    }
+
+
+def test_inventory_problem_order_does_not_depend_on_step_order() -> None:
+    def build(step_names: List[str]) -> List[DiscoveryProblem]:
+        result = _compile(
+            inputs=[
+                _image_input(),
+                WorkflowParameter(type="WorkflowParameter", name="model"),
+            ],
+            steps=[_model(name, model_id="$inputs.model") for name in step_names],
+        )
+        introspection = build_workflow_introspection(compilation_result=result)
+        return list(introspection.summary.models.unknown_reasons)
+
+    assert build(["alpha", "beta"]) == build(["beta", "alpha"])

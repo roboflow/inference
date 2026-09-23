@@ -19,7 +19,6 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
 from roboflow_workflows.core_steps.sinks.onvif_movement.v1 import (
-    NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION,
     NO_LAN_FROM_HOSTED_RESTRICTION,
 )
 from roboflow_workflows.execution_engine.constants import (
@@ -41,16 +40,17 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.utils.text import experimental
 from simple_pid import PID
@@ -272,8 +272,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [NO_LAN_FROM_HOSTED_PORTABLE_RESTRICTION]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[NO_LAN_FROM_HOSTED_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

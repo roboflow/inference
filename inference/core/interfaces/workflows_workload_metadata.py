@@ -18,38 +18,64 @@ Three hard rules shape the implementation:
 * **`USE_INFERENCE_MODELS=False` means zero calls.** The flag is read through
   the `inference.core.env` module at call time, so the gate reflects the process
   configuration in effect when the request is served.
-* **Credentials never leak - not into responses, not into a shared cache.**
-  The registry helper keeps its own 10-second cache keyed by
-  `f"{cache_prefix}:{model_id}"`, and with `MODELS_CACHE_AUTH_ENABLED=False` that
-  cache is READ for every caller. A process-wide prefix would therefore serve one
-  workspace's metadata to another workspace's api key.
+* **No credential material is ever turned into a SHARED cache key.** The
+  registry helper is called with its DEFAULT prefix, exactly like every other
+  caller, so no credential-derived key reaches the shared cache
+  (`inference.core.cache.cache`: Redis, with an in-process `MemoryCache`
+  fallback when Redis is not configured or cannot be reached). Repeat lookups
+  are absorbed by the in-memory cache below, whose key does contain the api key
+  but never leaves the process. The flip side of the default prefix: with
+  `MODELS_CACHE_AUTH_ENABLED=False` introspection reads and writes the same
+  shared, model-id-keyed entries as the model-resolution path - the same
+  metadata-only payload, written by the same helper.
 
-  The prefix is scoped by a non-reversible digest of the EFFECTIVE TRUSTED SCOPE
-  of the lookup, which is the pair
+In-memory cache
+---------------
+`_METADATA_CACHE` is a single process-wide `cachetools.TTLCache` shared by all
+provider instances and requests, guarded by `_METADATA_CACHE_LOCK` because
+cachetools containers are not thread-safe. Capacity is
+`_METADATA_CACHE_CAPACITY` entries; the TTL is `MODELS_CACHE_AUTH_CACHE_TTL`
+(default 15 minutes), the same TTL the authorization cache already uses.
 
-      (api key, assume-identity authorised workspace)
+The key is an exact Python tuple - no hashing, no string concatenation:
 
-  and not the api key alone. The second component matters because
-  `_add_assume_identity_headers` adds `x-assume-identity-authorised-workspace`
-  from a per-request ContextVar the auth middleware fills, and the platform
-  authorises the registry call against THAT workspace. The middleware resolves
-  the caller from query > header > body while this route only ever materialises
-  header/body, so two requests can legitimately carry the same body key and still
-  be authorised as different workspaces; keying the cache on the key alone would
-  serve the first workspace's metadata to the second one without a lookup
-  (Codex round-001 R001-F001).
+    (api_key, model_id, authorised_workspace, models_cache_auth_enabled)
 
-  The workspace is folded in only under exactly the conditions
-  `_add_assume_identity_headers` uses to put it on the wire, so a deployment
-  without assume-identity keeps the api-key-only partition it had before.
-  The digest is an internal cache-partition token: neither it nor its inputs are
-  ever returned, logged or put into a discovery reason.
+* `api_key` is stored as given, so `None` (no key) and `""` are distinct keys.
+* `authorised_workspace` is the workspace the call would send in the
+  assume-identity header (see `current_authorised_workspace()`), resolved per
+  call - before the lookup - because it lives in a per-request ContextVar. It is
+  `None` when no such header would be sent; the api key, model id and
+  authorization mode still key the entry.
+* `models_cache_auth_enabled` is the authorization policy that produced the
+  entry, read off `roboflow_api` - the very module attribute the helper itself
+  consults. Including it means a result obtained while enforcement was OFF can
+  never be served as an enforcement-ON authorization success.
+
+Only successful, usable metadata is cached, as an immutable tuple of the three
+mapped fields; every response object is rebuilt from it, so a caller can never
+mutate what a later caller receives. Exceptions, `unavailable` payloads and
+all-unknown metadata are not cached, so the next call retries.
+
+`MODELS_CACHE_AUTH_ENABLED=True` vs `False`
+-------------------------------------------
+With enforcement ON the registry helper does not read its shared cache, so an
+in-memory miss reaches the platform carrying this call's own key and headers;
+a hit reuses that answer for the TTL. With enforcement OFF the helper keeps its
+existing shared model-id-keyed cache policy: an in-memory miss can be answered
+from the shared cache populated by another caller for the same model id. That
+is the pre-existing policy of the helper for every caller, and it is unchanged
+here - hosted per-workspace isolation relies on `MODELS_CACHE_AUTH_ENABLED=True`.
+
+The cache is per process only. Concurrent cold misses for the same key may
+issue more than one registry request; there is no request coalescing.
 """
 
-import hashlib
 import logging
-from typing import Any, Dict, Optional
+import threading
+from typing import Any, Optional, Tuple
 
+from cachetools import TTLCache
 from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadata,
     ModelMetadataLookup,
@@ -65,22 +91,35 @@ logger = logging.getLogger(__name__)
 # `unavailable` WITHOUT a call - the inventory entry itself is kept.
 ROBOFLOW_PROVIDER = "roboflow"
 
-# Distinct from the default `roboflow_api_data:inference_models_registry` prefix
-# used by the execution paths: introspection must not populate or consume the
-# cache entries that model loading relies on.
-WORKLOAD_CACHE_PREFIX_ROOT = "roboflow_api_data:inference_models_registry:workload"
+# Hard bound on the number of cached entries; the least recently used entry is
+# evicted once it is reached.
+_METADATA_CACHE_CAPACITY = 1000
 
-_CREDENTIAL_SCOPE_DIGEST_LENGTH = 16
+# The mapped `(model_type, model_variant, task_type)` triple of ONE successful
+# lookup - immutable, so nothing shared is ever handed to a caller.
+_MetadataFields = Tuple[Optional[str], Optional[str], Optional[str]]
+
+_METADATA_CACHE: TTLCache = TTLCache(
+    maxsize=_METADATA_CACHE_CAPACITY,
+    ttl=inference_env.MODELS_CACHE_AUTH_CACHE_TTL,
+)
+_METADATA_CACHE_LOCK = threading.Lock()
+
+
+def clear_model_metadata_cache() -> None:
+    """Drop every in-memory entry. Intended for tests and fixtures."""
+    with _METADATA_CACHE_LOCK:
+        _METADATA_CACHE.clear()
 
 
 def current_authorised_workspace() -> Optional[str]:
-    """The assume-identity workspace this request's registry call is authorised as.
+    """The workspace this request's registry call would carry in its headers.
 
     Mirrors `roboflow_api._add_assume_identity_headers` condition for condition:
     the workspace only reaches the platform when the service access token is
     configured AND the per-request ContextVar holds a header-safe workspace id.
-    When it would not be sent, it is not part of the trusted scope either, so the
-    partition stays exactly what it was before this scoping existed.
+    When it would not be sent it is `None`, which is simply one more distinct
+    value of that cache-key component.
     """
     if not roboflow_api.ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
         return None
@@ -90,37 +129,6 @@ def current_authorised_workspace() -> Optional[str]:
     return authorised_workspace
 
 
-def credential_scope_digest(
-    api_key: Optional[str],
-    authorised_workspace: Optional[str] = None,
-) -> str:
-    """Non-reversible cache-partition token for an effective trusted scope.
-
-    A missing key is its own scope (the empty string), so anonymous lookups
-    share one partition and never collide with an authenticated one. The
-    assume-identity workspace, when one applies, is folded in behind a NUL
-    separator - a byte no api key or workspace id may contain - so the pair
-    cannot be re-split and `(key, workspace)` can never collide with a bare key.
-    Omitting the workspace reproduces the api-key-only token exactly, which is
-    what every non-assume-identity deployment keeps using.
-    """
-    material = api_key or ""
-    if authorised_workspace is not None:
-        material = f"{material}\x00{authorised_workspace}"
-    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
-    return digest[:_CREDENTIAL_SCOPE_DIGEST_LENGTH]
-
-
-def workload_metadata_cache_prefix(
-    api_key: Optional[str],
-    authorised_workspace: Optional[str] = None,
-) -> str:
-    return (
-        f"{WORKLOAD_CACHE_PREFIX_ROOT}:"
-        f"{credential_scope_digest(api_key, authorised_workspace)}"
-    )
-
-
 class ServerModelMetadataProvider:
     """`ModelMetadataProvider` implementation backed by the Roboflow registry.
 
@@ -128,24 +136,14 @@ class ServerModelMetadataProvider:
     package and is `@runtime_checkable`, so this class deliberately does not
     inherit from it (the host must not force `roboflow_workflows` to know about
     server types).
+
+    The instance holds nothing but the api key: the metadata cache is process
+    level, so a provider built per request still benefits from what earlier
+    requests in the same identity already resolved.
     """
 
     def __init__(self, api_key: Optional[str]) -> None:
         self._api_key = api_key
-
-    @property
-    def cache_prefix(self) -> str:
-        """Computed per access, never cached on the instance.
-
-        The assume-identity workspace lives in a per-request ContextVar, so a
-        prefix frozen at construction time could outlive the context it was
-        derived from. Reading it here keeps the partition tied to the scope the
-        registry call is actually authorised under.
-        """
-        return workload_metadata_cache_prefix(
-            api_key=self._api_key,
-            authorised_workspace=current_authorised_workspace(),
-        )
 
     def resolve_model_metadata(
         self,
@@ -160,13 +158,23 @@ class ServerModelMetadataProvider:
             return ModelMetadataLookup(status="unavailable")
         if inference_env.OFFLINE_MODE:
             return ModelMetadataLookup(status="unavailable")
+        # Every gate above stays in front of the cache, so a cached entry can
+        # never resurrect a lookup a disabled/offline deployment must not serve.
+        cache_key = (
+            self._api_key,
+            model_id,
+            current_authorised_workspace(),
+            bool(roboflow_api.MODELS_CACHE_AUTH_ENABLED),
+        )
+        with _METADATA_CACHE_LOCK:
+            cached_fields = _METADATA_CACHE.get(cache_key)
+        if cached_fields is not None:
+            return _available_lookup(fields=cached_fields)
         try:
             api_data = roboflow_api.get_model_metadata_from_inference_models_registry(
                 api_key=self._api_key,
                 model_id=model_id,
-                cache_prefix=self.cache_prefix,
             )
-            return _build_lookup(api_data=api_data)
         except Exception as error:
             # Deliberately not `logger.exception`: a failed lookup is an
             # expected outcome of introspection (unknown model, no permission,
@@ -178,26 +186,42 @@ class ServerModelMetadataProvider:
                 type(error).__name__,
             )
             return ModelMetadataLookup(status="unavailable")
+        fields = _usable_fields(api_data=api_data)
+        if fields is None:
+            # Nothing usable came back - not cached, so the next call retries.
+            return ModelMetadataLookup(status="unavailable")
+        with _METADATA_CACHE_LOCK:
+            _METADATA_CACHE[cache_key] = fields
+        return _available_lookup(fields=fields)
 
 
-def _build_lookup(api_data: Any) -> ModelMetadataLookup:
+def _available_lookup(fields: _MetadataFields) -> ModelMetadataLookup:
+    model_type, model_variant, task_type = fields
+    return ModelMetadataLookup(
+        status="available",
+        metadata=ModelMetadata(
+            model_type=model_type,
+            model_variant=model_variant,
+            task_type=task_type,
+        ),
+    )
+
+
+def _usable_fields(api_data: Any) -> Optional[_MetadataFields]:
+    """The mapped triple of a usable payload, or `None` when there is none."""
     if not isinstance(api_data, dict):
-        return ModelMetadataLookup(status="unavailable")
-    metadata = _map_registry_payload(api_data=api_data)
-    if not metadata.has_known_fields():
-        # Every substantive field came back null - there is nothing to report.
-        return ModelMetadataLookup(status="unavailable")
-    return ModelMetadataLookup(status="available", metadata=metadata)
-
-
-def _map_registry_payload(api_data: Dict[str, Any]) -> ModelMetadata:
+        return None
     # `modelLatencyMs` is intentionally dropped: it is a runtime heuristic of
     # the platform, not a compile-time workload fact.
-    return ModelMetadata(
-        model_type=_optional_str(api_data.get("modelType")),
-        model_variant=_optional_str(api_data.get("modelVariant")),
-        task_type=_optional_str(api_data.get("taskType")),
+    fields = (
+        _optional_str(api_data.get("modelType")),
+        _optional_str(api_data.get("modelVariant")),
+        _optional_str(api_data.get("taskType")),
     )
+    if all(value is None for value in fields):
+        # Every substantive field came back null - there is nothing to report.
+        return None
+    return fields
 
 
 def _optional_str(value: Any) -> Optional[str]:

@@ -1,41 +1,40 @@
-"""Shared portable restriction declarations for the non-model core blocks.
+"""Shared restriction declarations for the non-model core blocks.
 
-These constants are the ``discover_portable_restrictions()`` counterparts of
-the human-readable ``RuntimeRestriction`` presets in
-``roboflow_workflows.prototypes.block`` and of the per-block legacy
-declarations: a stable ``code`` plus a ``RestrictionCondition`` instead of a
-free-text ``note``. ``get_restrictions()`` is unchanged and remains the legacy
-API.
+These constants are the ``get_actual_restrictions()`` presets of the core
+blocks: ``RuntimeRestriction`` values carrying a human ``note``, a stable
+``code`` and the condition under which the caveat applies. They are the SAME
+entity the legacy ``get_restrictions()`` returns, so a block never authors a
+restriction twice; the workload document derives its portable
+``RestrictionMetadata`` from them through ``restriction_metadata_of()``.
 
 Two rules hold for everything in this module:
 
 * **No environment or configuration reads.** A preset is plain data. A
   restriction that a legacy ``get_restrictions()`` emits only on one branch of
   a flag is declared here UNCONDITIONALLY, with the flag pinned in
-  ``configuration_equals``. The portable declaration therefore describes the
-  TARGET configuration and never depends on the flags of the host that is
-  answering the introspection call.
+  ``applies_to_configuration``. The declaration therefore describes the TARGET
+  configuration; whether it applies to the host answering an introspection call
+  is decided by ``get_actual_restrictions(ignore_environment_restrictions=False)``,
+  never by the preset itself.
 * **One code, one meaning.** Codes come from the coordinator-owned registry;
   a preset is reused only where the semantics are actually identical.
 
-Presets that already have a legacy sibling constant living next to their block
+Presets that already have a sibling constant living next to their block
 (``core_steps/cache/common.py`` and ``core_steps/sinks/onvif_movement/v1.py``)
-keep their portable twin next to that sibling, so the legacy note and the
-portable code cannot drift apart.
+stay next to that sibling, so the note and the code cannot drift apart.
 """
 
 from typing import Tuple
 
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionCondition,
-    RestrictionMetadata,
     Runtime,
+    RuntimeRestriction,
     Severity,
     StepExecutionMode,
 )
 from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 
 # The pair emitted by every block whose legacy declaration is
@@ -44,85 +43,110 @@ from roboflow_workflows.prototypes.block import (
 # work with". Blocks that spell the first restriction out with their own note
 # (frame stack, heat accumulation, trace history) share the same axes and
 # therefore the same code.
-STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS: Tuple[RestrictionMetadata, ...] = (
-    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS: Tuple[RuntimeRestriction, ...] = (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 
 
 # ``ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False`` makes the local file
 # sink raise at run time.
-LOCAL_STORAGE_ACCESS_DISABLED_PORTABLE_RESTRICTION = RestrictionMetadata(
+LOCAL_STORAGE_ACCESS_DISABLED_RESTRICTION = RuntimeRestriction(
     code="local_storage_access_disabled",
     severity=Severity.HARD,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        configuration_equals={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": False},
+    note=(
+        "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_"
+        "STORAGE is False."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_configuration={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": False},
 )
 
 
 # The two caveats of the ENABLED branch: on a dedicated deployment the file is
 # written but cannot be fetched back through the Roboflow API, and on hosted
 # serverless the container disk disappears with the worker.
-DEPLOYMENT_VOLUME_NOT_RETRIEVABLE_PORTABLE_RESTRICTION = RestrictionMetadata(
+DEPLOYMENT_VOLUME_NOT_RETRIEVABLE_RESTRICTION = RuntimeRestriction(
     code="writes_to_deployment_volume_not_retrievable",
     severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.DEDICATED_DEPLOYMENT],
-        configuration_equals={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": True},
+    note=(
+        "Files are persisted on the deployment's volume but are not "
+        "retrievable through the Roboflow API; treat as internal-only logs."
     ),
+    applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_configuration={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": True},
 )
 
 
-EPHEMERAL_CONTAINER_DISK_PORTABLE_RESTRICTION = RestrictionMetadata(
+EPHEMERAL_CONTAINER_DISK_RESTRICTION = RuntimeRestriction(
     code="ephemeral_container_disk_loses_writes",
     severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS],
-        configuration_equals={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": True},
+    note=(
+        "Container disk is ephemeral, so files are lost when the worker scales "
+        "down; if there's more than one replica consuming workflow requests "
+        "the result will be non deterministic."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+    applies_to_configuration={"ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE": True},
 )
 
 
 # Both flag branches together: whichever way the target deployment sets
 # ``ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE``, exactly the entries whose
-# ``configuration_equals`` matches it apply.
-LOCAL_FILE_SINK_PORTABLE_RESTRICTIONS: Tuple[RestrictionMetadata, ...] = (
-    DEPLOYMENT_VOLUME_NOT_RETRIEVABLE_PORTABLE_RESTRICTION,
-    EPHEMERAL_CONTAINER_DISK_PORTABLE_RESTRICTION,
-    LOCAL_STORAGE_ACCESS_DISABLED_PORTABLE_RESTRICTION,
+# ``applies_to_configuration`` matches it apply.
+LOCAL_FILE_SINK_RESTRICTIONS: Tuple[RuntimeRestriction, ...] = (
+    DEPLOYMENT_VOLUME_NOT_RETRIEVABLE_RESTRICTION,
+    EPHEMERAL_CONTAINER_DISK_RESTRICTION,
+    LOCAL_STORAGE_ACCESS_DISABLED_RESTRICTION,
 )
 
 
-ENVIRONMENT_VARIABLE_ACCESS_DISABLED_PORTABLE_RESTRICTION = RestrictionMetadata(
+ENVIRONMENT_VARIABLE_ACCESS_DISABLED_RESTRICTION = RuntimeRestriction(
     code="environment_variable_access_disabled",
     severity=Severity.HARD,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        configuration_equals={
-            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": False
-        },
+    note=(
+        "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_ACCESSING_"
+        "ENVIRONMENTAL_VARIABLES is False. Roboflow's hosted runtimes set this "
+        "flag to False for security, so environment variables cannot be "
+        "exposed."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_configuration={
+        "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": False
+    },
 )
 
 
 # Append-log mode accumulates entries in process memory before uploading the
 # whole object, so it splits across stateless workers.
-S3_APPEND_BUFFER_PORTABLE_RESTRICTION = RestrictionMetadata(
+S3_APPEND_BUFFER_RESTRICTION = RuntimeRestriction(
     code="s3_append_buffer_resets_on_stateless_http",
     severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        step_execution_modes=[StepExecutionMode.REMOTE],
+    note=(
+        "Append-log mode buffers entries in process memory before uploading "
+        "the accumulated object to S3. With remote step execution on stateless "
+        "or multi-replica HTTP runtimes, successive requests may be served by "
+        "different worker processes, so append-log objects can reset or split "
+        "across workers. Use separate_files mode, or local step execution in "
+        "an InferencePipeline when each entry must be captured in a single "
+        "ordered log."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
 )
 
 
-# Fire-and-forget database writes hide persistence failures and pile up when
-# the database is slower than the video stream.
-FIRE_AND_FORGET_PORTABLE_RESTRICTION = RestrictionMetadata(
+# Fire-and-forget writes hide delivery / persistence failures and pile up when
+# the destination is slower than the video stream. Shared by the sinks that
+# offer the switch (PostgreSQL, Kafka producer), so the note stays neutral
+# about what the destination is.
+FIRE_AND_FORGET_RESTRICTION = RuntimeRestriction(
     code="fire_and_forget_hides_persistence_failures",
     severity=Severity.SOFT,
-    when=RestrictionCondition(runtimes=[Runtime.INFERENCE_PIPELINE]),
+    note=(
+        "Use fire_and_forget=false to observe delivery and persistence "
+        "failures and avoid accumulating background writes when the "
+        "destination is slower than the stream."
+    ),
+    applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
 )

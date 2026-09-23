@@ -1,10 +1,13 @@
 """Tests for the workload hooks and compatibility rules added to
 ``roboflow_workflows.prototypes.block``:
 
-* ``discover_work_operations()`` / ``discover_portable_restrictions()``
-  default to ``None`` (unknown) on a concrete manifest and follow the
-  None / list / Discovery convention through ``normalize_declaration``;
-* the three portable restriction presets;
+* ``discover_work_operations()`` defaults to ``None`` (unknown) on a concrete
+  manifest and follows the None / list / Discovery convention through
+  ``normalize_declaration``; ``get_actual_restrictions()`` defaults to an
+  incomplete "unknown" discovery;
+* the three portable restriction presets, which are now DERIVED from their
+  legacy twin through ``restriction_metadata_of`` instead of being authored
+  separately - the axes must still agree;
 * resource-entity envelope compatibility: old dicts without ``type`` parse,
   an explicit wrong ``type`` is rejected, a ``resource_type`` / metadata
   contradiction is rejected, ``to_dict()`` keeps the legacy shape while
@@ -25,8 +28,12 @@ from roboflow_workflows.execution_engine.entities.workload import (
     RestrictionMetadata,
     WorkOperation,
     complete_discovery,
+    custom_python_internals_unknown_problem,
+    declaration_unavailable_problem,
+    environment_filtered_declaration_problem,
     incomplete_discovery,
     normalize_declaration,
+    restriction_metadata_of,
 )
 from roboflow_workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION,
@@ -49,6 +56,7 @@ from roboflow_workflows.prototypes.block import (
     StepExecutionMode,
     ThirdPartyModelMetadata,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
     roboflow_platform_model,
     roboflow_platform_project,
@@ -77,8 +85,12 @@ class _AnnotatedManifest(WorkflowBlockManifest):
             return [WorkOperation.IMAGE_RESIZE]
         return [WorkOperation.IMAGE_TRANSFORM]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION]
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return actual_restrictions_of(
+            declared=[STILL_IMAGE_INPUT_SOFT_RESTRICTION],
+            node_id=f"$steps.{self.name}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class _CustomPythonLikeManifest(WorkflowBlockManifest):
@@ -91,11 +103,17 @@ class _CustomPythonLikeManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> Discovery[WorkOperation]:
         return incomplete_discovery(
             [WorkOperation.CUSTOM_PYTHON],
-            [f"custom_python_internal_operations_unknown:$steps.{self.name}"],
+            [
+                custom_python_internals_unknown_problem(
+                    node_id=f"$steps.{self.name}", declaration="operations"
+                )
+            ],
         )
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return []
+    def get_actual_restrictions(self, *, ignore_environment_restrictions: bool = False):
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -103,43 +121,51 @@ class _CustomPythonLikeManifest(WorkflowBlockManifest):
 # ---------------------------------------------------------------------------
 
 
-def test_hooks_default_to_none_on_a_concrete_manifest() -> None:
+def test_hooks_default_to_unknown_on_a_concrete_manifest() -> None:
     manifest = _PlainManifest.model_validate({"type": "test/plain@v1", "name": "step"})
 
     assert manifest.discover_work_operations() is None
-    assert manifest.discover_portable_restrictions() is None
     assert manifest.discover_dependent_resources() is None
+    restrictions = manifest.get_actual_restrictions()
+    assert restrictions.items == []
+    assert restrictions.complete is False
 
 
 def test_hooks_are_instance_methods_not_classmethods() -> None:
-    assert not isinstance(
-        WorkflowBlockManifest.__dict__["discover_work_operations"], classmethod
-    )
-    assert not isinstance(
-        WorkflowBlockManifest.__dict__["discover_portable_restrictions"], classmethod
-    )
+    for hook in ("discover_work_operations", "get_actual_restrictions"):
+        assert not isinstance(WorkflowBlockManifest.__dict__[hook], classmethod), hook
 
 
 def test_unannotated_manifest_normalises_to_unknown() -> None:
     manifest = _PlainManifest.model_validate({"type": "test/plain@v1", "name": "step"})
+    unavailable_operations = declaration_unavailable_problem(
+        node_id="$steps.step", declaration="operations"
+    )
+    unused_restrictions = declaration_unavailable_problem(
+        node_id="$steps.step", declaration="restrictions"
+    )
 
     operations = normalize_declaration(
-        manifest.discover_work_operations(), "step_declaration_missing:$steps.step"
+        manifest.discover_work_operations(), unavailable_operations
     )
     restrictions = normalize_declaration(
-        manifest.discover_portable_restrictions(),
-        "step_declaration_missing:$steps.step",
+        manifest.get_actual_restrictions(ignore_environment_restrictions=True),
+        unused_restrictions,
     )
 
     assert operations == Discovery(
-        items=[],
-        complete=False,
-        unknown_reasons=["step_declaration_missing:$steps.step"],
+        items=[], complete=False, unknown_reasons=[unavailable_operations]
     )
+    # restrictions answer through the legacy-fallback body, which states its own
+    # reason - the `unknown_problem` argument is only used for a `None` hook
     assert restrictions == Discovery(
         items=[],
         complete=False,
-        unknown_reasons=["step_declaration_missing:$steps.step"],
+        unknown_reasons=[
+            environment_filtered_declaration_problem(
+                node_id="$steps.step", declaration="restrictions"
+            )
+        ],
     )
 
 
@@ -150,34 +176,40 @@ def test_literal_manifest_settings_select_operations() -> None:
     transform = _AnnotatedManifest.model_validate(
         {"type": "test/annotated@v1", "name": "a", "resize": False}
     )
+    unused = declaration_unavailable_problem(
+        node_id="$steps.a", declaration="operations"
+    )
 
     assert normalize_declaration(
-        resize.discover_work_operations(), "unused:$steps.a"
+        resize.discover_work_operations(), unused
     ) == complete_discovery([WorkOperation.IMAGE_RESIZE])
     assert normalize_declaration(
-        transform.discover_work_operations(), "unused:$steps.a"
+        transform.discover_work_operations(), unused
     ) == complete_discovery([WorkOperation.IMAGE_TRANSFORM])
     assert normalize_declaration(
-        resize.discover_portable_restrictions(), "unused:$steps.a"
-    ) == complete_discovery([STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION])
+        resize.get_actual_restrictions(ignore_environment_restrictions=True), unused
+    ) == complete_discovery([STILL_IMAGE_INPUT_SOFT_RESTRICTION])
 
 
 def test_discovery_return_value_carries_explicit_completeness() -> None:
     manifest = _CustomPythonLikeManifest.model_validate(
         {"type": "test/custom@v1", "name": "custom"}
     )
-
-    operations = normalize_declaration(
-        manifest.discover_work_operations(), "unused:$steps.custom"
+    unused = declaration_unavailable_problem(
+        node_id="$steps.custom", declaration="operations"
     )
+
+    operations = normalize_declaration(manifest.discover_work_operations(), unused)
     restrictions = normalize_declaration(
-        manifest.discover_portable_restrictions(), "unused:$steps.custom"
+        manifest.get_actual_restrictions(ignore_environment_restrictions=True), unused
     )
 
     assert operations.items == [WorkOperation.CUSTOM_PYTHON]
     assert operations.complete is False
     assert operations.unknown_reasons == [
-        "custom_python_internal_operations_unknown:$steps.custom"
+        custom_python_internals_unknown_problem(
+            node_id="$steps.custom", declaration="operations"
+        )
     ]
     assert restrictions == complete_discovery([])
 
@@ -185,13 +217,17 @@ def test_discovery_return_value_carries_explicit_completeness() -> None:
 def test_legacy_restriction_api_is_untouched() -> None:
     assert WorkflowBlockManifest.get_restrictions() == []
     assert isinstance(WorkflowBlockManifest.__dict__["get_restrictions"], classmethod)
-    assert RuntimeRestriction.__dataclass_fields__.keys() == {
+    # the two new fields are appended and defaulted, so every historic
+    # positional and keyword constructor stays valid
+    assert list(RuntimeRestriction.__dataclass_fields__) == [
         "severity",
         "note",
         "applies_to_runtimes",
         "applies_to_step_execution_modes",
         "applies_to_input_modes",
-    }
+        "code",
+        "applies_to_configuration",
+    ]
     assert STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.to_dict() == {
         "severity": "soft",
         "note": STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.note,
@@ -213,6 +249,7 @@ def test_manifest_model_config_keeps_validate_assignment() -> None:
 def test_stateful_video_portable_preset_mirrors_legacy_axes() -> None:
     preset = STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION
 
+    assert preset == restriction_metadata_of(STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION)
     assert preset.code == "stateful_video_state_resets_on_stateless_http"
     assert preset.severity is Severity.SOFT
     assert preset.when == RestrictionCondition(
@@ -234,6 +271,7 @@ def test_stateful_video_portable_preset_mirrors_legacy_axes() -> None:
 def test_cooldown_portable_preset_mirrors_legacy_axes() -> None:
     preset = COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION
 
+    assert preset == restriction_metadata_of(COOLDOWN_HTTP_SOFT_RESTRICTION)
     assert preset.code == "cooldown_timer_resets_on_stateless_http"
     assert preset.severity is Severity.SOFT
     assert preset.when == RestrictionCondition(
@@ -247,6 +285,7 @@ def test_cooldown_portable_preset_mirrors_legacy_axes() -> None:
 def test_still_image_portable_preset_mirrors_legacy_axes() -> None:
     preset = STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION
 
+    assert preset == restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION)
     assert preset.code == "temporal_block_no_benefit_on_still_image"
     assert preset.severity is Severity.SOFT
     assert preset.when == RestrictionCondition(input_modes=[RuntimeInputMode.IMAGE])

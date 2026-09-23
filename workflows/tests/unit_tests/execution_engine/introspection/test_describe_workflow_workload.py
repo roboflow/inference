@@ -25,6 +25,11 @@ from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadataLookup,
     ModelMetadataProvider,
     WorkOperation,
+    custom_python_internals_unknown_problem,
+    declaration_unavailable_problem,
+    invalid_resource_identifier_problem,
+    opaque_remote_workflow_problem,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
@@ -365,7 +370,15 @@ def test_model_inventory_dedupes_and_reports_selectors() -> None:
         ("roboflow", "shared/1", ["$steps.a", "$steps.b"]),
     ]
     assert models.complete is False
-    assert models.unknown_reasons == ["unresolved_model_selector:$steps.dynamic"]
+    assert models.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.dynamic",
+            declaration="resources",
+            field="model_id",
+            selector="$inputs.model",
+            resource_type="roboflow_platform_model",
+        )
+    ]
     assert all(m.metadata_status == "unavailable" for m in models.items)
 
 
@@ -489,10 +502,17 @@ def test_remote_dispatch_inner_workflow_stays_opaque() -> None:
     introspection = describe_workflow_workload(workflow_definition=definition)
     dispatch = _step(introspection, "$steps.dispatch")
     assert dispatch.block_type == INNER_WORKFLOW
-    for discovery in (dispatch.resources, dispatch.operations, dispatch.restrictions):
+    for declaration, discovery in (
+        ("resources", dispatch.resources),
+        ("operations", dispatch.operations),
+        ("restrictions", dispatch.restrictions),
+    ):
         assert discovery.complete is False
         assert (
-            "remote_dispatch_child_opaque:$steps.dispatch" in discovery.unknown_reasons
+            opaque_remote_workflow_problem(
+                node_id="$steps.dispatch", declaration=declaration
+            )
+            in discovery.unknown_reasons
         )
     assert introspection.summary.models.complete is False
     assert [m.model_id for m in introspection.summary.models.items] == ["my_project/3"]
@@ -561,17 +581,20 @@ def test_dynamic_block_declarations_and_inertness(marker_path: str) -> None:
     assert custom.block_type == "SideEffect"
     assert custom.operations.items == [WorkOperation.CUSTOM_PYTHON]
     assert custom.operations.unknown_reasons == [
-        "custom_python_internal_operations_unknown:$steps.custom"
+        custom_python_internals_unknown_problem(
+            node_id="$steps.custom", declaration="operations"
+        )
     ]
     assert {item.code for item in custom.restrictions.items} == {
         "custom_python_execution_disabled",
         "tensor_native_requires_tensor_representation",
         "tensor_native_unsupported_in_modal",
     }
-    assert custom.resources.unknown_reasons == ["step_resources_unknown:$steps.custom"]
-    assert "step_resources_unknown:$steps.custom" in (
-        introspection.summary.models.unknown_reasons
+    resources_unavailable = declaration_unavailable_problem(
+        node_id="$steps.custom", declaration="resources", block_type="SideEffect"
     )
+    assert custom.resources.unknown_reasons == [resources_unavailable]
+    assert resources_unavailable in introspection.summary.models.unknown_reasons
     assert introspection.summary.models.complete is False
 
 
@@ -704,7 +727,14 @@ def test_blank_platform_model_id_does_not_break_introspection(
     )
     models = introspection.summary.models
     assert models.complete is False
-    assert models.unknown_reasons == ["blank_model_identifier:$steps.blank"]
+    assert models.unknown_reasons == [
+        invalid_resource_identifier_problem(
+            node_id="$steps.blank",
+            declaration="resources",
+            field="model_id",
+            resource_type="roboflow_platform_model",
+        )
+    ]
     assert [(m.model_id, m.used_by_steps) for m in models.items] == [
         ("my_project/3", ["$steps.valid"])
     ]
@@ -736,7 +766,15 @@ def test_blank_openai_compatible_base_url_does_not_break_introspection(
     models = introspection.summary.models
     assert models.items == []
     assert models.complete is False
-    assert "blank_model_identifier:$steps.llm" in models.unknown_reasons
+    assert (
+        invalid_resource_identifier_problem(
+            node_id="$steps.llm",
+            declaration="resources",
+            field="provider",
+            resource_type="third_party_model",
+        )
+        in models.unknown_reasons
+    )
     assert provider.calls == []
     llm = _step(introspection, "$steps.llm")
     third_party = [

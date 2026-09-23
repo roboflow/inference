@@ -8,12 +8,13 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionCondition,
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    actual_restrictions_of,
 )
 
 from inference.core.env import DEVICE_ID
@@ -49,14 +50,12 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
     DependentResource,
     ModelRequiredAction,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -70,20 +69,26 @@ from inference_models.models.base.classification import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
 
-# Portable twin of this block's legacy `get_restrictions()` note. The
-# aggregation buffer lives in process memory while the reporting interval is
-# tracked in the shared cache, so a stateless or multi-replica HTTP runtime
+# The aggregation buffer lives in process memory while the reporting interval
+# is tracked in the shared cache, so a stateless or multi-replica HTTP runtime
 # splits one reporting window across workers. Declared as plain data: the
 # condition describes the TARGET deployment, never the host answering the
 # introspection call.
-AGGREGATION_BUFFER_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
+AGGREGATION_BUFFER_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     code="aggregation_buffer_resets_on_stateless_http",
     severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        step_execution_modes=[StepExecutionMode.REMOTE],
-        input_modes=[RuntimeInputMode.VIDEO],
+    note=(
+        "Aggregation buffers are stored in process memory while the "
+        "reporting interval is tracked in cache. With remote step "
+        "execution on stateless or multi-replica HTTP runtimes, "
+        "predictions may be collected by different worker processes, "
+        "so reports can under-collect or flush partial aggregation "
+        "windows. Use local step execution in an InferencePipeline "
+        "for stable video aggregation."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+    applies_to_input_modes=[RuntimeInputMode.VIDEO],
 )
 
 TensorNativePrediction = Union[
@@ -317,11 +322,17 @@ class BlockManifest(WorkflowBlockManifest):
             WorkOperation.TEMPORAL_BUFFERING,
         ]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [
-            AGGREGATION_BUFFER_HTTP_SOFT_PORTABLE_RESTRICTION,
-            STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
-        ]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                AGGREGATION_BUFFER_HTTP_SOFT_RESTRICTION,
+                STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class ParsedPrediction(BaseModel):

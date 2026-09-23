@@ -20,12 +20,21 @@ from roboflow_workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
+    DeclarationDomain,
     Discovery,
+    DiscoveryProblem,
     ModelMetadataLookup,
     ModelMetadataProvider,
     RestrictionMetadata,
     WorkOperation,
+    declaration_failed_problem,
+    declaration_unavailable_problem,
+    invalid_resource_identifier_problem,
     normalize_declaration,
+    opaque_remote_workflow_problem,
+    restriction_metadata_of,
+    unresolved_selector_problem,
+    with_block_type,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     _cached_model_json_schema,
@@ -69,13 +78,13 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     DependentResourceType,
     WorkflowBlockManifest,
+    is_workflow_selector,
 )
 
 ROBOFLOW_MODEL_PROVIDER = "roboflow"
 
 RESOURCES_HOOK = "discover_dependent_resources"
 OPERATIONS_HOOK = "discover_work_operations"
-RESTRICTIONS_HOOK = "discover_portable_restrictions"
 
 ModelReference = Tuple[str, str]
 
@@ -226,12 +235,8 @@ def describe_step(
             context="workflow_introspection | step_description",
         )
     block_type = canonical_block_type(specification=specification)
-    opaque_reason = (
-        f"remote_dispatch_child_opaque:{step_selector}"
-        if is_dispatched_inner_workflow(
-            block_type=block_type, step_manifest=step_manifest
-        )
-        else None
+    opaque = is_dispatched_inner_workflow(
+        block_type=block_type, step_manifest=step_manifest
     )
     return StepMetadata(
         node_id=step_selector,
@@ -243,25 +248,25 @@ def describe_step(
             step_manifest=step_manifest,
             hook_name=RESOURCES_HOOK,
             discovery_type=Discovery[DependentResource],
-            unknown_reason=f"step_resources_unknown:{step_selector}",
+            declaration="resources",
             step_selector=step_selector,
-            opaque_reason=opaque_reason,
+            block_type=block_type,
+            opaque=opaque,
         ),
-        restrictions=collect_declaration(
+        restrictions=collect_restrictions(
             step_manifest=step_manifest,
-            hook_name=RESTRICTIONS_HOOK,
-            discovery_type=Discovery[RestrictionMetadata],
-            unknown_reason=f"step_restrictions_unknown:{step_selector}",
             step_selector=step_selector,
-            opaque_reason=opaque_reason,
+            block_type=block_type,
+            opaque=opaque,
         ),
         operations=collect_declaration(
             step_manifest=step_manifest,
             hook_name=OPERATIONS_HOOK,
             discovery_type=Discovery[WorkOperation],
-            unknown_reason=f"step_operations_unknown:{step_selector}",
+            declaration="operations",
             step_selector=step_selector,
-            opaque_reason=opaque_reason,
+            block_type=block_type,
+            opaque=opaque,
         ),
     )
 
@@ -300,21 +305,31 @@ def collect_declaration(
     step_manifest: WorkflowBlockManifest,
     hook_name: str,
     discovery_type: Type[Discovery],
-    unknown_reason: str,
+    declaration: DeclarationDomain,
     step_selector: str,
-    opaque_reason: Optional[str] = None,
+    block_type: str,
+    opaque: bool = False,
 ) -> Discovery:
     """Call one manifest hook and normalise its answer.
 
-    `None` -> unknown (incomplete with `unknown_reason`), a list -> complete,
-    a `Discovery` -> itself. A hook that raises, or returns something that does
-    not validate as the expected discovery, yields an incomplete discovery with
-    reason `<hook>_failed:$steps.<name>` - compilation and schema errors were
-    raised earlier, a broken declaration must not hide the whole graph.
+    `None` -> unknown (incomplete with a `declaration_unavailable` problem), a
+    list -> complete, a `Discovery` -> itself. A hook that raises, or returns
+    something that does not validate as the expected discovery, yields an
+    incomplete discovery with a `declaration_failed` problem - compilation and
+    schema errors were raised earlier, and a broken declaration must not hide
+    the whole graph. The exception itself is never reported: it may carry
+    anything the block put in it.
     """
     try:
         declared = getattr(step_manifest, hook_name)()
-        normalised = normalize_declaration(declared, unknown_reason)
+        normalised = normalize_declaration(
+            declared,
+            declaration_unavailable_problem(
+                node_id=step_selector,
+                declaration=declaration,
+                block_type=block_type,
+            ),
+        )
         discovery = discovery_type(
             items=list(normalised.items),
             complete=normalised.complete,
@@ -324,14 +339,96 @@ def collect_declaration(
         discovery = discovery_type(
             items=[],
             complete=False,
-            unknown_reasons=[f"{hook_name}_failed:{step_selector}"],
+            unknown_reasons=[
+                declaration_failed_problem(
+                    node_id=step_selector,
+                    declaration=declaration,
+                    block_type=block_type,
+                )
+            ],
         )
-    if opaque_reason is None:
+    return add_opaque_problem(
+        discovery=discovery,
+        discovery_type=discovery_type,
+        declaration=declaration,
+        step_selector=step_selector,
+        opaque=opaque,
+    )
+
+
+def collect_restrictions(
+    step_manifest: WorkflowBlockManifest,
+    step_selector: str,
+    block_type: str,
+    opaque: bool = False,
+) -> Discovery[RestrictionMetadata]:
+    """The step's restrictions, as the PORTABLE view.
+
+    The builder asks for `ignore_environment_restrictions=True` explicitly: a
+    workload document describes the definition, not the server that answered,
+    so every conditional declaration is reported with its condition intact and
+    nothing is filtered against this host's configuration. The authored
+    `RuntimeRestriction` entities are then projected onto the wire DTO, which
+    drops their human notes.
+
+    A hook that raises, or answers with something that does not validate,
+    yields `declaration_failed` exactly as for the other declarations. The
+    problems a manifest raises know the step but not the canonical block
+    identifier, so the ones that carry `block_type` by convention get it here.
+    """
+    try:
+        declared = step_manifest.get_actual_restrictions(
+            ignore_environment_restrictions=True
+        )
+        discovery = Discovery[RestrictionMetadata](
+            items=[restriction_metadata_of(item) for item in declared.items],
+            complete=declared.complete,
+            unknown_reasons=[
+                with_block_type(problem=reason, block_type=block_type)
+                for reason in declared.unknown_reasons
+            ],
+        )
+    except Exception:
+        discovery = Discovery[RestrictionMetadata](
+            items=[],
+            complete=False,
+            unknown_reasons=[
+                declaration_failed_problem(
+                    node_id=step_selector,
+                    declaration="restrictions",
+                    block_type=block_type,
+                )
+            ],
+        )
+    return add_opaque_problem(
+        discovery=discovery,
+        discovery_type=Discovery[RestrictionMetadata],
+        declaration="restrictions",
+        step_selector=step_selector,
+        opaque=opaque,
+    )
+
+
+def add_opaque_problem(
+    discovery: Discovery,
+    discovery_type: Type[Discovery],
+    declaration: DeclarationDomain,
+    step_selector: str,
+    opaque: bool,
+) -> Discovery:
+    """A `remote_dispatch` inner workflow can never be complete: whatever the
+    step itself declared, the child it dispatches is compiled elsewhere."""
+    if not opaque:
         return discovery
     return discovery_type(
         items=list(discovery.items),
         complete=False,
-        unknown_reasons=list(discovery.unknown_reasons) + [opaque_reason],
+        unknown_reasons=list(discovery.unknown_reasons)
+        + [
+            opaque_remote_workflow_problem(
+                node_id=step_selector, declaration=declaration
+            )
+        ],
     )
 
 
@@ -344,29 +441,57 @@ def build_models_inventory(
     * platform models -> provider `roboflow`; third-party models keep their
       declared provider; projects are not models;
     * selector-valued references are never inventory entries - they stay in
-      the per-step resources and add `unresolved_model_selector:<step>`;
+      the per-step resources and add an `unresolved_selector` problem naming
+      the resource field and its selector, one per selector-valued field;
     * blank (empty / whitespace-only) literal ids or providers are declared
       as-is per step but never inventoried, never sent to the metadata
-      provider, and add `blank_model_identifier:<step>` - an id is never
-      fabricated;
-    * a step with unknown / incomplete resources propagates its reasons;
+      provider, and add an `invalid_resource_identifier` problem naming the
+      blank field (never its value) - an id is never fabricated;
+    * a step with unknown / incomplete resources propagates its problems
+      unchanged, with all the context they carry;
     * entries are unique per `(provider, model_id)` with sorted referring
-      steps; metadata lookup outcomes never change `complete`.
+      steps; metadata lookup outcomes never change `complete`;
+    * `steps_by_dimensionality` is derived from that same deduplicated set of
+      referring steps (one count per step id, mapped to the step's compiled
+      input depth), so it always sums to `len(used_by_steps)`.
     """
     used_by_steps: Dict[ModelReference, Set[str]] = defaultdict(set)
-    unknown_reasons: Set[str] = set()
+    input_dimensionality_by_step = {
+        step.node_id: step.input_dimensionality for step in steps
+    }
+    problems: List[DiscoveryProblem] = []
     for step in steps:
         if not step.resources.complete:
-            unknown_reasons.update(step.resources.unknown_reasons)
+            problems.extend(step.resources.unknown_reasons)
         for resource in step.resources.items:
             reference = model_reference_of(resource=resource)
             if reference is None:
                 continue
             if resource.metadata.requires_runtime_resolution():
-                unknown_reasons.add(f"unresolved_model_selector:{step.node_id}")
+                problems.extend(
+                    unresolved_selector_problem(
+                        node_id=step.node_id,
+                        declaration="resources",
+                        field=field,
+                        selector=selector,
+                        resource_type=resource.resource_type.value,
+                    )
+                    for field, selector in selector_valued_identity_fields(
+                        resource=resource
+                    )
+                )
                 continue
-            if is_blank_model_reference(reference=reference):
-                unknown_reasons.add(f"blank_model_identifier:{step.node_id}")
+            blank_fields = blank_identity_fields(resource=resource)
+            if blank_fields:
+                problems.extend(
+                    invalid_resource_identifier_problem(
+                        node_id=step.node_id,
+                        declaration="resources",
+                        field=field,
+                        resource_type=resource.resource_type.value,
+                    )
+                    for field in blank_fields
+                )
                 continue
             used_by_steps[reference].add(step.node_id)
     references = sorted(used_by_steps.keys())
@@ -379,26 +504,65 @@ def build_models_inventory(
             provider=provider,
             model_id=model_id,
             used_by_steps=sorted(used_by_steps[(provider, model_id)]),
+            steps_by_dimensionality=dict(
+                Counter(
+                    input_dimensionality_by_step[step_id]
+                    for step_id in used_by_steps[(provider, model_id)]
+                )
+            ),
             metadata=lookups[(provider, model_id)].metadata,
             metadata_status=lookups[(provider, model_id)].status,
         )
         for provider, model_id in references
     ]
-    if unknown_reasons:
+    if problems:
+        # `Discovery` deduplicates by (code, details) and orders by that key,
+        # so the aggregate keeps every distinct step / field / selector context
+        # and never depends on the order the steps were visited in.
         return Discovery[ModelSummary](
             items=items,
             complete=False,
-            unknown_reasons=sorted(unknown_reasons),
+            unknown_reasons=problems,
         )
     return Discovery[ModelSummary](items=items, complete=True, unknown_reasons=[])
 
 
-def is_blank_model_reference(reference: ModelReference) -> bool:
-    """A literal reference whose provider or model id is empty / whitespace
-    (e.g. `model_id=""`, `base_url=""`) names nothing - `ModelSummary`
-    rejects it and no metadata lookup could resolve it."""
-    provider, model_id = reference
-    return not str(provider).strip() or not str(model_id).strip()
+def model_identity_fields(resource: DependentResource) -> List[Tuple[str, str]]:
+    """The `(metadata field, value)` pairs that identify the model a resource
+    refers to - the fields `model_reference_of()` reads, and exactly the ones
+    `requires_runtime_resolution()` inspects. A blank (empty / whitespace-only)
+    value names nothing: `ModelSummary` rejects it and no metadata lookup could
+    resolve it."""
+    if resource.resource_type is DependentResourceType.ROBOFLOW_PLATFORM_MODEL:
+        return [("model_id", resource.metadata.model_id)]
+    if resource.resource_type is DependentResourceType.THIRD_PARTY_MODEL:
+        return [
+            ("provider", resource.metadata.provider),
+            ("model_id", resource.metadata.model_id),
+        ]
+    return []
+
+
+def selector_valued_identity_fields(
+    resource: DependentResource,
+) -> List[Tuple[str, str]]:
+    """Identity fields fed by a workflow selector - one unresolved-selector
+    problem per field, so two different selectors never collapse into one."""
+    return [
+        (field, value)
+        for field, value in model_identity_fields(resource=resource)
+        if is_workflow_selector(value)
+    ]
+
+
+def blank_identity_fields(resource: DependentResource) -> List[str]:
+    """Identity fields whose literal value names nothing (empty/whitespace).
+    Only the field names are reported - the invalid value never is."""
+    return [
+        field
+        for field, value in model_identity_fields(resource=resource)
+        if not str(value).strip()
+    ]
 
 
 def model_reference_of(resource: DependentResource) -> Optional[ModelReference]:

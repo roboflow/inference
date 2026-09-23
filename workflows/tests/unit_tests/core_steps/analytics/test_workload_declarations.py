@@ -13,6 +13,8 @@ from roboflow_workflows.core_steps.analytics.line_counter.v2 import LineCounterM
 from roboflow_workflows.core_steps.analytics.overlap.v1 import OverlapManifest
 from roboflow_workflows.execution_engine.entities.workload import WorkOperation
 
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
+
 STATEFUL_CODES = [
     "stateful_video_state_resets_on_stateless_http",
     "temporal_block_no_benefit_on_still_image",
@@ -32,7 +34,7 @@ def test_line_counter_declares_detection_work_and_cross_frame_state() -> None:
         WorkOperation.TEMPORAL_BUFFERING,
     ]
     assert [
-        restriction.code for restriction in manifest.discover_portable_restrictions()
+        restriction.code for restriction in portable_restrictions(manifest)
     ] == STATEFUL_CODES
 
 
@@ -49,7 +51,7 @@ def test_data_aggregator_declares_aggregation_rather_than_detection_work() -> No
         WorkOperation.TEMPORAL_BUFFERING,
     ]
     assert [
-        restriction.code for restriction in manifest.discover_portable_restrictions()
+        restriction.code for restriction in portable_restrictions(manifest)
     ] == STATEFUL_CODES
 
 
@@ -63,4 +65,4 @@ def test_a_stateless_analytics_block_declares_no_buffering_and_no_caveat() -> No
     operations = manifest.discover_work_operations()
     assert operations == [WorkOperation.DETECTION_PROCESSING]
     assert WorkOperation.TEMPORAL_BUFFERING not in operations
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []

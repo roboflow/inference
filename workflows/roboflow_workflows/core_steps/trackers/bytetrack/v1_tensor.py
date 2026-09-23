@@ -2,7 +2,7 @@ from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.workload_presets import (
-    STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS,
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
 )
 from roboflow_workflows.core_steps.trackers._base_tensor import (
     TRACKER_PREDICTION_KINDS,
@@ -20,7 +20,8 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
@@ -28,8 +29,8 @@ from roboflow_workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
     DependentResource,
-    RuntimeRestriction,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from trackers import ByteTrackTracker
 
@@ -183,8 +184,14 @@ class ByteTrackManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.TRACKING]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return list(STATEFUL_VIDEO_TEMPORAL_PORTABLE_RESTRICTIONS)
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

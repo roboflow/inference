@@ -1,8 +1,8 @@
 """Exact per-family assertions for the model-block workload declarations.
 
-`discover_work_operations()` and `discover_portable_restrictions()` are the
-portable, compile-time counterparts of what a model block does and of the
-caveats `get_restrictions()` already publishes. These tests pin the exact
+`discover_work_operations()` and `get_actual_restrictions()` are the portable,
+compile-time counterparts of what a model block does and of the caveats
+`get_restrictions()` already publishes. These tests pin the exact
 values for one representative block of every operation family and of every
 restriction shape, so a silent re-classification fails here.
 """
@@ -90,11 +90,15 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Severity,
     StepExecutionMode,
     WorkOperation,
+    restriction_metadata_of,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
+
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
 
 MODEL_INFERENCE_ONLY = [WorkOperation.MODEL_INFERENCE]
 VENDOR_API_OPERATIONS = [
@@ -133,7 +137,7 @@ def test_roboflow_object_detection_v1_declares_model_inference_only() -> None:
     # then - remote dispatch is environment-defined transport, so the block
     # must NOT claim EXTERNAL_REQUEST here.
     assert operations == MODEL_INFERENCE_ONLY
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 def test_roboflow_object_detection_v2_declares_model_inference_only() -> None:
@@ -145,7 +149,7 @@ def test_roboflow_object_detection_v2_declares_model_inference_only() -> None:
 
     # then
     assert operations == MODEL_INFERENCE_ONLY
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 def test_action_recognition_declares_temporal_buffering() -> None:
@@ -182,7 +186,7 @@ def test_third_party_analyser_declares_image_analysis_without_model_inference() 
 
     # then - pyzbar is not a model.
     assert operations == [WorkOperation.IMAGE_ANALYSIS]
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 def test_vendor_api_block_declares_external_request_and_encoding() -> None:
@@ -194,7 +198,7 @@ def test_vendor_api_block_declares_external_request_and_encoding() -> None:
 
     # then
     assert operations == VENDOR_API_OPERATIONS
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 def test_anthropic_claude_declares_external_request_and_encoding() -> None:
@@ -247,7 +251,7 @@ def test_qwen_vlm_operations_follow_the_selected_backend(
 
     # then
     assert operations == expected
-    assert manifest.discover_portable_restrictions() == []
+    assert portable_restrictions(manifest) == []
 
 
 # ---------------------------------------------------------------------------
@@ -260,19 +264,11 @@ def test_gpu_and_flag_gated_block_declares_both_branches() -> None:
     manifest = _build(Moondream2V1Manifest)
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then - the hosted-endpoint branch is declared unconditionally, carrying
     # the flag value it applies to instead of being filtered out here.
     assert restrictions == [
-        RestrictionMetadata(
-            code="requires_gpu_for_local_execution",
-            severity=Severity.HARD,
-            when=RestrictionCondition(
-                runtimes=[Runtime.SELF_HOSTED_CPU],
-                step_execution_modes=[StepExecutionMode.LOCAL],
-            ),
-        ),
         RestrictionMetadata(
             code="hosted_endpoint_disabled_by_flag",
             severity=Severity.HARD,
@@ -280,6 +276,14 @@ def test_gpu_and_flag_gated_block_declares_both_branches() -> None:
                 runtimes=[Runtime.HOSTED_SERVERLESS],
                 step_execution_modes=[StepExecutionMode.REMOTE],
                 configuration_equals={"MOONDREAM2_ENABLED": False},
+            ),
+        ),
+        RestrictionMetadata(
+            code="requires_gpu_for_local_execution",
+            severity=Severity.HARD,
+            when=RestrictionCondition(
+                runtimes=[Runtime.SELF_HOSTED_CPU],
+                step_execution_modes=[StepExecutionMode.LOCAL],
             ),
         ),
     ]
@@ -290,12 +294,14 @@ def test_sam3_declares_gpu_and_sam3_flag() -> None:
     manifest = _build(SAM3V1Manifest)
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then
     assert restrictions == [
-        REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-        hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM3_ENABLED"),
+        restriction_metadata_of(
+            hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM3_ENABLED")
+        ),
+        restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
     ]
 
 
@@ -312,10 +318,12 @@ def test_lmm_blocks_declare_the_flag_branch_without_a_gpu_caveat(
     )
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then
-    assert restrictions == [hosted_endpoint_disabled_by_flag("LMM_ENABLED")]
+    assert restrictions == [
+        restriction_metadata_of(hosted_endpoint_disabled_by_flag("LMM_ENABLED"))
+    ]
 
 
 @pytest.mark.parametrize("manifest_class", [Florence2V1Manifest, Florence2V2Manifest])
@@ -326,12 +334,12 @@ def test_both_florence2_versions_declare_the_same_caveats(
     manifest = _build(manifest_class, classes=["cat", "dog"])
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then
     assert restrictions == [
-        REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-        hosted_endpoint_disabled_by_flag("FLORENCE2_ENABLED"),
+        restriction_metadata_of(hosted_endpoint_disabled_by_flag("FLORENCE2_ENABLED")),
+        restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
     ]
     assert manifest.discover_work_operations() == MODEL_INFERENCE_ONLY
 
@@ -341,10 +349,10 @@ def test_seg_preview_declares_the_roboflow_internal_endpoint_caveat() -> None:
     manifest = _build(SegPreviewV1Manifest)
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then - mirrors the legacy axes: three self-hosted runtimes, no mode axis
-    assert restrictions == [ROBOFLOW_INTERNAL_ENDPOINT_ONLY]
+    assert restrictions == [restriction_metadata_of(ROBOFLOW_INTERNAL_ENDPOINT_ONLY)]
     assert restrictions[0].when == RestrictionCondition(
         runtimes=[
             Runtime.SELF_HOSTED_CPU,
@@ -360,16 +368,16 @@ def test_streaming_video_block_declares_the_shared_presets_and_gpu() -> None:
     manifest = _build(SAM3VideoV1Manifest, class_names=["person"])
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then
     assert restrictions == [
-        STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-        REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-        STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+        restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
+        restriction_metadata_of(STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION),
+        restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),
     ]
-    assert restrictions[0].severity is Severity.SOFT
-    assert restrictions[0].when.input_modes == [RuntimeInputMode.VIDEO]
+    assert restrictions[1].severity is Severity.SOFT
+    assert restrictions[1].when.input_modes == [RuntimeInputMode.VIDEO]
     assert restrictions[2].when.input_modes == [RuntimeInputMode.IMAGE]
 
 
@@ -378,13 +386,13 @@ def test_action_recognition_declares_the_same_restriction_shape() -> None:
     manifest = _build(ActionRecognitionV1Manifest, model_id="my-action-model/1")
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then
     assert restrictions == [
-        STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION,
-        REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-        STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION,
+        restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
+        restriction_metadata_of(STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION),
+        restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),
     ]
 
 
@@ -419,15 +427,15 @@ def test_a_permanently_deprecated_block_declares_no_work(
 
     # when
     operations = manifest.discover_work_operations()
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then - a complete, truthful "no operation", plus the hard caveat that
     # the step can never produce a result; the legacy caveats are kept.
     assert operations == []
     assert restrictions == [
-        DEPRECATED_BLOCK_ALWAYS_RAISES,
-        REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-        hosted_endpoint_disabled_by_flag(flag),
+        restriction_metadata_of(DEPRECATED_BLOCK_ALWAYS_RAISES),
+        restriction_metadata_of(hosted_endpoint_disabled_by_flag(flag)),
+        restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
     ]
     assert restrictions[0].severity is Severity.HARD
     assert restrictions[0].when == RestrictionCondition()
@@ -443,11 +451,13 @@ def test_yolo_world_declares_the_tensor_representation_caveat(
     manifest = _build(manifest_class, class_names=["dog"])
 
     # when
-    restrictions = manifest.discover_portable_restrictions()
+    restrictions = portable_restrictions(manifest)
 
     # then - the tensor sibling raises, so the block only works on a numpy
     # server; the condition names the True branch of the representation flag.
-    assert restrictions == [UNSUPPORTED_IN_TENSOR_REPRESENTATION]
+    assert restrictions == [
+        restriction_metadata_of(UNSUPPORTED_IN_TENSOR_REPRESENTATION)
+    ]
     assert restrictions[0].severity is Severity.HARD
     assert restrictions[0].when.configuration_equals == {
         "ENABLE_TENSOR_DATA_REPRESENTATION": True
@@ -456,7 +466,7 @@ def test_yolo_world_declares_the_tensor_representation_caveat(
 
 
 def test_yolo_world_declares_the_same_text_in_both_representations() -> None:
-    for hook in ("discover_work_operations", "discover_portable_restrictions"):
+    for hook in ("discover_work_operations", "get_actual_restrictions"):
         numpy_source = inspect.getsource(getattr(YoloWorldV1Manifest, hook))
         tensor_source = inspect.getsource(getattr(YoloWorldV1TensorManifest, hook))
 
@@ -503,7 +513,14 @@ def test_lmm_operations_are_incomplete_when_lmm_type_is_a_selector(
     assert isinstance(operations, Discovery)
     assert list(operations.items) == [WorkOperation.MODEL_INFERENCE]
     assert operations.complete is False
-    assert operations.unknown_reasons == ["lmm_type_selector_unresolved:$steps.step"]
+    assert operations.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.step",
+            declaration="operations",
+            field="lmm_type",
+            selector="$inputs.lmm_type",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

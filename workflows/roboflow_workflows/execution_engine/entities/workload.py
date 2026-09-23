@@ -2,8 +2,16 @@
 
 This module is the lowest layer of the workload-introspection contract. It is
 imported by ``roboflow_workflows.prototypes.block`` (which re-exports the enums
-for backwards compatibility) and by the response schemas in
+and ``RuntimeRestriction`` for backwards compatibility) and by the response
+schemas in
 ``roboflow_workflows.execution_engine.introspection.workload_entities``.
+
+``RuntimeRestriction`` - the ONE entity a block authors a restriction with -
+lives here rather than in ``prototypes.block`` so that the discovery machinery
+in this module can key and project it without importing the framework layer.
+``prototypes.block`` re-exports the very same class object, so
+``from roboflow_workflows.prototypes.block import RuntimeRestriction`` is
+unchanged.
 
 Import discipline (an import-cycle trap otherwise): only the standard library,
 ``pydantic`` and ``typing_extensions`` may be imported here. Never import
@@ -12,6 +20,7 @@ or ``execution_engine.introspection.*`` from this module.
 """
 
 import json
+from dataclasses import dataclass
 from enum import Enum
 from typing import (
     Any,
@@ -222,11 +231,424 @@ class RestrictionMetadata(BaseModel):
         return hash((self.code, self.severity, self.when))
 
 
+@dataclass(frozen=True)
+class RuntimeRestriction:
+    """A single caveat for a workflow block - the ONE entity blocks author.
+
+    ``severity`` and ``note`` keep their historic meaning: ``note`` is a
+    one-line, human-readable explanation of the failure mode or degraded
+    behavior (e.g. "track_ids reset between requests", "raises RuntimeError"),
+    not an abstract precondition.
+
+    ``applies_to_runtimes`` / ``applies_to_step_execution_modes`` /
+    ``applies_to_input_modes`` narrow the restriction to specific workflow
+    runtimes, step execution modes and input modes. An axis left unset applies
+    to all of them.
+
+    ``code`` is a stable, machine-readable identifier authored from the
+    restriction's MEANING (never derived from the note). The set is open -
+    it is a plain string, and a plugin may add its own. The default,
+    ``generic_restriction``, says "this caveat has no dedicated identifier".
+    Within a ``Discovery[RuntimeRestriction]`` the note is part of a
+    restriction's identity, so two ``generic_restriction`` entries explaining
+    different failure modes stay two entries. That distinction is deliberately
+    NOT preserved on the wire: ``RestrictionMetadata`` carries no note, so both
+    project onto the same DTO and the portable discovery coalesces them under
+    its own ``(code, severity, condition)`` identity.
+
+    ``applies_to_configuration`` narrows the restriction to a target whose
+    configuration matches every listed ``key == value`` pair. The keys are
+    configuration field names (e.g. ``ENABLE_TENSOR_DATA_REPRESENTATION``);
+    the values are the values the restriction applies to. A declaration is
+    written for the TARGET configuration - the host answering an introspection
+    call never bakes its own flags into it.
+
+    Both new fields are defaulted and appended after the historic ones, so
+    every existing positional and keyword constructor stays valid, and
+    ``to_dict()`` (the legacy editor payload) is unchanged: it carries neither
+    the code nor the configuration.
+    """
+
+    severity: Severity
+    note: str
+    applies_to_runtimes: Optional[List[Runtime]] = None
+    applies_to_step_execution_modes: Optional[List[StepExecutionMode]] = None
+    applies_to_input_modes: Optional[List[RuntimeInputMode]] = None
+    code: str = "generic_restriction"
+    applies_to_configuration: Optional[Dict[str, JsonValue]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """The legacy editor payload. Deliberately unchanged - `code` and
+        `applies_to_configuration` are NOT part of it."""
+        result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
+        if self.applies_to_runtimes is not None:
+            result["applies_to_runtimes"] = [
+                runtime.value for runtime in self.applies_to_runtimes
+            ]
+        if self.applies_to_step_execution_modes is not None:
+            result["applies_to_step_execution_modes"] = [
+                mode.value for mode in self.applies_to_step_execution_modes
+            ]
+        if self.applies_to_input_modes is not None:
+            result["applies_to_input_modes"] = [
+                mode.value for mode in self.applies_to_input_modes
+            ]
+        return result
+
+
+def restriction_metadata_of(restriction: RuntimeRestriction) -> RestrictionMetadata:
+    """Project the authored entity onto the portable workload DTO.
+
+    The note is dropped on purpose - ``RestrictionMetadata`` is the wire form
+    and carries no free text. The configuration map is COPIED, so the returned
+    model never shares mutable state with a module-level preset.
+    """
+    return RestrictionMetadata(
+        code=restriction.code,
+        severity=restriction.severity,
+        when=RestrictionCondition(
+            runtimes=restriction.applies_to_runtimes,
+            step_execution_modes=restriction.applies_to_step_execution_modes,
+            input_modes=restriction.applies_to_input_modes,
+            configuration_equals=dict(restriction.applies_to_configuration or {}),
+        ),
+    )
+
+
+class DiscoveryProblemCode(str, Enum):
+    """Why a discovery is incomplete. The set is closed and owned by the
+    Execution Engine: a consumer branches on these codes, never on the
+    human-readable ``description``.
+
+    DECLARATION_UNAVAILABLE: the declaration is not available as a complete,
+    portable statement. Three producers use it, told apart by ``details``: the
+    block does not declare this domain at all (the hook returned ``None``, e.g.
+    an unannotated third-party plugin); restrictions come only from the legacy
+    ``get_restrictions()`` classmethod, which may already have filtered them
+    for the answering host (``details.source == "get_restrictions"``); or a
+    restriction's condition names configuration this process cannot evaluate
+    (``details.configuration_keys``).
+    DECLARATION_FAILED: the declaration hook raised or returned something that
+    is not a valid declaration.
+    UNRESOLVED_SELECTOR: a value the declaration depends on is a workflow
+    selector, so it is only known at run time.
+    INVALID_RESOURCE_IDENTIFIER: a literal resource identifier names nothing
+    (blank / whitespace-only) - no identifier is ever fabricated.
+    OPAQUE_REMOTE_WORKFLOW: the step dispatches a child workflow to a remote
+    server, which compiles it; the child is not inspectable here.
+    CUSTOM_PYTHON_INTERNALS_UNKNOWN: the step runs user-supplied Python; what
+    the code does beyond the declared items is not statically analysable.
+    """
+
+    DECLARATION_UNAVAILABLE = "declaration_unavailable"
+    DECLARATION_FAILED = "declaration_failed"
+    UNRESOLVED_SELECTOR = "unresolved_selector"
+    INVALID_RESOURCE_IDENTIFIER = "invalid_resource_identifier"
+    OPAQUE_REMOTE_WORKFLOW = "opaque_remote_workflow"
+    CUSTOM_PYTHON_INTERNALS_UNKNOWN = "custom_python_internals_unknown"
+
+
+DeclarationDomain = Literal["resources", "operations", "restrictions"]
+
+
+class DiscoveryProblem(BaseModel):
+    """One structured reason why a ``Discovery`` is incomplete.
+
+    ``code`` is what a consumer branches on, ``description`` is display text
+    (never parsed), and ``details`` is an open JSON map understood per code -
+    a loose-end contract: the conventions below are documented, not enforced
+    by code-specific models, so a producer may add context without a schema
+    change.
+
+    Conventions of the built-in problems (see the workload introspection docs):
+
+    * every built-in problem: ``node_id`` (canonical ``$steps.<name>`` id) and
+      ``declaration`` (``resources`` / ``operations`` / ``restrictions``);
+    * ``declaration_unavailable`` / ``declaration_failed``: ``block_type``
+      where known;
+    * ``unresolved_selector``: ``field`` and ``selector``, plus
+      ``resource_type`` when the selector sits in a resource identity field
+      (``field`` then names the resource metadata field);
+    * ``invalid_resource_identifier``: ``field`` and ``resource_type`` - never
+      the invalid value itself.
+
+    Neither the description nor the details ever carry raw exception text,
+    tracebacks, secret values or authorization headers.
+
+    Two problems are the SAME problem when their ``code`` and their canonical
+    (sorted-key) ``details`` JSON match; the wording of ``description`` is not
+    part of that identity.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["discovery_problem"] = "discovery_problem"
+    code: DiscoveryProblemCode
+    description: str = Field(min_length=1)
+    details: Dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("description", mode="after")
+    @classmethod
+    def _reject_blank_description(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "`description` must be a human-readable sentence, not blank."
+            )
+        return value
+
+    @field_validator("details", mode="after")
+    @classmethod
+    def _reject_blank_detail_keys(
+        cls, value: Dict[str, JsonValue]
+    ) -> Dict[str, JsonValue]:
+        for key in value:
+            if not key.strip():
+                raise ValueError("`details` keys must be non-empty names.")
+        return value
+
+    def identity(self) -> Tuple[str, str]:
+        """What makes two problems the same one: the code and the canonical
+        JSON form of the details - never the description."""
+        return self.code.value, json.dumps(self.details, sort_keys=True)
+
+    def __hash__(self) -> int:
+        # `details` is a dict, so pydantic's generated hash for frozen models
+        # would fail; hash the canonical JSON form instead. Deduplication goes
+        # through `identity()` - never put this object in a set, its details
+        # map stays mutable.
+        return hash(_canonical_json(self))
+
+
+def declaration_unavailable_problem(
+    node_id: str, declaration: DeclarationDomain, block_type: Optional[str] = None
+) -> DiscoveryProblem:
+    """The block declares nothing about this domain (hook returned ``None``)."""
+    details: Dict[str, JsonValue] = {"node_id": node_id, "declaration": declaration}
+    if block_type is not None:
+        details["block_type"] = block_type
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
+        description=(
+            f"Step `{node_id}` does not declare its {declaration}, so they are "
+            f"unknown rather than absent."
+        ),
+        details=details,
+    )
+
+
+def declaration_failed_problem(
+    node_id: str, declaration: DeclarationDomain, block_type: Optional[str] = None
+) -> DiscoveryProblem:
+    """The declaration hook raised or answered with an invalid shape."""
+    details: Dict[str, JsonValue] = {"node_id": node_id, "declaration": declaration}
+    if block_type is not None:
+        details["block_type"] = block_type
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.DECLARATION_FAILED,
+        description=(
+            f"The {declaration} declaration of step `{node_id}` could not be "
+            f"read: the block hook failed or returned an invalid declaration."
+        ),
+        details=details,
+    )
+
+
+def environment_filtered_declaration_problem(
+    node_id: str, declaration: DeclarationDomain, block_type: Optional[str] = None
+) -> DiscoveryProblem:
+    """The only declaration available is the legacy ``get_restrictions()``.
+
+    The default ``get_actual_restrictions()`` falls back to that classmethod:
+    a block's own override, or the inherited ``[]`` when it never declared
+    anything. A legacy override MAY already have filtered its entries against
+    the flags of the host answering the call, so what comes back cannot be
+    assumed environment-neutral; being a classmethod it also cannot refine the
+    list from this step's own settings, so instance-specific restrictions may
+    be missing; and the inherited default states nothing at all. Whatever the
+    classmethod returned is kept - codes included, a legacy declaration may
+    well carry a specific one - but the result is never claimed complete: an
+    empty or short list is not proof of absence. Reported under the existing
+    ``declaration_unavailable`` code, distinguished by ``source``.
+    """
+    details: Dict[str, JsonValue] = {
+        "node_id": node_id,
+        "declaration": declaration,
+        "source": "get_restrictions",
+    }
+    if block_type is not None:
+        details["block_type"] = block_type
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
+        description=(
+            f"Step `{node_id}` only declares its {declaration} through the "
+            f"legacy `get_restrictions()` API, which may already have filtered "
+            f"them for the host that answered and cannot report ones specific "
+            f"to this step's settings, so whatever it returned is kept but "
+            f"cannot be claimed complete."
+        ),
+        details=details,
+    )
+
+
+def unknown_configuration_problem(
+    node_id: str,
+    declaration: DeclarationDomain,
+    configuration_keys: List[str],
+    block_type: Optional[str] = None,
+) -> DiscoveryProblem:
+    """A declaration is conditioned on configuration this process cannot read.
+
+    Only the KEY NAMES are reported - never the host's values. The entries
+    concerned are kept, because an unreadable condition is uncertainty, not a
+    reason to drop a restriction.
+
+    Emitted only while the condition is still open: a restriction whose
+    predicates are ANDed and which already has one evaluable predicate that
+    does NOT hold here is definitively inactive, so it is dropped without a
+    problem and its unreadable keys are never reported.
+    """
+    details: Dict[str, JsonValue] = {
+        "node_id": node_id,
+        "declaration": declaration,
+        "configuration_keys": sorted(set(configuration_keys)),
+    }
+    if block_type is not None:
+        details["block_type"] = block_type
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
+        description=(
+            f"Step `{node_id}` conditions part of its {declaration} on "
+            f"configuration this process cannot evaluate, so those entries are "
+            f"kept without being confirmed."
+        ),
+        details=details,
+    )
+
+
+def with_block_type(problem: DiscoveryProblem, block_type: str) -> DiscoveryProblem:
+    """Add the reporter-known ``block_type`` to a declaration-level problem.
+
+    A manifest hook knows its step, not the canonical block identifier the
+    registry gave the block; the caller that forwards the problem does. Only
+    ``declaration_unavailable`` / ``declaration_failed`` carry ``block_type``
+    by convention, and an already-present value is never overwritten.
+    """
+    if problem.code not in (
+        DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
+        DiscoveryProblemCode.DECLARATION_FAILED,
+    ):
+        return problem
+    if "block_type" in problem.details:
+        return problem
+    return problem.model_copy(
+        update={"details": {**problem.details, "block_type": block_type}}
+    )
+
+
+def unresolved_selector_problem(
+    node_id: str,
+    declaration: DeclarationDomain,
+    field: str,
+    selector: str,
+    resource_type: Optional[str] = None,
+) -> DiscoveryProblem:
+    """A selector-valued field keeps the declaration from being complete."""
+    details: Dict[str, JsonValue] = {
+        "node_id": node_id,
+        "declaration": declaration,
+        "field": field,
+        "selector": selector,
+    }
+    if resource_type is not None:
+        details["resource_type"] = resource_type
+        subject = f"Field `{field}` of the {resource_type} declared by step"
+    else:
+        subject = f"Field `{field}` of step"
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.UNRESOLVED_SELECTOR,
+        description=(
+            f"{subject} `{node_id}` is set by selector `{selector}`, which is "
+            f"only known at run time, so the {declaration} are not fully known."
+        ),
+        details=details,
+    )
+
+
+def invalid_resource_identifier_problem(
+    node_id: str, declaration: DeclarationDomain, field: str, resource_type: str
+) -> DiscoveryProblem:
+    """A literal resource identifier names nothing (blank / whitespace-only)."""
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.INVALID_RESOURCE_IDENTIFIER,
+        description=(
+            f"Step `{node_id}` declares a {resource_type} whose `{field}` is "
+            f"blank, so the resource cannot be identified."
+        ),
+        details={
+            "node_id": node_id,
+            "declaration": declaration,
+            "field": field,
+            "resource_type": resource_type,
+        },
+    )
+
+
+def opaque_remote_workflow_problem(
+    node_id: str, declaration: DeclarationDomain
+) -> DiscoveryProblem:
+    """The child workflow is compiled by a remote server, not inspectable."""
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.OPAQUE_REMOTE_WORKFLOW,
+        description=(
+            f"Step `{node_id}` dispatches its child workflow to a remote "
+            f"server, so the child's {declaration} are not visible here."
+        ),
+        details={"node_id": node_id, "declaration": declaration},
+    )
+
+
+def custom_python_internals_unknown_problem(
+    node_id: str, declaration: DeclarationDomain
+) -> DiscoveryProblem:
+    """User-supplied Python may do more than the declared items say."""
+    return DiscoveryProblem(
+        code=DiscoveryProblemCode.CUSTOM_PYTHON_INTERNALS_UNKNOWN,
+        description=(
+            f"Step `{node_id}` runs custom Python code, so its internals may "
+            f"add {declaration} beyond the declared ones."
+        ),
+        details={"node_id": node_id, "declaration": declaration},
+    )
+
+
 def _discovery_item_sort_key(item: Any) -> Tuple[str, ...]:
     if isinstance(item, Enum):
         return (str(item.value),)
     if isinstance(item, RestrictionMetadata):
         return (item.code, item.severity.value, _canonical_json(item.when))
+    if isinstance(item, RuntimeRestriction):
+        # The note is PART of the identity: two `generic_restriction` entries
+        # explaining different failure modes are two restrictions, and merging
+        # them by code would silently drop one. The axes are keyed without
+        # going through `RestrictionMetadata`, so an invalid declaration still
+        # sorts (it fails later, where it can be reported as a problem).
+        return (
+            str(item.code),
+            item.severity.value,
+            item.note,
+            json.dumps(
+                {
+                    "applies_to_runtimes": item.applies_to_runtimes,
+                    "applies_to_step_execution_modes": (
+                        item.applies_to_step_execution_modes
+                    ),
+                    "applies_to_input_modes": item.applies_to_input_modes,
+                    "applies_to_configuration": item.applies_to_configuration,
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        )
     if isinstance(item, BaseModel):
         return (_canonical_json(item),)
     try:
@@ -244,21 +666,39 @@ def _deduplicate_and_sort_items(items: List[Any]) -> List[Any]:
     return [keyed[key] for key in sorted(keyed)]
 
 
+def _deduplicate_and_sort_problems(
+    problems: List[DiscoveryProblem],
+) -> List[DiscoveryProblem]:
+    """Unique by ``(code, canonical details)`` and sorted by that same key.
+
+    Neither the result order nor the surviving entry depends on the order the
+    producers ran in, on the insertion order of a details map, or on how a
+    description happens to be worded: identical identities with different
+    wording keep the lexicographically first description.
+    """
+    keyed: Dict[Tuple[str, str], DiscoveryProblem] = {}
+    for problem in problems:
+        key = problem.identity()
+        current = keyed.get(key)
+        if current is None or problem.description < current.description:
+            keyed[key] = problem
+    return [keyed[key] for key in sorted(keyed)]
+
+
 class Discovery(BaseModel, Generic[T]):
     """A set of discovered facts together with an honest completeness claim.
 
     * ``complete=True`` with no items is a known absence (the step truthfully
       does nothing of this kind). Complete results carry no ``unknown_reasons``.
     * ``complete=False`` may still list the items that ARE known, and MUST
-      carry at least one reason. Reasons are stable codes with context in the
-      form ``<reason_code>:<context>`` (e.g.
-      ``step_declaration_missing:$steps.crop``) - never exception traces or
-      secrets.
+      carry at least one reason. Reasons are ``DiscoveryProblem`` objects: a
+      closed ``code`` a consumer branches on, a human-readable ``description``
+      and open ``details`` - never exception traces or secrets.
 
     Items are de-duplicated and deterministically sorted (enum members by
     value, ``RestrictionMetadata`` by ``(code, severity, condition JSON)``,
-    other models by their JSON dump with sorted keys); reasons are unique and
-    sorted. Instances are frozen.
+    other models by their JSON dump with sorted keys); reasons are unique by
+    ``(code, canonical details)`` and sorted by that key. Instances are frozen.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -266,7 +706,7 @@ class Discovery(BaseModel, Generic[T]):
     type: Literal["discovery"] = "discovery"
     items: List[T]
     complete: bool
-    unknown_reasons: List[str]
+    unknown_reasons: List[DiscoveryProblem]
 
     @field_validator("items", mode="after")
     @classmethod
@@ -275,11 +715,10 @@ class Discovery(BaseModel, Generic[T]):
 
     @field_validator("unknown_reasons", mode="after")
     @classmethod
-    def _canonicalise_reasons(cls, value: List[str]) -> List[str]:
-        for reason in value:
-            if not reason.strip():
-                raise ValueError("`unknown_reasons` entries must be non-empty codes.")
-        return sorted(set(value))
+    def _canonicalise_reasons(
+        cls, value: List[DiscoveryProblem]
+    ) -> List[DiscoveryProblem]:
+        return _deduplicate_and_sort_problems(problems=value)
 
     @model_validator(mode="after")
     def _enforce_completeness_contract(self) -> "Discovery[T]":
@@ -301,25 +740,27 @@ def complete_discovery(items: Iterable[T]) -> Discovery[T]:
     return Discovery(items=list(items), complete=True, unknown_reasons=[])
 
 
-def incomplete_discovery(items: Iterable[T], reasons: Iterable[str]) -> Discovery[T]:
-    """Build an incomplete discovery listing the known ``items`` and why the
-    rest is unknown (``reasons`` must be non-empty)."""
+def incomplete_discovery(
+    items: Iterable[T], reasons: Iterable[DiscoveryProblem]
+) -> Discovery[T]:
+    """Build an incomplete discovery listing the known ``items`` and the
+    ``DiscoveryProblem`` reasons why the rest is unknown (non-empty)."""
     return Discovery(items=list(items), complete=False, unknown_reasons=list(reasons))
 
 
 def normalize_declaration(
-    value: Union[None, Iterable[T], Discovery[T]], unknown_reason: str
+    value: Union[None, Iterable[T], Discovery[T]], unknown_problem: DiscoveryProblem
 ) -> Discovery[T]:
     """Map a manifest hook return value onto the ``Discovery`` convention.
 
     * ``None`` -> unknown: ``Discovery(items=[], complete=False,
-      unknown_reasons=[unknown_reason])``.
+      unknown_reasons=[unknown_problem])``.
     * a plain list (any iterable) -> complete declaration (may be empty).
     * a ``Discovery`` -> re-validated copy of itself (item objects preserved,
       so in-process aids such as excluded resolver callbacks survive).
     """
     if value is None:
-        return Discovery(items=[], complete=False, unknown_reasons=[unknown_reason])
+        return Discovery(items=[], complete=False, unknown_reasons=[unknown_problem])
     if isinstance(value, Discovery):
         return type(value)(
             items=list(value.items),

@@ -24,19 +24,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from roboflow_workflows.prototypes.block import (
-    COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION,
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
     DependentResource,
-    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.prototypes.cache import WorkflowsCache
 from twilio.rest import Client
@@ -259,8 +259,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[COOLDOWN_HTTP_SOFT_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

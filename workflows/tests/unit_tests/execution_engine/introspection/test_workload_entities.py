@@ -11,7 +11,7 @@ the absence of every rejected field name from the schema.
 import json
 import subprocess
 import sys
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Optional, Type
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -21,7 +21,9 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Severity,
     WorkOperation,
     complete_discovery,
+    declaration_unavailable_problem,
     incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
     WORKLOAD_INTROSPECTION_SCHEMA_VERSION,
@@ -99,12 +101,18 @@ def _step(
 
 
 def _model(
-    model_id: str = "my_project/3", used_by_steps: List[str] = ("$steps.detector",)
+    model_id: str = "my_project/3",
+    used_by_steps: List[str] = ("$steps.detector",),
+    steps_by_dimensionality: Optional[Dict[int, int]] = None,
 ) -> ModelSummary:
+    if steps_by_dimensionality is None:
+        # every step of `_introspection()` has input depth 1
+        steps_by_dimensionality = {1: len(used_by_steps)} if used_by_steps else {}
     return ModelSummary(
         provider="roboflow",
         model_id=model_id,
         used_by_steps=list(used_by_steps),
+        steps_by_dimensionality=steps_by_dimensionality,
         metadata=None,
         metadata_status="unavailable",
     )
@@ -122,7 +130,11 @@ def _introspection(**overrides: Any) -> WorkflowIntrospection:
         operations=complete_discovery([WorkOperation.IMAGE_CROP]),
         restrictions=incomplete_discovery(
             [STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION],
-            ["step_declaration_missing:$steps.crop"],
+            [
+                declaration_unavailable_problem(
+                    node_id="$steps.crop", declaration="restrictions"
+                )
+            ],
         ),
     )
     payload: Dict[str, Any] = dict(
@@ -170,13 +182,20 @@ def _all_property_names(schema: Dict[str, Any]) -> List[str]:
 
 
 def _collect_type_values(payload: Any) -> List[str]:
+    """Discriminators of the entity objects. Plain JSON maps that are not
+    entities are skipped: `steps_by_dimensionality`, a restriction's
+    `configuration_equals` and a problem's open `details` may contain any JSON
+    data, a key named `type` included."""
     found: List[str] = []
+    plain_json_maps = {"details", "configuration_equals", "steps_by_dimensionality"}
 
     def _walk(node: Any) -> None:
         if isinstance(node, dict):
             if "type" in node and isinstance(node["type"], str):
                 found.append(node["type"])
-            for value in node.values():
+            for key, value in node.items():
+                if key in plain_json_maps:
+                    continue
                 _walk(value)
         elif isinstance(node, list):
             for value in node:
@@ -250,10 +269,14 @@ def test_valid_example_roundtrips_and_carries_discriminators_everywhere() -> Non
     assert python_payload["nodes"][0]["type"] == "graph_node"
     assert python_payload["edges"][0]["type"] == "graph_edge"
 
+    problem = python_payload["steps"][1]["restrictions"]["unknown_reasons"][0]
+    assert problem["type"] == "discovery_problem"
+
     assert set(_collect_type_values(json_payload)) == {
         "workflow_introspection",
         "workflow_summary",
         "discovery",
+        "discovery_problem",
         "model_summary",
         "step_metadata",
         "dependent_resource",
@@ -279,9 +302,13 @@ def test_steps_by_dimensionality_keys_are_strings_on_the_wire() -> None:
     wire = json.loads(introspection.model_dump_json())
 
     assert wire["summary"]["steps_by_dimensionality"] == {"1": 2}
+    assert wire["summary"]["models"]["items"][0]["steps_by_dimensionality"] == {"1": 1}
     parsed = WorkflowIntrospection.model_validate(wire)
     assert parsed.summary.steps_by_dimensionality == {1: 2}
     assert all(isinstance(key, int) for key in parsed.summary.steps_by_dimensionality)
+    model = parsed.summary.models.items[0]
+    assert model.steps_by_dimensionality == {1: 1}
+    assert all(isinstance(key, int) for key in model.steps_by_dimensionality)
 
 
 def test_model_summary_with_metadata_roundtrips() -> None:
@@ -289,14 +316,43 @@ def test_model_summary_with_metadata_roundtrips() -> None:
         provider="roboflow",
         model_id="my_project/3",
         used_by_steps=["$steps.b", "$steps.a"],
+        steps_by_dimensionality={2: 1, 1: 1},
         metadata=ModelMetadata(model_type="rfdetr", task_type="object-detection"),
         metadata_status="available",
     )
 
     assert summary.used_by_steps == ["$steps.a", "$steps.b"]
+    assert summary.steps_by_dimensionality == {1: 1, 2: 1}
     payload = summary.model_dump(mode="json")
     assert payload["metadata"]["type"] == "model_metadata"
+    assert payload["steps_by_dimensionality"] == {"1": 1, "2": 1}
     assert ModelSummary.model_validate(payload) == summary
+    assert ModelSummary.model_validate_json(summary.model_dump_json()) == summary
+
+
+def test_model_summary_histogram_is_required_and_canonical() -> None:
+    # required: no empty default is fabricated when the depths are not given
+    with pytest.raises(ValidationError, match="steps_by_dimensionality"):
+        ModelSummary(
+            provider="roboflow",
+            model_id="x",
+            used_by_steps=["$steps.a"],
+            metadata_status="unavailable",
+        )
+    # string keys from the wire are coerced and sorted ascending
+    summary = ModelSummary(
+        provider="roboflow",
+        model_id="x",
+        used_by_steps=["$steps.c", "$steps.a", "$steps.b", "$steps.d"],
+        steps_by_dimensionality={"2": 1, "0": 1, "1": 2},
+        metadata_status="unavailable",
+    )
+    assert list(summary.steps_by_dimensionality.items()) == [(0, 1), (1, 2), (2, 1)]
+    assert list(json.loads(summary.model_dump_json())["steps_by_dimensionality"]) == [
+        "0",
+        "1",
+        "2",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -325,7 +381,7 @@ def test_workflow_introspection_schema_shows_type_on_every_entity() -> None:
         type_property = definition["properties"]["type"]
         assert "const" in type_property and "default" in type_property, name
         assert type_property["const"] == type_property["default"], name
-    assert schema["properties"]["schema_version"]["const"] == "1"
+    assert schema["properties"]["schema_version"]["const"] == "2"
 
 
 def test_schema_has_no_rejected_field_names() -> None:
@@ -464,48 +520,79 @@ def test_step_metadata_keeps_access_vs_execution_and_third_party_resources() -> 
 
 
 def test_model_summary_rules() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="must name at least one step"):
         _model(used_by_steps=[])
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
         _model(used_by_steps=["$steps.a", "$steps.a"])
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="provider"):
         ModelSummary(
             provider="",
             model_id="x",
             used_by_steps=["$steps.a"],
+            steps_by_dimensionality={1: 1},
             metadata_status="unavailable",
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="model_id"):
         ModelSummary(
             provider="roboflow",
             model_id="",
             used_by_steps=["$steps.a"],
+            steps_by_dimensionality={1: 1},
             metadata_status="unavailable",
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="metadata"):
         ModelSummary(
             provider="roboflow",
             model_id="x",
             used_by_steps=["$steps.a"],
+            steps_by_dimensionality={1: 1},
             metadata=None,
             metadata_status="available",
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="metadata"):
         ModelSummary(
             provider="roboflow",
             model_id="x",
             used_by_steps=["$steps.a"],
+            steps_by_dimensionality={1: 1},
             metadata=ModelMetadata(),
             metadata_status="available",
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="metadata"):
         ModelSummary(
             provider="roboflow",
             model_id="x",
             used_by_steps=["$steps.a"],
+            steps_by_dimensionality={1: 1},
             metadata=ModelMetadata(model_type="rfdetr"),
             metadata_status="disabled",
         )
+
+
+def test_model_summary_histogram_rules() -> None:
+    with pytest.raises(ValidationError, match="must be non-negative"):
+        _model(steps_by_dimensionality={-1: 1})
+    with pytest.raises(ValidationError, match="must be positive counts"):
+        _model(used_by_steps=["$steps.a"], steps_by_dimensionality={1: 1, 2: 0})
+    # sum must equal the number of referring steps, in both directions
+    with pytest.raises(
+        ValidationError, match="must sum to the number of `used_by_steps`"
+    ):
+        _model(used_by_steps=["$steps.a"], steps_by_dimensionality={1: 2})
+    with pytest.raises(
+        ValidationError, match="must sum to the number of `used_by_steps`"
+    ):
+        _model(used_by_steps=["$steps.a", "$steps.b"], steps_by_dimensionality={1: 1})
+    with pytest.raises(
+        ValidationError, match="must sum to the number of `used_by_steps`"
+    ):
+        _model(used_by_steps=["$steps.a"], steps_by_dimensionality={})
+    # the entity alone cannot know the real depths: any split that sums is fine
+    mixed = _model(
+        used_by_steps=["$steps.a", "$steps.b", "$steps.c"],
+        steps_by_dimensionality={2: 1, 1: 2},
+    )
+    assert mixed.steps_by_dimensionality == {1: 2, 2: 1}
 
 
 def test_workflow_summary_histogram_rules() -> None:
@@ -565,17 +652,27 @@ def test_no_step_input_to_output_workflow_is_valid() -> None:
 
 
 def test_incomplete_model_inventory_with_unresolved_selector_is_valid() -> None:
+    problem = unresolved_selector_problem(
+        node_id="$steps.crop",
+        declaration="resources",
+        field="model_id",
+        selector="$inputs.model",
+        resource_type="roboflow_platform_model",
+    )
     introspection = _introspection(
         summary=WorkflowSummary(
-            models=incomplete_discovery(
-                [_model()], ["unresolved_model_selector:$steps.crop"]
-            ),
+            models=incomplete_discovery([_model()], [problem]),
             max_dimensionality=2,
             steps_by_dimensionality={1: 2},
         )
     )
 
     assert introspection.summary.models.complete is False
+    assert introspection.summary.models.unknown_reasons == [problem]
+    assert (
+        WorkflowIntrospection.model_validate(introspection.model_dump(mode="json"))
+        == introspection
+    )
 
 
 def test_rejects_duplicated_node_ids() -> None:
@@ -722,6 +819,7 @@ def test_rejects_duplicated_model_inventory_entry() -> None:
         provider="roboflow",
         model_id="my_project/3",
         used_by_steps=["$steps.crop"],
+        steps_by_dimensionality={1: 1},
         metadata_status="unavailable",
     )
     # Same (provider, model_id) with different used_by_steps: Discovery dedup
@@ -730,6 +828,80 @@ def test_rejects_duplicated_model_inventory_entry() -> None:
         _introspection(
             summary=WorkflowSummary(
                 models=complete_discovery([_model(), duplicate]),
+                max_dimensionality=2,
+                steps_by_dimensionality={1: 2},
+            )
+        )
+
+
+def test_model_histogram_is_checked_against_the_real_step_depths() -> None:
+    # given: both steps of the example have input depth 1
+    shared = _model(
+        used_by_steps=["$steps.detector", "$steps.crop"],
+        steps_by_dimensionality={1: 2},
+    )
+    introspection = _introspection(
+        summary=WorkflowSummary(
+            models=complete_discovery([shared]),
+            max_dimensionality=2,
+            steps_by_dimensionality={1: 2},
+        )
+    )
+    assert introspection.summary.models.items[0].steps_by_dimensionality == {1: 2}
+    assert (
+        WorkflowIntrospection.model_validate(introspection.model_dump(mode="json"))
+        == introspection
+    )
+
+
+def test_rejects_model_histogram_with_wrong_depth_even_when_sums_match() -> None:
+    # the entity-level sum rule passes (2 == 2); only the cross-field rule can
+    # see that neither referenced step is compiled at depth 2
+    wrong_depth = _model(
+        used_by_steps=["$steps.detector", "$steps.crop"],
+        steps_by_dimensionality={1: 1, 2: 1},
+    )
+    with pytest.raises(
+        ValidationError,
+        match="must equal the histogram of the input dimensionalities",
+    ):
+        _introspection(
+            summary=WorkflowSummary(
+                models=complete_discovery([wrong_depth]),
+                max_dimensionality=2,
+                steps_by_dimensionality={1: 2},
+            )
+        )
+
+
+def test_rejects_model_histogram_single_step_at_wrong_depth() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="must equal the histogram of the input dimensionalities",
+    ):
+        _introspection(
+            summary=WorkflowSummary(
+                models=complete_discovery([_model(steps_by_dimensionality={2: 1})]),
+                max_dimensionality=2,
+                steps_by_dimensionality={1: 2},
+            )
+        )
+
+
+def test_unknown_model_step_is_reported_before_its_depth_is_looked_up() -> None:
+    # `$steps.ghost` has no StepMetadata; the error must be the unknown-step
+    # one, not a KeyError or a histogram mismatch
+    with pytest.raises(ValidationError, match="used by unknown steps"):
+        _introspection(
+            summary=WorkflowSummary(
+                models=complete_discovery(
+                    [
+                        _model(
+                            used_by_steps=["$steps.ghost"],
+                            steps_by_dimensionality={7: 1},
+                        )
+                    ]
+                ),
                 max_dimensionality=2,
                 steps_by_dimensionality={1: 2},
             )
@@ -784,12 +956,23 @@ def test_max_dimensionality_may_exceed_every_step() -> None:
     assert introspection.summary.max_dimensionality == 3
 
 
-def test_rejects_wrong_schema_version_and_blank_engine_version() -> None:
+@pytest.mark.parametrize("schema_version", ["1", "3", "2.0", ""])
+def test_rejects_every_schema_version_but_the_current_one(schema_version: str) -> None:
+    # "1" is the retired string-reason format: it must be rejected, not
+    # silently accepted as if the reasons still parsed
     base = _introspection()
     with pytest.raises(ValidationError):
         WorkflowIntrospection.model_validate(
-            {**base.model_dump(mode="json"), "schema_version": "2"}
+            {**base.model_dump(mode="json"), "schema_version": schema_version}
         )
+
+
+def test_current_schema_version_is_two_and_engine_version_is_separate() -> None:
+    introspection = _introspection()
+
+    assert introspection.schema_version == "2"
+    assert WORKLOAD_INTROSPECTION_SCHEMA_VERSION == "2"
+    assert introspection.execution_engine_version == "1.7.0"
     with pytest.raises(ValidationError):
         _introspection(execution_engine_version="")
 

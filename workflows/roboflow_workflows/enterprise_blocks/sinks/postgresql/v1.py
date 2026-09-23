@@ -18,7 +18,7 @@ except ImportError:
     sql = None
 
 from roboflow_workflows.core_steps.common.workload_presets import (
-    FIRE_AND_FORGET_PORTABLE_RESTRICTION,
+    FIRE_AND_FORGET_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.environment import (
@@ -40,18 +40,19 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
-    RestrictionMetadata,
+    RuntimeRestriction,
     WorkOperation,
     incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
 )
 
@@ -357,20 +358,34 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.EXTERNAL_REQUEST]
 
-    def discover_portable_restrictions(
-        self,
-    ) -> Union[List[RestrictionMetadata], Discovery[RestrictionMetadata]]:
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
         if is_workflow_selector(self.fire_and_forget):
             # A runtime value decides whether writes are awaited, so the caveat
             # MAY apply. Claiming it applies would be as wrong as claiming it
             # does not: declare nothing complete and give the reason.
-            return incomplete_discovery(
+            declared = incomplete_discovery(
                 items=[],
-                reasons=[f"fire_and_forget_selector_unresolved:$steps.{self.name}"],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
             )
-        if self.fire_and_forget:
-            return [FIRE_AND_FORGET_PORTABLE_RESTRICTION]
-        return []
+        elif self.fire_and_forget:
+            declared = [FIRE_AND_FORGET_RESTRICTION]
+        else:
+            declared = []
+        return actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []

@@ -13,14 +13,16 @@ from roboflow_workflows.core_steps.cache.cache_set.v1 import (
     BlockManifest as CacheSetManifest,
 )
 from roboflow_workflows.core_steps.cache.common import (
-    IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION,
     IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Runtime,
     Severity,
     WorkOperation,
+    restriction_metadata_of,
 )
+
+from tests.unit_tests.workload_declaration_helpers import portable_restrictions
 
 
 def _cache_get() -> CacheGetManifest:
@@ -49,8 +51,10 @@ def test_cache_blocks_declare_the_direction_of_the_access() -> None:
 
 def test_cache_restriction_is_keyed_on_the_runtime_only() -> None:
     for manifest in (_cache_get(), _cache_set()):
-        restrictions = manifest.discover_portable_restrictions()
-        assert restrictions == [IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION]
+        restrictions = portable_restrictions(manifest)
+        assert restrictions == [
+            restriction_metadata_of(IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION)
+        ]
         condition = restrictions[0].when
         assert restrictions[0].code == "in_process_cache_not_shared_across_workers"
         assert restrictions[0].severity is Severity.SOFT
@@ -64,14 +68,21 @@ def test_cache_restriction_is_keyed_on_the_runtime_only() -> None:
 
 
 def test_portable_and_legacy_cache_presets_describe_the_same_runtimes() -> None:
-    assert set(IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION.applies_to_runtimes) == set(
-        IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION.when.runtimes
-    )
-    assert (
-        IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION.severity
-        is IN_PROCESS_CACHE_HTTP_SOFT_PORTABLE_RESTRICTION.severity
-    )
-    assert (
-        IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION.applies_to_step_execution_modes is None
-    )
-    assert IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION.applies_to_input_modes is None
+    """One preset, two views: the editor's note-carrying entity and the wire
+    DTO derived from it. They cannot drift because the DTO is projected, but
+    the axes are pinned here anyway."""
+    legacy = IN_PROCESS_CACHE_HTTP_SOFT_RESTRICTION
+    portable = restriction_metadata_of(legacy)
+
+    assert set(legacy.applies_to_runtimes) == set(portable.when.runtimes)
+    assert portable.severity is legacy.severity
+    assert legacy.applies_to_step_execution_modes is None
+    assert legacy.applies_to_input_modes is None
+    assert portable.when.step_execution_modes is None
+    assert portable.when.input_modes is None
+    # the editor payload is unchanged: it never carried the code
+    assert legacy.to_dict() == {
+        "severity": "soft",
+        "note": legacy.note,
+        "applies_to_runtimes": ["hosted_serverless", "dedicated_deployment"],
+    }

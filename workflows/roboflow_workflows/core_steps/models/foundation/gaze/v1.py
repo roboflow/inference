@@ -22,17 +22,18 @@ from roboflow_workflows.execution_engine.entities.types import (
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.prototypes.platform_errors import FeatureDeprecatedError
 
@@ -138,12 +139,18 @@ class BlockManifest(WorkflowBlockManifest):
         # step performs no work on any runtime.
         return []
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return [
-            DEPRECATED_BLOCK_ALWAYS_RAISES,
-            REQUIRES_GPU_FOR_LOCAL_EXECUTION,
-            hosted_endpoint_disabled_by_flag("CORE_MODEL_GAZE_ENABLED"),
-        ]
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                DEPRECATED_BLOCK_ALWAYS_RAISES,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("CORE_MODEL_GAZE_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class GazeBlockV1(WorkflowBlock):

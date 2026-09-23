@@ -31,7 +31,8 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.execution_engine.entities.workload import (
-    RestrictionMetadata,
+    Discovery,
+    RuntimeRestriction,
     WorkOperation,
 )
 
@@ -321,8 +322,12 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_work_operations(self) -> List[WorkOperation]:
         return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
 
-    def discover_portable_restrictions(self) -> List[RestrictionMetadata]:
-        return []
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class RoboflowDatasetUploadBlockV1(WorkflowBlock):

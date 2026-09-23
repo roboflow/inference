@@ -1,21 +1,41 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 from roboflow_workflows.errors import BlockInterfaceError
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.workload import (
+    DeclarationDomain,
     Discovery,
-    RestrictionCondition,
-    RestrictionMetadata,
+    DiscoveryProblem,
+)
+from roboflow_workflows.execution_engine.entities.workload import (  # noqa: F401 - compatibility re-export
+    RestrictionCondition as RestrictionCondition,
+)
+from roboflow_workflows.execution_engine.entities.workload import (  # noqa: F401 - compatibility re-export
+    RestrictionMetadata as RestrictionMetadata,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
     Runtime,
     RuntimeInputMode,
+    RuntimeRestriction,
     Severity,
     StepExecutionMode,
     WorkOperation,
+    declaration_failed_problem,
+    declaration_unavailable_problem,
+    environment_filtered_declaration_problem,
+    incomplete_discovery,
+    normalize_declaration,
+    restriction_metadata_of,
+    unknown_configuration_problem,
+)
+from roboflow_workflows.execution_engine.introspection.restriction_environment import (
+    ConfigurationMatch,
+    evaluate_configuration_condition,
 )
 from roboflow_workflows.execution_engine.introspection.utils import get_full_type_name
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
@@ -40,48 +60,10 @@ class AirGappedAvailability:
     reason: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class RuntimeRestriction:
-    """A single caveat for a workflow block.
-
-    ``note`` is a one-line, human-readable explanation of the failure mode or
-    degraded behavior. It should describe what happens (e.g. "track_ids reset
-    between requests", "raises RuntimeError", "writes to ephemeral /tmp"),
-    not abstract preconditions.
-
-    ``applies_to_runtimes`` narrows the restriction to specific workflow
-    runtimes. When unset, the restriction applies to all runtimes.
-
-    ``applies_to_step_execution_modes`` narrows the restriction to specific
-    workflow step execution modes. When unset, the restriction applies to all
-    step execution modes.
-
-    ``applies_to_input_modes`` narrows the restriction to specific workflow
-    input modes, such as video workflows that depend on cross-frame state.
-    When unset, the restriction applies to all input modes.
-    """
-
-    severity: Severity
-    note: str
-    applies_to_runtimes: Optional[List[Runtime]] = None
-    applies_to_step_execution_modes: Optional[List[StepExecutionMode]] = None
-    applies_to_input_modes: Optional[List[RuntimeInputMode]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
-        if self.applies_to_runtimes is not None:
-            result["applies_to_runtimes"] = [
-                runtime.value for runtime in self.applies_to_runtimes
-            ]
-        if self.applies_to_step_execution_modes is not None:
-            result["applies_to_step_execution_modes"] = [
-                mode.value for mode in self.applies_to_step_execution_modes
-            ]
-        if self.applies_to_input_modes is not None:
-            result["applies_to_input_modes"] = [
-                mode.value for mode in self.applies_to_input_modes
-            ]
-        return result
+# ``RuntimeRestriction`` is defined in
+# ``roboflow_workflows.execution_engine.entities.workload`` and re-exported
+# above - the class object is the same one, so importing it from here is
+# unchanged.
 
 
 # ----------------------------------------------------------------------------
@@ -95,6 +77,7 @@ class RuntimeRestriction:
 
 
 STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="stateful_video_state_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
         "Block keeps per-video state in process memory (keyed by "
@@ -112,6 +95,7 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
 
 
 COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="cooldown_timer_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
         "Cooldown / rate-limit timer is stored in process memory. With "
@@ -126,6 +110,7 @@ COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
 
 
 STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
+    code="temporal_block_no_benefit_on_still_image",
     severity=Severity.SOFT,
     note=(
         "Block depends on temporal context from video or repeated-frame "
@@ -137,31 +122,23 @@ STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
 )
 
 
-STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
-    code="stateful_video_state_resets_on_stateless_http",
-    severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        step_execution_modes=[StepExecutionMode.REMOTE],
-        input_modes=[RuntimeInputMode.VIDEO],
-    ),
+# Portable (wire-shaped) twins of the three presets above. They are DERIVED,
+# never separately authored, so the code and the axes cannot drift from the
+# restriction they describe. Kept as compatibility exports for callers that
+# already consume the `RestrictionMetadata` form; new code should declare the
+# `RuntimeRestriction` preset and let the projection do this.
+STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION
 )
 
 
-COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
-    code="cooldown_timer_resets_on_stateless_http",
-    severity=Severity.SOFT,
-    when=RestrictionCondition(
-        runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-        step_execution_modes=[StepExecutionMode.REMOTE],
-    ),
+COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    COOLDOWN_HTTP_SOFT_RESTRICTION
 )
 
 
-STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION = RestrictionMetadata(
-    code="temporal_block_no_benefit_on_still_image",
-    severity=Severity.SOFT,
-    when=RestrictionCondition(input_modes=[RuntimeInputMode.IMAGE]),
+STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION
 )
 
 
@@ -541,8 +518,7 @@ class WorkflowBlockManifest(BaseModel, ABC):
     ) -> Optional[Union[List[WorkOperation], Discovery[WorkOperation]]]:
         """Declare the meaningful work this step performs.
 
-        Return-value convention (shared with
-        ``discover_portable_restrictions()``):
+        Return-value convention:
 
         * ``None`` (the default) - unknown: the block does not declare its
           operations (e.g. an unannotated plugin). Callers must treat it as an
@@ -552,7 +528,15 @@ class WorkflowBlockManifest(BaseModel, ABC):
         * a ``Discovery[WorkOperation]`` - explicit completeness with reasons,
           e.g. custom Python declares
           ``incomplete_discovery([WorkOperation.CUSTOM_PYTHON],
-          ["custom_python_internal_operations_unknown:$steps.<name>"])``.
+          [custom_python_internals_unknown_problem(
+          node_id=f"$steps.{self.name}", declaration="operations")])``.
+
+        Reasons are ``DiscoveryProblem`` objects (a closed ``code``, a
+        human-readable ``description`` and open ``details``); build them with
+        the factories in
+        ``roboflow_workflows.execution_engine.entities.workload`` rather than
+        writing free text, and never put an exception message, a traceback or
+        a secret into them.
 
         Callers normalise every return value through
         ``roboflow_workflows.execution_engine.entities.workload.normalize_declaration``.
@@ -564,23 +548,58 @@ class WorkflowBlockManifest(BaseModel, ABC):
         """
         return None
 
-    def discover_portable_restrictions(
-        self,
-    ) -> Optional[Union[List[RestrictionMetadata], Discovery[RestrictionMetadata]]]:
-        """Declare portable (code + condition) runtime restrictions.
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """This step's restrictions, as a ``Discovery[RuntimeRestriction]``.
 
-        Same return-value convention as ``discover_work_operations()``:
-        ``None`` = unknown (the default), a plain ``list`` = complete
-        declaration (``[]`` = declares none), a
-        ``Discovery[RestrictionMetadata]`` = explicit completeness with
-        reasons.
+        The single hook a block overrides to declare restrictions. It never
+        executes the block, never resolves a selector and never invents a
+        value. An override declares what applies CONDITIONALLY on the target
+        deployment - runtimes, step execution modes, input modes and
+        ``applies_to_configuration`` - refined by the instance's own literal
+        settings; a field fed by a selector returns an ``incomplete_discovery``
+        with an ``unresolved_selector_problem`` instead of a guess. Build the
+        result with ``actual_restrictions_of()``, or return an empty complete
+        discovery when the block declares nothing.
 
-        Return every declaration that applies conditionally on the target
-        configuration (see ``RestrictionCondition``) without evaluating this
-        host's flags. ``get_restrictions()`` (human notes, environment
-        filtered) is unchanged and remains the legacy API.
+        ``ignore_environment_restrictions``:
+
+        * ``False`` (default) - the HOST view: the ``applies_to_configuration``
+          predicates are evaluated against the configuration installed in THIS
+          process and entries that definitively do not apply here are removed.
+          A predicate this process cannot evaluate keeps its entry and makes the
+          result incomplete, unless another predicate of the same restriction
+          already rules the ANDed condition out.
+        * ``True`` - the PORTABLE view: no host evaluation, every declaration
+          returned with its conditions intact.
+
+        The runtime, input-mode and step-execution-mode axes are never
+        evaluated in either mode.
+
+        The default body serves a block that never adopted this API: it calls
+        the legacy ``get_restrictions()`` classmethod - a block's own override
+        through ordinary dispatch, otherwise the inherited ``[]`` - and wraps
+        whatever comes back as INCOMPLETE. A legacy getter may already have
+        filtered its list against the flags of the host that answered, and the
+        inherited default declares nothing at all; neither a short list nor an
+        empty one proves absence. ``ignore_environment_restrictions=True``
+        cannot undo filtering that happened inside the classmethod, so the
+        fallback stays incomplete in both views.
         """
-        return None
+        node_id = f"$steps.{getattr(self, 'name', '<undefined>')}"
+        return actual_restrictions_of(
+            declared=incomplete_discovery(
+                items=list(self.get_restrictions()),
+                reasons=[
+                    environment_filtered_declaration_problem(
+                        node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+                    )
+                ],
+            ),
+            node_id=node_id,
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     @classmethod
     def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
@@ -622,6 +641,96 @@ class WorkflowBlockManifest(BaseModel, ABC):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return None
+
+
+RESTRICTIONS_DECLARATION: DeclarationDomain = "restrictions"
+
+
+def actual_restrictions_of(
+    declared: Union[None, Iterable[RuntimeRestriction], Discovery[RuntimeRestriction]],
+    *,
+    node_id: str,
+    ignore_environment_restrictions: bool,
+) -> Discovery[RuntimeRestriction]:
+    """Normalise restriction DATA a manifest has already computed.
+
+    ``declared``: ``None`` is unknown, a list is a complete declaration (``[]``
+    = declares none), a ``Discovery`` states its own completeness.
+
+    ``ignore_environment_restrictions``: ``True`` returns the declaration
+    untouched (the portable view), ``False`` evaluates its
+    ``applies_to_configuration`` predicates against this process.
+
+    ``RuntimeRestriction`` is a permissive dataclass, so each item is projected
+    onto the portable DTO here. A declaration that projection rejects - a blank
+    or non-identifier ``code``, an empty axis list, a blank configuration key -
+    becomes a sanitised ``declaration_failed`` problem instead of a complete
+    declaration the wire cannot carry.
+    """
+    try:
+        normalised = normalize_declaration(
+            declared,
+            declaration_unavailable_problem(
+                node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+            ),
+        )
+        # Re-typed deliberately: an item that is not a `RuntimeRestriction`
+        # fails validation here and is never passed on.
+        discovery = Discovery[RuntimeRestriction](
+            items=list(normalised.items),
+            complete=normalised.complete,
+            unknown_reasons=list(normalised.unknown_reasons),
+        )
+        for restriction in discovery.items:
+            restriction_metadata_of(restriction)
+    except Exception:
+        # The exception is never reported: a block may have put anything in it.
+        return Discovery[RuntimeRestriction](
+            items=[],
+            complete=False,
+            unknown_reasons=[
+                declaration_failed_problem(
+                    node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+                )
+            ],
+        )
+    if ignore_environment_restrictions:
+        return discovery
+    return _evaluate_against_this_host(declared=discovery, node_id=node_id)
+
+
+def _evaluate_against_this_host(
+    declared: Discovery[RuntimeRestriction], node_id: str
+) -> Discovery[RuntimeRestriction]:
+    """Drop what definitively does not apply here; keep what is uncertain.
+
+    Only ``applies_to_configuration`` is evaluated. The runtime, input-mode and
+    step-execution-mode axes are left alone - this process is not the target
+    and does not know them. Nothing is mutated and no condition is stripped:
+    the surviving entries are the declarations themselves.
+    """
+    kept: List[RuntimeRestriction] = []
+    unknown_keys: List[str] = []
+    for restriction in declared.items:
+        verdict, keys = evaluate_configuration_condition(restriction=restriction)
+        if verdict is ConfigurationMatch.INACTIVE:
+            continue
+        kept.append(restriction)
+        unknown_keys.extend(keys)
+    reasons: List[DiscoveryProblem] = list(declared.unknown_reasons)
+    if unknown_keys:
+        reasons.append(
+            unknown_configuration_problem(
+                node_id=node_id,
+                declaration=RESTRICTIONS_DECLARATION,
+                configuration_keys=unknown_keys,
+            )
+        )
+    return Discovery[RuntimeRestriction](
+        items=kept,
+        complete=declared.complete and not unknown_keys,
+        unknown_reasons=reasons,
+    )
 
 
 class WorkflowBlock(ABC):
