@@ -11,6 +11,9 @@ import inspect
 from typing import List, Type
 
 import pytest
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import (
     BlockManifest as AnthropicClaudeV5Manifest,
 )
@@ -93,10 +96,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
     restriction_metadata_of,
     unresolved_selector_problem,
 )
-from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-)
+from roboflow_workflows.prototypes.block import STILL_IMAGE_INPUT_SOFT_RESTRICTION
 
 from tests.unit_tests.workload_declaration_helpers import portable_restrictions
 
@@ -373,7 +373,7 @@ def test_streaming_video_block_declares_the_shared_presets_and_gpu() -> None:
     # then
     assert restrictions == [
         restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
-        restriction_metadata_of(STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION),
+        restriction_metadata_of(STATEFUL_VIDEO_ACTUAL_RESTRICTION),
         restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),
     ]
     assert restrictions[1].severity is Severity.SOFT
@@ -391,7 +391,7 @@ def test_action_recognition_declares_the_same_restriction_shape() -> None:
     # then
     assert restrictions == [
         restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
-        restriction_metadata_of(STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION),
+        restriction_metadata_of(STATEFUL_VIDEO_ACTUAL_RESTRICTION),
         restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),
     ]
 

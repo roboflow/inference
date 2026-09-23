@@ -5,6 +5,9 @@ evaluation as work of its own, and the inner-workflow dispatcher declares its
 child as OPAQUE instead of pretending to know what the child does.
 """
 
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.flow_control.delta_filter.v1 import (
     DeltaFilterManifest,
 )
@@ -20,7 +23,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
     WorkOperation,
     opaque_remote_workflow_problem,
 )
-from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
 
 from tests.unit_tests.workload_declaration_helpers import (
     declared_restrictions,
@@ -37,7 +39,7 @@ def test_rate_limiter_declares_flow_control_and_the_cooldown_caveat() -> None:
         next_steps=["$steps.sink"],
     )
     assert manifest.discover_work_operations() == [WorkOperation.FLOW_CONTROL]
-    assert declared_restrictions(manifest) == [COOLDOWN_HTTP_SOFT_RESTRICTION]
+    assert declared_restrictions(manifest) == [COOLDOWN_ACTUAL_RESTRICTION]
 
 
 def test_delta_filter_declares_the_state_it_keeps_between_frames() -> None:

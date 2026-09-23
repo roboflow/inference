@@ -23,6 +23,9 @@ from roboflow_workflows.core_steps.classical_cv.motion_detection.v1 import (
 from roboflow_workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockManifest,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     WorkOperation,
@@ -31,10 +34,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
 )
-from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-)
+from roboflow_workflows.prototypes.block import STILL_IMAGE_INPUT_SOFT_RESTRICTION
 
 from tests.unit_tests.workload_declaration_helpers import (
     declared_restrictions,
@@ -158,7 +158,7 @@ def test_motion_detection_declares_its_cross_frame_history() -> None:
     ]
     restrictions: List = declared_restrictions(manifest)
     assert restrictions == [
-        STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+        STATEFUL_VIDEO_ACTUAL_RESTRICTION,
         STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     ]
 

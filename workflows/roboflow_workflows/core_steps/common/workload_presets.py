@@ -2,10 +2,16 @@
 
 These constants are the ``get_actual_restrictions()`` presets of the core
 blocks: ``RuntimeRestriction`` values carrying a human ``note``, a stable
-``code`` and the condition under which the caveat applies. They are the SAME
-entity the legacy ``get_restrictions()`` returns, so a block never authors a
-restriction twice; the workload document derives its portable
-``RestrictionMetadata`` from them through ``restriction_metadata_of()``.
+``code`` and the condition under which the caveat applies. The workload
+document derives its portable ``RestrictionMetadata`` from them through
+``restriction_metadata_of()``.
+
+Both ``get_restrictions()`` and ``get_actual_restrictions()`` use the same
+entity type, ``RuntimeRestriction``. The state-loss presets (stateful video,
+cooldown, S3 append buffer) are intentionally declared separately from the
+legacy editor declarations, to preserve the editor contract: the legacy side
+keeps its historic step-execution-mode scope, while the actual presets here
+drop it.
 
 Two rules hold for everything in this module:
 
@@ -28,23 +34,62 @@ from typing import Tuple
 
 from roboflow_workflows.execution_engine.entities.workload import (
     Runtime,
+    RuntimeInputMode,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
 )
-from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+from roboflow_workflows.prototypes.block import STILL_IMAGE_INPUT_SOFT_RESTRICTION
+
+# Intentionally separate from get_restrictions() to preserve the editor
+# contract. Actual restrictions describe state loss independently of model
+# execution mode. Legacy twin: prototypes.block.STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.
+STATEFUL_VIDEO_ACTUAL_RESTRICTION = RuntimeRestriction(
+    code="stateful_video_state_resets_on_stateless_http",
+    severity=Severity.SOFT,
+    note=(
+        "Block keeps per-video state (keyed by video_metadata.video_identifier) "
+        "in its workflow block instance. An HTTP workflow request that builds a "
+        "fresh workflow / block instance starts from empty state, even on the "
+        "same CPU worker, so tracking / counting / aggregation output is "
+        "meaningless across requests. Running models locally or remotely does "
+        "not change this. Stable cross-frame results need a target that "
+        "preserves this step's state for the same video stream; reusing some "
+        "engine or process, CPU vs GPU, or the host answering introspection "
+        "does not guarantee that by itself."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+    applies_to_input_modes=[RuntimeInputMode.VIDEO],
 )
+
+
+# Intentionally separate from get_restrictions() to preserve the editor
+# contract. Actual restrictions describe state loss independently of model
+# execution mode. Legacy twin: prototypes.block.COOLDOWN_HTTP_SOFT_RESTRICTION.
+COOLDOWN_ACTUAL_RESTRICTION = RuntimeRestriction(
+    code="cooldown_timer_resets_on_stateless_http",
+    severity=Severity.SOFT,
+    note=(
+        "Cooldown / rate-limit timer is kept in the workflow block instance. An "
+        "HTTP workflow request that builds a fresh workflow / block instance "
+        "starts with a fresh timer, even on the same CPU worker, so cooldown "
+        "does not throttle across requests. Running models locally or remotely "
+        "does not change this. Cooldown behaves as documented only when the "
+        "target preserves this step's state across calls of the same stream; "
+        "reusing some engine or process, CPU vs GPU, or the host answering "
+        "introspection does not guarantee that by itself."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
+)
+
 
 # The pair emitted by every block whose legacy declaration is
 # ``[STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION, STILL_IMAGE_INPUT_SOFT_RESTRICTION]``
-# - cross-frame state in process memory, plus "a still image has no history to
-# work with". Blocks that spell the first restriction out with their own note
-# (frame stack, heat accumulation, trace history) share the same axes and
+# - cross-frame state in the block instance, plus "a still image has no history
+# to work with". Blocks that spell the first restriction out with their own
+# note (frame stack, heat accumulation, trace history) share the same axes and
 # therefore the same code.
 STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS: Tuple[RuntimeRestriction, ...] = (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 
@@ -117,22 +162,25 @@ ENVIRONMENT_VARIABLE_ACCESS_DISABLED_RESTRICTION = RuntimeRestriction(
 )
 
 
-# Append-log mode accumulates entries in process memory before uploading the
-# whole object, so it splits across stateless workers.
+# Append-log mode accumulates entries in the block instance before uploading
+# the whole object. Intentionally separate from get_restrictions() to preserve
+# the editor contract. Actual restrictions describe state loss independently of
+# model execution mode.
 S3_APPEND_BUFFER_RESTRICTION = RuntimeRestriction(
     code="s3_append_buffer_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
-        "Append-log mode buffers entries in process memory before uploading "
-        "the accumulated object to S3. With remote step execution on stateless "
-        "or multi-replica HTTP runtimes, successive requests may be served by "
-        "different worker processes, so append-log objects can reset or split "
-        "across workers. Use separate_files mode, or local step execution in "
-        "an InferencePipeline when each entry must be captured in a single "
-        "ordered log."
+        "Append-log mode buffers entries in the workflow block instance before "
+        "uploading the accumulated object to S3. An HTTP workflow request that "
+        "builds a fresh workflow / block instance starts with an empty buffer, "
+        "even on the same CPU worker, so append-log objects reset or split "
+        "across requests. Running models locally or remotely does not change "
+        "this. Use separate_files mode, or a target that preserves this step's "
+        "state for the same stream, when each entry must be captured in a "
+        "single ordered log; reusing some engine or process does not guarantee "
+        "that by itself."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
 )
 
 

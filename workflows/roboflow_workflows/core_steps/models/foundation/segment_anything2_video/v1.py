@@ -31,6 +31,9 @@ from roboflow_workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
@@ -252,9 +255,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
+        """Declare the GPU, cross-frame state-loss and still-image caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
         return actual_restrictions_of(
             declared=[
-                STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+                STATEFUL_VIDEO_ACTUAL_RESTRICTION,
                 REQUIRES_GPU_FOR_LOCAL_EXECUTION,
                 STILL_IMAGE_INPUT_SOFT_RESTRICTION,
             ],

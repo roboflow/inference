@@ -241,7 +241,7 @@ def test_legacy_restriction_api_is_untouched(plugin_manifests) -> None:
         "Aggregation buffers are stored in process memory" in restriction.note
         for restriction in legacy
     )
-    # ... the authored entities keep that note ...
+    # ... the authored actual entities carry their own notes ...
     authored = aggregator.model_construct().get_actual_restrictions(
         ignore_environment_restrictions=True
     )
@@ -292,17 +292,23 @@ def test_vision_event_bundle_declares_both_local_storage_flag_branches(
     assert by_code["writes_to_deployment_volume_not_retrievable"]["when"][
         "runtimes"
     ] == ["dedicated_deployment"]
-    assert by_code["cooldown_timer_resets_on_stateless_http"]["when"][
-        "step_execution_modes"
-    ] == ["remote"]
+    # the legacy classmethod keeps its REMOTE scope; the actual declaration
+    # drops it because the timer is lost wherever the model runs
+    cooldown_condition = by_code["cooldown_timer_resets_on_stateless_http"]["when"]
+    assert cooldown_condition["step_execution_modes"] is None
+    assert sorted(cooldown_condition["runtimes"]) == [
+        "dedicated_deployment",
+        "hosted_serverless",
+    ]
 
 
 def test_model_monitoring_aggregator_declaration_mirrors_its_legacy_axes(
     plugin_manifests,
 ) -> None:
     """The second exact expectation. The aggregation-buffer restriction keeps
-    the legacy declaration's three axes verbatim; the still-image caveat reuses
-    the shared preset."""
+    the legacy declaration's runtime and input axes but drops its REMOTE scope,
+    because the buffer is lost wherever the model runs; the still-image caveat
+    reuses the shared preset."""
     declarations = _declarations(
         plugin_manifests["roboflow_core/model_monitoring_inference_aggregator@v1"]
     )
@@ -325,12 +331,59 @@ def test_model_monitoring_aggregator_declaration_mirrors_its_legacy_axes(
         "dedicated_deployment",
         "hosted_serverless",
     ]
-    assert buffer_condition["step_execution_modes"] == ["remote"]
+    assert buffer_condition["step_execution_modes"] is None
     assert buffer_condition["input_modes"] == ["video"]
     assert buffer_condition["configuration_equals"] == {}
     still_image_condition = by_code["temporal_block_no_benefit_on_still_image"]["when"]
     assert still_image_condition["input_modes"] == ["image"]
     assert still_image_condition["runtimes"] is None
+
+
+@pytest.mark.parametrize(
+    "block_type, code",
+    [
+        (
+            "roboflow_core/roboflow_vision_events@v1",
+            "cooldown_timer_resets_on_stateless_http",
+        ),
+        (
+            "roboflow_core/vision_event_bundle@v1",
+            "cooldown_timer_resets_on_stateless_http",
+        ),
+        (
+            "roboflow_core/model_monitoring_inference_aggregator@v1",
+            "aggregation_buffer_resets_on_stateless_http",
+        ),
+    ],
+)
+def test_state_loss_caveat_keeps_the_editor_scope_only_in_the_legacy_view(
+    plugin_manifests, block_type: str, code: str
+) -> None:
+    """Intentional split: `get_restrictions()` (the editor view) keeps its REMOTE
+    scope, while the actual declaration drops only the step-execution mode,
+    because the state is lost wherever the model runs."""
+    manifest_cls = plugin_manifests[block_type]
+    legacy = [
+        restriction.to_dict()
+        for restriction in manifest_cls.get_restrictions()
+        if restriction.applies_to_step_execution_modes is not None
+    ]
+    actual = [
+        restriction
+        for restriction in _portable_view(manifest_cls.model_construct())
+        if restriction.code == code
+    ]
+
+    assert len(legacy) == 1 and len(actual) == 1
+    assert legacy[0]["applies_to_step_execution_modes"] == ["remote"]
+    assert actual[0].when.step_execution_modes is None
+    assert actual[0].severity.value == legacy[0]["severity"]
+    assert sorted(runtime.value for runtime in actual[0].when.runtimes) == sorted(
+        legacy[0]["applies_to_runtimes"]
+    )
+    assert [mode.value for mode in actual[0].when.input_modes or []] == legacy[0].get(
+        "applies_to_input_modes", []
+    )
 
 
 def test_no_hook_reads_an_environment_flag(plugin_manifests) -> None:
@@ -590,6 +643,35 @@ def _portable_restrictions_of(manifest_cls) -> list:
     return [restriction_metadata_of(item) for item in declared.items]
 
 
+# Intentional legacy/actual split for these state-loss codes only: the editor's
+# get_restrictions() keeps its historic REMOTE step-execution scope, while
+# get_actual_restrictions() omits the mode because block state is lost wherever
+# the model runs. Only the mode axis may differ; severity, runtimes and input
+# modes are still compared.
+STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE = frozenset(
+    {
+        "cooldown_timer_resets_on_stateless_http",
+        "aggregation_buffer_resets_on_stateless_http",
+    }
+)
+
+
+def _portable_axes_in_legacy_terms(restriction) -> tuple:
+    axes = _portable_axes(restriction)
+    if restriction.code not in STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE:
+        return axes
+
+    # a regression back to a REMOTE-only actual condition must fail here
+    # rather than silently match the legacy REMOTE scope
+    assert restriction.when.step_execution_modes is None, (
+        f"{restriction.code} must not depend on the step execution mode, got "
+        f"{restriction.when.step_execution_modes}"
+    )
+    severity, runtimes, _, input_modes = axes
+
+    return severity, runtimes, ("remote",), input_modes
+
+
 def _raw_divergence(block_type: str, manifest_cls) -> tuple:
     """`(legacy axes with no active portable match, portable entries with no legacy match)`.
 
@@ -608,14 +690,14 @@ def _raw_divergence(block_type: str, manifest_cls) -> tuple:
         if _condition_is_satisfied_here(restriction, block_module)
     ]
     portable_axes = collections.Counter(
-        _portable_axes(restriction) for restriction in active
+        _portable_axes_in_legacy_terms(restriction) for restriction in active
     )
     surplus = portable_axes - legacy_axes
     legacy_only = list((legacy_axes - portable_axes).elements())
     portable_only = [
         restriction
         for restriction in active
-        if surplus.get(_portable_axes(restriction), 0) > 0
+        if surplus.get(_portable_axes_in_legacy_terms(restriction), 0) > 0
     ]
     return legacy_only, portable_only
 

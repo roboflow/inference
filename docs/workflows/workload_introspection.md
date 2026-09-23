@@ -238,11 +238,11 @@ The builder asks the block for that portable view explicitly, with
 
 ### How a block declares a restriction
 
-A block authors ONE entity, `RuntimeRestriction`, and two public methods read it. Nothing here changes the editor: `get_restrictions()` returns what it always returned, in the same order, with the same notes and the same `to_dict()` payload.
+A block authors restrictions with ONE entity type, `RuntimeRestriction`, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see [below](#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose)). Nothing here changes the editor: `get_restrictions()` returns what it always returned, in the same order, with the same notes and the same `to_dict()` payload.
 
 | Method | Level | Returns | Filtered against this host? |
 | --- | --- | --- | --- |
-| `get_restrictions()` | classmethod | `List[RuntimeRestriction]` | yes — the legacy, editor-facing view, unchanged |
+| `get_restrictions()` | classmethod | `List[RuntimeRestriction]` | yes — the legacy, editor-facing view, unchanged (state-loss caveats differ from the actual view on purpose, see below) |
 | `get_actual_restrictions(*, ignore_environment_restrictions=False)` | instance | `Discovery[RuntimeRestriction]` | only when the flag is `False`, and only the configuration predicates |
 
 `RuntimeRestriction` keeps `severity`, `note` and its three `applies_to_*` axes, and adds two defaulted fields at the end, so every existing constructor call is still valid:
@@ -253,6 +253,40 @@ A block authors ONE entity, `RuntimeRestriction`, and two public methods read it
 `to_dict()`, the editor payload, carries **neither** of the two new fields.
 
 The wire DTO is derived, never authored twice: `restriction_metadata_of(restriction)` maps the code, the severity and the three axes plus `applies_to_configuration` onto a `RestrictionMetadata`, dropping the human note (the portable form has no `note` field).
+
+#### State-loss restrictions: editor view and actual view differ on purpose
+
+Some blocks keep state in their workflow block instance: trackers and other per-video analytics, frame / heat / trace history, cooldown and rate-limit timers, the S3 append-log buffer and the model-monitoring aggregation buffer. For these caveats the two methods intentionally differ:
+
+| | `get_restrictions()` (editor) | `get_actual_restrictions()` (this document) |
+| --- | --- | --- |
+| code | unchanged (several custom declarations use `generic_restriction`) | unchanged (specific codes, e.g. `stateful_video_state_resets_on_stateless_http`) |
+| severity, runtimes, input modes | unchanged | same values as the editor view |
+| step execution modes | `["remote"]`, as before | `null` — applies to either mode |
+| note | unchanged | explains state loss independently of the model execution mode |
+
+Why the mode is dropped. `step_execution_modes` says where the Execution Engine runs a model step: `local` inside the engine's process, `remote` through an inference service. It does not say whether block state survives. A workflow request that builds a fresh workflow / block instance starts from empty state, even on the same CPU worker, whether its models run locally or remotely.
+
+Who decides the lifecycle. Stable cross-frame behaviour needs the target to preserve the same step's state for the same logical stream across calls. That is a property of the target service that runs the workflow. The server answering this introspection call does not know it and does not evaluate it. Reusing some engine or process, request affinity, or CPU versus GPU hardware does not guarantee it by itself.
+
+Current limitation. The runtime axis cannot fully tell a persistent embedded engine apart from a self-hosted server that builds fresh instances for every HTTP request. These caveats keep their existing `hosted_serverless` and `dedicated_deployment` scope, and a consumer evaluating the conditions as written should honour that runtime predicate. A self-hosted deployment that serves each request with fresh instances can still lose state the same way; recognising that case needs the consumer's own knowledge of its target's lifecycle, which this document does not encode.
+
+A tracker, for example, reports:
+
+```json
+{
+  "type": "restriction",
+  "code": "stateful_video_state_resets_on_stateless_http",
+  "severity": "soft",
+  "when": {
+    "type": "restriction_condition",
+    "runtimes": ["dedicated_deployment", "hosted_serverless"],
+    "step_execution_modes": null,
+    "input_modes": ["video"],
+    "configuration_equals": {}
+  }
+}
+```
 
 #### `ignore_environment_restrictions`
 

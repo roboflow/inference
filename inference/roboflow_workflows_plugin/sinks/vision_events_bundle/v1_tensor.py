@@ -31,6 +31,7 @@ from pydantic import (
     field_validator,
 )
 from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
     LOCAL_FILE_SINK_RESTRICTIONS,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -556,9 +557,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
+        """Declare the cooldown state-loss caveat and the local-storage caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
         return actual_restrictions_of(
             declared=[
-                COOLDOWN_HTTP_SOFT_RESTRICTION,
+                COOLDOWN_ACTUAL_RESTRICTION,
                 *LOCAL_FILE_SINK_RESTRICTIONS,
             ],
             node_id=f"$steps.{getattr(self, 'name', '')}",

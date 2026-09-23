@@ -703,6 +703,36 @@ def _portable_axes(restriction: RestrictionMetadata) -> Tuple[Any, ...]:
     )
 
 
+# Intentional legacy/actual split for these state-loss codes only: the editor's
+# get_restrictions() keeps its historic REMOTE step-execution scope, while
+# get_actual_restrictions() omits the mode because block state is lost wherever
+# the model runs. Only the mode axis may differ; severity, runtimes and input
+# modes are still compared.
+STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE = frozenset(
+    {
+        "stateful_video_state_resets_on_stateless_http",
+        "cooldown_timer_resets_on_stateless_http",
+        "s3_append_buffer_resets_on_stateless_http",
+    }
+)
+
+
+def _portable_axes_in_legacy_terms(restriction: RestrictionMetadata) -> Tuple[Any, ...]:
+    axes = _portable_axes(restriction)
+    if restriction.code not in STATE_LOSS_CODES_WITH_LEGACY_REMOTE_SCOPE:
+        return axes
+
+    # a regression back to a REMOTE-only actual condition must fail here
+    # rather than silently match the legacy REMOTE scope
+    assert restriction.when.step_execution_modes is None, (
+        f"{restriction.code} must not depend on the step execution mode, got "
+        f"{restriction.when.step_execution_modes}"
+    )
+    severity, runtimes, _, input_modes = axes
+
+    return severity, runtimes, ("remote",), input_modes
+
+
 def _flag_value(block_module: Any, key: str) -> Any:
     """The value the LEGACY method would see for this configuration key.
 
@@ -749,14 +779,14 @@ def _compare_legacy_and_portable(block: _LoadedBlock) -> Tuple[List[str], List[s
         if _condition_is_satisfied_here(restriction, block_module)
     ]
     portable_axes = collections.Counter(
-        _portable_axes(restriction) for restriction in active
+        _portable_axes_in_legacy_terms(restriction) for restriction in active
     )
     legacy_only = list((legacy_axes - portable_axes).elements())
     surplus = portable_axes - legacy_axes
     portable_only = [
         restriction
         for restriction in active
-        if surplus.get(_portable_axes(restriction), 0) > 0
+        if surplus.get(_portable_axes_in_legacy_terms(restriction), 0) > 0
     ]
     unexplained_legacy = [
         f"{block.block_type}: legacy restriction {axes} has no active portable "

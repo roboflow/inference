@@ -58,25 +58,28 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference.core.workflows.prototypes.cache import WorkflowsCache
 
-# The aggregation buffer lives in process memory while the reporting interval
-# is tracked in the shared cache, so a stateless or multi-replica HTTP runtime
-# splits one reporting window across workers. Declared as plain data: the
-# condition describes the TARGET deployment, never the host answering the
-# introspection call.
+# The aggregation buffer lives in the block instance while the reporting
+# interval is tracked in the shared cache, so a fresh instance per request
+# splits one reporting window. Declared as plain data: the condition describes
+# the TARGET deployment, never the host answering the introspection call.
+# Intentionally separate from get_restrictions() to preserve the editor
+# contract. Actual restrictions describe state loss independently of model
+# execution mode.
 AGGREGATION_BUFFER_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     code="aggregation_buffer_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
-        "Aggregation buffers are stored in process memory while the "
-        "reporting interval is tracked in cache. With remote step "
-        "execution on stateless or multi-replica HTTP runtimes, "
-        "predictions may be collected by different worker processes, "
-        "so reports can under-collect or flush partial aggregation "
-        "windows. Use local step execution in an InferencePipeline "
-        "for stable video aggregation."
+        "Aggregation buffers are kept in the workflow block instance while the "
+        "reporting interval is tracked in cache. An HTTP workflow request that "
+        "builds a fresh workflow / block instance starts with an empty buffer, "
+        "even on the same CPU worker, while the cached interval keeps running, "
+        "so reports can under-collect or flush partial aggregation windows. "
+        "Running models locally or remotely does not change this. Stable video "
+        "aggregation needs a target that preserves this step's state for the "
+        "same video stream; reusing some engine or process does not guarantee "
+        "that by itself."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
     applies_to_input_modes=[RuntimeInputMode.VIDEO],
 )
 

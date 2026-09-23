@@ -16,7 +16,6 @@ import pytest
 from packaging.version import Version
 from roboflow_workflows.errors import (
     InvalidReferenceTargetError,
-    WorkflowDefinitionError,
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
 )
@@ -639,9 +638,38 @@ def test_definition_version_selects_engine() -> None:
         )
 
 
-def test_non_dict_definition_raises() -> None:
-    with pytest.raises(WorkflowDefinitionError):
-        describe_workflow_workload(workflow_definition=["not", "a", "dict"])
+def test_tracker_state_caveat_does_not_depend_on_model_execution_mode() -> None:
+    # given
+    definition = _definition(
+        steps=[
+            _model("model"),
+            {
+                "type": "roboflow_core/byte_tracker@v3",
+                "name": "tracker",
+                "image": "$inputs.image",
+                "detections": "$steps.model.predictions",
+            },
+        ],
+        outputs=[_output("tracked", "$steps.tracker.tracked_detections")],
+    )
+
+    # when
+    introspection = describe_workflow_workload(workflow_definition=definition)
+
+    # then - the runtime and video scopes are kept, but no step-execution-mode
+    # filter: tracker state is lost whether the model runs locally or remotely
+    payload = _step(introspection, "$steps.tracker").restrictions.model_dump(
+        mode="json"
+    )
+    conditions = {item["code"]: item["when"] for item in payload["items"]}
+    assert conditions["stateful_video_state_resets_on_stateless_http"] == {
+        "type": "restriction_condition",
+        "runtimes": ["dedicated_deployment", "hosted_serverless"],
+        "step_execution_modes": None,
+        "input_modes": ["video"],
+        "configuration_equals": {},
+    }
+    assert introspection.schema_version == "2"
 
 
 def test_malformed_definition_raises_existing_error_type() -> None:

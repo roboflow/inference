@@ -16,7 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-TODO: add changelog entry for cost estimation
+TODO
 
 ---
 

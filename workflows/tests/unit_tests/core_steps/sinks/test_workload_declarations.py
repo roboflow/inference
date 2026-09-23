@@ -12,6 +12,9 @@ from typing import Any, List
 import pytest
 import roboflow_workflows.core_steps.sinks.local_file.v1 as local_file_module
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.local_file.v1 import (
     BlockManifest as LocalFileManifest,
 )
@@ -29,7 +32,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     Runtime,
     Severity,
-    StepExecutionMode,
     WorkOperation,
     restriction_metadata_of,
     unresolved_selector_problem,
@@ -37,7 +39,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
 )
-from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
 
 from tests.unit_tests.workload_declaration_helpers import (
     portable_restrictions,
@@ -140,14 +141,19 @@ def test_s3_sink_declares_storage_and_transport() -> None:
     assert [restriction.code for restriction in restrictions] == [
         "s3_append_buffer_resets_on_stateless_http"
     ]
-    assert restrictions[0].when.step_execution_modes == [StepExecutionMode.REMOTE]
+    # state is lost wherever the model runs, so no step-execution-mode filter
+    assert restrictions[0].when.step_execution_modes is None
+    assert set(restrictions[0].when.runtimes) == {
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    }
 
 
 def test_a_notification_sink_declares_the_cooldown_caveat() -> None:
     manifest = _webhook()
     assert manifest.discover_work_operations() == [WorkOperation.EXTERNAL_REQUEST]
     assert portable_restrictions(manifest) == [
-        restriction_metadata_of(COOLDOWN_HTTP_SOFT_RESTRICTION)
+        restriction_metadata_of(COOLDOWN_ACTUAL_RESTRICTION)
     ]
 
 
