@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+---
+
+## `0.2.2`
+
+### Added
+- OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options.
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-opus-5-5` model option.
+
+---
+
 ## `0.2.1`
 
 ### Fixed
@@ -22,7 +32,6 @@
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
-
 ---
 
 ## `0.1.2`
