@@ -10,6 +10,7 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     ConfigurationError,
     configure_tls,
     normalise_broker_address,
+    normalise_client_id,
     resolve_broker_address,
     split_host_port,
 )
@@ -56,6 +57,27 @@ def test_split_host_port(entry, expected):
 )
 def test_normalise_broker_address(host, port, expected):
     assert normalise_broker_address(host, port) == expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("\t\n", None),
+        ("line1", "line1"),
+        ("  line1-camera3  ", "line1-camera3"),
+    ],
+)
+def test_normalise_client_id_treats_blank_as_unset_and_strips(value, expected):
+    assert normalise_client_id(value) == expected
+
+
+@pytest.mark.parametrize("value", [5, 1.5, True, ["line1"], {"id": "line1"}])
+def test_normalise_client_id_rejects_non_strings_naming_the_field(value):
+    with pytest.raises(ConfigurationError, match="client_id"):
+        normalise_client_id(value)
 
 
 def test_keepalive_is_shorter_than_paho_default():

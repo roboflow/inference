@@ -6,7 +6,8 @@ Both blocks open an outbound connection to the broker named by the workflow.
 `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (see `roboflow_workflows.environment`)
 before either block builds a client, and `configure_tls()` enables
 server-verified TLS on the client, gating a workflow-chosen CA path behind the
-engine's file-system permission.
+engine's file-system permission. `normalise_client_id()` turns the reader's
+optional `client_id` into either a usable id or "unset".
 """
 
 import logging
@@ -81,6 +82,33 @@ def configure_tls(
             if ca_certificate_path
             else f"TLS could not be configured: {e}."
         ) from e
+
+
+def normalise_client_id(value: Any) -> Optional[str]:
+    """Normalise the reader's optional ``client_id`` input.
+
+    A persistent MQTT session exists only for a fixed client id, so the presence
+    of the id is the switch. An empty or whitespace-only value is "unset", so a
+    stray space never creates a persistent session.
+
+    Args:
+        value: The workflow-provided ``client_id``: ``None``, a literal or a
+            selector-resolved value.
+
+    Returns:
+        The id with surrounding whitespace removed, or ``None`` when unset.
+
+    Raises:
+        ConfigurationError: When the value is not a string (a wiring error).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigurationError(
+            f"Invalid client_id: {value!r}. Must be a string or left empty."
+        )
+    value = value.strip()
+    return value or None
 
 
 def _normalise_host(host: str) -> str:

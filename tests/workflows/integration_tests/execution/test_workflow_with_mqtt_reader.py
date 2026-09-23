@@ -339,6 +339,210 @@ def test_tls_against_plain_broker_reports_not_connected(broker):
         block.close()
 
 
+# --- persistent sessions (client_id) ------------------------------------------
+
+
+@pytest.fixture
+def session_broker():
+    # granted QoS caps delivery, so the broker must grant up to QoS 2 to queue
+    # anything for an offline persistent session
+    broker = FakeMQTTBroker(keep_serving=True, session_aware=True, suback_reason_code=2)
+    thread = threading.Thread(target=broker.serve, daemon=True)
+    thread.start()
+    yield broker
+    broker.finish()
+    thread.join(timeout=2)
+
+
+def persistent_kwargs(broker: FakeMQTTBroker, **overrides) -> dict:
+    kwargs = reader_kwargs(broker, client_id="line1", qos=1, read_mode="sequential")
+    kwargs.update(overrides)
+    return kwargs
+
+
+def session_is_away(broker: FakeMQTTBroker, client_id: str = "line1") -> bool:
+    session = broker.sessions.get(client_id)
+    return session is not None and session.connection is None
+
+
+def subscribe_and_leave(broker: FakeMQTTBroker, **overrides) -> None:
+    """A block instance with a persistent session subscribes, then goes away."""
+    block = MQTTReaderBlockV1()
+    try:
+        result = block.run(**persistent_kwargs(broker, **overrides))
+        assert result["error_status"] is False, result["error_message"]
+    finally:
+        block.close()
+    assert wait_until(lambda: session_is_away(broker))
+
+
+@pytest.mark.timeout(20)
+def test_persistent_session_delivers_backlog_after_restart(session_broker, caplog):
+    # given - a subscriber with a fixed id went away and three QoS 1 messages
+    # were published meanwhile
+    with caplog.at_level("INFO", logger="inference"):
+        subscribe_and_leave(session_broker)
+    assert session_broker.connects == [("line1", False)]
+    assert "session present: False" in caplog.text
+    caplog.clear()
+    for payload in (b"A", b"B", b"C"):
+        session_broker.publish("plc/state", payload, qos=1)
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when - a new instance (a restarted pipeline) resumes the session
+        with caplog.at_level("INFO", logger="inference"):
+            results = [block.run(**persistent_kwargs(session_broker)) for _ in range(3)]
+
+        # then - the broker resumed the session and delivered the backlog in order
+        assert session_broker.connects[-1] == ("line1", False)
+        assert "session present: True" in caplog.text
+        assert [r["value"] for r in results] == ["A", "B", "C"]
+        assert [r["is_new"] for r in results] == [True, True, True]
+        assert [r["error_status"] for r in results] == [False, False, False]
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(20)
+def test_persistent_session_in_latest_mode_keeps_newest_of_backlog(session_broker):
+    # given
+    subscribe_and_leave(session_broker, read_mode="latest")
+    for payload in (b"A", b"B", b"C"):
+        session_broker.publish("plc/state", payload, qos=1)
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when
+        first = block.run(**persistent_kwargs(session_broker, read_mode="latest"))
+        second = block.run(**persistent_kwargs(session_broker, read_mode="latest"))
+
+        # then - only the newest message of the burst survives
+        assert first["value"] == "C"
+        assert first["is_new"] is True
+        assert second["is_new"] is False
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(20)
+def test_persistent_session_does_not_queue_qos0_messages(session_broker):
+    # given - the publisher used QoS 0, which a broker never queues
+    subscribe_and_leave(session_broker)
+    for payload in (b"A", b"B", b"C"):
+        session_broker.publish("plc/state", payload, qos=0)
+    block = MQTTReaderBlockV1()
+
+    try:
+        # when
+        result = block.run(**persistent_kwargs(session_broker))
+
+        # then - the session resumed, but there was nothing to deliver
+        assert session_broker.connects[-1] == ("line1", False)
+        assert result["error_status"] is False
+        assert result["value"] is None
+        assert result["is_new"] is False
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(20)
+def test_persistent_session_survives_reconnect_of_the_same_instance(session_broker):
+    # given - a live persistent subscription
+    block = MQTTReaderBlockV1()
+
+    try:
+        first = block.run(**persistent_kwargs(session_broker))
+        assert first["error_status"] is False
+
+        # when - the connection drops, a message is published while the block is
+        # away, and the background loop reconnects
+        session_broker.drop_connection()
+        assert wait_until(lambda: not block._state.connected.is_set())
+        assert wait_until(lambda: session_is_away(session_broker))
+        session_broker.publish("plc/state", PAUSED, qos=1)
+        assert wait_until(lambda: len(block._state.messages) == 1, timeout=10)
+        result = block.run(**persistent_kwargs(session_broker))
+
+        # then - the queued message reached the same instance after the reconnect
+        assert session_broker.connections_accepted == 2
+        assert session_broker.connects == [("line1", False), ("line1", False)]
+        assert result["payload"] == {"state": "PAUSED"}
+        assert result["is_new"] is True
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(20)
+def test_second_connection_with_the_same_client_id_evicts_the_first(session_broker):
+    # given - two block instances sharing one client id on one broker
+    first = MQTTReaderBlockV1()
+    second = MQTTReaderBlockV1()
+
+    try:
+        assert first.run(**persistent_kwargs(session_broker))["error_status"] is False
+
+        # when - the second connects with the same id
+        result = second.run(**persistent_kwargs(session_broker))
+
+        # then - the broker drops the first; its reconnect would evict the second
+        # in turn, so the first is closed here (only the first eviction is tested)
+        assert wait_until(lambda: not first._state.connected.is_set())
+        first.close()
+        assert result["error_status"] is False
+        assert session_broker.connects[:2] == [("line1", False), ("line1", False)]
+        assert wait_until(
+            lambda: second._state.connected.is_set()
+            and session_broker.sessions["line1"].connection is not None,
+            timeout=10,
+        )
+        session_broker.publish("plc/state", PAUSED, qos=1)
+        assert wait_until(lambda: len(second._state.messages) == 1, timeout=10)
+        updated = second.run(**persistent_kwargs(session_broker))
+        assert updated["payload"] == {"state": "PAUSED"}
+        assert updated["is_new"] is True
+    finally:
+        first.close()
+        second.close()
+
+
+@pytest.mark.timeout(20)
+def test_writer_without_client_id_delivers_to_an_away_persistent_subscriber(
+    session_broker,
+):
+    # given - a persistent subscriber that went away, and the unchanged MQTT Writer
+    from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
+        MQTTWriterSinkBlockV1,
+    )
+
+    subscribe_and_leave(session_broker)
+    writer = MQTTWriterSinkBlockV1()
+    reader = MQTTReaderBlockV1()
+
+    try:
+        # when - the writer publishes at QoS 1 with a broker-generated id
+        published = writer.run(
+            host=session_broker.host,
+            port=session_broker.port,
+            topic="plc/state",
+            message=PAUSED.decode("utf-8"),
+            qos=1,
+            timeout=2.0,
+        )
+        writer.close()
+        result = reader.run(**persistent_kwargs(session_broker))
+
+        # then - queued delivery depends only on the publish QoS, not on a writer id
+        assert published["error_status"] is False, published["message"]
+        assert published["message"] == "Message published successfully"
+        assert session_broker.connects[1] == ("", True)
+        assert result["payload"] == {"state": "PAUSED"}
+        assert result["is_new"] is True
+    finally:
+        writer.close()
+        reader.close()
+
+
 GATED_WORKFLOW = {
     "version": "1.0",
     "inputs": [

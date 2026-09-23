@@ -17,6 +17,7 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     MQTT_KEEPALIVE_SECONDS,
     ConfigurationError,
     configure_tls,
+    normalise_client_id,
     resolve_broker_address,
 )
 from roboflow_workflows.environment import GCP_SERVERLESS, LAMBDA
@@ -69,12 +70,26 @@ returned last.
 The subscription and the buffer live in the block instance only. An InferencePipeline
 keeps them for its lifetime, a restart begins with an empty buffer, and over the HTTP
 API every request builds a fresh instance, so only a retained message can be returned
-there. There is no persistent session and no durable resume: messages published while
-the block was not subscribed are not delivered.
+there. By default the session is not persistent either: messages published while the
+block was not subscribed are not delivered.
+
+Set `client_id` to a stable name that is unique on the broker (for example the camera
+or pipeline name from a workflow input) to keep a persistent session instead. The
+presence of the id is the switch: the block then connects with that id and asks the
+broker to keep the session, so the broker remembers the subscription and queues QoS 1
+and 2 messages while the block is away and delivers the backlog when a block with the
+same id reconnects, after a pipeline or process restart included. `qos` must then be 1
+or 2 and the publisher must also publish at QoS 1 or higher, because a broker queues
+nothing for QoS 0. Use `sequential` to work through the backlog one message per run;
+`latest` keeps only the newest of it. QoS 1 may redeliver a message whose
+acknowledgement was lost, and `sequential` surfaces that duplicate; QoS 2 avoids it.
+Two connections with the same id disconnect each other, so never share an id between
+pipelines. Persistent sessions are meant for InferencePipelines: over the HTTP API each
+request would resume the session, consume the whole backlog and return one message.
 
 One block instance subscribes on a single broker connection: changing host, port,
-credentials, timeout, topic, QoS, read mode or the TLS settings between runs is
-rejected as a configuration error. While the broker is unreachable every run waits up to `timeout`
+credentials, timeout, topic, QoS, read mode, client id or the TLS settings between runs
+is rejected as a configuration error. While the broker is unreachable every run waits up to `timeout`
 for the background reconnect before reporting the failure.
 
 The block is not available on the Roboflow hosted platform (`GCP_SERVERLESS` or
@@ -170,10 +185,14 @@ def mqtt_on_connect(
         state.connected.clear()
         return
 
-    logger.info("MQTT client connected")
+    logger.info(
+        "MQTT client connected (session present: %s)",
+        bool(flags.get("session present")),
+    )
     state.connected.set()
-    # the broker forgets subscriptions on every reconnect (clean session), so
-    # the subscription is (re)established here rather than once after connect()
+    # a clean-session broker forgets subscriptions on every reconnect, so the
+    # subscription is (re)established here rather than once after connect(); on
+    # a persistent session the repeated SUBSCRIBE is idempotent
     state.subscribe_failed = False
     state.subscribed.clear()
     try:
@@ -274,8 +293,22 @@ class BlockManifest(WorkflowBlockManifest):
     )
     qos: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=0,
-        description="Quality of Service level requested for the subscription (0, 1 or 2).",
+        description="Quality of Service level requested for the subscription (0, 1 or 2). "
+        "When client_id is set, qos must be 1 or 2: the broker only queues QoS 1 and 2 "
+        "messages for a persistent session, and a run with client_id and qos 0 reports "
+        "an error. The publisher must also publish at QoS 1 or higher for its messages "
+        "to be queued.",
         examples=[0, 1, 2],
+    )
+    client_id: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
+        description="Leave empty for a fresh session on every connection (a "
+        "broker-generated id). Set a stable name that is unique on the broker, for "
+        "example the camera or pipeline name from a workflow input, to keep a "
+        "persistent session: the broker then remembers the subscription and queues "
+        "QoS 1/2 messages while this block is away and delivers them when it "
+        "reconnects. Two connections with the same id disconnect each other.",
+        examples=["$inputs.pipeline_name", "line1-camera3"],
     )
     username: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
@@ -437,6 +470,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
         timeout: float = 0.5,
         encryption: str = "none",
         ca_certificate_path: Optional[str] = None,
+        client_id: Optional[str] = None,
     ) -> BlockResult:
         if GCP_SERVERLESS or LAMBDA:
             # never open an outbound broker connection from hosted workers
@@ -508,6 +542,18 @@ class MQTTReaderBlockV1(WorkflowBlock):
             )
         ca_certificate_path = ca_certificate_path or None
         try:
+            # blank means "no persistent session"; the presence of the id is the switch
+            client_id = normalise_client_id(client_id)
+        except ConfigurationError as e:
+            return self._handle_failure(str(e))
+        if client_id is not None and qos == 0:
+            # the broker queues only QoS 1 and 2 for an offline session: a
+            # persistent session at QoS 0 would look right and receive nothing
+            return self._handle_failure(
+                "client_id needs qos 1 or 2: the broker only queues QoS 1 and 2 "
+                "messages for a persistent session."
+            )
+        try:
             # the operator's broker policy; the RESOLVED address is what the
             # block connects to and what the connection identity is built from
             host, port = resolve_broker_address(
@@ -527,6 +573,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 timeout=timeout,
                 encryption=encryption,
                 ca_certificate_path=ca_certificate_path,
+                client_id=client_id,
             )
 
     def _connect_and_read(
@@ -541,6 +588,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
         timeout: float,
         encryption: str,
         ca_certificate_path: Optional[str],
+        client_id: Optional[str],
     ) -> BlockResult:
         connection_identity = (
             host,
@@ -553,6 +601,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
             read_mode,
             encryption,
             ca_certificate_path,
+            client_id,
         )
         if self._client is None:
             buffer_size = (
@@ -561,7 +610,15 @@ class MQTTReaderBlockV1(WorkflowBlock):
             state = MQTTReaderState(topic=topic, qos=qos, buffer_size=buffer_size)
             client = None
             try:
-                client = mqtt.Client(userdata=state)
+                if client_id is None:
+                    # broker-generated id, clean session: nothing outlives the connection
+                    client = mqtt.Client(userdata=state)
+                else:
+                    # a persistent session: the broker keeps the subscription and
+                    # queues QoS 1/2 messages while this id is away
+                    client = mqtt.Client(
+                        client_id=client_id, clean_session=False, userdata=state
+                    )
                 # a raising callback would end the network thread; log instead
                 client.suppress_exceptions = True
                 if username is not None:
@@ -616,8 +673,9 @@ class MQTTReaderBlockV1(WorkflowBlock):
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials, timeout, topic, "
-                "qos, read_mode, encryption or ca_certificate_path) changed between "
-                "runs; this block subscribes only with the configuration of its first run."
+                "qos, read_mode, encryption, ca_certificate_path or client_id) changed "
+                "between runs; this block subscribes only with the configuration of its "
+                "first run."
             )
         state = self._state
         # the background loop owns (re)connecting and (re)subscribing; runs

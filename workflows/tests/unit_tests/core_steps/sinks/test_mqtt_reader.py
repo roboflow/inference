@@ -64,8 +64,13 @@ class FakeClient:
     granted_qos = 0
     ack_subscriptions = True
     fire_on_connect = True
+    # CONNACK flags handed to on_connect; a test sets {"session present": 1}
+    connect_flags: dict = {}
 
-    def __init__(self, userdata=None):
+    def __init__(self, client_id="", clean_session=None, userdata=None):
+        # paho 1.6.1's constructor arguments the block chooses
+        self.client_id = client_id
+        self.clean_session = clean_session
         self.userdata = userdata
         # ordered record of the calls that matter for TLS: must precede connect()
         self.calls = []
@@ -105,7 +110,9 @@ class FakeClient:
     def loop_start(self):
         self.loop_started = True
         if self.fire_on_connect:
-            self.on_connect(self, self.userdata, {}, self.connack_reason_code)
+            self.on_connect(
+                self, self.userdata, dict(self.connect_flags), self.connack_reason_code
+            )
 
     def loop_stop(self):
         self.loop_stopped = True
@@ -127,8 +134,10 @@ class FakeClient:
 def clients() -> List[FakeClient]:
     created: List[FakeClient] = []
 
-    def factory(userdata=None):
-        client = FakeClient(userdata=userdata)
+    def factory(client_id="", clean_session=None, userdata=None):
+        client = FakeClient(
+            client_id=client_id, clean_session=clean_session, userdata=userdata
+        )
         created.append(client)
         return client
 
@@ -155,6 +164,19 @@ class TestManifest:
         assert manifest.timeout == 0.5
         assert manifest.username is None
         assert manifest.password is None
+        assert manifest.client_id is None
+
+    @pytest.mark.parametrize("client_id", ["line1-camera3", "$inputs.pipeline_name"])
+    def test_client_id_accepts_literal_and_selector(self, client_id):
+        manifest = BlockManifest.model_validate(manifest_payload(client_id=client_id))
+
+        assert manifest.client_id == client_id
+
+    def test_qos_description_states_the_persistent_session_rule(self):
+        schema = BlockManifest.model_json_schema()
+
+        assert "client_id" in schema["properties"]["qos"]["description"]
+        assert "1 or 2" in schema["properties"]["qos"]["description"]
 
     @pytest.mark.parametrize("read_mode", ["everything", "next", "", None])
     def test_read_mode_must_be_latest_or_sequential(self, read_mode):
@@ -244,6 +266,24 @@ class TestCallbacks:
 
         assert client.subscriptions == [("plc/#", 1)]
         assert state.connected.is_set()
+
+    @pytest.mark.parametrize(
+        "flags, expected",
+        [
+            ({}, "False"),
+            ({"session present": 0}, "False"),
+            ({"session present": 1}, "True"),
+        ],
+    )
+    def test_on_connect_logs_session_present_flag(self, caplog, flags, expected):
+        state = MQTTReaderState(topic="plc/#", qos=1, buffer_size=1)
+        client = FakeClient(userdata=state)
+        client.on_subscribe = mqtt_on_subscribe
+
+        with caplog.at_level("INFO", logger="inference"):
+            mqtt_on_connect(client, state, flags, 0)
+
+        assert f"session present: {expected}" in caplog.text
 
     def test_on_connect_resubscribes_on_every_connect(self):
         state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
@@ -411,6 +451,46 @@ class TestInputValidation:
         assert "topic" in result["error_message"].lower()
         assert clients == []
 
+    @pytest.mark.parametrize("client_id", [None, "", "   "])
+    def test_blank_client_id_builds_a_clean_session_client(
+        self, clients, block, client_id
+    ):
+        result = block.run(**run_kwargs(client_id=client_id))
+
+        assert result["error_status"] is False
+        assert clients[0].client_id == ""
+        assert clients[0].clean_session is None
+        assert clients[0].userdata is block._state
+
+    def test_client_id_builds_a_persistent_session_client(self, clients, block):
+        result = block.run(**run_kwargs(client_id=" line1 ", qos=1))
+
+        assert result["error_status"] is False
+        assert clients[0].client_id == "line1"
+        assert clients[0].clean_session is False
+        assert clients[0].userdata is block._state
+        assert clients[0].subscriptions == [("plc/state", 1)]
+
+    def test_client_id_with_qos_zero_rejected_before_client_construction(
+        self, clients, block
+    ):
+        result = block.run(**run_kwargs(client_id="line1"))
+
+        assert result["error_status"] is True
+        assert "client_id" in result["error_message"]
+        assert "qos 1 or 2" in result["error_message"]
+        assert clients == []
+
+    @pytest.mark.parametrize("client_id", [5, 1.5, True, ["line1"]])
+    def test_non_string_client_id_rejected_before_client_construction(
+        self, clients, block, client_id
+    ):
+        result = block.run(**run_kwargs(client_id=client_id, qos=1))
+
+        assert result["error_status"] is True
+        assert "client_id" in result["error_message"]
+        assert clients == []
+
     def test_error_outputs_carry_every_declared_key(self, clients, block):
         result = block.run(**run_kwargs(port=0))
 
@@ -558,6 +638,7 @@ class TestConnectionLifecycle:
             {"topic": "plc/other"},
             {"qos": 1},
             {"read_mode": "sequential"},
+            {"qos": 1, "client_id": "line1"},
         ],
     )
     def test_changed_parameters_rejected_and_connection_kept(
@@ -571,6 +652,30 @@ class TestConnectionLifecycle:
         assert "changed between runs" in result["error_message"]
         assert len(clients) == 1
         assert clients[0].disconnected is False
+
+    @pytest.mark.parametrize("later_client_id", [None, "", "line2"])
+    def test_dropped_or_changed_client_id_rejected_and_connection_kept(
+        self, clients, block, later_client_id
+    ):
+        block.run(**run_kwargs(client_id="line1", qos=1))
+
+        result = block.run(**run_kwargs(client_id=later_client_id, qos=1))
+
+        assert result["error_status"] is True
+        assert "client_id" in result["error_message"]
+        assert "changed between runs" in result["error_message"]
+        assert len(clients) == 1
+        assert clients[0].disconnected is False
+
+    def test_same_client_id_with_different_whitespace_is_not_a_change(
+        self, clients, block
+    ):
+        block.run(**run_kwargs(client_id="line1", qos=1))
+
+        result = block.run(**run_kwargs(client_id=" line1 ", qos=1))
+
+        assert result["error_status"] is False
+        assert len(clients) == 1
 
     def test_close_disconnects_stops_loop_and_clears_state(self, clients, block):
         block.run(**run_kwargs())
