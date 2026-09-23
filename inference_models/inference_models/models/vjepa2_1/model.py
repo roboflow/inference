@@ -21,8 +21,8 @@ from inference_models.models.base.action_recognition import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 
+from .architecture import VJepaEncoder
 from .head import SpanHead
-from .vendor.encoder import vit_base
 
 
 def validate_config(config):
@@ -168,7 +168,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         ):
             raise ValueError("V-JEPA class list is empty, duplicated, or inconsistent")
         model = nn.Module()
-        model.encoder = vit_base(**config["encoder"]["arguments"])
+        model.encoder = VJepaEncoder()
         model.head = SpanHead(config["head"]["queries"], len(classes))
         model.load_state_dict(
             load_file(files["model.safetensors"], device="cpu"), strict=True
