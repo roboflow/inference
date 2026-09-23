@@ -64,6 +64,21 @@ def test_resolve_request_action_falls_back_when_no_candidate_is_registered():
     assert resolve_request_action(route, request) == "embed_images"
 
 
+def test_resolve_request_action_keeps_compare_when_model_only_embeds():
+    route = _route(
+        task_type="embedding",
+        action="embed_images",
+        tasks={"embed_images", "embed_text"},
+    )
+    request = ClipCompareRequest(
+        subject="a dog",
+        subject_type="text",
+        prompt=["cat"],
+        prompt_type="text",
+    )
+    assert resolve_request_action(route, request) == "compare"
+
+
 def test_resolve_request_action_ignores_moondream_mro_only_routes():
     route = _route(tasks={"detect"}, model_mro_names=["MoonDream2HF"])
     request = LMMInferenceRequest(model_id="m/1", image=IMG)

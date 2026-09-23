@@ -586,6 +586,8 @@ ACTION_CANDIDATES_BY_REQUEST_TYPE: Dict[str, Tuple[str, ...]] = {
     "PerceptionEncoderCompareRequest": ("compare",),
 }
 
+SYNTHESIZED_ACTIONS = frozenset({"compare"})
+
 MOONDREAM_MODEL_CLASS = "MoonDream2HF"
 
 _EMBEDDING_RESPONSE_CLASSES = {
@@ -611,6 +613,8 @@ def resolve_request_action(route: Route, request: Any) -> str:
     candidates = ACTION_CANDIDATES_BY_REQUEST_TYPE.get(type(request).__name__)
     if not candidates:
         return route.action
+    if candidates[0] in SYNTHESIZED_ACTIONS:
+        return candidates[0]
     tasks = route.tasks or set()
     for candidate in candidates:
         if candidate in tasks:
