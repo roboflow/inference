@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- RF-DETR TensorRT models accept a typed or canonical mapping execution plan
+  through the `execution_plan` loader argument, replacing
+  `rfdetr_execution_plan`. Execution plans support canonical parsing and strict
+  profiling validation, while versioned `optimization_runtime_metadata`
+  reports requested, effective, and request-time stage selections together
+  with fallback details.
+
 ---
 
 ## `0.38.0`
