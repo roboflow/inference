@@ -24,6 +24,17 @@ def start(
             help="Port to run the inference server on (default is 9001).",
         ),
     ] = 9001,
+    bind_address: Annotated[
+        Optional[str],
+        typer.Option(
+            "--bind-address",
+            "-b",
+            help="Host address the server port is published on. Defaults to 127.0.0.1 (connections only from this "
+            "machine), except for Jetson images, which default to 0.0.0.0 because they are usually driven from "
+            "another machine. Binding to 0.0.0.0 exposes a server that has no authentication by default and runs "
+            "Workflows Custom Python blocks, so secure it first.",
+        ),
+    ] = None,
     rf_env: Annotated[
         str,
         typer.Option(
@@ -46,7 +57,12 @@ def start(
         typer.Option(
             "--dev",
             "-d",
-            help="Run inference server in development mode (default is False).",
+            help="Run inference server in development mode (default is False). "
+            "Also sets ENABLE_BUILDER=True and NOTEBOOK_ENABLED=True in the "
+            "container, which turns on the Workflows builder UI (/build) and "
+            "the Jupyter notebook server. Set those two variables directly "
+            "(for example with --env-file) to enable them without the rest "
+            "of development mode.",
         ),
     ] = False,
     api_key: Annotated[
@@ -103,6 +119,13 @@ def start(
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
 
+    if tunnel and bind_address != "0.0.0.0":
+        typer.echo(
+            "The tunnel runs in a separate container and reaches the server through the host gateway, which a "
+            "loopback-only binding rejects. Publishing the server on 0.0.0.0 so the tunnel can connect."
+        )
+        bind_address = "0.0.0.0"
+
     parsed_volumes = {}
     for v in volumes or []:
         parts = v.split(":")
@@ -119,6 +142,7 @@ def start(
         start_inference_container(
             image=image,
             port=port,
+            bind_address=bind_address,
             project=rf_env,
             env_file_path=env_file_path,
             development=development,

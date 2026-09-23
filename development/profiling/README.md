@@ -21,6 +21,11 @@ flowchart TD
     nsysCommand["--print-nsys-command"]
     nsys["nsys profile\nwraps uv run python ..."]
     trace["trace.nsys-rep"]
+    analyze["analyze.py"]
+    stats["nsys stats"]
+    reports["NVTX report CSV files"]
+    summary["Host + GPU range summaries"]
+    analysis["analysis.json"]
 
     config --> main
     main --> runProfile
@@ -42,6 +47,13 @@ flowchart TD
     capture --> manifest
     dataSource --> manifest
     target --> manifest
+
+    trace --> analyze
+    analyze --> stats
+    stats --> reports
+    reports --> summary
+    manifest --> summary
+    summary --> analysis
 ```
 
 ## Setup
@@ -77,7 +89,69 @@ PYTHONPATH=./ uv run python development/profiling/main.py \
 ```
 
 The printed command is intended for copy/paste. The Python entrypoint does not
-execute `nsys` itself.
+execute `nsys` itself. It creates the nested run directory before printing the
+command so Nsight can write the trace there.
+
+## Analyze a trace
+
+After `nsys profile` produces `trace.nsys-rep`, export supported NVTX reports
+and write a manifest-linked analysis:
+
+```bash
+PYTHONPATH=./ uv run python development/profiling/analyze.py \
+  --run-dir inference_profiling/snippets/smoke-tensor/runs/smoke-local
+```
+
+The command writes:
+
+- `stats/nsys_nvtx_pushpop_trace.csv` with individual host-side NVTX ranges
+- `stats/nsys_nvtx_gpu_proj_trace.csv` with per-instance GPU work projected
+  into NVTX ranges
+- `analysis.json` with run provenance, compact range summaries, iteration
+  statistics, and interpretation warnings
+
+The analyzer always reads `manifest.yaml` and `trace.nsys-rep` from the same run
+directory. Keep those files together when moving or archiving a run.
+
+The analyzer identifies measured iterations as direct children of the manifest's
+capture range and joins their host and GPU records by Nsight range ID. A target
+can therefore use a nested range name such as `iteration 0` without being
+mistaken for the harness iteration.
+
+Nested target ranges are aggregated by their scope below the harness iteration.
+For example, identically named ranges are reported separately as
+`preprocessing.resize` and `postprocessing.resize`, while the same scoped range
+is aggregated across measured iterations.
+
+`analysis.json` keeps these timing concepts separate:
+
+- **Host-inclusive time** is the CPU time between an NVTX range's push and pop.
+  It includes nested child ranges.
+- **Host-exclusive time** subtracts the duration of nested child ranges from
+  host-inclusive time.
+- **GPU-projected time** spans the GPU operations launched by CUDA calls inside
+  an NVTX range. It is not the same measurement as host-side range time.
+
+Nsight may produce an empty GPU-projection CSV when no GPU work is attributable
+to the measured NVTX ranges. In that case, host measurements remain available,
+GPU measurements are `null`, and `analysis.json` records a warning instead of
+reporting zero GPU time.
+
+Do not sum host-inclusive timings across nested ranges. A parent's duration
+already includes its children. Do not label host-side duration as GPU latency;
+CUDA launches are asynchronous unless the workload synchronizes explicitly.
+
+The analyzer does not add pass/fail thresholds or claim performance
+regressions. Use its provenance and warnings to decide whether two runs are
+comparable before interpreting timing differences.
+
+The parser tests use committed CSV fixtures and do not require Nsight or a GPU.
+Generating and validating a real `.nsys-rep` remains a manual integration step
+on a supported NVIDIA environment.
+
+The committed report schema is validated against Nsight Systems 2025.1. Other
+versions are parsed when their required columns remain compatible and are
+reported with a warning in `analysis.json`.
 
 ## Docker
 

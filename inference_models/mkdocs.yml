@@ -63,6 +63,8 @@ nav:
           - ResNet: models/resnet-classification.md
           - ViT: models/vit-classification.md
           - DINOv3: models/dinov3-classification.md
+          - PatchCore: models/patchcore-anomaly-detection.md
+          - FoundAD: models/foundad-anomaly-detection.md
       - OCR:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md
@@ -89,6 +91,7 @@ nav:
           - Qwen3.8: models/qwen38.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
+          - Cosmos 3 Edge: models/cosmos3.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md

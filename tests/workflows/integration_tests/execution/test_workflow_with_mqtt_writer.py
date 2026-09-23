@@ -1,4 +1,5 @@
 import copy
+import os
 import socket
 import threading
 import time
@@ -7,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.workflows.core_steps.sinks.noop import disabled_sink_message
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer import v1
 from inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
@@ -275,18 +277,20 @@ MQTT_SINK_WORKFLOW = {
 
 
 @pytest.fixture
-def enterprise_blocks_enabled():
+def enterprise_blocks_enabled(monkeypatch):
+    from inference.core.env import ENTERPRISE_BLOCKS_PLUGIN
     from inference.core.workflows.execution_engine.introspection import blocks_loader
     from inference.core.workflows.execution_engine.v1.compiler.core import (
         COMPILATION_CACHE,
     )
 
-    previous_value = blocks_loader.LOAD_ENTERPRISE_BLOCKS
-    blocks_loader.LOAD_ENTERPRISE_BLOCKS = True
-    blocks_loader.load_core_workflow_blocks.cache_clear()
+    plugins = [p for p in os.getenv("WORKFLOWS_PLUGINS", "").split(",") if p]
+    if ENTERPRISE_BLOCKS_PLUGIN not in plugins:  # env.py may have expanded it already;
+        plugins.append(ENTERPRISE_BLOCKS_PLUGIN)  # a duplicate trips the clash check
+    monkeypatch.setenv("WORKFLOWS_PLUGINS", ",".join(plugins))
+    blocks_loader.clear_caches()
     yield
-    blocks_loader.LOAD_ENTERPRISE_BLOCKS = previous_value
-    blocks_loader.load_core_workflow_blocks.cache_clear()
+    blocks_loader.clear_caches()
     # drop graphs compiled with enterprise blocks from the process-wide cache
     with COMPILATION_CACHE._cache_lock:
         COMPILATION_CACHE._cache.clear()
@@ -380,3 +384,44 @@ def test_workflow_with_failing_mqtt_sink_and_fail_fast_raises(
                 "message": "frame payload",
             }
         )
+
+
+@pytest.mark.timeout(15)
+def test_workflows_core_disable_sinks_still_reaches_the_enterprise_sink(
+    enterprise_blocks_enabled,
+):
+    # given - the server supplies `disable_sinks` namespaced under the core
+    # block source (http_api.py, inference_pipeline.py). An enterprise block
+    # re-tagged with its plugin module name would never see it and compilation
+    # would fail with BlockInitParameterNotProvidedError.
+    workflow_definition = copy.deepcopy(MQTT_SINK_WORKFLOW)
+    workflow_definition["outputs"].append(
+        {
+            "type": "JsonField",
+            "name": "message",
+            "selector": "$steps.mqtt_sink.message",
+        }
+    )
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters={"workflows_core.disable_sinks": True},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when - nothing listens on the port, so a sink that tried to connect
+    # would report a failure instead of the disabled response
+    with patch.object(v1.mqtt, "Client") as mqtt_client:
+        result = execution_engine.run(
+            runtime_parameters={
+                "host": "localhost",
+                "port": closed_port(),
+                "message": "frame payload",
+            }
+        )
+
+    # then - no connection attempted, disabled response returned
+    mqtt_client.assert_not_called()
+    assert result[0]["status"] is False
+    assert result[0]["message"] == disabled_sink_message(
+        disabled_by_execution_policy=True
+    )

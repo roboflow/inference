@@ -6,18 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.0",
     "immutable": ">=5.1.8",
     "js-yaml": "^4.3.0",
-    "next": "16.2.12",
+    "next": "^16.3.4",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
     "@babel/core": "^7.29.6",
+    "@playwright/test": "^1.48.0",
     "@headlessui/react": "^1.7.17",
     "@headlessui/tailwindcss": "^0.2.0",
     "@types/node": "latest",
@@ -33,7 +35,7 @@
     "postcss": "^8.5.18",
     "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
-    "sharp": "0.35.0",
+    "sharp": "^0.35.4",
     "tailwindcss": "latest",
     "typescript": "latest"
   },

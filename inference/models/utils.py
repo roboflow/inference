@@ -501,6 +501,9 @@ try:
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
         from inference.models.cosmos3.cosmos3_reasoner_inference_models import (
             InferenceModelsCosmos3ReasonerAdapter,
         )
@@ -511,6 +514,21 @@ try:
                 "cosmos-3-edge",
             ): InferenceModelsCosmos3ReasonerAdapter,
             ("vlm", "cosmos-3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Roboflow fine-tunes carry the platform's model type as their
+            # architecture.
+            ("text-image-pairs", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            ("vlm", "cosmos3-edge"): InferenceModelsCosmos3ReasonerAdapter,
+            # Action recognition fine-tunes ship under the dash-less trainer
+            # slug; the hosted base keeps the dash and is wrapped for the task
+            # on load.
+            (
+                "action-recognition",
+                "cosmos3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
+            (
+                "action-recognition",
+                "cosmos-3-edge",
+            ): InferenceModelsActionRecognitionAdapter,
         }
         ROBOFLOW_MODEL_TYPES.update(cosmos3_models)
 except:
@@ -1195,6 +1213,17 @@ if USE_INFERENCE_MODELS:
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
         InferenceModelsKeyPointsDetectionAdapter
     )
+
+    # PatchCore and FoundAD anomaly detection are inference_models-only
+    # (no legacy implementation), so we add entries directly.
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsAnomalyDetectionAdapter,
+    )
+
+    for variant in ["patchcore", "foundad"]:
+        ROBOFLOW_MODEL_TYPES[("classification", variant)] = (
+            InferenceModelsAnomalyDetectionAdapter
+        )
 
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.

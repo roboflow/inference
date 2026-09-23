@@ -51,7 +51,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|--------|---------|-------------------------------|---------------------|-----------------|
-| [RF-DETR Keypoint](rfdetr-keypoint-detection.md) | `onnx` | Apache 2.0 | N/A | ✅ | ✅ |
+| [RF-DETR Keypoint](rfdetr-keypoint-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
 | [YOLOv8 Keypoint](yolov8-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [YOLOv11 Keypoint](yolov11-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [YOLO26 Keypoint](yolo26-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
@@ -64,6 +64,8 @@ The `inference-models` library supports a wide range of computer vision models a
 | [ViT](vit-classification.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
 | [DINOv3](dinov3-classification.md) | `torch` | Meta DINO | N/A | ❌ | ✅ |
 | [YOLOv8 Cls](yolov8-classification.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [PatchCore](patchcore-anomaly-detection.md) | `torch` | Apache 2.0 | N/A | ❌ | ✅ |
+| [FoundAD](foundad-anomaly-detection.md) | `torch` | MIT, Meta DINO | N/A | ❌ | ✅ |
 
 ### Embeddings
 
@@ -111,6 +113,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [Qwen3.8](qwen38.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
+| [Cosmos 3 Edge](cosmos3.md) | `torch` | OpenMDW 1.1 | N/A                           | ✅ | ✅ |
 | [Gemma 4](gemma4.md) | `hugging-face` | Gemma License | N/A                           | ✅ | ❌  |
 
 ### Depth Estimation

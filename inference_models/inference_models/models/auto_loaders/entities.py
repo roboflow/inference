@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Union
 
+from inference_models.models.base.action_recognition import ActionRecognitionModel
 from inference_models.models.base.classification import (
     ClassificationModel,
     MultiLabelClassificationModel,
@@ -47,6 +48,7 @@ AnyModel = Union[
     OpenVocabularyObjectDetectionModel,
     SemanticSegmentationModel,
     TextOnlyOCRModel,
+    ActionRecognitionModel,
 ]
 
 

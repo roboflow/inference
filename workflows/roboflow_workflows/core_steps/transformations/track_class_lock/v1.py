@@ -1,0 +1,497 @@
+import heapq
+from collections import OrderedDict, defaultdict
+from copy import deepcopy
+from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Type, Union
+
+import numpy as np
+import supervision as sv
+from pydantic import ConfigDict, Field, model_validator
+from roboflow_workflows.core_steps.trackers._base import TRACKER_PREDICTION_KINDS
+from roboflow_workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
+    INTEGER_KIND,
+    Selector,
+)
+from roboflow_workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    BlockResult,
+    RuntimeRestriction,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+
+OUTPUT_KEY: str = "tracked_detections"
+# Upper bound on concurrently tracked video streams. Images flowing through
+# steps like Dynamic Crop carry a unique video_identifier per crop, which
+# would otherwise grow per-video state without limit on long-running servers;
+# least-recently-seen video state is evicted beyond this cap.
+MAX_TRACKED_VIDEOS: int = 256
+# Upper bound on retained tracks per video stream. Track state is retained for
+# up to state_ttl frames after a track was last seen, so without a cap an input
+# stream carrying many distinct tracker_id values (adversarial or a runaway
+# tracker) would grow per-video memory without limit and enlarge the per-frame
+# re-attachment candidate scan. Least-recently-seen tracks are evicted beyond
+# this cap. The value is far above any realistic simultaneous-object count.
+MAX_TRACKS_PER_VIDEO: int = 4096
+# Upper bound on state_ttl (in frames). state_ttl governs how long unseen track
+# state is retained; an unbounded value combined with a high track turnover
+# would prolong retention. Bounded here (and re-checked at runtime for
+# selector-provided values) as defense in depth alongside MAX_TRACKS_PER_VIDEO.
+MAX_STATE_TTL: int = 1_000_000
+# Upper bound on lost-track candidates considered when re-attaching a new
+# tracker id. Re-attachment bridges SHORT detection gaps, where only a handful
+# of locked tracks are ever simultaneously lost; capping the candidate pool
+# keeps per-frame re-attachment work at O(new_ids * MAX_REATTACH_CANDIDATES)
+# instead of O(new_ids * lost_tracks). The most-recently-lost tracks (the most
+# plausible re-attachment targets) are kept.
+MAX_REATTACH_CANDIDATES: int = 256
+# Upper bound on distinct classes for which a single track keeps voting state.
+# Class names come from the input detections, so without a cap one repeated
+# tracker id carrying a fresh class name per detection grows that track's
+# vote/confidence/class-id tables without limit (bypassing the per-video track
+# cap and TTL, which key on tracker id) and makes the per-detection ranking
+# cost grow with every detection. A real object flickers between a handful of
+# classes; once the cap is reached, votes for further NEW classes are ignored.
+MAX_CLASSES_PER_TRACK: int = 256
+LONG_DESCRIPTION = """
+Lock the class label of each tracked object by majority voting, eliminating class
+flicker in video workflows where a model alternates between similar classes for the
+same physical object.
+
+## How This Block Works
+
+This block maintains per-track voting state, keyed by the video_identifier embedded
+in the image's video metadata:
+
+1. Pre-lock, every qualifying frame (confidence >= vote_confidence) counts as a vote
+   for the predicted class. A class becomes locked once it collects min_votes votes
+   AND leads the runner-up class by at least lead_margin votes.
+2. Post-lock, the locked class is written into every subsequent detection of that
+   track. Reported confidence is the running mean of counted votes (clamped to 1.0).
+3. A locked class can only change after switch_after CONSECUTIVE qualifying frames
+   of the same challenger class. Challenger evidence is streak-scoped: both the
+   streak counter and its confidence sum reset whenever the streak breaks, and on a
+   successful switch the new class's tallies are seeded from the streak values only,
+   so reported confidence never exceeds 1.0.
+4. When a NEW tracker id appears where a locked track recently disappeared (within
+   reattach_window frames, bounding box IoU >= reattach_iou), the new track inherits
+   the lost track's lock and voting state. This makes locks survive tracker id
+   switches caused by short detection gaps or occlusions. Only locked tracks are
+   inherited, and a track still present in the current frame is never inherited.
+   Set reattach_window to 0 to disable re-attachment.
+5. State for tracks unseen for state_ttl frames is purged. Retained per-video
+   track state is additionally capped, evicting least-recently-seen tracks, so
+   state stays bounded under high tracker-id turnover. Each track keeps voting
+   state for a bounded number of distinct classes.
+
+Each detection is annotated with a boolean `class_locked` flag in detections.data.
+
+## Requirements
+
+Detections must carry tracker_id (wire this block after a tracking block such as
+Byte Tracker). The image's video_metadata is used to maintain separate state per
+video stream.
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Track Class Lock",
+            "version": "v1",
+            "short_description": "Lock the class of each tracked object by majority voting to eliminate class flicker.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "fas fa-lock",
+                "blockPriority": 5,
+            },
+        }
+    )
+    type: Literal["roboflow_core/track_class_lock@v1"]
+    image: Selector(kind=[IMAGE_KIND]) = Field(
+        description="Image with embedded video metadata. The video_metadata contains video_identifier used to maintain separate voting state for different videos.",
+    )
+    detections: Selector(kind=TRACKER_PREDICTION_KINDS) = Field(  # type: ignore
+        description="Tracked predictions (object detection, instance segmentation, keypoint detection or RLE instance segmentation). Must include tracker_id information from a tracking block.",
+        examples=["$steps.byte_tracker.tracked_detections"],
+    )
+    min_votes: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=10,
+        description="Cumulative qualifying votes a class needs before the initial lock is acquired. Higher values delay locking but make the initial decision more reliable.",
+        examples=[10, "$inputs.min_votes"],
+    )
+    vote_confidence: Union[Annotated[float, Field(ge=0.0, le=1.0)], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+        default=0.8,
+        description="Minimum prediction confidence for a frame to count, both for pre-lock votes and post-lock challenger streaks. Frames below this threshold are ignored.",
+        examples=[0.8, "$inputs.vote_confidence"],
+    )
+    lead_margin: Union[Annotated[int, Field(ge=0)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=3,
+        description="Number of votes by which the top class must lead the runner-up before locking. Prevents premature locks when two classes are contested.",
+        examples=[3, "$inputs.lead_margin"],
+    )
+    switch_after: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=15,
+        description="Number of CONSECUTIVE qualifying frames of the same challenger class required to change an existing lock. Any interruption resets the streak. Minimum 1 (a value of 1 switches on a single contrary frame; use >= 2 to enforce a multi-frame streak).",
+        examples=[15, "$inputs.switch_after"],
+    )
+    state_ttl: Union[Annotated[int, Field(ge=1, le=MAX_STATE_TTL)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=300,
+        description="Number of frames after which state of unseen tracks is purged.",
+        examples=[300, "$inputs.state_ttl"],
+    )
+    reattach_window: Union[Annotated[int, Field(ge=0)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=30,
+        description="When a NEW tracker id appears where a locked track disappeared within this many frames, the new track inherits the lost track's lock and votes. Bridges tracker id switches caused by short detection gaps. Set to 0 to disable re-attachment.",
+        examples=[30, "$inputs.reattach_window"],
+    )
+    reattach_iou: Union[Annotated[float, Field(ge=0.0, le=1.0)], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+        default=0.3,
+        description="Minimum IoU between a new detection's bounding box and a recently lost locked track's last known bounding box for the lock to be inherited. Higher values require the object to reappear closer to where it vanished.",
+        examples=[0.3, "$inputs.reattach_iou"],
+    )
+
+    @model_validator(mode="after")
+    def validate_reattach_window_within_state_ttl(self) -> "BlockManifest":
+        if (
+            isinstance(self.state_ttl, int)
+            and isinstance(self.reattach_window, int)
+            and self.reattach_window > self.state_ttl
+        ):
+            raise ValueError(
+                "`reattach_window` must not exceed `state_ttl` - lost tracks are "
+                "purged after `state_ttl` frames, so re-attachment beyond that "
+                "point can never happen."
+            )
+        return self
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name=OUTPUT_KEY, kind=TRACKER_PREDICTION_KINDS),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
+
+
+class TrackClassLockBlockV1(WorkflowBlock):
+    def __init__(self):
+        self._per_video_state: "OrderedDict[str, dict]" = OrderedDict()
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        image: WorkflowImageData,
+        detections: sv.Detections,
+        min_votes: int,
+        vote_confidence: float,
+        lead_margin: int,
+        switch_after: int,
+        state_ttl: int,
+        reattach_window: int,
+        reattach_iou: float,
+    ) -> BlockResult:
+        # selector-provided params bypass the manifest's pydantic Field bounds,
+        # so the same constraints are re-checked here at runtime
+        if min_votes < 1:
+            raise ValueError(f"`min_votes` must be >= 1, got {min_votes}")
+        if not 0.0 <= vote_confidence <= 1.0:
+            raise ValueError(
+                f"`vote_confidence` must be within [0.0, 1.0], got {vote_confidence}"
+            )
+        if lead_margin < 0:
+            raise ValueError(f"`lead_margin` must be >= 0, got {lead_margin}")
+        if switch_after < 1:
+            raise ValueError(f"`switch_after` must be >= 1, got {switch_after}")
+        if state_ttl < 1:
+            raise ValueError(f"`state_ttl` must be >= 1, got {state_ttl}")
+        if state_ttl > MAX_STATE_TTL:
+            raise ValueError(f"`state_ttl` must be <= {MAX_STATE_TTL}, got {state_ttl}")
+        if reattach_window < 0:
+            raise ValueError(f"`reattach_window` must be >= 0, got {reattach_window}")
+        if not 0.0 <= reattach_iou <= 1.0:
+            raise ValueError(
+                f"`reattach_iou` must be within [0.0, 1.0], got {reattach_iou}"
+            )
+        if reattach_window > state_ttl:
+            raise ValueError(
+                f"`reattach_window` ({reattach_window}) must not exceed `state_ttl` "
+                f"({state_ttl}) - lost tracks are purged after `state_ttl` frames, so "
+                "re-attachment beyond that point can never happen."
+            )
+        if len(detections) > 0 and detections.tracker_id is None:
+            raise ValueError(
+                f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
+            )
+        video_id = image.video_metadata.video_identifier
+        video_state = self._per_video_state.setdefault(
+            video_id, {"tracks": {}, "frame": 0}
+        )
+        self._per_video_state.move_to_end(video_id)
+        while len(self._per_video_state) > MAX_TRACKED_VIDEOS:
+            self._per_video_state.popitem(last=False)
+        video_state["frame"] += 1
+        frame = video_state["frame"]
+        tracks = video_state["tracks"]
+
+        dets = deepcopy(detections)
+        n = len(dets)
+        locked_flags = np.zeros(n, dtype=bool)
+
+        if dets.confidence is None and n > 0:
+            # trackers may emit detections without confidence; materialize it
+            # so locked confidence can be written back per detection
+            dets.confidence = np.ones(n, dtype=np.float32)
+
+        class_names = dets.data.get("class_name")
+        if class_names is not None:
+            # fixed-width numpy string arrays silently truncate longer names
+            # on assignment - switch to object dtype before relabelling
+            class_names = np.asarray(class_names).astype(object)
+            dets.data["class_name"] = class_names
+        active_tids: Set[int] = set()
+        if dets.tracker_id is not None:
+            active_tids = {
+                int(t) for t in dets.tracker_id if t is not None and int(t) >= 0
+            }
+        # Re-attachment can only inherit from tracks that are locked, lost (last
+        # seen on an earlier frame, within reattach_window) and absent from the
+        # current frame. Tracks created while this frame is processed have gap 0
+        # and can never qualify, so the eligible set is fixed for the whole
+        # frame. Computing it once turns the per-new-id scan of the entire track
+        # store (O(new_ids * total_tracks), quadratic for a frame of all-new
+        # ids) into a scan of just the lost-locked candidates.
+        inherit_candidates = _eligible_inheritance_candidates(
+            tracks=tracks,
+            frame=frame,
+            reattach_window=reattach_window,
+            active_tids=active_tids,
+        )
+        for i in range(n):
+            tid = dets.tracker_id[i]
+            if tid is None or int(tid) < 0:
+                continue
+            tid = int(tid)
+            if tid not in tracks and inherit_candidates:
+                inherited_idx = _find_lock_to_inherit(
+                    candidates=inherit_candidates,
+                    xyxy=dets.xyxy[i],
+                    reattach_iou=reattach_iou,
+                )
+                if inherited_idx is not None:
+                    # claim the candidate so a later new id in the same frame
+                    # cannot inherit the same lost track
+                    inherited_tid = inherit_candidates.pop(inherited_idx)[0]
+                    tracks[tid] = tracks.pop(inherited_tid)
+            st = tracks.setdefault(
+                tid,
+                {
+                    "votes": defaultdict(int),
+                    "conf_sum": defaultdict(float),
+                    "class_ids": {},
+                    "locked": None,
+                    "last_seen": frame,
+                    "challenger": None,
+                    "streak": 0,
+                    "streak_conf": 0.0,
+                    "last_xyxy": None,
+                },
+            )
+            st["last_seen"] = frame
+            st["last_xyxy"] = np.array(dets.xyxy[i], copy=True)
+
+            if class_names is not None:
+                cname = str(class_names[i])
+            elif dets.class_id is not None:
+                cname = str(dets.class_id[i])
+            else:
+                # no class identity available for this detection
+                continue
+            conf = float(dets.confidence[i]) if dets.confidence is not None else 1.0
+            qualifying = conf >= vote_confidence
+
+            if st["locked"] is None:
+                # pre-lock: cumulative voting (any order)
+                if qualifying and _class_admissible(st, cname):
+                    st["votes"][cname] += 1
+                    st["conf_sum"][cname] += conf
+                    if dets.class_id is not None:
+                        _record_class_id(st, cname, int(dets.class_id[i]))
+                if st["votes"]:
+                    # only the top two tallies matter; O(k) instead of a full sort
+                    ranked = heapq.nlargest(
+                        2, st["votes"].items(), key=lambda kv: kv[1]
+                    )
+                    top_c, top_v = ranked[0]
+                    runner_v = ranked[1][1] if len(ranked) > 1 else 0
+                    if top_v >= min_votes and top_v - runner_v >= lead_margin:
+                        st["locked"] = top_c
+            else:
+                # post-lock: strict consecutive challenge; challenger evidence
+                # is streak-scoped only, so a switch can never produce
+                # confidence above 1.0
+                if qualifying and cname != st["locked"]:
+                    if cname == st["challenger"]:
+                        st["streak"] += 1
+                        st["streak_conf"] += conf
+                    else:
+                        st["challenger"] = cname
+                        st["streak"] = 1
+                        st["streak_conf"] = conf
+                        if dets.class_id is not None:
+                            _record_class_id(st, cname, int(dets.class_id[i]))
+                    if st["streak"] >= switch_after:
+                        new = st["challenger"]
+                        st["locked"] = new
+                        st["votes"] = defaultdict(int, {new: st["streak"]})
+                        st["conf_sum"] = defaultdict(float, {new: st["streak_conf"]})
+                        st["challenger"], st["streak"], st["streak_conf"] = None, 0, 0.0
+                else:
+                    st["challenger"], st["streak"], st["streak_conf"] = None, 0, 0.0
+
+            if st["locked"] is not None:
+                lc = st["locked"]
+                if class_names is not None:
+                    class_names[i] = lc
+                if dets.class_id is not None and lc in st["class_ids"]:
+                    dets.class_id[i] = st["class_ids"][lc]
+                denom = max(st["votes"][lc], 1)
+                dets.confidence[i] = min(1.0, st["conf_sum"][lc] / denom)
+                locked_flags[i] = True
+
+        dets.data["class_locked"] = locked_flags
+
+        stale = [t for t, st in tracks.items() if frame - st["last_seen"] > state_ttl]
+        for t in stale:
+            del tracks[t]
+
+        _enforce_track_cap(tracks)
+
+        return {OUTPUT_KEY: dets}
+
+
+def _class_admissible(st: dict, cname: str) -> bool:
+    """Whether a vote for ``cname`` may be counted for this track.
+
+    Votes for classes already tallied are always counted; a NEW class is only
+    admitted while the track holds fewer than ``MAX_CLASSES_PER_TRACK``
+    classes, bounding per-track state against inputs that carry a fresh class
+    name per detection.
+    """
+    return cname in st["votes"] or len(st["votes"]) < MAX_CLASSES_PER_TRACK
+
+
+def _record_class_id(st: dict, cname: str, class_id: int) -> None:
+    """Remember the numeric class id for ``cname`` with bounded table size.
+
+    ``class_ids`` is also written for post-lock challengers, so it can outgrow
+    the vote table; before admitting a new name at the cap, drop ids no longer
+    referenced by any vote, the lock or the current challenger.
+    """
+    class_ids = st["class_ids"]
+    if cname not in class_ids and len(class_ids) >= MAX_CLASSES_PER_TRACK:
+        referenced = set(st["votes"]) | {st["locked"], st["challenger"], cname}
+        for stale in [k for k in class_ids if k not in referenced]:
+            del class_ids[stale]
+    class_ids[cname] = class_id
+
+
+def _eligible_inheritance_candidates(
+    tracks: Dict[int, dict],
+    frame: int,
+    reattach_window: int,
+    active_tids: Set[int],
+) -> List[Tuple[int, dict]]:
+    """Lost, locked tracks a new tracker id may inherit this frame.
+
+    A track qualifies only if it is locked, has a known last box, is not
+    present in the current frame, and was last seen between 1 and
+    ``reattach_window`` frames ago. Tracks created while the current frame is
+    processed have a gap of 0 and never qualify, so this set is stable for the
+    whole frame and can be computed once instead of rescanned per new id.
+    """
+    if reattach_window <= 0:
+        return []
+    candidates: List[Tuple[int, dict]] = []
+    for tid, st in tracks.items():
+        if tid in active_tids or st["locked"] is None or st["last_xyxy"] is None:
+            continue
+        gap = frame - st["last_seen"]
+        if gap < 1 or gap > reattach_window:
+            continue
+        candidates.append((tid, st))
+    if len(candidates) > MAX_REATTACH_CANDIDATES:
+        # keep the most-recently-lost tracks; bounds the per-new-id scan even
+        # when a pathological input produces very many lost, locked tracks
+        candidates.sort(key=lambda c: c[1]["last_seen"], reverse=True)
+        del candidates[MAX_REATTACH_CANDIDATES:]
+    return candidates
+
+
+def _find_lock_to_inherit(
+    candidates: List[Tuple[int, dict]],
+    xyxy: np.ndarray,
+    reattach_iou: float,
+) -> Optional[int]:
+    """Index into ``candidates`` of the best IoU match, or ``None``.
+
+    ``candidates`` comes from :func:`_eligible_inheritance_candidates`; the
+    caller pops the returned index so the same lost track is not inherited
+    twice within a frame.
+    """
+    best_idx: Optional[int] = None
+    best_iou = 0.0
+    for idx, (_tid, st) in enumerate(candidates):
+        iou = _box_iou(xyxy, st["last_xyxy"])
+        if iou >= reattach_iou and iou > best_iou:
+            best_idx, best_iou = idx, iou
+    return best_idx
+
+
+def _enforce_track_cap(tracks: Dict[int, dict]) -> None:
+    """Bound per-video retained state by evicting least-recently-seen tracks.
+
+    The sort is only paid on frames that exceed ``MAX_TRACKS_PER_VIDEO`` and
+    leaves the store at exactly the cap afterwards.
+    """
+    excess = len(tracks) - MAX_TRACKS_PER_VIDEO
+    if excess <= 0:
+        return
+    evictable = sorted(tracks, key=lambda t: tracks[t]["last_seen"])
+    for t in evictable[:excess]:
+        del tracks[t]
+
+
+def _box_iou(box_a: np.ndarray, box_b: np.ndarray) -> float:
+    inter_w = min(box_a[2], box_b[2]) - max(box_a[0], box_b[0])
+    inter_h = min(box_a[3], box_b[3]) - max(box_a[1], box_b[1])
+    if inter_w <= 0 or inter_h <= 0:
+        return 0.0
+    intersection = float(inter_w * inter_h)
+    area_a = float((box_a[2] - box_a[0]) * (box_a[3] - box_a[1]))
+    area_b = float((box_b[2] - box_b[0]) * (box_b[3] - box_b[1]))
+    union = area_a + area_b - intersection
+    if union <= 0:
+        return 0.0
+    return intersection / union

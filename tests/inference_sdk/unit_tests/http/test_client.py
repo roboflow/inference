@@ -45,6 +45,7 @@ from inference_sdk.http.entities import (
 from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
+    InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
     ModelNotSelectedError,
@@ -5506,3 +5507,237 @@ def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> No
     with warnings.catch_warnings():
         warnings.simplefilter("error", InferenceSDKGuidanceWarning)
         http_client.configure(InferenceConfiguration(api_key_transport="header"))
+
+
+def _video_model(task_type: str = "action-recognition") -> MagicMock:
+    return MagicMock(
+        return_value=ModelDescription(model_id="some/1", task_type=task_type)
+    )
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v1_picks_the_route_for_the_task(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.args[0].startswith("http://some.com/infer/action_recognition")
+    assert call.kwargs["json"]["video"] == {
+        "type": "url",
+        "value": "https://example.com/clip.mp4",
+    }
+
+
+def test_infer_on_video_v1_refuses_an_image_model() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model("object-detection")
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match="infer_on_stream"):
+        api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_follows_the_client_into_v0(requests_mock) -> None:
+    # Serverless serves the legacy route, so select_api_v0 has to reach it
+    # rather than silently calling v1.
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    # The filter is client configuration, as it is for the image doors.
+    api_client.configure(InferenceConfiguration(class_filter=["walk", "run"]))
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.args[0] == "http://some.com/some/1"
+    # v0 carries the options on the query string.
+    assert call.kwargs["params"]["image"] == "https://example.com/clip.mp4"
+    assert call.kwargs["params"]["class_filter"] == "walk,run"
+
+
+def test_infer_on_video_rejects_bytes_like_an_image_reference_does() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidInputFormatError, match="URL or a local path"):
+        api_client.infer_on_video(b"foo", model_id="some/1")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_reads_a_local_path_on_purpose(requests_mock, tmp_path) -> None:
+    # A path is read as bytes here, not handed to an image loader that only
+    # skips decoding while downsizing happens to be off.
+    clip = tmp_path / "clip.mov"
+    clip.write_bytes(b"foo")
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video(str(clip), model_id="some/1")
+
+    call = requests_mock.post.call_args
+    assert call.kwargs["data"] == "Zm9v"
+    assert "image" not in call.kwargs["params"]
+
+
+def test_infer_on_video_rejects_a_reference_that_resolves_to_nothing() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidInputFormatError):
+        api_client.infer_on_video("Zm9v", model_id="some/1")
+
+
+def test_infer_on_video_v0_rejects_a_model_id_without_a_version() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(InvalidModelIdentifier):
+        api_client.infer_on_video("https://example.com/clip.mp4", model_id="no-version")
+
+
+def test_infer_v1_refuses_a_video_model_and_names_the_clip_door() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match="infer_on_video"):
+        api_client.infer("https://example.com/frame.jpg", model_id="some/1")
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v1_picks_the_route_for_the_task() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="action-recognition")
+    )
+    with aioresponses() as mock:
+        # v1 carries the api key in the JSON body, not the query string.
+        mock.post(
+            "http://some.com/infer/action_recognition",
+            payload={"timeline": []},
+        )
+
+        result = await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+        assert result == {"timeline": []}
+        request = list(mock.requests.values())[0][0]
+        assert request.kwargs["json"]["api_key"] == "my-api-key"
+        assert request.kwargs["json"]["video"] == {
+            "type": "url",
+            "value": "https://example.com/clip.mp4",
+        }
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_follows_the_client_into_v0() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    with aioresponses() as mock:
+        mock.post(
+            "http://some.com/some/1?api_key=my-api-key&image=https%3A%2F%2Fexample.com%2Fclip.mp4",
+            payload={"timeline": []},
+        )
+
+        result = await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+        assert result == {"timeline": []}
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v1_refuses_an_image_model() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="object-detection")
+    )
+
+    with pytest.raises(ModelTaskTypeNotSupportedError, match=r"infer_async\(\)"):
+        await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1"
+        )
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_uses_the_model_selected_on_the_client(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    api_client.select_model(model_id="some/1")
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4")
+
+    assert requests_mock.post.call_args.args[0] == "http://some.com/some/1"
+
+
+def test_infer_on_video_requires_a_model_from_somewhere() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+
+    with pytest.raises(ModelNotSelectedError):
+        api_client.infer_on_video("https://example.com/clip.mp4")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v1_sends_the_configured_class_filter(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+    api_client.configure(InferenceConfiguration(class_filter=["walk"]))
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+
+    assert requests_mock.post.call_args.kwargs["json"]["class_filter"] == ["walk"]
+
+
+@pytest.mark.asyncio
+async def test_infer_async_refuses_a_video_model_and_names_the_async_clip_door() -> (
+    None
+):
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="action-recognition")
+    )
+
+    with pytest.raises(
+        ModelTaskTypeNotSupportedError, match=r"infer_on_video_async\(\)"
+    ):
+        await api_client.infer_async("https://example.com/frame.jpg", model_id="some/1")

@@ -26,6 +26,7 @@ _CONTROLLED_VARIABLES = [
     "SAM3_FINE_TUNED_MODELS_ENABLED",
     "WORKFLOWS_STEP_EXECUTION_MODE",
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE",
+    "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS",
     "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS",
     "WEBRTC_MODAL_TOKEN_ID",
     "WEBRTC_MODAL_TOKEN_SECRET",
@@ -919,7 +920,7 @@ assert os.environ["YOLO_OFFLINE"] == "True"
             "USE_INFERENCE_MODELS": "True",
             "SAM3_EXEC_MODE": "remote",
             "WORKFLOWS_STEP_EXECUTION_MODE": "remote",
-            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal",
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
             "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS": "False",
             "WEBRTC_MODAL_TOKEN_ID": "runtime-token-id",
             "WEBRTC_MODAL_TOKEN_SECRET": "runtime-token-secret",
@@ -1128,4 +1129,61 @@ assert usage.memcache_client is None
 assert usage.trackUsage("endpoint", "actor") is None
 """,
         {"OFFLINE_MODE": "True"},
+    )
+
+
+@pytest.mark.parametrize("local_permission", ["True", "False"])
+@pytest.mark.parametrize("mode", ["modal", " modal ", " MODAL "])
+def test_offline_modal_configuration_fails_closed(local_permission, mode):
+    _run_with_env(
+        """
+try:
+    from inference.core import env
+except RuntimeError as error:
+    assert "modal cannot run in OFFLINE_MODE" in str(error)
+else:
+    raise AssertionError("Offline Modal must not downgrade to local execution")
+""",
+        {
+            "OFFLINE_MODE": "True",
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": mode,
+            "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": local_permission,
+        },
+    )
+
+
+def test_online_modal_and_explicit_offline_local_remain_supported():
+    for offline, mode in [("False", "modal"), ("True", "local")]:
+        _run_with_env(
+            f"from inference.core import env\nassert env.WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == {mode!r}",
+            {"OFFLINE_MODE": offline, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": mode},
+        )
+
+
+@pytest.mark.parametrize("offline", ["True", "False"])
+@pytest.mark.parametrize("mode", ["", "sandbox", "mod al", "modalx"])
+def test_unknown_custom_python_mode_cannot_fall_through_to_local(offline, mode):
+    _run_with_env(
+        """
+try:
+    from inference.core import env
+except ValueError as error:
+    assert "must be local or modal" in str(error)
+else:
+    raise AssertionError("An unknown execution mode was accepted")
+""",
+        {"OFFLINE_MODE": offline, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": mode},
+    )
+
+
+@pytest.mark.parametrize(
+    "offline,mode,expected",
+    [("False", " MODAL ", "modal"), ("True", " LOCAL ", "local")],
+)
+def test_known_custom_python_modes_normalize_whitespace_and_case(
+    offline, mode, expected
+):
+    _run_with_env(
+        f"from inference.core import env\nassert env.WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == {expected!r}",
+        {"OFFLINE_MODE": offline, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": mode},
     )

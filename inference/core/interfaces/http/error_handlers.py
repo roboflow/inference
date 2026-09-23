@@ -24,6 +24,7 @@ from inference.core.exceptions import (
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     OnnxProviderNotAvailable,
+    PayloadTooLargeError,
     PaymentRequiredError,
     PostProcessingError,
     PreProcessingError,
@@ -72,6 +73,7 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowsInvalidEnvironmentValueError,
     WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
@@ -201,6 +203,12 @@ def with_route_exceptions(route):
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
+            )
+        except PayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": error.get_public_error_details()},
             )
         except InputImageLoadError as error:
             logger.exception("%s: %s", type(error).__name__, error)
@@ -387,6 +395,7 @@ def with_route_exceptions(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,
@@ -675,6 +684,12 @@ def with_route_exceptions_async(route):
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
+        except PayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": error.get_public_error_details()},
+            )
         except InputImageLoadError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -860,6 +875,7 @@ def with_route_exceptions_async(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,

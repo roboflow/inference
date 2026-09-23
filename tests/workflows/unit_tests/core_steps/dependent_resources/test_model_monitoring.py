@@ -11,7 +11,7 @@ for monitoring without pulling weights, so the declared dependency uses
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+from inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1 import (
     BlockManifest as ModelMonitoringV1Manifest,
 )
 from inference.core.workflows.prototypes.block import (

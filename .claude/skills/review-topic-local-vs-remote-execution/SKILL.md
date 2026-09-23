@@ -41,7 +41,7 @@ This is a behavior/content trigger, not a single directory — the paths above a
 
 2. **Local and remote paths stay semantically equivalent.** `run_locally` and `run_remotely` accept the same params and return the same shape; every manifest field is forwarded on both paths (one-path param wiring is a silent divergence).
 
-3. **Metadata must match behavior.** A block's `get_restrictions()` / `get_air_gapped_availability()` declarations are consumed by the describe endpoint and the platform UI to decide where a block may run. The declaration and the actual `run()` guard must agree — a code path that raises for a runtime needs a `RuntimeRestriction` for it, and vice-versa. LAN/same-process shape: `onvif_movement/v1.py` (HARD + `StepExecutionMode.REMOTE`, plus HARD + `Runtime.HOSTED_SERVERLESS`/`Runtime.DEDICATED_DEPLOYMENT` because hosted can't reach a customer LAN).
+3. **Metadata must match behavior.** A block's `get_restrictions()` / `get_air_gapped_availability()` declarations are consumed by the describe endpoint and the platform UI to decide where a block may run. The declaration and the actual `run()` guard must agree — a code path that raises for a runtime needs a `RuntimeRestriction` for it, and vice-versa. LAN shape: `onvif_movement/v1.py::NO_LAN_FROM_HOSTED_RESTRICTION` (HARD + `Runtime.HOSTED_SERVERLESS`/`Runtime.DEDICATED_DEPLOYMENT` because hosted can't reach a customer LAN). Do NOT gate a non-model block on `StepExecutionMode` - that enum only says where model steps run; a block with no remote path always executes in-process, and a REMOTE-scoped restriction is silent under the default LOCAL mode on hosted runtimes.
 
 4. **Runtime routing has no orphaned path.** A new backend, env flag, or hardware gate leaves BOTH the on and off value working and tested; the legacy path (ONNX registry entries) stays intact. Backend routing lives in `inference/core/models/inference_models_adapters.py` + `inference/core/env.py` (`USE_INFERENCE_MODELS`, `_PLATFORM_SPECIFIC_USE_INFERENCE_MODELS_DEFAULT`, `DISABLED_INFERENCE_MODELS_BACKENDS`). Rollout history: #2096 added per-deployment `DISABLED_INFERENCE_MODELS_BACKENDS`; #2128 added missing registry entries so RFDETR-NAS works under inference-models; #2136 reverted making inference-models the default backend (the default flip is contentious — review carefully).
 
@@ -54,7 +54,8 @@ This is a behavior/content trigger, not a single directory — the paths above a
 Files:
 - `inference/core/workflows/prototypes/block.py` — the contract: `StepExecutionMode`, `Runtime`, `Severity`, `RuntimeRestriction`, presets (`STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION`, `COOLDOWN_HTTP_SOFT_RESTRICTION`), and `get_restrictions` / `get_air_gapped_availability` / `get_execution_engine_compatibility` hooks. Read first.
 - `inference/core/workflows/core_steps/models/roboflow/object_detection/v1.py` — canonical LOCAL/REMOTE dispatch.
-- `inference/core/workflows/core_steps/sinks/onvif_movement/v1.py` — same-process + LAN block done right (two HARD restrictions).
+- `inference/core/workflows/core_steps/sinks/onvif_movement/v1.py` — LAN block done right (one HARD runtime-keyed restriction, shared with `v1_tensor.py`; no `step_execution_mode` gate).
+- `inference/core/workflows/core_steps/cache/common.py` — in-process cache caveat done right (SOFT, runtime-keyed, not narrowed by step mode or input mode).
 - `inference/core/models/inference_models_adapters.py` + `inference/core/env.py` — backend routing with per-platform default and per-deployment disable.
 - `tests/inference/hosted_platform_tests/conftest.py` (+ `test_workflows.py`, `test_roboflow_models.py`) — hosted/serverless/localhost parametrization.
 

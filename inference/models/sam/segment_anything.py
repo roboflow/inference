@@ -141,16 +141,20 @@ class SegmentAnything(RoboflowCoreModel):
                 embedding, _ = self.embed_image(**request.dict())
                 inference_time = perf_counter() - t1
                 if request.format == "json":
-                    return SamEmbeddingResponse(
+                    response = SamEmbeddingResponse(
                         embeddings=embedding.tolist(), time=inference_time
                     )
+                    self._attach_resolved_model_metadata(response)
+                    return response
                 elif request.format == "binary":
                     binary_vector = BytesIO()
                     np.save(binary_vector, embedding)
                     binary_vector.seek(0)
-                    return SamEmbeddingResponse(
+                    response = SamEmbeddingResponse(
                         embeddings=binary_vector.getvalue(), time=inference_time
                     )
+                    self._attach_resolved_model_metadata(response)
+                    return response
             elif isinstance(request, SamSegmentationRequest):
                 masks, low_res_masks = self.segment_image(**request.dict())
                 if request.format == "json":
@@ -174,6 +178,7 @@ class SegmentAnything(RoboflowCoreModel):
                     low_res_masks=[m.tolist() for m in low_res_masks],
                     time=perf_counter() - t1,
                 )
+                self._attach_resolved_model_metadata(response)
                 return response
 
     def preproc_image(self, image: InferenceRequestImage):

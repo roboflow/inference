@@ -18,6 +18,7 @@ from inference_sdk.http.errors import (
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
+VideoReference = str
 Confidence = Union[float, Literal["best", "default"]]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
@@ -27,6 +28,7 @@ CLASSIFICATION_TASK = "classification"
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
+ACTION_RECOGNITION_TASK = "action-recognition"
 DEFAULT_MAX_INPUT_SIZE = 1024
 
 
@@ -157,6 +159,7 @@ class InferenceConfiguration:
     class_agnostic_nms: Optional[bool] = None
     class_filter: Optional[List[str]] = None
     fix_batch_size: Optional[bool] = None
+    include_anomaly_map: Optional[bool] = None
     visualize_predictions: bool = False
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
@@ -329,6 +332,7 @@ class InferenceConfiguration:
             Dict[str, Any]: The classification parameters.
         """
         parameters_specs = [
+            ("include_anomaly_map", "include_anomaly_map"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),

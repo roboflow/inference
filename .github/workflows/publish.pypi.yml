@@ -34,5 +34,10 @@ jobs:
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
+      - name: 🧹 Remove roboflow-workflows artifacts (published separately)
+        # publish.pypi.roboflow_workflows.yml owns the roboflow-workflows
+        # release; keep exactly one publisher per distribution to avoid
+        # racing skip-existing checks on the same tag.
+        run: rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl
       - name: 🚀 Publish to PyPi
         uses: pypa/gh-action-pypi-publish@release/v1

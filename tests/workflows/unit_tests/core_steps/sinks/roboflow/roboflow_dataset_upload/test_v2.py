@@ -9,13 +9,13 @@ from pydantic import ValidationError
 
 from inference.core.cache import MemoryCache
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v2
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload import v2
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
     BlockManifest,
     RoboflowDatasetUploadBlockV2,
     maybe_register_datapoint_at_roboflow,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2_tensor import (
     RoboflowDatasetUploadBlockV2 as TensorRoboflowDatasetUploadBlockV2,
 )
 from inference.core.workflows.execution_engine.entities.base import (

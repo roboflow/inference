@@ -426,6 +426,7 @@ def build_nsys_command(
     Returns:
         Copy/paste-ready ``nsys profile`` command.
     """
+    run_dir.mkdir(parents=True, exist_ok=True)
     trace_output = run_dir / "trace"
     command = [
         "nsys",
@@ -467,9 +468,9 @@ def build_nsys_command(
     if config.seed is not None:
         command.extend(["--seed", str(config.seed)])
 
-    nsys_command = " \\\n  ".join(_quote_nsys_command_part(part) for part in command)
+    profile_command = " \\\n  ".join(_quote_nsys_command_part(part) for part in command)
 
-    return nsys_command
+    return profile_command
 
 
 def _quote_nsys_command_part(part: str) -> str:
