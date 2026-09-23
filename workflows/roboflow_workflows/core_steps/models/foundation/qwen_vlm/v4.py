@@ -112,7 +112,7 @@ from inference_sdk import InferenceHTTPClient
 #   ``reasoning: {"enabled": false}`` and must always receive an effort.
 
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
-    # Native — small models that run on Roboflow infrastructure.
+    # Native — models that run on Roboflow infrastructure.
     "Qwen 2.5 VL 7B": {
         "backend": "native",
         "model_id": "qwen25-vl-7b",
@@ -128,6 +128,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
     "Qwen 3.5 VL 2B": {
         "backend": "native",
         "model_id": "qwen3_5-2b",
+    },
+    "Qwen 3.8 VL 27B": {
+        "backend": "native",
+        "model_id": "qwen3_8-27b",
     },
     # OpenRouter — image-capable hosted Qwen chat models.
     "Qwen 3.8 Max": {
@@ -267,6 +271,7 @@ NATIVE_SUPPORTED_VARIANTS = NATIVE_MODEL_IDS + ["qwen-pretrains/2"]
 # which is the qwen3.5-2b base — so include the sentinel here too.
 NATIVE_THINKING_MODEL_VERSIONS = [
     "Qwen 3.5 VL 2B",
+    "Qwen 3.8 VL 27B",
     FINE_TUNED_NATIVE_LABEL,
 ]
 
@@ -953,11 +958,11 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     enable_thinking: bool = Field(
         default=False,
         description=(
-            "Enable Qwen3.5-VL's reasoning mode, where the model emits "
+            "Enable native Qwen reasoning mode, where the model emits "
             "thinking tokens before its answer. The reasoning trace is "
-            "returned in the `thinking` output. Only the Qwen 3.5 VL 2B "
-            "checkpoint (and Qwen3-VL fine-tunes derived from it) supports "
-            "this; ignored elsewhere."
+            "returned in the `thinking` output. Supported by Qwen 3.8 VL 27B, "
+            "Qwen 3.5 VL 2B, and Qwen3-VL fine-tunes derived from it; "
+            "ignored elsewhere."
         ),
         json_schema_extra={
             "relevant_for": {
@@ -1372,7 +1377,7 @@ class QwenVlmBlockV4(OpenRouterWorkflowBlockBase):
                 )
             return openrouter_outputs
 
-        # `enable_thinking` is only meaningful on Qwen3.5-VL native variants
+        # `enable_thinking` is only meaningful on supported native variants
         # (and qwen3-vl fine-tunes derived from them). Silently ignore on
         # other native checkpoints so the field stays harmless if it's left
         # toggled on after a model switch.
