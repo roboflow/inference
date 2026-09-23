@@ -50,6 +50,7 @@ COPY inference_models        /app/inference_models
 COPY inference_model_manager /app/inference_model_manager
 COPY inference_server        /app/inference_server
 COPY workflows                /app/workflows
+COPY inference/landing/out    /app/landing
 RUN python /app/workflows/build_scripts/download_fonts.py
 
 # ───────────────────────────── runtime ──────────────────────────────────────
@@ -58,7 +59,8 @@ FROM python:3.12-slim-bookworm AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
-    PATH=/opt/venv/bin:$PATH
+    PATH=/opt/venv/bin:$PATH \
+    LANDING_DIR=/app/landing
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates openssl \
@@ -70,6 +72,6 @@ COPY --from=builder /app /app
 
 WORKDIR /app/inference_server
 
-EXPOSE 8000
+EXPOSE 9001
 
 CMD ["python", "-m", "inference_server.app"]

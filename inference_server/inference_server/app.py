@@ -20,6 +20,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from inference_server import configuration as _cfg
 from inference_server.auth import extract_bearer, validate_api_key
@@ -257,9 +258,50 @@ if _cfg.ALLOW_ORIGINS:
     )
 
 
+def mount_landing_assets(app: FastAPI) -> bool:
+    if not os.path.isdir(_cfg.LANDING_DIR):
+        logger.warning(
+            "Landing page directory %s not found; / is not served", _cfg.LANDING_DIR
+        )
+        return False
+
+    if not _cfg.ENABLE_DASHBOARD:
+
+        @app.get("/dashboard.html")
+        @app.head("/dashboard.html")
+        async def _dashboard_guard() -> Response:
+            return Response(status_code=404)
+
+    static_dir = os.path.join(_cfg.LANDING_DIR, "static")
+    if os.path.isdir(static_dir):
+        app.mount(
+            "/static", StaticFiles(directory=static_dir, html=True), name="static"
+        )
+
+    next_static_dir = os.path.join(_cfg.LANDING_DIR, "_next", "static")
+    if os.path.isdir(next_static_dir):
+        app.mount(
+            "/_next/static",
+            StaticFiles(directory=next_static_dir, html=True),
+            name="_next_static",
+        )
+
+    return True
+
+
+def mount_landing_root(app: FastAPI) -> bool:
+    if not os.path.isdir(_cfg.LANDING_DIR):
+        return False
+
+    app.mount("/", StaticFiles(directory=_cfg.LANDING_DIR, html=True), name="root")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Include routers
 # ---------------------------------------------------------------------------
+
+_LANDING_ASSETS_MOUNTED = mount_landing_assets(app)
 
 app.include_router(v2_models.router)
 app.include_router(v2_server.router)
@@ -279,6 +321,8 @@ if _WORKFLOWS_ROUTES_ENABLED:
 
 if _cfg.LEGACY_ROUTES_ENABLED:
     include_legacy_catch_all(app)
+
+_LANDING_ROOT_MOUNTED = mount_landing_root(app)
 
 
 # ---------------------------------------------------------------------------

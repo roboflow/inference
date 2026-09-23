@@ -44,12 +44,12 @@ Run:
 
 ```bash
 docker run --rm -it \
-  -p 8000:8000 \
+  -p 9001:9001 \
   inference-server:cpu
 ```
 
 ```bash
-curl -X POST "http://localhost:8000/v2/models/infer?model_id=yolov8n-640" \
+curl -X POST "http://localhost:9001/v2/models/infer?model_id=yolov8n-640" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: image/jpeg" \
   --data-binary @image.jpg
@@ -71,7 +71,7 @@ without a code change here:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8000` | HTTP port (`__main__` dev runner) |
+| `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |
 | `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded at server startup; `/v2/server/ready` reports not-ready until each finishes loading |
@@ -116,6 +116,12 @@ are dropped at startup instead of registered.
 | `ALLOW_ORIGINS` | `*` | Comma-separated CORS origins |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `16` | Thread-pool size backing workflow execution |
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `8` | Max concurrent steps per workflow run |
+| `LANDING_DIR` | `<checkout>/inference/landing/out` | Directory of the exported legacy landing page served at `/`; the Docker images set it to `/app/landing` |
+| `ENABLE_DASHBOARD` | `false` | Serves `/dashboard.html` instead of 404 |
+
+`/` serves the legacy landing page from `LANDING_DIR`; its dashboard tab calls
+`/metrics`, `/logs`, and `/inference_pipelines`, which are not ported here and
+answer 404.
 
 Authentication differs by surface: `/v2/*` keeps Bearer-token auth plus
 `ENABLE_CONTROL_PLANE_ROUTES` gating. Legacy routes instead take an API key

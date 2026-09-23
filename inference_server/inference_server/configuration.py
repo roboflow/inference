@@ -94,9 +94,21 @@ MODEL_STAT_CACHE_TTL_S = get_float_from_env(
 )
 
 # ── HTTP (app.py) ─────────────────────────────────────────────────────────
-APP_PORT_DEFAULT = 8000
+APP_PORT_DEFAULT = 9001
 PORT_ENV = "PORT"
 NUM_WORKERS = get_integer_from_env("NUM_WORKERS", default=1)
+
+# ── Landing page (app.py) ──────────────────────────────────────────────────
+LANDING_DIR = os.environ.get(
+    "LANDING_DIR",
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "inference",
+        "landing",
+        "out",
+    ),
+)
+ENABLE_DASHBOARD = get_boolean_from_env("ENABLE_DASHBOARD", default=False)
 
 # ── App lifespan (app.py) ─────────────────────────────────────────────────
 MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", default=32)
