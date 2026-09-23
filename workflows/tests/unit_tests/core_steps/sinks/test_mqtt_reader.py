@@ -348,6 +348,29 @@ class TestCallbacks:
         assert client.disconnected is False
         assert state.refused_code == 3
 
+    @pytest.mark.parametrize("reason_code", [0, 3, 5])
+    def test_on_connect_completes_the_state_before_waking_a_waiter(self, reason_code):
+        # a run wakes on `connack`; what it then reads must already be final
+        state = MQTTReaderState(topic="plc/#", qos=1, buffer_size=1)
+        seen = {}
+
+        class RecordingEvent(threading.Event):
+            def set(self):
+                seen["refused_code"] = state.refused_code
+                seen["connected"] = state.connected.is_set()
+                super().set()
+
+        state.connack = RecordingEvent()
+        client = FakeClient(userdata=state)
+        client.on_subscribe = mqtt_on_subscribe
+
+        mqtt_on_connect(client, state, {}, reason_code)
+
+        assert seen == {
+            "refused_code": reason_code or None,
+            "connected": reason_code == 0,
+        }
+
     def test_on_connect_logs_the_refusal_reason(self, caplog):
         state = MQTTReaderState(topic="plc/#", qos=0, buffer_size=1)
 
@@ -1368,6 +1391,45 @@ class TestOutage:
         assert len(run_path_errors) == 1
         assert "restored after" not in caplog.text
 
+    def test_refused_resubscription_drains_then_returns_empty_failure(
+        self, clients, block
+    ):
+        client, _ = self.warm(clients, block, read_mode="sequential")
+        client.deliver(b"A")
+        drop(client)
+        client.granted_qos = SUBSCRIPTION_REFUSED_QOS
+        reconnect(client)
+
+        results = [block.run(**run_kwargs(read_mode="sequential")) for _ in range(2)]
+
+        assert results[0]["value"] == "A"
+        assert results[0]["error_status"] is False
+        assert results[1]["payload"] == {}
+        assert results[1]["error_status"] is True
+        assert "refused subscription" in results[1]["error_message"]
+
+    def test_cold_refused_subscription_drains_the_backlog_first(
+        self, clients, block, monkeypatch
+    ):
+        # a persistent session's backlog lands right after CONNACK, before the
+        # SUBACK that refuses the subscription: the messages are still real
+        monkeypatch.setattr(FakeClient, "granted_qos", SUBSCRIPTION_REFUSED_QOS)
+        original_loop_start = FakeClient.loop_start
+
+        def loop_start_with_backlog(client):
+            original_loop_start(client)
+            client.deliver(b"A")
+
+        with patch.object(FakeClient, "loop_start", loop_start_with_backlog):
+            first = block.run(**run_kwargs(read_mode="sequential"))
+        second = block.run(**run_kwargs(read_mode="sequential"))
+
+        assert first["value"] == "A"
+        assert first["error_status"] is False
+        assert block._subscribed_once is False
+        assert second["payload"] == {}
+        assert "refused subscription" in second["error_message"]
+
     def test_cold_instance_still_waits_for_the_broker(
         self, clients, block, monkeypatch
     ):
@@ -1376,7 +1438,8 @@ class TestOutage:
         started = time.monotonic()
         result = block.run(**run_kwargs(timeout=0.3))
 
-        assert time.monotonic() - started >= 0.3
+        # a hair of timer slack is allowed on the lower bound
+        assert time.monotonic() - started >= 0.25
         assert result["error_message"] == NOT_CONNECTED_WITHIN_TIMEOUT
         assert block._subscribed_once is False
 

@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import get_args
 from unittest.mock import MagicMock, patch
@@ -165,6 +166,27 @@ class TestCallbacks:
 
         client.disconnect.assert_not_called()
         assert state.refused_code == 3
+
+    @pytest.mark.parametrize("reason_code", [0, 3, 5])
+    def test_on_connect_completes_the_state_before_waking_a_waiter(self, reason_code):
+        # a run wakes on `connack`; what it then reads must already be final
+        state = MQTTWriterState()
+        seen = {}
+
+        class RecordingEvent(threading.Event):
+            def set(self):
+                seen["refused_code"] = state.refused_code
+                seen["connected"] = state.connected.is_set()
+                super().set()
+
+        state.connack = RecordingEvent()
+
+        mqtt_on_connect(MagicMock(), state, {}, reason_code)
+
+        assert seen == {
+            "refused_code": reason_code or None,
+            "connected": reason_code == 0,
+        }
 
     def test_on_connect_logs_the_refusal_reason(self, caplog):
         with caplog.at_level("ERROR", logger="inference"):

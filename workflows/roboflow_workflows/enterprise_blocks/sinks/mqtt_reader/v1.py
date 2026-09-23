@@ -224,16 +224,18 @@ def mqtt_on_connect(
     client, state: MQTTReaderState, flags, reason_code, properties=None
 ):
     # paho invokes on_connect for accepted and rejected CONNACK alike;
-    # only reason_code 0 means an established MQTT session
-    state.connack.set()
+    # only reason_code 0 means an established MQTT session. The outcome is
+    # recorded before `connack` wakes a waiting run, so the run never reads a
+    # half-updated state
     if reason_code != 0:
         state.refused_code = reason_code
+        state.connected.clear()
+        state.connack.set()
         logger.error(
             "MQTT connection refused: %s (code %s)",
             mqtt.connack_string(reason_code),
             reason_code,
         )
-        state.connected.clear()
         if reason_code in PERMANENT_CONNACK_CODES:
             # paho would otherwise reconnect with the same credentials forever;
             # disconnect() puts it in the disconnecting state, so its loop ends
@@ -247,6 +249,7 @@ def mqtt_on_connect(
         bool(flags.get("session present")),
     )
     state.connected.set()
+    state.connack.set()
     # a clean-session broker forgets subscriptions on every reconnect, so the
     # subscription is (re)established here rather than once after connect(); on
     # a persistent session the repeated SUBSCRIBE is idempotent
@@ -764,24 +767,28 @@ class MQTTReaderBlockV1(WorkflowBlock):
             # cold start: bounded waits for the broker's answers, so the first
             # run of a pipeline gets a message or a precise failure
             failure = self._wait_until_subscribed(state, timeout)
-            if failure is not None:
+            if failure is not None and not state.messages:
                 return failure
-            self._subscribed_once = True
-            if self._awaiting_retained:
-                # one-off, bounded: a retained message (or nothing) arrives right
-                # after SUBACK; without this wait the first run would race it
-                self._awaiting_retained = False
-                state.message_received.wait(timeout=timeout)
-        elif state.subscribe_failed:
-            # a known refusal is permanent for this configuration
-            return self._handle_failure(
-                f"MQTT broker refused subscription to topic {state.topic!r}."
-            )
-        # never wait once subscribed; drain first, because messages received
-        # before a drop are real whatever happened to the connection afterwards
+            if failure is None:
+                self._subscribed_once = True
+                if self._awaiting_retained:
+                    # one-off, bounded: a retained message (or nothing) arrives
+                    # right after SUBACK; without this wait the first run would
+                    # race it
+                    self._awaiting_retained = False
+                    state.message_received.wait(timeout=timeout)
+        # never wait once subscribed; always drain first, because messages
+        # received before a drop or a refusal are real whatever happened to the
+        # connection afterwards (a persistent session's backlog even lands
+        # before the SUBACK that may refuse the subscription)
         try:
             received_topic, payload, retained = state.messages.popleft()
         except IndexError:
+            if state.subscribe_failed:
+                # a known refusal is permanent for this configuration
+                return self._handle_failure(
+                    f"MQTT broker refused subscription to topic {state.topic!r}."
+                )
             if state.refused_code in PERMANENT_CONNACK_CODES:
                 # a reconnect refused with 1/2/4/5 stopped the loop: no fresh
                 # data can arrive until the pipeline is restarted

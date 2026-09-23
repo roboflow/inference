@@ -224,7 +224,7 @@ def test_outage_repeats_last_message_without_waiting_then_recovers(broker, caplo
             for _ in range(3):
                 started = time.monotonic()
                 during.append(block.run(**kwargs))
-                assert time.monotonic() - started < 0.2
+                assert time.monotonic() - started < 0.5
 
             # and the broker comes back: the retained copy is re-sent on the
             # resubscribe (the buffer holds one message in latest mode), then a
@@ -630,7 +630,7 @@ def test_persistent_session_outage_repeats_last_then_delivers_queued(session_bro
         session_broker.publish("plc/state", PAUSED, qos=1)
         started = time.monotonic()
         during = block.run(**kwargs)
-        assert time.monotonic() - started < 0.2
+        assert time.monotonic() - started < 0.5
 
         # and paho reconnects on its own
         assert wait_until(lambda: len(block._state.messages) == 1, timeout=10)

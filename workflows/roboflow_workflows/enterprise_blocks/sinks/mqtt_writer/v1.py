@@ -148,20 +148,23 @@ def mqtt_on_connect(
     client, state: MQTTWriterState, flags, reason_code, properties=None
 ):
     # paho invokes on_connect for accepted and rejected CONNACK alike;
-    # only reason_code 0 means an established MQTT session
-    state.connack.set()
+    # only reason_code 0 means an established MQTT session. The outcome is
+    # recorded before `connack` wakes a waiting run, so the run never reads a
+    # half-updated state
     if reason_code == 0:
         state.refused_code = None
-        logger.info("MQTT client connected")
         state.connected.set()
+        state.connack.set()
+        logger.info("MQTT client connected")
         return
     state.refused_code = reason_code
+    state.connected.clear()
+    state.connack.set()
     logger.error(
         "MQTT connection refused: %s (code %s)",
         mqtt.connack_string(reason_code),
         reason_code,
     )
-    state.connected.clear()
     if reason_code in PERMANENT_CONNACK_CODES:
         # paho would otherwise reconnect with the same credentials forever;
         # disconnect() puts it in the disconnecting state, so its loop ends
