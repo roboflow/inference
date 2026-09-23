@@ -554,6 +554,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx",
         class_name="PPOCRv6DetectionOnnx",
     ),
+    ("rfdetr-keypoint-stage2", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr_two_stage.rfdetr_key_points_stage2_onnx",
+        class_name="RFDetrKeyPointsStage2ONNX",
+    ),
+    ("rfdetr-keypoint-two-stage", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr_two_stage.rfdetr_two_stage_key_points_onnx",
+        class_name="RFDetrTwoStageKeyPointsONNX",
+    ),
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.l2cs.l2cs_onnx",
         class_name="L2CSNetOnnx",
