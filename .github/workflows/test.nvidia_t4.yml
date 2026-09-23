@@ -41,6 +41,13 @@ on:
           - mmp
           - bundled-subprocess
           - bundled-direct
+      server-image:
+        description: "Server under test: legacy inference image or the new inference_server image"
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - new
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 32-minute in-job image build is skipped. test_name `fast_track` runs
@@ -74,9 +81,12 @@ jobs:
     env:
       LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
       LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
+      SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
+      INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-gpu' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py' || '' }}
     strategy:
       matrix:
-        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
     timeout-minutes: 120
 
     steps:
@@ -95,7 +105,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt 
       - name: 🔨 Build Test Docker - GPU
-        if: ${{ inputs.image_tag == '' }}
+        if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' }}
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
       - name: 📥 Pull prebuilt image ${{ inputs.image_tag }}
@@ -106,13 +116,17 @@ jobs:
           docker pull "roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}"
           docker tag "roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}" roboflow/roboflow-inference-server-gpu:test
           echo "Image under test: roboflow/roboflow-inference-server-gpu:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
+      - name: 🔨 Build Test Docker - inference_server GPU
+        if: ${{ env.SERVER_IMAGE == 'new' }}
+        run: |
+          docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.gpu .
 
       - name: Show NVIDIA driver - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+        if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && env.SERVER_IMAGE == 'legacy' }}
         run: nvidia-smi
 
       - name: Verify CUDA OpenCV - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+        if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && env.SERVER_IMAGE == 'legacy' }}
         run: |
           docker run --rm --gpus all --entrypoint sh \
             -e OPENCV_REQUIRE_CUDA_BUILD=true \
@@ -122,7 +136,7 @@ jobs:
             /tmp/verify_opencv
 
       - name: Verify NVIDIA GStreamer codecs - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+        if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && env.SERVER_IMAGE == 'legacy' }}
         run: |
           docker run --rm --gpus all --entrypoint sh \
             -e GSTREAMER_REQUIRE_NVCODEC=true \
@@ -132,7 +146,7 @@ jobs:
             /tmp/verify_gstreamer
 
       - name: Verify CUDA GStreamer tensor bridge - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' }}
+        if: ${{ (inputs.test_name == '' || inputs.test_name == 'fast_track') && env.SERVER_IMAGE == 'legacy' }}
         run: |
           docker run --rm --gpus all --entrypoint python3 \
             -v "$PWD/docker/scripts/verify_gstreamer_cuda_tensor_runtime.py:/tmp/verify_gstreamer_cuda_tensor_runtime.py:ro" \
@@ -142,35 +156,35 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/ ${{ env.PYTEST_EXTRA_ARGS }}
       - name: 🧹 Cleanup Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'regression_without_torch' }}
         run: make stop_test_docker
 
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+        if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && env.SERVER_IMAGE == 'legacy') }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+        if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && env.SERVER_IMAGE == 'legacy') }}
         run: |
           source .venv/bin/activate
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/ ${{ env.PYTEST_EXTRA_ARGS }}
       - name: 🧹 Cleanup Test Docker - GPU
-        if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_with_torch' }}
+        if: ${{ inputs.test_name == 'regression_with_torch' || (inputs.test_name == '' && env.SERVER_IMAGE == 'legacy') }}
         run: make stop_test_docker
       
       - name: 🔋 Start Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'paligemma' }}
@@ -183,7 +197,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'florence' }}
@@ -196,7 +210,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam2' }}
@@ -209,7 +223,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'fast_track' || inputs.test_name == 'sam3' }}
@@ -235,7 +249,7 @@ jobs:
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ inputs.test_name == '' || inputs.test_name == 'moondream2' }}
