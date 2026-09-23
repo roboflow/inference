@@ -4,6 +4,10 @@ from typing import Any, Callable, FrozenSet, List, Optional, Sequence, Tuple
 DISABLED_STAGE = "none"
 
 
+class InvalidPipelineIdError(ValueError):
+    pass
+
+
 class PPOCRv6StructuredOCR:
     def __init__(self, pipeline: Any) -> None:
         self._pipeline = pipeline
@@ -47,6 +51,8 @@ class PipelineFamily:
     stage_prefixes: Tuple[str, ...]
     stage_tokens: FrozenSet[str]
     facade: Callable[[Any], Any]
+    task_type: str
+    default_action: str
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,8 @@ PIPELINE_FAMILIES: dict[str, PipelineFamily] = {
         stage_prefixes=("pp-ocrv6-det", "pp-ocrv6-rec"),
         stage_tokens=frozenset({DISABLED_STAGE, "tiny", "small", "medium"}),
         facade=PPOCRv6StructuredOCR,
+        task_type="structured-ocr",
+        default_action="infer",
     ),
 }
 
@@ -95,13 +103,15 @@ def resolve_pipeline_request(model_id: str) -> Optional[PipelineRequest]:
         if len(tokens) != len(family.stage_prefixes) or any(
             token not in family.stage_tokens for token in tokens
         ):
-            raise ValueError(f"Invalid pipeline model id: {model_id}")
+            raise InvalidPipelineIdError(f"Invalid pipeline model id: {model_id}")
         stage_model_ids = tuple(
             None if token == DISABLED_STAGE else f"{prefix}/{token}"
             for prefix, token in zip(family.stage_prefixes, tokens)
         )
     if not any(stage_model_ids):
-        raise ValueError(f"Pipeline model id disables every stage: {model_id}")
+        raise InvalidPipelineIdError(
+            f"Pipeline model id disables every stage: {model_id}"
+        )
     return PipelineRequest(family=family, stage_model_ids=stage_model_ids)
 
 
@@ -130,6 +140,10 @@ def _default_stage_model_ids(family: PipelineFamily) -> Tuple[str, ...]:
                 f"is not an enabled {prefix}/<token> model id"
             )
     return tuple(defaults)
+
+
+def is_pipeline_model_id(model_id: str) -> bool:
+    return model_id.partition("/")[0] in PIPELINE_FAMILIES
 
 
 def pipeline_stage_model_ids(model_id: str) -> List[str]:

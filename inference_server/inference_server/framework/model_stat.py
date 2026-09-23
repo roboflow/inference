@@ -5,6 +5,12 @@ import time
 from collections import OrderedDict
 from typing import Optional
 
+from inference_model_manager.pipelines import (
+    InvalidPipelineIdError,
+    PipelineRequest,
+    is_pipeline_model_id,
+    resolve_pipeline_request,
+)
 from inference_models.errors import (
     ModelNotFoundError,
     ModelRetrievalError,
@@ -14,6 +20,7 @@ from inference_models.errors import (
 from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
 from inference_server import configuration
 from inference_server.framework.entities import CommonRequestParams
+from inference_server.framework.fanout import gather_bounded
 
 _CACHE_MAXSIZE = configuration.MODEL_STAT_CACHE_SIZE
 _CACHE_TTL_S = configuration.MODEL_STAT_CACHE_TTL_S
@@ -87,11 +94,39 @@ async def _fetch_cache_and_map(
     common_params: CommonRequestParams, key: tuple[str, str]
 ) -> tuple[str, str]:
     result = await _fetch_and_map(common_params)
-    _cache.set(key, result)
+    if not is_pipeline_model_id(common_params.model_id):
+        _cache.set(key, result)
     return result
 
 
+def _pipeline_request(model_id: str) -> Optional[PipelineRequest]:
+    try:
+        return resolve_pipeline_request(model_id)
+    except InvalidPipelineIdError as exc:
+        raise LookupError(str(exc)) from exc
+
+
+async def _authorize_pipeline_stages(request: PipelineRequest, api_key: str) -> None:
+    await gather_bounded(
+        *(
+            stat_model_while_checking_auth(
+                CommonRequestParams(model_id=stage_model_id, api_key=api_key)
+            )
+            for stage_model_id in request.stage_model_ids
+            if stage_model_id is not None
+        )
+    )
+
+
 async def _fetch_and_map(common_params: CommonRequestParams) -> tuple[str, str]:
+    pipeline_request = _pipeline_request(common_params.model_id)
+    if pipeline_request is not None:
+        await _authorize_pipeline_stages(pipeline_request, common_params.api_key)
+        return (
+            pipeline_request.family.task_type,
+            pipeline_request.family.default_action,
+        )
+
     try:
         meta = await asyncio.to_thread(
             get_one_page_of_model_metadata,

@@ -586,14 +586,12 @@ def test_pp_ocr_missing_stage_is_404(legacy_client, fake_stat):
     assert r.status_code == 404 and "message" in r.json()
 
 
-def test_pp_ocr_denied_stage_is_401(legacy_client, monkeypatch):
-    async def _stat(common):
-        if common.model_id == "pp-ocrv6-rec/small":
-            raise PermissionError(common.model_id)
-        return ("object-detection", "infer")
+def test_pp_ocr_denied_stage_is_401(legacy_client, fake_stat):
+    from inference_models.errors import UnauthorizedModelAccessError
 
-    monkeypatch.setattr(
-        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
+    fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
+    fake_stat["pp-ocrv6-rec/small"] = UnauthorizedModelAccessError(
+        message="pp-ocrv6-rec/small", help_url=""
     )
     r = legacy_client(_pp_ocr_gateway()).post("/ocr/pp-ocr", json={"image": _image()})
     assert r.status_code == 401

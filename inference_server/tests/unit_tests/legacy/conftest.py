@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Optional
 
 import pytest
@@ -73,18 +74,31 @@ def route_paths(app) -> set[str]:
     return set(_walk(app.routes))
 
 
+@pytest.fixture(autouse=True)
+def _reset_model_stat_cache():
+    from inference_server.framework import model_stat
+
+    model_stat._reset_cache_for_tests()
+    yield
+    model_stat._reset_cache_for_tests()
+
+
 @pytest.fixture
 def fake_stat(monkeypatch):
+    from inference_models.errors import ModelNotFoundError
+    from inference_server.framework import model_stat
+
     table = {}
 
-    async def _stat(common):
-        if common.model_id not in table:
-            raise LookupError(common.model_id)
-        return table[common.model_id]
+    def _metadata(model_id: str, api_key: Optional[str] = None):
+        outcome = table.get(model_id)
+        if outcome is None:
+            raise ModelNotFoundError(message=model_id, help_url="")
+        if isinstance(outcome, Exception):
+            raise outcome
+        return SimpleNamespace(task_type=outcome[0])
 
-    monkeypatch.setattr(
-        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
-    )
+    monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
     return table
 
 

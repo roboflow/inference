@@ -6,7 +6,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from inference_model_manager.pipelines import pipeline_stage_model_ids
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 
 from inference_server.configuration import (
@@ -61,7 +60,6 @@ _CORE_MODEL_TASK_TYPES: dict[str, tuple[str, str]] = {
     "sam3": ("interactive-instance-segmentation", "embed"),
     "doctr": ("structured-ocr", "infer"),
     "easy_ocr": ("structured-ocr", "infer"),
-    "pp_ocr": ("structured-ocr", "infer"),
     "trocr": ("text-only-ocr", "infer"),
     "yolo_world": ("open-vocabulary-object-detection", "infer"),
     "grounding_dino": ("open-vocabulary-object-detection", "infer"),
@@ -307,19 +305,6 @@ class LegacyModelBridge:
     async def _stat(
         self, model_id: str, registry_id: str, api_key: Optional[str]
     ) -> tuple[str, str]:
-        stage_model_ids = pipeline_stage_model_ids(registry_id)
-        if stage_model_ids:
-            await gather_bounded(
-                *(
-                    stat_model_while_checking_auth(
-                        CommonRequestParams(
-                            model_id=stage_model_id, api_key=api_key or ""
-                        )
-                    )
-                    for stage_model_id in stage_model_ids
-                )
-            )
-            return _CORE_MODEL_TASK_TYPES[registry_id.split("/")[0]]
         try:
             return await stat_model_while_checking_auth(
                 CommonRequestParams(model_id=registry_id, api_key=api_key or "")

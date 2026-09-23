@@ -861,6 +861,8 @@ def repack_structured_ocr_response(
     generate_bounding_boxes: Optional[bool] = None,
     class_from_text: bool = False,
 ) -> OCRInferenceResponse:
+    # The rf_legacy_bridge copy detects PP-OCR by request type instead of these
+    # flags; change both together.
     if not (isinstance(prediction, tuple) and len(prediction) == 2):
         raise LegacyHTTPError(
             500,

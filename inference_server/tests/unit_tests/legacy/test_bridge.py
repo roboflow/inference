@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -282,20 +283,21 @@ async def test_route_carries_resolved_model_from_stats(fake_stat):
 
 
 def _recording_stat(monkeypatch, table, calls):
-    async def _stat(common):
-        calls.append((common.model_id, common.api_key))
-        if common.model_id.startswith("pp_ocr"):
-            raise AssertionError(f"synthetic id statted: {common.model_id}")
-        outcome = table.get(common.model_id)
+    from inference_models.errors import ModelNotFoundError
+    from inference_server.framework import model_stat
+
+    def _metadata(model_id, api_key=None):
+        calls.append((model_id, api_key or ""))
+        if model_id.startswith("pp_ocr"):
+            raise AssertionError(f"synthetic id statted: {model_id}")
+        outcome = table.get(model_id)
         if outcome is None:
-            raise LookupError(common.model_id)
+            raise ModelNotFoundError(message=model_id, help_url="")
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        return SimpleNamespace(task_type=outcome[0])
 
-    monkeypatch.setattr(
-        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
-    )
+    monkeypatch.setattr(model_stat, "get_one_page_of_model_metadata", _metadata)
 
 
 @pytest.mark.asyncio
@@ -335,11 +337,15 @@ async def test_resolve_pipeline_id_is_lookup_error_when_a_stage_is_missing(monke
 async def test_resolve_pipeline_id_is_permission_error_when_a_stage_is_denied(
     monkeypatch,
 ):
+    from inference_models.errors import UnauthorizedModelAccessError
+
     _recording_stat(
         monkeypatch,
         {
             "pp-ocrv6-det/small": ("object-detection", "infer"),
-            "pp-ocrv6-rec/small": PermissionError("pp-ocrv6-rec/small"),
+            "pp-ocrv6-rec/small": UnauthorizedModelAccessError(
+                message="pp-ocrv6-rec/small", help_url=""
+            ),
         },
         [],
     )
@@ -360,17 +366,25 @@ async def test_resolve_pipeline_id_skips_a_disabled_stage(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_loaded_pipeline_is_reauthorized_on_every_resolve(monkeypatch):
-    table = {
-        "pp-ocrv6-det/small": ("object-detection", "infer"),
-        "pp-ocrv6-rec/small": ("text-only-ocr", "infer"),
-    }
     calls = []
-    _recording_stat(monkeypatch, table, calls)
+    outcome = [("structured-ocr", "infer")]
+
+    async def _stat(common):
+        calls.append((common.model_id, common.api_key))
+        if isinstance(outcome[0], Exception):
+            raise outcome[0]
+        return outcome[0]
+
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.stat_model_while_checking_auth", _stat
+    )
     bridge = LegacyModelBridge(FakeGateway())
     await bridge.resolve("pp_ocr/small-small", "good")
     assert "pp_ocr/small-small" in bridge
-    table["pp-ocrv6-rec/small"] = PermissionError("revoked")
+    outcome[0] = PermissionError("revoked")
     with pytest.raises(PermissionError):
         await bridge.resolve("pp_ocr/small-small", "good")
-    assert calls.count(("pp-ocrv6-det/small", "good")) == 2
-    assert calls.count(("pp-ocrv6-rec/small", "good")) == 2
+    assert calls == [
+        ("pp_ocr/small-small", "good"),
+        ("pp_ocr/small-small", "good"),
+    ]

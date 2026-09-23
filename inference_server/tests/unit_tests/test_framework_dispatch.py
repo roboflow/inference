@@ -605,3 +605,70 @@ async def test_model_input_error_maps_to_400(fake_handler_entry):
     assert r.status_code == 400
     assert b"invalid model input" in r.body
     assert b"no embeddings were found in the cache" not in r.body
+
+
+def _pipeline_registry(calls: list):
+    from inference_models.errors import ModelNotFoundError
+
+    table = {
+        "pp-ocrv6-det/small": "object-detection",
+        "pp-ocrv6-rec/medium": "text-only-ocr",
+    }
+
+    def _metadata(model_id, api_key=None):
+        calls.append((model_id, api_key))
+        if model_id not in table:
+            raise ModelNotFoundError(message=model_id, help_url="")
+        return MagicMock(task_type=table[model_id])
+
+    return patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        side_effect=_metadata,
+    )
+
+
+@pytest.fixture
+def structured_ocr_handler_entry():
+    from inference_server.framework import model_stat
+
+    interface = ModelInterfaceDescription(
+        task="structured-ocr", params={}, output_schema={}
+    )
+    desc = ModelHandlerDescription(
+        input_parser=AsyncMock(return_value={"images": [b"x"], "params": {}}),
+        handler=AsyncMock(return_value=MagicMock()),
+        output_serializer=MagicMock(
+            return_value=Response(status_code=200, content=b"ok")
+        ),
+        interface_provider=lambda: interface,
+    )
+    key = ("structured-ocr", "infer")
+    previous = _HANDLERS.get(key)
+    _HANDLERS[key] = desc
+    model_stat._reset_cache_for_tests()
+    try:
+        yield desc
+    finally:
+        if previous is None:
+            _HANDLERS.pop(key, None)
+        else:
+            _HANDLERS[key] = previous
+        model_stat._reset_cache_for_tests()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_model_id_dispatches_after_stage_authorization(
+    structured_ocr_handler_entry,
+):
+    calls: list = []
+    proxy = _mock_proxy()
+    with _pipeline_registry(calls):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=pp_ocr/small-medium"), proxy
+        )
+    assert response is not None and response.status_code == 200
+    assert sorted(calls) == [
+        ("pp-ocrv6-det/small", "k1"),
+        ("pp-ocrv6-rec/medium", "k1"),
+    ]
+    assert proxy.ensure_loaded.await_args.args[0] == "pp_ocr/small-medium"
