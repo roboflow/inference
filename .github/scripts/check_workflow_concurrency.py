@@ -27,39 +27,84 @@ def _triggers(document: dict) -> set[str]:
     # PyYAML parses a bare ``on`` key as boolean True.
     on = document.get(True, document.get("on"))
     if isinstance(on, dict):
-        return set(on)
+        triggers = set(on)
+
+        return triggers
+
     if isinstance(on, list):
-        return set(on)
+        triggers = set(on)
+
+        return triggers
+
     if isinstance(on, str):
         return {on}
-    return set()
+
+    triggers = set()
+
+    return triggers
 
 
 def find_offenders(workflows_dir: Path) -> list[str]:
+    """Find workflow naming and concurrency policy violations.
+
+    Args:
+        workflows_dir (Path): Directory containing GitHub Actions workflow definitions.
+
+    Returns:
+        list[str]: Human-readable policy violations; empty when all checks pass.
+    """
     offenders: list[str] = []
     names: dict[str, list[str]] = defaultdict(list)
-    for path in sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml")):
+    for path in sorted(workflows_dir.glob("*.yml")) + sorted(
+        workflows_dir.glob("*.yaml")
+    ):
         with path.open() as handle:
             document = yaml.safe_load(handle)
         if not isinstance(document, dict):
             offenders.append(f"{path.name}: not a mapping at top level")
             continue
+
         name = document.get("name")
         if name:
             names[str(name)].append(path.name)
+        concurrency_blocks = [document.get("concurrency")]
+        concurrency_blocks.extend(
+            job.get("concurrency") for job in document.get("jobs", {}).values()
+        )
+        # actionlint 1.7.12 predates GitHub's queue option. Validate it here
+        # while the notifier carries a narrowly scoped parser waiver.
+        for concurrency in concurrency_blocks:
+            if isinstance(concurrency, dict) and "queue" in concurrency:
+                if concurrency["queue"] not in {"single", "max"}:
+                    offenders.append(
+                        f"{path.name}: concurrency.queue must be single or max"
+                    )
+                if (
+                    concurrency["queue"] == "max"
+                    and concurrency.get("cancel-in-progress", False) is not False
+                ):
+                    offenders.append(
+                        f"{path.name}: queue max requires cancel-in-progress false"
+                    )
         if not _triggers(document) & GUARDED_TRIGGERS:
             continue
+
         concurrency = document.get("concurrency")
         if not isinstance(concurrency, dict):
             offenders.append(
                 f"{path.name}: triggered by pull_request/push but has no top-level concurrency block"
             )
             continue
+
         group = str(concurrency.get("group", ""))
         if "github.workflow" not in group:
-            offenders.append(f"{path.name}: concurrency.group must be keyed by github.workflow")
+            offenders.append(
+                f"{path.name}: concurrency.group must be keyed by github.workflow"
+            )
         if "cancel-in-progress" not in concurrency:
-            offenders.append(f"{path.name}: concurrency block must set cancel-in-progress")
+            offenders.append(
+                f"{path.name}: concurrency block must set cancel-in-progress"
+            )
     for name, files in sorted(names.items()):
         if len(files) > 1:
             offenders.append(
@@ -70,6 +115,14 @@ def find_offenders(workflows_dir: Path) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    """Check workflow concurrency policy from process arguments.
+
+    Args:
+        argv (list[str]): Process arguments, optionally including a workflow directory.
+
+    Returns:
+        int: Zero on success, or one when policy violations exist.
+    """
     workflows_dir = Path(argv[1]) if len(argv) > 1 else DEFAULT_WORKFLOWS_DIR
     offenders = find_offenders(workflows_dir)
     if offenders:
@@ -81,6 +134,7 @@ def main(argv: list[str]) -> int:
             ".github/workflows) or fix the duplicate name."
         )
         return 1
+
     print(f"OK: concurrency policy holds for every workflow in {workflows_dir}")
     return 0
 

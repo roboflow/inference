@@ -4,7 +4,6 @@ import os.path
 import tempfile
 
 import pytest
-from humanfriendly.testing import touch
 
 from inference.core.utils.file_system import (
     MAX_PATH_BYTES,
@@ -22,6 +21,13 @@ from inference.core.utils.file_system import (
     read_json,
     read_text_file,
 )
+
+
+def touch(filename: str) -> None:
+    """Create ``filename`` (and missing parent directories) as an empty file."""
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, "a"):
+        pass
 
 
 def test_read_json_when_file_does_not_exist(empty_local_dir: str) -> None:
