@@ -11,9 +11,14 @@ def builder_env_session():
     Creates a temporary directory and sets the MODEL_CACHE_DIR environment
     variable. Removes the routes module from sys.modules so it reloads with the new env.
     """
+    previous = os.environ.get("MODEL_CACHE_DIR")
     with TemporaryDirectory() as tmp_dir:
         os.environ["MODEL_CACHE_DIR"] = os.path.join(tmp_dir, "model_cache")
         module_name = "inference.core.interfaces.http.builder.routes"
         if module_name in sys.modules:
             del sys.modules[module_name]
         yield tmp_dir
+    if previous is None:
+        os.environ.pop("MODEL_CACHE_DIR", None)
+    else:
+        os.environ["MODEL_CACHE_DIR"] = previous

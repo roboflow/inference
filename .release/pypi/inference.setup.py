@@ -6,9 +6,6 @@ from setuptools import find_packages
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-# Read the version without importing the package - `inference/__init__.py`
-# pulls in the full runtime (inference_models, torch, cv2), which wheel-build
-# stages may not be able to load.
 _version_namespace = {"__name__": "inference.core.version"}
 with open(os.path.join(root, "inference", "core", "version.py")) as _version_file:
     exec(_version_file.read(), _version_namespace)
@@ -48,16 +45,18 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "inference_sdk",
+            "inference_sdk.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
         ),
     ),
     package_data={
         "inference.models.perception_encoder.vision_encoder": [
             "bpe_simple_vocab_16e6.txt.gz"
-        ],
-        "inference.core.workflows.core_steps.visualizations.common.fonts": [
-            "assets/*/*",
-            "README.md",
         ],
     },
     entry_points={
@@ -71,8 +70,9 @@ setuptools.setup(
             "requirements/requirements.cpu.txt",
             "requirements/requirements.cli.txt",
             "requirements/requirements.sdk.http.txt",
+            "requirements/requirements.workflows.txt",
         ]
-    ),
+    ) + [f"inference-sdk=={__version__}"],
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "easy-ocr": read_requirements("requirements/requirements.easyocr.txt"),
@@ -100,5 +100,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.13"
+    python_requires=">=3.10,<3.14"
 )

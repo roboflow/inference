@@ -114,6 +114,6 @@ def test_port_no_longer_carries_provisional_members() -> None:
     # tests/workflows/unit_tests/prototypes/<file> -> parents[4] is the repo root
     source = (
         Path(__file__).resolve().parents[4]
-        / "inference/core/workflows/prototypes/models_provider.py"
+        / "workflows/roboflow_workflows/prototypes/models_provider.py"
     ).read_text(encoding="utf-8")
     assert "PROVISIONAL" not in source

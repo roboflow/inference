@@ -88,7 +88,7 @@ def test_the_deprecation_constructor_and_details_are_unchanged() -> None:
 def test_the_module_imports_only_typing() -> None:
     path = (
         pathlib.Path(__file__).resolve().parents[4]
-        / "inference/core/workflows/prototypes/platform_errors.py"
+        / "workflows/roboflow_workflows/prototypes/platform_errors.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules = set()

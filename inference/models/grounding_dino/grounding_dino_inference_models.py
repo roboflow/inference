@@ -95,6 +95,7 @@ class InferenceModelsGroundingDINOAdapter(Model):
         Perform inference based on the details provided in the request, and return the associated responses.
         """
         result = self.infer(**request.dict())
+        self._attach_resolved_model_metadata(result)
         return result
 
     @usage_collector("model")

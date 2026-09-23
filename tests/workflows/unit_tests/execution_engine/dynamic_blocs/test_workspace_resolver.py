@@ -63,7 +63,7 @@ def test_block_scaffolding_does_not_import_the_server() -> None:
     # tests/workflows/unit_tests/execution_engine/dynamic_blocs/
     path = (
         pathlib.Path(__file__).resolve().parents[5]
-        / "inference/core/workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py"
+        / "workflows/roboflow_workflows/execution_engine/v1/dynamic_blocks/block_scaffolding.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules = {

@@ -1,0 +1,629 @@
+import logging
+import os
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
+
+import cv2
+import numpy as np
+from roboflow_workflows._compat_names import get_logger
+
+try:
+    from inference_sdk.config import (
+        apply_duration_minimum,
+        execution_id,
+        remote_processing_times,
+    )
+except ImportError:
+    apply_duration_minimum = None
+    execution_id = None
+    remote_processing_times = None
+
+from roboflow_workflows.environment import INFERENCE_DEBUG_OUTPUT_DIR
+from roboflow_workflows.errors import BlockTraceback, StepExecutionError, WorkflowError
+from roboflow_workflows.execution_engine.profiling.core import (
+    NullWorkflowsProfiler,
+    WorkflowsProfiler,
+    execution_phase,
+)
+from roboflow_workflows.execution_engine.v1.compiler.entities import CompiledWorkflow
+from roboflow_workflows.execution_engine.v1.compiler.utils import (
+    construct_step_selector,
+    get_last_chunk_of_selector,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    current_debug_collector,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+    current_debug_step_name,
+    current_debug_trace,
+)
+from roboflow_workflows.execution_engine.v1.executor.execution_data_manager.manager import (
+    ExecutionDataManager,
+)
+from roboflow_workflows.execution_engine.v1.executor.flow_coordinator import (
+    ParallelStepExecutionCoordinator,
+)
+from roboflow_workflows.execution_engine.v1.executor.output_constructor import (
+    construct_workflow_output,
+)
+from roboflow_workflows.execution_engine.v1.executor.utils import run_steps_in_parallel
+from roboflow_workflows.prototypes.block import WorkflowBlock
+from roboflow_workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+
+logger = get_logger(__name__)
+
+
+def _store_crash_info(
+    image: np.ndarray,
+    exception: Optional[Exception] = None,
+) -> None:
+    if image is None or not INFERENCE_DEBUG_OUTPUT_DIR:
+        logger.error("Failed attempt to store crash info")
+        return
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        file_name = f"image_{timestamp}_{uuid4().hex[:5]}"
+        os.makedirs(INFERENCE_DEBUG_OUTPUT_DIR, exist_ok=True)
+        if exception is not None:
+            traceback_str = traceback.format_exc()
+            with open(
+                os.path.join(INFERENCE_DEBUG_OUTPUT_DIR, f"{file_name}.txt"), "w"
+            ) as f:
+                f.write(str(exception))
+                f.write("\n")
+                f.write(traceback_str)
+        image_path = os.path.join(INFERENCE_DEBUG_OUTPUT_DIR, f"{file_name}.jpg")
+        cv2.imwrite(image_path, image)
+    except Exception as e:
+        logger.error(f"Failed to store crash info: {e}")
+
+
+@execution_phase(
+    name="workflow_execution",
+    categories=["execution_engine_operation"],
+)
+def run_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    defer_stream_pipeline_flush: bool = False,
+    resolve_output_futures: bool = True,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+) -> List[Dict[str, Any]]:
+    return _run_workflow(
+        workflow=workflow,
+        runtime_parameters=runtime_parameters,
+        max_concurrent_steps=max_concurrent_steps,
+        kinds_serializers=kinds_serializers,
+        serialize_results=serialize_results,
+        profiler=profiler,
+        executor=executor,
+        step_error_handler=step_error_handler,
+        defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+        resolve_output_futures=resolve_output_futures,
+        observer=observer,
+    )
+
+
+def _run_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    defer_stream_pipeline_flush: bool = False,
+    resolve_output_futures: bool = True,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+) -> List[Dict[str, Any]]:
+    execution_data_manager = ExecutionDataManager.init(
+        execution_graph=workflow.execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    execution_coordinator = ParallelStepExecutionCoordinator.init(
+        execution_graph=workflow.execution_graph,
+    )
+    workflow_execution_id = get_or_create_workflow_execution_id()
+    try:
+        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+        while next_steps is not None:
+            execute_steps(
+                next_steps=next_steps,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                max_concurrent_steps=max_concurrent_steps,
+                workflow_execution_id=workflow_execution_id,
+                profiler=profiler,
+                executor=executor,
+                step_error_handler=step_error_handler,
+                observer=observer,
+            )
+            next_steps = execution_coordinator.get_steps_to_execute_next(
+                profiler=profiler
+            )
+        if not defer_stream_pipeline_flush:
+            with profiler.profile_execution_phase(
+                name="stream_pipeline_flush",
+                categories=["execution_engine_operation"],
+            ):
+                flush_stream_pipeline_outputs(
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                )
+        with profiler.profile_execution_phase(
+            name="outputs_construction",
+            categories=["execution_engine_operation"],
+        ):
+            return construct_workflow_output(
+                workflow_outputs=workflow.workflow_definition.outputs,
+                execution_graph=workflow.execution_graph,
+                execution_data_manager=execution_data_manager,
+                serialize_results=serialize_results,
+                kinds_serializers=kinds_serializers,
+                resolve_output_futures=resolve_output_futures,
+            )
+    finally:
+        if not defer_stream_pipeline_flush:
+            close_stream_pipelines(workflow=workflow)
+
+
+def flush_stream_pipeline_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+) -> List[Dict[str, Any]]:
+    execution_data_manager = ExecutionDataManager.init(
+        execution_graph=workflow.execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    execution_coordinator = ParallelStepExecutionCoordinator.init(
+        execution_graph=workflow.execution_graph,
+    )
+    flushed_step_selectors = flush_stream_pipeline_outputs(
+        workflow=workflow,
+        execution_data_manager=execution_data_manager,
+    )
+    downstream_step_selectors = _downstream_step_selectors(
+        workflow=workflow,
+        step_selectors=flushed_step_selectors,
+    )
+    workflow_execution_id = get_or_create_workflow_execution_id()
+    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+    while next_steps is not None:
+        runnable_steps = [
+            step_selector
+            for step_selector in next_steps
+            if step_selector in downstream_step_selectors
+            and execution_data_manager.all_inputs_impacting_step_are_registered(
+                step_selector=step_selector
+            )
+        ]
+        if runnable_steps:
+            execute_steps(
+                next_steps=runnable_steps,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                max_concurrent_steps=max_concurrent_steps,
+                profiler=profiler,
+                executor=executor,
+                step_error_handler=step_error_handler,
+                workflow_execution_id=workflow_execution_id,
+                observer=observer,
+            )
+        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+    return construct_workflow_output(
+        workflow_outputs=workflow.workflow_definition.outputs,
+        execution_graph=workflow.execution_graph,
+        execution_data_manager=execution_data_manager,
+        serialize_results=serialize_results,
+        kinds_serializers=kinds_serializers,
+    )
+
+
+def flush_stream_pipeline_outputs(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    step_selectors: Optional[List[str]] = None,
+) -> List[str]:
+    flushed_step_selectors = []
+    step_names = (
+        [get_last_chunk_of_selector(selector=selector) for selector in step_selectors]
+        if step_selectors is not None
+        else list(workflow.steps)
+    )
+    for step_name in step_names:
+        step = workflow.steps[step_name]
+        flush_fn = getattr(step.step, "flush_stream_pipeline_outputs", None)
+        if not callable(flush_fn):
+            continue
+        step_selector = construct_step_selector(step_name=step_name)
+        flushed_outputs = flush_fn()
+        for indices, outputs in flushed_outputs:
+            if not outputs:
+                continue
+            if execution_data_manager.is_step_simd(step_selector=step_selector):
+                execution_data_manager.register_simd_step_output(
+                    step_selector=step_selector,
+                    indices=indices,
+                    outputs=outputs,
+                )
+                flushed_step_selectors.append(step_selector)
+                continue
+            if len(outputs) != 1:
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=step.manifest.type,
+                    public_message=(
+                        f"Flushed stream pipeline for non-SIMD step {step_name} "
+                        f"returned {len(outputs)} outputs."
+                    ),
+                    context="workflow_execution | stream_pipeline_flush",
+                )
+            execution_data_manager.register_non_simd_step_output(
+                step_selector=step_selector,
+                output=outputs[0],
+            )
+            flushed_step_selectors.append(step_selector)
+    return flushed_step_selectors
+
+
+def _downstream_step_selectors(
+    workflow: CompiledWorkflow,
+    step_selectors: List[str],
+) -> set[str]:
+    step_selector_set = {
+        construct_step_selector(step_name=step_name) for step_name in workflow.steps
+    }
+    result = set()
+    nodes_to_visit = list(step_selectors)
+    while nodes_to_visit:
+        node = nodes_to_visit.pop(0)
+        for successor in workflow.execution_graph.successors(node):
+            if successor in step_selector_set and successor not in result:
+                result.add(successor)
+            nodes_to_visit.append(successor)
+    return result
+
+
+def close_stream_pipelines(workflow: CompiledWorkflow) -> None:
+    for step in workflow.steps.values():
+        close_fn = getattr(step.step, "close_stream_pipeline", None)
+        if callable(close_fn):
+            close_fn()
+
+
+def get_or_create_workflow_execution_id() -> str:
+    if execution_id is not None:
+        current_execution_id = execution_id.get()
+        if current_execution_id:
+            return current_execution_id
+    return str(uuid4())
+
+
+@execution_phase(
+    name="group_of_steps_execution",
+    categories=["execution_engine_operation"],
+    runtime_metadata=["next_steps", "max_concurrent_steps"],
+)
+def execute_steps(
+    next_steps: List[str],
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    max_concurrent_steps: int,
+    workflow_execution_id: str,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+) -> None:
+    if remote_processing_times is not None:
+        processing_time_collector = remote_processing_times.get()
+    else:
+        processing_time_collector = None
+    if apply_duration_minimum is not None:
+        duration_minimum_value = apply_duration_minimum.get()
+    else:
+        duration_minimum_value = None
+    # Capture the active debug-log collector (if any) in the request thread,
+    # so that worker threads can re-bind the ContextVar locally — ContextVars
+    # set in this thread do not propagate into ThreadPoolExecutor workers.
+    debug_collector = current_debug_collector.get()
+    debug_trace = current_debug_trace.get()
+    # Whatever the host needs inside a worker thread, snapshotted here for the
+    # same reason.
+    step_context = observer.capture_step_context()
+    logger.debug(f"Executing steps: {next_steps}.")
+    steps_functions = [
+        partial(
+            safe_execute_step,
+            step_selector=step_selector,
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            profiler=profiler,
+            workflow_execution_id=workflow_execution_id,
+            processing_time_collector=processing_time_collector,
+            duration_minimum_value=duration_minimum_value,
+            debug_collector=debug_collector,
+            debug_trace=debug_trace,
+            step_error_handler=step_error_handler,
+            observer=observer,
+            step_context=step_context,
+        )
+        for step_selector in next_steps
+    ]
+    _ = run_steps_in_parallel(
+        steps=steps_functions, max_workers=max_concurrent_steps, executor=executor
+    )
+
+
+@execution_phase(
+    name="step_execution",
+    categories=["execution_engine_operation"],
+    runtime_metadata=["step_selector"],
+)
+def safe_execute_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    profiler: Optional[WorkflowsProfiler] = None,
+    workflow_execution_id: Optional[str] = None,
+    processing_time_collector=None,
+    duration_minimum_value=None,
+    debug_collector=None,
+    debug_trace=None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+    step_context=None,
+) -> None:
+    if execution_id is not None and workflow_execution_id:
+        execution_id.set(workflow_execution_id)
+    if remote_processing_times is not None and processing_time_collector is not None:
+        remote_processing_times.set(processing_time_collector)
+    if apply_duration_minimum is not None and duration_minimum_value is not None:
+        apply_duration_minimum.set(duration_minimum_value)
+    # Always (re)bind, including None: pool threads are reused across requests,
+    # and a conditional set would leave a previous request's collector bound in
+    # this thread, silently accumulating logs on a dead object.
+    current_debug_collector.set(debug_collector)
+    current_debug_trace.set(debug_trace)
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    current_debug_step_name.set(step_name)
+    if profiler is None:
+        profiler = NullWorkflowsProfiler.init()
+    # The host re-establishes its own context here, for this step only: pool
+    # threads are reused, so anything it binds it must also unbind.
+    with observer.step_scope(context=step_context, step_name=step_name):
+        try:
+            logger.debug(
+                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+            run_step(
+                step_selector=step_selector,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                profiler=profiler,
+            )
+            logger.debug(
+                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+        except WorkflowError:
+            raise
+        except Exception as error:
+            if step_error_handler:
+                step_error_handler(step_name, error)
+            logger.exception(f"Execution of step {step_selector} encountered error.")
+            error_traceback = "".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            )
+            block_traceback = BlockTraceback(
+                traceback=error_traceback,
+                error_line=getattr(error, "error_line", None),
+                code_snippet=getattr(error, "code_snippet", None),
+                stdout=getattr(error, "stdout", None),
+                stderr=getattr(error, "stderr", None),
+            )
+            raise StepExecutionError(
+                block_id=step_name,
+                block_type=workflow.steps[step_name].manifest.type,
+                block_traceback=block_traceback,
+                public_message=str(error),
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+
+
+def run_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
+) -> None:
+    if execution_data_manager.is_step_simd(step_selector=step_selector):
+        return run_simd_step(
+            step_selector=step_selector,
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            profiler=profiler,
+        )
+    return run_non_simd_step(
+        step_selector=step_selector,
+        workflow=workflow,
+        execution_data_manager=execution_data_manager,
+        profiler=profiler,
+    )
+
+
+def run_simd_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> None:
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    step_instance = workflow.steps[step_name].step
+    step_manifest = workflow.steps[step_name].manifest
+    collapse_of_batch_to_scalar_expected = (
+        step_manifest.get_output_dimensionality_offset() < 0
+        and not execution_data_manager.does_step_produce_batches(
+            step_selector=step_selector
+        )
+    )
+    if step_manifest.accepts_batch_input() or collapse_of_batch_to_scalar_expected:
+        return run_simd_step_in_batch_mode(
+            step_selector=step_selector,
+            step_instance=step_instance,
+            execution_data_manager=execution_data_manager,
+            profiler=profiler,
+        )
+    return run_simd_step_in_non_batch_mode(
+        step_selector=step_selector,
+        step_instance=step_instance,
+        execution_data_manager=execution_data_manager,
+        profiler=profiler,
+    )
+
+
+def run_simd_step_in_batch_mode(
+    step_selector: str,
+    step_instance: WorkflowBlock,
+    execution_data_manager: ExecutionDataManager,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> None:
+    with profiler.profile_execution_phase(
+        name="step_input_assembly",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        step_input = execution_data_manager.get_simd_step_input(
+            step_selector=step_selector,
+        )
+    with profiler.profile_execution_phase(
+        name="step_code_execution",
+        categories=["workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+            "data_size": len(step_input.indices),
+        },
+    ):
+        if not step_input.indices:
+            # no inputs - discarded either by conditional exec or by not accepting empty
+            outputs = []
+        else:
+            try:
+                outputs = step_instance.run(**step_input.parameters)
+            except Exception as exc:
+                if INFERENCE_DEBUG_OUTPUT_DIR:
+                    _store_crash_info(
+                        image=execution_data_manager._runtime_parameters["image"][
+                            0
+                        ].numpy_image,
+                        exception=exc,
+                    )
+                raise exc
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=step_input.indices,
+            outputs=outputs,
+        )
+
+
+def run_simd_step_in_non_batch_mode(
+    step_selector: str,
+    step_instance: WorkflowBlock,
+    execution_data_manager: ExecutionDataManager,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> None:
+    indices, results = [], []
+    with profiler.profile_execution_phase(
+        name="iterative_step_code_execution",
+        categories=["execution_engine_operation", "workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+        },
+    ):
+        for input_definition in execution_data_manager.iterate_over_simd_step_input(
+            step_selector=step_selector
+        ):
+            with profiler.profile_execution_phase(
+                name="step_code_execution",
+                categories=["workflow_block_operation"],
+                metadata={
+                    "step": step_selector,
+                },
+            ):
+                result = step_instance.run(**input_definition.parameters)
+            results.append(result)
+            indices.append(input_definition.index)
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=indices,
+            outputs=results,
+        )
+
+
+def run_non_simd_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> None:
+    with profiler.profile_execution_phase(
+        name="step_input_assembly",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        step_input = execution_data_manager.get_non_simd_step_input(
+            step_selector=step_selector
+        )
+    if step_input is None:
+        # discarded by conditional execution or empty value from upstream step
+        return None
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    step_instance = workflow.steps[step_name].step
+    with profiler.profile_execution_phase(
+        name="step_code_execution",
+        categories=["workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+        },
+    ):
+        step_result = step_instance.run(**step_input)
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_non_simd_step_output(
+            step_selector=step_selector,
+            output=step_result,
+        )

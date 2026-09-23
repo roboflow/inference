@@ -1,7 +1,7 @@
 name: Publish roboflow-workflows to PyPI
 on:
-  #release:
-  #  types: [created]
+  release:
+    types: [created]
   workflow_dispatch:
     inputs:
       publish:

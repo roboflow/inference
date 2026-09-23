@@ -15,7 +15,7 @@ pip install -r requirements.txt
 cd ../..
 make create_wheels
 WHEEL_FILE=$(ls dist/inference-*.whl | head -n 1)
-pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
 cd app_bundles/osx
 # skip code sign and notarize for local testing
 python build.py --skip-sign
@@ -30,7 +30,6 @@ For development, you can run the app bundle directly from the source code:
 ```bash
 python run_inference.py
 ```
-
 
 
 

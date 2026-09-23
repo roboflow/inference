@@ -1,13 +1,14 @@
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (  # noqa: F401
     ActionRecognitionPrediction,
 )
 
 
-class ActionRecognitionInferenceResponse(BaseModel):
+class ActionRecognitionInferenceResponse(InferenceResponse):
     """Classified ranges covering one clip.
 
     Frame indices count from the first frame of the submitted clip, so a

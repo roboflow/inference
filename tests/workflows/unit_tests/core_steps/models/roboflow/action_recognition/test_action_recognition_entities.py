@@ -4,10 +4,10 @@ from pathlib import Path
 # tests/workflows/unit_tests/core_steps/models/roboflow/action_recognition/<file>
 # -> parents[7] is the repo root
 REPO_ROOT = Path(__file__).resolve().parents[7]
-BASE = REPO_ROOT / "inference/core/workflows/execution_engine/entities/base.py"
+BASE = REPO_ROOT / "workflows/roboflow_workflows/execution_engine/entities/base.py"
 ENTITIES = (
     REPO_ROOT
-    / "inference/core/workflows/core_steps/models/roboflow/action_recognition/entities.py"
+    / "workflows/roboflow_workflows/core_steps/models/roboflow/action_recognition/entities.py"
 )
 
 

@@ -100,12 +100,12 @@ MODELS_DECORATING_INFER_FROM_REQUEST = [
 # no model-category row under ENABLE_TENSOR_DATA_REPRESENTATION.
 BLOCKS_OBSERVING_MODEL_RUN = [
     (
-        "inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1",
+        "roboflow_workflows.core_steps.models.foundation.segment_anything2_video.v1",
         "SegmentAnything2VideoBlockV1",
         "run",
     ),
     (
-        "inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1",
+        "roboflow_workflows.core_steps.models.foundation.segment_anything3_video.v1",
         "SegmentAnything3VideoBlockV1",
         "_tracked_run",
     ),
@@ -115,7 +115,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _module_source_path(module_path: str) -> Path:
-    return _REPO_ROOT / Path(*module_path.split(".")).with_suffix(".py")
+    root = (
+        _REPO_ROOT / "workflows"
+        if module_path.startswith("roboflow_workflows.")
+        else _REPO_ROOT
+    )
+    return root / Path(*module_path.split(".")).with_suffix(".py")
 
 
 def _decorator_callable_name(node: ast.AST) -> str:

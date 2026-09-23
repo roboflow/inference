@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -53,6 +53,10 @@ jobs:
           # Composition-root tests also exercise the CLI entry points.
           pip install -r requirements/requirements.cli.txt -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
           pip install --no-deps ./inference_models
+      - name: 🏗️ Build and install roboflow-workflows wheel
+        run: |
+          make create_workflows_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
         run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py

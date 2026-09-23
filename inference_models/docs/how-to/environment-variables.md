@@ -669,6 +669,21 @@ Controls the bounded worker count used by `threaded-exact-v1`.
 export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
 ```
 
+**`INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS`**
+Default: `35389440` (`8192 * 4320`, full 8K DCI)
+
+**`INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION`**
+Default: `8192`
+
+These limits bound the pinned-host and CUDA staging buffers used by
+`triton-universal-v1`. A uint8 source exceeding either limit is routed through the
+declared base-preprocessor fallback before shape-sized GPU buffers are allocated.
+
+```bash
+export INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS="35389440"
+export INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION="8192"
+```
+
 **`INFERENCE_MODELS_RFDETR_POSTPROCESSOR`**
 Default: `triton-fused-v1`
 

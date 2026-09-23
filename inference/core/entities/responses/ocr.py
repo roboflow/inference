@@ -1,14 +1,15 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from inference.core.entities.responses.inference import (
+    InferenceResponse,
     InferenceResponseImage,
     ObjectDetectionPrediction,
 )
 
 
-class OCRInferenceResponse(BaseModel):
+class OCRInferenceResponse(InferenceResponse):
     """
     OCR Inference response.
 

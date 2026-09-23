@@ -10,6 +10,7 @@ from inference.core.workflows.core_steps.common.inference_response_entities impo
     InferenceResponse,
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
+    ResolvedModel,
     WithVisualizationResponse,
 )
 from inference.core.workflows.core_steps.common.segmentation_entities import (  # noqa: F401
@@ -232,6 +233,7 @@ class InstanceSegmentationInferenceResponseDC:
     frame_id: object = None
     time: object = None
     visualization: object = None
+    resolved_model: Optional[ResolvedModel] = None
     # Internal stream-pipeline fast path: lets workflow execution carry a
     # response future through Model.infer_from_request without blocking the
     # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
@@ -283,6 +285,8 @@ def _is_response_dc_to_dict(r: InstanceSegmentationInferenceResponseDC) -> dict:
         d["time"] = r.time
     if r.visualization is not None:
         d["visualization"] = r.visualization
+    if r.resolved_model is not None:
+        d["resolved_model"] = r.resolved_model.model_dump()
     return d
 
 
@@ -318,6 +322,20 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
         default=None,
+    )
+
+
+class AnomalyDetectionResponse(ClassificationInferenceResponse):
+    anomaly_score: float = Field(
+        description="Raw anomaly score; larger means more anomalous"
+    )
+    anomaly_threshold: float = Field(
+        description="Decision threshold fitted on validation images"
+    )
+    is_anomalous: bool
+    anomaly_map: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Raw local anomaly evidence in original image coordinates",
     )
 
 
@@ -362,7 +380,7 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     landmarks: Union[List[Point], List[Point3D]]
 
 
-class DepthEstimationResponse(BaseModel):
+class DepthEstimationResponse(InferenceResponse):
     """Response for depth estimation inference.
 
     Attributes:

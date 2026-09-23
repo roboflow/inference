@@ -8,7 +8,7 @@ from inference.core.workflows.core_steps.common.utils import load_core_model
 # tests/workflows/unit_tests/core_steps/common/<file> -> parents[5] is the repo root
 UTILS = (
     Path(__file__).resolve().parents[5]
-    / "inference/core/workflows/core_steps/common/utils.py"
+    / "workflows/roboflow_workflows/core_steps/common/utils.py"
 )
 
 

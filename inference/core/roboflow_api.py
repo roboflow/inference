@@ -111,7 +111,7 @@ _WORKFLOW_CACHE_PUBLIC_IDENTITY_HMAC_MESSAGE = (
     b"inference-workflow-cache-public-identity-v2"
 )
 _WORKFLOW_LEGACY_CANONICAL_SEGMENT = re.compile(r"[a-z0-9-]+")
-_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 _HEADER_IDENTITY_PATTERN = re.compile(r"[\x21-\x7e]+")
 _WORKFLOW_CANONICAL_CACHE_NAMESPACE = ".canonical-v2"
 _WORKFLOW_TENANT_CACHE_NAMESPACE = ".tenanted-v2"

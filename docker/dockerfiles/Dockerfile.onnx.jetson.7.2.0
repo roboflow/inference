@@ -327,6 +327,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp72-
 
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
+     requirements/requirements.workflows.txt \
      requirements/requirements.cli.txt \
      requirements/requirements.http.txt \
      requirements/requirements.clip.txt \
@@ -410,14 +411,20 @@ RUN test "$(python3 -c "import importlib.metadata as m; print(m.version('bitsand
 WORKDIR /build/inference
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-    python -m pip install --break-system-packages wheel twine requests && \
+    python -m pip install --break-system-packages setuptools wheel requests && \
     rm -f dist/* && \
+    make create_workflows_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    rm -rf build/* && \
     python .release/pypi/inference.sdk.setup.py bdist_wheel && \
     python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
-    python -m pip install --break-system-packages \
+    python -m pip install --break-system-packages --find-links dist/ \
+        dist/roboflow_workflows*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
@@ -450,6 +457,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         --find-links /opt/wheels \
         --override /tmp/runtime-overrides.txt \
         -r /build/reqs/_requirements.txt \
+        -r /build/reqs/requirements.workflows.txt \
         -r /build/reqs/requirements.cli.txt \
         -r /build/reqs/requirements.http.txt \
         -r /build/reqs/requirements.clip.txt \
@@ -514,7 +522,10 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/python-runtime/nvidia_nvtx-*.dist-info && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import torch; expected = {"sm_87", "sm_110"}; actual = set(torch.cuda.get_arch_list()); missing = expected - actual; assert not missing, f"Torch wheel is missing CUDA architectures: {sorted(missing)}; got {sorted(actual)}"' && \
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
-        /opt/wheels/inference_gpu-*.whl && \
+        /opt/wheels/inference_gpu-*.whl \
+        /opt/wheels/inference_cli-*.whl \
+        /opt/wheels/inference_sdk-*.whl \
+        /opt/wheels/roboflow_workflows-*.whl && \
     # OpenCV comes from the validated media runtime. Remove Python wheel copies
     # so every process resolves the same CUDA-enabled implementation.
     find /opt/python-runtime -type d \
@@ -598,6 +609,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=False \
