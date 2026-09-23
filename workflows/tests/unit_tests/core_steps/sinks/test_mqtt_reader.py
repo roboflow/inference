@@ -10,7 +10,9 @@ from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader import v1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import (
     LATEST_BUFFER_SIZE,
+    NOT_CONNECTED_REPEATING_LAST,
     NOT_CONNECTED_WITHIN_TIMEOUT,
+    NOT_RESUBSCRIBED_REPEATING_LAST,
     SEQUENTIAL_BUFFER_SIZE,
     SUBSCRIPTION_REFUSED_QOS,
     BlockManifest,
@@ -172,6 +174,20 @@ class TestManifest:
         manifest = BlockManifest.model_validate(manifest_payload(client_id=client_id))
 
         assert manifest.client_id == client_id
+
+    def test_timeout_description_scopes_the_wait_to_the_first_connection(self):
+        schema = BlockManifest.model_json_schema()
+
+        description = schema["properties"]["timeout"]["description"]
+        assert "first connection" in description
+        assert "Later runs never wait" in description
+
+    def test_outputs_unchanged_by_outage_handling(self):
+        names = [output.name for output in BlockManifest.describe_outputs()]
+
+        assert "error_status" in names
+        assert "error_message" in names
+        assert len(names) == 6
 
     def test_qos_description_states_the_persistent_session_rule(self):
         schema = BlockManifest.model_json_schema()
@@ -1058,6 +1074,311 @@ class TestReading:
             block.close()
 
         mock_print.assert_not_called()
+
+
+class TestOutageBookkeeping:
+    """The two helpers behind the outage outputs, driven directly."""
+
+    def warm_block_with_last(self, clients, block):
+        block.run(**run_kwargs())
+        clients[0].deliver(b'{"state": "RUNNING"}')
+        block.run(**run_kwargs())
+        return block
+
+    def test_repeat_with_error_returns_last_message_with_error_fields(
+        self, clients, block
+    ):
+        self.warm_block_with_last(clients, block)
+
+        result = block._repeat_last_with_error("boom")
+
+        assert result == {
+            "value": '{"state": "RUNNING"}',
+            "payload": {"state": "RUNNING"},
+            "topic": "plc/state",
+            "is_new": False,
+            "error_status": True,
+            "error_message": "boom",
+        }
+
+    def test_repeat_with_error_without_last_message_is_the_empty_failure(
+        self, clients, block
+    ):
+        block.run(**run_kwargs())
+
+        result = block._repeat_last_with_error("boom")
+
+        assert result == {
+            "value": None,
+            "payload": {},
+            "topic": None,
+            "is_new": False,
+            "error_status": True,
+            "error_message": "boom",
+        }
+
+    def test_outage_logs_one_error_line_naming_the_instance(
+        self, clients, block, caplog
+    ):
+        self.warm_block_with_last(clients, block)
+
+        with caplog.at_level("ERROR", logger="inference"):
+            block._repeat_last_with_error("boom")
+            block._repeat_last_with_error("boom")
+
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 1
+        assert "MQTT Reader localhost:1883 'plc/state': boom" in errors[0].getMessage()
+        assert block._outage_runs == 2
+
+    def test_recovery_logs_one_info_line_with_duration_and_count_and_resets(
+        self, clients, block, caplog
+    ):
+        self.warm_block_with_last(clients, block)
+        block._repeat_last_with_error("boom")
+        block._repeat_last_with_error("boom")
+
+        with caplog.at_level("INFO", logger="inference"):
+            block._log_recovery_if_needed()
+            block._log_recovery_if_needed()
+
+        infos = [
+            r
+            for r in caplog.records
+            if r.levelname == "INFO" and "restored after" in r.getMessage()
+        ]
+        assert len(infos) == 1
+        assert "2 runs returned the last message" in infos[0].getMessage()
+        assert "localhost:1883 'plc/state'" in infos[0].getMessage()
+        assert block._outage_started_at is None
+        assert block._outage_runs == 0
+
+    def test_recovery_while_healthy_logs_nothing(self, clients, block, caplog):
+        self.warm_block_with_last(clients, block)
+
+        with caplog.at_level("INFO", logger="inference"):
+            block._log_recovery_if_needed()
+
+        assert "restored after" not in caplog.text
+
+    def test_first_run_keeps_the_resolved_address_for_the_log(self, clients, block):
+        block.run(**run_kwargs())
+
+        assert (block._host, block._port) == ("localhost", 1883)
+
+    def test_close_resets_the_bookkeeping(self, clients, block):
+        self.warm_block_with_last(clients, block)
+        block._repeat_last_with_error("boom")
+        block._subscribed_once = True
+
+        block.close()
+
+        assert block._subscribed_once is False
+        assert block._outage_started_at is None
+        assert block._outage_runs == 0
+        assert (block._host, block._port) == (None, None)
+
+
+def drop(client: FakeClient) -> None:
+    client.on_disconnect(client, client.userdata, 1)
+
+
+def reconnect(client: FakeClient, reason_code: int = 0) -> None:
+    client.on_connect(client, client.userdata, {}, reason_code)
+
+
+RUNNING = b'{"state": "RUNNING"}'
+PAUSED = b'{"state": "PAUSED"}'
+
+
+class TestOutage:
+    """A warm instance (first run reached SUBACK) while the broker is away."""
+
+    def warm(self, clients, block, **kwargs):
+        block.run(**run_kwargs(**kwargs))
+        clients[0].deliver(RUNNING)
+        first = block.run(**run_kwargs(**kwargs))
+        assert first["is_new"] is True
+        return clients[0], first
+
+    def test_drop_repeats_last_message_with_error_without_waiting(self, clients, block):
+        client, first = self.warm(clients, block, timeout=2.0)
+        drop(client)
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=2.0))
+
+        assert time.monotonic() - started < 0.5
+        assert result == {
+            **first,
+            "is_new": False,
+            "error_status": True,
+            "error_message": NOT_CONNECTED_REPEATING_LAST,
+        }
+        assert "not connected" in result["error_message"]
+
+    def test_repeated_runs_during_outage_log_one_error_line(
+        self, clients, block, caplog
+    ):
+        client, _ = self.warm(clients, block)
+        drop(client)
+
+        with caplog.at_level("ERROR", logger="inference"):
+            results = [block.run(**run_kwargs()) for _ in range(4)]
+
+        assert len({str(r) for r in results}) == 1
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 1
+        assert "localhost:1883 'plc/state'" in errors[0].getMessage()
+
+    def test_buffered_messages_drain_before_the_outage_is_reported(
+        self, clients, block
+    ):
+        client, _ = self.warm(clients, block, read_mode="sequential")
+        client.deliver(b"A")
+        client.deliver(b"B")
+        drop(client)
+
+        results = [block.run(**run_kwargs(read_mode="sequential")) for _ in range(3)]
+
+        assert [r["value"] for r in results] == ["A", "B", "B"]
+        assert [r["is_new"] for r in results] == [True, True, False]
+        assert [r["error_status"] for r in results] == [False, False, True]
+
+    def test_drop_before_any_message_returns_empty_failure_without_waiting(
+        self, clients, block
+    ):
+        block.run(**run_kwargs(timeout=2.0))
+        drop(clients[0])
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=2.0))
+
+        assert time.monotonic() - started < 0.5
+        assert result["payload"] == {}
+        assert result["value"] is None
+        assert result["error_status"] is True
+        assert result["error_message"] == NOT_CONNECTED_REPEATING_LAST
+
+    def test_recovery_returns_live_message_and_logs_once(self, clients, block, caplog):
+        client, _ = self.warm(clients, block)
+        drop(client)
+        for _ in range(3):
+            block.run(**run_kwargs())
+
+        reconnect(client)
+        client.deliver(PAUSED)
+        with caplog.at_level("INFO", logger="inference"):
+            result = block.run(**run_kwargs())
+            block.run(**run_kwargs())
+
+        assert result["payload"] == {"state": "PAUSED"}
+        assert result["is_new"] is True
+        assert result["error_status"] is False
+        infos = [
+            r.getMessage() for r in caplog.records if "restored after" in r.getMessage()
+        ]
+        assert len(infos) == 1
+        assert "3 runs returned the last message" in infos[0]
+
+    def test_second_outage_logs_error_again(self, clients, block, caplog):
+        client, _ = self.warm(clients, block)
+        with caplog.at_level("ERROR", logger="inference"):
+            drop(client)
+            block.run(**run_kwargs())
+            reconnect(client)
+            client.deliver(PAUSED)
+            block.run(**run_kwargs())
+            drop(client)
+            block.run(**run_kwargs())
+
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 2
+
+    def test_reconnected_with_nothing_new_repeats_without_error_and_no_recovery_line(
+        self, clients, block, caplog
+    ):
+        client, first = self.warm(clients, block)
+        drop(client)
+        block.run(**run_kwargs())
+        reconnect(client)
+
+        with caplog.at_level("INFO", logger="inference"):
+            result = block.run(**run_kwargs())
+
+        assert result == {**first, "is_new": False}
+        assert "restored after" not in caplog.text
+
+    def test_connected_but_not_resubscribed_repeats_with_resubscribe_message(
+        self, clients, block
+    ):
+        client, first = self.warm(clients, block)
+        drop(client)
+        client.ack_subscriptions = False
+        reconnect(client)
+
+        result = block.run(**run_kwargs())
+
+        assert result == {
+            **first,
+            "is_new": False,
+            "error_status": True,
+            "error_message": NOT_RESUBSCRIBED_REPEATING_LAST,
+        }
+
+    def test_broker_unavailable_on_reconnect_repeats_with_its_reason(
+        self, clients, block
+    ):
+        client, first = self.warm(clients, block)
+        drop(client)
+        reconnect(client, 3)
+
+        result = block.run(**run_kwargs())
+
+        assert result["value"] == first["value"]
+        assert result["error_status"] is True
+        assert "broker unavailable" in result["error_message"]
+        assert "retrying in the background" in result["error_message"]
+        assert client.disconnected is False
+
+    def test_refused_reconnect_drains_then_repeats_with_refusal(
+        self, clients, block, caplog
+    ):
+        client, _ = self.warm(clients, block, read_mode="sequential")
+        client.deliver(b"A")
+        drop(client)
+        reconnect(client, 5)
+
+        with caplog.at_level("ERROR", logger="inference"):
+            results = [
+                block.run(**run_kwargs(read_mode="sequential")) for _ in range(3)
+            ]
+
+        assert [r["value"] for r in results] == ["A", "A", "A"]
+        assert [r["error_status"] for r in results] == [False, True, True]
+        assert "not authorised" in results[1]["error_message"]
+        assert "does not retry" in results[1]["error_message"]
+        assert results[2] == results[1]
+        assert client.disconnected is True
+        run_path_errors = [
+            r
+            for r in caplog.records
+            if r.levelname == "ERROR" and r.getMessage().startswith("MQTT Reader ")
+        ]
+        assert len(run_path_errors) == 1
+        assert "restored after" not in caplog.text
+
+    def test_cold_instance_still_waits_for_the_broker(
+        self, clients, block, monkeypatch
+    ):
+        monkeypatch.setattr(FakeClient, "fire_on_connect", False)
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=0.3))
+
+        assert time.monotonic() - started >= 0.3
+        assert result["error_message"] == NOT_CONNECTED_WITHIN_TIMEOUT
+        assert block._subscribed_once is False
 
 
 class TestBrokerPolicy:

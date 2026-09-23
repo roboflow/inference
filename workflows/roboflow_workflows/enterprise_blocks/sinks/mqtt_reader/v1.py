@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import threading
+import time
 from collections import deque
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -90,6 +91,15 @@ Two connections with the same id disconnect each other, so never share an id bet
 pipelines. Persistent sessions are meant for InferencePipelines: over the HTTP API each
 request would resume the session, consume the whole backlog and return one message.
 
+After the first subscription a run never waits for the broker. While the connection is
+down the outputs repeat the last message received with `error_status` True and `is_new`
+False, so a downstream step can gate on `error_status`; messages buffered before the drop
+are still returned first, and with `client_id` the messages the broker queued meanwhile
+follow after the reconnect. A connection refused on a reconnect is reported the same way,
+with the broker's reason, until the pipeline is restarted. The log carries one ERROR line
+when an outage starts and one INFO line with its duration when a live message arrives
+again.
+
 One block instance subscribes on a single broker connection: changing host, port,
 credentials, timeout, topic, QoS, read mode, client id or the TLS settings between runs
 is rejected as a configuration error. While the broker is unreachable every run waits up to `timeout`
@@ -128,8 +138,11 @@ Outputs:
                       not a JSON object.
     - topic (str): The topic the message arrived on (useful with wildcard filters).
     - is_new (bool): True if this run surfaced a message the previous run did not.
-    - error_status (bool): True if the run failed (connection, subscription, invalid
-                           configuration or an undecodable payload).
+    - error_status (bool): True if the run failed (invalid configuration, refused
+                           subscription, undecodable payload) or the broker connection
+                           is down or was refused after a healthy start; in the latter
+                           cases value, payload and topic repeat the last message
+                           received.
     - error_message (str): Details of the failure, or None.
 
 Failures are returned in the outputs and logged; the workflow keeps running.
@@ -141,6 +154,14 @@ NOT_CONNECTED_WITHIN_TIMEOUT = (
     "MQTT broker not connected (connection was not established within timeout); "
     "the client keeps retrying in the background. Raise 'timeout' if the "
     "broker needs longer to connect."
+)
+NOT_CONNECTED_REPEATING_LAST = (
+    "MQTT broker not connected; the client keeps reconnecting in the background and "
+    "the outputs repeat the last message received."
+)
+NOT_RESUBSCRIBED_REPEATING_LAST = (
+    "MQTT subscription not re-established yet after a reconnect; the outputs repeat "
+    "the last message received."
 )
 TLS_RELEVANT = {"encryption": {"values": ["tls"], "required": True}}
 LATEST_BUFFER_SIZE = 1
@@ -366,9 +387,11 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_KIND]),
     ] = Field(
         default=0.5,
-        description="Timeout in seconds for connecting to the MQTT broker and for the "
-        "broker's connection and subscription acknowledgements. Must be a finite "
-        "number greater than 0.",
+        description="Timeout in seconds for the first connection: the TCP connect, the "
+        "broker's connection acknowledgement (accepted or refused) and the subscription "
+        "acknowledgement. Later runs never wait: while the connection is down they return "
+        "the last message with error_status set, and the client reconnects in the "
+        "background. Must be a finite number greater than 0.",
         examples=[0.5],
     )
     encryption: Literal["none", "tls"] = Field(
@@ -459,6 +482,16 @@ class MQTTReaderBlockV1(WorkflowBlock):
         # the first read after subscribing waits for a retained message, which
         # the broker sends right after SUBACK as a separate packet
         self._awaiting_retained = False
+        # readiness waits are a cold-start concern: once the first run reached
+        # SUBACK, later runs never block on the broker
+        self._subscribed_once = False
+        # an outage is bracketed in the log: one ERROR line when a run first
+        # observes it, one INFO line with duration and run count on recovery
+        self._outage_started_at: Optional[float] = None
+        self._outage_runs = 0
+        # the resolved broker address, kept for the log lines
+        self._host: Optional[str] = None
+        self._port: Optional[int] = None
         self._lifecycle_lock = threading.Lock()
 
     def close(self) -> None:
@@ -472,6 +505,11 @@ class MQTTReaderBlockV1(WorkflowBlock):
             self._connection_identity = None
             self._last = None
             self._awaiting_retained = False
+            self._subscribed_once = False
+            self._outage_started_at = None
+            self._outage_runs = 0
+            self._host = None
+            self._port = None
             try:
                 client.disconnect()
             except Exception as e:
@@ -713,6 +751,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
             self._state = state
             self._connection_identity = connection_identity
             self._awaiting_retained = True
+            self._host, self._port = host, port
         elif connection_identity != self._connection_identity:
             return self._handle_failure(
                 "MQTT connection parameters (host, port, credentials, timeout, topic, "
@@ -721,6 +760,88 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 "first run."
             )
         state = self._state
+        if not self._subscribed_once:
+            # cold start: bounded waits for the broker's answers, so the first
+            # run of a pipeline gets a message or a precise failure
+            failure = self._wait_until_subscribed(state, timeout)
+            if failure is not None:
+                return failure
+            self._subscribed_once = True
+            if self._awaiting_retained:
+                # one-off, bounded: a retained message (or nothing) arrives right
+                # after SUBACK; without this wait the first run would race it
+                self._awaiting_retained = False
+                state.message_received.wait(timeout=timeout)
+        elif state.subscribe_failed:
+            # a known refusal is permanent for this configuration
+            return self._handle_failure(
+                f"MQTT broker refused subscription to topic {state.topic!r}."
+            )
+        # never wait once subscribed; drain first, because messages received
+        # before a drop are real whatever happened to the connection afterwards
+        try:
+            received_topic, payload, retained = state.messages.popleft()
+        except IndexError:
+            if state.refused_code in PERMANENT_CONNACK_CODES:
+                # a reconnect refused with 1/2/4/5 stopped the loop: no fresh
+                # data can arrive until the pipeline is restarted
+                return self._repeat_last_with_error(
+                    connection_refused_message(
+                        state.refused_code, block_inputs=READER_CONNECTION_INPUTS
+                    )
+                )
+            if not state.connected.is_set():
+                return self._repeat_last_with_error(
+                    connection_refused_message(
+                        state.refused_code, block_inputs=READER_CONNECTION_INPUTS
+                    )
+                    if state.refused_code == TRANSIENT_CONNACK_CODE
+                    else NOT_CONNECTED_REPEATING_LAST
+                )
+            if not state.subscribed.is_set():
+                return self._repeat_last_with_error(NOT_RESUBSCRIBED_REPEATING_LAST)
+            # nothing new since the previous run
+            return self._repeat_last()
+        # a live message ends an outage, a retained duplicate included
+        self._log_recovery_if_needed()
+        try:
+            value = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return self._handle_failure(
+                f"Message received on topic {received_topic!r} is not valid UTF-8."
+            )
+        parsed_payload: Dict[str, Any] = {}
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                parsed_payload = parsed
+        except ValueError:
+            pass
+        if (
+            retained
+            and self._last is not None
+            and self._last["topic"] == received_topic
+            and self._last["value"] == value
+        ):
+            # the broker re-sends the retained message on every resubscribe
+            # (reconnect); an unchanged copy is not a new message
+            return self._repeat_last()
+        self._last = {
+            "value": value,
+            "payload": parsed_payload,
+            "topic": received_topic,
+        }
+        return {
+            **self._last,
+            "is_new": True,
+            "error_status": False,
+            "error_message": None,
+        }
+
+    def _wait_until_subscribed(
+        self, state: MQTTReaderState, timeout: float
+    ) -> Optional[BlockResult]:
+        """The first run's readiness waits; returns the failure result or None."""
         # a permanent refusal stopped the network loop: report it on every run
         # without waiting and without touching the broker again
         if state.refused_code in PERMANENT_CONNACK_CODES:
@@ -761,49 +882,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
                 "MQTT subscription was not acknowledged within timeout. Raise "
                 "'timeout' if the broker needs longer to respond."
             )
-        if self._awaiting_retained:
-            # one-off, bounded: a retained message (or nothing) arrives right
-            # after SUBACK; without this wait the first run would race it
-            self._awaiting_retained = False
-            state.message_received.wait(timeout=timeout)
-        try:
-            received_topic, payload, retained = state.messages.popleft()
-        except IndexError:
-            # nothing new since the previous run
-            return self._repeat_last()
-        try:
-            value = payload.decode("utf-8")
-        except UnicodeDecodeError:
-            return self._handle_failure(
-                f"Message received on topic {received_topic!r} is not valid UTF-8."
-            )
-        parsed_payload: Dict[str, Any] = {}
-        try:
-            parsed = json.loads(value)
-            if isinstance(parsed, dict):
-                parsed_payload = parsed
-        except ValueError:
-            pass
-        if (
-            retained
-            and self._last is not None
-            and self._last["topic"] == received_topic
-            and self._last["value"] == value
-        ):
-            # the broker re-sends the retained message on every resubscribe
-            # (reconnect); an unchanged copy is not a new message
-            return self._repeat_last()
-        self._last = {
-            "value": value,
-            "payload": parsed_payload,
-            "topic": received_topic,
-        }
-        return {
-            **self._last,
-            "is_new": True,
-            "error_status": False,
-            "error_message": None,
-        }
+        return None
 
     def _repeat_last(self) -> BlockResult:
         if self._last is None:
@@ -814,6 +893,57 @@ class MQTTReaderBlockV1(WorkflowBlock):
             "error_status": False,
             "error_message": None,
         }
+
+    def _repeat_last_with_error(self, message: str) -> BlockResult:
+        """The outputs while no fresh data can arrive: the last message with the
+        error fields set, or the empty failure result when nothing was received yet.
+
+        The first call of an outage logs one ERROR line; later calls log nothing
+        (a video pipeline would otherwise write one line per frame).
+        """
+        if self._outage_started_at is None:
+            self._outage_started_at = time.monotonic()
+            self._outage_runs = 0
+            # host, port and topic identify the block instance in a shared log
+            logger.error(
+                "MQTT Reader %s:%s %r: %s",
+                self._host,
+                self._port,
+                self._state.topic if self._state is not None else None,
+                message,
+            )
+        self._outage_runs += 1
+        if self._last is None:
+            return {
+                "value": None,
+                "payload": {},
+                "topic": None,
+                "is_new": False,
+                "error_status": True,
+                "error_message": message,
+            }
+        return {
+            **self._last,
+            "is_new": False,
+            "error_status": True,
+            "error_message": message,
+        }
+
+    def _log_recovery_if_needed(self) -> None:
+        """Close the outage bracket in the log once a live message arrived again."""
+        if self._outage_started_at is None:
+            return
+        logger.info(
+            "MQTT Reader %s:%s %r: connection restored after %.1f s; %d runs returned "
+            "the last message received",
+            self._host,
+            self._port,
+            self._state.topic if self._state is not None else None,
+            time.monotonic() - self._outage_started_at,
+            self._outage_runs,
+        )
+        self._outage_started_at = None
+        self._outage_runs = 0
 
     @staticmethod
     def _empty_result() -> BlockResult:

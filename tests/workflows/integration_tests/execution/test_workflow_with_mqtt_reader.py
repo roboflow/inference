@@ -204,6 +204,76 @@ def test_subscription_restored_after_reconnect(broker):
         block.close()
 
 
+@pytest.mark.timeout(20)
+def test_outage_repeats_last_message_without_waiting_then_recovers(broker, caplog):
+    # given - a warm reader holding RUNNING
+    broker.retained["plc/state"] = RUNNING
+    block = MQTTReaderBlockV1()
+    kwargs = reader_kwargs(broker, timeout=2.0)
+    second_thread = None
+
+    try:
+        first = block.run(**kwargs)
+        assert first["payload"] == {"state": "RUNNING"}
+
+        # when - the connection drops and three frames arrive while it is down
+        broker.drop_connection()
+        assert wait_until(lambda: not block._state.connected.is_set())
+        with caplog.at_level("INFO", logger="inference"):
+            during = []
+            for _ in range(3):
+                started = time.monotonic()
+                during.append(block.run(**kwargs))
+                assert time.monotonic() - started < 0.2
+
+            # and the broker comes back: the retained copy is re-sent on the
+            # resubscribe (the buffer holds one message in latest mode), then a
+            # new message is published
+            second_thread = threading.Thread(target=broker.start, daemon=True)
+            second_thread.start()
+            assert wait_until(lambda: len(broker.subscriptions) == 2, timeout=10)
+            assert wait_until(lambda: len(block._state.messages) == 1, timeout=10)
+            after_reconnect = block.run(**kwargs)
+            broker.publish("plc/state", PAUSED)
+            assert wait_until(
+                lambda: bool(block._state.messages)
+                and block._state.messages[-1][1] == PAUSED
+            )
+            updated = block.run(**kwargs)
+
+        # then - every run during the outage repeated RUNNING with the error set
+        for result in during:
+            assert result == {
+                **first,
+                "is_new": False,
+                "error_status": True,
+                "error_message": result["error_message"],
+            }
+            assert "not connected" in result["error_message"]
+        errors = [
+            r
+            for r in caplog.records
+            if r.levelname == "ERROR" and r.getMessage().startswith("MQTT Reader ")
+        ]
+        assert len(errors) == 1
+        # the retained copy re-sent on resubscribe is not new, but it is live:
+        # it closes the outage; the next run returns the new message
+        assert after_reconnect == {**first, "is_new": False}
+        assert updated["payload"] == {"state": "PAUSED"}
+        assert updated["is_new"] is True
+        assert updated["error_status"] is False
+        recoveries = [
+            r.getMessage() for r in caplog.records if "restored after" in r.getMessage()
+        ]
+        assert len(recoveries) == 1
+        assert "3 runs returned the last message" in recoveries[0]
+        assert broker.connections_accepted == 2
+    finally:
+        block.close()
+        if second_thread is not None:
+            second_thread.join(timeout=2)
+
+
 @pytest.mark.timeout(15)
 def test_unreachable_broker_leaves_nothing_behind_and_later_run_recovers():
     # given - bound but not listening, so the TCP connect is refused
@@ -539,8 +609,57 @@ def test_persistent_session_survives_reconnect_of_the_same_instance(session_brok
 
 
 @pytest.mark.timeout(20)
+def test_persistent_session_outage_repeats_last_then_delivers_queued(session_broker):
+    # given - a warm persistent subscriber holding RUNNING
+    block = MQTTReaderBlockV1()
+    kwargs = persistent_kwargs(session_broker, timeout=2.0)
+
+    try:
+        block.run(**kwargs)
+        session_broker.publish("plc/state", RUNNING, qos=1)
+        assert wait_until(lambda: len(block._state.messages) == 1)
+        first = block.run(**kwargs)
+        assert first["payload"] == {"state": "RUNNING"}
+        assert first["is_new"] is True
+
+        # when - the connection drops, a QoS 1 message is queued while it is away,
+        # and a frame arrives during the outage
+        session_broker.drop_connection()
+        assert wait_until(lambda: not block._state.connected.is_set())
+        assert wait_until(lambda: session_is_away(session_broker))
+        session_broker.publish("plc/state", PAUSED, qos=1)
+        started = time.monotonic()
+        during = block.run(**kwargs)
+        assert time.monotonic() - started < 0.2
+
+        # and paho reconnects on its own
+        assert wait_until(lambda: len(block._state.messages) == 1, timeout=10)
+        after = block.run(**kwargs)
+
+        # then - the outage frame repeated RUNNING with the error set, and the
+        # queued message came through afterwards
+        assert during == {
+            **first,
+            "is_new": False,
+            "error_status": True,
+            "error_message": during["error_message"],
+        }
+        assert "not connected" in during["error_message"]
+        assert after["payload"] == {"state": "PAUSED"}
+        assert after["is_new"] is True
+        assert after["error_status"] is False
+        assert session_broker.connections_accepted == 2
+    finally:
+        block.close()
+
+
+@pytest.mark.timeout(20)
 def test_second_connection_with_the_same_client_id_evicts_the_first(session_broker):
-    # given - two block instances sharing one client id on one broker
+    # given - two block instances sharing one client id on one broker; a retained
+    # state makes each first run return at once instead of waiting `timeout` for
+    # a retained message, so the evicted first cannot reconnect and evict the
+    # second while the second's first run is still in progress
+    session_broker.retained["plc/state"] = RUNNING
     first = MQTTReaderBlockV1()
     second = MQTTReaderBlockV1()
 
