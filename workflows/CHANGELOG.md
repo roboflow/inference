@@ -1,5 +1,19 @@
 # Changelog
 
+This is the canonical changelog for the `roboflow-workflows` package, including
+blocks, dependencies, and execution-engine behavior. Add engine behavior changes
+under `## Unreleased` → `### Execution engine`; one entry is sufficient.
+
+Package releases record their bundled execution-engine compatibility version,
+which can remain unchanged across package releases. The package version and
+engine version are separate; workflow and block compatibility use the engine
+version. The mapping starts with package `0.2.2` below.
+
+Earlier engine changes and migration guidance remain in the
+[historical execution-engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+See the [engine release rule](../.cursor/rules/execution-engine-version-changelog.mdc)
+for contributor and maintainer responsibilities.
+
 ## Unreleased
 
 ### Fixed
@@ -12,6 +26,16 @@
 - Persistent sessions for the MQTT Reader: an optional `client_id` (unique per broker, for example the pipeline name from a workflow input) connects with that id and a non-clean session, so the broker keeps the subscription and queues QoS 1/2 messages while the block is away and delivers the backlog when the same id reconnects, after a pipeline or process restart included. Requires `qos` 1 or 2 (a run with `client_id` and `qos` 0 reports an error); the publisher must also publish at QoS 1 or higher. Meant for `InferencePipeline`s; `sequential` works through the backlog one message per run. Left empty, the behaviour is unchanged.
 - TLS for the MQTT Reader and MQTT Writer: an `encryption` dropdown (`none`, default, or `tls`) encrypts the connection and verifies the broker's certificate against the system trust store; `ca_certificate_path` (shown for TLS only) points at a PEM bundle for a private CA and requires `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`. The port is not switched automatically and verification cannot be disabled.
 - Operator policy for the MQTT Reader and MQTT Writer broker address: `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (comma-separated `host[:port]` allowlist, no DNS) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (default `True`; when `False` the workflow's host and port are ignored and the first allowlist entry is used). Defaults preserve existing behaviour.
+
+---
+
+## `0.2.2`
+
+Bundled execution engine: `1.15.2`.
+
+### Added
+- OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options.
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-opus-5-5` model option.
 
 ---
 
@@ -35,7 +59,6 @@
 - Python 3.13 support (`requires-python` is now `>=3.10,<3.14`).
 - OpenAI v7 detection and instance-segmentation accept optional `output_classes`, keeping visual
   prompts in `classes` while constraining and decoding model output with stable labels.
-
 ---
 
 ## `0.1.2`
