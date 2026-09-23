@@ -43,11 +43,11 @@ from inference.core.workflows.execution_engine.entities.base import (
 # tests/workflows/unit_tests/core_steps/common/<file> -> parents[5] is the repo root
 ENTITIES_MODULE = (
     Path(__file__).resolve().parents[5]
-    / "inference/core/workflows/core_steps/common/segmentation_entities.py"
+    / "workflows/roboflow_workflows/core_steps/common/segmentation_entities.py"
 )
 RESPONSE_ENTITIES_MODULE = (
     Path(__file__).resolve().parents[5]
-    / "inference/core/workflows/core_steps/common/inference_response_entities.py"
+    / "workflows/roboflow_workflows/core_steps/common/inference_response_entities.py"
 )
 _POINTS = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
 PAIRS = [
@@ -135,8 +135,8 @@ def test_response_entities_module_imports_nothing_from_the_server() -> None:
         if isinstance(node, ast.ImportFrom) and node.module
     )
     assert imported == [
-        "inference.core.workflows.core_steps.common.segmentation_entities",
         "pydantic",
+        "roboflow_workflows.core_steps.common.segmentation_entities",
         "typing",
     ], imported
 

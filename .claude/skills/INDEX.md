@@ -5,7 +5,9 @@ instead of carrying their own copy of the tables:
 
 - **CI** — `.github/prompts/claude-pr-review.md` (Skill Dispatch section).
 - **Local review tooling** — any agent or script reviewing this repo can
-  resolve skills through this file from its own checkout.
+  resolve skills through this file from its own checkout. The
+  [local pre-review skill](review-local/SKILL.md) provides a contributor-facing
+  entry point for reviewing branch and working-tree changes without posting.
 
 Editing rule: this file is the single source of truth for path→skill and
 signal→skill routing and for the shared review contract below. Do not restate

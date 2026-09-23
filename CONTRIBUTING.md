@@ -37,6 +37,33 @@ All pull requests will be reviewed by the maintainers of the project. We will pr
 
 PRs must pass all tests and linting requirements before they can be merged.
 
+### Automated review and maintainer handoff
+
+For eligible same-repository PRs, Claude performs an initial review after the PR
+is marked ready. Address its findings locally, then add the `claude-review` label
+to request another pass; pushes do not automatically restart review.
+
+When the Slack handoff integration is enabled, an agent sign-off for the current
+commit requests final maintainer review in the release channel. The PR receives
+a link to that Slack discussion. A sign-off for an older commit is not forwarded.
+
+If you disagree with the agent and need a maintainer decision, post a new PR comment:
+
+```text
+/maintainer-review Explain the disputed finding and why you need a human decision.
+```
+
+This internal workflow requires repository write access and an open, non-draft
+same-repository PR targeting `main`. Fork PRs cannot trigger it. Include a reason;
+editing an existing comment does not trigger it. Escalating does not dismiss
+findings or approve the PR. Maintainers coordinate in the Slack thread and record
+their final review and approval in GitHub. Slack replies are not synced to GitHub.
+Repeated requests for the same revision are coalesced. New revisions have a
+24-hour escalation cooldown per PR; requests during that window are suppressed.
+Maintainers are mentioned at most once per PR per 24 hours.
+
+See [maintainer setup](.github/maintainer-review-slack.md) for activation and recovery.
+
 ## :wrench: Development environment
 We recommend creating fresh conda environment:
 ```bash
@@ -46,12 +73,12 @@ conda activate inference-development
 
 Then, in repository root:
 ```bash
-repo_root$ (inference-development) pip install -e .
+repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e .
 ```
 
 That will install all requirements apart from SAM model. To install the latter:
 ```bash
-repo_root$ (inference-development) pip install -e ".[sam]"
+repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e ".[sam]"
 ```
 but in some OS (like MacOS) that would require installing additional libs ([this](https://medium.com/@vascofernandes_13322/how-to-install-gdal-on-macos-6a76fb5e24a4) guide should fix the issue for MacOS).
 
