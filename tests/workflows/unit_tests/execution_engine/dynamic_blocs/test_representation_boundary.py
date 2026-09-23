@@ -21,10 +21,10 @@ pytest.importorskip("inference_models")
 
 from pycocotools import mask as mask_utils
 
-from inference.core.workflows.core_steps.common.utils import (
+from roboflow_workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.execution_engine.constants import (
+from roboflow_workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
@@ -44,20 +44,20 @@ from inference.core.workflows.execution_engine.constants import (
     ROOT_PARENT_ID_KEY,
     TRACKER_ID_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
     representation_boundary,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicInputDefinition,
     ManifestDescription,
     SelectorType,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     RepresentationBoundaryError,
     convert_kwargs_to_legacy,
     native_detections_to_sv,
@@ -376,6 +376,35 @@ def test_native_detections_to_sv_handles_plain_and_empty_detections() -> None:
     assert converted_plain.mask is None
     assert len(converted_plain) == 1
     assert len(converted_empty) == 0
+
+
+def test_sv_detections_to_native_keeps_image_dimensions_for_empty_detections() -> None:
+    # given - a zero-row result carrying the image dimensions in metadata, the
+    # shape empty_detections_with_image_metadata() produces (issue #2974)
+    empty = sv.Detections.empty()
+    empty.metadata[IMAGE_DIMENSIONS_KEY] = [480, 640]
+
+    # when
+    result = sv_detections_to_native(sv_detections=empty)
+
+    # then
+    assert result.xyxy.shape[0] == 0
+    assert result.image_metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+
+
+def test_sv_detections_to_native_reads_array_image_dimensions_for_empty_detections() -> (
+    None
+):
+    # given
+    empty = sv.Detections.empty()
+    empty.metadata[IMAGE_DIMENSIONS_KEY] = np.array([480, 640])
+
+    # when
+    result = sv_detections_to_native(sv_detections=empty)
+
+    # then - plain ints, like the row-based rebuild emits
+    assert result.image_metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    assert all(isinstance(v, int) for v in result.image_metadata[IMAGE_DIMENSIONS_KEY])
 
 
 def test_convert_kwargs_is_identity_when_tensor_representation_off() -> None:
@@ -742,23 +771,23 @@ def test_convert_kwargs_empty_batch_passes_through_preserving_type() -> None:
 # Step 3: OUT direction (legacy -> native) + result walker + round trips      #
 # --------------------------------------------------------------------------- #
 
-from inference.core.workflows.core_steps.common.serializers_tensor import (
+from roboflow_workflows.core_steps.common.serializers_tensor import (
     serialise_native_classification,
     serialise_sv_detections,
 )
-from inference.core.workflows.core_steps.common.tensor_native import (
+from roboflow_workflows.core_steps.common.tensor_native import (
     native_detections_to_root_coordinates,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicOutputDefinition,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     classification_dict_to_native,
     convert_block_result_to_native,
     sv_detections_to_native,
     sv_detections_to_native_key_point_prediction,
 )
-from inference.core.workflows.execution_engine.v1.entities import FlowControl
+from roboflow_workflows.execution_engine.v1.entities import FlowControl
 
 
 def _manifest_with_outputs(outputs: dict) -> ManifestDescription:

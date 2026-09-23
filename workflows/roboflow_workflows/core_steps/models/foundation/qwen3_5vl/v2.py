@@ -1,0 +1,274 @@
+from typing import List, Literal, Optional, Type, Union
+
+from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.environment import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    QWEN_3_5_ENABLED,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
+from roboflow_workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
+    IMAGE_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
+    ImageInputField,
+    Selector,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+    roboflow_platform_model,
+)
+from roboflow_workflows.prototypes.models_provider import ModelsProvider
+
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+
+##########################################################################
+# Qwen3.5 Workflow Block Manifest
+##########################################################################
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Qwen3.5",
+            "version": "v2",
+            "short_description": "Run Qwen3.5 on an image.",
+            "long_description": (
+                "This workflow block runs Qwen3.5—a vision language model that accepts an image "
+                "and an optional text prompt—and returns a text answer based on a conversation template."
+            ),
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": [
+                "Qwen3.5",
+                "qwen3.5",
+                "vision language model",
+                "VLM",
+                "Alibaba",
+            ],
+            "is_vlm_block": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.7,
+            },
+        },
+        protected_namespaces=(),
+    )
+    type: Literal["roboflow_core/qwen3_5vl@v2"]
+
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional text prompt to provide additional context to Qwen3.5. Otherwise it will just be a default one, which may affect the desired model behavior.",
+        examples=["What is in this image?"],
+    )
+    model_version: Union[
+        Literal["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]),
+        str,
+    ] = Field(
+        default="qwen3_5-0.8b",
+        description="The Qwen3.5 model to be used for inference.",
+        examples=["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
+    )
+
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Optional system prompt to provide additional context to Qwen3.5.",
+        examples=["You are a helpful assistant."],
+    )
+
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate. If not set, the model's default will be used.",
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="parsed_output",
+                kind=[DICTIONARY_KIND],
+                description="A parsed version of the output, provided as a dictionary containing the text.",
+            ),
+        ]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        return ["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"]
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not QWEN_3_5_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "QWEN_3_5_ENABLED=False on Roboflow Hosted Serverless: "
+                        "the Qwen3.5-VL endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        return [roboflow_platform_model(model_id=self.model_version)]
+
+
+##########################################################################
+# Qwen3.5 Workflow Block
+##########################################################################
+class Qwen35VLBlockV2(WorkflowBlock):
+    def __init__(
+        self,
+        model_manager: ModelsProvider,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._model_manager = model_manager
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["model_manager", "api_key", "step_execution_mode"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str,
+        prompt: Optional[str],
+        system_prompt: Optional[str],
+        max_new_tokens: Optional[int] = None,
+    ) -> BlockResult:
+        if self._step_execution_mode == StepExecutionMode.LOCAL:
+            return self.run_locally(
+                images=images,
+                model_version=model_version,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_new_tokens=max_new_tokens,
+            )
+        elif self._step_execution_mode == StepExecutionMode.REMOTE:
+            return self.run_remotely(
+                images=images,
+                model_version=model_version,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_new_tokens=max_new_tokens,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str,
+        prompt: Optional[str],
+        system_prompt: Optional[str],
+        max_new_tokens: Optional[int] = None,
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        client.configure(
+            InferenceConfiguration(api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT)
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        prompt = prompt or "Describe what's in this image."
+        system_prompt = (
+            system_prompt
+            or "You are a Qwen3.5 model that can answer questions about any image."
+        )
+        combined_prompt = prompt + "<system_prompt>" + system_prompt
+
+        predictions = []
+        for image in images:
+            result = client.infer_lmm(
+                inference_input=image.base64_image,
+                model_id=model_version,
+                prompt=combined_prompt,
+                model_id_in_path=True,
+                enable_thinking=False,
+                max_new_tokens=max_new_tokens,
+            )
+            response_text = result.get("response", result)
+            predictions.append({"parsed_output": response_text})
+
+        return predictions
+
+    def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str,
+        prompt: Optional[str],
+        system_prompt: Optional[str],
+        max_new_tokens: Optional[int] = None,
+    ) -> BlockResult:
+        inference_images = [
+            i.to_inference_format(numpy_preferred=False) for i in images
+        ]
+        prompt = prompt or "Describe what's in this image."
+        system_prompt = system_prompt or "You are a helpful assistant."
+        prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
+        self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
+
+        predictions = []
+        for image, single_prompt in zip(inference_images, prompts):
+            prediction = self._model_manager.run_lmm(
+                model_id=model_version,
+                image=image,
+                prompt=single_prompt,
+                api_key=self._api_key,
+                enable_thinking=False,
+                max_new_tokens=max_new_tokens,
+            )
+            response_text = prediction["response"]
+            predictions.append({"parsed_output": response_text})
+        return predictions

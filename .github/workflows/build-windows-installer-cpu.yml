@@ -212,7 +212,7 @@ jobs:
           pip install -U --index-url https://download.pytorch.org/whl/cpu torch torchvision 
           WHEEL_FILE=$(ls dist/inference-*.whl)
           echo "Found CPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
+          pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
           echo "--- Installed inference details ---"
           pip show inference
           
@@ -352,4 +352,4 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
           asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-cpu-installer.exe
-          asset_content_type: application/vnd.microsoft.portable-executable 
+          asset_content_type: application/vnd.microsoft.portable-executable

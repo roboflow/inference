@@ -107,6 +107,7 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.inference import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     DepthEstimationResponse,
     InferenceResponse,
@@ -2129,6 +2130,7 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/infer/classification",
                 response_model=Union[
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     StubResponse,
@@ -4282,6 +4284,7 @@ class HttpInterface(BaseInterface):
                             depth_data["normalized_depth"]
                         )
                     return DepthEstimationResponse(
+                        resolved_model=getattr(response, "resolved_model", None),
                         normalized_depth=serialized_depth,
                         depth_map_format=inference_request.depth_map_format,
                         image=depth_data["image"].base64_image,
@@ -4600,6 +4603,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -4615,6 +4619,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -4728,6 +4733,10 @@ class HttpInterface(BaseInterface):
                 active_learning_target_dataset: Optional[str] = Query(
                     default=None,
                     description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+                ),
+                include_anomaly_map: Optional[bool] = Query(
+                    default=False,
+                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
                 ),
                 source: Optional[str] = Query(
                     "external",
@@ -4878,6 +4887,7 @@ class HttpInterface(BaseInterface):
                         args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
+                    args = {"include_anomaly_map": include_anomaly_map}
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
