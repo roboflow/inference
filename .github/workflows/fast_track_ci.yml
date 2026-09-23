@@ -1,0 +1,313 @@
+name: Fast-track CI
+# PR-equivalent CI for fast-track branches.
+#
+# A fast-track branch (fast-track/post-vX.Y.Z-ptN) is cut from a release tag
+# and carries a small set of approved changes to be deployed as X.Y.Z-postN.
+# It diverges from main by design, so the normal PR workflows cannot run on
+# its umbrella PR: GitHub delivers no `pull_request` event for a conflicting
+# PR, and check_if_branch_is_mergeable.yml rejects a diverged branch anyway.
+#
+# This workflow fires when a maintainer puts the `fast-track-deploy-approved`
+# label on the umbrella PR (and on every later push to the branch while the
+# label is present). A gate verifies the branch really is a fast-track branch.
+# Then every workflow that a PR to main would run is DISPATCHED on the
+# fast-track branch itself (workflow_dispatch), so the tests run in the
+# branch's own context: its own workflow definitions, its own cache scope.
+# Nothing from the branch executes inside this (main-context) run, which is
+# what keeps main's Actions cache out of reach of the branch code. Each
+# dispatched run is reported back as a commit status on the PR head.
+#
+# Runs with `pull_request_target` (main-branch definition, secrets). The gate
+# only admits same-repository PRs, and the label needs triage rights.
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write   # dispatch the test workflows
+  statuses: write  # report each dispatched run on the PR head commit
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Umbrella PR number (fast-track/post-vX.Y.Z-ptN -> main) carrying the fast-track-deploy-approved label"
+        type: string
+        required: true
+
+concurrency:
+  # One live run per umbrella PR; a newer push supersedes the older run (and
+  # the superseded run cancels the test runs it dispatched).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  FAST_TRACK_LABEL: fast-track-deploy-approved
+  # Workflows a PR to main runs (pull_request trigger, branches: [main]),
+  # plus the model licence check. Every one of them has a workflow_dispatch
+  # trigger on main. A workflow that cannot be dispatched on the branch (file
+  # missing, or no workflow_dispatch on that release) gets an `error` commit
+  # status and fails this run, unless listed in OPTIONAL_WORKFLOWS.
+  TEST_WORKFLOWS: >-
+    static_code_analysis.yml
+    check_model_licenses.yml
+    unit_tests_inference_x86.yml
+    unit_tests_inference_cli_x86.yml
+    unit_tests_inference_sdk_x86.yml
+    unit_tests_workflows_x86.yml
+    unit_tests_workflows_tensor_native_x86.yml
+    unit_tests_inference_experimental.yml
+    unit_tests_inference_model_manager_and_server.yml
+    integration_tests_inference_experimental_cpu.yml
+    integration_tests_workflows_x86.yml
+    integration_tests_workflows_tensor_native_x86.yml
+    integration_e2e_tests_inference_sdk_x86.yml
+  # Allowed to be undispatchable without failing the run. static_code_analysis
+  # only gained workflow_dispatch together with this workflow, so branches cut
+  # from earlier release tags cannot run it. Drop it from this list once every
+  # live fast-track lineage descends from a release that has the trigger.
+  OPTIONAL_WORKFLOWS: >-
+    static_code_analysis.yml
+
+jobs:
+  gate:
+    name: Verify fast-track branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.type != 'Bot' &&
+        contains(github.event.pull_request.labels.*.name, 'fast-track-deploy-approved') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'fast-track-deploy-approved')
+      )
+    outputs:
+      head_sha: ${{ steps.verify.outputs.head_sha }}
+      head_ref: ${{ steps.verify.outputs.head_ref }}
+      pr_number: ${{ steps.verify.outputs.pr_number }}
+    steps:
+      - name: Verify PR, label, branch name, and merge base
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          pr=$(gh api "repos/$REPO/pulls/$PR_NUMBER")
+          state=$(jq -r .state <<<"$pr")
+          base=$(jq -r .base.ref <<<"$pr")
+          head_ref=$(jq -r .head.ref <<<"$pr")
+          head_sha=$(jq -r .head.sha <<<"$pr")
+          head_repo=$(jq -r .head.repo.full_name <<<"$pr")
+          labels=$(jq -r '[.labels[].name] | join(",")' <<<"$pr")
+
+          echo "PR #$PR_NUMBER: $head_repo:$head_ref -> $base @ $head_sha"
+          echo "labels: $labels"
+
+          [ "$state" = "open" ] || fail "PR #$PR_NUMBER is not open ($state)"
+          [ "$head_repo" = "$REPO" ] || fail "PR head must live in $REPO, got $head_repo"
+          [ "$base" = "main" ] || fail "PR base must be main, got $base"
+          case ",$labels," in
+            *",$FAST_TRACK_LABEL,"*) ;;
+            *) fail "PR #$PR_NUMBER does not carry the $FAST_TRACK_LABEL label" ;;
+          esac
+
+          if [[ ! "$head_ref" =~ ^fast-track/post-v([0-9]+\.[0-9]+\.[0-9]+)-pt([0-9]+)$ ]]; then
+            fail "head branch '$head_ref' does not match fast-track/post-vX.Y.Z-ptN"
+          fi
+          release="${BASH_REMATCH[1]}"
+          pt="${BASH_REMATCH[2]}"
+          tag="v$release"
+
+          tag_sha=$(gh api "repos/$REPO/commits/$tag" --jq .sha) || fail "release tag $tag not found"
+          compare=$(gh api "repos/$REPO/compare/$tag...$head_sha")
+          status=$(jq -r .status <<<"$compare")
+          merge_base=$(jq -r .merge_base_commit.sha <<<"$compare")
+          ahead=$(jq -r .ahead_by <<<"$compare")
+          echo "compare $tag...$head_sha: status=$status ahead_by=$ahead merge_base=$merge_base"
+          [ "$status" = "ahead" ] || fail "branch must be strictly ahead of $tag (status: $status)"
+          [ "$merge_base" = "$tag_sha" ] || fail "merge base with $tag is $merge_base, expected the tag commit $tag_sha; the branch contains commits from elsewhere"
+
+          # Soft rule: inference version on the branch should read <release>-post<pt>.
+          version=$(gh api "repos/$REPO/contents/inference/core/version.py?ref=$head_sha" --jq .content | base64 -d | sed -n 's/^__version__ = "\(.*\)"/\1/p')
+          expected="$release-post$pt"
+          if [ "$version" != "$expected" ]; then
+            echo "::warning::inference/core/version.py reads '$version'; fast-track convention is '$expected' (branch pt$pt)"
+          fi
+
+          {
+            echo "## Fast-track gate"
+            echo "- PR: #$PR_NUMBER \`$head_ref\` -> \`$base\`"
+            echo "- head: \`$head_sha\`"
+            echo "- release tag: \`$tag\` (\`$tag_sha\`), branch is $ahead commit(s) ahead, merge base OK"
+            echo "- version.py: \`$version\` (convention: \`$expected\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  run-tests:
+    name: Dispatch and wait for the PR test workflows
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      HEAD_REF: ${{ needs.gate.outputs.head_ref }}
+      PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+      ORCHESTRATOR_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Dispatch every PR workflow on the fast-track branch
+        id: dispatch
+        run: |
+          set -euo pipefail
+          runs_file="$RUNNER_TEMP/runs.tsv"   # workflow<TAB>run_id<TAB>url
+          : > "$runs_file"
+          # Exported before the loop so a partial dispatch is still reported
+          # and cancellable if a later lookup fails.
+          echo "runs_file=$runs_file" >> "$GITHUB_OUTPUT"
+          : > "$RUNNER_TEMP/skipped.txt"
+
+          status() {  # context state description [target_url]
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $1" -f state="$2" -f description="$3" -f target_url="${4:-$ORCHESTRATOR_URL}"
+          }
+
+          for wf in $TEST_WORKFLOWS; do
+            name="${wf%.yml}"
+            # Runs created before this instant belong to somebody else.
+            since=$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ)
+            if ! out=$(gh workflow run "$wf" --repo "$REPO" --ref "$HEAD_REF" 2>&1); then
+              case " $OPTIONAL_WORKFLOWS " in
+                *" $wf "*)
+                  echo "::warning::$wf could not be dispatched on $HEAD_REF (optional): $out"
+                  echo "$name" >> "$RUNNER_TEMP/skipped.txt"
+                  status "$name" success "optional: not dispatchable on this branch"
+                  ;;
+                *)
+                  echo "::error::$wf could not be dispatched on $HEAD_REF: $out"
+                  status "$name" error "not dispatchable on this branch"
+                  echo "$name" >> "$RUNNER_TEMP/failed_dispatch.txt"
+                  ;;
+              esac
+              continue
+            fi
+            run_id=""
+            for _ in $(seq 1 30); do
+              sleep 3
+              run_id=$(gh run list --repo "$REPO" --workflow "$wf" --branch "$HEAD_REF" --event workflow_dispatch \
+                --limit 5 --json databaseId,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$since\")] | sort_by(.createdAt) | last | .databaseId // empty")
+              [ -n "$run_id" ] && break
+            done
+            if [ -z "$run_id" ]; then
+              echo "::error::$wf was dispatched but no run appeared within 90 s"
+              status "$name" error "dispatched, run not found"
+              exit 1
+            fi
+            # The run tests whatever the branch tip was at dispatch time. If
+            # that is not the SHA the gate verified, someone pushed in between;
+            # the `synchronize` event starts a fresh orchestrator for it.
+            run_sha=$(gh run view "$run_id" --repo "$REPO" --json headSha --jq .headSha)
+            if [ "$run_sha" != "$HEAD_SHA" ]; then
+              echo "::error::$wf run $run_id is on $run_sha, gate verified $HEAD_SHA; branch moved during dispatch"
+              status "$name" error "branch moved during dispatch" "${{ github.server_url }}/$REPO/actions/runs/$run_id"
+              exit 1
+            fi
+            url="${{ github.server_url }}/$REPO/actions/runs/$run_id"
+            printf '%s\t%s\t%s\n' "$name" "$run_id" "$url" >> "$runs_file"
+            status "$name" pending "running on $HEAD_REF" "$url"
+            echo "dispatched $wf -> run $run_id"
+          done
+
+          if [ -s "$RUNNER_TEMP/failed_dispatch.txt" ]; then
+            echo "::error::required workflow(s) not dispatchable: $(tr '\n' ' ' < "$RUNNER_TEMP/failed_dispatch.txt")"
+            echo "dispatch_failed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for the dispatched runs
+        id: wait
+        if: ${{ !cancelled() && steps.dispatch.outputs.runs_file != '' }}
+        run: |
+          set -euo pipefail
+          runs_file="${{ steps.dispatch.outputs.runs_file }}"
+          results_file="$RUNNER_TEMP/results.tsv"   # workflow<TAB>run_id<TAB>url<TAB>conclusion
+          : > "$results_file"
+          pending=$(cut -f2 "$runs_file" | tr '\n' ' ')
+          while [ -n "${pending// /}" ]; do
+            still=""
+            for run_id in $pending; do
+              info=$(gh run view "$run_id" --repo "$REPO" --json status,conclusion 2>/dev/null || echo '{}')
+              st=$(jq -r '.status // "unknown"' <<<"$info")
+              if [ "$st" = "completed" ]; then
+                conclusion=$(jq -r '.conclusion // "unknown"' <<<"$info")
+                line=$(awk -F'\t' -v id="$run_id" '$2==id' "$runs_file")
+                printf '%s\t%s\n' "$line" "$conclusion" >> "$results_file"
+                echo "run $run_id finished: $conclusion"
+              else
+                still="$still $run_id"
+              fi
+            done
+            pending="$still"
+            if [ -n "${pending// /}" ]; then sleep 60; fi
+          done
+          echo "results_file=$results_file" >> "$GITHUB_OUTPUT"
+
+      - name: Report statuses and summary
+        # On cancellation the next step owns the statuses; running both would
+        # post twice per run.
+        if: ${{ !cancelled() && steps.dispatch.outputs.runs_file != '' }}
+        run: |
+          set -euo pipefail
+          runs_file="${{ steps.dispatch.outputs.runs_file }}"
+          results_file="${{ steps.wait.outputs.results_file }}"
+          [ -n "$results_file" ] && [ -f "$results_file" ] || results_file=/dev/null
+          failed=0
+          {
+            echo "## Fast-track CI for #$PR_NUMBER (\`$HEAD_REF\` @ \`$HEAD_SHA\`)"
+            echo "| Workflow | Result | Run |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r name run_id url; do
+            [ -n "$name" ] || continue
+            conclusion=$(awk -F'\t' -v id="$run_id" '$2==id {print $4}' "$results_file")
+            case "$conclusion" in
+              success) state=success ;;
+              "")      state=error; conclusion="not finished (orchestrator stopped)" ;;
+              *)       state=failure; failed=1 ;;
+            esac
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $name" -f state="$state" -f description="$conclusion" -f target_url="$url"
+            echo "| $name | $conclusion | $url |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$runs_file"
+          while read -r name; do
+            [ -n "$name" ] || continue
+            echo "| $name | skipped (optional): not dispatchable on this branch | – |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$RUNNER_TEMP/skipped.txt"
+          if [ -s "$RUNNER_TEMP/failed_dispatch.txt" ]; then
+            while read -r name; do
+              [ -n "$name" ] || continue
+              echo "| $name | **not dispatchable on this branch** | – |" >> "$GITHUB_STEP_SUMMARY"
+            done < "$RUNNER_TEMP/failed_dispatch.txt"
+            failed=1
+          fi
+          [ "$failed" = 0 ] || { echo "::error::at least one required workflow failed or could not be dispatched"; exit 1; }
+
+      - name: Cancel dispatched runs if this run was cancelled
+        if: ${{ cancelled() && steps.dispatch.outputs.runs_file != '' }}
+        run: |
+          while IFS=$'\t' read -r name run_id url; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$REPO" || true
+            gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+              -f context="fast-track-ci / $name" -f state="error" -f description="cancelled: superseded by a newer push" -f target_url="$url" || true
+          done < "${{ steps.dispatch.outputs.runs_file }}"
