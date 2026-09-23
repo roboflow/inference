@@ -1,0 +1,196 @@
+name: Fast-track CI
+# PR-equivalent CI for fast-track branches.
+#
+# A fast-track branch (fast-track/post-vX.Y.Z-ptN) is cut from a release tag
+# and carries a small set of approved changes to be deployed as X.Y.Z-postN.
+# It diverges from main by design, so the normal PR workflows cannot run on
+# its umbrella PR: GitHub delivers no `pull_request` event for a conflicting
+# PR, and check_if_branch_is_mergeable.yml rejects a diverged branch anyway.
+#
+# This workflow fires when a maintainer puts the `fast-track-deploy-approved`
+# label on the umbrella PR (and on every later push to the branch while the
+# label is present). A gate verifies the branch really is a fast-track branch,
+# then the same workflows that run on a PR to main are called with the PR head
+# SHA. Results show up as check runs on the PR.
+#
+# Runs with `pull_request_target`, i.e. with secrets and the base-branch
+# workflow definitions. The gate only admits same-repository PRs, and the
+# label can only be applied by users with triage rights.
+
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Umbrella PR number (fast-track/post-vX.Y.Z-ptN -> main) carrying the fast-track-deploy-approved label"
+        type: string
+        required: true
+
+concurrency:
+  # One live run per umbrella PR; a newer push supersedes the older run.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  FAST_TRACK_LABEL: fast-track-deploy-approved
+
+jobs:
+  gate:
+    name: Verify fast-track branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.type != 'Bot' &&
+        contains(github.event.pull_request.labels.*.name, 'fast-track-deploy-approved') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'fast-track-deploy-approved')
+      )
+    outputs:
+      head_sha: ${{ steps.verify.outputs.head_sha }}
+      head_ref: ${{ steps.verify.outputs.head_ref }}
+      pr_number: ${{ steps.verify.outputs.pr_number }}
+    steps:
+      - name: Verify PR, label, branch name, and merge base
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          pr=$(gh api "repos/$REPO/pulls/$PR_NUMBER")
+          state=$(jq -r .state <<<"$pr")
+          base=$(jq -r .base.ref <<<"$pr")
+          head_ref=$(jq -r .head.ref <<<"$pr")
+          head_sha=$(jq -r .head.sha <<<"$pr")
+          head_repo=$(jq -r .head.repo.full_name <<<"$pr")
+          labels=$(jq -r '[.labels[].name] | join(",")' <<<"$pr")
+
+          echo "PR #$PR_NUMBER: $head_repo:$head_ref -> $base @ $head_sha"
+          echo "labels: $labels"
+
+          [ "$state" = "open" ] || fail "PR #$PR_NUMBER is not open ($state)"
+          [ "$head_repo" = "$REPO" ] || fail "PR head must live in $REPO, got $head_repo"
+          [ "$base" = "main" ] || fail "PR base must be main, got $base"
+          case ",$labels," in
+            *",$FAST_TRACK_LABEL,"*) ;;
+            *) fail "PR #$PR_NUMBER does not carry the $FAST_TRACK_LABEL label" ;;
+          esac
+
+          if [[ ! "$head_ref" =~ ^fast-track/post-v([0-9]+\.[0-9]+\.[0-9]+)-pt([0-9]+)$ ]]; then
+            fail "head branch '$head_ref' does not match fast-track/post-vX.Y.Z-ptN"
+          fi
+          release="${BASH_REMATCH[1]}"
+          pt="${BASH_REMATCH[2]}"
+          tag="v$release"
+
+          tag_sha=$(gh api "repos/$REPO/commits/$tag" --jq .sha) || fail "release tag $tag not found"
+          compare=$(gh api "repos/$REPO/compare/$tag...$head_sha")
+          status=$(jq -r .status <<<"$compare")
+          merge_base=$(jq -r .merge_base_commit.sha <<<"$compare")
+          ahead=$(jq -r .ahead_by <<<"$compare")
+          echo "compare $tag...$head_sha: status=$status ahead_by=$ahead merge_base=$merge_base"
+          [ "$status" = "ahead" ] || fail "branch must be strictly ahead of $tag (status: $status)"
+          [ "$merge_base" = "$tag_sha" ] || fail "merge base with $tag is $merge_base, expected the tag commit $tag_sha; the branch contains commits from elsewhere"
+
+          # Soft rule: inference version on the branch should read <release>-post<pt>.
+          version=$(gh api "repos/$REPO/contents/inference/core/version.py?ref=$head_sha" --jq .content | base64 -d | sed -n 's/^__version__ = "\(.*\)"/\1/p')
+          expected="$release-post$pt"
+          if [ "$version" != "$expected" ]; then
+            echo "::warning::inference/core/version.py reads '$version'; fast-track convention is '$expected' (branch pt$pt)"
+          fi
+
+          {
+            echo "## Fast-track gate"
+            echo "- PR: #$PR_NUMBER \`$head_ref\` -> \`$base\`"
+            echo "- head: \`$head_sha\`"
+            echo "- release tag: \`$tag\` (\`$tag_sha\`), branch is $ahead commit(s) ahead, merge base OK"
+            echo "- version.py: \`$version\` (convention: \`$expected\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  static-code-analysis:
+    needs: gate
+    uses: ./.github/workflows/static_code_analysis.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-inference:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_inference_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-inference-cli:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_inference_cli_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-inference-sdk:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_inference_sdk_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-workflows:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_workflows_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-workflows-tensor-native:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_workflows_tensor_native_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-inference-models:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_inference_experimental.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  unit-tests-model-manager-and-server:
+    needs: gate
+    uses: ./.github/workflows/unit_tests_inference_model_manager_and_server.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  integration-tests-inference-models-cpu:
+    needs: gate
+    uses: ./.github/workflows/integration_tests_inference_experimental_cpu.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  integration-tests-workflows:
+    needs: gate
+    uses: ./.github/workflows/integration_tests_workflows_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  integration-tests-workflows-tensor-native:
+    needs: gate
+    uses: ./.github/workflows/integration_tests_workflows_tensor_native_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit
+  integration-e2e-tests-inference-sdk:
+    needs: gate
+    uses: ./.github/workflows/integration_e2e_tests_inference_sdk_x86.yml
+    with:
+      ref: ${{ needs.gate.outputs.head_sha }}
+    secrets: inherit

@@ -18,9 +18,23 @@ on:
           - "3.11"
           - "3.12"
           - "3.13"
+  workflow_call:
+    # Fast-track CI (fast_track_ci.yml) calls this workflow for a branch that
+    # deliberately diverged from main. `ref` is the PR head SHA to test; empty
+    # keeps the default checkout for every other trigger.
+    inputs:
+      ref:
+        description: "Git ref to check out (fast-track CI). Empty = default for the event."
+        type: string
+        required: false
+        default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  # The literal file id keeps groups distinct when this workflow is *called*
+  # (workflow_call): inside a called workflow github.workflow resolves to the
+  # caller's name, so without it every workflow called by one caller would
+  # share a single group and serialize.
+  group: ${{ github.workflow }}-integration_tests_workflows_tensor_native_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -40,6 +54,8 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:

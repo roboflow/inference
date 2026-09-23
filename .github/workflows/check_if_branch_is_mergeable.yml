@@ -27,10 +27,21 @@ jobs:
           set -euo pipefail
           if [ "workflow_dispatch" = "$EVENT_NAME" ]; then
             echo "ℹ️ Manual run, skipping mergeability check"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "pull_request_target" = "$EVENT_NAME" ]; then
+            # Only fast_track_ci.yml reaches this workflow under
+            # pull_request_target. Fast-track branches are cut from a release
+            # tag and diverge from main by design; the fast-track gate already
+            # verified the branch, so the "contains main" rule does not apply.
+            echo "ℹ️ Fast-track CI run (pull_request_target), skipping mergeability check"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "main" = "$SOURCE_BRANCH" ]; then
             echo "ℹ️ Branch is main, proceeding"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
