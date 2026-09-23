@@ -28,9 +28,11 @@ from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.object_detection import ObjectDetectionModel
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.rfdetr_two_stage.rfdetr_key_points_stage2_onnx import (
     ImagesInput,
     RFDetrKeyPointsStage2ONNX,
+    identity_pre_processing_metadata,
     images_to_numpy_rgb,
 )
 
@@ -43,7 +45,9 @@ TwoStageResult = Tuple[List[KeyPoints], List[Detections]]
 
 
 class RFDetrTwoStageKeyPointsONNX(
-    KeyPointsDetectionModel[List[np.ndarray], None, TwoStageResult]
+    KeyPointsDetectionModel[
+        List[np.ndarray], List[PreProcessingMetadata], TwoStageResult
+    ]
 ):
 
     @classmethod
@@ -128,19 +132,26 @@ class RFDetrTwoStageKeyPointsONNX(
         images: ImagesInput,
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> Tuple[List[np.ndarray], None]:
-        return (
-            images_to_numpy_rgb(images=images, input_color_format=input_color_format),
-            None,
+    ) -> Tuple[List[np.ndarray], List[PreProcessingMetadata]]:
+        # The composite hands the stages original-resolution images, so its own
+        # metadata is the identity transform; hosts read the image size from it.
+        images_rgb = images_to_numpy_rgb(
+            images=images, input_color_format=input_color_format
         )
+        return images_rgb, [
+            identity_pre_processing_metadata(image) for image in images_rgb
+        ]
 
     def forward(
         self,
         pre_processed_images: List[np.ndarray],
         confidence: Confidence = "default",
         key_points_threshold: Optional[float] = None,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> TwoStageResult:
+        # `input_color_format` described the caller's images; pre_process has
+        # already converted them to RGB, so the stages are told that instead.
         images_rgb = pre_processed_images
         per_image_detections: List[Detections] = self._detector.infer(
             images_rgb, input_color_format="rgb", confidence=confidence, **kwargs
@@ -194,7 +205,10 @@ class RFDetrTwoStageKeyPointsONNX(
         return all_key_points, all_detections
 
     def post_process(
-        self, model_results: TwoStageResult, pre_processing_meta: None, **kwargs
+        self,
+        model_results: TwoStageResult,
+        pre_processing_meta: List[PreProcessingMetadata],
+        **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         return model_results
 

@@ -23,7 +23,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD,
 )
 from inference_models.developer_tools import align_device_with_onnx_session
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -37,7 +37,9 @@ from inference_models.models.common.onnx import (
 )
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
+    PreProcessingMetadata,
     ResizeMode,
+    StaticCropOffset,
     parse_class_names_file,
     parse_inference_config,
     parse_key_points_metadata,
@@ -95,9 +97,11 @@ class CropRecord:
 
 
 @dataclass(frozen=True)
-class TopDownBatchMetadata:
+class ImageTopDownMetadata:
+    """One input image's crops, in the order they occupy the batch."""
+
+    original_size: ImageDimensions
     crops: List[CropRecord]
-    images_count: int
 
 
 RawPosePrediction = Dict[str, torch.Tensor]
@@ -105,7 +109,9 @@ RawPosePrediction = Dict[str, torch.Tensor]
 
 class RFDetrKeyPointsStage2ONNX(
     KeyPointsDetectionModel[
-        Tuple[torch.Tensor, torch.Tensor], TopDownBatchMetadata, RawPosePrediction
+        Tuple[torch.Tensor, torch.Tensor],
+        List[ImageTopDownMetadata],
+        RawPosePrediction,
     ]
 ):
 
@@ -243,7 +249,7 @@ class RFDetrKeyPointsStage2ONNX(
         ] = None,
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], TopDownBatchMetadata]:
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], List[ImageTopDownMetadata]]:
         images_rgb = images_to_numpy_rgb(
             images=images, input_color_format=input_color_format
         )
@@ -256,8 +262,9 @@ class RFDetrKeyPointsStage2ONNX(
             )
         crops: List[np.ndarray] = []
         s_norms: List[float] = []
-        records: List[CropRecord] = []
+        metadata: List[ImageTopDownMetadata] = []
         for image_index, (image, image_boxes) in enumerate(zip(images_rgb, boxes)):
+            records: List[CropRecord] = []
             image_boxes = _to_numpy(image_boxes, dtype=np.float32).reshape(-1, 4)
             image_class_ids = (
                 _to_numpy(class_ids[image_index], dtype=np.int64).reshape(-1)
@@ -295,7 +302,14 @@ class RFDetrKeyPointsStage2ONNX(
                         ),
                     )
                 )
-        metadata = TopDownBatchMetadata(crops=records, images_count=len(images_rgb))
+            metadata.append(
+                ImageTopDownMetadata(
+                    original_size=ImageDimensions(
+                        height=image.shape[0], width=image.shape[1]
+                    ),
+                    crops=records,
+                )
+            )
         if not crops:
             height, width = self._crop_config.input_size
             empty_pixels = torch.zeros((0, 3, height, width), dtype=torch.float32)
@@ -332,7 +346,7 @@ class RFDetrKeyPointsStage2ONNX(
     def post_process(
         self,
         model_results: RawPosePrediction,
-        pre_processing_meta: TopDownBatchMetadata,
+        pre_processing_meta: List[ImageTopDownMetadata],
         key_points_threshold: float = INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
@@ -340,10 +354,13 @@ class RFDetrKeyPointsStage2ONNX(
         sigmas = model_results[SIGMAS_OUTPUT].float().cpu().numpy()
         presence = model_results[PRESENCE_OUTPUT].float().cpu().numpy()
         scores = model_results[SCORES_OUTPUT].float().cpu().numpy()
-        per_image: List[List[_InstanceResult]] = [
-            [] for _ in range(pre_processing_meta.images_count)
-        ]
-        for row, record in enumerate(pre_processing_meta.crops):
+        per_image: List[List[_InstanceResult]] = [[] for _ in pre_processing_meta]
+        batch_rows = (
+            (image_index, record)
+            for image_index, image_meta in enumerate(pre_processing_meta)
+            for record in image_meta.crops
+        )
+        for row, (image_index, record) in enumerate(batch_rows):
             slots = self._key_point_slots[record.class_id]
             slot_slice = slice(slots.offset, slots.offset + slots.count)
             xy = record.geometry.to_image(keypoints[row, slot_slice])
@@ -363,7 +380,7 @@ class RFDetrKeyPointsStage2ONNX(
                 if record.detection_confidence is not None
                 else pose_score
             )
-            per_image[record.image_index].append(
+            per_image[image_index].append(
                 _InstanceResult(
                     xy=_pad_rows(xy, self._max_key_points),
                     confidence=_pad_rows(confidence, self._max_key_points),
@@ -547,6 +564,25 @@ def images_to_numpy_rgb(
             array = cv2.cvtColor(array, cv2.COLOR_BGR2RGB)
         result.append(np.ascontiguousarray(array))
     return result
+
+
+def identity_pre_processing_metadata(image: np.ndarray) -> PreProcessingMetadata:
+    """Metadata for an image passed through at its original size, unpadded."""
+    size = ImageDimensions(height=image.shape[0], width=image.shape[1])
+    return PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=size,
+        size_after_pre_processing=size,
+        inference_size=size,
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0, offset_y=0, crop_width=size.width, crop_height=size.height
+        ),
+    )
 
 
 def _to_uint8_hwc(array: np.ndarray) -> np.ndarray:
