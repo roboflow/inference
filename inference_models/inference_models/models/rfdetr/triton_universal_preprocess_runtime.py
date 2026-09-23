@@ -21,6 +21,10 @@ import torch
 import torchvision.transforms.functional as TF
 
 from inference_models import PreProcessingOverrides
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION,
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -44,6 +48,14 @@ from inference_models.models.rfdetr.triton_preprocess import (
 
 ImageInput = Union[np.ndarray, torch.Tensor]
 _STAGING_RING_SIZE = 2
+
+
+def _source_shape_exceeds_triton_budget(height: int, width: int) -> bool:
+    return (
+        height > INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION
+        or width > INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION
+        or height * width > INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS
+    )
 
 
 @dataclass(frozen=True)
@@ -510,6 +522,19 @@ class UniversalFastPreprocessRuntime:
             unsupported.append("mixed uint8 and floating tensor semantics")
         if len(set(shapes)) > 1:
             unsupported.append(f"heterogeneous source dimensions: {shapes}")
+        oversized_shapes = [
+            shape
+            for kind, shape in zip(kinds, shapes)
+            if kind == "uint8" and _source_shape_exceeds_triton_budget(*shape)
+        ]
+        if oversized_shapes:
+            unsupported.append(
+                "uint8 source dimensions exceed the Triton preprocessing budget: "
+                f"{oversized_shapes}; maximum dimension is "
+                f"{INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION} "
+                "and maximum pixel count is "
+                f"{INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS}"
+            )
         if not TRITON_AVAILABLE:
             unsupported.append("Triton is not installed")
         if unsupported:
