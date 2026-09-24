@@ -27,6 +27,14 @@ for contributor and maintainer responsibilities.
 - TLS for the MQTT Reader and MQTT Writer: an `encryption` dropdown (`none`, default, or `tls`) encrypts the connection and verifies the broker's certificate against the system trust store; `ca_certificate_path` (shown for TLS only) points at a PEM bundle for a private CA and requires `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`. The port is not switched automatically and verification cannot be disabled.
 - Operator policy for the MQTT Reader and MQTT Writer broker address: `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (comma-separated `host[:port]` allowlist, no DNS) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (default `True`; when `False` the workflow's host and port are ignored and the first allowlist entry is used). Defaults preserve existing behaviour.
 
+### Execution Engine Change
+
+- Reject cyclic saved inner-workflow references during resolution with a composition
+  error instead of `RecursionError`. Enforce nesting depth and total inner-workflow
+  count limits during reference expansion, before fetching or expanding children
+  beyond those limits. Valid repeated references and remote dispatch are unchanged;
+  no migration is required.
+
 ---
 
 ## `0.2.2`
