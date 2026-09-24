@@ -1,4 +1,5 @@
 import threading
+import warnings
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
@@ -48,12 +49,12 @@ from inference_models.models.optimization.fallback_warnings import (
     FallbackWarningTracker,
 )
 from inference_models.models.optimization.ids import BASE_IMPLEMENTATION_ID
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.optimization.runtime_metadata import (
     OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
     SelectionSnapshot,
-)
-from inference_models.models.optimization.runtime_components import (
-    get_runtime_components,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -117,6 +118,8 @@ except ImportError as import_error:
 _MODEL_RUNTIME_ERROR_HELP_URL = (
     "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror"
 )
+
+
 def _as_model_runtime_error(
     error: RecoverableStageExecutionError,
 ) -> ModelRuntimeError:
@@ -138,9 +141,7 @@ class RFDetrForObjectDetectionTRT(
     @staticmethod
     def _resolve_requested_execution_plan(
         *,
-        execution_plan: Optional[
-            Union[RFDetrExecutionPlan, Mapping[str, Any]]
-        ],
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]],
     ) -> RFDetrExecutionPlan:
         """Normalize loader input into a typed RF-DETR execution plan."""
         if execution_plan is None:
@@ -166,9 +167,7 @@ class RFDetrForObjectDetectionTRT(
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        execution_plan: Optional[
-            Union[RFDetrExecutionPlan, Mapping[str, Any]]
-        ] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
@@ -187,20 +186,34 @@ class RFDetrForObjectDetectionTRT(
                 When omitted, RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
             **kwargs: Additional loader arguments accepted for API compatibility.
+                The deprecated rfdetr_execution_plan alias is supported until
+                October 24, 2026, and emits a FutureWarning. Use execution_plan
+                instead; do not provide both a non-None execution_plan and its alias.
 
         Returns:
             Loaded RF-DETR TensorRT model.
 
         Raises:
-            TypeError: If the removed rfdetr_execution_plan argument is supplied.
+            TypeError: If rfdetr_execution_plan is supplied together with a
+                non-None execution_plan.
             ValueError: If a serialized execution plan is invalid.
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
         if "rfdetr_execution_plan" in kwargs:
-            raise TypeError(
-                "'rfdetr_execution_plan' has been removed; use 'execution_plan' instead."
+            if execution_plan is not None:
+                raise TypeError(
+                    "Cannot pass both 'rfdetr_execution_plan' and 'execution_plan'; "
+                    "use 'execution_plan' only."
+                )
+
+            warnings.warn(
+                "'rfdetr_execution_plan' is deprecated and will be removed on "
+                "October 24, 2026. Use 'execution_plan' instead.",
+                FutureWarning,
+                stacklevel=2,
             )
+            execution_plan = kwargs.pop("rfdetr_execution_plan")
 
         if device.type != "cuda":
             raise ModelRuntimeError(
@@ -311,9 +324,7 @@ class RFDetrForObjectDetectionTRT(
         trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         rfdetr_preprocessor_max_workers: Optional[int] = None,
-        execution_plan: Optional[
-            Union[RFDetrExecutionPlan, Mapping[str, Any]]
-        ] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         recommended_parameters=None,
     ):
         self._engine = engine
@@ -500,9 +511,7 @@ class RFDetrForObjectDetectionTRT(
         """Return machine-readable selected implementation metadata."""
         implementation_metadata = {
             "preprocessor": self.preprocessor_implementation_metadata.to_dict(),
-            "buffer_strategy": (
-                self.buffer_strategy_implementation_metadata.to_dict()
-            ),
+            "buffer_strategy": (self.buffer_strategy_implementation_metadata.to_dict()),
             "scheduler": self.scheduler_implementation_metadata.to_dict(),
             "postprocessor": self.postprocessor_implementation_metadata.to_dict(),
             "engine_plugin": self.engine_plugin_implementation_metadata.to_dict(),
