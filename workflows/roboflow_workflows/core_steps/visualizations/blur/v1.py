@@ -2,11 +2,15 @@ from typing import Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.visualizations.common.annotators.blur import (
+    MaskAwareBlurAnnotator,
+)
 from roboflow_workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
     PredictionsVisualizationManifest,
 )
+from roboflow_workflows.core_steps.visualizations.common.utils import ensure_dense_masks
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import INTEGER_KIND, Selector
 from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -103,7 +107,7 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
         key = "_".join(map(str, [kernel_size]))
 
         if key not in self.annotatorCache:
-            self.annotatorCache[key] = sv.BlurAnnotator(kernel_size=kernel_size)
+            self.annotatorCache[key] = MaskAwareBlurAnnotator(kernel_size=kernel_size)
         return self.annotatorCache[key]
 
     def run(
@@ -113,6 +117,7 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
         copy_image: bool,
         kernel_size: Optional[int],
     ) -> BlockResult:
+        predictions = ensure_dense_masks(predictions)
         annotator = self.getAnnotator(kernel_size)
         scene = image.numpy_image
         if copy_image:

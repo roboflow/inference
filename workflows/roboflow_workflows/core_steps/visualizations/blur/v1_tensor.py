@@ -6,6 +6,9 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
 )
+from roboflow_workflows.core_steps.visualizations.common.annotators.blur import (
+    MaskAwareBlurAnnotator,
+)
 from roboflow_workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
@@ -108,7 +111,7 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
         key = "_".join(map(str, [kernel_size]))
 
         if key not in self.annotatorCache:
-            self.annotatorCache[key] = sv.BlurAnnotator(kernel_size=kernel_size)
+            self.annotatorCache[key] = MaskAwareBlurAnnotator(kernel_size=kernel_size)
         return self.annotatorCache[key]
 
     def run(
@@ -118,11 +121,9 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
         copy_image: bool,
         kernel_size: Optional[int],
     ) -> BlockResult:
-        # sv.BlurAnnotator blurs the `xyxy` box region and never reads `.mask`;
-        # skip the device->host dense-mask materialisation.
-        predictions = to_supervision_for_annotation(
-            predictions, materialise_masks=False
-        )
+        # Masks are needed so segmentation predictions blur their own shape
+        # rather than their bounding box.
+        predictions = to_supervision_for_annotation(predictions)
         annotator = self.getAnnotator(kernel_size)
         scene = image.numpy_image
         if copy_image:
