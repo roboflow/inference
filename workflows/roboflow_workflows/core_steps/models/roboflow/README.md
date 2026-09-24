@@ -11,9 +11,10 @@ may be used freely without a Roboflow account or API Key.
 ## Fine-Tuned Models
 
 The Workflow blocks in this directory are Apache 2.0 licensed,
-but if you're loading a fine-tuned model from the Roboflow cloud
-platform you'll need a Roboflow account and a Roboflow API Key
-and usage will be metered according to your Roboflow plan's limits.
+but loading a fine-tuned model from the Roboflow platform requires
+a Roboflow account and API key. Running that model on your own
+hardware does not use credits. The Serverless Cloud API bills
+each image at the model's rate.
 
 ## Model Licenses
 
