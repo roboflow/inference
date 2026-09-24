@@ -103,49 +103,17 @@ async def probe_turn_url(url: str) -> bool:
     return reachable
 
 
-def _turn_urls(config: Optional[RTCConfiguration]) -> List[Tuple[int, str]]:
-    """List (server index, url) for every TURN URL, in config order."""
-    if config is None or not config.iceServers:
-        return []
-
-    candidates = []
-    for index, server in enumerate(config.iceServers):
-        urls = server.urls if isinstance(server.urls, list) else [server.urls]
-        for url in urls:
-            if url.startswith("turn"):
-                candidates.append((index, url))
-    return candidates
-
-
-def _with_url_first(
-    config: RTCConfiguration, server_index: int, url: str
-) -> RTCConfiguration:
-    """Copy ``config`` with ``url`` first in its server and that server first."""
-    chosen = config.iceServers[server_index]
-    urls = chosen.urls if isinstance(chosen.urls, list) else [chosen.urls]
-    reordered_server = RTCIceServer(
-        urls=[url] + [other for other in urls if other != url],
-        username=chosen.username,
-        credential=chosen.credential,
-        credentialType=chosen.credentialType,
-    )
-    other_servers = [
-        server
-        for index, server in enumerate(config.iceServers)
-        if index != server_index
+def _turn_urls(config: Optional[RTCConfiguration]) -> List[Tuple[RTCIceServer, str]]:
+    """List (server, url) for every TURN URL, in config order."""
+    servers = config.iceServers if config and config.iceServers else []
+    candidates = [
+        (server, url)
+        for server in servers
+        for url in (server.urls if isinstance(server.urls, list) else [server.urls])
+        if url.startswith("turn")
     ]
-    reordered = RTCConfiguration(
-        iceServers=[reordered_server] + other_servers,
-        bundlePolicy=config.bundlePolicy,
-    )
 
-    return reordered
-
-
-def _probe_succeeded(task: asyncio.Task) -> bool:
-    if not task.done() or task.cancelled() or task.exception() is not None:
-        return False
-    return task.result() is True
+    return candidates
 
 
 async def prefer_reachable_turn(
@@ -165,9 +133,9 @@ async def prefer_reachable_turn(
         timeout: Overall time budget for all probes, in seconds.
 
     Returns:
-        A reordered copy of ``config`` when a TURN URL other than the first one
-        is the first reachable one, otherwise ``config`` itself. The input is
-        never mutated. With fewer than two TURN URLs nothing is probed.
+        A copy of ``config`` with the reachable TURN URL in front when it is not
+        already the first one, otherwise ``config`` itself. The input is never
+        mutated. With fewer than two TURN URLs nothing is probed.
     """
     candidates = _turn_urls(config)
     if len(candidates) < 2:
@@ -177,16 +145,28 @@ async def prefer_reachable_turn(
     deadline = loop.time() + timeout
     tasks = [asyncio.ensure_future(probe_turn_url(url)) for _, url in candidates]
     try:
-        for (server_index, url), task in zip(candidates, tasks):
+        for (server, url), task in zip(candidates, tasks):
             await asyncio.wait([task], timeout=max(deadline - loop.time(), 0))
-            if not _probe_succeeded(task):
+            done = task.done() and not task.cancelled()
+            if not done or task.exception() or task.result() is not True:
                 continue
 
             logger.debug("Using TURN %s (first reachable)", url)
-            if (server_index, url) == candidates[0]:
+            if task is tasks[0]:
                 return config
 
-            reordered = _with_url_first(config, server_index, url)
+            # aiortc uses only the first TURN URL, so a copy of the reachable
+            # one in front wins; the rest of the config stays as it was.
+            first = RTCIceServer(
+                urls=url,
+                username=server.username,
+                credential=server.credential,
+                credentialType=server.credentialType,
+            )
+            reordered = RTCConfiguration(
+                iceServers=[first, *config.iceServers],
+                bundlePolicy=config.bundlePolicy,
+            )
             return reordered
     finally:
         for task in tasks:
