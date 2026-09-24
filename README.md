@@ -275,7 +275,7 @@ Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to th
 | [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
 | [Serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |  | ✅
 | [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
-| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
+| [Self-Hosted Commercial Model Licensing](https://roboflow.com/licensing) |  | Enterprise add-on
 | [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
 | [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
 
@@ -309,7 +309,7 @@ Visit our [documentation](https://inference.roboflow.com) to explore comprehensi
 
 The core of Inference is licensed under Apache 2.0.
 
-Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). Paid Roboflow accounts include a commercial license for some models (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
+Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for the models Roboflow can relicense, for every user. A commercial license for self-hosted deployment of those models is available as an Enterprise add-on. Without that add-on, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0 (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
 Cloud-connected functionality (private model and Workflow registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key. Inference on your own hardware does not use credits. Serverless Cloud API usage is billed per image, and other hosted products follow [Roboflow pricing](https://roboflow.com/pricing).
 
