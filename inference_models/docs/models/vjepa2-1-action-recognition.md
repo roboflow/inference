@@ -5,7 +5,9 @@ The package must contain `model.safetensors`, `inference_config.json`, and `clas
 The loader rejects incompatible methods and missing weights instead of downloading an upstream checkpoint.
 
 This release supports the versioned `frame_anchored_multilabel_spans_v1` method from roboflow-train.
-Frames resize directly to 384×384 without cropping, using the normalization recorded in the package.
+Frames resize directly to the square resolution recorded in the package, without cropping.
+The default is 384×384. The side must be 64 to 1080 pixels and divisible by 16.
+Inference uses the normalization recorded in the package.
 The recorded FPS, window length, overlap, and confidence threshold drive inference.
 The shared action-recognition adapter and video decoder also serve Cosmos.
 V-JEPA enables overlapping windows and an end-aligned final window through that shared path.

@@ -49,6 +49,17 @@ def validate_config(config):
     frames = inputs["frames"]
     if type(frames) is not int or not 2 <= frames <= 256 or frames % 2:
         raise ValueError("V-JEPA requires an even frame count between 2 and 256")
+    side = inputs["height"]
+    if (
+        type(side) is not int
+        or type(inputs["width"]) is not int
+        or side != inputs["width"]
+        or not 64 <= side <= 1080
+        or side % 16
+    ):
+        raise ValueError(
+            "V-JEPA requires a square input side between 64 and 1080 divisible by 16"
+        )
     if not math.isfinite(inputs["fps"]) or inputs["fps"] <= 0:
         raise ValueError("V-JEPA requires a positive finite FPS")
     contracts = [
@@ -57,8 +68,6 @@ def validate_config(config):
             {
                 "layout": "BCTHW",
                 "resize": "direct_square",
-                "height": 384,
-                "width": 384,
                 "color_mode": "rgb",
                 "interpolation": "bilinear",
                 "antialias": True,
@@ -112,7 +121,7 @@ def validate_config(config):
                 "Unsupported V-JEPA preprocessing, head, or postprocessing"
             )
     expected_encoder = dict(
-        img_size=[384, 384],
+        img_size=[side, side],
         num_frames=frames,
         patch_size=16,
         tubelet_size=2,
@@ -168,6 +177,8 @@ class VJepaActionRecognition(ActionRecognitionModel):
         ):
             raise ValueError("V-JEPA class list is empty, duplicated, or inconsistent")
         model = nn.Module()
+        # RoPE positions come from the input shape, so the encoder has no
+        # resolution-sized weights to configure or convert.
         model.encoder = VJepaEncoder()
         model.head = SpanHead(config["head"]["queries"], len(classes))
         model.load_state_dict(

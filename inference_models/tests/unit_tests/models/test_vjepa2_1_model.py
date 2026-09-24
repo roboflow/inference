@@ -106,7 +106,8 @@ def test_contract_rejects_causal_or_different_head_artifacts():
             validate_config(altered)
 
 
-def test_infer_thresholds_candidates_and_masks_padded_queries():
+@pytest.mark.parametrize("side", [256, 384, 512])
+def test_infer_thresholds_candidates_and_masks_padded_queries(side):
     captured = []
 
     def encoder(inputs):
@@ -118,9 +119,14 @@ def test_infer_thresholds_candidates_and_masks_padded_queries():
         intervals = torch.tensor([[[[0.0, 2.0], [0.0, 2.0]]] * 4])
         return logits, intervals
 
+    metadata = config()
+    metadata["network_input"]["height"] = side
+    metadata["network_input"]["width"] = side
+    metadata["encoder"]["arguments"]["img_size"] = [side, side]
+    validate_config(metadata)
     model = VJepaActionRecognition(
         SimpleNamespace(encoder=encoder, head=head),
-        config(),
+        metadata,
         ["a", "b"],
         torch.device("cpu"),
     )
@@ -132,7 +138,23 @@ def test_infer_thresholds_candidates_and_masks_padded_queries():
     assert all(row.class_name == "a" and row.end_exclusive for row in predictions)
     assert len(model.infer([frame, frame], confidence=0)) == 4
     assert model.infer([frame, frame], confidence=1) == []
-    assert captured[0].shape == (1, 3, 4, 384, 384)
-    assert captured[0][0, 0, 0, 192, 0] > 0
-    assert captured[0][0, 1, 0, 192, -1] > 0
+    assert captured[0].shape == (1, 3, 4, side, side)
+    assert captured[0][0, 0, 0, side // 2, 0] > 0
+    assert captured[0][0, 1, 0, side // 2, -1] > 0
     assert torch.equal(captured[0][:, :, 1], captured[0][:, :, 3])
+
+
+def test_contract_rejects_mismatched_or_unaligned_frame_side():
+    for height, width in [(256, 384), (255, 255), (48, 48), (384, 384.0)]:
+        metadata = config()
+        metadata["network_input"]["height"] = height
+        metadata["network_input"]["width"] = width
+        metadata["encoder"]["arguments"]["img_size"] = [height, width]
+        with pytest.raises(ValueError, match="square input side"):
+            validate_config(metadata)
+
+    metadata = config()
+    metadata["network_input"]["height"] = 256
+    metadata["network_input"]["width"] = 256
+    with pytest.raises(ValueError, match="encoder arguments"):
+        validate_config(metadata)
