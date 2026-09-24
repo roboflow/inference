@@ -344,7 +344,9 @@ def test_facade_files_only_alias_their_exact_legacy_target(facade_module: str) -
 
 
 @pytest.mark.parametrize("facade_module", sorted(FACADE_MODULES))
-def test_facade_name_resolves_to_the_legacy_module_object(facade_module: str) -> None:
+def test_facade_name_resolves_to_the_legacy_module_object(
+    facade_module: str, stub_ultralytics_if_missing
+) -> None:
     import importlib
 
     facade = importlib.import_module(facade_module)
