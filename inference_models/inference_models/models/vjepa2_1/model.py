@@ -26,6 +26,15 @@ from .head import SpanHead
 
 
 def validate_config(config):
+    """Validate the recorded V-JEPA inference contract.
+
+    Args:
+        config: Parsed inference configuration from the model package.
+
+    Raises:
+        ValueError: If the package requires unsupported model or preprocessing behavior.
+    """
+
     expected = {
         "schema_version": 1,
         "architecture": "vjepa2_1",
