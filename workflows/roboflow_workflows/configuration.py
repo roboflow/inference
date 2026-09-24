@@ -59,6 +59,11 @@ class EngineConfiguration:
     # None-vs-list distinction; the facade rebuilds the ORDERED list.
     allow_kafka_sinks_user_provided_bootstrap_servers: bool = True
     kafka_sinks_whitelisted_bootstrap_servers: Optional[Tuple[str, ...]] = None
+    # MQTT blocks broker-address policy, same shape as the Kafka pair: the
+    # facade rebuilds the ORDERED list and the first entry is the operator's
+    # broker when user-provided hosts are not allowed.
+    allow_mqtt_blocks_user_provided_host: bool = True
+    mqtt_blocks_whitelisted_hosts: Optional[Tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)
