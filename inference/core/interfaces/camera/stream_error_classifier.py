@@ -20,12 +20,12 @@ except (ImportError, AttributeError):  # pragma: no cover - Windows
     fcntl = None  # type: ignore[assignment]
     _FIONREAD = None
 
-from inference.core.env import DISABLE_NATIVE_STDERR_CAPTURE
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
 )
 from inference.core.interfaces.camera.stream_error_codes import StreamErrorCode
+from inference.core.interfaces.stream.environment import DISABLE_NATIVE_STDERR_CAPTURE
 
 _AUTH_STATUS_PATTERN = re.compile(r"\b401\b|\b403\b")
 _NOT_FOUND_STATUS_PATTERN = re.compile(r"\b404\b")

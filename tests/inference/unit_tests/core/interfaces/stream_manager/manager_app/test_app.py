@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 from unittest import mock
 from unittest.mock import MagicMock
@@ -6,10 +7,17 @@ import pytest
 
 from inference.core.interfaces.stream_manager.manager_app import app
 from inference.core.interfaces.stream_manager.manager_app.app import (
+    InferencePipelinesManagerHandler,
     ManagedInferencePipeline,
     ensure_idle_pipelines_warmed_up,
     get_or_spawn_pipeline_process,
 )
+from inference.core.interfaces.stream_manager.manager_app.host import (
+    PipelineHostDescriptor,
+)
+
+# Never resolved: these tests replace the process spawn.
+HOST_DESCRIPTOR = PipelineHostDescriptor(factory="some.host.module:create_host")
 
 
 class _StopLoop(Exception):
@@ -41,14 +49,17 @@ def test_get_or_spawn_pipeline_process_spawns_when_below_limit(
     # given
     processes_table = {"existing": _managed_pipeline("existing", is_idle=False)}
 
-    def _spawn(processes_table, mark_as_idle):
+    def _spawn(processes_table, mark_as_idle, host_descriptor):
+        assert host_descriptor is HOST_DESCRIPTOR
         processes_table["new"] = _managed_pipeline("new", is_idle=mark_as_idle)
         return "new"
 
     spawn_managed_pipeline_process_mock.side_effect = _spawn
 
     # when
-    result = get_or_spawn_pipeline_process(processes_table=processes_table)
+    result = get_or_spawn_pipeline_process(
+        processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+    )
 
     # then
     assert result.pipeline_id == "new"
@@ -67,7 +78,9 @@ def test_get_or_spawn_pipeline_process_refuses_to_spawn_above_limit(
 
     # when
     with pytest.raises(Exception):
-        _ = get_or_spawn_pipeline_process(processes_table=processes_table)
+        _ = get_or_spawn_pipeline_process(
+            processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+        )
 
     # then
     spawn_managed_pipeline_process_mock.assert_not_called()
@@ -85,7 +98,9 @@ def test_get_or_spawn_pipeline_process_reuses_idle_pipeline_at_limit(
     }
 
     # when
-    result = get_or_spawn_pipeline_process(processes_table=processes_table)
+    result = get_or_spawn_pipeline_process(
+        processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+    )
 
     # then
     assert result.pipeline_id == "idle"
@@ -105,14 +120,17 @@ def test_get_or_spawn_pipeline_process_when_ram_usage_not_sampled_yet(
         "not_sampled": _managed_pipeline("not_sampled", is_idle=False),
     }
 
-    def _spawn(processes_table, mark_as_idle):
+    def _spawn(processes_table, mark_as_idle, host_descriptor):
+        assert host_descriptor is HOST_DESCRIPTOR
         processes_table["new"] = _managed_pipeline("new", is_idle=mark_as_idle)
         return "new"
 
     spawn_managed_pipeline_process_mock.side_effect = _spawn
 
     # when
-    result = get_or_spawn_pipeline_process(processes_table=processes_table)
+    result = get_or_spawn_pipeline_process(
+        processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+    )
 
     # then
     assert result.pipeline_id == "new"
@@ -132,7 +150,9 @@ def test_get_or_spawn_pipeline_process_refuses_to_spawn_above_ram_limit(
 
     # when
     with pytest.raises(Exception):
-        _ = get_or_spawn_pipeline_process(processes_table=processes_table)
+        _ = get_or_spawn_pipeline_process(
+            processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+        )
 
     # then
     spawn_managed_pipeline_process_mock.assert_not_called()
@@ -152,10 +172,14 @@ def test_ensure_idle_pipelines_warmed_up_spawns_below_limit(
     # when
     with mock.patch.object(app, "PROCESSES_TABLE", processes_table):
         with pytest.raises(_StopLoop):
-            ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines=1)
+            ensure_idle_pipelines_warmed_up(
+                expected_warmed_up_pipelines=1, host_descriptor=HOST_DESCRIPTOR
+            )
 
     # then
-    spawn_managed_pipeline_process_mock.assert_called_once()
+    spawn_managed_pipeline_process_mock.assert_called_once_with(
+        processes_table=processes_table, host_descriptor=HOST_DESCRIPTOR
+    )
 
 
 @mock.patch.object(app, "STREAM_MANAGER_MAX_ACTIVE_PIPELINES", 2)
@@ -175,7 +199,97 @@ def test_ensure_idle_pipelines_warmed_up_respects_active_pipelines_limit(
     # when
     with mock.patch.object(app, "PROCESSES_TABLE", processes_table):
         with pytest.raises(_StopLoop):
-            ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines=1)
+            ensure_idle_pipelines_warmed_up(
+                expected_warmed_up_pipelines=1, host_descriptor=HOST_DESCRIPTOR
+            )
 
     # then
     spawn_managed_pipeline_process_mock.assert_not_called()
+
+
+class DummySocket:
+    def __init__(self):
+        self._buffer = b""
+        self._sent = b""
+
+    def get_data_that_was_sent(self) -> bytes:
+        return self._sent
+
+    def fill(self, data: bytes) -> None:
+        self._buffer = data
+
+    def recv(self, __bufsize: int) -> bytes:
+        chunk = self._buffer[:__bufsize]
+        self._buffer = self._buffer[__bufsize:]
+        return chunk
+
+    def sendall(self, __data: bytes) -> None:
+        self._sent += __data
+
+
+def _handle_raw_request(payload: bytes) -> dict:
+    socket = DummySocket()
+    header = len(payload).to_bytes(length=4, byteorder="big")
+    socket.fill(header + payload)
+    _ = InferencePipelinesManagerHandler(
+        request=socket,
+        client_address=MagicMock(),
+        server=MagicMock(),
+        processes_table={},
+        host_descriptor=HOST_DESCRIPTOR,
+    )
+    return json.loads(socket.get_data_that_was_sent()[4:].decode("utf-8"))
+
+
+# Carried over from the removed enterprise stream manager's handler tests
+# (WP-A05): the manager fails closed on requests it cannot trust.
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"FOR SURE NOT A JSON",
+        json.dumps({"invalid": "data"}).encode("utf-8"),
+        json.dumps({"type": "unknown"}).encode("utf-8"),
+    ],
+)
+def test_pipeline_manager_handler_rejects_invalid_requests(payload: bytes) -> None:
+    # when
+    response = _handle_raw_request(payload)
+
+    # then
+    assert (
+        response["pipeline_id"] is None
+    ), "Pipeline ID cannot be associated to this request"
+    assert response["response"]["status"] == "failure", "Operation should failed"
+    assert (
+        response["response"]["error_type"] == "invalid_payload"
+    ), "Wrong payload should be denoted as error cause"
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize(
+    "command_type, error_type",
+    [
+        ("status", "not_found"),
+        ("mute", "not_found"),
+        ("resume", "not_found"),
+        ("consume_result", "not_found"),
+        # Unlike the removed enterprise manager (not_found), termination looks
+        # the pipeline up before dispatching the command; still a failure.
+        ("terminate", "invalid_payload"),
+    ],
+)
+def test_pipeline_manager_handler_when_command_requested_for_unknown_pipeline(
+    command_type: str, error_type: str
+) -> None:
+    # when
+    response = _handle_raw_request(
+        json.dumps({"type": command_type, "pipeline_id": "unknown"}).encode("utf-8")
+    )
+
+    # then
+    assert (
+        response["pipeline_id"] == "unknown"
+    ), "Pipeline ID must be assigned to request"
+    assert response["response"]["status"] == "failure", "Operation should failed"
+    assert response["response"]["error_type"] == error_type

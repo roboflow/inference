@@ -5,7 +5,6 @@ from starlette.testclient import TestClient
 
 from inference.core.interfaces.http import http_api
 from inference.core.interfaces.stream_manager.manager_app import entities
-from inference.enterprise.stream_management.api import entities as enterprise_entities
 
 PAYLOAD = {
     "video_configuration": {"type": "VideoConfiguration", "video_reference": 0},
@@ -14,6 +13,10 @@ PAYLOAD = {
         "workflow_specification": {"version": "1.0", "inputs": [], "steps": []},
     },
 }
+# The request models every stream initialisation is validated through: the
+# video configuration alone, and nested in the regular and WebRTC payloads
+# (these carry the checks once made on the removed enterprise request model).
+SCHEMAS = ["manager", "initialise_payload", "webrtc_payload"]
 ROUTES = [
     ("GET", "/list"),
     ("GET", "/victim/status"),
@@ -132,7 +135,7 @@ def test_disabled_stream_api_does_not_register_pipeline_routes(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("schema", ["manager", "enterprise"])
+@pytest.mark.parametrize("schema", SCHEMAS)
 @pytest.mark.parametrize(
     "reference",
     [
@@ -154,12 +157,11 @@ def test_disabled_stream_api_does_not_register_pipeline_routes(monkeypatch):
 )
 def test_stream_requests_reject_raw_media_launch_syntax(monkeypatch, reference, schema):
     monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
-    monkeypatch.setattr(enterprise_entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
     with pytest.raises(ValueError):
         make_video_request(schema, reference)
 
 
-@pytest.mark.parametrize("schema", ["manager", "enterprise"])
+@pytest.mark.parametrize("schema", SCHEMAS)
 @pytest.mark.parametrize(
     "reference",
     [
@@ -182,14 +184,12 @@ def test_stream_requests_reject_raw_media_launch_syntax(monkeypatch, reference, 
 )
 def test_stream_requests_accept_supported_sources(monkeypatch, reference, schema):
     monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
-    monkeypatch.setattr(enterprise_entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
     assert make_video_request(schema, reference).video_reference == reference
 
 
-@pytest.mark.parametrize("schema", ["manager", "enterprise"])
+@pytest.mark.parametrize("schema", SCHEMAS)
 def test_operator_can_explicitly_allow_raw_media_pipeline(monkeypatch, schema):
     monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", True)
-    monkeypatch.setattr(enterprise_entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", True)
     reference = "videotestsrc ! appsink"
     assert make_video_request(schema, reference).video_reference == reference
 
@@ -199,8 +199,43 @@ def make_video_request(schema, reference):
         return entities.VideoConfiguration(
             type="VideoConfiguration", video_reference=reference
         )
-    return enterprise_entities.PipelineInitialisationRequest(
-        model_id="test/1",
-        video_reference=reference,
-        sink_configuration={"host": "localhost", "port": 5000},
-    )
+    payload = {
+        **PAYLOAD,
+        "video_configuration": {
+            "type": "VideoConfiguration",
+            "video_reference": reference,
+        },
+    }
+    if schema == "initialise_payload":
+        request = entities.InitialisePipelinePayload.model_validate(payload)
+    else:
+        request = entities.InitialiseWebRTCPipelinePayload.model_validate(
+            {**payload, "webrtc_offer": {"type": "offer", "sdp": "test"}}
+        )
+    return request.video_configuration
+
+
+@pytest.mark.parametrize("suffix", ["/initialise", "/initialise_webrtc"])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            **PAYLOAD,
+            "video_configuration": {
+                "type": "VideoConfiguration",
+                "video_reference": "videotestsrc ! appsink",
+            },
+            "webrtc_offer": {"type": "offer", "sdp": "test"},
+        },
+        None,
+    ],
+)
+def test_pipeline_initialisation_rejects_invalid_payload_before_the_manager(
+    monkeypatch, suffix, payload
+):
+    monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
+    interface, manager = make_interface(monkeypatch)
+    with TestClient(interface.app) as client:
+        response = client.post("/inference_pipelines" + suffix, json=payload)
+    assert response.status_code == 422, response.text
+    assert manager.mock_calls == []

@@ -1,3 +1,4 @@
+import logging
 import time
 from copy import copy
 from dataclasses import dataclass
@@ -17,8 +18,6 @@ from typing import (
     Union,
 )
 
-from inference.core import logger
-from inference.core.env import RESTART_ATTEMPT_DELAY
 from inference.core.interfaces.camera.collection_policy import CollectionPolicy
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import (
@@ -29,6 +28,9 @@ from inference.core.interfaces.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
 )
 from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
+from inference.core.interfaces.stream.environment import RESTART_ATTEMPT_DELAY
+
+logger = logging.getLogger(__name__)
 
 MINIMAL_FPS = 0.01
 

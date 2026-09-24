@@ -35,6 +35,12 @@ Rules (see MOVE_WORKFLOWS_PLAN.MD Phase D):
 - The empty legacy ``inference.enterprise.workflows`` root is intentionally
   absent from the map: aliasing it to the canonical root would expose new
   core APIs under an enterprise dotted path.
+- ``_HOST_EXPORTS`` restores a historical export that a host-neutral stream
+  module no longer imports itself (it must not import the ``inference``
+  server): the same finder wraps that exact module's normal loader and binds
+  the ORIGINAL host object onto it right after it executes. Keyed by exact
+  dotted name, never by prefix; the module's own source and metadata are
+  untouched.
 """
 
 from __future__ import annotations
@@ -44,7 +50,7 @@ import importlib.abc
 import importlib.machinery
 import sys
 import threading
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from inference._workflows_compat_inventory import (
     _ENTERPRISE_MODULES,
@@ -60,6 +66,16 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
     ),
     ("inference.core.workflows", "roboflow_workflows"),
 )
+
+# module -> ((exported name, host module defining that exact object), ...)
+# `sinks.active_learning_sink` takes its middleware structurally, but the
+# historical `from ...stream.sinks import ActiveLearningMiddleware` must still
+# yield the concrete class (streams_compat_inventory.json).
+_HOST_EXPORTS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "inference.core.interfaces.stream.sinks": (
+        ("ActiveLearningMiddleware", "inference.core.active_learning.middlewares"),
+    ),
+}
 
 _FINDER_MARKER = "_roboflow_workflows_compat_finder"
 _INSTALL_LOCK = threading.RLock()
@@ -109,12 +125,57 @@ class _WorkflowsCompatLoader(importlib.abc.Loader):
         sys.modules[self._legacy_name] = importlib.import_module(self._canonical_name)
 
 
+class _HostExportsLoader(importlib.abc.Loader):
+    """Run the module's own loader, then bind its historical host exports."""
+
+    def __init__(
+        self, loader: importlib.abc.Loader, exports: Tuple[Tuple[str, str], ...]
+    ) -> None:
+        self._loader = loader
+        self._exports = exports
+
+    def create_module(self, spec):  # type: ignore[override]
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module) -> None:  # type: ignore[override]
+        self._loader.exec_module(module)
+        for name, host_module in self._exports:
+            setattr(module, name, getattr(importlib.import_module(host_module), name))
+
+    def __getattr__(self, name: str):
+        # get_source / get_filename / get_resource_reader keep answering for
+        # the real file (inspect, linecache, importlib.resources).
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._loader, name)
+
+
+def _find_spec_with_host_exports(fullname: str, path, target):
+    # Ask the finders that would otherwise load the module (PathFinder, or a
+    # frozen/zip importer in app bundles), keeping their spec as-is.
+    for finder in sys.meta_path:
+        if getattr(finder, _FINDER_MARKER, False):
+            continue
+        find_spec = getattr(finder, "find_spec", None)
+        if find_spec is None:
+            continue
+        spec = find_spec(fullname, path, target)
+        if spec is None:
+            continue
+        if spec.loader is not None:
+            spec.loader = _HostExportsLoader(spec.loader, _HOST_EXPORTS[fullname])
+        return spec
+    return None
+
+
 class _WorkflowsCompatFinder(importlib.abc.MetaPathFinder):
     # Stable duck-typed marker: survives reload of this module (which would
     # otherwise mint a new class object and make `isinstance` checks fail).
     _roboflow_workflows_compat_finder = True
 
     def find_spec(self, fullname, path=None, target=None):  # type: ignore[override]
+        if fullname in _HOST_EXPORTS:
+            return _find_spec_with_host_exports(fullname, path, target)
         if not _under_legacy_prefix(fullname):
             return None
         if fullname not in _INVENTORY_LEGACY:

@@ -1,42 +1,16 @@
-from functools import partial
-from typing import Any, Callable, List
+"""Historical name of `inference.core.interfaces.legacy_stream.model_handlers.yolo_world`.
 
-from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.entities import ModelConfig
-from inference.models import YOLOWorld
+The implementation needs the `inference` server (models, model managers or the
+Roboflow platform), so it lives outside the host-neutral stream runtime. This
+name is an exact alias rather than a re-export: importing it yields the
+implementation module object itself, so an attribute read, set or patched
+through either name is the same attribute.
+"""
 
+import sys
 
-def build_yolo_world_inference_function(
-    model_id: str,
-    classes: List[str],
-    inference_config: ModelConfig,
-) -> Callable[[List[VideoFrame]], List[Any]]:
-    model = YOLOWorld(model_id=model_id)
-    model = init_yolo_world_model(model=model, classes=classes)
-    return partial(
-        process_frame_yolo_world, model=model, inference_config=inference_config
-    )
+from inference.core.interfaces.legacy_stream.model_handlers import (
+    yolo_world as _implementation,
+)
 
-
-def init_yolo_world_model(model: YOLOWorld, classes: List[str]) -> YOLOWorld:
-    model.set_classes(classes)
-    return model
-
-
-def process_frame_yolo_world(
-    video_frames: List[VideoFrame],
-    model: YOLOWorld,
-    inference_config: ModelConfig,
-) -> List[dict]:
-    postprocessing_args = inference_config.to_postprocessing_params()
-    result = []
-    for video_frame in video_frames:
-        predictions = model.infer(
-            video_frame.image,
-            **postprocessing_args,
-        ).dict(
-            by_alias=True,
-            exclude_none=True,
-        )
-        result.append(predictions)
-    return result
+sys.modules[__name__] = _implementation
