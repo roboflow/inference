@@ -463,10 +463,13 @@ def test_index_list_parameters_by_frame_id_returns_input_for_empty_batch() -> No
     assert indexed is params
 
 
-def test_index_list_parameters_by_frame_id_warns_once_per_key(caplog) -> None:
+def test_index_list_parameters_by_frame_id_warns_once_per_key(
+    inference_caplog,
+) -> None:
     frames = [_make_frame(5)]
     params = {"cached_preds": ["p0", "p1", "p2"]}
     warned_keys = set()
+    caplog = inference_caplog
 
     with caplog.at_level(logging.WARNING):
         _index_list_parameters_by_frame_id(

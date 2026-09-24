@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from threading import Thread
@@ -5,7 +6,7 @@ from threading import Thread
 import cv2
 from PIL import Image
 
-from inference.core.logger import logger
+logger = logging.getLogger(__name__)
 
 
 class WebcamStream:

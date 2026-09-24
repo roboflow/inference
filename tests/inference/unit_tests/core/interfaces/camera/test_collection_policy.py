@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inference.core import env as core_env
 from inference.core.interfaces.camera import collection_policy as cp
 from inference.core.interfaces.camera import utils as camera_utils
 from inference.core.interfaces.camera.collection_policy import (
@@ -23,10 +22,11 @@ from inference.core.interfaces.camera.collection_policy import (
 )
 from inference.core.interfaces.camera.exceptions import EndOfStreamError
 from inference.core.interfaces.camera.utils import VideoSources, _multiplex_videos
+from inference.core.interfaces.stream import environment as streams_environment
 
 
 def test_resolve_mode_explicit_argument_wins(monkeypatch) -> None:
-    monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+    monkeypatch.setattr(streams_environment, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
 
     resolved = resolve_video_processing_mode(explicit_mode="every_frame")
 
@@ -34,7 +34,7 @@ def test_resolve_mode_explicit_argument_wins(monkeypatch) -> None:
 
 
 def test_resolve_mode_defaults_to_auto_for_tensor_cohort(monkeypatch) -> None:
-    monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+    monkeypatch.setattr(streams_environment, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
 
     resolved = resolve_video_processing_mode(explicit_mode=None)
 
@@ -44,7 +44,7 @@ def test_resolve_mode_defaults_to_auto_for_tensor_cohort(monkeypatch) -> None:
 def test_resolve_mode_preserves_legacy_behavior_outside_tensor_cohort(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", False)
+    monkeypatch.setattr(streams_environment, "ENABLE_TENSOR_DATA_REPRESENTATION", False)
 
     resolved = resolve_video_processing_mode(explicit_mode=None)
 
@@ -61,7 +61,7 @@ def test_resolve_mode_legacy_alias_overrides_tensor_cohort_default(
     monkeypatch, alias: str
 ) -> None:
     # given - the tensor cohort, where the implicit default is AUTO
-    monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
+    monkeypatch.setattr(streams_environment, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
 
     resolved = resolve_video_processing_mode(explicit_mode=alias)
 
@@ -260,9 +260,7 @@ def test_policy_minimum_period_tracks_fastest_source_and_skips_files() -> None:
         policy.read_frame(source_ord=2, source=file_source, timeout=0.1)
 
     # then - the fastest LIVE source binds; the 120 fps file never counts
-    assert policy.minimum_live_arrival_period() == pytest.approx(
-        1 / 30.0, rel=0.05
-    )
+    assert policy.minimum_live_arrival_period() == pytest.approx(1 / 30.0, rel=0.05)
 
 
 def test_policy_feeds_estimator_with_staleness_drained_frames() -> None:
@@ -282,9 +280,7 @@ def test_policy_feeds_estimator_with_staleness_drained_frames() -> None:
 
     # then - every drained arrival counted: period known despite 0 returns
     assert frame is None
-    assert policy.minimum_live_arrival_period() == pytest.approx(
-        1 / 15.0, rel=0.05
-    )
+    assert policy.minimum_live_arrival_period() == pytest.approx(1 / 15.0, rel=0.05)
 
 
 def _fake_frame(age_seconds: float, frame_id: int = 1, source_id: int = 0):

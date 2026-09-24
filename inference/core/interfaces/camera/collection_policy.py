@@ -30,8 +30,8 @@ from enum import Enum
 from time import monotonic
 from typing import TYPE_CHECKING, Callable, Deque, Dict, Optional, Union
 
-from inference.core import env as core_env
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream import environment as streams_environment
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from inference.core.interfaces.camera.video_source import VideoSource
@@ -100,7 +100,7 @@ def resolve_video_processing_mode(
         ):
             return None
         return VideoProcessingMode(explicit_mode)
-    if core_env.ENABLE_TENSOR_DATA_REPRESENTATION:
+    if streams_environment.ENABLE_TENSOR_DATA_REPRESENTATION:
         return VideoProcessingMode.AUTO
     return None
 

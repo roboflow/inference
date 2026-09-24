@@ -3,18 +3,18 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
-from inference.core.env import (
-    ALLOW_UNSAFE_GSTREAMER_PIPELINES,
-    DEFAULT_BUFFER_SIZE,
-    PREDICTIONS_QUEUE_SIZE,
-    WEBRTC_REALTIME_PROCESSING,
+from inference.core.interfaces.camera.buffer_strategies import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
 )
 from inference.core.interfaces.camera.source_reference_validation import (
     validate_video_references,
 )
-from inference.core.interfaces.camera.video_source import (
-    BufferConsumptionStrategy,
-    BufferFillingStrategy,
+from inference.core.interfaces.stream.environment import (
+    ALLOW_UNSAFE_GSTREAMER_PIPELINES,
+    DEFAULT_BUFFER_SIZE,
+    PREDICTIONS_QUEUE_SIZE,
+    WEBRTC_REALTIME_PROCESSING,
 )
 
 STATUS_KEY = "status"

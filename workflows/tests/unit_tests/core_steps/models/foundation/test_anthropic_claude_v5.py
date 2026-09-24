@@ -339,8 +339,10 @@ from unittest.mock import MagicMock, Mock  # noqa: E402
 
 from anthropic import NOT_GIVEN  # noqa: E402
 from roboflow_workflows.core_steps.models.foundation.anthropic_claude.v5 import (  # noqa: E402
+    CLAUDE_MODELS,
     EXACT_MODEL_VERSIONS,
     MAX_OUTPUT_TOKENS,
+    MODEL_VERSION_METADATA,
     execute_claude_request,
 )
 
@@ -368,6 +370,42 @@ def test_v5_claude_fable_5_1_model_metadata() -> None:
     assert result.model_version == "claude-fable-5-1"
     assert EXACT_MODEL_VERSIONS["claude-fable-5-1"] == "claude-fable-5-1"
     assert MAX_OUTPUT_TOKENS["claude-fable-5-1"] == 128000
+
+
+def test_v5_claude_opus_5_5_model_metadata() -> None:
+    # Released in roboflow-workflows 0.2.2.
+    specification = {
+        "type": "roboflow_core/anthropic_claude@v5",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "This is my prompt",
+        "api_key": "$inputs.anthropic_api_key",
+        "model_version": "claude-opus-5-5",
+    }
+
+    result = BlockManifest.model_validate(specification)
+    model_version_schema = BlockManifest.model_json_schema()["properties"][
+        "model_version"
+    ]
+
+    assert result.model_version == "claude-opus-5-5"
+    assert CLAUDE_MODELS[0] == {
+        "id": "claude-opus-5-5",
+        "name": "Claude Opus 5.5",
+        "exact_version": "claude-opus-5-5",
+        "max_output_tokens": 128000,
+    }
+    assert CLAUDE_MODELS[1]["id"] == "claude-fable-5-1"
+    assert EXACT_MODEL_VERSIONS["claude-opus-5-5"] == "claude-opus-5-5"
+    assert MAX_OUTPUT_TOKENS["claude-opus-5-5"] == 128000
+    assert MODEL_VERSION_METADATA["claude-opus-5-5"] == {"name": "Claude Opus 5.5"}
+    assert model_version_schema["examples"] == [
+        "claude-opus-5-5",
+        "claude-sonnet-4-5",
+        "$inputs.claude_model",
+    ]
+    assert model_version_schema["default"] == "claude-sonnet-4-5"
 
 
 def _mock_streaming_client(mock_anthropic_class: Mock, text: str = "ok") -> MagicMock:

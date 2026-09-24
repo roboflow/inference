@@ -34,6 +34,12 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+      - name: 🕰️ Fetch WP-A00 baseline commit
+        # actions/checkout@v6 only fetches HEAD at depth 1, so this historical
+        # commit (needed by test_manifest_source_paths_match_git_tree_at_baseline_sha
+        # in test_streams_decontamination.py) is otherwise missing once HEAD
+        # moves past it. Keep this SHA in sync with BASELINE_SHA there.
+        run: git fetch --depth 1 origin 65ad2beaaca0825bffc2fbbe99199d3a40994324
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -63,3 +69,6 @@ jobs:
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
+      - name: 🧪 Stream Pipeline Benchmark Harness Tests
+        timeout-minutes: 10
+        run: python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py
