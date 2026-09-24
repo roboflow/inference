@@ -1,6 +1,7 @@
 """Tests for picking a reachable TURN transport before aiortc sees the config."""
 
 import asyncio
+import logging
 import time
 
 import pytest
@@ -64,10 +65,24 @@ def test_aiortc_uses_first_reachable_turn_url(monkeypatch, reachable, expected):
     "config", [None, _config(TLS), _config("stun:stun.example.com:3478", TLS)]
 )
 def test_fewer_than_two_turn_urls_are_returned_unprobed(monkeypatch, config):
-    assert _prefer(monkeypatch, config, reachable=set()) is config
+    probed = []
+    monkeypatch.setattr(turn_probe, "probe_turn_url", probed.append)
+
+    assert asyncio.run(turn_probe.prefer_reachable_turn(config)) is config
+    assert probed == []
+
+
+def test_urls_aiortc_would_skip_are_not_candidates(monkeypatch):
+    quic = "turn:turn1.example.com:3478?transport=quic"
+
+    result = _prefer(monkeypatch, _config(UDP, quic, TLS), reachable={quic, TLS})
+
+    assert _aiortc_turn(result) == (443, True, "tcp", "user")
 
 
 def test_none_reachable_warns(monkeypatch, caplog):
+    # The SDK logger does not propagate; route it to caplog on any pytest version.
+    monkeypatch.setattr(logging.getLogger("inference_sdk"), "propagate", True)
     _prefer(monkeypatch, _config(UDP, TLS), reachable=set())
 
     assert "No TURN transport reachable" in caplog.text

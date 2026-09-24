@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 from aioice import stun
 from aiortc import RTCConfiguration, RTCIceServer
-from aiortc.rtcicetransport import parse_stun_turn_uri
+from aiortc.rtcicetransport import connection_kwargs, parse_stun_turn_uri
 
 from inference_sdk.utils.logging import get_logger
 
@@ -103,14 +103,25 @@ async def probe_turn_url(url: str) -> bool:
     return reachable
 
 
+def _single_url_server(server: RTCIceServer, url: str) -> RTCIceServer:
+    single = RTCIceServer(
+        urls=url,
+        username=server.username,
+        credential=server.credential,
+        credentialType=server.credentialType,
+    )
+
+    return single
+
+
 def _turn_urls(config: Optional[RTCConfiguration]) -> List[Tuple[RTCIceServer, str]]:
-    """List (server, url) for every TURN URL, in config order."""
+    """List (server, url) for every TURN URL aiortc would use, in config order."""
     servers = config.iceServers if config and config.iceServers else []
     candidates = [
         (server, url)
         for server in servers
         for url in (server.urls if isinstance(server.urls, list) else [server.urls])
-        if url.startswith("turn")
+        if "turn_server" in connection_kwargs([_single_url_server(server, url)])
     ]
 
     return candidates
@@ -157,12 +168,7 @@ async def prefer_reachable_turn(
 
             # aiortc uses only the first TURN URL, so a copy of the reachable
             # one in front wins; the rest of the config stays as it was.
-            first = RTCIceServer(
-                urls=url,
-                username=server.username,
-                credential=server.credential,
-                credentialType=server.credentialType,
-            )
+            first = _single_url_server(server, url)
             reordered = RTCConfiguration(
                 iceServers=[first, *config.iceServers],
                 bundlePolicy=config.bundlePolicy,
