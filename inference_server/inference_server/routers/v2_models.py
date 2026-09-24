@@ -166,7 +166,7 @@ async def v2_model_compatibility() -> Response:
 async def v2_list_models(
     mm: Any = Depends(get_model_manager),
 ) -> Response:
-    """List currently loaded models with state, device, memory, queue depth."""
+    """List currently loaded models with state, device, queue depth."""
     try:
         stats = await mm.stats()
     except Exception:
