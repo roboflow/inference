@@ -260,11 +260,9 @@ via the Roboflow UI.
 
 Without an API Key, you can access a wide range of pre-trained and foundational models and run public Workflows.
 
-Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features enhanced by Roboflow's Cloud
-platform. When running with an API Key, usage is metered according to
-Roboflow's [pricing tiers](https://roboflow.com/pricing).
+Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access private Workflows, fine-tuned models, and hosted compute. Inference you run on your own hardware does not use credits. The [Serverless Cloud API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) bills per image, at a rate set by the model. See [Roboflow pricing](https://roboflow.com/pricing).
 
-|                         | Open Access | With API Key (Metered) |
+|                         | Open Access | With API Key |
 |-------------------------|-------------|--------------|
 | [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
 | [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
@@ -283,13 +281,11 @@ Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
 ## 🌩️ hosted compute
 
-If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) billed per API-call.
-
-We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
+If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via the [Serverless Cloud API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) billed per image. Each model has its own image rate. Custom Python blocks and vision-language models on that API are billed for execution time. Current rates are on the [Serverless pricing](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api/pricing) page.
 
 ## 🖥️ run on-prem or self-hosted
 
-Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment.
+Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment. Images and video you run on your own hardware do not use credits. You pay for the machine.
 
 `inference server start` attempts to automatically choose the optimal container to optimize performance on your machine (including with GPU acceleration via NVIDIA CUDA when available). Special installation notes and performance tips by device are listed below:
 
@@ -315,7 +311,7 @@ The core of Inference is licensed under Apache 2.0.
 
 Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). Paid Roboflow accounts include a commercial license for some models (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
-Cloud connected functionality (like our model and Workflows registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key & is metered based on usage.
+Cloud-connected functionality (private model and Workflow registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key. Inference on your own hardware does not use credits. Serverless Cloud API usage is billed per image, and other hosted products follow [Roboflow pricing](https://roboflow.com/pricing).
 
 Enterprise functionality is source-available in [`inference/enterprise`](/inference/enterprise/) under an [enterprise license](/inference/enterprise/LICENSE.txt) and usage in production requires an active Enterprise contract in good standing.
 
