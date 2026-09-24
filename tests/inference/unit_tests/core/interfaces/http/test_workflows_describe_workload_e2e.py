@@ -360,8 +360,8 @@ def test_branched_example_without_metadata_enrichment(
     # then - the graph: 1 input + 5 steps + 3 outputs, 9 deduplicated edges
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "1"
+    assert body["type"] == "workflow_introspection_v1"
+    assert "schema_version" not in body
     assert len(body["nodes"]) == 9
     assert [node["kind"] for node in body["nodes"]].count("step") == 5
     assert {
@@ -408,7 +408,7 @@ def test_branched_example_without_metadata_enrichment(
         "$steps.classification",
     ):
         assert steps[node_id]["restrictions"] == {
-            "type": "discovery",
+            "type": "discovery_v1",
             "items": [],
             "complete": True,
             "unknown_reasons": [],
@@ -422,7 +422,7 @@ def test_branched_example_without_metadata_enrichment(
     assert counter["operations"]["complete"] is False
     assert counter["operations"]["unknown_reasons"] == [
         {
-            "type": "discovery_problem",
+            "type": "discovery_problem_v1",
             "code": "custom_python_internals_unknown",
             "description": (
                 "Step `$steps.counter` runs custom Python code, so its "
@@ -433,11 +433,11 @@ def test_branched_example_without_metadata_enrichment(
     ]
     assert counter["restrictions"]["items"] == [
         {
-            "type": "restriction",
+            "type": "restriction_v1",
             "code": "custom_python_execution_disabled",
             "severity": "hard",
             "when": {
-                "type": "restriction_condition",
+                "type": "restriction_condition_v1",
                 "runtimes": None,
                 "step_execution_modes": None,
                 "input_modes": None,
@@ -450,7 +450,7 @@ def test_branched_example_without_metadata_enrichment(
     ]
     assert body["summary"]["models"]["unknown_reasons"] == [
         {
-            "type": "discovery_problem",
+            "type": "discovery_problem_v1",
             "code": "declaration_unavailable",
             "description": (
                 "Step `$steps.counter` does not declare its resources, so they "
@@ -513,7 +513,7 @@ def test_branched_example_with_metadata_enrichment(
     for model in models.values():
         assert model["metadata_status"] == "available"
         assert model["metadata"] == {
-            "type": "model_metadata",
+            "type": "model_metadata_v1",
             "model_type": "yolov8n",
             "model_variant": "coco",
             "task_type": "object-detection",
@@ -530,7 +530,7 @@ def test_branched_example_with_metadata_enrichment(
     assert body["summary"]["models"]["complete"] is False
     assert body["summary"]["models"]["unknown_reasons"] == [
         {
-            "type": "discovery_problem",
+            "type": "discovery_problem_v1",
             "code": "declaration_unavailable",
             "description": (
                 "Step `$steps.counter` does not declare its resources, so they "
@@ -603,7 +603,7 @@ def test_describe_workload_over_a_real_socket(interface, enrichment_disabled) ->
     # then
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["type"] == "workflow_introspection"
+    assert body["type"] == "workflow_introspection_v1"
     assert len(body["steps"]) == 5
     assert body["summary"]["steps_by_dimensionality"] == {"1": 2, "2": 3}
     models = _models_by_id(body)

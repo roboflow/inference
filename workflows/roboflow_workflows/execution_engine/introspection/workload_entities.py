@@ -5,6 +5,11 @@ connectivity graph, per-step facts and summaries. They are an introspection
 extension, not an estimator - no scores, weights, schedules or hardware
 assumptions appear here.
 
+Each entity carries a versioned ``type`` discriminator (e.g.
+``workflow_introspection_v1``); there is no separate ``schema_version`` field.
+``execution_engine_version`` is the version of the compiler that answered, not
+a schema version.
+
 Import discipline: this module may import ``prototypes.block`` and
 ``entities.workload``; it must never import ``execution_engine.v1.*`` or
 ``core_steps.*``. ``prototypes.block`` must never import this module
@@ -28,8 +33,6 @@ from roboflow_workflows.prototypes.block import DependentResource
 GraphNodeKind = Literal["input", "step", "output"]
 GraphEdgeKind = Literal["data", "control"]
 
-WORKLOAD_INTROSPECTION_SCHEMA_VERSION = "1"
-
 
 class GraphNode(BaseModel):
     """A workflow input, step or output. ``id`` is the canonical selector
@@ -38,7 +41,7 @@ class GraphNode(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["graph_node"] = "graph_node"
+    type: Literal["graph_node_v1"] = "graph_node_v1"
     id: str = Field(min_length=1)
     kind: GraphNodeKind
 
@@ -50,7 +53,7 @@ class GraphEdge(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["graph_edge"] = "graph_edge"
+    type: Literal["graph_edge_v1"] = "graph_edge_v1"
     source: str = Field(min_length=1)
     target: str = Field(min_length=1)
     kind: GraphEdgeKind
@@ -68,7 +71,7 @@ class StepMetadata(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["step_metadata"] = "step_metadata"
+    type: Literal["step_metadata_v1"] = "step_metadata_v1"
     node_id: str = Field(min_length=1)
     block_type: str = Field(min_length=1)
     input_dimensionality: int = Field(ge=0)
@@ -113,7 +116,7 @@ class ModelSummary(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", protected_namespaces=())
 
-    type: Literal["model_summary"] = "model_summary"
+    type: Literal["model_summary_v1"] = "model_summary_v1"
     provider: str = Field(min_length=1)
     model_id: str = Field(min_length=1)
     used_by_steps: List[str]
@@ -160,7 +163,7 @@ class WorkflowSummary(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["workflow_summary"] = "workflow_summary"
+    type: Literal["workflow_summary_v1"] = "workflow_summary_v1"
     models: Discovery[ModelSummary]
     max_dimensionality: int = Field(ge=0)
     steps_by_dimensionality: Dict[int, int]
@@ -172,12 +175,15 @@ class WorkflowSummary(BaseModel):
 
 
 class WorkflowIntrospection(BaseModel):
-    """Top-level workload introspection response (schema version 1)."""
+    """Top-level workload introspection response.
+
+    The versioned ``type`` identifies the response schema;
+    ``execution_engine_version`` identifies the compiler that produced it.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["workflow_introspection"] = "workflow_introspection"
-    schema_version: Literal["1"] = WORKLOAD_INTROSPECTION_SCHEMA_VERSION
+    type: Literal["workflow_introspection_v1"] = "workflow_introspection_v1"
     execution_engine_version: str = Field(min_length=1)
     nodes: List[GraphNode]
     edges: List[GraphEdge]

@@ -12,7 +12,7 @@ entity.
 import json
 import subprocess
 import sys
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Tuple, Type, Union
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -223,7 +223,7 @@ def test_discovery_problem_serializes_code_description_and_details() -> None:
     payload = json.loads(problem.model_dump_json())
 
     assert payload == {
-        "type": "discovery_problem",
+        "type": "discovery_problem_v1",
         "code": "unresolved_selector",
         "description": "Field `lmm_type` of step `$steps.a` is set by a selector.",
         "details": {
@@ -243,7 +243,7 @@ def test_discovery_problem_details_default_to_an_empty_map() -> None:
     )
 
     assert problem.details == {}
-    assert problem.type == "discovery_problem"
+    assert problem.type == "discovery_problem_v1"
 
 
 def test_discovery_problem_details_keep_nested_json_data() -> None:
@@ -413,7 +413,7 @@ def test_complete_empty_discovery_is_known_absence() -> None:
     assert discovery.complete is True
     assert discovery.unknown_reasons == []
     assert discovery.model_dump() == {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": True,
         "unknown_reasons": [],
@@ -620,26 +620,14 @@ def test_parametrised_discovery_validates_item_type_and_keeps_type_default() -> 
     discovery = Discovery[WorkOperation].model_validate(
         {"items": ["tracking"], "complete": True, "unknown_reasons": []}
     )
-    assert discovery.type == "discovery"
-    assert discovery.model_dump()["type"] == "discovery"
+    assert discovery.type == "discovery_v1"
+    assert discovery.model_dump()["type"] == "discovery_v1"
     assert discovery.model_dump(mode="json") == {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": ["tracking"],
         "complete": True,
         "unknown_reasons": [],
     }
-
-
-def test_discovery_rejects_wrong_type_discriminator() -> None:
-    with pytest.raises(ValidationError):
-        Discovery.model_validate(
-            {
-                "type": "not_discovery",
-                "items": [],
-                "complete": True,
-                "unknown_reasons": [],
-            }
-        )
 
 
 def test_discovery_is_frozen() -> None:
@@ -707,7 +695,7 @@ def test_restriction_condition_default_is_unrestricted() -> None:
     assert condition.input_modes is None
     assert condition.configuration_equals == {}
     assert condition.model_dump(mode="json") == {
-        "type": "restriction_condition",
+        "type": "restriction_condition_v1",
         "runtimes": None,
         "step_execution_modes": None,
         "input_modes": None,
@@ -810,11 +798,11 @@ def test_restriction_metadata_accepts_valid_code_and_defaults_condition() -> Non
 
     assert restriction.when == RestrictionCondition()
     assert restriction.model_dump(mode="json") == {
-        "type": "restriction",
+        "type": "restriction_v1",
         "code": "writes_to_ephemeral_disk",
         "severity": "soft",
         "when": {
-            "type": "restriction_condition",
+            "type": "restriction_condition_v1",
             "runtimes": None,
             "step_execution_modes": None,
             "input_modes": None,
@@ -940,29 +928,80 @@ def test_entity_roundtrips_through_json_with_type_discriminator(
     assert type(entity).model_validate_json(json.dumps(payload)) == entity
 
 
+# (entity, path to the tagged object inside its JSON dump); an empty path is
+# the entity itself.
+TYPE_TAG_LOCATIONS: List[Tuple[BaseModel, Tuple[Union[str, int], ...]]] = [
+    *((entity, ()) for entity in ENTITY_EXAMPLES),
+    (
+        incomplete_discovery(
+            [],
+            [declaration_failed_problem(node_id="$steps.a", declaration="resources")],
+        ),
+        ("unknown_reasons", 0),
+    ),
+    (
+        RestrictionMetadata(code="writes_to_ephemeral_disk", severity=Severity.HARD),
+        ("when",),
+    ),
+    (
+        ModelMetadataLookup(
+            status="available", metadata=ModelMetadata(task_type="ocr")
+        ),
+        ("metadata",),
+    ),
+]
+
+
 @pytest.mark.parametrize(
-    "entity_type",
-    [
-        Discovery[WorkOperation],
-        Discovery[RestrictionMetadata],
-        DiscoveryProblem,
-        RestrictionCondition,
-        RestrictionMetadata,
-        ModelMetadata,
-        ModelMetadataLookup,
+    "wrong_type_template", ["something_else", "{unversioned}", "{unversioned}_v2"]
+)
+@pytest.mark.parametrize(
+    "entity, tag_path",
+    TYPE_TAG_LOCATIONS,
+    ids=[
+        f"{type(entity).__name__}:{'.'.join(map(str, path)) or 'self'}"
+        for entity, path in TYPE_TAG_LOCATIONS
     ],
-    ids=lambda t: t.__name__,
+)
+def test_entity_rejects_unknown_unversioned_and_other_version_types(
+    entity: BaseModel,
+    tag_path: Tuple[Union[str, int], ...],
+    wrong_type_template: str,
+) -> None:
+    payload = entity.model_dump(mode="json")
+    tagged = payload
+    for key in tag_path:
+        tagged = tagged[key]
+    unversioned = tagged["type"].removesuffix("_v1")
+    tagged["type"] = wrong_type_template.format(unversioned=unversioned)
+
+    with pytest.raises(ValidationError):
+        type(entity).model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "entity_type, expected_type",
+    [
+        (Discovery[WorkOperation], "discovery_v1"),
+        (Discovery[RestrictionMetadata], "discovery_v1"),
+        (DiscoveryProblem, "discovery_problem_v1"),
+        (RestrictionCondition, "restriction_condition_v1"),
+        (RestrictionMetadata, "restriction_v1"),
+        (ModelMetadata, "model_metadata_v1"),
+        (ModelMetadataLookup, "model_metadata_lookup_v1"),
+    ],
+    ids=lambda value: value.__name__ if isinstance(value, type) else value,
 )
 def test_entity_schema_exports_type_const_and_default(
-    entity_type: Type[BaseModel],
+    entity_type: Type[BaseModel], expected_type: str
 ) -> None:
     schema = entity_type.model_json_schema()
 
     json.dumps(schema)  # exportable, no python callables
     type_property = schema["properties"]["type"]
-    expected = entity_type.model_fields["type"].default
-    assert type_property["const"] == expected
-    assert type_property["default"] == expected
+    assert type_property["const"] == expected_type
+    assert type_property["default"] == expected_type
+    assert entity_type.model_fields["type"].default == expected_type
     assert not (REJECTED_FIELD_NAMES & set(_all_property_names(schema)))
 
 

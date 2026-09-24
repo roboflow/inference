@@ -399,7 +399,7 @@ def test_branched_reference_example_has_the_documented_shape() -> None:
     assert custom_step["operations"]["complete"] is False
     assert custom_step["operations"]["unknown_reasons"] == [
         {
-            "type": "discovery_problem",
+            "type": "discovery_problem_v1",
             "code": "custom_python_internals_unknown",
             "description": (
                 "Step `$steps.counter` runs custom Python code, so its "
@@ -410,7 +410,7 @@ def test_branched_reference_example_has_the_documented_shape() -> None:
     ]
     assert body["summary"]["models"]["unknown_reasons"] == [
         {
-            "type": "discovery_problem",
+            "type": "discovery_problem_v1",
             "code": "declaration_unavailable",
             "description": (
                 "Step `$steps.counter` does not declare its resources, so they "

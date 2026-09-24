@@ -272,8 +272,8 @@ def test_inline_route_describes_workload_with_the_body_api_key(
     # then
     assert response.status_code == 200
     body = response.json()
-    assert body["type"] == "workflow_introspection"
-    assert body["schema_version"] == "1"
+    assert body["type"] == "workflow_introspection_v1"
+    assert "schema_version" not in body
     assert [step["node_id"] for step in body["steps"]] == ["$steps.detection"]
 
 
@@ -291,7 +291,7 @@ def test_inline_route_accepts_the_bearer_header_only(
 
     # then
     assert response.status_code == 200
-    assert response.json()["type"] == "workflow_introspection"
+    assert response.json()["type"] == "workflow_introspection_v1"
 
 
 def test_missing_key_fails_exactly_like_describe_interface(interface) -> None:
@@ -335,7 +335,7 @@ def test_saved_route_forwards_cache_and_version_options(
 
     # then
     assert response.status_code == 200
-    assert response.json()["type"] == "workflow_introspection"
+    assert response.json()["type"] == "workflow_introspection_v1"
     fetch.assert_called_once_with(
         api_key=API_KEY,
         workspace_id="my-workspace",
@@ -459,7 +459,7 @@ def test_flag_on_enriches_roboflow_models_with_mapped_fields(
         assert model["provider"] == "roboflow"
         assert model["metadata_status"] == "available"
         assert model["metadata"] == {
-            "type": "model_metadata",
+            "type": "model_metadata_v1",
             "model_type": "yolov8n",
             "model_variant": "coco",
             "task_type": "object-detection",
@@ -660,14 +660,25 @@ def test_every_nested_object_carries_its_type_discriminator(
     missing = [entity for entity in _entity_dicts(body) if "type" not in entity]
     assert not missing, f"entities serialized without a discriminator: {missing}"
     # spot-check the nested ones the response model defaults
+    assert body["type"] == "workflow_introspection_v1"
+    assert "schema_version" not in body
     step = body["steps"][0]
-    assert step["type"] == "step_metadata"
-    assert step["operations"]["type"] == "discovery"
-    assert step["resources"]["type"] == "discovery"
-    assert step["restrictions"]["type"] == "discovery"
-    assert body["summary"]["type"] == "workflow_summary"
-    assert body["summary"]["models"]["items"][0]["type"] == "model_summary"
-    assert body["summary"]["models"]["items"][0]["metadata"]["type"] == "model_metadata"
+    assert step["type"] == "step_metadata_v1"
+    assert step["operations"]["type"] == "discovery_v1"
+    assert step["resources"]["type"] == "discovery_v1"
+    assert step["restrictions"]["type"] == "discovery_v1"
+    assert body["summary"]["type"] == "workflow_summary_v1"
+    assert body["summary"]["models"]["items"][0]["type"] == "model_summary_v1"
+    assert (
+        body["summary"]["models"]["items"][0]["metadata"]["type"] == "model_metadata_v1"
+    )
+    detection = next(
+        step for step in body["steps"] if step["node_id"] == "$steps.detection"
+    )
+    resource = detection["resources"]["items"][0]
+    assert resource["type"] == "dependent_resource_v1"
+    assert resource["resource_type"] == "roboflow_platform_model"
+    assert resource["metadata"]["type"] == "roboflow_platform_model_v1"
 
 
 def test_response_round_trips_through_the_response_model(
@@ -737,6 +748,13 @@ def test_routes_are_registered_and_documented(interface) -> None:
         spec = client.get("/openapi.json").json()
     assert INLINE_ROUTE in spec["paths"]
     assert "WorkflowIntrospection" in spec["components"]["schemas"]
+    # the public schema advertises the versioned top-level tag and no
+    # standalone schema version
+    introspection_schema = spec["components"]["schemas"]["WorkflowIntrospection"]
+    introspection_properties = introspection_schema["properties"]
+    assert introspection_properties["type"]["default"] == "workflow_introspection_v1"
+    assert "schema_version" not in introspection_properties
+    assert "execution_engine_version" in introspection_properties
     assert {
         "Discovery_DependentResource_",
         "Discovery_ModelSummary_",

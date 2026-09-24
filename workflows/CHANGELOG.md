@@ -18,7 +18,7 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
-- Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions.
+- Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions. Each entity `type` carries its contract version (e.g. `workflow_introspection_v1`); there is no separate `schema_version`.
 - Report unresolved resource identities explicitly and include streaming-video models without changing how they load.
 - Align static and actual restriction codes, and correct stateful-block and industrial-sink caveats without changing editor payloads.
 - Reject cyclic saved inner-workflow references during resolution with a composition

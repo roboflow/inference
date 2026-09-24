@@ -304,8 +304,8 @@ def test_portable_presets_have_no_note_and_serialise_with_discriminators() -> No
     ):
         payload = preset.model_dump(mode="json")
         assert "note" not in payload
-        assert payload["type"] == "restriction"
-        assert payload["when"]["type"] == "restriction_condition"
+        assert payload["type"] == "restriction_v1"
+        assert payload["when"]["type"] == "restriction_condition_v1"
         assert RestrictionMetadata.model_validate(payload) == preset
 
 
@@ -315,27 +315,30 @@ def test_portable_presets_have_no_note_and_serialise_with_discriminators() -> No
 
 
 def test_resource_entities_carry_defaulted_discriminators() -> None:
-    assert DependentResource.model_fields["type"].default == "dependent_resource"
+    assert DependentResource.model_fields["type"].default == "dependent_resource_v1"
     assert (
         RoboflowPlatformModelMetadata.model_fields["type"].default
-        == "roboflow_platform_model"
+        == "roboflow_platform_model_v1"
     )
     assert (
         RoboflowPlatformProjectMetadata.model_fields["type"].default
-        == "roboflow_platform_project"
+        == "roboflow_platform_project_v1"
     )
-    assert ThirdPartyModelMetadata.model_fields["type"].default == "third_party_model"
-    # The metadata discriminators coincide with the `resource_type` values.
+    assert (
+        ThirdPartyModelMetadata.model_fields["type"].default == "third_party_model_v1"
+    )
+    # The metadata discriminators are the versioned `resource_type` values; the
+    # `resource_type` domain values themselves stay unversioned.
     for resource_type, metadata_type in REGISTERED_RESOURCE_METADATA_TYPES.items():
-        assert metadata_type.model_fields["type"].default == resource_type.value
+        assert metadata_type.model_fields["type"].default == f"{resource_type.value}_v1"
 
 
 def test_model_dump_json_includes_discriminators_recursively() -> None:
     assert roboflow_platform_model(model_id="my_project/3").model_dump(mode="json") == {
-        "type": "dependent_resource",
+        "type": "dependent_resource_v1",
         "resource_type": "roboflow_platform_model",
         "metadata": {
-            "type": "roboflow_platform_model",
+            "type": "roboflow_platform_model_v1",
             "model_id": "my_project/3",
             "required_action": "execution",
             "execution_location": "environment_defined",
@@ -344,17 +347,20 @@ def test_model_dump_json_includes_discriminators_recursively() -> None:
     assert roboflow_platform_project(project_url="my_dataset").model_dump(
         mode="json"
     ) == {
-        "type": "dependent_resource",
+        "type": "dependent_resource_v1",
         "resource_type": "roboflow_platform_project",
-        "metadata": {"type": "roboflow_platform_project", "project_url": "my_dataset"},
+        "metadata": {
+            "type": "roboflow_platform_project_v1",
+            "project_url": "my_dataset",
+        },
     }
     assert third_party_model(provider="openai", model_id="gpt-4o").model_dump(
         mode="json"
     ) == {
-        "type": "dependent_resource",
+        "type": "dependent_resource_v1",
         "resource_type": "third_party_model",
         "metadata": {
-            "type": "third_party_model",
+            "type": "third_party_model_v1",
             "provider": "openai",
             "model_id": "gpt-4o",
         },
@@ -364,8 +370,8 @@ def test_model_dump_json_includes_discriminators_recursively() -> None:
 def test_python_mode_dump_also_includes_discriminators() -> None:
     payload = roboflow_platform_model(model_id="my_project/3").model_dump()
 
-    assert payload["type"] == "dependent_resource"
-    assert payload["metadata"]["type"] == "roboflow_platform_model"
+    assert payload["type"] == "dependent_resource_v1"
+    assert payload["metadata"]["type"] == "roboflow_platform_model_v1"
     assert payload["resource_type"] is DependentResourceType.ROBOFLOW_PLATFORM_MODEL
 
 
@@ -424,11 +430,14 @@ def test_old_envelope_without_type_and_new_envelope_both_parse(
         assert parsed.model_dump(mode="json") == discriminated
 
 
-def test_explicit_wrong_envelope_type_is_rejected() -> None:
+@pytest.mark.parametrize(
+    "envelope_type", ["resource", "dependent_resource", "dependent_resource_v2"]
+)
+def test_explicit_wrong_envelope_type_is_rejected(envelope_type: str) -> None:
     with pytest.raises(ValidationError):
         DependentResource.model_validate(
             {
-                "type": "resource",
+                "type": envelope_type,
                 "resource_type": "third_party_model",
                 "metadata": {"provider": "openai", "model_id": "gpt-4o"},
             }
@@ -438,12 +447,37 @@ def test_explicit_wrong_envelope_type_is_rejected() -> None:
 def test_explicit_wrong_metadata_type_is_rejected() -> None:
     with pytest.raises(ValidationError):
         ThirdPartyModelMetadata(
-            type="roboflow_platform_model", provider="a", model_id="b"
+            type="roboflow_platform_model_v1", provider="a", model_id="b"
         )
     with pytest.raises(ValidationError):
         RoboflowPlatformModelMetadata.model_validate(
-            {"type": "third_party_model", "model_id": "my_project/3"}
+            {"type": "third_party_model_v1", "model_id": "my_project/3"}
         )
+
+
+@pytest.mark.parametrize("version_suffix", ["", "_v2"])
+@pytest.mark.parametrize(
+    "resource",
+    [
+        roboflow_platform_model(model_id="my_project/3"),
+        roboflow_platform_project(project_url="my_dataset"),
+        third_party_model(provider="openai", model_id="gpt-4o"),
+    ],
+    ids=lambda r: r.resource_type.value,
+)
+def test_metadata_type_of_another_version_is_rejected(
+    resource: DependentResource, version_suffix: str
+) -> None:
+    envelope = resource.model_dump(mode="json")
+    metadata = {
+        **envelope["metadata"],
+        "type": f"{resource.resource_type.value}{version_suffix}",
+    }
+
+    with pytest.raises(ValidationError):
+        type(resource.metadata).model_validate(metadata)
+    with pytest.raises(BlockInterfaceError):
+        DependentResource.model_validate({**envelope, "metadata": metadata})
 
 
 def test_metadata_type_contradicting_resource_type_is_rejected() -> None:
@@ -452,7 +486,7 @@ def test_metadata_type_contradicting_resource_type_is_rejected() -> None:
             {
                 "resource_type": "roboflow_platform_model",
                 "metadata": {
-                    "type": "third_party_model",
+                    "type": "third_party_model_v1",
                     "provider": "openai",
                     "model_id": "gpt-4o",
                 },
@@ -462,7 +496,10 @@ def test_metadata_type_contradicting_resource_type_is_rejected() -> None:
         DependentResource.model_validate(
             {
                 "resource_type": "third_party_model",
-                "metadata": {"type": "roboflow_platform_project", "project_url": "x"},
+                "metadata": {
+                    "type": "roboflow_platform_project_v1",
+                    "project_url": "x",
+                },
             }
         )
 
@@ -550,18 +587,19 @@ def test_resource_schema_shows_type_on_envelope_and_every_metadata_variant() -> 
     schema = DependentResource.model_json_schema()
 
     assert schema["properties"]["type"] == {
-        "const": "dependent_resource",
-        "default": "dependent_resource",
+        "const": "dependent_resource_v1",
+        "default": "dependent_resource_v1",
         "title": "Type",
         "type": "string",
     }
-    for name in (
-        "RoboflowPlatformModelMetadata",
-        "RoboflowPlatformProjectMetadata",
-        "ThirdPartyModelMetadata",
+    for name, expected_type in (
+        ("RoboflowPlatformModelMetadata", "roboflow_platform_model_v1"),
+        ("RoboflowPlatformProjectMetadata", "roboflow_platform_project_v1"),
+        ("ThirdPartyModelMetadata", "third_party_model_v1"),
     ):
         type_property = schema["$defs"][name]["properties"]["type"]
-        assert type_property["const"] == type_property["default"]
+        assert type_property["const"] == expected_type
+        assert type_property["default"] == expected_type
     variants = {
         ref["$ref"].rsplit("/", 1)[-1]
         for ref in schema["properties"]["metadata"]["anyOf"]

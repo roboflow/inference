@@ -1358,12 +1358,12 @@ def test_unannotated_block_yields_incomplete_declarations() -> None:
         ],
     )
     assert step.operations.model_dump(mode="json") == {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": False,
         "unknown_reasons": [
             {
-                "type": "discovery_problem",
+                "type": "discovery_problem_v1",
                 "code": "declaration_unavailable",
                 "description": (
                     "Step `$steps.x` does not declare its operations, so they "
@@ -2065,12 +2065,13 @@ def test_response_carries_engine_version_and_roundtrips_json() -> None:
     )
     assert roundtrip == introspection
     dumped = introspection.model_dump(mode="json")
-    assert dumped["type"] == "workflow_introspection"
+    assert dumped["type"] == "workflow_introspection_v1"
+    assert "schema_version" not in dumped
     assert dumped["summary"]["steps_by_dimensionality"] == {"1": 2}
     assert dumped["summary"]["models"]["items"][0]["steps_by_dimensionality"] == {
         "1": 1
     }
-    assert all(step["type"] == "step_metadata" for step in dumped["steps"])
+    assert all(step["type"] == "step_metadata_v1" for step in dumped["steps"])
 
 
 def test_output_is_stable_across_runs_with_different_lineage_ids() -> None:

@@ -13,6 +13,11 @@ in this module can key and project it without importing the framework layer.
 ``from roboflow_workflows.prototypes.block import RuntimeRestriction`` is
 unchanged.
 
+Every workload DTO carries a versioned ``type`` discriminator (e.g.
+``discovery_v1``). The suffix is the schema version of that one entity, so an
+explicit tag of any other version is rejected; omitting ``type`` on
+construction keeps the default.
+
 Import discipline (an import-cycle trap otherwise): only the standard library,
 ``pydantic`` and ``typing_extensions`` may be imported here. Never import
 ``roboflow_workflows.prototypes.*``, ``core_steps.*``, ``execution_engine.v1.*``
@@ -177,7 +182,7 @@ class RestrictionCondition(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["restriction_condition"] = "restriction_condition"
+    type: Literal["restriction_condition_v1"] = "restriction_condition_v1"
     runtimes: Optional[List[Runtime]] = None
     step_execution_modes: Optional[List[StepExecutionMode]] = None
     input_modes: Optional[List[RuntimeInputMode]] = None
@@ -222,7 +227,7 @@ class RestrictionMetadata(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["restriction"] = "restriction"
+    type: Literal["restriction_v1"] = "restriction_v1"
     code: str = Field(min_length=1, pattern=RESTRICTION_CODE_PATTERN)
     severity: Severity
     when: RestrictionCondition = RestrictionCondition()
@@ -382,7 +387,7 @@ class DiscoveryProblem(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["discovery_problem"] = "discovery_problem"
+    type: Literal["discovery_problem_v1"] = "discovery_problem_v1"
     code: DiscoveryProblemCode
     description: str = Field(min_length=1)
     details: Dict[str, JsonValue] = Field(default_factory=dict)
@@ -703,7 +708,7 @@ class Discovery(BaseModel, Generic[T]):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["discovery"] = "discovery"
+    type: Literal["discovery_v1"] = "discovery_v1"
     items: List[T]
     complete: bool
     unknown_reasons: List[DiscoveryProblem]
@@ -776,7 +781,7 @@ class ModelMetadata(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", protected_namespaces=())
 
-    type: Literal["model_metadata"] = "model_metadata"
+    type: Literal["model_metadata_v1"] = "model_metadata_v1"
     model_type: Optional[str] = None
     model_variant: Optional[str] = None
     task_type: Optional[str] = None
@@ -817,7 +822,7 @@ class ModelMetadataLookup(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["model_metadata_lookup"] = "model_metadata_lookup"
+    type: Literal["model_metadata_lookup_v1"] = "model_metadata_lookup_v1"
     status: ModelMetadataStatus
     metadata: Optional[ModelMetadata] = None
 

@@ -11,10 +11,11 @@ the absence of every rejected field name from the schema.
 import json
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from roboflow_workflows.errors import BlockInterfaceError
 from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadata,
     RestrictionMetadata,
@@ -25,8 +26,8 @@ from roboflow_workflows.execution_engine.entities.workload import (
     incomplete_discovery,
     unresolved_selector_problem,
 )
+from roboflow_workflows.execution_engine.introspection import workload_entities
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
-    WORKLOAD_INTROSPECTION_SCHEMA_VERSION,
     GraphEdge,
     GraphNode,
     ModelSummary,
@@ -64,12 +65,32 @@ REJECTED_FIELD_NAMES = {
 }
 
 EXPECTED_DISCRIMINATORS = {
-    GraphNode: "graph_node",
-    GraphEdge: "graph_edge",
-    StepMetadata: "step_metadata",
-    ModelSummary: "model_summary",
-    WorkflowSummary: "workflow_summary",
-    WorkflowIntrospection: "workflow_introspection",
+    GraphNode: "graph_node_v1",
+    GraphEdge: "graph_edge_v1",
+    StepMetadata: "step_metadata_v1",
+    ModelSummary: "model_summary_v1",
+    WorkflowSummary: "workflow_summary_v1",
+    WorkflowIntrospection: "workflow_introspection_v1",
+}
+
+# Every entity tag reachable from the `WorkflowIntrospection` schema (the host
+# lookup result `model_metadata_lookup_v1` never appears in a response).
+EXPECTED_SCHEMA_TYPE_TAGS = {
+    "workflow_introspection_v1",
+    "graph_node_v1",
+    "graph_edge_v1",
+    "step_metadata_v1",
+    "model_summary_v1",
+    "workflow_summary_v1",
+    "restriction_condition_v1",
+    "restriction_v1",
+    "discovery_problem_v1",
+    "discovery_v1",
+    "model_metadata_v1",
+    "roboflow_platform_model_v1",
+    "roboflow_platform_project_v1",
+    "third_party_model_v1",
+    "dependent_resource_v1",
 }
 
 
@@ -254,39 +275,40 @@ def test_valid_example_roundtrips_and_carries_discriminators_everywhere() -> Non
     python_payload = introspection.model_dump()
     json_payload = introspection.model_dump(mode="json")
 
-    assert python_payload["type"] == "workflow_introspection"
-    assert python_payload["summary"]["type"] == "workflow_summary"
-    assert python_payload["summary"]["models"]["type"] == "discovery"
-    assert python_payload["summary"]["models"]["items"][0]["type"] == "model_summary"
-    assert python_payload["steps"][0]["type"] == "step_metadata"
-    assert python_payload["steps"][0]["resources"]["type"] == "discovery"
+    assert python_payload["type"] == "workflow_introspection_v1"
+    assert python_payload["summary"]["type"] == "workflow_summary_v1"
+    assert python_payload["summary"]["models"]["type"] == "discovery_v1"
+    assert python_payload["summary"]["models"]["items"][0]["type"] == "model_summary_v1"
+    assert python_payload["steps"][0]["type"] == "step_metadata_v1"
+    assert python_payload["steps"][0]["resources"]["type"] == "discovery_v1"
     resource = python_payload["steps"][0]["resources"]["items"][0]
-    assert resource["type"] == "dependent_resource"
-    assert resource["metadata"]["type"] == "roboflow_platform_model"
+    assert resource["type"] == "dependent_resource_v1"
+    assert resource["metadata"]["type"] == "roboflow_platform_model_v1"
     restriction = python_payload["steps"][1]["restrictions"]["items"][0]
-    assert restriction["type"] == "restriction"
-    assert restriction["when"]["type"] == "restriction_condition"
-    assert python_payload["nodes"][0]["type"] == "graph_node"
-    assert python_payload["edges"][0]["type"] == "graph_edge"
+    assert restriction["type"] == "restriction_v1"
+    assert restriction["when"]["type"] == "restriction_condition_v1"
+    assert python_payload["nodes"][0]["type"] == "graph_node_v1"
+    assert python_payload["edges"][0]["type"] == "graph_edge_v1"
 
     problem = python_payload["steps"][1]["restrictions"]["unknown_reasons"][0]
-    assert problem["type"] == "discovery_problem"
+    assert problem["type"] == "discovery_problem_v1"
 
     assert set(_collect_type_values(json_payload)) == {
-        "workflow_introspection",
-        "workflow_summary",
-        "discovery",
-        "discovery_problem",
-        "model_summary",
-        "step_metadata",
-        "dependent_resource",
-        "roboflow_platform_model",
-        "restriction",
-        "restriction_condition",
-        "graph_node",
-        "graph_edge",
+        "workflow_introspection_v1",
+        "workflow_summary_v1",
+        "discovery_v1",
+        "discovery_problem_v1",
+        "model_summary_v1",
+        "step_metadata_v1",
+        "dependent_resource_v1",
+        "roboflow_platform_model_v1",
+        "restriction_v1",
+        "restriction_condition_v1",
+        "graph_node_v1",
+        "graph_edge_v1",
     }
-    assert json_payload["schema_version"] == WORKLOAD_INTROSPECTION_SCHEMA_VERSION
+    assert "schema_version" not in json_payload
+    assert json_payload["execution_engine_version"] == "1.7.0"
     assert json_payload["steps"][1]["operations"]["items"] == ["image_crop"]
 
     parsed = WorkflowIntrospection.model_validate(json_payload)
@@ -324,7 +346,7 @@ def test_model_summary_with_metadata_roundtrips() -> None:
     assert summary.used_by_steps == ["$steps.a", "$steps.b"]
     assert summary.steps_by_dimensionality == {1: 1, 2: 1}
     payload = summary.model_dump(mode="json")
-    assert payload["metadata"]["type"] == "model_metadata"
+    assert payload["metadata"]["type"] == "model_metadata_v1"
     assert payload["steps_by_dimensionality"] == {"1": 1, "2": 1}
     assert ModelSummary.model_validate(payload) == summary
     assert ModelSummary.model_validate_json(summary.model_dump_json()) == summary
@@ -374,6 +396,7 @@ def test_schema_exports_type_const_and_default(entity_type: Type[BaseModel]) -> 
 def test_workflow_introspection_schema_shows_type_on_every_entity() -> None:
     schema = WorkflowIntrospection.model_json_schema()
 
+    type_tags = {schema["properties"]["type"]["const"]}
     for name, definition in schema["$defs"].items():
         if "properties" not in definition:
             continue  # enums
@@ -381,7 +404,11 @@ def test_workflow_introspection_schema_shows_type_on_every_entity() -> None:
         type_property = definition["properties"]["type"]
         assert "const" in type_property and "default" in type_property, name
         assert type_property["const"] == type_property["default"], name
-    assert schema["properties"]["schema_version"]["const"] == "1"
+        type_tags.add(type_property["const"])
+    # every `Discovery[...]` specialisation shares `discovery_v1`
+    assert type_tags == EXPECTED_SCHEMA_TYPE_TAGS
+    assert "schema_version" not in schema["properties"]
+    assert "execution_engine_version" in schema["required"]
 
 
 def test_schema_has_no_rejected_field_names() -> None:
@@ -424,9 +451,16 @@ def test_each_entity_roundtrips_through_json(entity: BaseModel) -> None:
 
 
 @pytest.mark.parametrize(
+    "wrong_type_template", ["something_else", "{unversioned}", "{unversioned}_v2"]
+)
+@pytest.mark.parametrize(
     "entity_type", list(EXPECTED_DISCRIMINATORS), ids=lambda t: t.__name__
 )
-def test_wrong_type_discriminator_is_rejected(entity_type: Type[BaseModel]) -> None:
+def test_wrong_type_discriminator_is_rejected(
+    entity_type: Type[BaseModel], wrong_type_template: str
+) -> None:
+    unversioned = EXPECTED_DISCRIMINATORS[entity_type].removesuffix("_v1")
+    wrong_type = wrong_type_template.format(unversioned=unversioned)
     example = {
         GraphNode: GraphNode(id="$inputs.image", kind="input"),
         GraphEdge: GraphEdge(source="$inputs.image", target="$steps.a", kind="data"),
@@ -439,10 +473,45 @@ def test_wrong_type_discriminator_is_rejected(entity_type: Type[BaseModel]) -> N
         ),
         WorkflowIntrospection: _introspection(),
     }[entity_type]
-    payload = {**example.model_dump(mode="json"), "type": "something_else"}
+    payload = {**example.model_dump(mode="json"), "type": wrong_type}
 
     with pytest.raises(ValidationError):
         entity_type.model_validate(payload)
+
+
+@pytest.mark.parametrize("wrong_type_template", ["{unversioned}", "{unversioned}_v2"])
+@pytest.mark.parametrize(
+    "tag_path",
+    [
+        ("nodes", 0),
+        ("edges", 0),
+        ("steps", 0),
+        ("steps", 0, "resources"),
+        ("steps", 0, "resources", "items", 0),
+        ("steps", 0, "resources", "items", 0, "metadata"),
+        ("steps", 1, "restrictions", "items", 0),
+        ("steps", 1, "restrictions", "items", 0, "when"),
+        ("steps", 1, "restrictions", "unknown_reasons", 0),
+        ("summary",),
+        ("summary", "models"),
+        ("summary", "models", "items", 0),
+    ],
+    ids=lambda path: ".".join(map(str, path)),
+)
+def test_nested_entity_with_other_version_type_is_rejected(
+    tag_path: Tuple[Union[str, int], ...], wrong_type_template: str
+) -> None:
+    payload = _introspection().model_dump(mode="json")
+    tagged = payload
+    for key in tag_path:
+        tagged = tagged[key]
+    unversioned = tagged["type"].removesuffix("_v1")
+    tagged["type"] = wrong_type_template.format(unversioned=unversioned)
+
+    # a resource metadata tag contradicting `resource_type` is a block
+    # interface error, raised by `DependentResource` before field validation
+    with pytest.raises((ValidationError, BlockInterfaceError)):
+        WorkflowIntrospection.model_validate(payload)
 
 
 def test_entities_are_frozen() -> None:
@@ -510,9 +579,9 @@ def test_step_metadata_keeps_access_vs_execution_and_third_party_resources() -> 
     # key, so `model_id` values ("$inputs.model" < "gpt-4o") come before the
     # project entry whose first metadata key is `project_url`.
     assert [item["metadata"]["type"] for item in payload] == [
-        "roboflow_platform_model",
-        "third_party_model",
-        "roboflow_platform_project",
+        "roboflow_platform_model_v1",
+        "third_party_model_v1",
+        "roboflow_platform_project_v1",
     ]
     assert payload[0]["metadata"]["required_action"] == "access"
     assert payload[0]["metadata"]["execution_location"] is None
@@ -956,8 +1025,8 @@ def test_max_dimensionality_may_exceed_every_step() -> None:
     assert introspection.summary.max_dimensionality == 3
 
 
-@pytest.mark.parametrize("schema_version", ["2", "3", "1.0", ""])
-def test_rejects_every_schema_version_but_the_current_one(schema_version: str) -> None:
+@pytest.mark.parametrize("schema_version", ["1", "2", ""])
+def test_removed_schema_version_field_is_rejected(schema_version: str) -> None:
     base = _introspection()
     with pytest.raises(ValidationError):
         WorkflowIntrospection.model_validate(
@@ -965,11 +1034,12 @@ def test_rejects_every_schema_version_but_the_current_one(schema_version: str) -
         )
 
 
-def test_current_schema_version_is_one_and_engine_version_is_separate() -> None:
+def test_type_versions_the_schema_and_engine_version_is_separate() -> None:
     introspection = _introspection()
 
-    assert introspection.schema_version == "1"
-    assert WORKLOAD_INTROSPECTION_SCHEMA_VERSION == "1"
+    assert introspection.type == "workflow_introspection_v1"
+    assert "schema_version" not in WorkflowIntrospection.model_fields
+    assert not hasattr(workload_entities, "WORKLOAD_INTROSPECTION_SCHEMA_VERSION")
     assert introspection.execution_engine_version == "1.7.0"
     with pytest.raises(ValidationError):
         _introspection(execution_engine_version="")

@@ -60,11 +60,15 @@ display(JSON(description, expanded=False))
 
 ## Response
 
-The response is a `WorkflowIntrospection` document. Every entity object in it carries a defaulted `type` discriminator, at every nesting level, so another service can parse it without Python callables. Plain JSON maps that are not entities — `steps_by_dimensionality` (on the summary and on every model entry), a restriction's `configuration_equals` and a discovery problem's `details` — carry no `type`, and their contents are arbitrary JSON data. The full JSON Schema is published in the server's `/openapi.json` under `components.schemas.WorkflowIntrospection`, and in Python as `WorkflowIntrospection.model_json_schema()` from `roboflow_workflows.execution_engine.introspection.workload_entities`.
+The response is a `WorkflowIntrospection` document. Every entity object in it carries a defaulted `type` discriminator, at every nesting level, so another service can parse it without Python callables. Plain JSON maps that are not entities — `steps_by_dimensionality` (on the summary and on every model entry), a restriction's `configuration_equals` and a discovery problem's `details` — carry no `type`, and their contents are arbitrary JSON data.
+
+Each `type` value names the entity and the version of its contract, for example `workflow_introspection_v1`, `step_metadata_v1`, `discovery_v1` or `roboflow_platform_model_v1`. There is no separate document-wide schema version. The `_v1` suffix is independent of `execution_engine_version` (the compiler that produced the document) and of the workflow definition's `version`. Only `type` tags carry the suffix: enum values (`resource_type`, `kind`, `code`, `severity`, operations, runtimes and modes) and the plain JSON maps are unchanged. The Python models reject any other `type` value, the unsuffixed names included.
+
+The full JSON Schema is published in the server's `/openapi.json` under `components.schemas.WorkflowIntrospection`, and in Python as `WorkflowIntrospection.model_json_schema()` from `roboflow_workflows.execution_engine.introspection.workload_entities`.
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | `"1"`. Bumped only for an incompatible change of this document. It is independent of the workflow-definition `version` and of `execution_engine_version`. |
+| `type` | `"workflow_introspection_v1"`: the document entity and its contract version. |
 | `execution_engine_version` | the Execution Engine version that compiled the definition. |
 | `nodes` | one entry per input, step and output, with `kind` in `input` / `step` / `output`. Ids are canonical selectors (`$inputs.image`, `$steps.detection`, `$outputs.predictions`). Internal compiler nodes are never exposed. |
 | `edges` | deduplicated `(source, target, kind)` triples, `kind` in `data` / `control`. The same node pair may carry both. This is connectivity, not a schedule. |
@@ -105,7 +109,7 @@ The practical consequence for a consumer: `steps_by_dimensionality` places a sti
 Every declaration is wrapped in a `Discovery`. A complete declaration with no items looks like this on the wire:
 
 ```json
-{"type": "discovery", "items": [], "complete": true, "unknown_reasons": []}
+{"type": "discovery_v1", "items": [], "complete": true, "unknown_reasons": []}
 ```
 
 * `complete: true` with an empty `items` means **known absence** — the block declares that it does none of this. It is a positive statement, not a gap in the data.
@@ -126,7 +130,7 @@ Every entry of `unknown_reasons` is a `DiscoveryProblem`:
 
 ```json
 {
-  "type": "discovery_problem",
+  "type": "discovery_problem_v1",
   "code": "unresolved_selector",
   "description": "Field `model_id` of the roboflow_platform_model declared by step `$steps.detection` is set by selector `$inputs.model`, which is only known at run time, so the resources are not fully known.",
   "details": {
@@ -140,8 +144,8 @@ Every entry of `unknown_reasons` is a `DiscoveryProblem`:
 ```
 
 * `code` is the machine-readable reason. The set is **closed** and owned by the Execution Engine; a new member is an Execution Engine change, never a producer's free choice.
-* `description` is display text. Branch on `code` and read `details` — **never parse the description**. Its wording may change without a schema bump.
-* `details` is an open JSON map understood **per code**. The conventions below are documented, not shape-enforced: a producer may add context to a problem without a schema change, so read the keys you know and ignore the rest.
+* `description` is display text. Branch on `code` and read `details` — **never parse the description**. Its wording may change without a contract version change.
+* `details` is an open JSON map understood **per code**. The conventions below are documented, not shape-enforced: a producer may add context to a problem without a contract version change, so read the keys you know and ignore the rest.
 
 Two problems are the same problem when their `code` and their `details` match; the wording plays no part. Reasons are deduplicated on that identity and ordered deterministically by it, so the same definition always produces the same list, in the same order, whatever order the steps were visited in. Distinct contexts stay distinct: two steps hitting the same unresolved selector, or one step with two unresolved fields, are two entries.
 
@@ -175,7 +179,7 @@ A restriction-side example: the Kafka producer keeps the restriction it does kno
 
 ```json
 {
-  "type": "discovery_problem",
+  "type": "discovery_problem_v1",
   "code": "unresolved_selector",
   "description": "Field `fire_and_forget` of step `$steps.producer` is set by selector `$inputs.wait_for_ack`, which is only known at run time, so the restrictions are not fully known.",
   "details": {
@@ -189,13 +193,13 @@ A restriction-side example: the Kafka producer keeps the restriction it does kno
 
 ### Resources
 
-A step's `resources` discovery lists `DependentResource` entries: the external things the step needs. Each entry carries a `resource_type` and a typed `metadata` object whose `type` always agrees with `resource_type`:
+A step's `resources` discovery lists `DependentResource` entries: the external things the step needs. Each entry carries a `resource_type` and a typed `metadata` object whose `type` always agrees with `resource_type`. The `resource_type` values carry no version suffix; the `metadata.type` tags do:
 
 | `resource_type` | `metadata.type` | Metadata fields |
 | --- | --- | --- |
-| `roboflow_platform_model` | `roboflow_platform_model` | `model_id`, `required_action`, `execution_location` |
-| `roboflow_platform_project` | `roboflow_platform_project` | `project_url` |
-| `third_party_model` | `third_party_model` | `provider`, `model_id` |
+| `roboflow_platform_model` | `roboflow_platform_model_v1` | `model_id`, `required_action`, `execution_location` |
+| `roboflow_platform_project` | `roboflow_platform_project_v1` | `project_url` |
+| `third_party_model` | `third_party_model_v1` | `provider`, `model_id` |
 
 A Roboflow model reference declares what the step needs from the model:
 
@@ -241,11 +245,11 @@ A `RestrictionMetadata` carries a `code`, a `severity` and a `when` condition; i
 
 ```json
 {
-  "type": "restriction",
+  "type": "restriction_v1",
   "code": "custom_python_execution_disabled",
   "severity": "hard",
   "when": {
-    "type": "restriction_condition",
+    "type": "restriction_condition_v1",
     "runtimes": null,
     "step_execution_modes": null,
     "input_modes": null,
@@ -260,7 +264,7 @@ A `RestrictionMetadata` carries a `code`, a `severity` and a `when` condition; i
 whether or not this server allows custom Python. The consumer decides what the restriction means for its own target configuration.
 
 The builder asks the block for that portable view explicitly, with
-`get_actual_restrictions(ignore_environment_restrictions=True)`, and projects each answer onto the DTO above. `schema_version` is unaffected: this document's restriction payload is exactly what it was.
+`get_actual_restrictions(ignore_environment_restrictions=True)`, and projects each answer onto the DTO above.
 
 ### How a block declares a restriction
 
@@ -303,11 +307,11 @@ A tracker, for example, reports:
 
 ```json
 {
-  "type": "restriction",
+  "type": "restriction_v1",
   "code": "stateful_video_state_resets_on_stateless_http",
   "severity": "soft",
   "when": {
-    "type": "restriction_condition",
+    "type": "restriction_condition_v1",
     "runtimes": ["dedicated_deployment", "hosted_serverless"],
     "step_execution_modes": null,
     "input_modes": ["video"],
@@ -376,7 +380,7 @@ def get_actual_restrictions(
 
 ```json
 {
-  "type": "model_summary",
+  "type": "model_summary_v1",
   "provider": "roboflow",
   "model_id": "my-project/3",
   "used_by_steps": ["$steps.crop_detection", "$steps.detection"],
@@ -484,39 +488,38 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
 
 ```json
 {
-  "type": "workflow_introspection",
-  "schema_version": "1",
+  "type": "workflow_introspection_v1",
   "execution_engine_version": "1.15.2",
   "nodes": [
-    {"type": "graph_node", "id": "$inputs.image", "kind": "input"},
-    {"type": "graph_node", "id": "$steps.detection", "kind": "step"},
-    {"type": "graph_node", "id": "$steps.crop", "kind": "step"},
-    {"type": "graph_node", "id": "$steps.classification", "kind": "step"},
-    {"type": "graph_node", "id": "$outputs.classes", "kind": "output"}
+    {"type": "graph_node_v1", "id": "$inputs.image", "kind": "input"},
+    {"type": "graph_node_v1", "id": "$steps.detection", "kind": "step"},
+    {"type": "graph_node_v1", "id": "$steps.crop", "kind": "step"},
+    {"type": "graph_node_v1", "id": "$steps.classification", "kind": "step"},
+    {"type": "graph_node_v1", "id": "$outputs.classes", "kind": "output"}
   ],
   "edges": [
-    {"type": "graph_edge", "source": "$inputs.image", "target": "$steps.crop", "kind": "data"},
-    {"type": "graph_edge", "source": "$inputs.image", "target": "$steps.detection", "kind": "data"},
-    {"type": "graph_edge", "source": "$steps.classification", "target": "$outputs.classes", "kind": "data"},
-    {"type": "graph_edge", "source": "$steps.crop", "target": "$steps.classification", "kind": "data"},
-    {"type": "graph_edge", "source": "$steps.detection", "target": "$steps.crop", "kind": "data"}
+    {"type": "graph_edge_v1", "source": "$inputs.image", "target": "$steps.crop", "kind": "data"},
+    {"type": "graph_edge_v1", "source": "$inputs.image", "target": "$steps.detection", "kind": "data"},
+    {"type": "graph_edge_v1", "source": "$steps.classification", "target": "$outputs.classes", "kind": "data"},
+    {"type": "graph_edge_v1", "source": "$steps.crop", "target": "$steps.classification", "kind": "data"},
+    {"type": "graph_edge_v1", "source": "$steps.detection", "target": "$steps.crop", "kind": "data"}
   ],
   "steps": [
     {
-      "type": "step_metadata",
+      "type": "step_metadata_v1",
       "node_id": "$steps.detection",
       "block_type": "roboflow_core/roboflow_object_detection_model@v3",
       "input_dimensionality": 1,
       "output_dimensionality": 1,
       "accepts_batch_input": true,
       "resources": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [
           {
-            "type": "dependent_resource",
+            "type": "dependent_resource_v1",
             "resource_type": "roboflow_platform_model",
             "metadata": {
-              "type": "roboflow_platform_model",
+              "type": "roboflow_platform_model_v1",
               "model_id": "my-project/3",
               "required_action": "execution",
               "execution_location": "environment_defined"
@@ -527,59 +530,59 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
         "unknown_reasons": []
       },
       "restrictions": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": true,
         "unknown_reasons": []
       },
       "operations": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": ["model_inference"],
         "complete": true,
         "unknown_reasons": []
       }
     },
     {
-      "type": "step_metadata",
+      "type": "step_metadata_v1",
       "node_id": "$steps.crop",
       "block_type": "roboflow_core/dynamic_crop@v1",
       "input_dimensionality": 1,
       "output_dimensionality": 2,
       "accepts_batch_input": true,
       "resources": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": true,
         "unknown_reasons": []
       },
       "restrictions": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": true,
         "unknown_reasons": []
       },
       "operations": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": ["image_crop"],
         "complete": true,
         "unknown_reasons": []
       }
     },
     {
-      "type": "step_metadata",
+      "type": "step_metadata_v1",
       "node_id": "$steps.classification",
       "block_type": "roboflow_core/roboflow_classification_model@v2",
       "input_dimensionality": 2,
       "output_dimensionality": 2,
       "accepts_batch_input": true,
       "resources": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [
           {
-            "type": "dependent_resource",
+            "type": "dependent_resource_v1",
             "resource_type": "roboflow_platform_model",
             "metadata": {
-              "type": "roboflow_platform_model",
+              "type": "roboflow_platform_model_v1",
               "model_id": "my-other-project/1",
               "required_action": "execution",
               "execution_location": "environment_defined"
@@ -590,13 +593,13 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
         "unknown_reasons": []
       },
       "restrictions": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": [],
         "complete": true,
         "unknown_reasons": []
       },
       "operations": {
-        "type": "discovery",
+        "type": "discovery_v1",
         "items": ["model_inference"],
         "complete": true,
         "unknown_reasons": []
@@ -604,12 +607,12 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
     }
   ],
   "summary": {
-    "type": "workflow_summary",
+    "type": "workflow_summary_v1",
     "models": {
-      "type": "discovery",
+      "type": "discovery_v1",
       "items": [
         {
-          "type": "model_summary",
+          "type": "model_summary_v1",
           "provider": "roboflow",
           "model_id": "my-other-project/1",
           "used_by_steps": ["$steps.classification"],
@@ -618,7 +621,7 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
           "metadata_status": "disabled"
         },
         {
-          "type": "model_summary",
+          "type": "model_summary_v1",
           "provider": "roboflow",
           "model_id": "my-project/3",
           "used_by_steps": ["$steps.detection"],
@@ -671,27 +674,27 @@ The complete response has the same envelope as the previous example (three nodes
 
 ```json
 {
-  "type": "step_metadata",
+  "type": "step_metadata_v1",
   "node_id": "$steps.producer",
   "block_type": "roboflow_enterprise/kafka_producer_sink@v1",
   "input_dimensionality": 0,
   "output_dimensionality": 0,
   "accepts_batch_input": false,
   "resources": {
-    "type": "discovery",
+    "type": "discovery_v1",
     "items": [],
     "complete": true,
     "unknown_reasons": []
   },
   "restrictions": {
-    "type": "discovery",
+    "type": "discovery_v1",
     "items": [
       {
-        "type": "restriction",
+        "type": "restriction_v1",
         "code": "fire_and_forget_hides_persistence_failures",
         "severity": "soft",
         "when": {
-          "type": "restriction_condition",
+          "type": "restriction_condition_v1",
           "runtimes": ["inference_pipeline"],
           "step_execution_modes": null,
           "input_modes": null,
@@ -699,11 +702,11 @@ The complete response has the same envelope as the previous example (three nodes
         }
       },
       {
-        "type": "restriction",
+        "type": "restriction_v1",
         "code": "unavailable_on_hosted_platform",
         "severity": "hard",
         "when": {
-          "type": "restriction_condition",
+          "type": "restriction_condition_v1",
           "runtimes": ["hosted_serverless"],
           "step_execution_modes": null,
           "input_modes": null,
@@ -715,7 +718,7 @@ The complete response has the same envelope as the previous example (three nodes
     "unknown_reasons": []
   },
   "operations": {
-    "type": "discovery",
+    "type": "discovery_v1",
     "items": ["external_request"],
     "complete": true,
     "unknown_reasons": []

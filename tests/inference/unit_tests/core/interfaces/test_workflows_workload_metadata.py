@@ -259,7 +259,7 @@ def test_successful_lookup_maps_registry_fields_and_drops_latency(
     assert result.metadata.model_variant == "coco"
     assert result.metadata.task_type == "object-detection"
     assert result.metadata.model_dump() == {
-        "type": "model_metadata",
+        "type": "model_metadata_v1",
         "model_type": "yolov8n",
         "model_variant": "coco",
         "task_type": "object-detection",

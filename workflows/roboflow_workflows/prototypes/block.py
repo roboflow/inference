@@ -199,7 +199,7 @@ class ModelExecutionLocation(str, Enum):
 class RoboflowPlatformModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
-    type: Literal["roboflow_platform_model"] = "roboflow_platform_model"
+    type: Literal["roboflow_platform_model_v1"] = "roboflow_platform_model_v1"
     model_id: str
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION
     execution_location: Optional[ModelExecutionLocation] = None
@@ -292,7 +292,7 @@ class RoboflowPlatformModelMetadata(BaseModel):
 class RoboflowPlatformProjectMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    type: Literal["roboflow_platform_project"] = "roboflow_platform_project"
+    type: Literal["roboflow_platform_project_v1"] = "roboflow_platform_project_v1"
     project_url: str
 
     def requires_runtime_resolution(self) -> bool:
@@ -302,7 +302,7 @@ class RoboflowPlatformProjectMetadata(BaseModel):
 class ThirdPartyModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
-    type: Literal["third_party_model"] = "third_party_model"
+    type: Literal["third_party_model_v1"] = "third_party_model_v1"
     provider: str
     model_id: str
     # See RoboflowPlatformModelMetadata.model_id_resolver — same contract.
@@ -334,7 +334,7 @@ REGISTERED_RESOURCE_METADATA_TYPES: Dict[DependentResourceType, Type[BaseModel]]
 class DependentResource(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    type: Literal["dependent_resource"] = "dependent_resource"
+    type: Literal["dependent_resource_v1"] = "dependent_resource_v1"
     resource_type: DependentResourceType
     metadata: Union[
         RoboflowPlatformModelMetadata,

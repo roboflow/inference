@@ -663,13 +663,14 @@ def test_tracker_state_caveat_does_not_depend_on_model_execution_mode() -> None:
     )
     conditions = {item["code"]: item["when"] for item in payload["items"]}
     assert conditions["stateful_video_state_resets_on_stateless_http"] == {
-        "type": "restriction_condition",
+        "type": "restriction_condition_v1",
         "runtimes": ["dedicated_deployment", "hosted_serverless"],
         "step_execution_modes": None,
         "input_modes": ["video"],
         "configuration_equals": {},
     }
-    assert introspection.schema_version == "1"
+    assert introspection.type == "workflow_introspection_v1"
+    assert "schema_version" not in introspection.model_dump(mode="json")
 
 
 def test_malformed_definition_raises_existing_error_type() -> None:
@@ -704,10 +705,12 @@ def test_result_roundtrips_json_and_serialises_type_fields() -> None:
     assert roundtrip == introspection
     dumped = introspection.model_dump(mode="json")
     assert dumped["summary"]["steps_by_dimensionality"] == {"1": 2}
-    assert dumped["summary"]["models"]["items"][0]["type"] == "model_summary"
-    assert dumped["steps"][0]["resources"]["items"][0]["type"] == "dependent_resource"
+    assert dumped["summary"]["models"]["items"][0]["type"] == "model_summary_v1"
+    assert dumped["steps"][0]["resources"]["items"][0]["type"] == (
+        "dependent_resource_v1"
+    )
     assert dumped["steps"][0]["resources"]["items"][0]["metadata"]["type"] == (
-        "roboflow_platform_model"
+        "roboflow_platform_model_v1"
     )
 
 
