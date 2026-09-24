@@ -16,10 +16,6 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-### Changed
-
-- Roboflow model blocks: loading a fine-tuned model still requires an API key. Running it on your own hardware does not use credits. The Serverless Cloud API bills each image at the model's rate.
-
 ### Fixed
 
 - MQTT Writer: a broker that refuses the connection (bad user name or password, not authorised, unacceptable protocol version) is now reported in the outputs with the broker's reason, and the client stops reconnecting instead of retrying the same credentials about once a second, which tripped brokers' authentication rate limiting. The refusal is reported as soon as the broker answers rather than after `timeout`, and every later run repeats it without touching the broker; fix the configuration and restart the pipeline. A broker answering "unavailable" keeps retrying in the background.
