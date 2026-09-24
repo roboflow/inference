@@ -1,10 +1,34 @@
 # Changelog
 
+This is the canonical changelog for the `roboflow-workflows` package, including
+blocks, dependencies, and execution-engine behavior. Add engine behavior changes
+under `## Unreleased` → `### Execution engine`; one entry is sufficient.
+
+Package releases record their bundled execution-engine compatibility version,
+which can remain unchanged across package releases. The package version and
+engine version are separate; workflow and block compatibility use the engine
+version. The mapping starts with package `0.2.2` below.
+
+Earlier engine changes and migration guidance remain in the
+[historical execution-engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+See the [engine release rule](../.cursor/rules/execution-engine-version-changelog.mdc)
+for contributor and maintainer responsibilities.
+
 ## Unreleased
+
+### Execution engine
+
+- Reject cyclic saved inner-workflow references during resolution with a composition
+  error instead of `RecursionError`. Enforce nesting depth and total inner-workflow
+  count limits during reference expansion, before fetching or expanding children
+  beyond those limits. Valid repeated references and remote dispatch are unchanged;
+  no migration is required.
 
 ---
 
 ## `0.2.2`
+
+Bundled execution engine: `1.15.2`.
 
 ### Added
 - OpenAI block (`open_ai@v7`): `gpt-6-sol` and `gpt-6-luna` model options.
