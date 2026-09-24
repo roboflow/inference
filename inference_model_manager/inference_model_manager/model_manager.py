@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference_model_manager import configuration as cfg
-from inference_model_manager.backends.base import Backend
+from inference_model_manager.backends.base import Backend, BackendState
 from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
 from inference_model_manager.marshalling import (
     model_supports_rle,
@@ -837,7 +837,7 @@ class ModelManager:
         """
         backend = self._backends.get(model_id)
         if backend is None:
-            return "not_loaded"
+            return BackendState.NOT_LOADED
         return backend.state
 
     def list_models(self) -> List[Dict[str, Any]]:
@@ -877,7 +877,9 @@ class ModelManager:
 
     @property
     def loaded_models(self) -> List[str]:
-        return [mid for mid, b in self._backends.items() if b.state == "loaded"]
+        return [
+            mid for mid, b in self._backends.items() if b.state == BackendState.LOADED
+        ]
 
     def is_healthy(self, model_id: str) -> bool:
         backend = self._backends.get(model_id)

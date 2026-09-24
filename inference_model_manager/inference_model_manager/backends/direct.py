@@ -8,7 +8,11 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from inference_model_manager.backends.base import Backend, attach_model_caches
+from inference_model_manager.backends.base import (
+    Backend,
+    BackendState,
+    attach_model_caches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +52,7 @@ class DirectBackend(Backend):
         self._device_str = device
         self._decoder_name = decoder
         self._executor = executor
-        self._state_value: str = "loading"
+        self._state_value: str = BackendState.LOADING
 
         self._decode: Callable[[bytes], Any] = make_decoder(
             decoder,
@@ -70,7 +74,7 @@ class DirectBackend(Backend):
         except Exception:
             self._model = None
             raise
-        self._state_value = "loaded"
+        self._state_value = BackendState.LOADED
 
         self._device_str = self._detect_device()
 
@@ -138,7 +142,7 @@ class DirectBackend(Backend):
         already observed zero in flight, and run against an unloaded model.
         """
         with self._inflight_lock:
-            if self._state_value != "loaded" or self._model is None:
+            if self._state_value != BackendState.LOADED or self._model is None:
                 raise RuntimeError(
                     f"Backend '{self._model_id}' not accepting requests "
                     f"(state={self.state})"
@@ -151,7 +155,7 @@ class DirectBackend(Backend):
 
     def drain_and_unload(self, timeout_s: float = 30.0) -> None:
         with self._inflight_lock:
-            self._state_value = "draining"
+            self._state_value = BackendState.DRAINING
         logger.info(
             "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
         )
@@ -177,7 +181,7 @@ class DirectBackend(Backend):
 
     def unload(self) -> None:
         with self._inflight_lock:
-            self._state_value = "unhealthy"
+            self._state_value = BackendState.UNHEALTHY
         del self._model
         self._model = None
 
@@ -196,16 +200,16 @@ class DirectBackend(Backend):
     @property
     def state(self) -> str:
         if self._model is None:
-            return "unhealthy"
+            return BackendState.UNHEALTHY
         return self._state_value
 
     @property
     def is_healthy(self) -> bool:
-        return self._model is not None and self._state_value == "loaded"
+        return self._model is not None and self._state_value == BackendState.LOADED
 
     @property
     def is_accepting(self) -> bool:
-        return self._state_value == "loaded" and self._model is not None
+        return self._state_value == BackendState.LOADED and self._model is not None
 
     @property
     def max_batch_size(self) -> Optional[int]:

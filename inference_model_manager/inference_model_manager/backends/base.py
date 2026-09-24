@@ -1,7 +1,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, Dict, List, Optional
+
+
+class BackendState(str, Enum):
+    """Lifecycle states a backend reports through ``state``.
+
+    A ``str`` subclass so that members compare equal to, serialize as, and
+    render as their value; a backend may still report the plain string.
+    """
+
+    LOADING = "loading"
+    LOADED = "loaded"
+    DRAINING = "draining"
+    UNHEALTHY = "unhealthy"
+    NOT_LOADED = "not_loaded"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 def detect_max_batch_size(model) -> Optional[int]:
@@ -175,9 +193,10 @@ class Backend(ABC):
     ``Dict[str, Backend]`` keyed by ``model_id`` and consumes that surface
     directly:
 
-    - ``state``: must be the literal string ``"loaded"`` for the model to
-      appear in ``ModelManager.loaded_models``. Also returned verbatim by
-      ``health()`` and included in ``list_models()``.
+    - ``state``: must equal ``BackendState.LOADED`` for the model to appear in
+      ``ModelManager.loaded_models``. Also returned verbatim by ``health()``
+      and included in ``list_models()``. Use ``BackendState``; a plain string
+      of the same value is accepted.
     - ``device``: surfaced in ``list_models()``.
     - ``is_healthy``: read by ``ModelManager.is_healthy()``.
     - ``is_accepting``: drives ``ModelManager.is_ready()``; also surfaced in

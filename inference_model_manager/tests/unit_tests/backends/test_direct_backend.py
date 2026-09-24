@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -123,3 +125,33 @@ class TestRequestedDeviceReporting:
         )
 
         assert backend._detect_device() == "cuda"
+
+
+class TestBackendStateVocabulary:
+    def test_members_are_interchangeable_with_the_plain_strings(self):
+        import json
+
+        from inference_model_manager.backends.base import BackendState
+
+        assert BackendState.LOADED == "loaded"
+        assert json.dumps({"state": BackendState.LOADED}) == '{"state": "loaded"}'
+        assert {"loaded": 1}[BackendState.LOADED] == 1
+        assert BackendState("loaded") is BackendState.LOADED
+
+    def test_members_render_as_their_value(self):
+        from inference_model_manager.backends.base import BackendState
+
+        assert f"{BackendState.LOADED}" == "loaded"
+        assert str(BackendState.LOADED) == "loaded"
+        assert "%s" % BackendState.LOADED == "loaded"
+
+    def test_a_backend_reporting_a_plain_string_still_counts_as_loaded(self):
+        from inference_model_manager.model_manager import ModelManager
+
+        mm = ModelManager()
+        try:
+            mm._backends["legacy-backend"] = SimpleNamespace(state="loaded")
+            assert mm.loaded_models == ["legacy-backend"]
+        finally:
+            mm._backends.clear()
+            mm.shutdown()
