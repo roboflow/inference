@@ -101,17 +101,17 @@ class DirectBackend(Backend):
         )
 
     def _detect_device(self) -> str:
-        if self._model is None:
-            return self._device_str or "cpu"
-        params = (
-            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
-        )
-        if params:
-            return str(params[0].device)
-        buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
-        if buffers:
-            return str(buffers[0].device)
-        return self._device_str or "cpu"
+        """Return the device the model was asked to load on.
+
+        This is the requested device, not necessarily the one executing the
+        model: an onnxruntime session that falls back to CPU is still reported
+        as the device that was requested.
+        """
+        if self._device_str:
+            return self._device_str
+        from inference_models.configuration import DEFAULT_DEVICE_STR
+
+        return DEFAULT_DEVICE_STR
 
     def _decode_input(self, raw_input: Any) -> Any:
         if isinstance(raw_input, (bytes, bytearray)):

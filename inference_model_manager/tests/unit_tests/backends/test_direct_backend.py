@@ -91,3 +91,35 @@ class TestResolvedModelInStats:
             assert entry["resolved_model"] is None
         finally:
             mm.shutdown()
+
+
+class TestRequestedDeviceReporting:
+    def test_explicit_device_is_reported(self):
+        backend = DirectBackend.__new__(DirectBackend)
+        backend._device_str = "cuda:1"
+
+        assert backend._detect_device() == "cuda:1"
+
+    def test_absent_device_falls_back_to_the_library_default(self, monkeypatch):
+        from inference_models import configuration
+
+        monkeypatch.setattr(configuration, "DEFAULT_DEVICE_STR", "cuda")
+        backend = DirectBackend.__new__(DirectBackend)
+        backend._device_str = None
+
+        assert backend._detect_device() == "cuda"
+
+    def test_model_attributes_do_not_decide_the_reported_device(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from inference_models import configuration
+
+        monkeypatch.setattr(configuration, "DEFAULT_DEVICE_STR", "cuda")
+        backend = DirectBackend.__new__(DirectBackend)
+        backend._device_str = None
+        backend._model = SimpleNamespace(
+            parameters=lambda: [SimpleNamespace(device="cpu")],
+            buffers=lambda: [SimpleNamespace(device="cpu")],
+        )
+
+        assert backend._detect_device() == "cuda"
