@@ -20,70 +20,72 @@ The `inference-models` library supports a wide range of computer vision models a
 
 **Legend:** ✅ Available | ❌ Not available | 🔑 Requires API key | 📤 Upload only
 
+**Self-hosted commercial license:** Enterprise add-on means a commercial license for self-hosted deployment is available as an add-on, not included with Enterprise by default. Without that add-on, self-hosted deployment follows the model license, so an AGPL-3.0 model must be used under AGPL-3.0. Those same models include a commercial license for every user on [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api). N/A means that license already allows commercial use. ❌ means Roboflow does not offer a commercial license for that model.
+
 ### Object Detection
 
-| Model                                   | Backends | License    | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model                                   | Backends | License    | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-----------------------------------------|--------|------------|-------------------------------|---------------------|----------------|
 | [RF-DETR](rfdetr-object-detection.md)   | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
-| [YOLOv5](yolov5-object-detection.md)    | `onnx` | AGPL-3.0   | ✅ | ❌ | 📤 |
-| [YOLOv8](yolov8-object-detection.md)    | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ✅ | ✅ |
+| [YOLOv5](yolov5-object-detection.md)    | `onnx` | AGPL-3.0   | Enterprise add-on | ❌ | 📤 |
+| [YOLOv8](yolov8-object-detection.md)    | `onnx`, `torch-script`, `trt` | AGPL-3.0   | Enterprise add-on | ✅ | ✅ |
 | [YOLOv9](yolov9-object-detection.md)    | `onnx`, `torch-script`, `trt` | GPL-3.0    | ❌ | ❌ | 📤 |
-| [YOLOv10](yolov10-object-detection.md)  | `onnx`, `trt` | AGPL-3.0   | ✅ | ✅ | 📤 |
-| [YOLOv11](yolov11-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ✅ | ✅ |
-| [YOLOv12](yolov12-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ❌ | ✅ |
+| [YOLOv10](yolov10-object-detection.md)  | `onnx`, `trt` | AGPL-3.0   | Enterprise add-on | ✅ | 📤 |
+| [YOLOv11](yolov11-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | Enterprise add-on | ✅ | ✅ |
+| [YOLOv12](yolov12-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | Enterprise add-on | ❌ | ✅ |
 | [YOLO-NAS](yolonas-object-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
 | [Grounding DINO](grounding-dino.md)     | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [OWLv2](owlv2.md)                       | `hugging-face` | Apache 2.0 | N/A | 🔑 | ❌ |
-| [Roboflow Instant](rroboflow-instant-object-detection)           | `hugging-face` | Roboflow   | ✅ | ❌ | ✅ |
+| [Roboflow Instant](rroboflow-instant-object-detection)           | `hugging-face` | Roboflow   | Enterprise add-on | ❌ | ✅ |
 
 ### Instance Segmentation
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|--------|---------|-------------------------------|---------------------|-----------------|
 | [RF-DETR Seg](rfdetr-instance-segmentation.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
-| [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx` | AGPL-3.0 | ✅ | ❌ | ✅ |
+| [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx` | AGPL-3.0 | Enterprise add-on | ❌ | ✅ |
 | [YOLOv7 Seg](yolov7-instance-segmentation.md) | `onnx` | AGPL-3.0 | ❌ | ❌ | ✅ |
-| [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
-| [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
+| [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [YOLACT](yolact-instance-segmentation.md) | `onnx` | MIT | N/A | ❌ | ✅ |
 
 ### Keypoint Detection
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|--------|---------|-------------------------------|---------------------|-----------------|
 | [RF-DETR Keypoint](rfdetr-keypoint-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
-| [YOLOv8 Keypoint](yolov8-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
-| [YOLOv11 Keypoint](yolov11-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
-| [YOLO26 Keypoint](yolo26-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLOv8 Keypoint](yolov8-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
+| [YOLOv11 Keypoint](yolov11-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
+| [YOLO26 Keypoint](yolo26-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 
 ### Classification
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [ResNet](resnet-classification.md) | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
 | [ViT](vit-classification.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
 | [DINOv3](dinov3-classification.md) | `torch` | Meta DINO | N/A | ❌ | ✅ |
-| [YOLOv8 Cls](yolov8-classification.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLOv8 Cls](yolov8-classification.md) | `onnx`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [PatchCore](patchcore-anomaly-detection.md) | `torch` | Apache 2.0 | N/A | ❌ | ✅ |
 | [FoundAD](foundad-anomaly-detection.md) | `torch` | MIT, Meta DINO | N/A | ❌ | ✅ |
 
 ### Embeddings
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [CLIP](clip.md) | `torch`, `onnx` | MIT | N/A | ✅ | ❌ |
 | [Perception Encoder](perception-encoder.md) | `torch` | FAIR Noncommercial | ❌ | ✅ | ❌ |
 
 ### Semantic Segmentation
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
-| [YOLO26 Sem](yolo26-semantic-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLO26 Sem](yolo26-semantic-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [DeepLabV3+](deeplabv3plus.md) | `torch`, `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 
 ### OCR & Document Parsing
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [DocTR](doctr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [EasyOCR](easyocr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
@@ -93,7 +95,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 ### Interactive Segmentation
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [SAM](sam-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [SAM2](sam2-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
@@ -102,7 +104,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 ### Vision-Language Models
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [Florence-2](florence2.md) | `torch` | MIT | N/A                           | ✅ | ✅ |
 | [Mage-VL](mage-vl.md) | `torch` | Apache 2.0 | N/A                           | 🚧 registration pending | ❌ |
@@ -118,15 +120,15 @@ The `inference-models` library supports a wide range of computer vision models a
 
 ### Depth Estimation
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
-| [YOLO26 Depth](yolo26-depth-estimation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ❌ |
+| [YOLO26 Depth](yolo26-depth-estimation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ❌ |
 | [Depth Anything V2](depth-anything-v2.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [Depth Anything V3](depth-anything-v3.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 
 ### Specialized Models
 
-| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [L2CS](l2cs.md) | `torch` | MIT | N/A | ✅ | ❌ |
 
