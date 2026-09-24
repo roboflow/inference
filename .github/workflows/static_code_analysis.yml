@@ -6,6 +6,9 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    # Fast-track CI (fast_track_ci.yml) dispatches this workflow on a
+    # fast-track branch.
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
