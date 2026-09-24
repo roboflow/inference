@@ -47,7 +47,7 @@ def _od_bridge():
         registry_id="ds/1",
         task_type="object-detection",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["cat"],
     )
     b.predictions[("ds/1", "infer")] = SimpleNamespace(
@@ -80,7 +80,7 @@ def test_instance_segmentation_raw_responses():
         registry_id="ds/1",
         task_type="instance-segmentation",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["cat"],
     )
     mask = np.zeros((1, 4, 6), dtype=bool)
@@ -122,14 +122,14 @@ def test_none_confidence_is_forwarded_and_rejected_by_the_request_entity():
         )
 
 
-def test_classification_inference_kwargs_override_task_params():
+def test_classification_inference_kwargs_override_action_params():
     b = FakeSyncBridge()
     b.routes["cls/1"] = Route(
         model_id="cls/1",
         registry_id="cls/1",
         task_type="classification",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["cat"],
     )
     b.predictions[("cls/1", "infer")] = SimpleNamespace(
@@ -180,7 +180,7 @@ def test_key_remembered_by_add_model_is_reused_by_keyless_calls():
         registry_id="depth-anything-v2/small",
         task_type="depth-estimation",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     b.predictions[("depth-anything-v2/small", "infer")] = np.array(
         [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
@@ -207,7 +207,7 @@ def test_depth_estimation_returns_normalized_depth_and_image():
         registry_id="depth-anything-v2/small",
         task_type="depth-estimation",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     b.predictions[("depth-anything-v2/small", "infer")] = np.array(
         [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
@@ -227,7 +227,7 @@ def test_clip_text_embedding():
         registry_id="clip/ViT-B-16",
         task_type="embedding",
         action="embed_images",
-        tasks={"embed_images", "embed_text"},
+        actions={"embed_images", "embed_text"},
     )
     b.predictions[("clip/ViT-B-16", "embed_text")] = np.array([[1.0, 2.0], [3.0, 4.0]])
     out = GatewayModelsProvider(b, api_key=None).run_clip_text_embedding(
@@ -243,7 +243,7 @@ def test_clip_comparison_returns_similarity_payload():
         registry_id="clip/ViT-B-16",
         task_type="embedding",
         action="embed_images",
-        tasks={"embed_images", "embed_text", "compare"},
+        actions={"embed_images", "embed_text", "compare"},
     )
     b.predictions[("clip/ViT-B-16", "embed_images")] = np.array([[1.0, 0.0]])
     b.predictions[("clip/ViT-B-16", "embed_text")] = np.array([[1.0, 0.0], [0.0, 1.0]])
@@ -264,7 +264,7 @@ def test_sam2_segmentation_returns_responses():
         registry_id="sam2/hiera_large",
         task_type="interactive-instance-segmentation",
         action="embed",
-        tasks={"embed", "segment_with_visual_prompts"},
+        actions={"embed", "segment_with_visual_prompts"},
     )
     mask = np.zeros((1, 4, 6), dtype=bool)
     mask[0, 1:3, 1:3] = True

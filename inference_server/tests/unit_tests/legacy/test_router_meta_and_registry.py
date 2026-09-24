@@ -27,7 +27,7 @@ def test_healthz_and_readiness(legacy_client):
 
 def test_model_add_registry_remove_clear(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
-    gw = FakeGateway(model_info={"ds/1": {"tasks": {"infer": {}}}})
+    gw = FakeGateway(model_info={"ds/1": {"actions": {"infer": {}}}})
     c = legacy_client(gw)
     r = c.post("/model/add", json={"model_id": "ds/1", "api_key": "k"})
     assert r.status_code == 200

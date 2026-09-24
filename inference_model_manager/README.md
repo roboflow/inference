@@ -70,7 +70,7 @@ Models default to BGR input (OpenCV convention). Pass `input_color_format` if yo
 
 ## Registering a model in the registry
 
-Models in `inference-models` work standalone — no changes needed there. To make a model available through model manager (task dispatch, validation, typed serialization), add an entry to `registry_defaults.py`.
+Models in `inference-models` work standalone — no changes needed there. To make a model available through model manager (action dispatch, validation, typed serialization), add an entry to `registry_defaults.py`.
 
 ### Case 1: Model inherits from a registered base class
 
@@ -85,18 +85,18 @@ class MyDetector(ObjectDetectionModel):
 
 This works out of the box with `mm.process("my-detector", images=img)`.
 
-### Case 2: New base class or model with unique tasks
+### Case 2: New base class or model with unique actions
 
-Add entries to `_TASK_CONFIGS` in `registry_defaults.py`. Each entry is a tuple:
+Add entries to `_ACTION_CONFIGS` in `registry_defaults.py`. Each entry is a tuple:
 
 ```
-(task_name, method_name, is_default, params_dict, validator_name, serializer_name, response_type)
+(action_name, method_name, is_default, params_dict, validator_name, serializer_name, response_type)
 ```
 
-Example — a model with two tasks:
+Example — a model with two actions:
 
 ```python
-# In registry_defaults.py _TASK_CONFIGS dict:
+# In registry_defaults.py _ACTION_CONFIGS dict:
 "MyCustomModel": [
     ("generate", "generate_output", True,
      {
@@ -124,9 +124,9 @@ Reusable param fragments (`_P_IMAGES`, `_P_IMAGES_PROMPT`, `_K_OD`, etc.) are de
 ```
 
 Fields:
-- **task_name** — what users pass as `task=` param (e.g. `mm.process("model", task="embed")`)
-- **method_name** — actual method on the model class to call (can differ from task_name)
-- **is_default** — exactly one task must be `True`; used when `task=None`
+- **action_name** — what users pass as `action=` param (e.g. `mm.process("model", action="embed")`)
+- **method_name** — actual method on the model class to call (can differ from action_name)
+- **is_default** — exactly one action must be `True`; used when `action=None`
 - **params_dict** — `{name: {type, required, default?}}` — exposed in stats/interface for API discovery
 - **validator_name** — function from `validators.py` (e.g. `"validate_images_required"`)
 - **serializer_name** — function from `serializers_typed.py` (e.g. `"serialize_text"`)
@@ -158,7 +158,7 @@ def serialize_my_custom_output(output, model) -> dict:
     }
 ```
 
-Then reference by name in `_TASK_CONFIGS`:
+Then reference by name in `_ACTION_CONFIGS`:
 
 ```python
 "MyCustomModel": [
@@ -170,14 +170,14 @@ Then reference by name in `_TASK_CONFIGS`:
 
 ### Case 4: Multi-model pipelines
 
-A pipeline registered in `inference_models` (`REGISTERED_PIPELINES`) is loaded as one manager entry. `inference_model_manager/pipelines.py` maps the serving id family to the pipeline: `pp_ocr/{det}-{rec}` loads `pp-ocrv6-det/{det}` and `pp-ocrv6-rec/{rec}` (`none` disables a stage, a single token applies to both, bare `pp_ocr` uses the library defaults) and composes them with `resolve_pipeline_class(...).with_models(...)`. The composed object is wrapped in a facade whose class name carries the `_TASK_CONFIGS` entry, so dispatch, validation and serialization work as for any model:
+A pipeline registered in `inference_models` (`REGISTERED_PIPELINES`) is loaded as one manager entry. `inference_model_manager/pipelines.py` maps the serving id family to the pipeline: `pp_ocr/{det}-{rec}` loads `pp-ocrv6-det/{det}` and `pp-ocrv6-rec/{rec}` (`none` disables a stage, a single token applies to both, bare `pp_ocr` uses the library defaults) and composes them with `resolve_pipeline_class(...).with_models(...)`. The composed object is wrapped in a facade whose class name carries the `_ACTION_CONFIGS` entry, so dispatch, validation and serialization work as for any model:
 
 ```python
 mm.load("pp_ocr/small-small", api_key="YOUR_KEY")
 texts, detections = mm.process("pp_ocr/small-small", images=image, serialize=False)
 ```
 
-To add a pipeline: one `PipelineFamily` row in `PIPELINE_FAMILIES`, one facade adapting the pipeline result to a registered task contract, one `_TASK_CONFIGS` entry keyed by the facade class name.
+To add a pipeline: one `PipelineFamily` row in `PIPELINE_FAMILIES`, one facade adapting the pipeline result to a registered action contract, one `_ACTION_CONFIGS` entry keyed by the facade class name.
 
 ### How it works
 
@@ -186,6 +186,6 @@ Registration is lazy. Nothing is imported until `ModelManager.load()` is called.
 1. Backend loads the model (`AutoModel.from_pretrained` for direct, backend-specific for plugin backends)
 2. For direct backend: `lazy_register(type(model))` walks the class MRO
 3. For backends whose model doesn't live in-process: the backend reports MRO class names directly, `lazy_register_by_names(mro_names)` matches by string
-4. For each ancestor, checks if `cls.__name__` has an entry in `_TASK_CONFIGS`
-5. If found, registers the tasks (imports only validators/serializers — pure Python, no heavy deps)
+4. For each ancestor, checks if `cls.__name__` has an entry in `_ACTION_CONFIGS`
+5. If found, registers the actions (imports only validators/serializers — pure Python, no heavy deps)
 6. Subsequent `process()` calls use the registered entry for dispatch + serialization

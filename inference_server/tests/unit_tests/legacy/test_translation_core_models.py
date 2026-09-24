@@ -40,15 +40,15 @@ def _route(**kwargs) -> Route:
 
 
 def test_resolve_request_action_prefers_moondream_detect():
-    route = _route(tasks={"detect"}, model_class_name="MoonDream2HF")
+    route = _route(actions={"detect"}, model_class_name="MoonDream2HF")
     assert (
         resolve_request_action(route, LMMInferenceRequest(model_id="m/1", image=IMG))
         == "detect"
     )
 
 
-def test_resolve_request_action_uses_first_candidate_present_in_tasks():
-    route = _route(task_type="embedding", action="embed_images", tasks={"embed_text"})
+def test_resolve_request_action_uses_first_candidate_present_in_actions():
+    route = _route(task_type="embedding", action="embed_images", actions={"embed_text"})
     request = ClipTextEmbeddingRequest(text="hello")
     assert resolve_request_action(route, request) == "embed_text"
 
@@ -59,7 +59,7 @@ def test_resolve_request_action_falls_back_to_route_action():
 
 
 def test_resolve_request_action_falls_back_when_no_candidate_is_registered():
-    route = _route(task_type="embedding", action="embed_images", tasks={"compare"})
+    route = _route(task_type="embedding", action="embed_images", actions={"compare"})
     request = ClipTextEmbeddingRequest(text="hello")
     assert resolve_request_action(route, request) == "embed_images"
 
@@ -68,7 +68,7 @@ def test_resolve_request_action_keeps_compare_when_model_only_embeds():
     route = _route(
         task_type="embedding",
         action="embed_images",
-        tasks={"embed_images", "embed_text"},
+        actions={"embed_images", "embed_text"},
     )
     request = ClipCompareRequest(
         subject="a dog",
@@ -80,7 +80,7 @@ def test_resolve_request_action_keeps_compare_when_model_only_embeds():
 
 
 def test_resolve_request_action_ignores_moondream_mro_only_routes():
-    route = _route(tasks={"detect"}, model_mro_names=["MoonDream2HF"])
+    route = _route(actions={"detect"}, model_mro_names=["MoonDream2HF"])
     request = LMMInferenceRequest(model_id="m/1", image=IMG)
     assert resolve_request_action(route, request) == "prompt"
 
@@ -93,7 +93,7 @@ def test_embedding_calls_for_compare_put_subject_first():
         prompt_type="text",
     )
     calls, keys = build_embedding_calls("compare", req)
-    assert [c["task"] for c in calls] == ["embed_text", "embed_text"]
+    assert [c["action"] for c in calls] == ["embed_text", "embed_text"]
     assert keys == ["x", "y"]
     assert calls[0]["params"] == {"texts": ["a dog"]}
     assert calls[1]["params"] == {"texts": ["cat", "dog"]}
@@ -103,7 +103,7 @@ def test_embedding_calls_for_images_are_one_per_image():
     req = ClipImageEmbeddingRequest(image=[IMG, IMG])
     calls, keys = build_embedding_calls("embed_images", req)
     assert keys is None
-    assert [c["task"] for c in calls] == ["embed_images", "embed_images"]
+    assert [c["action"] for c in calls] == ["embed_images", "embed_images"]
     assert calls[0]["image"] is not None and calls[0]["params"] == {}
 
 

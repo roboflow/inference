@@ -61,7 +61,7 @@ def test_run_tensor_native_inference_returns_per_image_tensor_objects():
         registry_id="ds/1",
         task_type="object-detection",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["cat"],
     )
     bridge.predictions[("ds/1", "infer")] = _marshalled_detections()
@@ -97,7 +97,7 @@ def test_classification_is_one_batched_prediction():
         registry_id="c/1",
         task_type="classification",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["a", "b"],
     )
     bridge.predictions[("c/1", "infer")] = ClassificationPrediction(
@@ -127,7 +127,7 @@ def test_multi_label_classification_is_one_prediction_per_image():
         registry_id="m/1",
         task_type="multi-label-classification",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         class_names=["a", "b"],
     )
     bridge.predictions[("m/1", "infer")] = MultiLabelClassificationPrediction(
@@ -156,7 +156,7 @@ def test_keypoints_are_two_parallel_lists():
         registry_id="k/1",
         task_type="keypoint-detection",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
         key_points_classes=[["nose"]],
     )
     kp = KeyPoints(
@@ -187,7 +187,7 @@ def test_keypoints_without_detections_keep_none():
         registry_id="k/1",
         task_type="keypoint-detection",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     kp = KeyPoints(
         xy=np.zeros((1, 1, 2), np.float32),
@@ -210,7 +210,7 @@ def test_dense_masks_flag_maps_to_mask_format():
         registry_id="s/1",
         task_type="instance-segmentation",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     bridge.predictions[("s/1", "infer")] = _marshalled_detections()
     GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(
@@ -228,7 +228,7 @@ def test_rle_masks_stay_the_default_for_instance_segmentation():
         registry_id="s/1",
         task_type="instance-segmentation",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     bridge.predictions[("s/1", "infer")] = _marshalled_detections()
     GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(
@@ -247,7 +247,7 @@ def test_run_tensor_native_inference_ships_npy_when_gateway_needs_bytes():
         registry_id="ds/1",
         task_type="object-detection",
         action="infer",
-        tasks={"infer"},
+        actions={"infer"},
     )
     bridge.predictions[("ds/1", "infer")] = _marshalled_detections()
     GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(
@@ -265,7 +265,7 @@ def test_unsupported_family_is_501():
         registry_id="v/1",
         task_type="vlm",
         action="prompt",
-        tasks={"prompt"},
+        actions={"prompt"},
     )
     with pytest.raises(LegacyHTTPError) as exc:
         GatewayModelsProvider(bridge, api_key="k").run_tensor_native_inference(

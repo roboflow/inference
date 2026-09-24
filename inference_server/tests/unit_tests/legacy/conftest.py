@@ -43,17 +43,27 @@ class FakeGateway:
         return ("ok",) if self.loaded.pop(model_id, None) is not None else ("error", 6)
 
     async def infer(
-        self, *, model_id, image=None, task=None, instance="", params=None, request=None
+        self,
+        *,
+        model_id,
+        image=None,
+        action=None,
+        instance="",
+        params=None,
+        request=None,
     ):
-        self.calls.append(("infer", model_id, task, params, image))
-        value = self.predictions[(model_id, task)]
+        self.calls.append(("infer", model_id, action, params, image))
+        value = self.predictions[(model_id, action)]
         return value(image, params) if callable(value) else value
 
     async def stats(self):
         return {"models": {k: dict(v, model_id=k) for k, v in self.loaded.items()}}
 
     async def interface(self, model_id):
-        return {"model_id": model_id, "tasks": self.loaded[model_id].get("tasks", {})}
+        return {
+            "model_id": model_id,
+            "actions": self.loaded[model_id].get("actions", {}),
+        }
 
 
 def route_paths(app) -> set[str]:

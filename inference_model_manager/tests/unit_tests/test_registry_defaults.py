@@ -5,7 +5,7 @@ from inference_model_manager.registry import ModelRegistry
 
 
 def test_subclass_override_registers_after_base(monkeypatch):
-    """Subclass config must register even when a base class with same task is already registered.
+    """Subclass config must register even when a base class with same action is already registered.
 
     Regression: previously _register_from_config used get_entry_for_class (MRO-walking)
     to decide whether to skip. After Base.infer was registered, Sub.infer would be
@@ -35,7 +35,7 @@ def test_subclass_override_registers_after_base(monkeypatch):
 
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)
-    monkeypatch.setattr(registry_defaults, "_TASK_CONFIGS", fake_configs)
+    monkeypatch.setattr(registry_defaults, "_ACTION_CONFIGS", fake_configs)
     monkeypatch.setattr(
         registry_defaults,
         "_resolve_validator",
@@ -83,7 +83,7 @@ def test_register_from_config_idempotent_for_same_class(monkeypatch):
 
     test_registry = ModelRegistry()
     monkeypatch.setattr(registry_defaults, "registry", test_registry)
-    monkeypatch.setattr(registry_defaults, "_TASK_CONFIGS", fake_configs)
+    monkeypatch.setattr(registry_defaults, "_ACTION_CONFIGS", fake_configs)
     monkeypatch.setattr(registry_defaults, "_resolve_validator", lambda _: validator)
     monkeypatch.setattr(registry_defaults, "_resolve_serializer", lambda _: serializer)
 
@@ -97,7 +97,7 @@ def test_register_from_config_idempotent_for_same_class(monkeypatch):
     second_entry = test_registry.get_entry(FakeBase(), "infer")
 
     assert first_entry is second_entry
-    assert test_registry.registered_tasks(FakeBase) == ["infer"]
+    assert test_registry.registered_actions(FakeBase) == ["infer"]
 
 
 class TestRegistryThreadSafety:
@@ -126,7 +126,7 @@ class TestRegistryThreadSafety:
             while not stop.is_set():
                 try:
                     reg.get_entry_by_mro_names(["Seed0"], "infer")
-                    reg.get_default_task_by_mro_names(["Seed299"])
+                    reg.get_default_action_by_mro_names(["Seed299"])
                 except Exception as exc:
                     errors.append(exc)
                     return
@@ -148,10 +148,13 @@ class TestRegistryThreadSafety:
         assert errors == []
 
 
-def test_moondream2_task_configs_match_model_signatures():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+def test_moondream2_action_configs_match_model_signatures():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
-    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["MoonDream2HF"]}
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["MoonDream2HF"]}
 
     assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": True}
     assert cfgs["detect"][4] == "validate_images_and_classes"
@@ -163,14 +166,17 @@ def test_moondream2_task_configs_match_model_signatures():
     assert cfgs["point"][6] == "roboflow-keypoints-compact-v1"
 
     assert cfgs["caption"][3]["length"] == {"type": "str", "required": False}
-    for task in ("caption", "detect", "query", "point"):
-        assert "max_new_tokens" in cfgs[task][3]
+    for action in ("caption", "detect", "query", "point"):
+        assert "max_new_tokens" in cfgs[action][3]
 
 
-def test_florence2_task_configs():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+def test_florence2_action_configs():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
-    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["Florence2HF"]}
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["Florence2HF"]}
 
     assert cfgs["segment_phrase"][7] == {"prompt": "phrase"}
     assert cfgs["ground_phrase"][7] == {"prompt": "phrase"}
@@ -183,18 +189,21 @@ def test_florence2_task_configs():
     assert cfgs["caption"][3]["granularity"] == {"type": "str", "required": False}
     assert cfgs["detect"][3]["labels_mode"] == {"type": "str", "required": False}
     assert cfgs["detect"][3]["classes"] == {"type": "list[str]", "required": False}
-    for task in ("caption", "detect", "ocr", "parse_document"):
-        assert "max_new_tokens" in cfgs[task][3]
+    for action in ("caption", "detect", "ocr", "parse_document"):
+        assert "max_new_tokens" in cfgs[action][3]
 
 
 def test_sam_and_sam2_segment_configs():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
     for key, cache_flags in (
         ("SAMTorch", {"enforce_mask_input", "use_mask_input_cache"}),
         ("SAM2Torch", {"load_from_mask_input_cache", "save_to_mask_input_cache"}),
     ):
-        cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS[key]}
+        cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS[key]}
         seg = cfgs["segment"]
         assert "points" not in seg[3]
         assert seg[3]["embeddings"]["required"] is False
@@ -219,9 +228,12 @@ def test_sam_and_sam2_segment_configs():
 
 
 def test_sam2_stream_configs_match_signatures():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
-    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["SAM2ForStream"]}
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["SAM2ForStream"]}
     assert cfgs["prompt"][3]["image"]["required"] is True
     assert cfgs["prompt"][3]["bboxes"]["required"] is True
     assert "prompt" not in cfgs["prompt"][3]
@@ -229,10 +241,13 @@ def test_sam2_stream_configs_match_signatures():
     assert cfgs["prompt"][5] == "serialize_passthrough"
 
 
-def test_owlv2_few_shot_task_config():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+def test_owlv2_few_shot_action_config():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
-    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["OWLv2HF"]}
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["OWLv2HF"]}
     few_shot = cfgs["infer_with_reference_examples"]
 
     assert few_shot[1] == "infer_with_reference_examples"
@@ -249,29 +264,32 @@ def test_owlv2_few_shot_task_config():
     assert few_shot[6] == "roboflow-object-detection-compact-v1"
 
 
-def test_cosmos3_edge_reasoner_task_config():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+def test_cosmos3_edge_reasoner_action_config():
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
-    cfgs = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["Cosmos3EdgeReasoner"]}
-    prompt_task = cfgs["prompt"]
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["Cosmos3EdgeReasoner"]}
+    prompt_action = cfgs["prompt"]
 
-    assert prompt_task[1] == "prompt"
-    assert prompt_task[2] is True
-    assert prompt_task[3]["images"] == {"type": "image", "required": True}
-    assert prompt_task[3]["prompt"] == {"type": "str", "required": True}
+    assert prompt_action[1] == "prompt"
+    assert prompt_action[2] is True
+    assert prompt_action[3]["images"] == {"type": "image", "required": True}
+    assert prompt_action[3]["prompt"] == {"type": "str", "required": True}
     for param in ("max_new_tokens", "do_sample", "skip_special_tokens", "return_thinking"):
-        assert param in prompt_task[3], param
-        assert prompt_task[3][param]["required"] is False
-    assert prompt_task[3]["max_new_tokens"]["type"] == "int"
-    assert prompt_task[3]["do_sample"]["type"] == "bool"
-    assert prompt_task[3]["skip_special_tokens"]["type"] == "bool"
-    assert prompt_task[3]["return_thinking"]["type"] == "bool"
-    assert "default" not in prompt_task[3]["max_new_tokens"]
-    assert "default" not in prompt_task[3]["do_sample"]
-    assert prompt_task[4] == "validate_images_and_prompt"
-    assert prompt_task[5] == "serialize_text"
-    assert prompt_task[6] == "roboflow-text-v1"
-    assert prompt_task[7] == {}
+        assert param in prompt_action[3], param
+        assert prompt_action[3][param]["required"] is False
+    assert prompt_action[3]["max_new_tokens"]["type"] == "int"
+    assert prompt_action[3]["do_sample"]["type"] == "bool"
+    assert prompt_action[3]["skip_special_tokens"]["type"] == "bool"
+    assert prompt_action[3]["return_thinking"]["type"] == "bool"
+    assert "default" not in prompt_action[3]["max_new_tokens"]
+    assert "default" not in prompt_action[3]["do_sample"]
+    assert prompt_action[4] == "validate_images_and_prompt"
+    assert prompt_action[5] == "serialize_text"
+    assert prompt_action[6] == "roboflow-text-v1"
+    assert prompt_action[7] == {}
 
 
 def test_model_owned_defaults_not_injected():
@@ -283,10 +301,10 @@ def test_model_owned_defaults_not_injected():
 
 
 def test_per_family_detector_contracts():
-    from inference_model_manager.registry_defaults import _K_ISEG, _TASK_CONFIGS, _unpack_config
+    from inference_model_manager.registry_defaults import _K_ISEG, _ACTION_CONFIGS, _unpack_config
 
     def params_of(key):
-        return _unpack_config(_TASK_CONFIGS[key][0])[3]
+        return _unpack_config(_ACTION_CONFIGS[key][0])[3]
 
     for key in (
         "RFDetrForObjectDetectionTorch",
@@ -377,7 +395,10 @@ def test_per_family_detector_contracts():
 
 
 def test_per_family_contracts_have_no_default_keys():
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS, _unpack_config
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
 
     keys = (
         "RFDetrForObjectDetectionTorch",
@@ -411,7 +432,7 @@ def test_per_family_contracts_have_no_default_keys():
         "MultiLabelClassificationModel",
     )
     for key in keys:
-        for cfg in _TASK_CONFIGS[key]:
+        for cfg in _ACTION_CONFIGS[key]:
             for name, spec in _unpack_config(cfg)[3].items():
                 assert "default" not in spec, (key, name)
 
@@ -419,29 +440,29 @@ def test_per_family_contracts_have_no_default_keys():
 def test_vlm_generation_params():
     from inference_model_manager.registry_defaults import (
         _P_VLM_PROMPT,
-        _TASK_CONFIGS,
+        _ACTION_CONFIGS,
         _unpack_config,
     )
 
     assert "do_sample" in _P_VLM_PROMPT
     assert "skip_special_tokens" in _P_VLM_PROMPT
 
-    g4 = _unpack_config(_TASK_CONFIGS["Gemma4HF"][0])[3]
+    g4 = _unpack_config(_ACTION_CONFIGS["Gemma4HF"][0])[3]
     assert "enable_thinking" in g4
 
-    sv = _unpack_config(_TASK_CONFIGS["SmolVLMHF"][0])[3]
+    sv = _unpack_config(_ACTION_CONFIGS["SmolVLMHF"][0])[3]
     assert "images_to_single_prompt" in sv
 
-    glm = {c[0]: _unpack_config(c) for c in _TASK_CONFIGS["GlmOcrHF"]}
-    for task in ("recognize_text", "recognize_table", "recognize_formula"):
-        p = glm[task][3]
+    glm = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["GlmOcrHF"]}
+    for action in ("recognize_text", "recognize_table", "recognize_formula"):
+        p = glm[action][3]
         assert "max_new_tokens" in p and "do_sample" in p and "skip_special_tokens" in p
 
 
 def test_vlm_generation_contracts_match_model_signatures():
     from inference_model_manager.registry_defaults import (
         _P_GEN_FLAGS,
-        _TASK_CONFIGS,
+        _ACTION_CONFIGS,
         _unpack_config,
     )
 
@@ -451,7 +472,7 @@ def test_vlm_generation_contracts_match_model_signatures():
     }
 
     def cfgs_of(key):
-        return {c[0]: _unpack_config(c) for c in _TASK_CONFIGS[key]}
+        return {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS[key]}
 
     for key in (
         "PaliGemmaHF",
@@ -489,24 +510,24 @@ def test_vlm_generation_contracts_match_model_signatures():
     florence = cfgs_of("Florence2HF")
     fp = florence["prompt"][3]
     assert "do_sample" in fp and "skip_special_tokens" in fp
-    for task in ("segment_phrase", "ground_phrase"):
-        p = florence[task][3]
-        assert set(p) == {"images", "prompt", "max_new_tokens", "do_sample"}, task
-        assert p["do_sample"] == {"type": "bool", "required": False}, task
-        assert florence[task][7] == {"prompt": "phrase"}, task
-    for task, cfg in florence.items():
-        assert "num_beams" not in cfg[3], task
+    for action in ("segment_phrase", "ground_phrase"):
+        p = florence[action][3]
+        assert set(p) == {"images", "prompt", "max_new_tokens", "do_sample"}, action
+        assert p["do_sample"] == {"type": "bool", "required": False}, action
+        assert florence[action][7] == {"prompt": "phrase"}, action
+    for action, cfg in florence.items():
+        assert "num_beams" not in cfg[3], action
 
     md_query = cfgs_of("MoonDream2HF")["query"]
     assert set(md_query[3]) == {"images", "prompt", "max_new_tokens"}
     assert md_query[7] == {"prompt": "question"}
 
     glm = cfgs_of("GlmOcrHF")
-    for task in ("recognize_text", "recognize_table", "recognize_formula"):
-        p = glm[task][3]
-        assert set(p) == {"images", "max_new_tokens", "do_sample", "skip_special_tokens"}, task
+    for action in ("recognize_text", "recognize_table", "recognize_formula"):
+        p = glm[action][3]
+        assert set(p) == {"images", "max_new_tokens", "do_sample", "skip_special_tokens"}, action
         for name, spec in p.items():
-            assert "default" not in spec, (task, name)
+            assert "default" not in spec, (action, name)
     gp = glm["prompt"][3]
     assert "do_sample" in gp and "skip_special_tokens" in gp
 

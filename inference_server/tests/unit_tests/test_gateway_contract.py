@@ -22,7 +22,7 @@ EXPECTED_GATEWAY_SIGNATURES = {
     "infer": [
         ("model_id", "KEYWORD_ONLY", REQUIRED),
         ("image", "KEYWORD_ONLY", None),
-        ("task", "KEYWORD_ONLY", None),
+        ("action", "KEYWORD_ONLY", None),
         ("instance", "KEYWORD_ONLY", ""),
         ("params", "KEYWORD_ONLY", None),
         ("request", "KEYWORD_ONLY", None),

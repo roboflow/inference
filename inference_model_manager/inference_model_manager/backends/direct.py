@@ -45,7 +45,7 @@ class DirectBackend(Backend):
         # batch_max_size / batch_max_delay_ms accepted for API parity with
         # other backend kinds (ModelManager.load passes them generically).
         # They are unused in DirectBackend — inference is dispatched per-request
-        # by ModelManager.process() via invoke_task(backend.model, ...).
+        # by ModelManager.process() via invoke_action(backend.model, ...).
         del batch_max_size, batch_max_delay_ms
 
         self._model_id = model_id
@@ -160,7 +160,7 @@ class DirectBackend(Backend):
             "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
         )
         # Wait for in-flight forward passes — dropping the model under a live
-        # invoke_task crashes (CUDA error / AttributeError).
+        # invoke_action crashes (CUDA error / AttributeError).
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             with self._inflight_lock:

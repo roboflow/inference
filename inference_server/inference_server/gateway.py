@@ -366,7 +366,7 @@ class ModelManagerGateway:
         *,
         model_id: str,
         image: Any = None,
-        task: Optional[str] = None,
+        action: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
@@ -376,7 +376,7 @@ class ModelManagerGateway:
             return await self._infer(
                 model_id=model_id,
                 image=image,
-                task=task,
+                action=action,
                 instance=instance,
                 params=params,
                 request=request,
@@ -389,13 +389,14 @@ class ModelManagerGateway:
         *,
         model_id: str,
         image: Any = None,
-        task: Optional[str] = None,
+        action: Optional[str] = None,
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
     ) -> Any:
         # `request` is ignored in-process: no client-disconnect race
-        # (process_async runs in executor; cancellation propagates via task).
+        # (process_async runs in executor; cancellation propagates via the
+        # asyncio task).
         key = routing_key(model_id, instance)
         call_kwargs = dict(params) if params else {}
         # Empty payload = params-only request; the model resolves inputs from
@@ -415,7 +416,7 @@ class ModelManagerGateway:
             # handling (no-op on subprocess backends — the worker does it).
             return await self.manager.process_async(
                 key,
-                task=task,
+                action=action,
                 serialize=False,
                 wire_marshalling=True,
                 **call_kwargs,
@@ -468,4 +469,4 @@ class ModelManagerGateway:
         info = stats["models"].get(model_id)
         if info is None:
             raise RuntimeError(f"model '{model_id}' is not loaded")
-        return {"model_id": model_id, "tasks": info.get("tasks", {})}
+        return {"model_id": model_id, "actions": info.get("actions", {})}

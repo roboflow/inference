@@ -608,16 +608,16 @@ def is_moondream_backed(route: Route) -> bool:
 
 
 def resolve_request_action(route: Route, request: Any) -> str:
-    if is_moondream_backed(route) and "detect" in (route.tasks or set()):
+    if is_moondream_backed(route) and "detect" in (route.actions or set()):
         return "detect"
     candidates = ACTION_CANDIDATES_BY_REQUEST_TYPE.get(type(request).__name__)
     if not candidates:
         return route.action
     if candidates[0] in SYNTHESIZED_ACTIONS:
         return candidates[0]
-    tasks = route.tasks or set()
+    actions = route.actions or set()
     for candidate in candidates:
-        if candidate in tasks:
+        if candidate in actions:
             return candidate
     return route.action
 
@@ -686,11 +686,11 @@ def _embedding_response_class(request: Any):
 
 
 def _embed_image_call(image: Any) -> dict:
-    return {"task": "embed_images", "image": image, "params": {}}
+    return {"action": "embed_images", "image": image, "params": {}}
 
 
 def _embed_text_call(texts: List[str]) -> dict:
-    return {"task": "embed_text", "image": None, "params": {"texts": list(texts)}}
+    return {"action": "embed_text", "image": None, "params": {"texts": list(texts)}}
 
 
 def build_embedding_calls(

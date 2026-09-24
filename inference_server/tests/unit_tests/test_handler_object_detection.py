@@ -148,7 +148,7 @@ async def test_input_parser_rejects_unrecognized_format_with_415():
 
 
 @pytest.mark.asyncio
-async def test_handler_single_image_calls_proxy_infer_once_with_task_none():
+async def test_handler_single_image_calls_proxy_infer_once_with_action_none():
     proxy = MagicMock()
     fake_prediction = MagicMock()
     proxy.infer = AsyncMock(return_value=fake_prediction)
@@ -163,7 +163,7 @@ async def test_handler_single_image_calls_proxy_infer_once_with_task_none():
     kwargs = proxy.infer.await_args.kwargs
     assert kwargs["model_id"] == "acme/1"
     assert kwargs["image"] == _JPEG
-    assert kwargs["task"] is None
+    assert kwargs["action"] is None
     assert kwargs["params"]["confidence"] == 0.5
 
 
@@ -182,7 +182,7 @@ async def test_handler_batch_fans_out_concurrent_proxy_calls():
 
 
 @pytest.mark.asyncio
-async def test_handler_passes_non_infer_action_as_task_kwarg():
+async def test_handler_passes_non_infer_action_as_action_kwarg():
     proxy = MagicMock()
     proxy.infer = AsyncMock(return_value=MagicMock())
     hooks = ServerHooks(
@@ -191,7 +191,7 @@ async def test_handler_passes_non_infer_action_as_task_kwarg():
     await handle_object_detection(
         "detect_objects", {"images": [_JPEG], "params": {}}, proxy, hooks
     )
-    assert proxy.infer.await_args.kwargs["task"] == "detect_objects"
+    assert proxy.infer.await_args.kwargs["action"] == "detect_objects"
 
 
 # ---------- output serializer ----------

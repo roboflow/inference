@@ -1,6 +1,6 @@
 """Centralized model registry — validation, serialization, dispatch.
 
-Maps (model_base_class, task_name) → TaskEntry. Lookup follows MRO:
+Maps (model_base_class, action_name) → ActionEntry. Lookup follows MRO:
 exact class first, then base classes up the hierarchy. One registration
 for ObjectDetectionModel covers all YOLO/RFDETR/etc. subclasses.
 
@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class TaskEntry:
-    """Everything needed to validate, invoke, and serialize one task."""
+class ActionEntry:
+    """Everything needed to validate, invoke, and serialize one action."""
 
     method: str
     """Name of the method to call on the model instance."""
 
     default: bool
-    """True if this is the default task for the model class."""
+    """True if this is the default action for the model class."""
 
     params: dict
     """Parameter definitions: {name: {type, required, default?}} for docs / validation."""
@@ -45,14 +45,14 @@ class TaskEntry:
 
 
 class ModelRegistry:
-    """Maps (base_class, task_name) → TaskEntry.
+    """Maps (base_class, action_name) → ActionEntry.
 
     Lookup follows Python MRO: checks exact class, then each base class
     up the hierarchy. First match wins.
     """
 
     def __init__(self) -> None:
-        self._entries: Dict[type, Dict[str, TaskEntry]] = {}
+        self._entries: Dict[type, Dict[str, ActionEntry]] = {}
         # Guards _entries against concurrent first-registration (lazy_register*
         # runs on load paths) racing the per-request MRO-name scans — iterating
         # an unlocked dict while register inserts raises RuntimeError mid-inference.
@@ -61,7 +61,7 @@ class ModelRegistry:
     def register(
         self,
         model_class: type,
-        task_name: str,
+        action_name: str,
         *,
         method: Optional[str] = None,
         default: bool = False,
@@ -71,22 +71,22 @@ class ModelRegistry:
         response_type: str,
         param_aliases: Optional[dict] = None,
     ) -> None:
-        """Register a task entry for a model class.
+        """Register an action entry for a model class.
 
         Args:
             model_class: Base class (e.g. ObjectDetectionModel). Models
                 inheriting from this class get this entry via MRO lookup.
-            task_name: Task name (e.g. "infer", "embed_text", "caption").
-            method: Model method to call. Defaults to task_name.
-            default: True if this is the default task for this class.
+            action_name: Action name (e.g. "infer", "embed_text", "caption").
+            method: Model method to call. Defaults to action_name.
+            default: True if this is the default action for this class.
             params: Parameter names for docs/validation.
             validator: Validates kwargs before invocation.
             serializer: Converts raw model output to typed dict.
             response_type: Type string for response envelope.
             param_aliases: Maps external param names to method kwargs.
         """
-        entry = TaskEntry(
-            method=method or task_name,
+        entry = ActionEntry(
+            method=method or action_name,
             default=default,
             params=params or {},
             validator=validator,
@@ -96,59 +96,61 @@ class ModelRegistry:
         )
 
         with self._lock:
-            self._entries.setdefault(model_class, {})[task_name] = entry
+            self._entries.setdefault(model_class, {})[action_name] = entry
 
-    def get_entry(self, model: Any, task_name: str) -> Optional[TaskEntry]:
-        """Look up TaskEntry for model instance + task, following MRO.
+    def get_entry(self, model: Any, action_name: str) -> Optional[ActionEntry]:
+        """Look up ActionEntry for model instance + action, following MRO.
 
         Returns None if no entry found (caller falls back to raw dispatch).
         """
         for cls in type(model).__mro__:
             class_entries = self._entries.get(cls)
-            if class_entries and task_name in class_entries:
-                return class_entries[task_name]
+            if class_entries and action_name in class_entries:
+                return class_entries[action_name]
         return None
 
-    def validate(self, model: Any, task_name: str, kwargs: dict) -> dict:
-        """Validate kwargs for a task. Returns validated kwargs.
+    def validate(self, model: Any, action_name: str, kwargs: dict) -> dict:
+        """Validate kwargs for an action. Returns validated kwargs.
 
         If no registry entry exists, returns kwargs unchanged (no validation).
         Raises ValueError on validation failure.
         """
-        entry = self.get_entry(model, task_name)
+        entry = self.get_entry(model, action_name)
         if entry is None:
             return kwargs
         return entry.validator(kwargs)
 
-    def serialize(self, model: Any, task_name: str, raw_output: Any) -> Optional[dict]:
+    def serialize(
+        self, model: Any, action_name: str, raw_output: Any
+    ) -> Optional[dict]:
         """Serialize model output to typed dict.
 
         Returns None if no registry entry (caller uses raw output).
         """
-        entry = self.get_entry(model, task_name)
+        entry = self.get_entry(model, action_name)
         if entry is None:
             return None
         return entry.serializer(raw_output, model)
 
-    def response_type(self, model: Any, task_name: str) -> Optional[str]:
-        """Get response type string for a task."""
-        entry = self.get_entry(model, task_name)
+    def response_type(self, model: Any, action_name: str) -> Optional[str]:
+        """Get response type string for an action."""
+        entry = self.get_entry(model, action_name)
         return entry.response_type if entry else None
 
     def get_entry_for_class(
-        self, model_class: type, task_name: str
-    ) -> Optional[TaskEntry]:
-        """Look up TaskEntry by model class (not instance), following MRO."""
+        self, model_class: type, action_name: str
+    ) -> Optional[ActionEntry]:
+        """Look up ActionEntry by model class (not instance), following MRO."""
         for cls in model_class.__mro__:
             class_entries = self._entries.get(cls)
-            if class_entries and task_name in class_entries:
-                return class_entries[task_name]
+            if class_entries and action_name in class_entries:
+                return class_entries[action_name]
         return None
 
     def get_entry_by_mro_names(
-        self, mro_names: list[str], task_name: str
-    ) -> Optional[TaskEntry]:
-        """Look up TaskEntry by MRO class name strings.
+        self, mro_names: list[str], action_name: str
+    ) -> Optional[ActionEntry]:
+        """Look up ActionEntry by MRO class name strings.
 
         Used when the model instance does not live in-process and the
         backend reports class name strings instead.
@@ -156,19 +158,19 @@ class ModelRegistry:
         with self._lock:
             for name in mro_names:
                 for cls, class_entries in self._entries.items():
-                    if cls.__name__ == name and task_name in class_entries:
-                        return class_entries[task_name]
+                    if cls.__name__ == name and action_name in class_entries:
+                        return class_entries[action_name]
         return None
 
-    def get_default_task_by_mro_names(self, mro_names: list[str]) -> Optional[str]:
-        """Find default task name by MRO class name strings."""
+    def get_default_action_by_mro_names(self, mro_names: list[str]) -> Optional[str]:
+        """Find default action name by MRO class name strings."""
         with self._lock:
             for name in mro_names:
                 for cls, class_entries in self._entries.items():
                     if cls.__name__ == name:
-                        for task_name, entry in class_entries.items():
+                        for action_name, entry in class_entries.items():
                             if entry.default:
-                                return task_name
+                                return action_name
         return None
 
     def registered_classes(self) -> List[type]:
@@ -176,7 +178,7 @@ class ModelRegistry:
         with self._lock:
             return list(self._entries.keys())
 
-    def registered_tasks(self, model_class: type) -> List[str]:
-        """Return all task names registered for a class (exact, not MRO)."""
+    def registered_actions(self, model_class: type) -> List[str]:
+        """Return all action names registered for a class (exact, not MRO)."""
         with self._lock:
             return list(self._entries.get(model_class, {}).keys())

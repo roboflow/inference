@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from inference_models.errors import ModelNotFoundError
 from inference_server.framework import model_stat
 from inference_server.framework.entities import CommonRequestParams
-from inference_server.routers.v2_models import _interface_from_registry
+from inference_server.routers.v2_models import (
+    _interface_from_registry,
+    v2_model_interface,
+)
 
 _STAGE_TASK_TYPES = {
     "pp-ocrv6-det/small": "object-detection",
@@ -34,6 +37,24 @@ def _registry(calls: list):
         "inference_server.framework.model_stat.get_one_page_of_model_metadata",
         side_effect=_metadata,
     )
+
+
+@pytest.mark.asyncio
+async def test_interface_of_a_loaded_model_is_served_verbatim():
+    mm = MagicMock()
+    mm.interface = AsyncMock(
+        return_value={"model_id": "acme/1", "actions": {"infer": {"params": {}}}}
+    )
+    response = await v2_model_interface(
+        request=MagicMock(query_params={"model_id": "acme/1"}),
+        api_key="key-1",
+        mm=mm,
+    )
+    assert response.status_code == 200
+    assert json.loads(response.body) == {
+        "model_id": "acme/1",
+        "actions": {"infer": {"params": {}}},
+    }
 
 
 @pytest.mark.asyncio

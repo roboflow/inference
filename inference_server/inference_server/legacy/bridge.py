@@ -40,7 +40,7 @@ class Route:
     registry_id: str
     task_type: str
     action: str
-    tasks: set[str] = field(default_factory=set)
+    actions: set[str] = field(default_factory=set)
     class_names: Optional[list[str]] = None
     key_points_classes: Optional[list[list[str]]] = None
     model_class_name: Optional[str] = None
@@ -225,7 +225,7 @@ class LegacyModelBridge:
                 self.gateway.infer(
                     model_id=route.registry_id,
                     image=image.data if image is not None else None,
-                    task=action,
+                    action=action,
                     params=params,
                 )
                 for image in images
@@ -347,7 +347,7 @@ def _apply_stat(route: Route, task_type: Optional[str], action: Optional[str]) -
 
 
 def _apply_metadata(route: Route, entry: dict) -> None:
-    route.tasks = set(entry.get("tasks") or {})
+    route.actions = set(entry.get("actions") or {})
     route.class_names = entry.get("class_names")
     route.key_points_classes = entry.get("key_points_classes")
     route.model_class_name = entry.get("model_class_name")

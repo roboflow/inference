@@ -15,13 +15,13 @@ async def handle_vlm(
     images: list[bytes] = input_data["images"]
     params: dict = input_data["params"]
     common = hooks.common
-    task = action if action and action != "infer" else None
+    dispatch_action = action if action and action != "infer" else None
 
     if len(images) == 1:
         return await proxy.infer(
             model_id=common.model_id,
             image=images[0],
-            task=task,
+            action=dispatch_action,
             instance=common.instance,
             params=params,
             request=hooks.request,
@@ -32,7 +32,7 @@ async def handle_vlm(
             proxy.infer(
                 model_id=common.model_id,
                 image=img,
-                task=task,
+                action=dispatch_action,
                 instance=common.instance,
                 params=params,
                 request=hooks.request,

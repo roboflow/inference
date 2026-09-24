@@ -28,7 +28,7 @@ async def _embed_image(proxy, common, hooks, image: bytes):
     return await proxy.infer(
         model_id=common.model_id,
         image=image,
-        task="embed_images",
+        action="embed_images",
         instance=common.instance,
         params={},
         request=hooks.request,
@@ -39,7 +39,7 @@ async def _embed_texts(proxy, common, hooks, texts: list[str]):
     return await proxy.infer(
         model_id=common.model_id,
         image=None,
-        task="embed_text",
+        action="embed_text",
         instance=common.instance,
         params={"texts": texts},
         request=hooks.request,
@@ -61,7 +61,7 @@ async def handle_embeddings(
             return await proxy.infer(
                 model_id=common.model_id,
                 image=images[0],
-                task="embed_images",
+                action="embed_images",
                 instance=common.instance,
                 params=params,
                 request=hooks.request,

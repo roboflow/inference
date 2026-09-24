@@ -22,7 +22,7 @@ async def test_resolve_uses_registry_stat_and_fills_metadata(fake_stat):
         model_info={
             "ds/1": {
                 "class_names": ["a", "b"],
-                "tasks": {"infer": {}},
+                "actions": {"infer": {}},
                 "model_class_name": "X",
             }
         }
@@ -32,7 +32,7 @@ async def test_resolve_uses_registry_stat_and_fills_metadata(fake_stat):
     assert (
         route.task_type == "object-detection"
         and route.class_names == ["a", "b"]
-        and route.tasks == {"infer"}
+        and route.actions == {"infer"}
     )
     assert ("ensure_loaded", "ds/1", "key") in gw.calls
     assert await bridge.resolve("ds/1", "key") is route

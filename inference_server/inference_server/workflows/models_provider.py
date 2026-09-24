@@ -739,12 +739,14 @@ class GatewayModelsProvider:
             if payload is None:
                 results.append(
                     self._bridge.infer_params_only(
-                        route, key, call["task"], call["params"]
+                        route, key, call["action"], call["params"]
                     )
                 )
                 continue
             results.extend(
-                self._bridge.infer(route, key, call["task"], [payload], call["params"])
+                self._bridge.infer(
+                    route, key, call["action"], [payload], call["params"]
+                )
             )
         elapsed = time.perf_counter() - started
         response = repack_embedding_response(action, request, results, prompt_keys)

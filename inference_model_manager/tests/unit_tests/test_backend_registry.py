@@ -77,9 +77,11 @@ def test_fake_backend_end_to_end_load_process_unload():
                 "last_inference_ts": None,
             }
 
-        def submit_request(self, *, task=None, raw_input=None, validate=None, **kwargs):
+        def submit_request(
+            self, *, action=None, raw_input=None, validate=None, **kwargs
+        ):
             f = concurrent.futures.Future()
-            f.set_result({"echo": raw_input, "task": task})
+            f.set_result({"echo": raw_input, "action": action})
             return f
 
         def unload(self):
@@ -97,7 +99,7 @@ def test_fake_backend_end_to_end_load_process_unload():
         assert [m["model_id"] for m in mm.list_models()] == ["m1"]
         assert mm.stats()["models"][0]["model_id"] == "m1"
         result = mm.process("m1", images=b"raw", serialize=False)
-        assert result == {"echo": b"raw", "task": None}
+        assert result == {"echo": b"raw", "action": None}
         mm.unload("m1", drain=True)
         with pytest.raises(KeyError):
             mm.unload("m1")

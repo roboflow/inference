@@ -26,7 +26,7 @@ _registered_classes: set[int] = set()
 # No imports happen here. Pure data.
 # ---------------------------------------------------------------------------
 
-# Each entry: (task_name, method, default, params, validator_name, serializer_name, response_type)
+# Each entry: (action_name, method, default, params, validator_name, serializer_name, response_type)
 # validator_name/serializer_name are looked up from the modules at registration time.
 #
 # params: dict[str, dict] — each param has "type", "required", and optionally "default".
@@ -284,12 +284,12 @@ _E_KP_CONF_THRESH = [
 
 
 def _unpack_config(cfg: tuple) -> tuple:
-    task_name, method, default, params, val_name, ser_name, resp_type = cfg[:7]
+    action_name, method, default, params, val_name, ser_name, resp_type = cfg[:7]
     aliases = cfg[7] if len(cfg) > 7 else {}
-    return task_name, method, default, params, val_name, ser_name, resp_type, aliases
+    return action_name, method, default, params, val_name, ser_name, resp_type, aliases
 
 
-_TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
+_ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
     # --- Object Detection (base — fallback for all OD models) ---
     "ObjectDetectionModel": [
         (
@@ -963,10 +963,10 @@ def _resolve_serializer(name: str):
 
 
 def lazy_register(model_class: type) -> None:
-    """Register tasks for model_class if any MRO ancestor has config.
+    """Register actions for model_class if any MRO ancestor has config.
 
     Called once per class. Walks MRO, checks class names against
-    _TASK_CONFIGS. Imports validators/serializers only when needed
+    _ACTION_CONFIGS. Imports validators/serializers only when needed
     (pure Python, no heavy deps).
     """
     # Under registry._lock so a second thread first-loading the same class
@@ -983,7 +983,7 @@ def lazy_register(model_class: type) -> None:
 
 
 def lazy_register_by_names(mro_names: list[str]) -> None:
-    """Register tasks using MRO class name strings.
+    """Register actions using MRO class name strings.
 
     Used when the backend reports class names instead of a live model
     instance — no actual class objects needed. Creates lightweight
@@ -997,17 +997,17 @@ def lazy_register_by_names(mro_names: list[str]) -> None:
         _registered_name_keys.add(key)
 
         for name in mro_names:
-            config = _TASK_CONFIGS.get(name)
+            config = _ACTION_CONFIGS.get(name)
             if config is None:
                 continue
             placeholder = type(name, (), {})
             for cfg in config:
-                task_name, method, default, params, val_name, ser_name, resp_type, aliases = (
+                action_name, method, default, params, val_name, ser_name, resp_type, aliases = (
                     _unpack_config(cfg)
                 )
                 registry.register(
                     placeholder,
-                    task_name,
+                    action_name,
                     method=method,
                     default=default,
                     params=params,
@@ -1022,20 +1022,20 @@ _registered_name_keys: set[str] = set()
 
 
 def _register_from_config(cls: type) -> None:
-    """Register tasks for a single class if it has config."""
-    config = _TASK_CONFIGS.get(cls.__name__)
+    """Register actions for a single class if it has config."""
+    config = _ACTION_CONFIGS.get(cls.__name__)
     if config is None:
         return
-    existing = set(registry.registered_tasks(cls))
+    existing = set(registry.registered_actions(cls))
     for cfg in config:
-        task_name, method, default, params, val_name, ser_name, resp_type, aliases = (
+        action_name, method, default, params, val_name, ser_name, resp_type, aliases = (
             _unpack_config(cfg)
         )
-        if task_name in existing:
+        if action_name in existing:
             continue
         registry.register(
             cls,
-            task_name,
+            action_name,
             method=method,
             default=default,
             params=params,

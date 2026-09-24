@@ -24,14 +24,14 @@ def _fake_manager(process_return=None):
 
 
 @pytest.mark.asyncio
-async def test_infer_forwards_task_image_and_params_to_manager():
+async def test_infer_forwards_action_image_and_params_to_manager():
     mgr = _fake_manager(process_return={"detections": []})
     wrapper = ModelManagerGateway(mgr)
     image = b"\xff\xd8\xff"
     result = await wrapper.infer(
         model_id="acme/1",
         image=image,
-        task="prompt",
+        action="prompt",
         instance="",
         params={"confidence": 0.5, "prompt": "hi"},
     )
@@ -39,7 +39,7 @@ async def test_infer_forwards_task_image_and_params_to_manager():
     mgr.process_async.assert_awaited_once()
     args, kwargs = mgr.process_async.await_args
     assert args == ("acme/1",)
-    assert kwargs["task"] == "prompt"
+    assert kwargs["action"] == "prompt"
     assert kwargs["images"] == image
     assert kwargs["confidence"] == 0.5
     assert kwargs["prompt"] == "hi"
@@ -49,10 +49,10 @@ async def test_infer_forwards_task_image_and_params_to_manager():
 async def test_infer_with_no_params_still_includes_images_kwarg():
     mgr = _fake_manager(process_return="ok")
     wrapper = ModelManagerGateway(mgr)
-    await wrapper.infer(model_id="m", image=b"x", task=None, params=None)
+    await wrapper.infer(model_id="m", image=b"x", action=None, params=None)
     kwargs = mgr.process_async.await_args.kwargs
     assert kwargs["images"] == b"x"
-    assert kwargs["task"] is None
+    assert kwargs["action"] is None
 
 
 @pytest.mark.asyncio
@@ -63,7 +63,7 @@ async def test_infer_forwards_numpy_image_to_manager_without_copying():
     wrapper = ModelManagerGateway(mgr)
     image = np.zeros((48, 64, 3), dtype=np.uint8)
 
-    await wrapper.infer(model_id="m", image=image, task="infer")
+    await wrapper.infer(model_id="m", image=image, action="infer")
 
     kwargs = mgr.process_async.await_args.kwargs
     assert kwargs["images"] is image
@@ -84,13 +84,13 @@ async def test_stats_rekeys_models_list_into_dict():
     mgr.stats = MagicMock(
         return_value={
             "a": 1,
-            "models": [{"model_id": "acme/1", "tasks": {"infer": {}}}],
+            "models": [{"model_id": "acme/1", "actions": {"infer": {}}}],
         }
     )
     wrapper = ModelManagerGateway(mgr)
     out = await wrapper.stats()
     assert out["a"] == 1
-    assert out["models"] == {"acme/1": {"model_id": "acme/1", "tasks": {"infer": {}}}}
+    assert out["models"] == {"acme/1": {"model_id": "acme/1", "actions": {"infer": {}}}}
 
 
 @pytest.mark.asyncio
@@ -122,15 +122,15 @@ async def test_interface_raises_runtime_error_when_model_not_loaded():
 
 
 @pytest.mark.asyncio
-async def test_interface_returns_tasks_for_loaded_model():
+async def test_interface_returns_actions_for_loaded_model():
     mgr = _fake_manager()
     mgr.stats = MagicMock(
-        return_value={"models": [{"model_id": "acme/1", "tasks": {"infer": {}}}]}
+        return_value={"models": [{"model_id": "acme/1", "actions": {"infer": {}}}]}
     )
     wrapper = ModelManagerGateway(mgr)
     info = await wrapper.interface("acme/1")
     assert info["model_id"] == "acme/1"
-    assert info["tasks"] == {"infer": {}}
+    assert info["actions"] == {"infer": {}}
 
 
 @pytest.mark.asyncio
@@ -524,7 +524,7 @@ def test_wire_marshalling_decodes_injects_rle_and_unwraps():
     try:
         result = manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=b"jpegbytes",
@@ -544,7 +544,7 @@ def test_wire_marshalling_respects_explicit_mask_format_and_no_rle_support():
     try:
         manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=b"x",
@@ -559,7 +559,7 @@ def test_wire_marshalling_respects_explicit_mask_format_and_no_rle_support():
     try:
         manager2.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=b"x",
@@ -574,7 +574,7 @@ def test_wire_marshalling_off_is_passthrough():
     manager, backend = _make_wire_manager(model_result=[["prompt-result"]])
     try:
         result = manager.process(
-            "wire/1", task="segment", serialize=False, images=b"rawbytes"
+            "wire/1", action="segment", serialize=False, images=b"rawbytes"
         )
         assert backend.decoded == []
         call = backend.model.calls[0]
@@ -591,7 +591,7 @@ def test_wire_marshalling_decodes_image_lists_and_maps_per_image():
     try:
         result = manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=[b"a", b"b"],
@@ -609,7 +609,7 @@ def test_wire_marshalling_retries_per_image_on_mismatched_batch():
     try:
         result = manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=[b"a", b"b", b"c"],
@@ -630,7 +630,7 @@ def test_wire_marshalling_params_only_omits_images_kwarg():
     try:
         manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=None,
@@ -652,7 +652,7 @@ def test_wire_marshalling_converts_tensors_to_numpy():
     try:
         result = manager.process(
             "wire/1",
-            task="segment",
+            action="segment",
             serialize=False,
             wire_marshalling=True,
             images=b"x",
@@ -673,7 +673,7 @@ async def test_infer_passes_wire_marshalling_to_manager():
 
 @pytest.mark.asyncio
 async def test_real_manager_stats_shape_for_route_resolution():
-    """The adapter resolves routes from stats()['models'][id]: tasks,
+    """The adapter resolves routes from stats()['models'][id]: actions,
     model_class_name, model_mro_names, class_names, key_points_classes,
     backend_type. Pin the shape against a real ModelManager."""
     from inference_model_manager.model_manager import ModelManager
@@ -707,9 +707,9 @@ async def test_real_manager_stats_shape_for_route_resolution():
         assert entry["model_mro_names"] == ["SAM3Torch", "object"]
         assert entry["class_names"] is None
         assert entry["key_points_classes"] is None
-        assert "segment_with_text_prompts" in entry["tasks"]
+        assert "segment_with_text_prompts" in entry["actions"]
         interface = await wrapper.interface("sam3/sam3_interactive")
-        assert "embed_images" in interface["tasks"]
+        assert "embed_images" in interface["actions"]
     finally:
         manager._backends.clear()
         manager.shutdown()
@@ -722,7 +722,7 @@ async def test_infer_empty_image_becomes_images_none():
     await wrapper.infer(
         model_id="sam3/sam3_final",
         image=b"",
-        task="segment_with_visual_prompts",
+        action="segment_with_visual_prompts",
         params={"image_hashes": ["h1"]},
     )
     kwargs = mgr.process_async.await_args.kwargs

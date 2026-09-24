@@ -9,7 +9,7 @@ from __future__ import annotations
 
 def validate_images_required(kwargs: dict) -> dict:
     if "images" not in kwargs:
-        raise ValueError("'images' param required for this task")
+        raise ValueError("'images' param required for this action")
     return kwargs
 
 
@@ -31,7 +31,7 @@ def validate_images_and_prompt(kwargs: dict) -> dict:
     if "images" not in kwargs:
         raise ValueError("'images' param required")
     if "prompt" not in kwargs:
-        raise ValueError("'prompt' param required for this task")
+        raise ValueError("'prompt' param required for this action")
     return kwargs
 
 

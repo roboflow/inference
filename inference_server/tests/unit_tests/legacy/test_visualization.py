@@ -239,7 +239,7 @@ def _detection_gateway():
     )
     return FakeGateway(
         predictions={("ds/1", "infer"): detections},
-        model_info={"ds/1": {"class_names": ["cat"], "tasks": {"infer": {}}}},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
     )
 
 
@@ -292,7 +292,7 @@ def test_catch_all_semantic_segmentation_visualization_is_501(
     )
     gateway = FakeGateway(
         predictions={("ds/1", "infer"): segmentation},
-        model_info={"ds/1": {"class_names": ["cat"], "tasks": {"infer": {}}}},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
     )
     response = legacy_client(gateway).post(
         f"/ds/1?api_key=k&format={image_format}",

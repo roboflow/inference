@@ -29,7 +29,9 @@ def _det(class_id=0):
 def test_clip_embed_text_is_params_only_call(legacy_client, fake_stat):
     gw = FakeGateway(
         predictions={("clip/ViT-B-16", "embed_text"): np.array([[1.0, 2.0]])},
-        model_info={"clip/ViT-B-16": {"tasks": {"embed_text": {}, "embed_images": {}}}},
+        model_info={
+            "clip/ViT-B-16": {"actions": {"embed_text": {}, "embed_images": {}}}
+        },
     )
     r = legacy_client(gw).post(
         "/clip/embed_text", json={"text": "hello", "api_key": "k"}
@@ -45,7 +47,7 @@ def test_clip_embed_text_is_params_only_call(legacy_client, fake_stat):
 def test_clip_embed_image_sends_decoded_image(legacy_client, fake_stat):
     gw = FakeGateway(
         predictions={("clip/ViT-B-16", "embed_images"): np.array([[0.5, 0.5]])},
-        model_info={"clip/ViT-B-16": {"tasks": {"embed_images": {}}}},
+        model_info={"clip/ViT-B-16": {"actions": {"embed_images": {}}}},
     )
     r = legacy_client(gw).post("/clip/embed_image", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -61,7 +63,7 @@ def test_clip_compare_returns_named_similarities(legacy_client, fake_stat):
                 [[1.0, 0.0]] * len(params["texts"])
             )
         },
-        model_info={"clip/ViT-B-16": {"tasks": {"embed_text": {}, "compare": {}}}},
+        model_info={"clip/ViT-B-16": {"actions": {"embed_text": {}, "compare": {}}}},
     )
     r = legacy_client(gw).post(
         "/clip/compare",
@@ -85,7 +87,7 @@ def test_perception_encoder_uses_registry_alias(legacy_client, fake_stat):
             ("perception-encoder/PE-Core-L14-336", "embed_text"): np.array([[1.0]])
         },
         model_info={
-            "perception-encoder/PE-Core-L14-336": {"tasks": {"embed_text": {}}}
+            "perception-encoder/PE-Core-L14-336": {"actions": {"embed_text": {}}}
         },
     )
     r = legacy_client(gw).post("/perception_encoder/embed_text", json={"text": "hi"})
@@ -107,7 +109,7 @@ def test_doctr_keeps_parent_id_null(legacy_client, fake_stat):
                 ],
             )
         },
-        model_info={"doctr/default": {"tasks": {"infer": {}}}},
+        model_info={"doctr/default": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post("/doctr/ocr", json={"image": _image(), "api_key": "k"})
     assert r.status_code == 200, r.text
@@ -125,7 +127,7 @@ def test_easy_ocr_rejects_other_languages(legacy_client, fake_stat):
 def test_trocr_returns_text_only_response(legacy_client, fake_stat):
     gw = FakeGateway(
         predictions={("trocr/trocr-base-printed", "infer"): ["abc"]},
-        model_info={"trocr/trocr-base-printed": {"tasks": {"infer": {}}}},
+        model_info={"trocr/trocr-base-printed": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post("/ocr/trocr", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -150,7 +152,7 @@ def test_pp_ocr_resolves_versioned_model_id(legacy_client, fake_stat):
                 ],
             )
         },
-        model_info={"pp_ocr/small-small": {"tasks": {"infer": {}}}},
+        model_info={"pp_ocr/small-small": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post("/ocr/pp-ocr", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -171,7 +173,7 @@ def test_pp_ocr_always_returns_boxes_with_recognized_text(legacy_client, fake_st
     fake_stat["pp-ocrv6-rec/small"] = ("text-only-ocr", "infer")
     gw = FakeGateway(
         predictions={("pp_ocr/small-small", "infer"): (["ocr"], [_ocr_det(["ocr"])])},
-        model_info={"pp_ocr/small-small": {"tasks": {"infer": {}}}},
+        model_info={"pp_ocr/small-small": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post("/ocr/pp-ocr", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -188,7 +190,7 @@ def test_pp_ocr_detect_only_returns_boxes_and_empty_result(legacy_client, fake_s
     fake_stat["pp-ocrv6-det/small"] = ("object-detection", "infer")
     gw = FakeGateway(
         predictions={("pp_ocr/small-none", "infer"): ([""], [_ocr_det(["", ""])])},
-        model_info={"pp_ocr/small-none": {"tasks": {"infer": {}}}},
+        model_info={"pp_ocr/small-none": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post(
         "/ocr/pp-ocr", json={"image": _image(), "text_recognition": "none"}
@@ -243,7 +245,7 @@ def test_lmm_returns_text_response(legacy_client, fake_stat):
     fake_stat["smolvlm2/x"] = ("vlm", "prompt")
     gw = FakeGateway(
         predictions={("smolvlm2/x", "prompt"): ["a cat"]},
-        model_info={"smolvlm2/x": {"tasks": {"prompt": {}}}},
+        model_info={"smolvlm2/x": {"actions": {"prompt": {}}}},
     )
     r = legacy_client(gw).post(
         "/infer/lmm/smolvlm2/x",
@@ -266,7 +268,7 @@ def test_lmm_moondream_route_detects(legacy_client, fake_stat):
         },
         model_info={
             "moondream2/moondream2": {
-                "tasks": {"detect": {}},
+                "actions": {"detect": {}},
                 "model_class_name": "MoonDream2HF",
             }
         },
@@ -288,7 +290,7 @@ def test_depth_png8_is_string(legacy_client, fake_stat):
                 [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
             )
         },
-        model_info={"depth-anything-v2/small": {"tasks": {"infer": {}}}},
+        model_info={"depth-anything-v2/small": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post(
         "/infer/depth-estimation",
@@ -308,7 +310,7 @@ def test_depth_json_format_returns_matrix(legacy_client, fake_stat):
                 [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
             )
         },
-        model_info={"depth-anything-v2/small": {"tasks": {"infer": {}}}},
+        model_info={"depth-anything-v2/small": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post("/infer/depth-estimation", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -323,7 +325,7 @@ def test_depth_path_model_id_is_used(legacy_client, fake_stat):
                 [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
             )
         },
-        model_info={"depth-anything-v3/large": {"tasks": {"infer": {}}}},
+        model_info={"depth-anything-v3/large": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post(
         "/infer/depth-estimation/depth-anything-v3/large", json={"image": _image()}
@@ -399,7 +401,7 @@ def test_sam2_embed_image_sends_namespaced_image_hash(legacy_client, fake_stat):
                 SimpleNamespace(image_hash=namespace_client_hash_id("img-1", "k"))
             ]
         },
-        model_info={"sam2/hiera_large": {"tasks": {"embed": {}}}},
+        model_info={"sam2/hiera_large": {"actions": {"embed": {}}}},
     )
     r = legacy_client(gw).post(
         "/sam2/embed_image",
@@ -415,7 +417,9 @@ def test_sam2_embed_image_sends_namespaced_image_hash(legacy_client, fake_stat):
 
 def test_sam2_segment_image_binary_format_is_501(legacy_client, fake_stat):
     gw = FakeGateway(
-        model_info={"sam2/hiera_large": {"tasks": {"segment_with_visual_prompts": {}}}},
+        model_info={
+            "sam2/hiera_large": {"actions": {"segment_with_visual_prompts": {}}}
+        },
     )
     r = legacy_client(gw).post(
         "/sam2/segment_image", json={"image": _image(), "format": "binary"}
@@ -449,7 +453,7 @@ def test_sam3_embed_image_resolves_interactive_model(legacy_client, fake_stat):
                 SimpleNamespace(image_hash="server-hash")
             ]
         },
-        model_info={"sam3/sam3_interactive": {"tasks": {"embed_images": {}}}},
+        model_info={"sam3/sam3_interactive": {"actions": {"embed_images": {}}}},
     )
     r = legacy_client(gw).post("/sam3/embed_image", json={"image": _image()})
     assert r.status_code == 200, r.text
@@ -487,7 +491,7 @@ def test_sam3_concept_segment_keeps_echo_and_null_fields(legacy_client, fake_sta
                 {"prompt_index": 0, "masks": masks, "scores": [0.8]}
             ]
         },
-        model_info={"sam3/sam3_final": {"tasks": {"segment_with_text_prompts": {}}}},
+        model_info={"sam3/sam3_final": {"actions": {"segment_with_text_prompts": {}}}},
     )
     r = legacy_client(gw).post(
         "/sam3/concept_segment",
@@ -516,7 +520,7 @@ def test_depth_rejects_list_image(legacy_client, fake_stat):
                 [[0.0, 1.0], [2.0, 3.0]], dtype=np.float32
             )
         },
-        model_info={"depth-anything-v2/small": {"tasks": {"infer": {}}}},
+        model_info={"depth-anything-v2/small": {"actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post(
         "/infer/depth-estimation", json={"image": [_image(), _image()]}
@@ -542,7 +546,7 @@ def test_clip_embed_image_loads_every_image_in_one_call(
     monkeypatch.setattr(router_module, "load_request_images", spy)
     gw = FakeGateway(
         predictions={("clip/ViT-B-16", "embed_images"): np.array([[1.0, 0.0]])},
-        model_info={"clip/ViT-B-16": {"tasks": {"embed_images": {}}}},
+        model_info={"clip/ViT-B-16": {"actions": {"embed_images": {}}}},
     )
     first = {"type": "base64", "value": _jpeg_b64(8, 6)}
     second = {"type": "base64", "value": _jpeg_b64(4, 4)}
@@ -572,7 +576,7 @@ def _pp_ocr_gateway():
                 ],
             )
         },
-        model_info={"pp_ocr/small-small": {"tasks": {"infer": {}}}},
+        model_info={"pp_ocr/small-small": {"actions": {"infer": {}}}},
     )
 
 

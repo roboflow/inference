@@ -127,7 +127,7 @@ async def test_empty_images_issues_single_empty_payload_infer():
     proxy.infer.assert_awaited_once()
     kwargs = proxy.infer.await_args.kwargs
     assert kwargs["image"] == b""
-    assert kwargs["task"] == "segment_with_visual_prompts"
+    assert kwargs["action"] == "segment_with_visual_prompts"
     assert kwargs["params"]["image_hashes"] == ["h1"]
 
 

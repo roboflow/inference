@@ -67,7 +67,7 @@ def test_run_workflow_with_object_detection_block(legacy_client, fake_stat):
     )
     gateway = FakeGateway(
         predictions={("ds/1", "infer"): detections},
-        model_info={"ds/1": {"class_names": ["cat"], "tasks": {"infer": {}}}},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
     )
 
     response = legacy_client(gateway).post(

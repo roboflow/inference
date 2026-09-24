@@ -23,7 +23,7 @@ class _FakeProxy:
         self.load = AsyncMock(return_value=("ok",))
         self.unload = AsyncMock(return_value=("ok",))
         self.stats = AsyncMock(return_value={"models": {}})
-        self.interface = AsyncMock(return_value={"model_id": "m", "tasks": {}})
+        self.interface = AsyncMock(return_value={"model_id": "m", "actions": {}})
 
 
 @pytest_asyncio.fixture()
@@ -145,7 +145,7 @@ async def test_vlm_prompt_dispatch_threads_prompt_into_params(
     body = resp.json()
     assert body["model_info"]["task"] == "vlm"
     call = proxy.infer.await_args.kwargs
-    assert call["task"] == "prompt"
+    assert call["action"] == "prompt"
     assert call["params"].get("prompt") == "describe this"
 
 
@@ -323,7 +323,7 @@ async def test_interface_returns_proxy_data_when_model_loaded(
     _, proxy = app_with_fake_proxy
     proxy.interface.return_value = {
         "model_id": "acme/1",
-        "tasks": {"infer": {"params": {}}},
+        "actions": {"infer": {"params": {}}},
     }
     resp = await client.get(
         "/v2/models/interface?model_id=acme/1",
@@ -331,7 +331,7 @@ async def test_interface_returns_proxy_data_when_model_loaded(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["tasks"] == {"infer": {"params": {}}}
+    assert body["actions"] == {"infer": {"params": {}}}
 
 
 @pytest.mark.asyncio

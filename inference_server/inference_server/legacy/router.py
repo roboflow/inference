@@ -814,12 +814,14 @@ async def _run_embedding(
         if payload is None:
             results.append(
                 await bridge.infer_params_only(
-                    route, api_key, call["task"], call["params"]
+                    route, api_key, call["action"], call["params"]
                 )
             )
             continue
         results.extend(
-            await bridge.infer(route, api_key, call["task"], [payload], call["params"])
+            await bridge.infer(
+                route, api_key, call["action"], [payload], call["params"]
+            )
         )
     elapsed = time.perf_counter() - started
     response = repack_embedding_response(

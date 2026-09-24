@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from inference_model_manager import configuration as cfg
-from inference_model_manager.dispatch import list_tasks_for_class
+from inference_model_manager.dispatch import list_actions_for_class
 from inference_model_manager.model_manager import ModelManager
 from inference_model_manager.pipelines import (
     DISABLED_STAGE,
@@ -204,11 +204,11 @@ def test_facade_recognition_only_yields_empty_detections():
     assert tuple(detections[0].xyxy.shape) == (0, 4) and len(detections[0]) == 0
 
 
-def test_facade_registers_structured_ocr_infer_task():
+def test_facade_registers_structured_ocr_infer_action():
     lazy_register(PPOCRv6StructuredOCR)
-    tasks = list_tasks_for_class(PPOCRv6StructuredOCR)
-    assert tasks["infer"]["default"] is True
-    assert tasks["infer"]["response_type"] == "roboflow-structured-ocr-compact-v1"
+    actions = list_actions_for_class(PPOCRv6StructuredOCR)
+    assert actions["infer"]["default"] is True
+    assert actions["infer"]["response_type"] == "roboflow-structured-ocr-compact-v1"
 
 
 _FROM_PRETRAINED = "inference_models.models.auto_loaders.core.AutoModel.from_pretrained"
@@ -242,7 +242,7 @@ def test_load_pp_ocr_small_small_expands_to_stage_models():
         )
         assert entry["model_class_name"] == "PPOCRv6StructuredOCR"
         assert entry["model_mro_names"][0] == "PPOCRv6StructuredOCR"
-        assert "infer" in entry["tasks"] and entry["class_names"] is None
+        assert "infer" in entry["actions"] and entry["class_names"] is None
         assert mm.list_models()[0]["state"] == "loaded"
     finally:
         mm.shutdown()
@@ -255,7 +255,7 @@ def test_process_pp_ocr_returns_structured_tuple_with_numpy():
             mm.load("pp_ocr/small-small", api_key="k", warmup_iters=0)
         texts, detections = mm.process(
             "pp_ocr/small-small",
-            task="infer",
+            action="infer",
             serialize=False,
             wire_marshalling=True,
             images=_image(),

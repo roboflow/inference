@@ -10,7 +10,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend, BackendState
-from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
+from inference_model_manager.dispatch import (
+    _get_registry,
+    invoke_action,
+    resolve_action,
+)
 from inference_model_manager.marshalling import (
     model_supports_rle,
     split_batched_result,
@@ -103,7 +107,7 @@ class ModelManager:
 
     Backends fall into two kinds:
       - **Direct**: the model instance lives in-process; ModelManager dispatches
-        tasks against it through the task registry.
+        actions against it through the action registry.
       - **submit_request**: the model does not live in-process; ModelManager
         routes ``process()``/``submit()`` through the backend's
         ``submit_request()`` method instead. Community/plugin backends
@@ -217,7 +221,7 @@ class ModelManager:
                 batch_max_delay_ms=batch_max_delay_ms,
                 **kwargs,
             )
-            # Register model class in registry for task dispatch + serialization.
+            # Register model class in registry for action dispatch + serialization.
             from inference_model_manager.registry_defaults import (
                 lazy_register,
                 lazy_register_by_names,
@@ -397,7 +401,7 @@ class ModelManager:
             return popped
 
     # ------------------------------------------------------------------
-    # Processing — unified task dispatch
+    # Processing — unified action dispatch
     # ------------------------------------------------------------------
 
     def _wire_marshal_inputs(self, backend: Any, kwargs: dict) -> tuple:
@@ -436,16 +440,16 @@ class ModelManager:
     def process(
         self,
         model_id: str,
-        task: Optional[str] = None,
+        action: Optional[str] = None,
         *,
         serialize: bool = True,
         wire_marshalling: bool = False,
         **kwargs: Any,
     ) -> Any:
-        """Process a task on a loaded model. Blocks until result is ready.
+        """Process an action on a loaded model. Blocks until result is ready.
 
-        Uses the model registry to resolve ``task`` to the correct method.
-        If ``task`` is None, the default task is used.
+        Uses the model registry to resolve ``action`` to the correct method.
+        If ``action`` is None, the default action is used.
 
         ``serialize=False`` returns the raw prediction object without the
         registry-typed envelope — used by proxies whose callers serialize at
@@ -457,8 +461,8 @@ class ModelManager:
 
         Args:
             model_id: Loaded model key.
-            task: Task name (e.g. ``"infer"``, ``"embed_text"``, ``"caption"``).
-                None → default task for this model.
+            action: Action name (e.g. ``"infer"``, ``"embed_text"``, ``"caption"``).
+                None → default action for this model.
             **kwargs: Passed to the model method (images, texts, classes, prompt, etc.).
 
         Returns:
@@ -466,7 +470,7 @@ class ModelManager:
 
         Raises:
             KeyError: If model_id is not loaded.
-            ValueError: If task is not supported by the model.
+            ValueError: If action is not supported by the model.
         """
         self._check_open()
         backend = self._get_backend(model_id)
@@ -474,7 +478,7 @@ class ModelManager:
         if hasattr(backend, "submit_request"):
             raw_input = kwargs.pop("images", None)
             result = self.submit(
-                model_id, task=task, raw_input=raw_input, **kwargs
+                model_id, action=action, raw_input=raw_input, **kwargs
             ).result(timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S)
             if not serialize:
                 return result
@@ -484,22 +488,22 @@ class ModelManager:
             mro_names = getattr(backend, "_model_mro_names", [])
             if mro_names:
                 reg = _get_registry()
-                task_name = (
-                    task or reg.get_default_task_by_mro_names(mro_names) or "infer"
+                action_name = (
+                    action or reg.get_default_action_by_mro_names(mro_names) or "infer"
                 )
-                entry = reg.get_entry_by_mro_names(mro_names, task_name)
+                entry = reg.get_entry_by_mro_names(mro_names, action_name)
                 if entry is not None:
                     return entry.serializer(result, backend)
             return result
 
-        task_setup_ns = 0
-        task_setup_started = performance_profiler.start()
+        action_setup_ns = 0
+        action_setup_started = performance_profiler.start()
         try:
-            # Resolve task (validates it exists, raises ValueError if not)
-            task_name, _entry = resolve_task(backend.model, task)
+            # Resolve action (validates it exists, raises ValueError if not)
+            action_name, _entry = resolve_action(backend.model, action)
         finally:
-            if task_setup_started is not None:
-                task_setup_ns += time.perf_counter_ns() - task_setup_started
+            if action_setup_started is not None:
+                action_setup_ns += time.perf_counter_ns() - action_setup_started
 
         n_images = 1
         if wire_marshalling:
@@ -510,15 +514,15 @@ class ModelManager:
             finally:
                 performance_profiler.stop("manager.input_decode", decode_started)
 
-        task_setup_started = performance_profiler.start()
+        action_setup_started = performance_profiler.start()
         try:
             # Validate kwargs through registry (if entry exists)
-            kwargs = _get_registry().validate(backend.model, task_name, kwargs)
+            kwargs = _get_registry().validate(backend.model, action_name, kwargs)
         finally:
-            if task_setup_started is not None:
-                task_setup_ns += time.perf_counter_ns() - task_setup_started
+            if action_setup_started is not None:
+                action_setup_ns += time.perf_counter_ns() - action_setup_started
                 performance_profiler.record(
-                    "manager.task_setup", task_setup_ns / 1_000_000, "ms"
+                    "manager.action_setup", action_setup_ns / 1_000_000, "ms"
                 )
 
         t0 = time.monotonic()
@@ -533,7 +537,7 @@ class ModelManager:
             invoke_started = performance_profiler.start()
             performance_profiler.increment("manager.model_invoke.calls")
             try:
-                result = invoke_task(backend.model, task=task, **kwargs)
+                result = invoke_action(backend.model, action=action, **kwargs)
             finally:
                 performance_profiler.stop("manager.model_invoke", invoke_started)
             if wire_marshalling:
@@ -550,7 +554,9 @@ class ModelManager:
                     retry_started = performance_profiler.start()
                     performance_profiler.increment("manager.model_invoke.calls")
                     try:
-                        return invoke_task(backend.model, task=task, **single_kwargs)
+                        return invoke_action(
+                            backend.model, action=action, **single_kwargs
+                        )
                     finally:
                         if retry_started is not None:
                             retry_ended = time.perf_counter_ns()
@@ -581,7 +587,7 @@ class ModelManager:
             if serialize:
                 # Inside the in-flight lease: serialization still reads
                 # backend.model, which an unload would drop underneath it.
-                typed = _get_registry().serialize(backend.model, task_name, result)
+                typed = _get_registry().serialize(backend.model, action_name, result)
                 if typed is not None:
                     result = typed
         except Exception:
@@ -597,19 +603,19 @@ class ModelManager:
     async def process_async(
         self,
         model_id: str,
-        task: Optional[str] = None,
+        action: Optional[str] = None,
         *,
         serialize: bool = True,
         wire_marshalling: bool = False,
         **kwargs: Any,
     ) -> Any:
-        """Process a task asynchronously.
+        """Process an action asynchronously.
 
         Same as ``process()`` but non-blocking in an async context.
 
         Raises:
             KeyError: If model_id is not loaded.
-            ValueError: If task is not supported by the model.
+            ValueError: If action is not supported by the model.
         """
         self._check_open()
         loop = asyncio.get_running_loop()
@@ -618,7 +624,7 @@ class ModelManager:
                 self._executor,
                 lambda: self.process(
                     model_id,
-                    task=task,
+                    action=action,
                     serialize=serialize,
                     wire_marshalling=wire_marshalling,
                     **kwargs,
@@ -634,7 +640,7 @@ class ModelManager:
             try:
                 return self.process(
                     model_id,
-                    task=task,
+                    action=action,
                     serialize=serialize,
                     wire_marshalling=wire_marshalling,
                     **kwargs,
@@ -675,19 +681,19 @@ class ModelManager:
         self,
         model_id: str,
         *,
-        task: Optional[str] = None,
+        action: Optional[str] = None,
         raw_input: Any = None,
         **kwargs,
     ) -> Future:
         """Submit for processing. Returns a Future immediately.
 
         For backends implementing ``submit_request`` (community/plugin
-        backends), forwards task + params and returns their Future.
-        For direct backends, runs in thread pool via task dispatch.
+        backends), forwards action + params and returns their Future.
+        For direct backends, runs in thread pool via action dispatch.
 
         Args:
             model_id: Loaded model key.
-            task: Task name. None → default.
+            action: Action name. None → default.
             raw_input: Passed to ``submit_request`` backends; direct backends
                 take images via kwargs instead.
             **kwargs: Additional params (forwarded to the backend's
@@ -707,13 +713,13 @@ class ModelManager:
             mro_names = getattr(backend, "_model_mro_names", [])
             if mro_names:
                 reg = _get_registry()
-                task_name = task or reg.get_default_task_by_mro_names(mro_names)
-                if task_name:
-                    entry = reg.get_entry_by_mro_names(mro_names, task_name)
+                action_name = action or reg.get_default_action_by_mro_names(mro_names)
+                if action_name:
+                    entry = reg.get_entry_by_mro_names(mro_names, action_name)
                     if entry is not None:
                         validate = entry.validator
             return backend.submit_request(
-                task=task, raw_input=raw_input, validate=validate, **kwargs
+                action=action, raw_input=raw_input, validate=validate, **kwargs
             )
 
         # Direct backend: validate sync, run in thread pool, record stats.
@@ -721,8 +727,8 @@ class ModelManager:
             raise RuntimeError(
                 f"Backend '{model_id}' not accepting requests (state={backend.state})"
             )
-        task_name, _ = resolve_task(backend.model, task)
-        kwargs = _get_registry().validate(backend.model, task_name, kwargs)
+        action_name, _ = resolve_action(backend.model, action)
+        kwargs = _get_registry().validate(backend.model, action_name, kwargs)
 
         def _run():
             t0 = time.monotonic()
@@ -730,7 +736,7 @@ class ModelManager:
             if _begin is not None:
                 _begin()
             try:
-                result = invoke_task(backend.model, task=task, **kwargs)
+                result = invoke_action(backend.model, action=action, **kwargs)
             except Exception:
                 backend.record_inference(t0, error=True)
                 raise
@@ -743,8 +749,8 @@ class ModelManager:
 
         return self._executor.submit(_run)
 
-    def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:
-        """Return supported tasks for a loaded model.
+    def get_supported_actions(self, model_id: str) -> Dict[str, Any]:
+        """Return supported actions for a loaded model.
 
         Works for both DirectBackend (has model instance) and backends
         reporting MRO class names instead (community/plugin backends).
@@ -755,12 +761,12 @@ class ModelManager:
         backend = self._get_backend(model_id)
         mro_names = getattr(backend, "_model_mro_names", None)
         if mro_names:
-            from inference_model_manager.dispatch import list_tasks_by_mro_names
+            from inference_model_manager.dispatch import list_actions_by_mro_names
 
-            return list_tasks_by_mro_names(mro_names)
-        from inference_model_manager.dispatch import list_tasks
+            return list_actions_by_mro_names(mro_names)
+        from inference_model_manager.dispatch import list_actions
 
-        return list_tasks(backend.model)
+        return list_actions(backend.model)
 
     # ------------------------------------------------------------------
     # Observability
@@ -800,9 +806,9 @@ class ModelManager:
             except Exception:
                 s["key_points_classes"] = None
             try:
-                s["tasks"] = self.get_supported_tasks(model_id)
+                s["actions"] = self.get_supported_actions(model_id)
             except Exception:
-                s["tasks"] = {}
+                s["actions"] = {}
             models.append(s)
 
         return {

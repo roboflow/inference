@@ -15,13 +15,13 @@ async def handle_interactive_instance_segmentation(
     images: list[bytes] = input_data["images"]
     params: dict = input_data["params"]
     common = hooks.common
-    task = action if action and action != "infer" else None
+    dispatch_action = action if action and action != "infer" else None
 
     if not images:
         return await proxy.infer(
             model_id=common.model_id,
             image=b"",
-            task=task,
+            action=dispatch_action,
             instance=common.instance,
             params=params,
             request=hooks.request,
@@ -31,7 +31,7 @@ async def handle_interactive_instance_segmentation(
         return await proxy.infer(
             model_id=common.model_id,
             image=images[0],
-            task=task,
+            action=dispatch_action,
             instance=common.instance,
             params=params,
             request=hooks.request,
@@ -42,7 +42,7 @@ async def handle_interactive_instance_segmentation(
             proxy.infer(
                 model_id=common.model_id,
                 image=img,
-                task=task,
+                action=dispatch_action,
                 instance=common.instance,
                 params=params,
                 request=hooks.request,

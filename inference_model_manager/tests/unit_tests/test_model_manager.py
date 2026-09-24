@@ -238,14 +238,14 @@ class TestModelManagerInference:
         mm.submit("model-a", images="img").result(timeout=5)
         assert recorded == [False]
 
-    def test_submit_validates_task(self):
-        """submit() direct path must raise on unknown task before queuing."""
+    def test_submit_validates_action(self):
+        """submit() direct path must raise on unknown action before queuing."""
         mm = ModelManager()
         _patch_create_backend(mm, {})
         mm.load("model-a", api_key="")
 
         with pytest.raises(ValueError):
-            mm.submit("model-a", task="nonexistent-task", images="img")
+            mm.submit("model-a", action="nonexistent-action", images="img")
 
     def test_process_async(self):
         mm = ModelManager()

@@ -224,8 +224,8 @@ class Backend(ABC):
     Inference is exposed one of two ways:
 
     - Set ``.model`` to an in-process ``inference_models`` model instance —
-      ``ModelManager`` dispatches tasks against it through the task registry.
-    - Implement ``submit_request(*, task, raw_input, validate, **kwargs) ->
+      ``ModelManager`` dispatches actions against it through the action registry.
+    - Implement ``submit_request(*, action, raw_input, validate, **kwargs) ->
       concurrent.futures.Future`` — ``ModelManager.process()`` /
       ``submit()`` route through it instead.
 
@@ -324,7 +324,7 @@ class Backend(ABC):
 
     @property
     def model(self) -> Any:
-        """Underlying model instance. Used by ModelManager.invoke() for task dispatch.
+        """Underlying model instance. Used by ModelManager.invoke() for action dispatch.
 
         Returns None for subprocess backends (model lives in worker process).
         """

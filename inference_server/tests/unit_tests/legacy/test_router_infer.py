@@ -26,7 +26,7 @@ def test_infer_object_detection_single(legacy_client, fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
     gw = FakeGateway(
         predictions={("ds/1", "infer"): _det()},
-        model_info={"ds/1": {"class_names": ["cat"], "tasks": {"infer": {}}}},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
     )
     r = legacy_client(gw).post(
         "/infer/object_detection",

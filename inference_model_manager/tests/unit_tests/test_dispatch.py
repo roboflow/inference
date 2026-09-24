@@ -1,39 +1,39 @@
-"""Unit tests for dispatch module — task resolution and listing."""
+"""Unit tests for dispatch module — action resolution and listing."""
 
-from inference_model_manager.dispatch import list_tasks_by_mro_names
+from inference_model_manager.dispatch import list_actions_by_mro_names
 from inference_model_manager.registry_defaults import lazy_register_by_names
 
 
-def test_list_tasks_by_mro_names_object_detection():
-    """ObjectDetectionModel MRO names should return 'infer' task."""
+def test_list_actions_by_mro_names_object_detection():
+    """ObjectDetectionModel MRO names should return 'infer' action."""
     lazy_register_by_names(["ObjectDetectionModel"])
-    tasks = list_tasks_by_mro_names(["ObjectDetectionModel"])
-    assert "infer" in tasks
-    assert tasks["infer"]["default"] is True
-    assert "images" in tasks["infer"]["params"]
+    actions = list_actions_by_mro_names(["ObjectDetectionModel"])
+    assert "infer" in actions
+    assert actions["infer"]["default"] is True
+    assert "images" in actions["infer"]["params"]
 
 
-def test_list_tasks_by_mro_names_unknown_class():
+def test_list_actions_by_mro_names_unknown_class():
     """Unknown class names should return empty dict."""
-    tasks = list_tasks_by_mro_names(["CompletelyUnknownModel"])
-    assert tasks == {}
+    actions = list_actions_by_mro_names(["CompletelyUnknownModel"])
+    assert actions == {}
 
 
-def test_list_tasks_by_mro_names_walks_mro():
+def test_list_actions_by_mro_names_walks_mro():
     """Should match on any ancestor in the MRO list."""
     lazy_register_by_names(["ObjectDetectionModel"])
-    tasks = list_tasks_by_mro_names(
+    actions = list_actions_by_mro_names(
         [
             "YOLOv8ForObjectDetectionTorchScript",
             "ObjectDetectionModel",
             "object",
         ]
     )
-    assert "infer" in tasks
+    assert "infer" in actions
 
 
-def test_invoke_task_applies_param_aliases():
-    from inference_model_manager.dispatch import invoke_task
+def test_invoke_action_applies_param_aliases():
+    from inference_model_manager.dispatch import invoke_action
     from inference_model_manager.registry_defaults import registry
 
     class AliasedModel:
@@ -51,7 +51,7 @@ def test_invoke_task_applies_param_aliases():
         response_type="roboflow-text-v1",
         param_aliases={"prompt": "question"},
     )
-    result = invoke_task(AliasedModel(), task="query", prompt="hi")
+    result = invoke_action(AliasedModel(), action="query", prompt="hi")
     assert result == "answer:hi"
 
 
