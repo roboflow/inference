@@ -153,6 +153,10 @@ _MULTIPART_PART_MISSING_MESSAGE = (
     "Expected image to be send in part named 'file' of multipart/form-data request"
 )
 _EMPTY_BODY_MESSAGE = "Image not found in request body."
+_YOLO_WORLD_UNSUPPORTED_MESSAGE = (
+    "YOLO-World is not supported by this inference server configuration."
+)
+
 _TASK_UNAVAILABLE_MESSAGE = (
     "{route} is not available on inference_server: no model class for this task is "
     "registered with the model manager"
@@ -1073,9 +1077,7 @@ async def yolo_world_infer(
     inference_request: YOLOWorldInferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Any:
-    return await _run_open_vocabulary_detection(
-        request, inference_request, bridge, "yolo_world"
-    )
+    raise LegacyHTTPError(404, _YOLO_WORLD_UNSUPPORTED_MESSAGE)
 
 
 @grounding_dino_router.post(

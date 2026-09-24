@@ -198,19 +198,15 @@ def test_pp_ocr_detect_only_returns_boxes_and_empty_result(legacy_client, fake_s
     assert body["result"] == "" and len(body["predictions"]) == 2
 
 
-def test_yolo_world_uses_requested_classes(legacy_client, fake_stat):
-    gw = FakeGateway(
-        predictions={("yolo_world/l", "infer"): _det(1)},
-        model_info={"yolo_world/l": {"tasks": {"infer": {}}}},
-    )
+def test_yolo_world_is_404_without_loading_a_model(legacy_client, fake_stat):
+    gw = FakeGateway()
     r = legacy_client(gw).post(
         "/yolo_world/infer",
         json={"image": _image(), "text": ["cat", "dog"], "confidence": 0.2},
     )
-    assert r.status_code == 200, r.text
-    assert r.json()["predictions"][0]["class"] == "dog"
-    call = next(c for c in gw.calls if c[0] == "infer")
-    assert call[3]["classes"] == ["cat", "dog"] and call[3]["confidence"] == 0.2
+    assert r.status_code == 404, r.text
+    assert "not supported" in r.json()["message"]
+    assert gw.calls == []
 
 
 def test_grounding_dino_custom_box_threshold_is_501(legacy_client, fake_stat):
