@@ -2,8 +2,11 @@ import base64
 import io
 import os.path
 import pickle
+import sys
 import tempfile
+import types
 from typing import Generator
+from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
@@ -129,6 +132,68 @@ def image_as_local_path() -> Generator[str, None, None]:
 @fixture(scope="function")
 def example_text_file() -> str:
     return os.path.join(ASSETS_DIR_PATH, "example_text_file.txt")
+
+
+# Everything whose import needs `ultralytics`: the yolo_world model and the
+# stream handler built on it, under its legacy and historical (facade) names.
+_ULTRALYTICS_DEPENDENT_MODULES = (
+    "ultralytics",
+    "inference.models.yolo_world.yolo_world",
+    "inference.models.yolo_world",
+    "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+    "inference.core.interfaces.stream.model_handlers.yolo_world",
+)
+
+
+@fixture(scope="function")
+def stub_ultralytics_if_missing() -> Generator[None, None, None]:
+    """Let yolo_world's module-level `from ultralytics import YOLO, settings`
+    succeed when the optional `ultralytics` dependency (requirements.yolo_world.txt)
+    is not installed, so tests can exercise the real import chain around it
+    without requiring the heavy extra.
+
+    On teardown every stub-backed module is dropped from `sys.modules` and from
+    its parent package, and the `YOLOWorld` class cached by
+    `inference.models.get_model_class` is forgotten, so later imports see the
+    dependency as missing again. Other modules imported meanwhile are kept.
+    """
+    try:
+        import ultralytics  # noqa: F401
+    except ModuleNotFoundError:
+        pass
+    else:
+        yield
+        return
+
+    preloaded = {
+        name: sys.modules[name]
+        for name in _ULTRALYTICS_DEPENDENT_MODULES
+        if name in sys.modules
+    }
+    models = sys.modules.get("inference.models")
+    registry_had_yolo_world = models is not None and (
+        "YOLOWorld" in models._MODEL_REGISTRY
+    )
+    stub = types.ModuleType("ultralytics")
+    stub.YOLO = MagicMock(name="ultralytics.YOLO")
+    stub.settings = MagicMock(name="ultralytics.settings")
+    sys.modules["ultralytics"] = stub
+    try:
+        yield
+    finally:
+        for name in _ULTRALYTICS_DEPENDENT_MODULES:
+            if name in preloaded:
+                sys.modules[name] = preloaded[name]
+                continue
+            module = sys.modules.pop(name, None)
+            parent_name, _, child_name = name.rpartition(".")
+            parent = sys.modules.get(parent_name)
+            if module is not None and parent is not None:
+                if vars(parent).get(child_name) is module:
+                    delattr(parent, child_name)
+        models = sys.modules.get("inference.models")
+        if models is not None and not registry_had_yolo_world:
+            models._MODEL_REGISTRY.pop("YOLOWorld", None)
 
 
 # --- aiohttp 3.14 / aioresponses compatibility shim --------------------------

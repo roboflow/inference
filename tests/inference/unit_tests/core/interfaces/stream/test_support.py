@@ -150,16 +150,21 @@ def test_queue_created_for_foreign_loop_shares_it_between_sync_and_async_sides(
 @pytest.mark.timeout(30)
 @pytest.mark.parametrize("queue_class", QUEUE_CLASSES)
 def test_queue_waits_time_out_with_builtin_timeout_error(queue_class: type) -> None:
+    # Both implementations propagate whatever `asyncio.wait_for` raises,
+    # unchanged. `asyncio.TimeoutError` *is* the builtin `TimeoutError` from
+    # Python 3.11 onward, but on 3.10 it is still its own distinct type; this
+    # asserts against `asyncio.TimeoutError` so the test pins the same legacy
+    # behavior on every supported interpreter instead of only on 3.11+.
     queue = queue_class()
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         queue.sync_get(timeout=0.05)
 
     async def scenario() -> None:
         async_queue = queue_class()
         await async_queue.async_get(timeout=0.01)
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         asyncio.run(scenario())
 
 

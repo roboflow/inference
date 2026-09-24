@@ -728,7 +728,7 @@ def test_legacy_factories_construct_the_class_they_are_called_on(
 
 
 def test_legacy_yolo_world_forwards_config_and_wraps_import_errors(
-    video_sources, monkeypatch
+    video_sources, monkeypatch, stub_ultralytics_if_missing
 ) -> None:
     import inference.core.interfaces.stream.model_handlers.yolo_world as historical
 
@@ -747,15 +747,18 @@ def test_legacy_yolo_world_forwards_config_and_wraps_import_errors(
     assert pipeline._on_video_frame is handler
     assert type(pipeline) is LegacyInferencePipeline
 
-    monkeypatch.setitem(
-        sys.modules,
-        "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
-        None,
-    )
-    with pytest.raises(CannotInitialiseModelError) as error:
-        LegacyInferencePipeline.init_with_yolo_world(
-            video_reference="video.mp4", classes=["cat"]
+    # Undone here rather than at test teardown: `stub_ultralytics_if_missing`
+    # tears down first and must not have the stub-backed handler put back after.
+    with monkeypatch.context() as patch:
+        patch.setitem(
+            sys.modules,
+            "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+            None,
         )
+        with pytest.raises(CannotInitialiseModelError) as error:
+            LegacyInferencePipeline.init_with_yolo_world(
+                video_reference="video.mp4", classes=["cat"]
+            )
     assert isinstance(error.value.__cause__, ImportError)
 
 
@@ -929,7 +932,9 @@ def test_active_learning_sink_accepts_any_batch_registrar() -> None:
     assert call["disable_preproc_auto_orient"] is True
 
 
-def test_model_config_stays_canonical_in_stream_entities() -> None:
+def test_model_config_stays_canonical_in_stream_entities(
+    stub_ultralytics_if_missing,
+) -> None:
     from inference.core.interfaces.legacy_stream.model_handlers import (
         roboflow_models,
         yolo_world,
@@ -1072,7 +1077,9 @@ def test_historical_names_are_the_legacy_modules() -> None:
     )
 
 
-def test_historical_module_keeps_its_baseline_public_names() -> None:
+def test_historical_module_keeps_its_baseline_public_names(
+    stub_ultralytics_if_missing,
+) -> None:
     import json
     from pathlib import Path
 
