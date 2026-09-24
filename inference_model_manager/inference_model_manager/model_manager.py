@@ -13,6 +13,7 @@ from inference_model_manager.backends.base import Backend
 from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
 from inference_model_manager.marshalling import (
     model_supports_rle,
+    split_batched_result,
     tensors_to_numpy,
 )
 from inference_models.utils.performance import performance_profiler
@@ -428,23 +429,7 @@ class ModelManager:
         per-image mapping as the worker's sub_results block (including the
         per-image retry when a batched call returns a mismatched shape),
         then tensors -> CPU numpy."""
-        if isinstance(raw_out, list) and (n_images == 1 or len(raw_out) == n_images):
-            results = raw_out
-        else:
-            shape = getattr(raw_out, "shape", None)
-            if shape and n_images > 1 and shape[0] == n_images:
-                results = [raw_out[i : i + 1] for i in range(n_images)]
-            elif n_images == 1:
-                results = [raw_out]
-            elif retry_single is not None:
-                results = []
-                for index in range(n_images):
-                    single_out = retry_single(index)
-                    if isinstance(single_out, list):
-                        single_out = single_out[0] if single_out else None
-                    results.append(single_out)
-            else:
-                results = [raw_out]
+        results = split_batched_result(raw_out, n_images, retry_single=retry_single)
         results = [tensors_to_numpy(result) for result in results]
         return results[0] if n_images == 1 else results
 

@@ -1,7 +1,7 @@
 import dataclasses
 import io
 import pickle
-from typing import Any
+from typing import Any, Callable, List, Optional
 
 import numpy as np
 
@@ -64,6 +64,50 @@ def tensors_to_numpy(result: Any) -> Any:
         return obj
 
     return _walk(result)
+
+
+def split_batched_result(
+    raw_out: Any, n_images: int, retry_single: Optional[Callable] = None
+) -> List[Any]:
+    """Map a raw batched model result to one result per input image.
+
+    Handles the result shapes the model contract can produce:
+      * a list whose length matches the batch (or a single-image call),
+      * a tuple of per-image lists (the structured-OCR ``(texts, detections)``
+        contract) — each image gets the whole tuple back with one-element
+        lists, exactly the shape a single-image call returns,
+      * an array/tensor whose leading dimension matches the batch,
+      * anything else, which falls back to ``retry_single`` — re-invoking the
+        model once per image — when one is supplied.
+    """
+    if isinstance(raw_out, list) and (n_images == 1 or len(raw_out) == n_images):
+        return raw_out
+    if (
+        n_images > 1
+        and isinstance(raw_out, tuple)
+        and raw_out
+        and all(
+            isinstance(element, list) and len(element) == n_images
+            for element in raw_out
+        )
+    ):
+        return [
+            tuple([element[index]] for element in raw_out) for index in range(n_images)
+        ]
+    shape = getattr(raw_out, "shape", None)
+    if shape and n_images > 1 and shape[0] == n_images:
+        return [raw_out[i : i + 1] for i in range(n_images)]
+    if n_images == 1:
+        return [raw_out]
+    if retry_single is not None:
+        results = []
+        for index in range(n_images):
+            single_out = retry_single(index)
+            if isinstance(single_out, list):
+                single_out = single_out[0] if single_out else None
+            results.append(single_out)
+        return results
+    return [raw_out]
 
 
 def model_supports_rle(model: Any) -> bool:
