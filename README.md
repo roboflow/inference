@@ -285,7 +285,7 @@ If you don't want to manage your own infrastructure for self-hosting, Roboflow o
 
 ## 🖥️ run on-prem or self-hosted
 
-Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment. Images and video you run on your own hardware do not use credits. You pay for the machine.
+Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment. Images and video you run on your own hardware are free, and do not use credits. You pay for the machine.
 
 `inference server start` attempts to automatically choose the optimal container to optimize performance on your machine (including with GPU acceleration via NVIDIA CUDA when available). Special installation notes and performance tips by device are listed below:
 
