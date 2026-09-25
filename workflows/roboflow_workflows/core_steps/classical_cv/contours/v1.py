@@ -144,6 +144,12 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare the work this step performs.
+
+        Returns:
+            Image analysis for finding contours and visualization for drawing
+            them on the output image.
+        """
         return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
 
     def get_actual_restrictions(

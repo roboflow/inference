@@ -611,18 +611,6 @@ def test_inner_workflow_reports_its_child_as_opaque(
 
 # Portable entries with no legacy counterpart, keyed by (block type, code).
 PORTABLE_WITHOUT_LEGACY = {
-    (
-        "roboflow_core/trackers_botsort@v1",
-        "stateful_video_state_resets_on_stateless_http",
-    ): (
-        "BoT-SORT keeps per-video tracker state like its sibling trackers but "
-        "never declared the caveat in get_restrictions(); the portable "
-        "declaration fixes the legacy gap (DECISIONS D021)"
-    ),
-    (
-        "roboflow_core/trackers_botsort@v1",
-        "temporal_block_no_benefit_on_still_image",
-    ): "second half of the same recorded addition (DECISIONS D021)",
     ("roboflow_core/cog_vlm@v1", "deprecated_block_always_raises"): (
         "run() raises FeatureDeprecatedError unconditionally; the legacy API "
         "has no way to say that, the portable one does (DECISIONS D020)"

@@ -2,7 +2,12 @@
 
 Workload introspection answers one question about a Workflow definition: **what work does this definition describe?** It compiles the definition structurally — no block is initialised, no model is loaded or registered, no custom Python is evaluated, nothing is executed — and returns the compiled graph, the per-step declarations the blocks make about themselves, and an inventory of the models the definition refers to.
 
-The answer is *portable*: it describes the definition, not the server that answered. The same definition returns the same graph, step declarations and model references on a hosted deployment, on a Jetson and in an air-gapped container. The one exception is the optional model-metadata enrichment in the inventory (`summary.models.items[].metadata`): whether it is populated depends on the answering server's `USE_INFERENCE_MODELS` gate, on the credentials in the request and on the server's access to the model registry. Consumers (a cost estimator, a scheduler, a capacity planner) apply their own hardware assumptions to the portable part.
+The answer is designed to be *portable*: it describes the definition, not the server that answered. Portability is a design goal, not a guarantee for every block: some parts of the answer can depend on the process that answers. Cases documented on this page:
+
+* the optional model-metadata enrichment in the inventory (`summary.models.items[].metadata`): whether it is populated depends on the answering server's `USE_INFERENCE_MODELS` gate, on the credentials in the request and on the server's access to the model registry;
+* one host-configured resource identity: CLIP comparison v1 declares the CLIP variant configured on the answering process (see [Discovery](#discovery-known-known-absent-and-unknown)).
+
+Consumers (a cost estimator, a scheduler, a capacity planner) apply their own hardware assumptions to the portable part.
 
 ## Endpoints
 
@@ -135,6 +140,7 @@ A block that declares nothing (a third-party plugin that has not been annotated)
 Writing a hook is not the same as knowing its answer. An explicitly written hook may still answer "unknown" or "partly known":
 
 * **Audited unknown.** Some model blocks write the resources hook and return `None` on purpose, because their model has no identity they could declare truthfully. Four model families do this today: Google Vision OCR, Seg Preview, Stability AI inpainting and Stability AI outpainting. Their steps report `resources.complete: false` with `declaration_unavailable`. No id is guessed for them.
+* **Host-configured identity.** CLIP comparison v1 (`roboflow_core/clip_comparison@v1`, numpy and tensor) has no version field: it runs the default CLIP variant configured where it executes. It declares `clip/{CLIP_VERSION_ID}`, filled with the `CLIP_VERSION_ID` configured on the process that **answers** introspection (default `ViT-B-16`). The step reports this id as a complete literal. A target configured with a different `CLIP_VERSION_ID` can run a different variant than the one declared, so compare the id with your target's configuration. CLIP comparison v2 has a `version` field and declares `clip/<version>` from the definition.
 * **Conditional declarations.** Some blocks declare a resource only under a condition in their own configuration, for example an active-learning target project that matters only while active learning is enabled. A literal condition is evaluated by the block. When the condition itself comes from a selector (for example `disable_active_learning: "$inputs.flag"`), the block declares the resource it might use; the document does not model whether the condition will hold at run time.
 * **Unknown identities.** A declared resource whose identity is a selector or a blank literal makes the step's resources incomplete. See [Resources](#resources).
 
@@ -168,7 +174,7 @@ Two problems are the same problem when their `code` and their `details` match; t
 | `declaration_unavailable` | the declaration is not available as a complete, portable statement. Three cases carry it: the block does not declare this domain at all (the hook returned `None`, e.g. an unannotated plugin); a block's restrictions come from the legacy `get_restrictions()` fallback (then `details.source` is `"get_restrictions"`); or a restriction's condition names configuration this process cannot evaluate (then `details.configuration_keys` lists those keys). Read `details` to tell them apart. |
 | `declaration_failed` | the declaration hook raised, or answered with something that is not a valid declaration. Introspection stays non-fatal: the step is reported with an empty, incomplete declaration rather than failing the whole response. |
 | `unresolved_selector` | a value the declaration depends on is a workflow selector, so it is only known at run time. |
-| `invalid_resource_identifier` | a literal resource identifier names nothing (empty or whitespace-only). No identifier is ever fabricated. |
+| `invalid_resource_identifier` | a resource identifier names nothing: an empty or whitespace-only literal, or a missing (`null`) model id that the block would use. No identifier is ever fabricated. |
 | `opaque_remote_workflow` | the step dispatches a child workflow to a remote server, which compiles it; nothing about the child is visible here. |
 | `custom_python_internals_unknown` | the step runs user-supplied Python; what the code does beyond the declared items is not statically analysable. |
 
@@ -237,7 +243,7 @@ For every identity field of every declared item:
 * a selector value adds an `unresolved_selector` problem with `field`, `selector` and `resource_type`;
 * a blank literal (empty or whitespace-only) adds an `invalid_resource_identifier` problem with `field` and `resource_type`, never the value.
 
-Either problem makes the step's `resources` `complete: false`. The item itself stays in `items`, verbatim. Problems the block reported itself stay next to the new ones. Selectors are never resolved and no default id is guessed. So `StepMetadata.resources.complete == true` means every declared resource of the step is identified by a literal.
+Either problem makes the step's `resources` `complete: false`. The item itself stays in `items`, verbatim. Problems the block reported itself stay next to the new ones. A block may report `invalid_resource_identifier` itself, with `field` and `resource_type`, when a model id it would use is missing (`null`); no item is listed for that model. Selectors are never resolved and no default id is guessed. So `StepMetadata.resources.complete == true` means every declared resource of the step is identified by a literal.
 
 The model inventory is about **models** only (see [Model inventory](#model-inventory)):
 
@@ -248,6 +254,8 @@ The model inventory is about **models** only (see [Model inventory](#model-inven
 #### Declaring resources (block authors)
 
 `discover_dependent_resources()` returns a plain list (a complete declaration), a `Discovery` (explicit completeness with reasons) or `None` (unknown). Return the configured id verbatim, selector included; introspection reports its completeness. Do not return a guessed default.
+
+The Execution Engine's runtime model preloader (`dependencies_pre_init`) accepts all three answers. It uses the known items: all items of a list, the items of a `Discovery` whether complete or incomplete, and nothing for `None`. The declared `DependentResource` objects reach the preloader unchanged, so `model_id_resolver`, `model_registration_kwargs` and `preloadable` still apply.
 
 `roboflow_platform_model()` accepts a keyword-only `preloadable` argument, default `True`. It is an in-process aid for the Execution Engine, like `model_id_resolver` and `model_registration_kwargs`: it never appears in this document, in `to_dict()` or in the JSON schema. `preloadable=False` means "the generic Execution Engine model-manager preloader must not register this model". Use it for a block that loads and owns its model itself. It says nothing about whether the block loads weights or runs remotely. The streaming video blocks (SAM2 video, SAM3 video, action recognition) declare their model this way, with `required_action: "execution"` and `execution_location: "local"`. SAM3 video declares only the model its literal `tracking_mode` selects: `model_id` for `concept`, `visual_model_id` for `visual`.
 
@@ -280,11 +288,35 @@ whether or not this server allows custom Python. The consumer decides what the r
 The builder asks the block for that portable view explicitly, with
 `get_actual_restrictions(ignore_environment_restrictions=True)`, and projects each answer onto the DTO above.
 
+#### Runtimes do not describe hardware, except the two self-hosted values
+
+The `runtimes` values are `hosted_serverless`, `dedicated_deployment`, `self_hosted_cpu`, `self_hosted_gpu` and `inference_pipeline`. Only `self_hosted_cpu` and `self_hosted_gpu` name hardware. `inference_pipeline` has no CPU/GPU variant.
+
+The GPU restriction shows the consequence:
+
+```
+requires_gpu_for_local_execution (hard)
+    when runtimes = [self_hosted_cpu] AND step_execution_modes = [local]
+```
+
+Evaluated as written, this condition does not match `inference_pipeline`. That result says nothing about the pipeline's hardware: it neither states that an inference pipeline has a GPU nor that the block runs there without one. A consumer that evaluates restrictions for an inference pipeline must supply its own assumption about the target hardware.
+
+#### Network reachability is not always a runtime restriction
+
+The PLC reader and writer (`roboflow_core/plc_reader@v1`, `roboflow_core/plc_writer@v1`) show where the document stops. Their `connection_mode` decides what they declare:
+
+| `connection_mode` | Declared restriction |
+| --- | --- |
+| `ethernet_ip`, `modbus` (direct) | `requires_lan_access_to_device`, hard, `runtimes: ["dedicated_deployment", "hosted_serverless"]`: the process must reach the PLC on the customer's network |
+| `relay` (the default) | none, complete |
+
+In relay mode the block sends HTTP requests to a PLC Relay service. The address defaults to loopback (`127.0.0.1`, port 8007), which is a relay running on the same device. The address field also accepts another host or IP, or a full `http://` / `https://` URL, which is used as given. The block code has no hosted-runtime guard and no address allowlist for the relay. The process executing the workflow must be able to reach the relay address. A hosted runtime can use a relay at a reachable external URL, so relay mode declares no hosted restriction. The default loopback address works only where a relay runs next to the executor; the document does not check that, and a consumer must judge it for its own target.
+
 ### How a block declares a restriction
 
-A block authors restrictions with ONE entity type, `RuntimeRestriction`, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see [below](#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose)). For the editor, `get_restrictions()` keeps its notes, severity, ordering and condition scopes, and its `to_dict()` payload is unchanged.
+A block authors restrictions with ONE entity type, `RuntimeRestriction`, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see [below](#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose)). For the editor, `get_restrictions()` keeps its notes, severity, ordering and condition scopes, and its `to_dict()` serialization shape is unchanged. Which entries a block lists can still change when a declaration is corrected: the BoT-SORT, Continue If and PostgreSQL editor views gained caveats they were missing, and the LMM blocks lost a false one.
 
-When both methods describe the same caveat, they give it the same `code`. Their scopes can still differ on purpose: the state-loss mode axis below, and storage caveats that the editor view emits per host flag while the actual view pins the flag in `applies_to_configuration`. `to_dict()` still omits `code` and `applies_to_configuration`, so the editor payload is unchanged.
+When both methods describe the same caveat, they give it the same `code`. Their scopes can still differ on purpose: the state-loss mode axis below, and storage caveats that the editor view emits per host flag while the actual view pins the flag in `applies_to_configuration`. `to_dict()` still omits `code` and `applies_to_configuration`, so the editor payload keeps its shape.
 
 | Method | Level | Returns | Filtered against this host? |
 | --- | --- | --- | --- |
@@ -334,6 +366,18 @@ A tracker, for example, reports:
 }
 ```
 
+The BoT-SORT tracker (`roboflow_core/trackers_botsort@v1`, numpy and tensor) lists the stateful-video and still-image caveats in both views, like SORT, OC-SORT and ByteTrack.
+
+Some blocks keep state only under a setting. Continue If (`roboflow_core/continue_if@v1`) keeps a grace-period timer in the block instance only when `stop_delay` is positive:
+
+| `stop_delay` | `get_actual_restrictions()` |
+| --- | --- |
+| `0` (the default) | complete and empty: no state is kept |
+| positive literal | complete: `cooldown_timer_resets_on_stateless_http`, soft, `runtimes: ["dedicated_deployment", "hosted_serverless"]`, `step_execution_modes: null` |
+| selector | conservative: the same restriction, with `complete: false` and an `unresolved_selector` problem for `stop_delay` |
+
+The editor `get_restrictions()` is a classmethod and cannot see `stop_delay`. It always lists the cooldown caveat, with its `["remote"]` mode axis. The selector row describes what the declaration hook answers. It is not a claim that a selector, or an explicit `0`, passes the field's current validation (`gt=0`).
+
 #### `ignore_environment_restrictions`
 
 * `True` — the **portable** view, and what this document carries. No host evaluation at all: every applicable declaration is returned with its condition intact, for the downstream target to evaluate. It does **not** drop environment-dependent restrictions.
@@ -367,7 +411,15 @@ def get_actual_restrictions(
 
 `actual_restrictions_of()` takes restriction DATA, not a manifest: it calls nothing back and picks between no implementations. A plugin that subclasses a built-in can extend what it inherits by calling `super().get_actual_restrictions(ignore_environment_restrictions=...)` and adding to the result.
 
-A declaration the portable contract cannot express — a blank or non-identifier `code`, an axis declared as an empty list, a blank configuration key — is reported as `declaration_failed` rather than published as a complete declaration the wire cannot carry. The `RuntimeRestriction` constructor itself stays permissive; the contract begins at the new API. A hook that raises is sanitised the same way at the workload-builder boundary: the exception text never reaches the response.
+`actual_restrictions_of()` validates every entry by projecting it onto the wire DTO, then rebuilds the entry from that validated projection. A rebuilt entry has:
+
+* each axis as a new list of enum members, in the authored order, or `None` when the axis was `None`;
+* `applies_to_configuration` as a new plain `dict` built from the validated projection, or `None` when it was `None`;
+* the authored `note`, unchanged.
+
+The declared completeness and reasons are kept. Shared preset objects are never mutated or returned by identity.
+
+A declaration the portable contract cannot express is reported as `declaration_failed` with no items, rather than published as a complete declaration the wire cannot carry. Examples: a blank or non-identifier `code`, an axis declared as an empty list, an unknown or repeated axis value, a note that is not a string, a blank or non-string configuration key, a configuration value that is not JSON. The host view (`ignore_environment_restrictions=False`) evaluates this host's configuration inside the same boundary: an exception during that evaluation also yields only `declaration_failed`. In both cases the problem carries no exception text and none of the declared or configured values. The `RuntimeRestriction` constructor itself stays permissive; the contract begins at the new API. A hook that raises is sanitised the same way at the workload-builder boundary.
 
 #### Compatibility
 
@@ -422,7 +474,7 @@ A standalone package call with no metadata provider yields `unavailable` — the
 
 #### How the lookup reaches the platform, and what that costs you
 
-The server performs the lookup through the existing registry helper `get_model_metadata_from_inference_models_registry()` (`GET /models/v1/external/stat`). That call is **metadata only**: no weights are downloaded, no model is registered with the model manager, and the model-type resolution paths that would enforce this deployment's model support are deliberately not used. The helper is called with its **default** cache prefix, exactly like every other caller: introspection derives no *shared* cache key from credentials, so no credential-derived key reaches the shared cache (`inference.core.cache.cache` — Redis, with an in-process memory cache fallback when Redis is not configured or cannot be reached).
+The server performs the lookup through the existing registry helper `get_model_metadata_from_inference_models_registry()` (`GET /models/v1/external/stat`). That call is **metadata only**: no weights are downloaded, no model is registered with the model manager, and the model-type resolution paths that would enforce this deployment's model support are deliberately not used.
 
 Repeat lookups are absorbed by an **in-memory cache inside the server process**, shared by every request and every provider instance. It holds at most 1000 entries (the least recently used entry is evicted at that bound) and expires them after `MODELS_CACHE_AUTH_CACHE_TTL` (default 15 minutes), the TTL the authorization cache already uses. Its key does contain the api key, and it never leaves the process. The key is an exact tuple, not a hash:
 
@@ -432,14 +484,32 @@ Repeat lookups are absorbed by an **in-memory cache inside the server process**,
 
 * `api_key` as given, so "no key" (`None`) and an empty key are different entries.
 * `authorised_workspace` is the workspace the call would send in the `x-assume-identity-authorised-workspace` header, resolved per call before the lookup — set only when the service access token is configured and the per-request workspace id is header-safe, and `None` otherwise. When it is `None`, the api key, model id and authorization mode still key the entry.
-* `MODELS_CACHE_AUTH_ENABLED` is the authorization policy in force when the entry was written, so an answer obtained while enforcement was off can never be reused as an enforcement-on authorization success.
+* `MODELS_CACHE_AUTH_ENABLED` is the authorization policy in force when the entry was written. It keeps each policy's entries apart. Switching back to a policy whose entry is still live reuses that entry.
 
 Only successful, usable metadata is cached. Exceptions, `unavailable` results and payloads whose every field is unknown are not stored, so the next request retries. The `USE_INFERENCE_MODELS`, provider and `OFFLINE_MODE` gates are all evaluated before the cache is consulted. The cache lives in one process: with several workers each keeps its own, and concurrent first-time lookups of the same key may issue more than one request — there is no request coalescing.
 
-What the two authorization policies mean for isolation:
+**Every in-memory miss is authorized by the platform for that caller, in both authorization modes.** On a miss, introspection calls the helper with a fresh, single-use cache prefix: a fixed namespace plus a random nonce from `secrets.token_hex(16)`. No api key, credential digest, token or workspace id feeds that prefix.
 
-* **`MODELS_CACHE_AUTH_ENABLED=True`** — the helper does not read the shared cache, so an in-memory miss reaches the platform carrying that call's own key and identity headers; a hit reuses that answer for the TTL, for that key tuple only.
-* **`MODELS_CACHE_AUTH_ENABLED=False`** (the default) — the helper keeps its existing policy for all of its callers: it reads its shared cache, which is keyed by model id alone. An in-memory miss can therefore be answered from an entry another caller populated for the same model id, without a fresh authorization. That entry pool is now the same one the model-resolution path uses, because both call the helper with the same default prefix; the cached value is the same metadata-only payload in either case. This is the helper's own policy, unchanged by workload introspection; **per-workspace isolation on a multi-tenant deployment relies on enabling `MODELS_CACHE_AUTH_ENABLED`.**
+```
+lookup(api_key, model_id):
+    key = (api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)
+    if key has a live in-memory entry:
+        return it                        # authorized earlier for this exact tuple
+    prefix = "workload_introspection:inference_models_registry:" + random_nonce()
+    helper(api_key, model_id, cache_prefix=prefix)
+        MODELS_CACHE_AUTH_ENABLED=False: shared-cache read of prefix:model_id -> always a miss
+        MODELS_CACHE_AUTH_ENABLED=True:  no shared-cache read
+        -> platform call with the caller's own api key and identity headers
+        on success: shared-cache write of prefix:model_id, expire=10 s   # nobody reads it
+    keep the answer in memory only when it is a usable success
+```
+
+What this means:
+
+* A cold tuple, an expired or evicted entry, and a retry after a failure all reach the platform with the caller's credentials and identity. An in-memory hit returns only an answer the platform already authorized for the same `(api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)` tuple, within the TTL.
+* Introspection never reads, writes or purges the helper's shared entries under its default prefix. The model-resolution path keeps its existing use of that default cache, unchanged.
+* The unchanged helper still writes each successful answer under the single-use prefix with `expire=10`. No later lookup reads that entry.
+* Cost: with `MODELS_CACHE_AUTH_ENABLED=False`, a cold lookup could formerly be answered by the default shared entry with no platform call. It now makes one authorized metadata call and one short-lived cache write. Some additional authenticated cold calls are therefore expected. Repeat lookups for the same tuple are still answered from memory.
 
 Two consequences of reusing that helper, which is shared with the loading paths and is not modified by this feature:
 
@@ -747,6 +817,19 @@ What the step says:
 * **Known-empty resources.** The producer needs no model, project or third-party model, and it declares that as a complete empty list.
 * **How `fire_and_forget` shapes the declaration.** The block reads its own manifest value when declaring restrictions. A literal `true` (as here, and the default) yields both restrictions. A literal `false` yields only the hard hosted-platform restriction, because the run then waits for the broker's acknowledgement and the caveat does not exist. A selector such as `$inputs.wait_for_ack` cannot be resolved at compile time, so the block keeps the hard restriction it does know and returns `complete: false` with the `unresolved_selector` problem shown in [Discovery problems](#discovery-problems) instead of guessing.
 
+Other sinks with a `fire_and_forget` switch declare the same soft caveat by the same rule: a literal `true` (their default) adds `fire_and_forget_hides_persistence_failures` for `inference_pipeline`, a literal `false` omits it, and a selector makes the restrictions `complete: false` with an `unresolved_selector` problem for `fire_and_forget`. What else each one declares differs:
+
+| Block | Also declared, for every `fire_and_forget` value, selector included |
+| --- | --- |
+| `roboflow_core/postgresql_sink@v1` | `unavailable_on_hosted_platform`, hard, `runtimes: ["hosted_serverless"]`, like Kafka. The block's `run()` already refuses to write on the hosted platform. The editor `get_restrictions()` lists this restriction too. |
+| `roboflow_enterprise/opc_writer_sink@v1` | `cooldown_timer_resets_on_stateless_http`, soft: its cooldown timer lives in the block instance |
+| `roboflow_core/microsoft_sql_server_sink@v1` | nothing |
+| `roboflow_enterprise/event_writer_sink@v1` | nothing |
+
 ## Errors
 
-The routes reuse the existing error handling: a malformed definition, an unknown block, an invalid selector or an Execution Engine version outside `>=1.0.0,<2.0.0` returns the error the ordinary compilation path would return. A partially compiled or invented graph is never returned in place of an error.
+The routes reuse the existing error handling: a malformed definition, an unknown block or an invalid selector returns the error the ordinary compilation path would return. A partially compiled or invented graph is never returned in place of an error.
+
+**Execution Engine version.** Introspection selects the engine exactly as workflow execution (`ExecutionEngine.init`) does. The requested version is a minimum within its major version: the installed engine must satisfy `>=requested,<next major`. So prerelease minimums such as `1.0.0rc1`, or an `rc` of the installed minor line, are accepted when the installed engine satisfies them. An unsupported request — for example `0.9`, `2.0`, or a minor or patch newer than the installed engine — returns HTTP 400 with `error_type: NotSupportedExecutionEngineError` and the same message that execution returns. The check runs before compilation, inner-workflow fetches and model metadata lookups. In the Python API, an explicit `execution_engine_version` that cannot be parsed still raises `WorkflowExecutionEngineVersionError`.
+
+**Dynamic blocks.** A `dynamic_blocks_definitions` entry that does not match the dynamic block schema (for example `{}`) returns HTTP 400 with `error_type: DynamicBlockError`. The message names the entry's index and the failing field locations, and the inner validation error is kept as the cause. Introspection stays structural: it evaluates no custom Python for these definitions. On the execution path, the existing custom-Python policy check still runs before this schema check.

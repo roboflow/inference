@@ -129,6 +129,13 @@ class CameraFocusManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare the work this step performs.
+
+        Returns:
+            Image analysis for the focus measure and visualization for the
+            focus-measure image, with its value text, that the block always
+            renders as its output image.
+        """
         return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
 
     def get_actual_restrictions(

@@ -226,6 +226,13 @@ class CameraFocusManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare the work this step performs.
+
+        Returns:
+            Image analysis, plus visualization when any overlay option is
+            enabled or ``grid_overlay`` draws a grid. With every overlay off,
+            image analysis only.
+        """
         # Same overlay switch as the numpy and device run paths: with every
         # overlay off the input image is returned unchanged, nothing is drawn.
         draws_overlay = (

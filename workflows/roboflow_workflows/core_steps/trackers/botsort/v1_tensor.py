@@ -260,6 +260,12 @@ class BoTSORTManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Declare the editor-facing restrictions of the tracker.
+
+        Returns:
+            The shared stateful-video and still-image soft restrictions, the
+            same list as the SORT, OC-SORT and ByteTrack trackers.
+        """
         return [
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
