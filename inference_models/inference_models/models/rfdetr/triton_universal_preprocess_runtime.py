@@ -446,8 +446,8 @@ class UniversalFastPreprocessRuntime:
         unsupported = []
         if network_input.resize_mode is not ResizeMode.STRETCH_TO:
             unsupported.append(f"resize_mode={network_input.resize_mode!r}")
-        if network_input.dataset_version_resize_dimensions is not None:
-            unsupported.append("dataset-version resize")
+        # STRETCH_TO uses one resize to the network size in the reference path,
+        # regardless of the dataset-version dimensions.
         if network_input.input_channels != 3:
             unsupported.append(f"input_channels={network_input.input_channels}")
         if network_input.scaling_factor not in (None, 255):
@@ -471,11 +471,8 @@ class UniversalFastPreprocessRuntime:
             and image_pre_processing.grayscale.enabled
         ):
             unsupported.append("grayscale")
-        if (
-            image_pre_processing.auto_orient is not None
-            and image_pre_processing.auto_orient.enabled
-        ):
-            unsupported.append("auto orient")
+        # EXIF orientation is handled when decoding, before these arrays/tensors
+        # reach either the reference or Triton pixel preprocessor.
         if unsupported:
             result = CompatibilityResult.incompatible(*unsupported)
         else:
@@ -498,15 +495,10 @@ class UniversalFastPreprocessRuntime:
         Returns:
             Compatibility result with every unsupported request characteristic.
         """
+        # Model compatibility already requires these transforms to be inactive;
+        # request flags that only disable them cannot change the pixel operations.
+        del pre_processing_overrides
         unsupported = []
-        if pre_processing_overrides is not None and any(
-            (
-                pre_processing_overrides.disable_contrast_enhancement,
-                pre_processing_overrides.disable_grayscale,
-                pre_processing_overrides.disable_static_crop,
-            )
-        ):
-            unsupported.append("active pre-processing overrides")
 
         raw_items = _raw_batch_items(images)
         if not raw_items:
