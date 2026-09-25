@@ -78,6 +78,15 @@ selection remains responsible for concrete input constraints, not installed pack
 
 ## Per-request execution
 
+For `triton-universal-v1`, stretch inputs may carry dataset-version resize
+dimensions: the reference path still performs a single resize to the network size.
+Auto-orient metadata is also compatible because image decoding handles EXIF
+orientation before the pixel preprocessor receives arrays or tensors. Model-level
+checks still reject enabled crop, contrast, and grayscale transforms, so request
+flags disabling those already-inactive operations are harmless and retain Triton.
+Non-stretch resize modes, unsupported input contracts, source-size limits, and
+runtime failures continue to use the existing compatibility/fallback policy.
+
 ```mermaid
 flowchart TD
     inputs["Image inputs<br/>NumPy or torch.Tensor<br/>CPU or CUDA"]
