@@ -234,6 +234,10 @@ class ActiveLearningConfigurationError(ActiveLearningError):
     pass
 
 
+class InferencePayloadTooLargeError(Exception):
+    pass
+
+
 class CannotInitialiseModelError(Exception):
     pass
 

@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+import dataclasses
+import logging
+import threading
+import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional
+
+from inference_model_manager.backends.base import (
+    Backend,
+    BackendState,
+    attach_model_caches,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class DirectBackend(Backend):
+    """Loads and runs a model in the current process.
+
+    All inference happens in-process via ``model.infer()`` — no IPC, no
+    worker processes.
+
+    Preferred for: InferencePipeline, CPU-only / constrained hardware,
+    any scenario where per-frame IPC overhead is unacceptable.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        api_key: str,
+        *,
+        device: Optional[str] = None,
+        decoder: str = "imagecodecs",
+        executor: Optional[ThreadPoolExecutor] = None,
+        batch_max_size: int = 0,
+        batch_max_delay_ms: float = 10.0,
+        **kwargs,
+    ) -> None:
+        from inference_model_manager.backends.decode import make_decoder
+        from inference_model_manager.pipelines import load_model
+
+        # batch_max_size / batch_max_delay_ms accepted for API parity with
+        # other backend kinds (ModelManager.load passes them generically).
+        # They are unused in DirectBackend — inference is dispatched per-request
+        # by ModelManager.process() via invoke_action(backend.model, ...).
+        del batch_max_size, batch_max_delay_ms
+
+        self._model_id = model_id
+        self._device_str = device
+        self._decoder_name = decoder
+        self._executor = executor
+        self._state_value: str = BackendState.LOADING
+
+        self._decode: Callable[[bytes], Any] = make_decoder(
+            decoder,
+            device=device or "cpu",
+        )
+
+        load_kwargs = dict(kwargs)
+        if device is not None:
+            load_kwargs["device"] = device
+        logger.info(
+            "DirectBackend(%s): loading model (device=%s, decoder=%s)",
+            model_id,
+            device or "default",
+            decoder,
+        )
+        try:
+            self._model = load_model(model_id, api_key, **load_kwargs)
+            attach_model_caches(self._model)
+        except Exception:
+            self._model = None
+            raise
+        self._state_value = BackendState.LOADED
+
+        self._device_str = self._detect_device()
+
+        from inference_model_manager.backends.base import detect_max_batch_size
+
+        model_max = detect_max_batch_size(self._model)
+
+        self._inference_count = 0
+        self._error_count = 0
+        self._last_inference_ts = 0.0
+        self._start_ts = time.monotonic()
+        self._latencies: deque[float] = deque(maxlen=1000)
+        self._inflight = 0
+        self._inflight_lock = threading.Lock()
+
+        model_type = type(self._model).__name__
+        class_count = len(self.class_names) if self.class_names else 0
+        logger.info(
+            "DirectBackend(%s): ready | model_type=%s | device=%s | decoder=%s | "
+            "class_names=%d | model_max_batch=%s | executor=%s",
+            model_id,
+            model_type,
+            self._device_str,
+            decoder,
+            class_count,
+            model_max,
+            "shared" if executor else "none",
+        )
+
+    def _detect_device(self) -> str:
+        """Return the device the model was asked to load on.
+
+        This is the requested device, not necessarily the one executing the
+        model: an onnxruntime session that falls back to CPU is still reported
+        as the device that was requested.
+        """
+        if self._device_str:
+            return self._device_str
+        from inference_models.configuration import DEFAULT_DEVICE_STR
+
+        return DEFAULT_DEVICE_STR
+
+    def _decode_input(self, raw_input: Any) -> Any:
+        if isinstance(raw_input, (bytes, bytearray)):
+            return self._decode(raw_input)
+        return raw_input
+
+    def record_inference(self, t0: float, error: bool = False) -> None:
+        elapsed = time.monotonic() - t0
+        self._inference_count += 1
+        self._last_inference_ts = t0
+        self._latencies.append(elapsed)
+        if error:
+            self._error_count += 1
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def inflight_begin(self) -> None:
+        """Take an in-flight lease, or refuse if the backend stopped accepting.
+
+        Check and increment happen under one lock: a request that passed a
+        separate acceptance check could otherwise increment after a drain had
+        already observed zero in flight, and run against an unloaded model.
+        """
+        with self._inflight_lock:
+            if self._state_value != BackendState.LOADED or self._model is None:
+                raise RuntimeError(
+                    f"Backend '{self._model_id}' not accepting requests "
+                    f"(state={self.state})"
+                )
+            self._inflight += 1
+
+    def inflight_end(self) -> None:
+        with self._inflight_lock:
+            self._inflight = max(0, self._inflight - 1)
+
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        with self._inflight_lock:
+            self._state_value = BackendState.DRAINING
+        logger.info(
+            "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
+        )
+        # Wait for in-flight forward passes — dropping the model under a live
+        # invoke_action crashes (CUDA error / AttributeError).
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            with self._inflight_lock:
+                remaining = self._inflight
+            if remaining == 0:
+                break
+            time.sleep(0.05)
+        with self._inflight_lock:
+            remaining = self._inflight
+        if remaining > 0:
+            logger.warning(
+                "DirectBackend(%s): drain timeout — %d inference(s) still "
+                "in flight, force-unloading",
+                self._model_id,
+                remaining,
+            )
+        self.unload()
+
+    def unload(self) -> None:
+        with self._inflight_lock:
+            self._state_value = BackendState.UNHEALTHY
+        del self._model
+        self._model = None
+
+    # ------------------------------------------------------------------
+    # Observability
+    # ------------------------------------------------------------------
+
+    @property
+    def model(self) -> Any:
+        return self._model
+
+    @property
+    def device(self) -> str:
+        return self._device_str or "cpu"
+
+    @property
+    def state(self) -> str:
+        if self._model is None:
+            return BackendState.UNHEALTHY
+        return self._state_value
+
+    @property
+    def is_healthy(self) -> bool:
+        return self._model is not None and self._state_value == BackendState.LOADED
+
+    @property
+    def is_accepting(self) -> bool:
+        return self._state_value == BackendState.LOADED and self._model is not None
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        from inference_model_manager.backends.base import detect_max_batch_size
+
+        return detect_max_batch_size(self._model)
+
+    @property
+    def queue_depth(self) -> int:
+        return 0
+
+    def stats(self) -> Dict[str, Any]:
+        sorted_lats = sorted(self._latencies) if self._latencies else []
+
+        def _pct(p: float) -> float:
+            if not sorted_lats:
+                return 0.0
+            idx = min(int(len(sorted_lats) * p / 100), len(sorted_lats) - 1)
+            return sorted_lats[idx] * 1000
+
+        return {
+            "model_id": self._model_id,
+            "backend_type": "direct",
+            "decoder": self._decoder_name,
+            "state": self.state,
+            "is_accepting": self.is_accepting,
+            "queue_depth": 0,
+            "queue_depth_by_priority": {},
+            "max_batch_size": self.max_batch_size,
+            "current_batch_fill_pct": 0.0,
+            "batch_delay_ms": 0.0,
+            "throughput_fps": (
+                self._inference_count / max(time.monotonic() - self._start_ts, 1e-6)
+            ),
+            "latency_p50_ms": _pct(50),
+            "latency_p99_ms": _pct(99),
+            "inference_count": self._inference_count,
+            "error_count": self._error_count,
+            "last_inference_ts": self._last_inference_ts,
+            "model_class_name": type(self._model).__name__ if self._model else None,
+            "resolved_model": (
+                dataclasses.asdict(self._model.resolved_model)
+                if dataclasses.is_dataclass(
+                    getattr(self._model, "resolved_model", None)
+                )
+                else None
+            ),
+        }
+
+    @property
+    def class_names(self) -> Optional[List[str]]:
+        return getattr(self._model, "class_names", None)
+
+    @property
+    def key_points_classes(self) -> Optional[List[List[str]]]:
+        return getattr(self._model, "key_points_classes", None)
+
+    @property
+    def last_used_ts(self) -> Optional[float]:
+        return self._last_inference_ts or self._start_ts
