@@ -1,5 +1,5 @@
 import contextvars
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
 
 from roboflow_workflows.environment import WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT
@@ -13,11 +13,38 @@ def run_steps_in_parallel(
     steps: List[Callable[[], T]],
     max_workers: int = 1,
     executor: Optional[ThreadPoolExecutor] = None,
+    flat_dispatch: bool = False,
 ) -> List[T]:
     steps = [wrap_with_context_snapshot(step) for step in steps]
     if executor is None:
         with ThreadPoolExecutor(max_workers=max_workers) as inner_executor:
             return list(inner_executor.map(_run, steps))
+    if flat_dispatch:
+        # Dedicated (run-owned) pool: submit the whole wave in one flat map,
+        # exactly like the historical executor=None branch - no chunk
+        # barriers. Shared host pools must keep batched dispatch so one
+        # wide wave cannot monopolise them.
+        #
+        # Failure path: the historical per-wave `with` block ran
+        # `shutdown(wait=True)` before a step error could leave this
+        # function, so callers between here and `_run_workflow`'s `finally`
+        # (profiler phases, execution-phase closes) never observed a
+        # still-running sibling. Reproduce that by cancelling not-yet-
+        # started futures and draining in-flight ones before propagating.
+        # `CancelledError` is a `BaseException` (3.8+), so it must be
+        # caught explicitly - `except Exception` would mask the step error.
+        # The run-owned pool is NOT shut down here; its creator owns it.
+        futures = [executor.submit(_run, step) for step in steps]
+        try:
+            return [future.result() for future in futures]
+        finally:
+            for future in futures:
+                future.cancel()
+            for future in futures:
+                try:
+                    future.exception()
+                except CancelledError:
+                    pass
     results = []
     for batch in create_batches(sequence=steps, batch_size=max_workers):
         batch_results = list(executor.map(_run, batch))

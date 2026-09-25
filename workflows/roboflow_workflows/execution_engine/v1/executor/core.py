@@ -138,9 +138,39 @@ def _run_workflow(
         execution_graph=workflow.execution_graph,
     )
     workflow_execution_id = get_or_create_workflow_execution_id()
+    # Hosts that supply no executor (standalone `roboflow-workflows`, SDK and
+    # embedded usage) previously paid a fresh ThreadPoolExecutor per DAG wave:
+    # for a 10-step chain that is 10 thread-spawn/teardown cycles per run and
+    # the dominant per-run overhead in profiling. Own ONE run-scoped pool
+    # instead, created lazily on the first wave and shut down in `finally`
+    # with the same wait semantics the per-wave `with` block had. Concurrency
+    # degree (max_concurrent_steps), per-task context isolation, and the
+    # provided-executor path are unchanged.
+    #
+    # Worker-reuse boundary: threads live for exactly one run. Framework
+    # context is isolated per task (context snapshot + the unconditional
+    # rebinds in `safe_execute_step`), so waves and runs cannot contaminate
+    # each other or the request thread. Third-party `threading.local` set
+    # inside one step MAY be observed by a later step of the SAME run - the
+    # reuse profile hosted pools have had since #1717; the block contract
+    # never promised wave-fresh workers (step state belongs to block
+    # instances / InstanceCache). Cross-run leakage is impossible here
+    # because the threads are destroyed with the run.
+    #
+    # Early exits: this executor has no cancellation primitive, so the
+    # supported early terminations are exception abort (later waves never
+    # scheduled) and conditional branch termination (FlowControl masks the
+    # branch, downstream block bodies are discarded inside still-scheduled
+    # waves). Both unwind through the `finally` below - pool drains exactly
+    # once on every supported path; both are pinned in the ownership tests.
+    owned_executor: Optional[ThreadPoolExecutor] = None
+    run_executor = executor
     try:
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
         while next_steps is not None:
+            if run_executor is None:
+                owned_executor = ThreadPoolExecutor(max_workers=max_concurrent_steps)
+                run_executor = owned_executor
             execute_steps(
                 next_steps=next_steps,
                 workflow=workflow,
@@ -148,9 +178,13 @@ def _run_workflow(
                 max_concurrent_steps=max_concurrent_steps,
                 workflow_execution_id=workflow_execution_id,
                 profiler=profiler,
-                executor=executor,
+                executor=run_executor,
                 step_error_handler=step_error_handler,
                 observer=observer,
+                # executor=None hosts previously dispatched each wave with a
+                # flat map on a dedicated pool - keep that scheduling for the
+                # run-owned pool; host-provided pools stay batched.
+                flat_dispatch=executor is None,
             )
             next_steps = execution_coordinator.get_steps_to_execute_next(
                 profiler=profiler
@@ -177,8 +211,19 @@ def _run_workflow(
                 resolve_output_futures=resolve_output_futures,
             )
     finally:
-        if not defer_stream_pipeline_flush:
-            close_stream_pipelines(workflow=workflow)
+        try:
+            if owned_executor is not None:
+                # Drain in-flight wave tasks BEFORE closing stream pipelines -
+                # the per-wave executor teardown used to guarantee exactly that
+                # ordering on the executor=None path.
+                owned_executor.shutdown(wait=True)
+        finally:
+            # Nested so pipeline close still runs if shutdown itself raises
+            # (e.g. KeyboardInterrupt during join): the historical per-wave
+            # `with` lived inside `execute_steps`, so the outer cleanup
+            # always ran.
+            if not defer_stream_pipeline_flush:
+                close_stream_pipelines(workflow=workflow)
 
 
 def flush_stream_pipeline_workflow(
@@ -208,36 +253,51 @@ def flush_stream_pipeline_workflow(
         step_selectors=flushed_step_selectors,
     )
     workflow_execution_id = get_or_create_workflow_execution_id()
-    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    while next_steps is not None:
-        runnable_steps = [
-            step_selector
-            for step_selector in next_steps
-            if step_selector in downstream_step_selectors
-            and execution_data_manager.all_inputs_impacting_step_are_registered(
-                step_selector=step_selector
-            )
-        ]
-        if runnable_steps:
-            execute_steps(
-                next_steps=runnable_steps,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                max_concurrent_steps=max_concurrent_steps,
-                profiler=profiler,
-                executor=executor,
-                step_error_handler=step_error_handler,
-                workflow_execution_id=workflow_execution_id,
-                observer=observer,
-            )
+    # Run-scoped pool for executor=None hosts - mirrors `_run_workflow`.
+    owned_executor: Optional[ThreadPoolExecutor] = None
+    run_executor = executor
+    try:
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    return construct_workflow_output(
-        workflow_outputs=workflow.workflow_definition.outputs,
-        execution_graph=workflow.execution_graph,
-        execution_data_manager=execution_data_manager,
-        serialize_results=serialize_results,
-        kinds_serializers=kinds_serializers,
-    )
+        while next_steps is not None:
+            runnable_steps = [
+                step_selector
+                for step_selector in next_steps
+                if step_selector in downstream_step_selectors
+                and execution_data_manager.all_inputs_impacting_step_are_registered(
+                    step_selector=step_selector
+                )
+            ]
+            if runnable_steps:
+                if run_executor is None:
+                    owned_executor = ThreadPoolExecutor(
+                        max_workers=max_concurrent_steps
+                    )
+                    run_executor = owned_executor
+                execute_steps(
+                    next_steps=runnable_steps,
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                    max_concurrent_steps=max_concurrent_steps,
+                    profiler=profiler,
+                    executor=run_executor,
+                    step_error_handler=step_error_handler,
+                    workflow_execution_id=workflow_execution_id,
+                    observer=observer,
+                    flat_dispatch=executor is None,
+                )
+            next_steps = execution_coordinator.get_steps_to_execute_next(
+                profiler=profiler
+            )
+        return construct_workflow_output(
+            workflow_outputs=workflow.workflow_definition.outputs,
+            execution_graph=workflow.execution_graph,
+            execution_data_manager=execution_data_manager,
+            serialize_results=serialize_results,
+            kinds_serializers=kinds_serializers,
+        )
+    finally:
+        if owned_executor is not None:
+            owned_executor.shutdown(wait=True)
 
 
 def flush_stream_pipeline_outputs(
@@ -335,6 +395,7 @@ def execute_steps(
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     observer: ExecutionObserver = NULL_EXECUTION_OBSERVER,
+    flat_dispatch: bool = False,
 ) -> None:
     if remote_processing_times is not None:
         processing_time_collector = remote_processing_times.get()
@@ -372,7 +433,10 @@ def execute_steps(
         for step_selector in next_steps
     ]
     _ = run_steps_in_parallel(
-        steps=steps_functions, max_workers=max_concurrent_steps, executor=executor
+        steps=steps_functions,
+        max_workers=max_concurrent_steps,
+        executor=executor,
+        flat_dispatch=flat_dispatch,
     )
 
 
