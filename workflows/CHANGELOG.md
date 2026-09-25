@@ -30,7 +30,7 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Widened `zxing-cpp` from `~=2.2.0` to `>=2.2.0,<=2.3.0` so installs can pick 2.3.0: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
+- `zxing-cpp` is now pinned per Python version: `~=2.2.0` on Python < 3.13 (unchanged from before) and `==2.3.0` on Python 3.13, which is the first release with 3.13 wheels. The pin is split rather than widened because neither 2.2.0 nor 2.3.0 ships aarch64 wheels, so Jetson installs compile from source, and the 2.3.0 sources need C++20 concepts, which the JetPack 5 toolchain (GCC 9.4) does not support.
 
 ### Execution Engine Change
 

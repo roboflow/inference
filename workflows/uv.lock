@@ -2875,6 +2875,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pkgconfig"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/fd/0adde075cd3bfecd557bc7d757e00e231d34d8a6edb4c8d1642759254c21/pkgconfig-1.6.0.tar.gz", hash = "sha256:4a5a6631ce937fafac457104a40d558785a658bbdca5c49b6295bc3fd651907f", size = 5691, upload-time = "2026-03-06T11:26:01.194Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/6f/f7ec07fba48f07c555cc4099481df644fbbc12067879072c17ac229f6556/pkgconfig-1.6.0-py3-none-any.whl", hash = "sha256:98e71754855e9563838d952a160eb577edabb57782e49853edb5381927e6bea1", size = 7086, upload-time = "2026-03-06T11:26:07.688Z" },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.11.13"
 source = { registry = "https://pypi.org/simple" }
@@ -3585,6 +3594,7 @@ version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
+    { name = "pkgconfig" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7b/88/f73dae807ec68b228fba72507105e3ba80a561dc0bade0004ce24fd118fc/pyvips-2.2.3.tar.gz", hash = "sha256:43bceced0db492654c93008246a58a508e0373ae1621116b87b322f2ac72212f", size = 56626, upload-time = "2024-04-28T11:19:58.158Z" }
 
@@ -4034,7 +4044,8 @@ dependencies = [
     { name = "urllib3" },
     { name = "websocket-client" },
     { name = "zeep" },
-    { name = "zxing-cpp" },
+    { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 
 [package.optional-dependencies]
@@ -4100,7 +4111,8 @@ requires-dist = [
     { name = "urllib3", specifier = ">=2.7.0,<3.0.0" },
     { name = "websocket-client", specifier = "~=1.9.0" },
     { name = "zeep", specifier = ">=4.0,<5.0" },
-    { name = "zxing-cpp", specifier = ">=2.2.0,<=2.3.0" },
+    { name = "zxing-cpp", marker = "python_full_version < '3.13'", specifier = "~=2.2.0" },
+    { name = "zxing-cpp", marker = "python_full_version >= '3.13'", specifier = "==2.3.0" },
 ]
 provides-extras = ["enterprise", "test"]
 
@@ -5129,8 +5141,47 @@ wheels = [
 
 [[package]]
 name = "zxing-cpp"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.11.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.11.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version < '3.11' and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/8f/77828ef6e7bcad2ed17da58a4af833fce52e2afb6e72214e0403fa0ef197/zxing-cpp-2.2.0.tar.gz", hash = "sha256:11884ef9d1a61e47ad89836339da9e1040cb28b083fb37462bc58e8d46f135bc", size = 652847, upload-time = "2023-12-08T20:37:18.985Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/b1/2c58169b415b2e3a472ddb26150d95e717e5247c78abbc552718ed549884/zxing_cpp-2.2.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:eb8ede507dad76d0ed606c17be943cfe554909cdb517f7650da076e8dc9648c0", size = 1500775, upload-time = "2023-12-08T20:35:57.708Z" },
+    { url = "https://files.pythonhosted.org/packages/64/e4/78913f55bde52a80e282f98a3ff1ba21ae534dc6a2a865fae1fbaf408203/zxing_cpp-2.2.0-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5e8bae00edea7f6350ced4f954ca2c3386afbf6d85d3303126f9cf8584cec454", size = 962999, upload-time = "2023-12-08T20:36:01.764Z" },
+    { url = "https://files.pythonhosted.org/packages/57/47/dad02f727f908045e2abd8e0e930e7f20e6d1566e30e64fb0578a42af0a9/zxing_cpp-2.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8256ed05d0978e87847e91e2aff03b21c19cf4256dcb8af8a335de8361f027be", size = 940030, upload-time = "2023-12-08T20:36:05.997Z" },
+    { url = "https://files.pythonhosted.org/packages/22/f2/09e03bbc2317de1b0916e0162871f40e6b4769c367ac7144f80e08d4a8d5/zxing_cpp-2.2.0-cp310-cp310-win32.whl", hash = "sha256:5e788ec26d10ac057f5027357ab404b1de2dd3ce216c1d0be20437dcd37f1afc", size = 628574, upload-time = "2023-12-08T20:36:09.711Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/0b/483db6155ca3ff6f70a9d4e29ba88dd4e67801517cdf330a97c370ede32d/zxing_cpp-2.2.0-cp310-cp310-win_amd64.whl", hash = "sha256:b69dcee874b59201a586e8fc77a7f83a92cd09d029d22a8b7b4f7112db2c675f", size = 692016, upload-time = "2023-12-08T20:36:13.317Z" },
+    { url = "https://files.pythonhosted.org/packages/20/dc/4f301d215b77b7a256b1b98a3ca9449f13417f96d5489a2ecff0a7dacbb4/zxing_cpp-2.2.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:f7d63385278ed2c674c756fe3448769b813351584e111cb61e6901a5e3dbf646", size = 1503237, upload-time = "2023-12-08T20:36:18.37Z" },
+    { url = "https://files.pythonhosted.org/packages/24/a8/393de9c47df6bdfca7cbc64a591ce26550bd176b09b22eb180bf99c3a3d4/zxing_cpp-2.2.0-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:7d9e7369bba46727e4a7fa1b5bd2b630696ec042df60063c13f2d844887950b1", size = 964092, upload-time = "2023-12-08T20:36:22.095Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/c1/dcd5e242c252ca3ea84acf8cf6e533b4cc90a1171c9d1a7457f24ca19aca/zxing_cpp-2.2.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8602d7cad833007df497b8db7c1216fc7d21e077eb02206b45f4fc061b082913", size = 941408, upload-time = "2023-12-08T20:36:25.052Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/fa/f4c855c57c8b9bdf9c9bcce891b5da6cffb09331adf38e086c2908d83f41/zxing_cpp-2.2.0-cp311-cp311-win32.whl", hash = "sha256:e2059fb6d47eb80122856d1524611339bffe27ad7e4cf59bdb6d642989e238b4", size = 628452, upload-time = "2023-12-08T20:36:27.962Z" },
+    { url = "https://files.pythonhosted.org/packages/68/8a/22c3d653c31cba5866c36877e6ef80786af8f4aea375c3f258a66539995f/zxing_cpp-2.2.0-cp311-cp311-win_amd64.whl", hash = "sha256:70f9f13c4c91cb0747c0dc7ef247b39e19d38d07efd695fac17d11832f93d44a", size = 692361, upload-time = "2023-12-08T20:36:30.568Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/03/0244ec65840eb58698dc820877c30388a54ac90ea26b72f0a80565da2280/zxing_cpp-2.2.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:177d5ed00c505e1728a90dc4742c6f0a4d9c2db56101809762f10f98fb822fa2", size = 1504810, upload-time = "2023-12-08T20:36:34.401Z" },
+    { url = "https://files.pythonhosted.org/packages/69/df/59e2016085a61868570f071f2a40e050cf65e7c8267c86bfe935be3b17d1/zxing_cpp-2.2.0-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:a9868fbb9770ef2a2b72b6fe67d7528b9e4858ba6a130e59969ecb2e71271cd1", size = 962759, upload-time = "2023-12-08T20:36:37.17Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/24/11d8dc758a044cb921f5f34d3136fee5f0896f37b9eab7ee3f9d47f8ad46/zxing_cpp-2.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c0b35274af536ac9091d446ba0f69840feba62525feddf24b7b8991d924d6543", size = 939677, upload-time = "2023-12-08T20:36:40.17Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/8e/33c867704d8b7fd366e3d1cc2b3e4ad0cad0816a437ebba1f1eda8cbdb91/zxing_cpp-2.2.0-cp312-cp312-win32.whl", hash = "sha256:c2ff0059eef121ae7769ba4baeee52172438ca770cb4054e1d114beeda66226d", size = 628886, upload-time = "2023-12-08T20:36:43.115Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/89/91f417cbd62bbb1b3d2be8dd8b4162b33f1a6fbd44a35ce94dca4c10de07/zxing_cpp-2.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:e3cdd28dd42176f59aa7fcbd052ec1d60c1fa29363b3fa5a8e41ecf8ce6e9be7", size = 692340, upload-time = "2023-12-08T20:36:46.107Z" },
+]
+
+[[package]]
+name = "zxing-cpp"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/f2/b781bf6119abe665069777e3c0f154752cf924fe8a55fca027243abbc555/zxing_cpp-2.3.0.tar.gz", hash = "sha256:3babedb67a4c15c9de2c2b4c42d70af83a6c85780c1b2d9803ac64c6ae69f14e", size = 1172666, upload-time = "2025-01-01T21:54:05.856Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/31/93/3e830a3dd44a9f7d11219883bc6f131ca68da2a5ad48690d9645e19c3b55/zxing_cpp-2.3.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:4e1ffcdd8e44a344cbf32bb0435e1fbe67241337c0a0f22452c2b8f7c16dc75e", size = 1694502, upload-time = "2025-01-01T21:53:06.339Z" },
