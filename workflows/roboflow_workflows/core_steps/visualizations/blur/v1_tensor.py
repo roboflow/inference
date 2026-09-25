@@ -34,7 +34,7 @@ This block takes an image and detection predictions and applies a blur effect to
 4. Preserves the background and areas outside detected objects unchanged
 5. Returns an annotated image where detected objects are blurred, while the rest of the image remains sharp
 
-The block works with both object detection predictions (using bounding boxes) and instance segmentation predictions (using masks). When masks are available, it blurs the exact shape of detected objects; otherwise, it blurs rectangular bounding box regions. The blur intensity is controlled by the kernel size parameter, where larger kernel sizes create stronger blur effects. This creates a visual effect that obscures or anonymizes detected objects while maintaining context from the surrounding image, making it ideal for privacy protection, content filtering, or focusing attention on the background.
+The block works with both object detection predictions (using bounding boxes) and instance segmentation predictions (using masks). When masks are available, it blurs the exact shape of detected objects; otherwise, it blurs rectangular bounding box regions. The blur intensity is controlled by the kernel size parameter, where larger kernel sizes create stronger blur effects. The padding parameter blurs extra pixels around each detection, growing boxes on every side and masks outward, to cover edges the model missed. This creates a visual effect that obscures or anonymizes detected objects while maintaining context from the surrounding image, making it ideal for privacy protection, content filtering, or focusing attention on the background.
 
 ## Common Use Cases
 
@@ -89,6 +89,11 @@ class BlurManifest(PredictionsVisualizationManifest):
         default=15,
         examples=[15, "$inputs.kernel_size"],
     )
+    padding: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        description="Extra pixels to blur around each detection. Bounding boxes grow by this many pixels on every side, and segmentation masks grow outward by this many pixels, so edges the model missed (hair, hands) are still covered. 0 blurs exactly the box or mask.",
+        default=0,
+        examples=[0, 10, "$inputs.blur_padding"],
+    )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -107,11 +112,14 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
     def getAnnotator(
         self,
         kernel_size: int,
+        padding: int = 0,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [kernel_size]))
+        key = "_".join(map(str, [kernel_size, padding]))
 
         if key not in self.annotatorCache:
-            self.annotatorCache[key] = MaskAwareBlurAnnotator(kernel_size=kernel_size)
+            self.annotatorCache[key] = MaskAwareBlurAnnotator(
+                kernel_size=kernel_size, padding=padding
+            )
         return self.annotatorCache[key]
 
     def run(
@@ -120,11 +128,12 @@ class BlurVisualizationBlockV1(PredictionsVisualizationBlock):
         predictions: Union[TensorNativePrediction, TensorNativeDetections],
         copy_image: bool,
         kernel_size: Optional[int],
+        padding: Optional[int] = 0,
     ) -> BlockResult:
         # Masks are needed so segmentation predictions blur their own shape
         # rather than their bounding box.
         predictions = to_supervision_for_annotation(predictions)
-        annotator = self.getAnnotator(kernel_size)
+        annotator = self.getAnnotator(kernel_size, padding or 0)
         scene = image.numpy_image
         if copy_image:
             scene = scene.copy()
