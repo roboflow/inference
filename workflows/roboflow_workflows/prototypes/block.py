@@ -529,12 +529,27 @@ class WorkflowBlockManifest(BaseModel, ABC):
         """
         return None
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+    def discover_dependent_resources(
+        self,
+    ) -> Optional[Union[List[DependentResource], Discovery[DependentResource]]]:
         """Declare external resources this step will pull at run time.
 
-        Returns ``None`` (the default) when the block does not declare its
-        dependencies — callers must treat that as *unknown*, which is distinct
-        from ``[]`` (the block declares it needs no external resources).
+        Return-value convention:
+
+        * ``None`` (the default) - unknown: the block does not declare its
+          dependencies. Callers must treat it as an incomplete discovery,
+          which is distinct from
+        * ``[]`` / a plain ``list`` - a complete declaration; an empty list
+          truthfully says the block needs no external resources.
+        * a ``Discovery[DependentResource]`` - explicit completeness with
+          reasons. An incomplete discovery may still list the resources that
+          ARE known; the runtime pre-loader uses those known items.
+
+        Callers normalise every return value through
+        ``roboflow_workflows.execution_engine.entities.workload.normalize_declaration``.
+        The ``DependentResource`` objects are kept as authored, so in-process
+        aids such as ``model_id_resolver`` and ``model_registration_kwargs``
+        reach the pre-loader.
 
         Field values that are workflow selectors (``$inputs.<name>`` /
         ``$steps.<name>.<property>``) are returned verbatim inside the

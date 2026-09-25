@@ -6,6 +6,7 @@ declared through `$inputs.<name>` selectors).
 
 import inspect
 import json
+import typing
 from unittest.mock import MagicMock, NonCallableMagicMock
 
 import networkx as nx
@@ -17,6 +18,12 @@ from roboflow_workflows.core_steps.models.roboflow.object_detection.v3 import (
 from roboflow_workflows.errors import (
     RuntimeInputError,
     WorkflowEnvironmentConfigurationError,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    complete_discovery,
+    declaration_unavailable_problem,
+    incomplete_discovery,
 )
 from roboflow_workflows.execution_engine.v1 import core as ee_core
 from roboflow_workflows.execution_engine.v1.compiler.entities import (
@@ -35,10 +42,12 @@ from roboflow_workflows.execution_engine.v1.core import (
     _retrieve_step_execution_mode,
 )
 from roboflow_workflows.prototypes.block import (
+    DependentResource,
     DependentResourceType,
     ModelExecutionLocation,
     ModelRequiredAction,
     StepExecutionMode,
+    WorkflowBlockManifest,
     roboflow_platform_model,
     roboflow_platform_project,
     third_party_model,
@@ -890,3 +899,294 @@ def test_real_video_manifest_declarations_are_never_preloaded() -> None:
     ]
     assert pending == []
     model_manager.add_model.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Discovery[DependentResource] declarations reach the pre-loader as items
+# ---------------------------------------------------------------------------
+
+
+def _unavailable_resources_problem(step_name: str):
+    return declaration_unavailable_problem(
+        node_id=f"$steps.{step_name}", declaration="resources"
+    )
+
+
+def _declare_resources_per_step(monkeypatch, declarations: dict) -> None:
+    # Every object-detection step answers with the declaration registered
+    # under its own step name.
+    def discover_dependent_resources(self):
+        return declarations[self.name]
+
+    monkeypatch.setattr(
+        ObjectDetectionV3Manifest,
+        "discover_dependent_resources",
+        discover_dependent_resources,
+    )
+
+
+def _init_engine_with_pre_loading(model_manager) -> ExecutionEngineV1:
+    engine = ExecutionEngineV1.init(
+        workflow_definition=WORKFLOW_WITH_LITERAL_AND_INPUT_FED_MODELS,
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": "api-key",
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        dependencies_pre_init=["roboflow_platform_model"],
+    )
+
+    return engine
+
+
+def test_deduce_blocks_dependencies_flattens_discovery_declarations_into_items(
+    monkeypatch,
+) -> None:
+    # given
+    literal_resource = roboflow_platform_model(model_id="my_project/3")
+    input_fed_resource = roboflow_platform_model(model_id="$inputs.model")
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "a": complete_discovery([literal_resource]),
+            "b": incomplete_discovery(
+                [input_fed_resource], [_unavailable_resources_problem("b")]
+            ),
+        },
+    )
+    compiled_workflow = _compiled_workflow_with_steps(
+        steps=[
+            _object_detection_manifest(name="a", model_id="my_project/3"),
+            _object_detection_manifest(name="b", model_id="$inputs.model"),
+        ]
+    )
+
+    # when
+    dependencies = deduce_blocks_dependencies(compiled_workflow=compiled_workflow)
+
+    # then - resources, never the (field, value) tuples of the Discovery model
+    assert all(isinstance(dependency, DependentResource) for dependency in dependencies)
+    assert dependencies == [literal_resource, input_fed_resource]
+
+
+def test_deduce_blocks_dependencies_skips_unknown_and_empty_declarations(
+    monkeypatch,
+) -> None:
+    # given
+    _declare_resources_per_step(monkeypatch, declarations={"a": None, "b": []})
+    compiled_workflow = _compiled_workflow_with_steps(
+        steps=[
+            _object_detection_manifest(name="a", model_id="my_project/3"),
+            _object_detection_manifest(name="b", model_id="my_project/4"),
+        ]
+    )
+
+    # when
+    dependencies = deduce_blocks_dependencies(compiled_workflow=compiled_workflow)
+
+    # then
+    assert dependencies == []
+
+
+def test_execution_engine_init_pre_loads_known_items_of_incomplete_discovery(
+    monkeypatch,
+) -> None:
+    # given
+    resolver = _RecordingResolver()
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "static_model": incomplete_discovery(
+                [
+                    roboflow_platform_model(
+                        model_id="my_project/3",
+                        model_registration_kwargs={"endpoint_type": "custom"},
+                    )
+                ],
+                [_unavailable_resources_problem("static_model")],
+            ),
+            "dynamic_model": incomplete_discovery(
+                [
+                    roboflow_platform_model(
+                        model_id="$inputs.model", model_id_resolver=resolver
+                    )
+                ],
+                [_unavailable_resources_problem("dynamic_model")],
+            ),
+        },
+    )
+    model_manager = NonCallableMagicMock()
+
+    # when
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+
+    # then - the known literal model is registered with its kwargs intact and
+    # the input-fed one is deferred with its resolver intact
+    model_manager.add_model.assert_called_once_with(
+        model_id="my_project/3", api_key="api-key", endpoint_type="custom"
+    )
+    assert len(engine._pending_runtime_dependencies) == 1
+    pending_dependency = engine._pending_runtime_dependencies[0]
+    assert isinstance(pending_dependency, DependentResource)
+    assert pending_dependency.metadata.model_id == "$inputs.model"
+    assert pending_dependency.metadata.model_id_resolver is resolver
+
+
+def test_resolver_of_incomplete_discovery_item_is_applied_on_runtime_resolution(
+    monkeypatch,
+) -> None:
+    # given
+    resolver = _RecordingResolver()
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "static_model": complete_discovery([]),
+            "dynamic_model": incomplete_discovery(
+                [
+                    roboflow_platform_model(
+                        model_id="$inputs.model",
+                        model_id_resolver=resolver,
+                        model_registration_kwargs={"endpoint_type": "custom"},
+                    )
+                ],
+                [_unavailable_resources_problem("dynamic_model")],
+            ),
+        },
+    )
+    model_manager = NonCallableMagicMock()
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+    model_manager.add_model.assert_not_called()
+
+    # when
+    _resolve_and_pre_load_runtime_dependencies(
+        pending_dependencies=engine._pending_runtime_dependencies,
+        runtime_parameters={"model": "my_project/7"},
+        model_manager=model_manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert resolver.calls == ["my_project/7"]
+    model_manager.add_model.assert_called_once_with(
+        model_id="my_project/7", api_key="api-key", endpoint_type="custom"
+    )
+
+
+def test_execution_engine_init_tolerates_incomplete_discovery_without_items(
+    monkeypatch,
+) -> None:
+    # given - the reported reproduction: an empty incomplete discovery used to
+    # hand the Discovery model's (field, value) tuples to the pre-loader
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "static_model": incomplete_discovery(
+                [], [_unavailable_resources_problem("static_model")]
+            ),
+            "dynamic_model": incomplete_discovery(
+                [], [_unavailable_resources_problem("dynamic_model")]
+            ),
+        },
+    )
+    model_manager = NonCallableMagicMock()
+
+    # when
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+
+    # then
+    model_manager.add_model.assert_not_called()
+    assert engine._pending_runtime_dependencies == []
+
+
+def test_execution_engine_init_pre_loads_complete_discovery_items(monkeypatch) -> None:
+    # given
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "static_model": complete_discovery(
+                [roboflow_platform_model(model_id="my_project/3")]
+            ),
+            "dynamic_model": complete_discovery(
+                [roboflow_platform_model(model_id="$inputs.model")]
+            ),
+        },
+    )
+    model_manager = NonCallableMagicMock()
+
+    # when
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+
+    # then
+    model_manager.add_model.assert_called_once_with(
+        model_id="my_project/3", api_key="api-key"
+    )
+    assert [
+        dependency.metadata.model_id
+        for dependency in engine._pending_runtime_dependencies
+    ] == ["$inputs.model"]
+
+
+@pytest.mark.parametrize(
+    "declarations",
+    [
+        {"static_model": None, "dynamic_model": None},
+        {"static_model": [], "dynamic_model": []},
+        {"static_model": complete_discovery([]), "dynamic_model": None},
+    ],
+    ids=["unknown", "legacy-empty-list", "complete-empty-discovery-and-unknown"],
+)
+def test_execution_engine_init_pre_loads_nothing_when_nothing_is_known(
+    monkeypatch, declarations: dict
+) -> None:
+    # given
+    _declare_resources_per_step(monkeypatch, declarations=declarations)
+    model_manager = NonCallableMagicMock()
+
+    # when
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+
+    # then
+    model_manager.add_model.assert_not_called()
+    assert engine._pending_runtime_dependencies == []
+
+
+def test_execution_engine_init_pre_loads_legacy_list_declarations(monkeypatch) -> None:
+    # given
+    _declare_resources_per_step(
+        monkeypatch,
+        declarations={
+            "static_model": [
+                roboflow_platform_model(
+                    model_id="my_project/3",
+                    model_registration_kwargs={"endpoint_type": "custom"},
+                )
+            ],
+            "dynamic_model": [roboflow_platform_model(model_id="$inputs.model")],
+        },
+    )
+    model_manager = NonCallableMagicMock()
+
+    # when
+    engine = _init_engine_with_pre_loading(model_manager=model_manager)
+
+    # then
+    model_manager.add_model.assert_called_once_with(
+        model_id="my_project/3", api_key="api-key", endpoint_type="custom"
+    )
+    assert [
+        dependency.metadata.model_id
+        for dependency in engine._pending_runtime_dependencies
+    ] == ["$inputs.model"]
+
+
+def test_discover_dependent_resources_annotation_admits_discovery() -> None:
+    annotation = typing.get_type_hints(
+        WorkflowBlockManifest.discover_dependent_resources
+    )["return"]
+
+    assert set(typing.get_args(annotation)) == {
+        typing.List[DependentResource],
+        Discovery[DependentResource],
+        type(None),
+    }
