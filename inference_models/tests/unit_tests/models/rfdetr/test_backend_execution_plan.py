@@ -239,6 +239,8 @@ def test_reference_adapter_records_caller_cuda_storage(monkeypatch):
     assert result.tensor is output
 
 
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA runtime required")
 @pytest.mark.parametrize("backend", ["torch", "onnx"])
 @pytest.mark.parametrize("kind", ["numpy", "uint8-cuda", "float-cuda"])
