@@ -1,5 +1,7 @@
+import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Type, Union
 
@@ -704,14 +706,34 @@ def actual_restrictions_of(
     = declares none), a ``Discovery`` states its own completeness.
 
     ``ignore_environment_restrictions``: ``True`` returns the declaration
-    untouched (the portable view), ``False`` evaluates its
+    with every condition intact (the portable view), ``False`` evaluates its
     ``applies_to_configuration`` predicates against this process.
 
     ``RuntimeRestriction`` is a permissive dataclass, so each item is projected
-    onto the portable DTO here. A declaration that projection rejects - a blank
-    or non-identifier ``code``, an empty axis list, a blank configuration key -
-    becomes a sanitised ``declaration_failed`` problem instead of a complete
-    declaration the wire cannot carry.
+    onto the portable DTO here, and the returned entry is REBUILT from that
+    validated projection: axis values become enum members in lists, and the
+    configuration becomes a plain ``dict``. The authored ``note``, the authored
+    order within each axis, and ``None`` versus a configuration map are kept.
+    The declaration's own completeness and reasons are kept too. A shared preset
+    is never mutated; the result holds new containers.
+
+    A declaration that projection rejects - a blank or non-identifier ``code``,
+    an empty or duplicated axis, an unknown axis value, a blank configuration
+    key, a value that is not JSON, a note that is not a string - becomes a
+    sanitised ``declaration_failed`` problem instead of a complete declaration
+    the wire cannot carry. A failure while evaluating the host view gets the
+    same treatment. The exception, the invalid values and this process's
+    configuration are never reported.
+
+    Args:
+        declared: The restriction data the manifest computed.
+        node_id: The ``$steps.<name>`` selector named by reported problems.
+        ignore_environment_restrictions: ``True`` for the portable view,
+            ``False`` for the host view.
+
+    Returns:
+        The normalised restrictions, or an empty incomplete discovery with a
+        ``declaration_failed`` problem.
     """
     try:
         normalised = normalize_declaration(
@@ -720,18 +742,20 @@ def actual_restrictions_of(
                 node_id=node_id, declaration=RESTRICTIONS_DECLARATION
             ),
         )
-        # Re-typed deliberately: an item that is not a `RuntimeRestriction`
-        # fails validation here and is never passed on.
         discovery = Discovery[RuntimeRestriction](
-            items=list(normalised.items),
+            items=[
+                _rebuilt_from_projection(restriction=restriction)
+                for restriction in normalised.items
+            ],
             complete=normalised.complete,
             unknown_reasons=list(normalised.unknown_reasons),
         )
-        for restriction in discovery.items:
-            restriction_metadata_of(restriction)
+        if not ignore_environment_restrictions:
+            discovery = _evaluate_against_this_host(declared=discovery, node_id=node_id)
     except Exception:
-        # The exception is never reported: a block may have put anything in it.
-        return Discovery[RuntimeRestriction](
+        # The exception is never reported: a block may have put anything in
+        # it, and host evaluation must not leak this process's configuration.
+        failed_discovery = Discovery[RuntimeRestriction](
             items=[],
             complete=False,
             unknown_reasons=[
@@ -740,9 +764,82 @@ def actual_restrictions_of(
                 )
             ],
         )
-    if ignore_environment_restrictions:
-        return discovery
-    return _evaluate_against_this_host(declared=discovery, node_id=node_id)
+
+        return failed_discovery
+
+    return discovery
+
+
+def _rebuilt_from_projection(restriction: RuntimeRestriction) -> RuntimeRestriction:
+    """A new ``RuntimeRestriction`` holding the projection's validated values.
+
+    Raises on anything the projection rejects. The caller turns that into a
+    sanitised problem. The note is not part of the projection, so it is
+    checked here and kept as authored.
+    """
+    if not isinstance(restriction, RuntimeRestriction):
+        raise TypeError("A restriction declaration must be a RuntimeRestriction.")
+    if not isinstance(restriction.note, str):
+        raise TypeError("A restriction note must be a string.")
+
+    # A one-shot iterator would be empty on a second read, so it is read ONCE
+    # and the projection and the rebuild both use that list. Every other value
+    # reaches the projection as authored and keeps its validation.
+    materialised = replace(
+        restriction,
+        applies_to_runtimes=_read_once(restriction.applies_to_runtimes),
+        applies_to_step_execution_modes=_read_once(
+            restriction.applies_to_step_execution_modes
+        ),
+        applies_to_input_modes=_read_once(restriction.applies_to_input_modes),
+    )
+    metadata = restriction_metadata_of(materialised)
+    condition = metadata.when
+
+    configuration = None
+    if restriction.applies_to_configuration is not None:
+        configuration = copy.deepcopy(dict(condition.configuration_equals))
+    rebuilt = RuntimeRestriction(
+        severity=metadata.severity,
+        note=restriction.note,
+        applies_to_runtimes=_enum_axis(Runtime, materialised.applies_to_runtimes),
+        applies_to_step_execution_modes=_enum_axis(
+            StepExecutionMode, materialised.applies_to_step_execution_modes
+        ),
+        applies_to_input_modes=_enum_axis(
+            RuntimeInputMode, materialised.applies_to_input_modes
+        ),
+        code=metadata.code,
+        applies_to_configuration=configuration,
+    )
+
+    return rebuilt
+
+
+def _read_once(values: Any) -> Any:
+    """Turn a one-shot iterator into a list; return anything else unchanged."""
+    if not isinstance(values, Iterator):
+        return values
+
+    listed = list(values)
+
+    return listed
+
+
+def _enum_axis(
+    enum_type: Type[Enum], authored: Optional[Iterable[Any]]
+) -> Optional[List[Enum]]:
+    """An axis the projection already validated, as enum members in a new list.
+
+    The authored order is kept (the projection sorts; order carries no meaning,
+    but keeping it keeps a rebuilt preset equal to the preset itself).
+    """
+    if authored is None:
+        return None
+
+    members = [enum_type(value) for value in authored]
+
+    return members
 
 
 def _evaluate_against_this_host(
@@ -753,7 +850,7 @@ def _evaluate_against_this_host(
     Only ``applies_to_configuration`` is evaluated. The runtime, input-mode and
     step-execution-mode axes are left alone - this process is not the target
     and does not know them. Nothing is mutated and no condition is stripped:
-    the surviving entries are the declarations themselves.
+    the surviving entries are the rebuilt declarations, conditions intact.
     """
     kept: List[RuntimeRestriction] = []
     unknown_keys: List[str] = []

@@ -13,7 +13,11 @@ What is pinned here:
   evaluates ONLY the configuration predicates against this process, drops what
   definitively does not apply, and reports what it cannot evaluate;
 * that the values come from the installed ``WorkflowsConfiguration``, not from
-  ``os.environ``.
+  ``os.environ``;
+* that every entry is rebuilt from its validated projection (enum members,
+  lists, a configuration map; note, authored axis order and ``None`` kept), and
+  that a malformed field or a failing host evaluation becomes a sanitised
+  ``declaration_failed`` problem.
 """
 
 import importlib
@@ -51,11 +55,13 @@ from roboflow_workflows.execution_engine.entities.workload import (
     restriction_metadata_of,
     unresolved_selector_problem,
 )
+from roboflow_workflows.execution_engine.introspection import restriction_environment
 from roboflow_workflows.execution_engine.introspection.restriction_environment import (
     EVALUABLE_CONFIGURATION_KEYS,
     ConfigurationMatch,
     evaluate_configuration_condition,
 )
+from roboflow_workflows.prototypes import block as block_module
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
@@ -997,3 +1003,414 @@ def test_a_block_may_declare_its_restrictions_unknown() -> None:
     assert [reason.code for reason in discovery.unknown_reasons] == [
         DiscoveryProblemCode.DECLARATION_UNAVAILABLE
     ]
+
+
+# ---------------------------------------------------------------------------
+# Entries are rebuilt from the validated projection
+# ---------------------------------------------------------------------------
+
+SECRET = "sk-live-do-not-leak-0123456789"
+NODE_ID = "$steps.step"
+
+
+class _SecretBearingValue:
+    """Not a JSON value; its text form carries a secret."""
+
+    def __repr__(self) -> str:
+        return SECRET
+
+    def __str__(self) -> str:
+        return SECRET
+
+
+def _accepted_but_unsafe() -> RuntimeRestriction:
+    # The dataclass accepts a sequence of pairs; the projection reads it as the
+    # map {"X": True}.
+    return RuntimeRestriction(
+        code="example_restriction",
+        severity=Severity.HARD,
+        note="review",
+        applies_to_configuration=[("X", True)],
+    )
+
+
+def _canonical_example() -> RuntimeRestriction:
+    return RuntimeRestriction(
+        code="example_restriction",
+        severity=Severity.HARD,
+        note="review",
+        applies_to_configuration={"X": True},
+    )
+
+
+def _assert_sanitised_failure(discovery: Discovery[RuntimeRestriction]) -> None:
+    assert discovery.items == []
+    assert discovery.complete is False
+    assert [reason.code for reason in discovery.unknown_reasons] == [
+        DiscoveryProblemCode.DECLARATION_FAILED
+    ]
+    payload = discovery.model_dump_json()
+    assert SECRET not in payload
+    assert "Traceback" not in payload
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [
+        pytest.param(lambda: [_accepted_but_unsafe()], id="list"),
+        pytest.param(lambda: complete_discovery([_accepted_but_unsafe()]), id="typed"),
+    ],
+)
+def test_the_portable_view_carries_the_canonical_configuration(declared) -> None:
+    discovery = actual_restrictions_of(
+        declared=declared(),
+        node_id=NODE_ID,
+        ignore_environment_restrictions=True,
+    )
+
+    assert discovery == complete_discovery([_canonical_example()])
+    assert type(discovery.items[0].applies_to_configuration) is dict
+
+
+def test_the_host_view_evaluates_the_canonical_configuration() -> None:
+    """The reported crash: the raw pair list reached the host evaluator."""
+    discovery = actual_restrictions_of(
+        declared=complete_discovery([_accepted_but_unsafe()]),
+        node_id=NODE_ID,
+        ignore_environment_restrictions=False,
+    )
+
+    # "X" is not an evaluable key: the entry is kept and the view is incomplete
+    assert discovery.items == [_canonical_example()]
+    assert discovery.complete is False
+    assert [
+        (reason.code, reason.details["configuration_keys"])
+        for reason in discovery.unknown_reasons
+    ] == [(DiscoveryProblemCode.DECLARATION_UNAVAILABLE, ["X"])]
+
+
+def test_an_inactive_predicate_drops_a_rebuilt_entry_beside_an_unknown_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(environment, TENSOR_FLAG, False)
+    restriction = RuntimeRestriction(
+        severity=Severity.HARD,
+        note="Two predicates, one of them unreadable.",
+        code="mixed_predicates",
+        applies_to_configuration=[(TENSOR_FLAG, True), ("UNKNOWN_FLAG", True)],
+    )
+
+    host_view = actual_restrictions_of(
+        declared=[restriction], node_id=NODE_ID, ignore_environment_restrictions=False
+    )
+    portable_view = actual_restrictions_of(
+        declared=[restriction], node_id=NODE_ID, ignore_environment_restrictions=True
+    )
+
+    assert host_view == complete_discovery([])
+    assert portable_view.complete is True
+    assert portable_view.items[0].applies_to_configuration == {
+        TENSOR_FLAG: True,
+        "UNKNOWN_FLAG": True,
+    }
+
+
+@pytest.mark.parametrize("ignore_environment", [True, False])
+def test_axis_values_are_rebuilt_as_enum_members_in_authored_order(
+    ignore_environment: bool,
+) -> None:
+    authored = RuntimeRestriction(
+        severity=Severity.SOFT,
+        note="Strings and tuples are accepted by the dataclass.",
+        applies_to_runtimes=("self_hosted_gpu", Runtime.DEDICATED_DEPLOYMENT),
+        applies_to_step_execution_modes=("remote",),
+        applies_to_input_modes=["video"],
+        code="typed_axes",
+    )
+
+    [rebuilt] = actual_restrictions_of(
+        declared=[authored],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=ignore_environment,
+    ).items
+
+    assert rebuilt.note == authored.note
+    assert rebuilt.code == "typed_axes"
+    assert rebuilt.severity is Severity.SOFT
+    assert type(rebuilt.applies_to_runtimes) is list
+    assert [type(member) for member in rebuilt.applies_to_runtimes] == [
+        Runtime,
+        Runtime,
+    ]
+    assert rebuilt.applies_to_runtimes == [
+        Runtime.SELF_HOSTED_GPU,
+        Runtime.DEDICATED_DEPLOYMENT,
+    ]
+    assert rebuilt.applies_to_step_execution_modes == [StepExecutionMode.REMOTE]
+    assert [type(member) for member in rebuilt.applies_to_input_modes] == [
+        RuntimeInputMode
+    ]
+    assert rebuilt.applies_to_configuration is None
+
+
+@pytest.mark.parametrize(
+    "axis, condition_field, member",
+    [
+        ("applies_to_runtimes", "runtimes", Runtime.HOSTED_SERVERLESS),
+        (
+            "applies_to_step_execution_modes",
+            "step_execution_modes",
+            StepExecutionMode.REMOTE,
+        ),
+        ("applies_to_input_modes", "input_modes", RuntimeInputMode.VIDEO),
+    ],
+    ids=["runtimes", "step_execution_modes", "input_modes"],
+)
+@pytest.mark.parametrize("ignore_environment", [True, False])
+def test_a_one_shot_axis_iterable_is_read_once(
+    axis: str, condition_field: str, member: Any, ignore_environment: bool
+) -> None:
+    """Reported: the projection consumed the iterator, and the rebuild then
+    published a complete entry with an empty axis."""
+    authored = RuntimeRestriction(
+        Severity.HARD, "test", code="one_shot_axis", **{axis: iter([member])}
+    )
+
+    discovery = actual_restrictions_of(
+        declared=[authored],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=ignore_environment,
+    )
+
+    assert discovery.complete is True
+    [rebuilt] = discovery.items
+    rebuilt_axis = getattr(rebuilt, axis)
+    assert type(rebuilt_axis) is list
+    assert rebuilt_axis == [member]
+    assert type(rebuilt_axis[0]) is type(member)
+    # the published entry can itself be projected
+    assert getattr(restriction_metadata_of(rebuilt).when, condition_field) == [member]
+
+
+@pytest.mark.parametrize(
+    "configuration",
+    [None, {}, {TENSOR_FLAG: True}],
+    ids=["none", "empty_map", "map"],
+)
+def test_none_and_a_configuration_map_stay_distinct(configuration) -> None:
+    authored = RuntimeRestriction(
+        Severity.HARD,
+        "note",
+        code="a_code",
+        applies_to_configuration=configuration,
+    )
+
+    [rebuilt] = actual_restrictions_of(
+        declared=[authored], node_id=NODE_ID, ignore_environment_restrictions=True
+    ).items
+
+    assert rebuilt == authored
+    assert rebuilt.applies_to_configuration == configuration
+    if configuration is not None:
+        assert rebuilt.applies_to_configuration is not configuration
+
+
+def test_rebuilding_shared_presets_neither_mutates_nor_aliases_them() -> None:
+    tensor_payload = UNSUPPORTED_IN_TENSOR_REPRESENTATION.to_dict()
+    video_payload = STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.to_dict()
+
+    discovery = actual_restrictions_of(
+        declared=[
+            UNSUPPORTED_IN_TENSOR_REPRESENTATION,
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+        ],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=True,
+    )
+    by_code = {item.code: item for item in discovery.items}
+    tensor_entry = by_code[UNSUPPORTED_IN_TENSOR_REPRESENTATION.code]
+    video_entry = by_code[STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.code]
+
+    # equal to the presets, authored axis order and notes included
+    assert tensor_entry == UNSUPPORTED_IN_TENSOR_REPRESENTATION
+    assert video_entry == STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION
+    # but holding its own containers
+    assert tensor_entry is not UNSUPPORTED_IN_TENSOR_REPRESENTATION
+    assert (
+        tensor_entry.applies_to_configuration
+        is not UNSUPPORTED_IN_TENSOR_REPRESENTATION.applies_to_configuration
+    )
+    assert (
+        video_entry.applies_to_runtimes
+        is not STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.applies_to_runtimes
+    )
+    # and the legacy editor payload is unchanged
+    assert tensor_entry.to_dict() == tensor_payload
+    assert video_entry.to_dict() == video_payload
+    assert UNSUPPORTED_IN_TENSOR_REPRESENTATION.to_dict() == tensor_payload
+    assert STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION.to_dict() == video_payload
+
+
+@pytest.mark.parametrize("ignore_environment", [True, False])
+def test_rebuilding_keeps_notes_and_the_declared_incompleteness(
+    ignore_environment: bool,
+) -> None:
+    reason = unresolved_selector_problem(
+        node_id=NODE_ID,
+        declaration="restrictions",
+        field="fire_and_forget",
+        selector="$inputs.fire_and_forget",
+    )
+    first = RuntimeRestriction(
+        Severity.SOFT,
+        "Track ids reset between requests.",
+        (Runtime.HOSTED_SERVERLESS,),
+    )
+    second = RuntimeRestriction(
+        Severity.SOFT,
+        "Cooldown does not throttle.",
+        (Runtime.HOSTED_SERVERLESS,),
+    )
+
+    discovery = actual_restrictions_of(
+        declared=incomplete_discovery([first, second], [reason]),
+        node_id=NODE_ID,
+        ignore_environment_restrictions=ignore_environment,
+    )
+
+    assert sorted(item.note for item in discovery.items) == [
+        "Cooldown does not throttle.",
+        "Track ids reset between requests.",
+    ]
+    assert {item.code for item in discovery.items} == {"generic_restriction"}
+    assert all(
+        item.applies_to_runtimes == [Runtime.HOSTED_SERVERLESS]
+        for item in discovery.items
+    )
+    assert discovery.complete is False
+    assert discovery.unknown_reasons == [reason]
+
+
+@pytest.mark.parametrize(
+    "restriction",
+    [
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, None, code="a_code"),
+            id="note_is_none",
+        ),
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, 42, code="a_code"),
+            id="note_is_not_a_string",
+        ),
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, "n", code=[SECRET]),
+            id="code_is_not_a_string",
+        ),
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, "n", applies_to_runtimes=[SECRET]),
+            id="unknown_runtime",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD,
+                "n",
+                applies_to_runtimes={Runtime.HOSTED_SERVERLESS: SECRET},
+            ),
+            id="runtimes_axis_is_a_mapping",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD, "n", applies_to_runtimes="hosted_serverless"
+            ),
+            id="runtimes_axis_is_a_string",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD,
+                "n",
+                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS] * 2,
+            ),
+            id="duplicated_runtime",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD, "n", applies_to_step_execution_modes=[SECRET]
+            ),
+            id="unknown_step_execution_mode",
+        ),
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, "n", applies_to_input_modes=(SECRET,)),
+            id="unknown_input_mode",
+        ),
+        pytest.param(
+            RuntimeRestriction(Severity.HARD, "n", applies_to_configuration=SECRET),
+            id="configuration_is_not_a_map",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD, "n", applies_to_configuration={7: SECRET}
+            ),
+            id="configuration_key_is_not_a_string",
+        ),
+        pytest.param(
+            RuntimeRestriction(
+                Severity.HARD,
+                "n",
+                applies_to_configuration={"X": _SecretBearingValue()},
+            ),
+            id="configuration_value_is_not_json",
+        ),
+    ],
+)
+@pytest.mark.parametrize("ignore_environment", [True, False])
+def test_a_malformed_field_is_reported_without_its_contents(
+    restriction: RuntimeRestriction, ignore_environment: bool
+) -> None:
+    discovery = actual_restrictions_of(
+        declared=[restriction],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=ignore_environment,
+    )
+
+    _assert_sanitised_failure(discovery=discovery)
+
+
+def test_a_host_evaluation_failure_is_reported_without_its_contents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def leaking_read(key: str) -> Any:
+        raise RuntimeError(f"cannot read {key}: password={SECRET}")
+
+    monkeypatch.setattr(
+        restriction_environment, "read_configuration_value", leaking_read
+    )
+
+    host_view = actual_restrictions_of(
+        declared=[UNSUPPORTED_IN_TENSOR_REPRESENTATION],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=False,
+    )
+    portable_view = actual_restrictions_of(
+        declared=[UNSUPPORTED_IN_TENSOR_REPRESENTATION],
+        node_id=NODE_ID,
+        ignore_environment_restrictions=True,
+    )
+
+    _assert_sanitised_failure(discovery=host_view)
+    # the portable view never evaluates this host, so it is unaffected
+    assert portable_view == complete_discovery([UNSUPPORTED_IN_TENSOR_REPRESENTATION])
+
+
+def test_a_host_evaluation_failure_through_the_legacy_fallback_is_sanitised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def leaking_evaluation(restriction: RuntimeRestriction) -> Any:
+        raise ValueError(SECRET)
+
+    monkeypatch.setattr(
+        block_module, "evaluate_configuration_condition", leaking_evaluation
+    )
+
+    discovery = _manifest(_LegacyConditionalManifest).get_actual_restrictions()
+
+    _assert_sanitised_failure(discovery=discovery)

@@ -237,6 +237,64 @@ def test_legacy_restriction_api_is_untouched() -> None:
     }
 
 
+class _PermissiveLegacyManifest(WorkflowBlockManifest):
+    """A legacy getter whose entry uses shapes only the dataclass accepts."""
+
+    type: Literal["test/permissive-legacy@v1"]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
+                Severity.SOFT,
+                "Degrades on hosted runtimes.",
+                (Runtime.HOSTED_SERVERLESS,),
+                code="permissive_legacy",
+                applies_to_configuration=[("X", True)],
+            )
+        ]
+
+
+@pytest.mark.parametrize("ignore_environment", [True, False])
+def test_legacy_fallback_rebuilds_permissive_entries_and_stays_incomplete(
+    ignore_environment: bool,
+) -> None:
+    manifest = _PermissiveLegacyManifest.model_validate(
+        {"type": "test/permissive-legacy@v1", "name": "step"}
+    )
+
+    discovery = manifest.get_actual_restrictions(
+        ignore_environment_restrictions=ignore_environment
+    )
+
+    assert discovery.items == [
+        RuntimeRestriction(
+            Severity.SOFT,
+            "Degrades on hosted runtimes.",
+            [Runtime.HOSTED_SERVERLESS],
+            code="permissive_legacy",
+            applies_to_configuration={"X": True},
+        )
+    ]
+    assert discovery.complete is False
+    assert (
+        environment_filtered_declaration_problem(
+            node_id="$steps.step", declaration="restrictions"
+        )
+        in discovery.unknown_reasons
+    )
+    # the legacy editor payload of the authored entry is unchanged
+    assert _PermissiveLegacyManifest.get_restrictions()[0].to_dict() == {
+        "severity": "soft",
+        "note": "Degrades on hosted runtimes.",
+        "applies_to_runtimes": ["hosted_serverless"],
+    }
+
+
 def test_manifest_model_config_keeps_validate_assignment() -> None:
     assert WorkflowBlockManifest.model_config.get("validate_assignment") is True
 
