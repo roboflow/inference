@@ -24,6 +24,9 @@ from inference_models.models.rfdetr.optimization.contracts import (
     Preprocessor,
     PreprocessRequest,
 )
+from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+    PreprocessorSelector,
+)
 
 StageT = TypeVar("StageT", bound=InferenceStage)
 
@@ -36,60 +39,34 @@ def resolve_preprocessor_for_model(
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
     allow_fallback: bool,
+    selector: Optional[PreprocessorSelector] = None,
 ) -> ImplementationSelection[Preprocessor]:
-    """Resolve preprocessing against static model-package configuration.
+    """Resolve a model's primary using static and model compatibility.
 
     Args:
-        registry: RF-DETR implementation registry.
-        requested_id: Requested preprocessing implementation ID.
-        context: Runtime target context.
-        image_pre_processing: Model-package image transformations.
-        network_input: Model-package network input definition.
-        allow_fallback: Whether declared compatibility fallback may be used.
+        registry (ImplementationRegistry): Model implementation registry.
+        requested_id (str): Explicit implementation or auto.
+        context (ExecutionContext): Fixed target and dependency snapshot.
+        image_pre_processing (ImagePreProcessing): Fixed model transformations.
+        network_input (NetworkInputDefinition): Fixed model input configuration.
+        allow_fallback (bool): Permit compatibility fallback.
+        selector (PreprocessorSelector, optional): Model-owned eligibility cache.
+            Omitting it uses an uncached selector for standalone calls.
 
     Returns:
-        Effective implementation and optional fallback reason.
+        ImplementationSelection: Model-compatible primary.
 
     Raises:
-        ModelRuntimeError: If the requested implementation is incompatible and no
-            permitted compatible fallback exists.
+        ModelRuntimeError: If no permitted compatible candidate exists.
     """
-    static_selection = registry.resolve_selection(
-        stage=OptimizationStage.PREPROCESS,
-        requested_id=requested_id,
-        context=context,
-        allow_fallback=allow_fallback,
-    )
-    implementation = cast(
-        Preprocessor,
-        static_selection.implementation,
-    )
-
-    def check(candidate: Preprocessor) -> CompatibilityResult:
-        result = candidate.check_model_compatibility(
-            image_pre_processing=image_pre_processing,
-            network_input=network_input,
-        )
-
-        return result
-
-    compatibility = check(implementation)
-    if compatibility.supported:
-        selection = cast(
-            ImplementationSelection[Preprocessor],
-            static_selection,
-        )
-
-        return selection
-
-    selection = _apply_declared_fallback(
+    selector = selector or PreprocessorSelector(
         registry=registry,
-        stage=OptimizationStage.PREPROCESS,
-        implementation=implementation,
-        requested_id=static_selection.requested_id,
         context=context,
-        check_compatibility=check,
-        allow_fallback=allow_fallback,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+    )
+    selection = selector.resolve_model(
+        requested_id=requested_id, allow_fallback=allow_fallback
     )
 
     return selection
@@ -102,40 +79,35 @@ def resolve_preprocessor_for_request(
     request: PreprocessRequest,
     context: ExecutionContext,
     allow_fallback: bool,
+    selector: Optional[PreprocessorSelector] = None,
 ) -> ImplementationSelection[Preprocessor]:
-    """Resolve preprocessing against one concrete inference request.
+    """Resolve the complete compatibility chain for one request.
 
     Args:
-        registry: RF-DETR implementation registry.
-        implementation: Model-level selected preprocessor.
-        request: Typed preprocessing request.
-        context: Runtime target and request context.
-        allow_fallback: Whether declared compatibility fallback may be used.
+        registry (ImplementationRegistry): Model implementation registry.
+        implementation (Preprocessor): Model-selected primary.
+        request (PreprocessRequest): Current inputs and overrides.
+        context (ExecutionContext): Current execution context.
+        allow_fallback (bool): Permit compatibility fallback.
+        selector (PreprocessorSelector, optional): Model-owned eligibility cache.
+            Omitting it validates static/model constraints without retaining a cache.
 
     Returns:
-        Effective request implementation and optional fallback reason.
+        ImplementationSelection: Request-compatible implementation.
 
     Raises:
-        ModelRuntimeError: If the selected implementation is incompatible and no
-            permitted compatible fallback exists.
+        ModelRuntimeError: If the chain is invalid or no candidate is compatible.
     """
-    requested_id = implementation.metadata.implementation_id
-
-    def check(candidate: Preprocessor) -> CompatibilityResult:
-        result = candidate.check_request_compatibility(
-            request=request,
-            context=context,
-        )
-
-        return result
-
-    selection = _apply_declared_fallback(
+    selector = selector or PreprocessorSelector(
         registry=registry,
-        stage=OptimizationStage.PREPROCESS,
-        implementation=implementation,
-        requested_id=requested_id,
         context=context,
-        check_compatibility=check,
+        image_pre_processing=request.image_pre_processing,
+        network_input=request.network_input,
+    )
+    selection = selector.resolve_request(
+        implementation=implementation,
+        request=request,
+        context=context,
         allow_fallback=allow_fallback,
     )
 
@@ -149,72 +121,40 @@ def resolve_preprocessor_runtime_fallback(
     request: PreprocessRequest,
     context: ExecutionContext,
     allow_fallback: bool,
+    selector: Optional[PreprocessorSelector] = None,
 ) -> ImplementationSelection[Preprocessor]:
-    """Resolve whether preprocessing must follow a runtime failure fallback.
+    """Check runtime health and validate every candidate reached during recovery.
 
     Args:
-        registry: RF-DETR implementation registry.
-        selection: Request-compatible preprocessing selection.
-        request: Typed preprocessing request.
-        context: Runtime target and request context.
-        allow_fallback: Whether a recorded runtime failure may use the declared
-            fallback.
+        registry (ImplementationRegistry): Model implementation registry.
+        selection (ImplementationSelection): Request-validated implementation.
+        request (PreprocessRequest): Current inputs and overrides.
+        context (ExecutionContext): Current execution context.
+        allow_fallback (bool): Permit recorded runtime-failure recovery.
+        selector (PreprocessorSelector, optional): Model-owned eligibility cache.
+            Omitting it uses an uncached selector for standalone calls.
 
     Returns:
-        Original selection when its runtime remains available, otherwise its
-        declared compatible fallback.
+        ImplementationSelection: Healthy implementation or fully checked fallback.
 
     Raises:
-        RecoverableStageExecutionError: If execution failed and fallback is
-            unavailable or disabled.
+        RecoverableStageExecutionError: If runtime-failure fallback is disabled.
+        ModelRuntimeError: If no compatible fallback exists.
     """
-    implementation = selection.implementation
-    runtime_compatibility = implementation.check_runtime_compatibility(
+    selector = selector or PreprocessorSelector(
+        registry=registry,
+        context=context,
+        image_pre_processing=request.image_pre_processing,
+        network_input=request.network_input,
+    )
+    fallback = selector.resolve_runtime_fallback(
+        selection=selection,
         request=request,
         context=context,
-    )
-    if runtime_compatibility.supported:
-        return selection
-    if not allow_fallback:
-        raise RecoverableStageExecutionError(
-            message=(
-                "RF-DETR preprocess implementation cannot execute after a "
-                f"recoverable runtime failure: {runtime_compatibility.reason}. "
-                "Runtime failure fallback is disabled by the execution plan."
-            ),
-        )
-
-    def check(candidate: Preprocessor) -> CompatibilityResult:
-        request_compatibility = candidate.check_request_compatibility(
-            request=request,
-            context=context,
-        )
-        candidate_runtime_compatibility = candidate.check_runtime_compatibility(
-            request=request,
-            context=context,
-        )
-        if (
-            request_compatibility.supported
-            and candidate_runtime_compatibility.supported
-        ):
-            return CompatibilityResult.compatible()
-
-        return CompatibilityResult.incompatible(
-            *request_compatibility.reasons,
-            *candidate_runtime_compatibility.reasons,
-        )
-
-    fallback_selection = _apply_declared_fallback(
-        registry=registry,
-        stage=OptimizationStage.PREPROCESS,
-        implementation=implementation,
-        requested_id=selection.requested_id,
-        context=context,
-        check_compatibility=check,
         allow_fallback=allow_fallback,
     )
 
-    return fallback_selection
+    return fallback
 
 
 def resolve_postprocessor_for_request(
