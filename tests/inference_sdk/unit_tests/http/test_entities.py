@@ -1,3 +1,5 @@
+from typing import Any
+
 from inference_sdk.config import outbound_service_secret
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
@@ -282,3 +284,29 @@ def test_to_legacy_call_parameters_context_overrides_explicit_count_inference_tr
     # then
     assert parameters["countinference"] is False
     assert parameters["service_secret"] == "ctx-secret"
+
+
+def test_model_selection_is_sent_in_both_api_versions() -> None:
+    configuration = InferenceConfiguration(backend="trt", quantization="fp16")
+    for mode in (HTTPClientMode.V0, HTTPClientMode.V1):
+        for task in (OBJECT_DETECTION_TASK, CLASSIFICATION_TASK):
+            parameters = configuration.to_api_call_parameters(mode, task)
+            assert parameters["backend"] == "trt"
+            assert parameters["quantization"] == "fp16"
+
+
+def test_exact_package_cannot_be_combined_with_other_selectors() -> None:
+    import pytest
+
+    from inference_sdk.http.errors import InvalidParameterError
+
+    selectors: list[dict[str, Any]] = [{"backend": "trt"}, {"quantization": "fp16"}]
+    for selector in selectors:
+        with pytest.raises(InvalidParameterError, match="model_package_id"):
+            InferenceConfiguration(model_package_id="package-1", **selector)
+
+
+def test_positional_configuration_preserves_confidence_threshold() -> None:
+    configuration = InferenceConfiguration(0.5)
+    assert configuration.confidence_threshold == 0.5
+    assert configuration.to_model_selection_parameters() == {}

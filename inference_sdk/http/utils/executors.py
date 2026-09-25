@@ -27,6 +27,7 @@ from inference_sdk.config import (
 )
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
+from inference_sdk.http.utils.model_selection import ensure_model_selection_applied
 from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
@@ -81,8 +82,12 @@ def execute_requests_packages(
         results.extend(responses)
         all_request_data.extend(requests_data_package)
     _collect_remote_processing_times(results, all_request_data)
-    for response in results:
+    for response, request_data in zip(results, all_request_data):
         api_key_safe_raise_for_status(response=response)
+        ensure_model_selection_applied(
+            response.headers,
+            {**(request_data.parameters or {}), **(request_data.payload or {})},
+        )
     return results
 
 
@@ -499,6 +504,10 @@ async def make_request_async(
         if response_is_not_retryable_error(response=response):
             response.raise_for_status()
         if response.status == 200:
+            ensure_model_selection_applied(
+                response.headers,
+                {**(request_data.parameters or {}), **(request_data.payload or {})},
+            )
             collect_remote_processing_metadata_from_headers(
                 headers=response.headers,
                 request_data=request_data,

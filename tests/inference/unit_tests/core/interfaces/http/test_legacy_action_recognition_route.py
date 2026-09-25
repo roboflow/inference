@@ -78,9 +78,13 @@ def _build_interface(monkeypatch, lambda_mode: bool):
 
 
 @pytest.mark.parametrize("lambda_mode", [False, True])
+@pytest.mark.parametrize("selectors", [{}, {"model_package_id": "video-package"}])
 def test_legacy_action_recognition_infers_with_the_registered_identifier(
-    monkeypatch, lambda_mode: bool
+    monkeypatch, lambda_mode: bool, selectors
 ) -> None:
+    from inference.core import env
+
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", True)
     interface, model_manager = _build_interface(monkeypatch, lambda_mode=lambda_mode)
     app = _LambdaScope(interface.app) if lambda_mode else interface.app
 
@@ -90,6 +94,7 @@ def test_legacy_action_recognition_infers_with_the_registered_identifier(
             params={
                 "api_key": "query-api-key",
                 "image": "https://example.com/clip.mp4",
+                **selectors,
             },
         )
 
@@ -100,7 +105,9 @@ def test_legacy_action_recognition_infers_with_the_registered_identifier(
     assert registered_under == PATH_MODEL_ID
     # The inference call has to name that same identifier.
     inferred_with = model_manager.infer_from_request_sync.call_args.args[0]
-    assert inferred_with == registered_under
+    assert inferred_with == add_model_call.kwargs.get(
+        "model_cache_key", registered_under
+    )
 
 
 def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:

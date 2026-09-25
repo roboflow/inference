@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.requests.model_selection import model_selection_kwargs
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
@@ -82,7 +83,12 @@ class ActiveLearningManager(ModelManager):
         self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
     ) -> None:
         try:
-            resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+            public_model_id = (
+                (request.model_id or model_id)
+                if model_selection_kwargs(request)
+                else model_id
+            )
+            resolved_model_id = resolve_roboflow_model_alias(model_id=public_model_id)
             if not hasattr(request, "active_learning_target_dataset"):
                 return None
             target_dataset = (
@@ -98,7 +104,9 @@ class ActiveLearningManager(ModelManager):
             )
             self.register_datapoint(
                 prediction=prediction,
-                model_id=resolved_model_id,
+                model_id=(
+                    model_id if model_selection_kwargs(request) else resolved_model_id
+                ),
                 request=request,
                 middleware_key=middleware_key,
             )

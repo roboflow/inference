@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference.core.entities.requests.inference import BaseRequest
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
@@ -127,7 +128,7 @@ async def test_infer_from_request_when_model_is_available() -> None:
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
     model_manager._models = {"some/1": MagicMock()}
-    request = MagicMock()
+    request = BaseRequest(id="request-id", disable_model_monitoring=True)
 
     # when
     result = await model_manager.infer_from_request(model_id="some/1", request=request)
@@ -148,7 +149,7 @@ async def test_infer_from_request_when_model_is_available_but_exception_raised()
     error = ValueError()
     model_mock.infer_from_request.side_effect = error
     model_manager._models = {"some/1": model_mock}
-    request = MagicMock()
+    request = BaseRequest(id="request-id", disable_model_monitoring=True)
 
     # when
     with pytest.raises(ValueError) as thrown_exception:
