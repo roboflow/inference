@@ -584,3 +584,74 @@ async def test_with_route_exceptions_async_when_runtime_limits_step_execution_er
 
     assert resp.status_code == 507
     assert "runtime limit" in resp.body.decode().lower()
+
+
+@pytest.mark.parametrize("async_route", [False, True])
+@pytest.mark.asyncio
+async def test_workflow_proxy_diagnostics_survive_existing_exception_wrapping(
+    async_route,
+):
+    import json
+
+    import requests
+
+    from inference.core.roboflow_api import wrap_roboflow_api_errors
+    from inference.core.workflows.errors import StepExecutionError
+
+    response = requests.Response()
+    response.status_code = 502
+    response._content = json.dumps(
+        {
+            "error": "Anthropic API Error",
+            "details": "private provider message sk-secret",
+            "api_proxy_error_type": "upstream_error",
+            "provider": "anthropic",
+            "proxy_status_code": 502,
+            "upstream_status_code": 429,
+            "failure_kind": "http_error",
+            "provider_request_id": "req_123",
+            "provider_error_code": "rate_limit_error",
+            "api_key": "sk-secret",
+        }
+    ).encode()
+    response._content_consumed = True
+
+    @wrap_roboflow_api_errors()
+    def provider_call():
+        response.raise_for_status()
+
+    def failing_step():
+        try:
+            provider_call()
+        except Exception as cause:
+            raise StepExecutionError(
+                block_id="$steps.claude",
+                block_type="roboflow/anthropic_claude@v5",
+                public_message="Step failed",
+                context="workflow_execution",
+                inner_error=cause,
+            ) from cause
+
+    @with_route_exceptions
+    def sync_handler():
+        failing_step()
+
+    @with_route_exceptions_async
+    async def async_handler():
+        failing_step()
+
+    response = await async_handler() if async_route else sync_handler()
+    body = json.loads(response.body)
+    assert response.status_code == 500
+    assert body["inner_error_type"] == "RoboflowAPIUnsuccessfulRequestError"
+    assert body["blocks_errors"][0]["block_id"] == "$steps.claude"
+    assert body["diagnostics"] == {
+        "provider": "anthropic",
+        "api_proxy_error_type": "upstream_error",
+        "proxy_status_code": 502,
+        "upstream_status_code": 429,
+        "failure_kind": "http_error",
+        "provider_request_id": "req_123",
+        "provider_error_code": "rate_limit_error",
+    }
+    assert "sk-secret" not in json.dumps(body["diagnostics"])
