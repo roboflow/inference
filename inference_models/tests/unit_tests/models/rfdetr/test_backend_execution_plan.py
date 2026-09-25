@@ -34,6 +34,7 @@ from inference_models.models.rfdetr.optimization.contracts import (
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
+from inference_models.models.rfdetr.optimization.preprocessors import pillow_simd
 from inference_models.models.rfdetr.optimization.preprocessors.base import (
     BasePreprocessor,
 )
@@ -65,6 +66,17 @@ def config():
     return inference_config
 
 
+@pytest.fixture
+def _without_pillow_simd(monkeypatch):
+    """Make reference-fallback tests independent of optional native installation."""
+
+    def _unavailable():
+        raise ImportError("Pillow-SIMD intentionally unavailable in reference test")
+
+    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", _unavailable)
+
+
+@pytest.mark.usefixtures("_without_pillow_simd")
 @pytest.mark.parametrize("backend", ["torch", "onnx"])
 def test_cpu_triton_request_falls_back_and_preserves_dynamic_size(backend):
     """Verify CPU fallback retains dynamic-size reference behavior.
@@ -183,6 +195,7 @@ def test_universal_size_override_declares_fallback_without_gpu_work():
     assert "image_size" in result.reason
 
 
+@pytest.mark.usefixtures("_without_pillow_simd")
 def test_non_cuda_gpu_declares_fallback_before_constructing_cuda_runtime():
     """Reject MPS targets without constructing a CUDA implementation."""
     path = RFDetrBackendPath(
@@ -480,6 +493,7 @@ def test_torch_model_runs_selected_stages_with_real_cpu_tensors():
     }
 
 
+@pytest.mark.usefixtures("_without_pillow_simd")
 def test_onnx_model_delegates_forward_and_postprocess_through_plan(monkeypatch):
     """Exercise all composed stages around an ONNX-session double.
 
