@@ -8,6 +8,7 @@ from typing import Callable, DefaultDict, Dict, Generic, Optional, Tuple, TypeVa
 
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
     ExecutionContext,
     InferenceStage,
     OptimizationMetadata,
@@ -111,6 +112,81 @@ class ImplementationRegistry:
                 implementation=implementation,
             )
         )
+
+    def metadata(
+        self, *, stage: OptimizationStage, implementation_id: str
+    ) -> OptimizationMetadata:
+        """Read a candidate's metadata without constructing its native runtime.
+
+        Args:
+            stage (OptimizationStage): Stage containing the candidate.
+            implementation_id (str): Explicit registered ID.
+
+        Returns:
+            OptimizationMetadata: Declared constraints and fallback ID.
+
+        Raises:
+            ModelRuntimeError: If the ID is not registered.
+        """
+        registration = self._registrations.get(stage, {}).get(implementation_id)
+        if registration is None:
+            available = sorted(self._registrations.get(stage, {}))
+            raise ModelRuntimeError(
+                message=(
+                    f"Unknown {self._scope_name} {stage.value} implementation "
+                    f"{implementation_id!r}. Available implementations: {available}."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+
+        return registration.metadata
+
+    def auto_preferences(self, *, stage: OptimizationStage) -> Tuple[str, ...]:
+        """Read automatic candidates, including the terminal base implementation.
+
+        Args:
+            stage (OptimizationStage): Stage whose policy is requested.
+
+        Returns:
+            tuple[str, ...]: IDs in preference order, ending with base.
+        """
+        candidates = (*self._auto_preferences.get(stage, ()), self._base_id)
+
+        return candidates
+
+    def inspect_candidate(
+        self,
+        *,
+        stage: OptimizationStage,
+        implementation_id: str,
+        context: ExecutionContext,
+    ) -> Tuple[Optional[InferenceStage], CompatibilityResult]:
+        """Check one candidate without following fallback or hiding factory errors.
+
+        Args:
+            stage (OptimizationStage): Stage containing the candidate.
+            implementation_id (str): Explicit registered ID.
+            context (ExecutionContext): Stable model target and dependencies.
+
+        Returns:
+            tuple: Optional implementation and static compatibility result.
+
+        Raises:
+            ModelRuntimeError: If the ID is unknown. Factory exceptions propagate.
+        """
+        metadata = self.metadata(stage=stage, implementation_id=implementation_id)
+        compatibility = metadata_compatibility(metadata=metadata, context=context)
+        if not compatibility.supported:
+            return None, compatibility
+
+        implementation = self._registrations[stage][implementation_id].materialize()
+        if not implementation.is_compatible(context):
+            compatibility = CompatibilityResult.incompatible(
+                f"{implementation_id}: static runtime context is incompatible"
+            )
+            return None, compatibility
+
+        return implementation, compatibility
 
     def register_factory(
         self,

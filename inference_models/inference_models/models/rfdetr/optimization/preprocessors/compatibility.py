@@ -62,10 +62,10 @@ def check_base_request_compatibility(
     return result
 
 
-def check_threaded_request_compatibility(
+def check_numpy_request_compatibility(
     request: PreprocessRequest,
 ) -> CompatibilityResult:
-    """Check the exact NumPy batch constraints of threaded preprocessing.
+    """Check the NumPy image constraints of Pillow-SIMD preprocessing.
 
     Args:
         request: Typed preprocessing request.
@@ -89,9 +89,13 @@ def check_threaded_request_compatibility(
     ]
     reasons = []
     if unsupported:
-        reasons.append(f"threaded preprocessing requires NumPy inputs: {unsupported}")
+        reasons.append(
+            f"Pillow-SIMD preprocessing requires NumPy inputs: {unsupported}"
+        )
     if invalid:
-        reasons.append(f"threaded preprocessing requires uint8 HWC images: {invalid}")
+        reasons.append(
+            f"Pillow-SIMD preprocessing requires uint8 HWC images: {invalid}"
+        )
     if reasons:
         result = CompatibilityResult.incompatible(*reasons)
     else:
