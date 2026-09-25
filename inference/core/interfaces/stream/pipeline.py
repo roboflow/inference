@@ -588,6 +588,29 @@ class InferencePipeline:
             self._results_consumer_missing = False
 
     def terminate(self) -> None:
+        """Stop the pipeline and terminate the video sources it started.
+
+        Sets the stop flag first. When called from a thread other than a
+        still-running inference thread, it then waits - with no deadline - until
+        that thread has finished starting sources, i.e. every source started or
+        one failed to start. Only sources that started successfully are then
+        terminated, each once, in start order; sources after a startup failure
+        are never started and are left untouched. A repeated call after an
+        error terminates only the sources still pending.
+
+        Sources start one after another, each under its state lock, and a
+        startup may stall - for example on a native open of a camera or
+        stream - so the wait is unbounded: it may last as long as all the
+        sources' startups together. Call `join()` afterwards to wait for the
+        pipeline workers.
+
+        Raises:
+            StreamOperationNotAllowedError: If a source that just started is
+                still INITIALISING (its capture worker has not yet moved it to
+                RUNNING). Sources not yet terminated remain pending, so the call
+                may be retried. Callers must not assume an immediate return or
+                exception-free cleanup.
+        """
         self._stop = True
         if (
             self._inference_thread is not None
