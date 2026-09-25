@@ -10,6 +10,7 @@ Without the override, the fixture downloads the synthetic-dataset t7 package.
 
 import json
 import math
+from hashlib import sha256
 from pathlib import Path
 
 import numpy as np
@@ -138,3 +139,45 @@ def test_real_weights_predict_scored_spans_and_filter_them(
 
     assert filtered == [p for p in class_predictions if p.confidence >= threshold]
     assert filtered
+
+
+@pytest.mark.gpu_only
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is required for predictions"
+)
+def test_t7_predictions_match_pinned_reference(
+    loaded_model, vjepa_action_recognition_package, vjepa_prediction_frames
+) -> None:
+    expected = json.loads(
+        (
+            Path(__file__).parent / "fixtures" / "vjepa2_1_t7_predictions.json"
+        ).read_text()
+    )
+    frames = vjepa_prediction_frames
+    assert len(frames) == expected["frame_count"]
+    assert sha256(frames.tobytes()).hexdigest() == expected["frames_sha256"]
+    weights_hash = sha256()
+    with (vjepa_action_recognition_package / "model.safetensors").open("rb") as weights:
+        for block in iter(lambda: weights.read(1024 * 1024), b""):
+            weights_hash.update(block)
+    assert weights_hash.hexdigest() == expected["weights_sha256"]
+
+    predictions = loaded_model.infer(
+        frames=list(frames), fps=expected["sample_fps"], confidence=0
+    )
+
+    assert len(predictions) == expected["prediction_count"]
+    # Serving uses BF16; the independent reference was captured in FP32.
+    for reference in expected["predictions"]:
+        prediction = predictions[reference["index"]]
+        assert prediction.class_name == reference["class_name"]
+        assert prediction.end_exclusive is True
+        np.testing.assert_allclose(
+            [prediction.start_frame_idx, prediction.end_frame_idx],
+            [reference["start_frame"], reference["end_frame"]],
+            rtol=0,
+            atol=0.5,
+        )
+        assert prediction.confidence == pytest.approx(
+            reference["confidence"], rel=0, abs=0.01
+        )
