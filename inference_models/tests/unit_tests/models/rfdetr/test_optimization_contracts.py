@@ -45,7 +45,6 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_BASE,
-    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.optimization.readiness import (
@@ -287,7 +286,6 @@ def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
 def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
-        preprocessor_max_workers=2,
     )
     context = ExecutionContext(
         device_kind="gpu",
@@ -306,10 +304,27 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
         context=context,
     )
 
-    assert (
-        preprocessor.metadata.implementation_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
-    )
+    assert preprocessor.metadata.implementation_id == "base"
     assert postprocessor.metadata.implementation_id == RFDETR_POSTPROCESSOR_BASE
+
+
+@pytest.mark.parametrize("backend", ["trt", "torch", "onnx"])
+def test_registry_rejects_removed_threaded_preprocessor(backend) -> None:
+    """Reject the removed implementation rather than silently selecting base.
+
+    Args:
+        backend (str): Object-detection registry to inspect.
+    """
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cpu"), backend=backend
+    )
+    with pytest.raises(ModelRuntimeError, match="Unknown RF-DETR preprocess"):
+        registry.resolve_selection(
+            stage=OptimizationStage.PREPROCESS,
+            requested_id="threaded-exact-v1",
+            context=ExecutionContext(device_kind="cpu", device="cpu"),
+            allow_fallback=True,
+        )
 
 
 def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:

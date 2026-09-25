@@ -18,7 +18,7 @@ from inference_models.models.rfdetr.optimization.preprocessors.common import (
     run_reference_preprocessor,
 )
 from inference_models.models.rfdetr.optimization.preprocessors.compatibility import (
-    check_threaded_request_compatibility,
+    check_numpy_request_compatibility,
 )
 
 
@@ -53,8 +53,7 @@ class PillowSIMDPreprocessor(BasePreprocessor):
         stream_behavior="SSE4.1 CPU resize followed by transfer on the caller stream",
     )
 
-    def __init__(self, *, max_workers=1):
-        super().__init__(max_workers=max_workers)
+    def __init__(self):
         self._image = None
         self._unavailable_reason = None
         try:
@@ -89,16 +88,9 @@ class PillowSIMDPreprocessor(BasePreprocessor):
         Returns:
             CompatibilityResult: Request compatibility and fallback reasons.
         """
-        result = check_threaded_request_compatibility(request)
-        compatibility = replace(
-            result,
-            reasons=tuple(
-                reason.replace("threaded preprocessing", "Pillow-SIMD preprocessing")
-                for reason in result.reasons
-            ),
-        )
+        result = check_numpy_request_compatibility(request)
 
-        return compatibility
+        return result
 
     def preprocess(self, request, context):
         """Resize with Pillow-SIMD and transfer the normalized batch to the target.
@@ -122,7 +114,6 @@ class PillowSIMDPreprocessor(BasePreprocessor):
             request,
             context,
             implementation_id="base",
-            max_workers=1,
             image_module=self._image,
         )
         simd_result = replace(

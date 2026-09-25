@@ -49,11 +49,11 @@ flowchart TD
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
-    requested --> build["Register metadata + lazy factories<br/>(device, max_workers)"]
+    requested --> build["Register metadata + lazy factories<br/>(device)"]
 
     subgraph preprocessors["Preprocessor implementations"]
         pre_base["base"]
-        pre_threaded["threaded-exact-v1"]
+        pre_simd["pillow-simd-v1"]
         pre_triton["triton-universal-v1"]
     end
 
@@ -69,7 +69,7 @@ flowchart TD
     end
 
     pre_base --> build
-    pre_threaded --> build
+    pre_simd --> build
     pre_triton --> build
     post_base --> build
     post_triton --> build
@@ -89,7 +89,6 @@ arguments:
 | Variable | Stage | Example value |
 |---|---|---|
 | `INFERENCE_MODELS_RFDETR_PREPROCESSOR` | preprocessing | `triton-universal-v1` |
-| `INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS` | threaded preprocessing | `4` |
 | `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS` | Triton preprocessing | `35389440` |
 | `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION` | Triton preprocessing | `8192` |
 | `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` | postprocessing | `triton-fused-v1` |
@@ -114,7 +113,7 @@ flowchart TD
     invocation{"Invocation"}
     pre_request["PreprocessRequest + ExecutionContext"]
     pre_selected{"Selected Preprocessor<br/>compatible with request?"}
-    pre_base["base / threaded exact<br/>synchronize before return"]
+    pre_base["base / pillow-simd-v1<br/>synchronize before return"]
     pre_triton["Triton universal<br/>record CUDA ready event"]
     buffer["Selected BufferStrategy<br/>preserve or prepare storage"]
     boundary{"independent_stage_execution?<br/>default: true"}
@@ -229,7 +228,7 @@ TensorRT forward does not need to know which preprocessor produced its input.
   reuse across engine outputs and postprocessing requires a contract extension.
 - `auto` resolves those base-only categories to `base`; an unknown explicit ID raises a
   registry error listing the available implementations.
-- Preprocessing `auto` prefers `triton-universal-v1`, then `threaded-exact-v1`;
+- Preprocessing `auto` prefers `triton-universal-v1`;
   postprocessing `auto` prefers `triton-fused-v1`. Each stage uses `base` when no listed
   candidate is compatible.
 - Validation records remain informational provenance and do not participate in

@@ -89,7 +89,7 @@ def test_arm_selection_does_not_attempt_native_import(monkeypatch):
 
     monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", _unexpected)
     registry = build_rfdetr_implementation_registry(
-        device=torch.device("cpu"), preprocessor_max_workers=1, backend="torch"
+        device=torch.device("cpu"), backend="torch"
     )
     selection = registry.resolve_selection(
         stage=OptimizationStage.PREPROCESS,

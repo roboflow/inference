@@ -84,7 +84,6 @@ class RFDetrForObjectDetectionONNX(
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
         """Load an ONNX package and resolve its object-detection execution plan.
@@ -98,7 +97,6 @@ class RFDetrForObjectDetectionONNX(
             recommended_parameters (RecommendedParameters, optional): Model defaults.
             rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
                 fallback policies; None resolves environment/default choices.
-            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
             **kwargs: Extra loader options accepted for shared API compatibility.
 
         Returns:
@@ -181,7 +179,6 @@ class RFDetrForObjectDetectionONNX(
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
             rfdetr_execution_plan=rfdetr_execution_plan,
-            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
 
         return model
@@ -197,7 +194,6 @@ class RFDetrForObjectDetectionONNX(
         input_batch_size: Optional[int],
         recommended_parameters=None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -218,7 +214,6 @@ class RFDetrForObjectDetectionONNX(
             inference_config=inference_config,
             backend="onnx",
             execution_plan=rfdetr_execution_plan,
-            max_workers=rfdetr_preprocessor_max_workers,
         )
 
     @property

@@ -25,9 +25,6 @@ from inference_models.models.rfdetr.optimization.catalog import (
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
-from inference_models.models.rfdetr.pre_processing import (
-    resolve_rfdetr_preprocessor_max_workers,
-)
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
     UniversalFastPreprocessRuntime,
     _build_metadata_batch,
@@ -460,29 +457,6 @@ def test_runtime_compatibility_inspects_only_first_validated_batch_item(
 
     assert not compatibility.supported
     assert inspect_calls == 1
-
-
-def test_preprocessor_worker_limit_can_be_selected_from_environment(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "7")
-
-    assert resolve_rfdetr_preprocessor_max_workers() == 7
-
-
-def test_explicit_preprocessor_worker_limit_overrides_environment(monkeypatch) -> None:
-    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "7")
-
-    assert resolve_rfdetr_preprocessor_max_workers(2) == 2
-
-
-def test_preprocessor_worker_limit_rejects_non_positive_environment_value(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS", "0")
-
-    with pytest.raises(ModelRuntimeError, match="must be at least 1"):
-        resolve_rfdetr_preprocessor_max_workers()
 
 
 def test_universal_runtime_requires_cuda_device() -> None:

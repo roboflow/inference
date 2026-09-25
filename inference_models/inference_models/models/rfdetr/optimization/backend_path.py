@@ -31,9 +31,6 @@ from inference_models.models.rfdetr.optimization.selection import (
     resolve_preprocessor_for_request,
     resolve_preprocessor_runtime_fallback,
 )
-from inference_models.models.rfdetr.pre_processing import (
-    resolve_rfdetr_preprocessor_max_workers,
-)
 
 
 class RFDetrBackendPath:
@@ -46,7 +43,6 @@ class RFDetrBackendPath:
         inference_config,
         backend,
         execution_plan=None,
-        max_workers=None
     ):
         self.device = device
         self.config = inference_config
@@ -55,9 +51,6 @@ class RFDetrBackendPath:
         requested = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
         self.registry = build_rfdetr_implementation_registry(
             device=device,
-            preprocessor_max_workers=resolve_rfdetr_preprocessor_max_workers(
-                max_workers=max_workers
-            ),
             backend=backend,
         )
         context = self.context()
@@ -87,7 +80,7 @@ class RFDetrBackendPath:
         self.selections = selections
         self.plan = replace(
             requested,
-            **{name + "_id": item.effective_id for name, item in selections.items()}
+            **{name + "_id": item.effective_id for name, item in selections.items()},
         )
         for name, selection in selections.items():
             setattr(self, name, selection.implementation)
@@ -164,7 +157,7 @@ class RFDetrBackendPath:
         input_color_format=None,
         pre_processing_overrides=None,
         image_size=None,
-        independent_stage_execution=True
+        independent_stage_execution=True,
     ):
         """Resolve request compatibility and prepare the backend input tensor.
 

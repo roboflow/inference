@@ -221,7 +221,6 @@ def test_reference_adapter_records_caller_cuda_storage(monkeypatch):
         ),
         ExecutionContext("gpu", "cuda:0", current_stream=stream),
         implementation_id="base",
-        max_workers=1,
     )
     image.record_stream.assert_called_once_with(stream)
     assert result.tensor is output
@@ -285,7 +284,6 @@ class _FailingPreprocessor(BasePreprocessor):
     metadata = replace(BasePreprocessor.metadata, implementation_id="failing")
 
     def __init__(self, error):
-        super().__init__(max_workers=1)
         self.error = error
         self.failed = False
         self.calls = 0

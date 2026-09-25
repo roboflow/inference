@@ -17,7 +17,6 @@ def run_reference_preprocessor(
     context: ExecutionContext,
     *,
     implementation_id: str,
-    max_workers: int,
     image_module=None,
 ) -> PreprocessResult:
     """Run the existing RF-DETR preprocessor on the context stream.
@@ -25,8 +24,7 @@ def run_reference_preprocessor(
     Args:
         request (PreprocessRequest): Typed preprocessing request.
         context (ExecutionContext): Target device and optional CUDA stream.
-        implementation_id (str): Base or threaded implementation ID.
-        max_workers (int): Bounded threaded worker limit.
+        implementation_id (str): Reference implementation ID.
         image_module (ModuleType, optional): Isolated resize module; None uses Pillow.
 
     Returns:
@@ -64,7 +62,6 @@ def run_reference_preprocessor(
             input_color_format=request.input_color_format,
             pre_processing_overrides=request.pre_processing_overrides,
             preprocessor_implementation_id=implementation_id,
-            preprocessor_max_workers=max_workers,
             image_size_wh=request.image_size_wh,
             image_module=image_module,
         )

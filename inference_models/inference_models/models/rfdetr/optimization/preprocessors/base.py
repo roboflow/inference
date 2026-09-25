@@ -58,9 +58,6 @@ class BasePreprocessor:
         stream_behavior="CPU work followed by transfer to the target; CUDA transfers use the caller stream",
     )
 
-    def __init__(self, *, max_workers: int) -> None:
-        self._max_workers = max_workers
-
     def is_compatible(self, context: ExecutionContext) -> bool:
         """Return whether the base path supports the runtime context.
 
@@ -140,7 +137,6 @@ class BasePreprocessor:
             request,
             context,
             implementation_id=self.metadata.implementation_id,
-            max_workers=self._max_workers,
         )
 
         return result

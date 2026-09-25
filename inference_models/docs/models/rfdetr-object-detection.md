@@ -96,7 +96,7 @@ cv2.imwrite("annotated.jpg", annotated_image)
 
 All three object-detection backends accept `rfdetr_execution_plan=RFDetrExecutionPlan(...)`.
 The default `auto` selection prefers `triton-universal-v1` on compatible CUDA
-devices, then `threaded-exact-v1`, with `base` as the reference fallback. CPU and
+devices, with `base` as the reference fallback. CPU and
 MPS do not construct the CUDA-only Triton preprocessor. Torch's `image_size`
 override falls back to reference preprocessing when Triton cannot preserve it.
 

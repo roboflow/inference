@@ -77,9 +77,6 @@ from inference_models.models.rfdetr.optimization.selection import (
     resolve_preprocessor_for_request,
     resolve_preprocessor_runtime_fallback,
 )
-from inference_models.models.rfdetr.pre_processing import (
-    resolve_rfdetr_preprocessor_max_workers,
-)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -142,7 +139,6 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
@@ -156,8 +152,6 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache: Optional caller-managed CUDA graph cache.
             default_trt_cuda_graph_cache_size: Default automatic graph-cache capacity.
             rf_detr_max_input_resolution: Optional maximum accepted input resolution.
-            rfdetr_preprocessor_max_workers: Explicit threaded preprocessing worker
-                limit. When omitted, the corresponding environment value is used.
             rfdetr_execution_plan: Explicit composed execution plan. When omitted,
                 RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
@@ -258,7 +252,6 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             trt_execution_context=trt_execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             rfdetr_execution_plan=rfdetr_execution_plan,
             recommended_parameters=recommended_parameters,
         )
@@ -276,7 +269,6 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
         recommended_parameters=None,
     ):
@@ -291,15 +283,11 @@ class RFDetrForObjectDetectionTRT(
         self._trt_execution_context = trt_execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
-        self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
-            max_workers=rfdetr_preprocessor_max_workers
-        )
         requested_plan = RFDetrExecutionPlan.resolve(
             execution_plan=rfdetr_execution_plan,
         )
         self._implementation_registry = build_rfdetr_implementation_registry(
             device=self._device,
-            preprocessor_max_workers=self._rfdetr_preprocessor_max_workers,
         )
         resolution_context = self._execution_stage_context(current_stream=None)
         preprocessor_selection = resolve_preprocessor_for_model(

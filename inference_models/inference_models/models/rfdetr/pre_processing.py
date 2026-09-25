@@ -11,7 +11,6 @@ torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import List, Optional, Tuple, Union
 
@@ -42,53 +41,14 @@ from inference_models.models.common.roboflow.pre_processing import (
     make_the_value_divisible,
     pre_process_numpy_image,
 )
-from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_PREPROCESSOR_BASE,
-    RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
-    RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME,
-    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
-)
-from inference_models.utils.environment import get_integer_from_env
-
-
-def resolve_rfdetr_preprocessor_max_workers(max_workers: Optional[int] = None) -> int:
-    """Resolve the explicit or environment-selected preprocessing worker limit.
-
-    Args:
-        max_workers: Explicit worker limit. When omitted,
-            ``INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS`` is used,
-            defaulting to ``4``.
-
-    Returns:
-        Positive preprocessing worker limit.
-
-    Raises:
-        InvalidEnvVariable: If the environment value is not an integer.
-        ModelRuntimeError: If the resolved worker limit is less than one.
-    """
-    if max_workers is None:
-        max_workers = get_integer_from_env(
-            variable_name=RFDETR_PREPROCESSOR_MAX_WORKERS_ENV_NAME,
-            default=RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
-        )
-    if max_workers < 1:
-        raise ModelRuntimeError(
-            message="RF-DETR preprocessor_max_workers must be at least 1.",
-            help_url=(
-                "https://inference-models.roboflow.com/errors/models-runtime/"
-                "#modelruntimeerror"
-            ),
-        )
-
-    return max_workers
+from inference_models.models.rfdetr.optimization.ids import RFDETR_PREPROCESSOR_BASE
 
 
 @lru_cache(maxsize=None)
-def _log_selected_preprocessor(implementation_id: str, max_workers: int) -> None:
+def _log_selected_preprocessor(implementation_id: str) -> None:
     LOGGER.warning(
-        "Selected RF-DETR preprocessor implementation=%s max_workers=%d",
+        "Selected RF-DETR preprocessor implementation=%s",
         implementation_id,
-        max_workers,
     )
 
 
@@ -101,7 +61,6 @@ def pre_process_network_input(
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
     pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     preprocessor_implementation_id: str = RFDETR_PREPROCESSOR_BASE,
-    preprocessor_max_workers: int = RFDETR_PREPROCESSOR_DEFAULT_MAX_WORKERS,
     image_module=None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     """Preprocess RF-DETR inputs with the selected implementation.
@@ -115,19 +74,17 @@ def pre_process_network_input(
         image_size_wh (int | tuple[int, int], optional): Requested input dimensions.
         pre_processing_overrides (PreProcessingOverrides, optional): Per-call overrides.
         preprocessor_implementation_id (str): Explicit implementation ID.
-        preprocessor_max_workers (int): Explicit threaded worker limit.
         image_module (ModuleType, optional): Resize module; None uses standard Pillow.
 
     Returns:
         Contiguous NCHW batch and per-image preprocessing metadata.
 
     Raises:
-        ModelRuntimeError: If the selected implementation or worker limit is invalid.
+        ModelRuntimeError: If the selected implementation is invalid.
         TypeError: If an input type is unsupported by the selected implementation.
     """
     supported_preprocessors = {
         RFDETR_PREPROCESSOR_BASE,
-        RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     }
     if preprocessor_implementation_id not in supported_preprocessors:
         raise ModelRuntimeError(
@@ -142,14 +99,7 @@ def pre_process_network_input(
             ),
         )
 
-    selected_preprocessor = preprocessor_implementation_id
-    preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
-        max_workers=preprocessor_max_workers
-    )
-    _log_selected_preprocessor(
-        implementation_id=selected_preprocessor,
-        max_workers=preprocessor_max_workers,
-    )
+    _log_selected_preprocessor(implementation_id=preprocessor_implementation_id)
     input_color_mode = (
         ColorMode(input_color_format) if input_color_format is not None else None
     )
@@ -207,48 +157,7 @@ def pre_process_network_input(
 
         return result
 
-    if selected_preprocessor == RFDETR_PREPROCESSOR_THREADED_EXACT_V1:
-        unsupported = [
-            type(image).__name__
-            for image in image_list
-            if not isinstance(image, np.ndarray)
-        ]
-        if unsupported:
-            raise ModelRuntimeError(
-                message=(
-                    f"{RFDETR_PREPROCESSOR_THREADED_EXACT_V1!r} accepts only "
-                    "numpy uint8 HWC/NHWC images; received unsupported entries: "
-                    f"{unsupported}. Select 'base' for torch.Tensor inputs."
-                ),
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )
-        invalid = [
-            (str(image.dtype), tuple(image.shape))
-            for image in image_list
-            if image.dtype != np.uint8 or image.ndim != 3 or image.shape[-1] != 3
-        ]
-        if invalid:
-            raise ModelRuntimeError(
-                message=(
-                    f"{RFDETR_PREPROCESSOR_THREADED_EXACT_V1!r} requires uint8 "
-                    f"HWC images with 3 channels; received: {invalid}."
-                ),
-                help_url=(
-                    "https://inference-models.roboflow.com/errors/models-runtime/"
-                    "#modelruntimeerror"
-                ),
-            )
-        if len(image_list) > 1 and preprocessor_max_workers > 1:
-            worker_count = min(len(image_list), preprocessor_max_workers)
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                processed = list(executor.map(_preprocess_one, image_list))
-        else:
-            processed = [_preprocess_one(image) for image in image_list]
-    else:
-        processed = [_preprocess_one(image) for image in image_list]
+    processed = [_preprocess_one(image) for image in image_list]
 
     tensors = [tensor.to(device=target_device) for tensor, _ in processed]
     metadata = [meta for _, meta in processed]

@@ -22,7 +22,6 @@ from inference_models.models.rfdetr.optimization.postprocessors import (
 )
 from inference_models.models.rfdetr.optimization.preprocessors import (
     BasePreprocessor,
-    ThreadedExactPreprocessor,
     TritonUniversalPreprocessor,
 )
 from inference_models.models.rfdetr.optimization.preprocessors.pillow_simd import (
@@ -38,7 +37,6 @@ RFDETR_PREPROCESSOR_IMPLEMENTATIONS: Mapping[str, OptimizationMetadata] = (
             implementation.metadata.implementation_id: implementation.metadata
             for implementation in (
                 BasePreprocessor,
-                ThreadedExactPreprocessor,
                 TritonUniversalPreprocessor,
                 PillowSIMDPreprocessor,
             )
@@ -83,14 +81,12 @@ RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS: Mapping[str, OptimizationMetadata] = (
 def build_rfdetr_implementation_registry(
     *,
     device: torch.device,
-    preprocessor_max_workers: int,
     backend: str = "trt",
 ) -> ImplementationRegistry:
     """Build the complete RF-DETR stage implementation registry.
 
     Args:
         device (torch.device): Target selected for the model.
-        preprocessor_max_workers (int): Bounded threaded preprocessing worker limit.
         backend (str): Object-detection backend: trt, torch or onnx.
 
     Returns:
@@ -99,11 +95,7 @@ def build_rfdetr_implementation_registry(
     registry = ImplementationRegistry(scope_name="RF-DETR")
     registry.register_factory(
         metadata=BasePreprocessor.metadata,
-        factory=lambda: BasePreprocessor(max_workers=preprocessor_max_workers),
-    )
-    registry.register_factory(
-        metadata=ThreadedExactPreprocessor.metadata,
-        factory=lambda: ThreadedExactPreprocessor(max_workers=preprocessor_max_workers),
+        factory=BasePreprocessor,
     )
     registry.register_factory(
         metadata=TritonUniversalPreprocessor.metadata,
@@ -136,7 +128,6 @@ def build_rfdetr_implementation_registry(
             stage=OptimizationStage.PREPROCESS,
             implementation_ids=(
                 TritonUniversalPreprocessor.metadata.implementation_id,
-                ThreadedExactPreprocessor.metadata.implementation_id,
             ),
         )
         return registry
@@ -159,10 +150,7 @@ def build_rfdetr_implementation_registry(
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.PREPROCESS,
-        implementation_ids=(
-            TritonUniversalPreprocessor.metadata.implementation_id,
-            ThreadedExactPreprocessor.metadata.implementation_id,
-        ),
+        implementation_ids=(TritonUniversalPreprocessor.metadata.implementation_id,),
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.POSTPROCESS,

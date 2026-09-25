@@ -100,7 +100,6 @@ class RFDetrForObjectDetectionTorch(
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
         """Load a model package or checkpoint and resolve its execution plan.
@@ -115,7 +114,6 @@ class RFDetrForObjectDetectionTorch(
             recommended_parameters (RecommendedParameters, optional): Package defaults.
             rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
                 fallback policies; None resolves environment/default choices.
-            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
             **kwargs: Extra loader options accepted for shared API compatibility.
 
         Returns:
@@ -134,7 +132,6 @@ class RFDetrForObjectDetectionTorch(
                 rf_detr_max_input_resolution=rf_detr_max_input_resolution,
                 device=device,
                 rfdetr_execution_plan=rfdetr_execution_plan,
-                rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             )
 
             return loaded_model
@@ -213,7 +210,6 @@ class RFDetrForObjectDetectionTorch(
             resolution=model_config.resolution,
             recommended_parameters=recommended_parameters,
             rfdetr_execution_plan=rfdetr_execution_plan,
-            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
 
         return loaded_model
@@ -228,7 +224,6 @@ class RFDetrForObjectDetectionTorch(
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         """Load a standalone checkpoint with explicit architecture metadata.
 
@@ -241,7 +236,6 @@ class RFDetrForObjectDetectionTorch(
             rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
             rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
                 fallback policies.
-            rfdetr_preprocessor_max_workers (int, optional): Threaded resize limit.
 
         Returns:
             RFDetrForObjectDetectionTorch: Initialized checkpoint model.
@@ -344,7 +338,6 @@ class RFDetrForObjectDetectionTorch(
             post_processor=post_processor,
             resolution=model_config.resolution,
             rfdetr_execution_plan=rfdetr_execution_plan,
-            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
         )
 
         return loaded_model
@@ -360,7 +353,6 @@ class RFDetrForObjectDetectionTorch(
         resolution: int,
         recommended_parameters=None,
         rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -381,7 +373,6 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             backend="torch",
             execution_plan=rfdetr_execution_plan,
-            max_workers=rfdetr_preprocessor_max_workers,
         )
 
     @property

@@ -652,9 +652,9 @@ See [Inference-Path Optimization Architecture](../contributors/inference-path-op
 for the selection model and the complete RF-DETR execution flow.
 
 **`INFERENCE_MODELS_RFDETR_PREPROCESSOR`**
-Default: `auto` (prefers compatible Triton, then threaded exact, then base)
+Default: `auto` (prefers compatible Triton, then base)
 
-Supported values: `base`, `auto`, `threaded-exact-v1`, `triton-universal-v1`, `pillow-simd-v1`.
+Supported values: `base`, `auto`, `triton-universal-v1`, `pillow-simd-v1`.
 
 ```bash
 export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
@@ -671,15 +671,6 @@ Directory containing the optional SIMD `PIL` package. An empty value disables it
 The selected preprocessor loads it under an isolated module name; it never replaces
 the standard `PIL` used by `base`. The x86 ONNX Dockerfiles install the pinned
 12.3.0.post0 build here. Absence or incompatibility selects the declared fallback.
-
-**`INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS`**
-Default: `4`
-
-Controls the bounded worker count used by `threaded-exact-v1`.
-
-```bash
-export INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS="4"
-```
 
 **`INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS`**
 Default: `35389440` (`8192 * 4320`, full 8K DCI)
