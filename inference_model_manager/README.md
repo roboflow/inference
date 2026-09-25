@@ -26,6 +26,16 @@ uv pip install -e ".[torch-jp6-cu126,onnx-jp6-cu126]"
 
 Extras cascade to `inference-models`.
 
+### HEIC input (optional)
+
+JPEG, PNG, WebP, and AVIF (Pillow >= 11.2) decode out of the box. HEIC needs the `heif` extra:
+
+```bash
+uv pip install -e ".[heif]"
+```
+
+It is opt-in on purpose: `pillow-heif` source is BSD-3, but its binary wheels are distributed under GPLv2 because they bundle x265, and HEVC decoding is patent-encumbered. Roboflow does not ship it in public images. Installing it on your own hardware is your call. Without it, a HEIC request fails with a clear error naming the extra.
+
 ## Direct backend
 
 Model loads and runs in the same process. Fastest for single-model use.

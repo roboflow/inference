@@ -7,12 +7,12 @@ requires-python = ">=3.10,<3.14"
 dependencies = [
   "inference-models>=0.39.0rc1,<1.0",
   "numpy",
-  "pillow-heif>=1.7.0",
   "imagecodecs",
   "filelock",
 ]
 
 [project.optional-dependencies]
+heif = ["pillow-heif>=1.7.0"]
 # Runtime extras — each pulls the matching inference-models variant
 torch-cpu = ["inference-models[torch-cpu]"]
 torch-cu118 = ["inference-models[torch-cu118]"]

@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 import imagecodecs
 import numpy as np
-from PIL import Image
+from PIL import Image, features
 
 from inference_model_manager import configuration as cfg
 
@@ -30,6 +30,7 @@ except ImportError:
 # The brand check matters: every ISO-BMFF file (MP4, MOV) has `ftyp` at 4.
 _FTYP_OFFSET = 4
 _FTYP_MAGIC = b"ftyp"
+_AVIF_BRANDS = frozenset((b"avif", b"avis"))
 _HEIF_BRANDS = frozenset(
     (
         b"heic",
@@ -41,8 +42,7 @@ _HEIF_BRANDS = frozenset(
         b"hevs",
         b"mif1",
         b"msf1",
-        b"avif",
-        b"avis",
+        *_AVIF_BRANDS,
     )
 )
 
@@ -216,11 +216,16 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
 
 
 def _decode_heif(data: bytes) -> np.ndarray:
-    """Decode HEIC/AVIF via Pillow+pillow-heif → RGB HWC uint8 numpy."""
-    if not _HAS_HEIF:
+    """Decode HEIC/AVIF via Pillow → RGB HWC uint8 numpy.
+
+    AVIF is native in Pillow >= 11.2. HEIC needs the optional pillow-heif
+    plugin (the ``heif`` extra).
+    """
+    avif_native = data[8:12] in _AVIF_BRANDS and features.check("avif")
+    if not _HAS_HEIF and not avif_native:
         raise ValueError(
             "HEIC/AVIF image received but pillow-heif is not installed. "
-            "Install with: pip install pillow-heif"
+            'Install with: pip install "inference-model-manager[heif]"'
         )
     img = Image.open(io.BytesIO(data))
     if img.mode != "RGB":

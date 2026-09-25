@@ -527,12 +527,11 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/inference_sdk-*.whl \
         /opt/wheels/roboflow_workflows-*.whl && \
     # The new model manager stack. --no-deps throughout: every dependency but
-    # these three already lands in /opt/python-runtime above.
+    # these two already lands in /opt/python-runtime above.
     python3 -m pip install --no-deps --target /opt/python-runtime --upgrade \
         /build/inference/inference_models \
         /build/inference/inference_model_manager \
         /build/inference/inference_server \
-        "pillow-heif>=1.7.0" \
         imagecodecs \
         "filetype>=1.2.0" && \
     PYTHONPATH=/opt/python-runtime python3 -c 'import importlib.metadata as m; print(" ".join(f"{p}=={m.version(p)}" for p in ("inference-models", "inference-model-manager", "inference-server")))' && \

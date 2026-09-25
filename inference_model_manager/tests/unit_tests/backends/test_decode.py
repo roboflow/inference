@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 
+from inference_model_manager.backends import decode
 from inference_model_manager.backends.decode import (
     _decode_ic,
     _select_codec,
@@ -398,3 +399,21 @@ class TestPluginDecoderGate:
         chw = np.zeros((3, 8, 8), dtype=np.uint8)
         with self._registered(lambda data: chw) as decode:
             assert decode(webp_bytes) is chw
+
+
+def _heic_header() -> bytes:
+    return b"\x00\x00\x00\x18ftypheic" + b"\x00" * 64
+
+
+def test_heic_without_pillow_heif_names_the_extra(monkeypatch):
+    monkeypatch.setattr(decode, "_HAS_HEIF", False)
+    with pytest.raises(ValueError, match=r"inference-model-manager\[heif\]"):
+        decode._decode_heif(_heic_header())
+
+
+def test_avif_without_pillow_heif_uses_pillow_native(monkeypatch):
+    monkeypatch.setattr(decode, "_HAS_HEIF", False)
+    monkeypatch.setattr(decode.features, "check", lambda name: name == "avif")
+    with pytest.raises(Exception) as exc_info:
+        decode._decode_heif(b"\x00\x00\x00\x18ftypavif" + b"\x00" * 64)
+    assert "pillow-heif" not in str(exc_info.value)
