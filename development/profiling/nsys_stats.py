@@ -10,9 +10,13 @@ from typing import Mapping, Sequence
 
 NVTX_PUSHPOP_TRACE_REPORT = "nvtx_pushpop_trace"
 NVTX_GPU_PROJECTION_TRACE_REPORT = "nvtx_gpu_proj_trace"
+CUDA_GPU_KERNEL_SUMMARY_REPORT = "cuda_gpu_kern_sum"
+CUDA_GPU_TRACE_REPORT = "cuda_gpu_trace"
 DEFAULT_REPORTS = (
     NVTX_PUSHPOP_TRACE_REPORT,
     NVTX_GPU_PROJECTION_TRACE_REPORT,
+    CUDA_GPU_KERNEL_SUMMARY_REPORT,
+    CUDA_GPU_TRACE_REPORT,
 )
 VALIDATED_NSYS_VERSION_FAMILY = (2025, 1)
 _NSYS_VERSION_PATTERN = re.compile(r"\b(?P<major>\d{4})\.(?P<minor>\d+)\b")
@@ -62,6 +66,25 @@ class GpuProjectedRange:
 
 
 @dataclass(frozen=True)
+class KernelSummary:
+    """One kernel name aggregated by Nsight across the capture."""
+
+    name: str
+    instances: int
+    cumulative_duration_ns: int
+
+
+@dataclass(frozen=True)
+class MemoryTransfer:
+    """One CUDA memory copy recorded on the GPU timeline."""
+
+    source_memory_kind: str
+    destination_memory_kind: str
+    bytes: int
+    duration_ns: int
+
+
+@dataclass(frozen=True)
 class NsysStatsArtifacts:
     """Files and tool metadata produced by an ``nsys stats`` export."""
 
@@ -83,7 +106,7 @@ def build_nsys_stats_command(
     command.extend(
         [
             "--format",
-            "csv",
+            "csv:mem=B",
             "--output",
             str(output_base),
             "--force-overwrite=true",
@@ -227,6 +250,65 @@ def parse_nvtx_gpu_projection_trace(path: Path) -> list[GpuProjectedRange]:
         )
         for row in rows
     ]
+
+
+def parse_cuda_gpu_kernel_summary(path: Path) -> list[KernelSummary]:
+    """Parse capture-wide kernel counts and cumulative time."""
+    rows = _read_csv_rows(
+        path,
+        required_columns=("Name", "Instances", "Total Time (ns)"),
+        allow_empty=True,
+    )
+    summaries = []
+    for row in rows:
+        name = row["Name"]
+        if not name:
+            raise NsysStatsError(f"Nsight kernel report has an empty name: {path}")
+        summaries.append(
+            KernelSummary(
+                name=name,
+                instances=_parse_int(row, "Instances", path),
+                cumulative_duration_ns=_parse_int(row, "Total Time (ns)", path),
+            )
+        )
+    return summaries
+
+
+def parse_cuda_gpu_trace_transfers(path: Path) -> list[MemoryTransfer]:
+    """Parse CUDA copies, excluding kernels and memory-set operations."""
+    rows = _read_csv_rows(
+        path,
+        required_columns=(
+            "Duration (ns)",
+            "Bytes (B)",
+            "SrcMemKd",
+            "DstMemKd",
+            "Name",
+        ),
+        allow_empty=True,
+    )
+    transfers = []
+    for row in rows:
+        name = row["Name"] or ""
+        source = row["SrcMemKd"] or ""
+        destination = row["DstMemKd"] or ""
+        if "memset" in name.lower():
+            continue
+        if not (source or destination) and "memcpy" not in name.lower():
+            continue
+        if not source or not destination:
+            raise NsysStatsError(
+                f"Nsight CUDA copy in {path} is missing a memory kind: {name!r}"
+            )
+        transfers.append(
+            MemoryTransfer(
+                source_memory_kind=source,
+                destination_memory_kind=destination,
+                bytes=_parse_int(row, "Bytes (B)", path),
+                duration_ns=_parse_int(row, "Duration (ns)", path),
+            )
+        )
+    return transfers
 
 
 def _read_nsys_version(executable: str) -> str:

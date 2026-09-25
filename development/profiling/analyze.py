@@ -9,9 +9,13 @@ import yaml
 
 from development.profiling.analysis import ProfileAnalysisError, build_profile_analysis
 from development.profiling.nsys_stats import (
+    CUDA_GPU_KERNEL_SUMMARY_REPORT,
+    CUDA_GPU_TRACE_REPORT,
     NVTX_GPU_PROJECTION_TRACE_REPORT,
     NVTX_PUSHPOP_TRACE_REPORT,
     NsysStatsError,
+    parse_cuda_gpu_kernel_summary,
+    parse_cuda_gpu_trace_transfers,
     parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
     run_nsys_stats,
@@ -68,10 +72,18 @@ def analyze_run(
     gpu_projected_ranges = parse_nvtx_gpu_projection_trace(
         artifacts.report_paths[NVTX_GPU_PROJECTION_TRACE_REPORT]
     )
+    kernel_summaries = parse_cuda_gpu_kernel_summary(
+        artifacts.report_paths[CUDA_GPU_KERNEL_SUMMARY_REPORT]
+    )
+    memory_transfers = parse_cuda_gpu_trace_transfers(
+        artifacts.report_paths[CUDA_GPU_TRACE_REPORT]
+    )
     analysis = build_profile_analysis(
         manifest=manifest,
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_projected_ranges,
+        kernel_summaries=kernel_summaries,
+        memory_transfers=memory_transfers,
         nsys_version=artifacts.nsys_version,
         run_dir=run_dir,
         trace_path=trace_path,
