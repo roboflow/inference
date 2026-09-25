@@ -30,7 +30,7 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Bumped `zxing-cpp` from `~=2.2.0` to `>=2.3.0,<=3.1.1`: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
+- Widened `zxing-cpp` from `~=2.2.0` to `>=2.2.0,<=2.3.0` so installs can pick 2.3.0: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
 
 ### Execution Engine Change
 
