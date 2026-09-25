@@ -3,7 +3,6 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import supervision as sv
-from supervision.annotators.utils import calculate_dynamic_kernel_size
 from supervision.detection.compact_mask import CompactMask
 
 
@@ -76,9 +75,7 @@ class MaskAwareBlurAnnotator(sv.BlurAnnotator):
             kernel_size = (
                 self.kernel_size
                 if self.kernel_size is not None
-                else calculate_dynamic_kernel_size(
-                    region_x1, region_y1, region_x2, region_y2
-                )
+                else _dynamic_kernel_size(region_x1, region_y1, region_x2, region_y2)
             )
             roi = scene[region_y1:region_y2, region_x1:region_x2]
             blurred = cv2.blur(roi, (kernel_size, kernel_size))
@@ -125,3 +122,13 @@ def _grow(mask: np.ndarray, padding: int) -> np.ndarray:
         cv2.MORPH_ELLIPSE, (2 * padding + 1, 2 * padding + 1)
     )
     return cv2.dilate(mask.astype(np.uint8), kernel) > 0
+
+
+def _dynamic_kernel_size(x1: int, y1: int, x2: int, y2: int) -> int:
+    """Blur kernel size for a region: one-third of its shorter side, at least 1.
+
+    The rule `sv.BlurAnnotator` applies when `kernel_size` is `None`, inlined so
+    this module does not import a helper from supervision's private
+    `annotators.utils` namespace.
+    """
+    return max(1, min(y2 - y1, x2 - x1) // 3)
