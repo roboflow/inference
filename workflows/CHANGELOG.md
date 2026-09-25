@@ -19,6 +19,7 @@ for contributor and maintainer responsibilities.
 ### Fixed
 
 - MQTT Writer: a broker that refuses the connection (bad user name or password, not authorised, unacceptable protocol version) is now reported in the outputs with the broker's reason, and the client stops reconnecting instead of retrying the same credentials about once a second, which tripped brokers' authentication rate limiting. The refusal is reported as soon as the broker answers rather than after `timeout`, and every later run repeats it without touching the broker; fix the configuration and restart the pipeline. A broker answering "unavailable" keeps retrying in the background.
+- Preserve image dimensions and parent lineage when Template Matching returns no detections.
 
 ### Added
 
@@ -27,7 +28,18 @@ for contributor and maintainer responsibilities.
 - TLS for the MQTT Reader and MQTT Writer: an `encryption` dropdown (`none`, default, or `tls`) encrypts the connection and verifies the broker's certificate against the system trust store; `ca_certificate_path` (shown for TLS only) points at a PEM bundle for a private CA and requires `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True`. The port is not switched automatically and verification cannot be disabled.
 - Operator policy for the MQTT Reader and MQTT Writer broker address: `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (comma-separated `host[:port]` allowlist, no DNS) and `MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST` (default `True`; when `False` the workflow's host and port are ignored and the first allowlist entry is used). Defaults preserve existing behaviour.
 
+### Changed
+
+- Widened `zxing-cpp` from `~=2.2.0` to `>=2.2.0,<=2.3.0` so installs can pick 2.3.0: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
+
 ### Execution Engine Change
+
+- **Run-scoped thread pool for executor-less runs** — runs that receive no
+  host-provided executor (standalone `roboflow-workflows`, SDK and embedded
+  usage) now reuse one run-scoped thread pool across step waves instead of
+  constructing a `ThreadPoolExecutor` per wave, lowering latency on multi-wave
+  chains; host-provided executors and scheduling are unchanged. No migration
+  is needed.
 
 - Reject cyclic saved inner-workflow references during resolution with a composition
   error instead of `RecursionError`. Enforce nesting depth and total inner-workflow

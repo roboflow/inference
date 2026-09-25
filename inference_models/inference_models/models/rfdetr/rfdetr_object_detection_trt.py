@@ -1,6 +1,5 @@
 import threading
 import time
-import warnings
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
@@ -75,6 +74,10 @@ from inference_models.models.rfdetr.optimization.contracts import (
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
+    _normalize_execution_plan_argument,
+)
+from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+    PreprocessorSelector,
 )
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_postprocessor_for_request,
@@ -82,9 +85,6 @@ from inference_models.models.rfdetr.optimization.selection import (
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
     resolve_preprocessor_runtime_fallback,
-)
-from inference_models.models.rfdetr.pre_processing import (
-    resolve_rfdetr_preprocessor_max_workers,
 )
 from inference_models.utils.environment import get_boolean_from_env
 from inference_models.weights_providers.entities import RecommendedParameters
@@ -146,16 +146,7 @@ class RFDetrForObjectDetectionTRT(
         execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]],
     ) -> RFDetrExecutionPlan:
         """Normalize loader input into a typed RF-DETR execution plan."""
-        if execution_plan is None:
-            resolved_plan = RFDetrExecutionPlan.resolve()
-
-            return resolved_plan
-
-        if isinstance(execution_plan, RFDetrExecutionPlan):
-            return execution_plan
-
-        parsed_plan = RFDetrExecutionPlan.from_dict(execution_plan)
-        resolved_plan = cast(RFDetrExecutionPlan, parsed_plan)
+        resolved_plan = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
 
         return resolved_plan
 
@@ -168,7 +159,6 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
@@ -182,8 +172,6 @@ class RFDetrForObjectDetectionTRT(
             trt_cuda_graph_cache: Optional caller-managed CUDA graph cache.
             default_trt_cuda_graph_cache_size: Default automatic graph-cache capacity.
             rf_detr_max_input_resolution: Optional maximum accepted input resolution.
-            rfdetr_preprocessor_max_workers: Explicit threaded preprocessing worker
-                limit. When omitted, the corresponding environment value is used.
             execution_plan: Explicit RF-DETR execution plan or its canonical mapping.
                 When omitted, RF-DETR implementation environment variables are used.
             recommended_parameters: Optional model-specific recommended parameters.
@@ -202,20 +190,9 @@ class RFDetrForObjectDetectionTRT(
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
-        if "rfdetr_execution_plan" in kwargs:
-            if execution_plan is not None:
-                raise TypeError(
-                    "Cannot pass both 'rfdetr_execution_plan' and 'execution_plan'; "
-                    "use 'execution_plan' only."
-                )
-
-            warnings.warn(
-                "'rfdetr_execution_plan' is deprecated and will be removed on "
-                "October 24, 2026. Use 'execution_plan' instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            execution_plan = kwargs.pop("rfdetr_execution_plan")
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan, kwargs=kwargs
+        )
 
         if device.type != "cuda":
             raise ModelRuntimeError(
@@ -305,7 +282,6 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             trt_execution_context=trt_execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            rfdetr_preprocessor_max_workers=rfdetr_preprocessor_max_workers,
             execution_plan=execution_plan,
             recommended_parameters=recommended_parameters,
         )
@@ -325,7 +301,6 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         trt_execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        rfdetr_preprocessor_max_workers: Optional[int] = None,
         execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         recommended_parameters=None,
     ):
@@ -340,18 +315,21 @@ class RFDetrForObjectDetectionTRT(
         self._trt_execution_context = trt_execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
-        self._rfdetr_preprocessor_max_workers = resolve_rfdetr_preprocessor_max_workers(
-            max_workers=rfdetr_preprocessor_max_workers
-        )
         requested_plan = self._resolve_requested_execution_plan(
             execution_plan=execution_plan,
         )
         self._implementation_registry = build_rfdetr_implementation_registry(
             device=self._device,
-            preprocessor_max_workers=self._rfdetr_preprocessor_max_workers,
         )
         resolution_context = self._execution_stage_context(current_stream=None)
+        self._preprocessor_selector = PreprocessorSelector(
+            registry=self._implementation_registry,
+            context=resolution_context,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+        )
         preprocessor_selection = resolve_preprocessor_for_model(
+            selector=self._preprocessor_selector,
             registry=self._implementation_registry,
             requested_id=requested_plan.preprocessor_id,
             context=resolution_context,
@@ -640,6 +618,7 @@ class RFDetrForObjectDetectionTRT(
         )
         context = self._execution_stage_context(current_stream=stream)
         selection = resolve_preprocessor_for_request(
+            selector=self._preprocessor_selector,
             registry=self._implementation_registry,
             implementation=self._preprocessor,
             request=request,
@@ -653,46 +632,44 @@ class RFDetrForObjectDetectionTRT(
         )
         try:
             selection = resolve_preprocessor_runtime_fallback(
+                selector=self._preprocessor_selector,
                 registry=self._implementation_registry,
                 selection=selection,
                 request=request,
                 context=context,
                 allow_fallback=allow_runtime_failure_fallback,
             )
-            self._record_runtime_selection(
-                stage="preprocessor",
-                requested_id=selection.requested_id,
-                effective_id=selection.effective_id,
-                fallback_reason=selection.fallback_reason,
-            )
-            try:
-                result = selection.implementation.preprocess(
-                    request=request,
-                    context=context,
-                )
-            except RecoverableStageExecutionError:
-                if not allow_runtime_failure_fallback:
-                    raise
-                fallback_selection = resolve_preprocessor_runtime_fallback(
-                    registry=self._implementation_registry,
-                    selection=selection,
-                    request=request,
-                    context=context,
-                    allow_fallback=allow_runtime_failure_fallback,
-                )
-                if fallback_selection.implementation is selection.implementation:
-                    raise
-                selection = fallback_selection
+            attempted = set()
+            while True:
+                attempted.add(selection.effective_id)
                 self._record_runtime_selection(
                     stage="preprocessor",
                     requested_id=selection.requested_id,
                     effective_id=selection.effective_id,
                     fallback_reason=selection.fallback_reason,
                 )
-                result = selection.implementation.preprocess(
-                    request=request,
-                    context=context,
-                )
+                try:
+                    result = selection.implementation.preprocess(
+                        request=request,
+                        context=context,
+                    )
+                    break
+                except RecoverableStageExecutionError:
+                    if not allow_runtime_failure_fallback:
+                        raise
+
+                    fallback_selection = resolve_preprocessor_runtime_fallback(
+                        selector=self._preprocessor_selector,
+                        registry=self._implementation_registry,
+                        selection=selection,
+                        request=request,
+                        context=context,
+                        allow_fallback=allow_runtime_failure_fallback,
+                    )
+                    if fallback_selection.effective_id in attempted:
+                        raise
+
+                    selection = fallback_selection
         except RecoverableStageExecutionError as error:
             raise _as_model_runtime_error(error) from error
         if selection.used_fallback and self._request_fallback_warnings.claim(

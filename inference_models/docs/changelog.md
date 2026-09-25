@@ -4,6 +4,11 @@
 
 ### Added
 
+- RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
+  sharing Triton Universal preprocessing, reference fallback, compatibility checks
+  and per-request selection metadata with TensorRT.
+- Explicit `pillow-simd-v1` preprocessing with isolated Pillow-SIMD >=12.3.0.post0,
+  Linux x86/SSE4.1 compatibility checks and numerical-difference metadata.
 - RF-DETR TensorRT models accept a typed or canonical mapping execution plan
   through the `execution_plan` loader argument, replacing
   `rfdetr_execution_plan`. The old name remains a deprecated alias until
@@ -24,6 +29,12 @@
   `RFDetrForObjectDetectionTRT.last_inference_diagnostics`. This is a placement
   and backend-selection diagnostic, not a timing surface: the package exposes no
   per-stage timing API.
+
+### Changed
+
+- Reference RF-DETR NumPy preprocessing swaps BGR/RGB channels after resizing,
+  preserving pixel values while avoiding a full-resolution channel copy.
+- Removed the unused `threaded-exact-v1` RF-DETR preprocessor and its worker-count options.
 
 ### Fixed
 

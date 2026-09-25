@@ -297,6 +297,9 @@ class _RuntimeStage:
         del context
         return True
 
+    def check_model_compatibility(self, **kwargs) -> CompatibilityResult:
+        return CompatibilityResult.compatible()
+
     def check_request_compatibility(
         self,
         *,
@@ -445,6 +448,16 @@ def _build_preprocess_model(
         image_pre_processing=object(),
         network_input=object(),
     )
+    from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+        PreprocessorSelector,
+    )
+
+    model._preprocessor_selector = PreprocessorSelector(
+        registry=model._implementation_registry,
+        context=_context(),
+        image_pre_processing=model._inference_config.image_pre_processing,
+        network_input=model._inference_config.network_input,
+    )
 
     return model
 
@@ -530,6 +543,27 @@ def test_preprocess_retries_base_then_short_circuits_recorded_failure(
     assert first_selection["requested_id"] == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     assert first_selection["effective_id"] == RFDETR_PREPROCESSOR_BASE
     assert first_selection["fallback_reason"] is not None
+
+
+def test_preprocess_two_execution_failures_follow_full_chain(rfdetr_trt_model_class):
+    from dataclasses import replace
+
+    candidate, base = _preprocess_stages()
+    candidate.metadata = replace(candidate.metadata, fallback_id="middle")
+    middle = _RuntimeStage(
+        "middle",
+        stage=OptimizationStage.PREPROCESS,
+        fail_recoverably=True,
+    )
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class, candidate=candidate, base=base
+    )
+    model._implementation_registry.register(middle)
+    for _ in range(2):
+        result, _ = model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+        assert result.shape == (1, 3, 2, 2)
+    assert candidate.calls == middle.calls == 1
+    assert base.calls == 2
 
 
 @pytest.mark.parametrize(

@@ -10,7 +10,7 @@ Scope of the change, by RF-DETR entry point:
 | RF-DETR entry point                     | Preprocessor                   | Affected | Proven by                            |
 | --------------------------------------- | ------------------------------ | -------- | ------------------------------------ |
 | Object detection, TensorRT              | `triton-universal-v1` (Triton) | yes      | CPU here + CUDA parity test (GPU)    |
-| Object detection, TensorRT (fallback)   | reference / `threaded-exact-v1`| no       | CPU here                             |
+| Object detection, TensorRT (fallback)   | reference / `pillow-simd-v1`| no       | CPU here                             |
 | Object detection, ONNX                  | reference                      | no       | CPU here                             |
 | Object detection, PyTorch               | reference                      | no       | CPU here                             |
 | Instance segmentation, TensorRT         | `FastPreprocessRuntime`        | no       | CPU here, behaviourally (gate unchanged) |
@@ -42,12 +42,14 @@ Those tests skip without CUDA, and a skip is not a pass.
 """
 
 import importlib.util
+import inspect
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
+from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     Contrast,
@@ -65,7 +67,7 @@ from inference_models.models.rfdetr.optimization.catalog import (
 )
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_PREPROCESSOR_BASE,
-    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+    RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.pre_processing import (
@@ -374,7 +376,7 @@ def test_widened_gate_keeps_every_other_restriction(
 def test_registry_exposes_exactly_three_preprocessor_implementations() -> None:
     assert set(RFDETR_PREPROCESSOR_IMPLEMENTATIONS) == {
         RFDETR_PREPROCESSOR_BASE,
-        RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+        RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     }
 
@@ -382,8 +384,9 @@ def test_registry_exposes_exactly_three_preprocessor_implementations() -> None:
 @pytest.mark.parametrize(
     "module_name",
     [
-        pytest.param("rfdetr_object_detection_onnx", marks=requires_onnxruntime),
-        "rfdetr_object_detection_pytorch",
+        # Object detection moved to the execution-path abstraction in #3017 and no
+        # longer binds a preprocessor at module scope; the test below covers those
+        # backends at the point where the choice is now made.
         pytest.param("rfdetr_instance_segmentation_onnx", marks=requires_onnxruntime),
         pytest.param("rfdetr_key_points_detection_onnx", marks=requires_onnxruntime),
     ],
@@ -399,6 +402,34 @@ def test_importable_non_tensorrt_backends_bind_the_reference_preprocessor(
         for name, value in vars(module).items()
         if value is UniversalFastPreprocessRuntime
     ]
+
+
+def test_reference_adapter_defaults_to_base_and_refuses_the_universal_runtime() -> None:
+    """The reference preprocessing path cannot reach the widened universal gate.
+
+    Backends that go through `pre_process_network_input` are unaffected by changes to
+    `triton-universal-v1` compatibility. Since #3017 the object-detection backends
+    resolve their preprocessor through the execution path rather than a module-level
+    import, so asserting on that import no longer covers them. This pins the property
+    where it is now decided: the adapter defaults to the base implementation and
+    rejects any other id outright, so widening the universal gate cannot pull these
+    backends onto it.
+    """
+    signature = inspect.signature(pre_process_network_input)
+    assert (
+        signature.parameters["preprocessor_implementation_id"].default
+        == RFDETR_PREPROCESSOR_BASE
+    )
+
+    with pytest.raises(ModelRuntimeError) as excinfo:
+        pre_process_network_input(
+            images=np.zeros((4, 4, 3), dtype=np.uint8),
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
+            target_device=torch.device("cpu"),
+            preprocessor_implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        )
+    assert RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1 in str(excinfo.value)
 
 
 def test_tensorrt_sibling_modules_do_not_name_the_universal_preprocessor_source_scan() -> (
