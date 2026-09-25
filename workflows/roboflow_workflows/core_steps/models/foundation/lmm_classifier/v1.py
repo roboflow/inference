@@ -8,10 +8,6 @@ from roboflow_workflows.core_steps.models.foundation.lmm.v1 import (
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
-from roboflow_workflows.core_steps.models.workload_presets import (
-    hosted_endpoint_disabled_by_flag,
-)
-from roboflow_workflows.environment import LMM_ENABLED
 from roboflow_workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
@@ -45,11 +41,8 @@ from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     DependentResource,
-    Runtime,
-    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
-    actual_restrictions_of,
     is_workflow_selector,
     third_party_model,
 )
@@ -147,37 +140,21 @@ class BlockManifest(WorkflowBlockManifest):
             ]
         return []
 
-    @classmethod
-    def get_restrictions(cls) -> List[RuntimeRestriction]:
-        """Return the block's coarse execution restrictions.
-
-        Returns:
-            Restrictions that apply on this host, each with a stable ``code``.
-        """
-        restrictions = []
-        if not LMM_ENABLED:
-            restrictions.append(
-                RuntimeRestriction(
-                    code="hosted_endpoint_disabled_by_flag",
-                    severity=Severity.HARD,
-                    note=(
-                        "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
-                        "/llm_v1 endpoint is not registered, so run_remotely() "
-                        "returns 404."
-                    ),
-                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
-                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
-                )
-            )
-        return restrictions
-
     def discover_work_operations(
         self,
     ) -> Union[List[WorkOperation], Discovery[WorkOperation]]:
+        """Declare the work this step performs, from the literal ``lmm_type``.
+
+        Returns:
+            The OpenAI vendor-call operations for ``gpt_4v``. An incomplete
+            discovery holding only ``MODEL_INFERENCE`` when ``lmm_type`` is a
+            selector. An empty list for any other value.
+        """
         # Mirrors discover_dependent_resources() above: the literal `lmm_type`
-        # picks the work. `gpt_4v` calls the OpenAI API on both execution
-        # paths (directly when local, through Roboflow /llm_v1 when remote),
-        # so it encodes the image and issues a vendor request. The only other
+        # picks the work. `gpt_4v` calls the OpenAI API directly on both
+        # execution paths: run_locally() and run_remotely() both use
+        # run_gpt_4v_llm_prompting(), and no Roboflow endpoint is involved.
+        # So it encodes the image and issues a vendor request. The only other
         # value, `cog_vlm`, is end-of-life and raises. A selector-fed
         # `lmm_type` is not statically resolvable.
         if is_workflow_selector(self.lmm_type):
@@ -203,10 +180,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        return actual_restrictions_of(
-            declared=[hosted_endpoint_disabled_by_flag("LMM_ENABLED")],
-            node_id=f"$steps.{getattr(self, 'name', '')}",
-            ignore_environment_restrictions=ignore_environment_restrictions,
+        """Declare that this step has no runtime restriction.
+
+        Both execution paths call OpenAI directly and never reach a Roboflow
+        LMM endpoint, so ``LMM_ENABLED`` does not gate this block.
+
+        Args:
+            ignore_environment_restrictions: Selects the host view (``False``)
+                or the portable view (``True``). Both views return the same
+                declaration.
+
+        Returns:
+            A complete, empty discovery: a known absence of restrictions.
+        """
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
         )
 
 

@@ -15,7 +15,11 @@ The declared items come back in the canonical discovery order - sorted by
 from typing import Any, List, Type
 
 import pytest
+from roboflow_workflows import environment
 from roboflow_workflows.core_steps.models.foundation import lmm as lmm_package
+from roboflow_workflows.core_steps.models.foundation import (
+    lmm_classifier as lmm_classifier_package,
+)
 from roboflow_workflows.core_steps.models.foundation import (
     moondream2 as moondream2_package,
 )
@@ -24,6 +28,9 @@ from roboflow_workflows.core_steps.models.foundation import (
 )
 from roboflow_workflows.core_steps.models.foundation.lmm.v1 import (
     BlockManifest as LMMV1Manifest,
+)
+from roboflow_workflows.core_steps.models.foundation.lmm_classifier.v1 import (
+    BlockManifest as LMMClassifierV1Manifest,
 )
 from roboflow_workflows.core_steps.models.foundation.moondream2.v1 import (
     BlockManifest as Moondream2V1Manifest,
@@ -50,6 +57,7 @@ from tests.unit_tests.workload_declaration_helpers import (
 MOONDREAM2_MODULE = moondream2_package.v1
 MOONDREAM2_TENSOR_MODULE = moondream2_package.v1_tensor
 LMM_MODULE = lmm_package.v1
+LMM_CLASSIFIER_MODULE = lmm_classifier_package.v1
 SAM3_MODULE = sam3_package.v1
 
 
@@ -123,28 +131,39 @@ def test_moondream2_portable_restrictions_ignore_the_host_flag(
     ]
 
 
-def test_lmm_portable_restrictions_ignore_the_host_flag(
+@pytest.mark.parametrize(
+    "module, manifest_class, extra",
+    [
+        (LMM_MODULE, LMMV1Manifest, {"prompt": "describe"}),
+        (LMM_CLASSIFIER_MODULE, LMMClassifierV1Manifest, {"classes": ["a", "b"]}),
+    ],
+)
+@pytest.mark.parametrize("lmm_enabled", [True, False])
+def test_lmm_blocks_declare_no_restriction_whatever_the_lmm_flag(
+    module: Any,
+    manifest_class: Type,
+    extra: dict,
+    lmm_enabled: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # given - legacy list is EMPTY when the flag is on
-    manifest = _manifest(LMMV1Manifest, prompt="describe", lmm_type="gpt_4v")
-    expected = [hosted_endpoint_disabled_by_flag("LMM_ENABLED")]
+    # given - LMM_ENABLED gates the Roboflow LMM endpoint, which neither
+    # block calls; both execution paths call OpenAI directly
+    manifest = _manifest(manifest_class, lmm_type="gpt_4v", **extra)
+    monkeypatch.setattr(environment, "LMM_ENABLED", lmm_enabled)
 
     # when
-    monkeypatch.setattr(LMM_MODULE, "LMM_ENABLED", True)
-    portable_with_flag_on = declared_restrictions(manifest)
-    legacy_with_flag_on = LMMV1Manifest.get_restrictions()
-    monkeypatch.setattr(LMM_MODULE, "LMM_ENABLED", False)
-    portable_with_flag_off = declared_restrictions(manifest)
-    legacy_with_flag_off = LMMV1Manifest.get_restrictions()
+    host_view = manifest.get_actual_restrictions()
+    portable_view = manifest.get_actual_restrictions(
+        ignore_environment_restrictions=True
+    )
 
-    # then
-    assert portable_with_flag_on == expected
-    assert portable_with_flag_off == expected
-    assert legacy_with_flag_on == []
-    assert len(legacy_with_flag_off) == 1
-    assert legacy_with_flag_off[0].code == "hosted_endpoint_disabled_by_flag"
-    assert "code" not in legacy_with_flag_off[0].to_dict()
+    # then - the block does not read the flag, and declares a known absence
+    assert not hasattr(module, "LMM_ENABLED")
+    for view in (host_view, portable_view):
+        assert list(view.items) == []
+        assert view.complete is True
+        assert list(view.unknown_reasons) == []
+    assert manifest_class.get_restrictions() == []
 
 
 def test_sam3_portable_restrictions_ignore_the_host_flag(

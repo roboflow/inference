@@ -307,10 +307,11 @@ def test_sam3_declares_gpu_and_sam3_flag() -> None:
 
 
 @pytest.mark.parametrize("manifest_class", [LMMV1Manifest, LMMClassifierV1Manifest])
-def test_lmm_blocks_declare_the_flag_branch_without_a_gpu_caveat(
+def test_lmm_blocks_declare_no_restriction(
     manifest_class: Type,
 ) -> None:
-    # given - legacy get_restrictions() starts from an EMPTY list here
+    # given - both execution paths call OpenAI directly, so no Roboflow
+    # endpoint flag gates the block
     manifest = _build(
         manifest_class,
         prompt="describe",
@@ -319,12 +320,18 @@ def test_lmm_blocks_declare_the_flag_branch_without_a_gpu_caveat(
     )
 
     # when
-    restrictions = portable_restrictions(manifest)
+    host_view = manifest.get_actual_restrictions()
+    portable_view = manifest.get_actual_restrictions(
+        ignore_environment_restrictions=True
+    )
 
-    # then
-    assert restrictions == [
-        restriction_metadata_of(hosted_endpoint_disabled_by_flag("LMM_ENABLED"))
-    ]
+    # then - a complete, known absence in both views, legacy included
+    for view in (host_view, portable_view):
+        assert isinstance(view, Discovery)
+        assert list(view.items) == []
+        assert view.complete is True
+        assert list(view.unknown_reasons) == []
+    assert manifest_class.get_restrictions() == []
 
 
 @pytest.mark.parametrize("manifest_class", [Florence2V1Manifest, Florence2V2Manifest])
