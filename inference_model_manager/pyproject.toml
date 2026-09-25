@@ -12,7 +12,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-heif = ["pillow-heif>=1.7.0"]
 # Runtime extras — each pulls the matching inference-models variant
 torch-cpu = ["inference-models[torch-cpu]"]
 torch-cu118 = ["inference-models[torch-cu118]"]

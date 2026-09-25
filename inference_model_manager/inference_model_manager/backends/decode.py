@@ -8,43 +8,13 @@ Decoders:
 
 from __future__ import annotations
 
-import io
 import threading
 from typing import Any, Callable
 
 import imagecodecs
 import numpy as np
-from PIL import Image, features
 
 from inference_model_manager import configuration as cfg
-
-try:
-    import pillow_heif
-
-    pillow_heif.register_heif_opener()
-    _HAS_HEIF = True
-except ImportError:
-    _HAS_HEIF = False
-
-# HEIC/AVIF: ISO-BMFF `ftyp` box at offset 4 + a HEIF/AVIF brand at offset 8.
-# The brand check matters: every ISO-BMFF file (MP4, MOV) has `ftyp` at 4.
-_FTYP_OFFSET = 4
-_FTYP_MAGIC = b"ftyp"
-_AVIF_BRANDS = frozenset((b"avif", b"avis"))
-_HEIF_BRANDS = frozenset(
-    (
-        b"heic",
-        b"heix",
-        b"hevc",
-        b"heim",
-        b"heis",
-        b"hevm",
-        b"hevs",
-        b"mif1",
-        b"msf1",
-        *_AVIF_BRANDS,
-    )
-)
 
 
 def max_decoded_pixels() -> int:
@@ -153,13 +123,6 @@ def _guarded(decode: Callable[[bytes], Any]) -> Callable[[bytes], Any]:
     return _decode
 
 
-def _is_heif(data: bytes | memoryview) -> bool:
-    return (
-        bytes(data[_FTYP_OFFSET : _FTYP_OFFSET + 4]) == _FTYP_MAGIC
-        and bytes(data[8:12]) in _HEIF_BRANDS
-    )
-
-
 def _select_codec(head: bytes) -> str | None:
     """Map header magic bytes to an imagecodecs codec name, or None if unknown.
 
@@ -185,6 +148,8 @@ def _select_codec(head: bytes) -> str | None:
         head[:4] == b"\x00\x00\x00\x0c" and head[4:8] == b"jP  "
     ):
         return "jpeg2k"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis"):
+        return "avif"
     return None
 
 
@@ -215,24 +180,6 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     return _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
 
 
-def _decode_heif(data: bytes) -> np.ndarray:
-    """Decode HEIC/AVIF via Pillow → RGB HWC uint8 numpy.
-
-    AVIF is native in Pillow >= 11.2. HEIC needs the optional pillow-heif
-    plugin (the ``heif`` extra).
-    """
-    avif_native = data[8:12] in _AVIF_BRANDS and features.check("avif")
-    if not _HAS_HEIF and not avif_native:
-        raise ValueError(
-            "HEIC/AVIF image received but pillow-heif is not installed. "
-            'Install with: pip install "inference-model-manager[heif]"'
-        )
-    img = Image.open(io.BytesIO(data))
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    return np.asarray(img)
-
-
 DECODER_FACTORIES: dict[str, Callable[[str], Callable[[bytes], Any]]] = {}
 _ENTRY_POINT_DECODERS_LOADED = False
 
@@ -252,7 +199,7 @@ def register_decoder(
 
 def _imagecodecs_factory(device: str) -> Callable[[bytes], Any]:
     def _decode_imagecodecs(data: bytes) -> Any:
-        decoded = _decode_heif(data) if _is_heif(data) else _decode_ic(data)
+        decoded = _decode_ic(data)
         # Before the BGR copy: a headerless oversized image must not be
         # allocated twice on its way to being rejected.
         _guard_decoded(decoded, max_decoded_pixels())
