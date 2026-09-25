@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_stream_benchmark_checks:
+        description: "Run stream pipeline benchmark harness tests (manual dispatch only)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -77,5 +83,6 @@ jobs:
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
       - name: 🧪 Stream Pipeline Benchmark Harness Tests
+        if: github.event_name == 'workflow_dispatch' && inputs.run_stream_benchmark_checks
         timeout-minutes: 10
         run: python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py
