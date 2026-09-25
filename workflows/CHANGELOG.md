@@ -34,6 +34,13 @@ for contributor and maintainer responsibilities.
 
 ### Execution Engine Change
 
+- **Run-scoped thread pool for executor-less runs** — runs that receive no
+  host-provided executor (standalone `roboflow-workflows`, SDK and embedded
+  usage) now reuse one run-scoped thread pool across step waves instead of
+  constructing a `ThreadPoolExecutor` per wave, lowering latency on multi-wave
+  chains; host-provided executors and scheduling are unchanged. No migration
+  is needed.
+
 - Reject cyclic saved inner-workflow references during resolution with a composition
   error instead of `RecursionError`. Enforce nesting depth and total inner-workflow
   count limits during reference expansion, before fetching or expanding children
