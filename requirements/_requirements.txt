@@ -26,7 +26,7 @@ pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
 openai>=1.17.0,<2.0.0
 structlog>=24.1.0,<25.0.0
-zxing-cpp~=2.2.0
+zxing-cpp>=2.3.0,<=3.1.1
 boto3>=1.40.0,<=1.41.5
 botocore>=1.40.0,<=1.41.5
 typing_extensions>=4.8.0,<=4.15.0
