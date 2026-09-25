@@ -157,6 +157,35 @@ if KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is not None:
         for entry in KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS.split(",")
         if entry.strip()
     ]
+# Operator policy for the MQTT Reader / MQTT Writer Workflow blocks, which open
+# an outbound connection to the `host`/`port` taken from the workflow definition
+# or its inputs. When True (default, preserves behaviour) that value is
+# honoured, subject to the allowlist below. When False the workflow-provided
+# value is ignored and the blocks connect to the first entry of
+# MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS instead; with no entry configured
+# there, the MQTT blocks are disabled (every run reports an error).
+MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST = str2bool(
+    os.getenv("MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", True)
+)
+# Optional comma-separated list of `host[:port]` MQTT brokers the MQTT Workflow
+# blocks may connect to. When set and a user-provided host is allowed, the
+# workflow's `host:port` must match an entry or the run reports an error; an
+# entry without a port matches that host on any port. When a user-provided host
+# is not allowed, the first entry is what the blocks connect to (port 1883 when
+# the entry has none). Hosts are compared after trimming whitespace, lowercasing
+# and stripping IPv6 brackets; there is no DNS resolution. Empty entries are
+# ignored. A variable that is set but holds no entries is an empty allowlist:
+# nothing is permitted. Default None (no allowlist).
+MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS = os.getenv(
+    "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS"
+)
+if MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS is not None:
+    # a list, not a set: the first entry is the operator's broker
+    MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS = [
+        entry.strip()
+        for entry in MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS.split(",")
+        if entry.strip()
+    ]
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")

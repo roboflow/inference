@@ -52,7 +52,6 @@ Models listed with a 👍 above are permissively licensed for commercial use by 
 
 Models with a ✅ or ❌ have restrictive licensing that can be problematic for commercial use without procuring an additional license.
 
-For models marked with a ✅ above, Roboflow [offers commercial licenses](https://roboflow.com/licensing) on [its paid plans](https://roboflow.com/pricing)
-that allow use in commercial projects without the onerous terms in their default open source licenses.
+For models marked with a ✅ above, [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for every user. A commercial license for self-hosted deployment is available as an [Enterprise add-on](https://roboflow.com/licensing). That license covers commercial use without the obligations in the model's default open source license. Without that add-on, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0.
 
 Models with an ❌ above do not have a commercial license available (from anyone). You may wish to seek legal advice before using them commercially.
