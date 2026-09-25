@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 
 def _class_names(model: Any) -> list | None:
     return getattr(model, "class_names", None)
@@ -234,6 +236,30 @@ def serialize_semantic_segmentation_compact(output: Any, model: Any) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _split_keypoints(item: Any) -> Any:
+    """Split a (keypoints, detections) pair, unwrapping each half."""
+    if isinstance(item, tuple) and len(item) == 2:
+        keypoints, detections = item
+        return _unwrap_batch(keypoints), _unwrap_batch(detections)
+    return item, None
+
+
+def _keypoints_fields(keypoints: Any, detections: Any) -> dict:
+    """xy/class_id/confidence, plus boxes when detections accompany the keypoints."""
+    fields = {
+        "xy": _to_list(keypoints.xy),
+        "class_id": _to_list(keypoints.class_id),
+        "confidence": _to_list(keypoints.confidence),
+    }
+    if detections is not None:
+        fields["boxes"] = {
+            "xyxy": _to_list(detections.xyxy),
+            "class_id": _to_list(detections.class_id),
+            "confidence": _to_list(detections.confidence),
+        }
+    return fields
+
+
 def serialize_keypoints_compact(output: Any, model: Any) -> dict:
     """KeyPoints → roboflow-keypoints-compact-v1"""
     output = _unwrap_batch(output)
@@ -241,21 +267,25 @@ def serialize_keypoints_compact(output: Any, model: Any) -> dict:
         return {
             "type": "roboflow-keypoints-compact-v1",
             "class_names": _class_names(model),
+            "batch": [_keypoints_fields(*_split_keypoints(item)) for item in output],
+        }
+    keypoints, detections = _split_keypoints(output)
+    if isinstance(keypoints, list):
+        detections_list = (
+            detections if isinstance(detections, list) else [None] * len(keypoints)
+        )
+        return {
+            "type": "roboflow-keypoints-compact-v1",
+            "class_names": _class_names(model),
             "batch": [
-                {
-                    "xy": _to_list(o.xy),
-                    "class_id": _to_list(o.class_id),
-                    "confidence": _to_list(o.confidence),
-                }
-                for o in output
+                _keypoints_fields(kp, det)
+                for kp, det in zip(keypoints, detections_list)
             ],
         }
     return {
         "type": "roboflow-keypoints-compact-v1",
         "class_names": _class_names(model),
-        "xy": _to_list(output.xy),
-        "class_id": _to_list(output.class_id),
-        "confidence": _to_list(output.confidence),
+        **_keypoints_fields(keypoints, detections),
     }
 
 
@@ -389,6 +419,22 @@ def serialize_detections_rich(output: Any, model: Any) -> dict:
     }
 
 
+def _classification_rich_row(row: Any, top_id: Any, names: Any) -> dict:
+    """Candidates for one confidence row; top matches top_id, else the sorted first."""
+    candidates = []
+    for j in range(len(row)):
+        c = {"class_id": j, "confidence": float(row[j])}
+        if names and j < len(names):
+            c["class_name"] = names[j]
+        candidates.append(c)
+    candidates.sort(key=lambda x: x["confidence"], reverse=True)
+    if top_id is not None:
+        top = [c for c in candidates if c["class_id"] == int(top_id)][:1]
+    else:
+        top = candidates[:1]
+    return {"candidates": candidates, "top": top}
+
+
 def serialize_classification_rich(output: Any, model: Any) -> dict:
     """ClassificationPrediction → roboflow-classification-rich-v1"""
     output = _unwrap_batch(output)
@@ -406,25 +452,23 @@ def serialize_classification_rich(output: Any, model: Any) -> dict:
             ],
         }
     names = _class_names(model)
-    candidates = []
-    for i in range(len(output.confidence)):
-        c = {
-            "class_id": (
-                _to_py(output.class_id[i])
-                if hasattr(output.class_id, "__len__")
-                else _to_py(output.class_id)
-            ),
-            "confidence": _to_py(output.confidence[i]),
+    confidence = np.asarray(output.confidence)
+    if confidence.ndim == 1:
+        confidence = confidence[None, :]
+    class_id = np.asarray(output.class_id).reshape(-1)
+    bs = confidence.shape[0]
+    top_ids = class_id if len(class_id) == bs else [None] * bs
+    if bs > 1:
+        return {
+            "type": "roboflow-classification-rich-v1",
+            "batch": [
+                _classification_rich_row(confidence[i], top_ids[i], names)
+                for i in range(bs)
+            ],
         }
-        cid = int(c["class_id"])
-        if names and cid < len(names):
-            c["class_name"] = names[cid]
-        candidates.append(c)
-    candidates.sort(key=lambda x: x["confidence"], reverse=True)
     return {
         "type": "roboflow-classification-rich-v1",
-        "candidates": candidates,
-        "top": candidates[:1],
+        **_classification_rich_row(confidence[0], top_ids[0], names),
     }
 
 

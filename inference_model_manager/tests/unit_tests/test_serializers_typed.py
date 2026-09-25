@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from inference_model_manager.serializers_typed import (
@@ -42,6 +43,20 @@ def _semseg():
 
 def _kp():
     return SimpleNamespace(xy=[[1, 2]], class_id=[0], confidence=[0.9])
+
+
+def _det():
+    return SimpleNamespace(xyxy=[[0, 0, 1, 1]], class_id=[0], confidence=[0.9])
+
+
+def _kp_tuple():
+    return ([_kp()], [_det()])
+
+
+def _cls_real(conf, class_id):
+    return SimpleNamespace(
+        confidence=np.asarray([conf]), class_id=np.asarray([class_id])
+    )
 
 
 class TestBatchedOutputs:
@@ -82,6 +97,63 @@ class TestBatchedOutputs:
         out = serialize_classification_rich([_cls(), _cls((0.2, 0.8))], _MODEL)
         assert len(out["batch"]) == 2
         assert out["batch"][1]["top"][0]["class_name"] == "b"
+
+
+class TestKeypointsModelShapes:
+    def test_bare_keypoints(self):
+        out = serialize_keypoints_compact(_kp(), _MODEL)
+        assert out["xy"] == [[1, 2]]
+        assert "boxes" not in out
+
+    def test_single_image_tuple_with_detections(self):
+        out = serialize_keypoints_compact(_kp_tuple(), _MODEL)
+        assert out["xy"] == [[1, 2]]
+        assert out["boxes"]["xyxy"] == [[0, 0, 1, 1]]
+
+    def test_single_image_tuple_without_detections(self):
+        out = serialize_keypoints_compact(([_kp()], None), _MODEL)
+        assert out["xy"] == [[1, 2]]
+        assert "boxes" not in out
+
+    def test_batch_of_tuples(self):
+        out = serialize_keypoints_compact([_kp_tuple(), _kp_tuple()], _MODEL)
+        assert len(out["batch"]) == 2
+        assert out["batch"][0]["boxes"]["xyxy"] == [[0, 0, 1, 1]]
+
+    def test_tuple_with_several_keypoints_and_no_detections(self):
+        out = serialize_keypoints_compact(([_kp(), _kp()], None), _MODEL)
+        assert len(out["batch"]) == 2
+        assert "boxes" not in out["batch"][0]
+        assert "boxes" not in out["batch"][1]
+
+
+class TestClassificationRichRealShapes:
+    def test_two_class_single_image_returns_two_candidates(self):
+        out = serialize_classification_rich(_cls_real((0.9, 0.1), 0), _MODEL)
+        assert len(out["candidates"]) == 2
+        assert out["top"][0]["class_id"] == 0
+
+    def test_batch_of_two(self):
+        out = serialize_classification_rich(
+            [_cls_real((0.9, 0.1), 0), _cls_real((0.2, 0.8), 1)], _MODEL
+        )
+        assert len(out["batch"]) == 2
+        assert out["batch"][1]["top"][0]["class_id"] == 1
+
+    def test_tied_confidence_top_comes_from_class_id_not_sort(self):
+        out = serialize_classification_rich(_cls_real((0.5, 0.5), 1), _MODEL)
+        assert out["top"][0]["class_id"] == 1
+
+    def test_single_object_multi_row_confidence_returns_batch(self):
+        out = serialize_classification_rich(
+            SimpleNamespace(
+                confidence=np.asarray([[0.9, 0.1], [0.2, 0.8]]),
+                class_id=np.asarray([0, 1]),
+            ),
+            _MODEL,
+        )
+        assert len(out["batch"]) == 2
+        assert out["batch"][1]["top"][0]["class_id"] == 1
 
 
 class _RLEMasks:

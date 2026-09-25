@@ -5,7 +5,7 @@ description = "FastAPI inference server — direct client for inference-model-ma
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "inference-model-manager==0.4.0",
+  "inference-model-manager==0.5.0",
   "inference-sdk>=1.6.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
