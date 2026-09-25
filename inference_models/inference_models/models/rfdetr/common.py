@@ -17,7 +17,7 @@ from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
-    align_instance_segmentation_results_to_rle_masks,
+    align_instance_segmentation_results_to_rle_masks_batched,
     rescale_image_detections,
 )
 from inference_models.models.optimization.triton_jit import (
@@ -366,8 +366,12 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         image_meta.pad_bottom,
     )
     selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
-    aligned_boxes, rle_masks = [], []
-    for bbox, mask in align_instance_segmentation_results_to_rle_masks(
+    # Align masks in bounded chunks (the same routine the dense path uses) and
+    # RLE-encode each chunk with a single device->host transfer. The previous
+    # per-detection generator (align_instance_segmentation_results_to_rle_masks)
+    # did a .cpu() sync per mask, serializing the GPU N times per frame on
+    # Jetson. Output is equivalent. This is the non-Triton fallback path.
+    aligned_boxes, rle_masks = align_instance_segmentation_results_to_rle_masks_batched(
         image_bboxes=selected_boxes_xyxy,
         masks=selected_masks,
         padding=padding,
@@ -377,9 +381,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         size_after_pre_processing=image_meta.size_after_pre_processing,
         inference_size=denorm_size,
         static_crop_offset=image_meta.static_crop_offset,
-    ):
-        aligned_boxes.append(bbox)
-        rle_masks.append(mask)
+    )
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
         image_size=(
             image_meta.original_size.height,
@@ -387,14 +389,8 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
         ),
         masks=rle_masks,
     )
-    if len(aligned_boxes) > 0:
-        aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
-    else:
-        aligned_boxes_tensor = torch.empty(
-            (0, 4), dtype=torch.int32, device=image_bboxes.device
-        )
     return InstanceDetections(
-        xyxy=aligned_boxes_tensor.round().int(),
+        xyxy=aligned_boxes.round().int(),
         confidence=confidence,
         class_id=top_classes.int(),
         mask=instances_masks,
