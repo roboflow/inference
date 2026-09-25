@@ -18,7 +18,13 @@ from uuid import uuid4
 import numpy as np
 import torch
 from pycocotools import mask as mask_utils
-from roboflow_workflows.core_steps.common.keypoints import validate_keypoints_padding
+from roboflow_workflows.core_steps.common.keypoints import (
+    COCO_KEYPOINT_NAMES,
+    KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINTS_PADDING_CELLS,
+    is_coco_skeleton,
+    validate_keypoints_padding,
+)
 from roboflow_workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from roboflow_workflows.execution_engine.constants import (
     CLASS_ID_KEY,
@@ -1013,44 +1019,84 @@ def build_native_key_points(
     per_instance_xy: List[Optional[List[List[float]]]],
     per_instance_confidence: List[Optional[List[float]]],
     object_class_ids: List[Any],
-    image_metadata: dict,
+    image_metadata: Optional[dict],
+    per_instance_keypoint_class_ids: Optional[List[Optional[List[Any]]]] = None,
+    per_instance_keypoint_class_names: Optional[List[Optional[List[Any]]]] = None,
+    device: Optional[Any] = None,
 ) -> KeyPoints:
-    """Rebuild a padded native ``KeyPoints`` from per-instance keypoint lists (the
-    flattened ``keypoints_xy`` / ``keypoints_confidence`` shape the keypoint
-    producer writes into ``bboxes_metadata``). Mirrors
-    ``keypoint_detection/v3_tensor._native_key_points_from_inference_predictions``:
-    ragged per-instance keypoint counts are zero-padded to a uniform ``K`` with
-    confidence ``0.0`` in the padding rows. ``class_id`` is the per-instance
-    *object* class id (one per skeleton), matching the bbox ``Detections.class_id``.
-    Used by the rollup block and the dynamic-block representation boundary to
-    rebuild the ``(KeyPoints, Detections)`` tuple the visualizer siblings require.
+    """Rebuild a native ``KeyPoints`` from per-instance keypoint lists (the
+    flattened ``keypoints_xy`` / ``keypoints_confidence`` / ``keypoints_class_id``
+    / ``keypoints_class_name`` shape the keypoint producers write into
+    ``bboxes_metadata`` and the remote keypoint model steps receive).
+
+    With ``per_instance_keypoint_class_ids`` every keypoint is placed at the slot
+    given by its keypoint class id, so the result keeps the fixed skeleton order
+    the locally executed models emit even though model responses omit keypoints
+    below the keypoint confidence threshold. Slots without a keypoint stay at
+    ``(0, 0)`` with confidence ``0.0`` (``to_supervision`` marks them invisible).
+    Padding slots (``KEYPOINT_PADDING_CLASS_NAME``) are skipped, and when every
+    keypoint sits at its COCO slot the width is raised to the full COCO skeleton
+    so supervision's default skeleton is found. Without keypoint class ids, or
+    when an id is negative or the slotted width would exceed the keypoint
+    padding limit, the keypoints are packed leading and zero-padded to the
+    batch-wide maximum, as before.
+    ``class_id`` is the per-instance *object* class id (one per skeleton),
+    matching the bbox ``Detections.class_id``. Used by the keypoint model steps
+    (remote execution), the rollup block and the dynamic-block representation
+    boundary to rebuild the ``(KeyPoints, Detections)`` tuple the visualizer
+    siblings require.
     """
     number_of_instances = len(object_class_ids)
     normalised_xy = [list(xy) if xy else [] for xy in per_instance_xy]
     normalised_confidence = [
         list(conf) if conf else [] for conf in per_instance_confidence
     ]
-    max_key_points = max((len(xy) for xy in normalised_xy), default=0)
-    validate_keypoints_padding(number_of_instances, max_key_points)
+    slotted = None
+    if per_instance_keypoint_class_ids is not None:
+        slotted = _place_key_points_in_skeleton_slots(
+            normalised_xy=normalised_xy,
+            normalised_confidence=normalised_confidence,
+            per_instance_keypoint_class_ids=per_instance_keypoint_class_ids,
+            per_instance_keypoint_class_names=per_instance_keypoint_class_names,
+        )
+    if slotted is not None:
+        placed, key_points_count = slotted
+    else:
+        key_points_count = max((len(xy) for xy in normalised_xy), default=0)
+        placed = {
+            (row, position): (
+                float(xy[0]),
+                float(xy[1]),
+                (
+                    float(normalised_confidence[row][position])
+                    if position < len(normalised_confidence[row])
+                    else 0.0
+                ),
+            )
+            for row, xy_row in enumerate(normalised_xy)
+            for position, xy in enumerate(xy_row)
+        }
+    validate_keypoints_padding(number_of_instances, key_points_count)
     xy_tensor = torch.zeros(
-        (number_of_instances, max_key_points, 2), dtype=torch.float32
+        (number_of_instances, key_points_count, 2), dtype=torch.float32, device=device
     )
     confidence_tensor = torch.zeros(
-        (number_of_instances, max_key_points), dtype=torch.float32
+        (number_of_instances, key_points_count), dtype=torch.float32, device=device
     )
-    for index in range(number_of_instances):
-        keypoint_count = len(normalised_xy[index])
-        if keypoint_count > 0:
-            xy_tensor[index, :keypoint_count] = torch.as_tensor(
-                normalised_xy[index], dtype=torch.float32
-            )
-        confidence_count = len(normalised_confidence[index])
-        if confidence_count > 0:
-            confidence_tensor[index, :confidence_count] = torch.as_tensor(
-                normalised_confidence[index], dtype=torch.float32
-            )
+    if placed:
+        rows = torch.as_tensor(
+            [row for row, _ in placed], dtype=torch.long, device=device
+        )
+        slots = torch.as_tensor(
+            [slot for _, slot in placed], dtype=torch.long, device=device
+        )
+        values = torch.as_tensor(
+            list(placed.values()), dtype=torch.float32, device=device
+        )
+        xy_tensor[rows, slots] = values[:, :2]
+        confidence_tensor[rows, slots] = values[:, 2]
     class_id_tensor = torch.as_tensor(
-        [int(value) for value in object_class_ids], dtype=torch.long
+        [int(value) for value in object_class_ids], dtype=torch.long, device=device
     ).reshape(-1)
     return KeyPoints(
         xy=xy_tensor,
@@ -1058,3 +1104,69 @@ def build_native_key_points(
         confidence=confidence_tensor,
         image_metadata=image_metadata,
     )
+
+
+def _place_key_points_in_skeleton_slots(
+    normalised_xy: List[List[List[float]]],
+    normalised_confidence: List[List[float]],
+    per_instance_keypoint_class_ids: List[Optional[List[Any]]],
+    per_instance_keypoint_class_names: Optional[List[Optional[List[Any]]]],
+) -> Optional[Tuple[Dict[Tuple[int, int], Tuple[float, float, float]], int]]:
+    """Map every real keypoint to ``(row, slot) -> (x, y, confidence)`` with
+    ``slot`` its keypoint class id, and return the slot count. A later keypoint
+    in an already taken slot wins, matching the numpy visualizer's scatter.
+
+    Returns ``None`` when the ids cannot be trusted, so the caller keeps the
+    packed layout: a negative id, or ids so large that the slotted tensors would
+    exceed the keypoint padding limit. Class ids reach the builders unchecked
+    from remote responses and runtime input, so the width must not follow them
+    blindly (the same rule the numpy Keypoint Visualization applies)."""
+    placed: Dict[Tuple[int, int], Tuple[float, float, float]] = {}
+    real_class_ids: List[int] = []
+    real_class_names: List[Any] = []
+    for row, xy_row in enumerate(normalised_xy):
+        confidence_row = normalised_confidence[row]
+        class_ids_row = _optional_row(per_instance_keypoint_class_ids, row)
+        class_names_row = _optional_row(per_instance_keypoint_class_names, row)
+        for position, xy in enumerate(xy_row):
+            class_name = (
+                class_names_row[position] if position < len(class_names_row) else None
+            )
+            if (
+                class_name is not None
+                and str(class_name) == KEYPOINT_PADDING_CLASS_NAME
+            ):
+                continue
+            slot = position
+            if position < len(class_ids_row):
+                try:
+                    slot = int(class_ids_row[position])
+                except (TypeError, ValueError):
+                    return None
+                if slot < 0:
+                    return None
+            confidence = (
+                float(confidence_row[position])
+                if position < len(confidence_row)
+                else 0.0
+            )
+            placed[(row, slot)] = (float(xy[0]), float(xy[1]), confidence)
+            real_class_ids.append(slot)
+            real_class_names.append(class_name)
+    key_points_count = max((slot + 1 for _, slot in placed), default=0)
+    if per_instance_keypoint_class_names is not None and is_coco_skeleton(
+        real_class_ids, real_class_names
+    ):
+        key_points_count = max(key_points_count, len(COCO_KEYPOINT_NAMES))
+    if len(normalised_xy) * key_points_count > MAX_KEYPOINTS_PADDING_CELLS:
+        return None
+    return placed, key_points_count
+
+
+def _optional_row(
+    per_instance_values: Optional[List[Optional[List[Any]]]], row: int
+) -> List[Any]:
+    if per_instance_values is None or row >= len(per_instance_values):
+        return []
+    values = per_instance_values[row]
+    return list(values) if values else []

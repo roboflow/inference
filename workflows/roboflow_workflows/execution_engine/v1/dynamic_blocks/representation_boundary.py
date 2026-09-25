@@ -1063,11 +1063,35 @@ def sv_detections_to_native_key_point_prediction(
     class_ids = (
         bbox_component.class_id.detach().cpu().tolist() if detections_number > 0 else []
     )
+    keypoint_class_id_column = sv_detections.data.get(
+        KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS
+    )
+    keypoint_class_name_column = sv_detections.data.get(
+        KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS
+    )
+    per_instance_keypoint_class_ids: Optional[List[List[Any]]] = None
+    per_instance_keypoint_class_names: Optional[List[List[Any]]] = None
+    if keypoint_class_id_column is not None:
+        # Place keypoints at their skeleton slots (see build_native_key_points);
+        # the padded columns mark padding by class name, which the builder skips.
+        per_instance_keypoint_class_ids = [
+            np.asarray(keypoint_class_id_column[index]).reshape(-1).tolist()
+            for index in range(detections_number)
+        ]
+        if keypoint_class_name_column is not None:
+            per_instance_keypoint_class_names = [
+                np.asarray(keypoint_class_name_column[index], dtype=object)
+                .reshape(-1)
+                .tolist()
+                for index in range(detections_number)
+            ]
     key_points = build_native_key_points(
         per_instance_xy=per_instance_xy,
         per_instance_confidence=per_instance_confidence,
         object_class_ids=class_ids,
         image_metadata=bbox_component.image_metadata or {},
+        per_instance_keypoint_class_ids=per_instance_keypoint_class_ids,
+        per_instance_keypoint_class_names=per_instance_keypoint_class_names,
     )
     return key_points, bbox_component
 

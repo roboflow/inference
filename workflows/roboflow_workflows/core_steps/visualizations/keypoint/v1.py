@@ -5,8 +5,10 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.keypoints import (
+    COCO_KEYPOINT_NAMES,
     KEYPOINT_PADDING_CLASS_NAME,
     MAX_KEYPOINTS_PADDING_CELLS,
+    is_coco_skeleton,
 )
 from roboflow_workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
@@ -201,28 +203,6 @@ class KeypointManifest(VisualizationManifest):
         return ">=1.2.0,<2.0.0"
 
 
-COCO_KEYPOINT_NAMES = (
-    "nose",
-    "left_eye",
-    "right_eye",
-    "left_ear",
-    "right_ear",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_hip",
-    "right_hip",
-    "left_knee",
-    "right_knee",
-    "left_ankle",
-    "right_ankle",
-)
-COCO_KEYPOINT_INDEX = {name: index for index, name in enumerate(COCO_KEYPOINT_NAMES)}
-
-
 def _keypoints_in_skeleton_slots(
     detections: sv.Detections,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -238,8 +218,9 @@ def _keypoints_in_skeleton_slots(
     Scattering by `keypoints_class_id` restores the fixed skeleton order and
     leaves undetected slots at (0, 0), which supervision's annotators skip. When
     every keypoint sits at its COCO position (its class id is that name's index
-    in `COCO_KEYPOINT_NAMES`), the slots are widened to all 17 so the COCO
-    skeleton is found even when trailing joints are missing everywhere.
+    in `COCO_KEYPOINT_NAMES`, see `is_coco_skeleton`), the slots are widened to
+    all 17 so the COCO skeleton is found even when trailing joints are missing
+    everywhere.
 
     Keypoints are returned as stored when they carry no class ids, or when the
     ids cannot be trusted: a negative id, or ids so large that the slotted
@@ -265,10 +246,7 @@ def _keypoints_in_skeleton_slots(
     if real_class_id.min() < 0:
         return keypoints_xy, keypoints_confidence, keypoints_class_name
     slots = max(keypoints_xy.shape[1], int(real_class_id.max()) + 1)
-    if all(
-        COCO_KEYPOINT_INDEX.get(str(name)) == class_id
-        for name, class_id in zip(keypoints_class_name[is_real], real_class_id)
-    ):
+    if is_coco_skeleton(real_class_id, keypoints_class_name[is_real]):
         slots = max(slots, len(COCO_KEYPOINT_NAMES))
     detections_count = keypoints_xy.shape[0]
     if detections_count * slots > MAX_KEYPOINTS_PADDING_CELLS:
