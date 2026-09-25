@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.keypoints import MAX_KEYPOINT_SLOTS
 from roboflow_workflows.core_steps.visualizations.keypoint.v1 import (
     COCO_KEYPOINT_NAMES,
     KeypointManifest,
@@ -520,10 +521,28 @@ def test_keypoints_with_coco_names_out_of_coco_order_are_not_widened() -> None:
     assert key_points.xy.shape == (1, 2, 2)
 
 
-def test_keypoints_with_oversized_class_id_are_used_as_stored() -> None:
-    # given: runtime input can carry any class id
+def test_keypoints_with_class_id_at_the_slot_limit_are_placed() -> None:
+    # given: the highest class id a skeleton may use
     predictions = _partial_pose_predictions([0])
-    predictions.data["keypoints_class_id"] = np.array([[1_000_000_000]], dtype=int)
+    predictions.data["keypoints_class_id"] = np.array(
+        [[MAX_KEYPOINT_SLOTS - 1]], dtype=int
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, MAX_KEYPOINT_SLOTS, 2)
+    assert tuple(key_points.xy[0, MAX_KEYPOINT_SLOTS - 1]) == (100.0, 100.0)
+
+
+def test_keypoints_with_class_id_beyond_the_slot_limit_are_used_as_stored() -> None:
+    # given: runtime input can carry any class id; one slot past the limit stays
+    # far below the padding cell limit, so only the slot limit stops the widening
+    predictions = _partial_pose_predictions([0])
+    predictions.data["keypoints_class_id"] = np.array([[MAX_KEYPOINT_SLOTS]], dtype=int)
 
     # when
     key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
@@ -532,6 +551,46 @@ def test_keypoints_with_oversized_class_id_are_used_as_stored() -> None:
 
     # then
     assert key_points.xy.shape == (1, 1, 2)
+
+
+def test_padding_slots_are_not_scattered_onto_the_nose() -> None:
+    # given: the first person has only nose and right_eye, padded to the batch
+    # width with the padding class name and class id 0, like
+    # `add_inference_keypoints_to_sv_detections` stores it
+    predictions = sv.Detections(
+        xyxy=np.array([[50, 50, 450, 450], [10, 10, 40, 40]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        data={
+            "keypoints_xy": np.array(
+                [
+                    [[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]],
+                    [[200.0, 200.0], [210.0, 220.0], [220.0, 240.0]],
+                ],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.8, 0.0], [0.9, 0.9, 0.9]], dtype=np.float32
+            ),
+            "keypoints_class_name": np.array(
+                [["nose", "right_eye", ""], ["nose", "left_eye", "right_eye"]],
+                dtype=object,
+            ),
+            "keypoints_class_id": np.array([[0, 2, 0], [0, 1, 2]], dtype=int),
+        },
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then: the padding row (class id 0) must not overwrite the real nose
+    assert key_points.xy.shape == (2, 17, 2)
+    assert tuple(key_points.xy[0, 0]) == (100.0, 100.0)
+    assert tuple(key_points.xy[0, 2]) == (120.0, 140.0)
+    assert tuple(key_points.xy[0, 1]) == (0.0, 0.0)
+    assert key_points.data["class_name"][0, 0] == "nose"
+    assert key_points.data["class_name"][0, 1] == ""
 
 
 def test_keypoints_with_negative_class_id_are_used_as_stored() -> None:

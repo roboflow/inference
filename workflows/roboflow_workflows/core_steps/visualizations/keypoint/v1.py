@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.keypoints import (
     COCO_KEYPOINT_NAMES,
     KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINT_SLOTS,
     MAX_KEYPOINTS_PADDING_CELLS,
     is_coco_skeleton,
 )
@@ -223,9 +224,11 @@ def _keypoints_in_skeleton_slots(
     everywhere.
 
     Keypoints are returned as stored when they carry no class ids, or when the
-    ids cannot be trusted: a negative id, or ids so large that the slotted
-    arrays would exceed the keypoint padding limit. Class ids reach this block
-    unchecked from runtime input, so the width must not follow them blindly.
+    ids cannot be trusted: a negative id, an id beyond the per-skeleton slot
+    limit (`MAX_KEYPOINT_SLOTS`), or ids so large that the slotted arrays would
+    exceed the keypoint padding limit. Class ids reach this block unchecked from
+    runtime input, so the width must not follow them blindly: the annotators
+    iterate every slot in Python, so width is CPU time, not only memory.
     """
     keypoints_xy = np.asarray(detections.data["keypoints_xy"], dtype=np.float32)
     keypoints_confidence = np.asarray(
@@ -249,7 +252,10 @@ def _keypoints_in_skeleton_slots(
     if is_coco_skeleton(real_class_id, keypoints_class_name[is_real]):
         slots = max(slots, len(COCO_KEYPOINT_NAMES))
     detections_count = keypoints_xy.shape[0]
-    if detections_count * slots > MAX_KEYPOINTS_PADDING_CELLS:
+    if (
+        slots > MAX_KEYPOINT_SLOTS
+        or detections_count * slots > MAX_KEYPOINTS_PADDING_CELLS
+    ):
         return keypoints_xy, keypoints_confidence, keypoints_class_name
 
     slotted_xy = np.zeros((detections_count, slots, 2), dtype=np.float32)

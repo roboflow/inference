@@ -21,6 +21,7 @@ from pycocotools import mask as mask_utils
 from roboflow_workflows.core_steps.common.keypoints import (
     COCO_KEYPOINT_NAMES,
     KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINT_SLOTS,
     MAX_KEYPOINTS_PADDING_CELLS,
     is_coco_skeleton,
     validate_keypoints_padding,
@@ -1036,10 +1037,10 @@ def build_native_key_points(
     ``(0, 0)`` with confidence ``0.0`` (``to_supervision`` marks them invisible).
     Padding slots (``KEYPOINT_PADDING_CLASS_NAME``) are skipped, and when every
     keypoint sits at its COCO slot the width is raised to the full COCO skeleton
-    so supervision's default skeleton is found. Without keypoint class ids, or
-    when an id is negative or the slotted width would exceed the keypoint
-    padding limit, the keypoints are packed leading and zero-padded to the
-    batch-wide maximum, as before.
+    so supervision's default skeleton is found. Without keypoint class ids or
+    class names, or when an id is negative or the slotted width would exceed
+    the per-skeleton slot limit or the keypoint padding limit, the keypoints
+    are packed leading and zero-padded to the batch-wide maximum, as before.
     ``class_id`` is the per-instance *object* class id (one per skeleton),
     matching the bbox ``Detections.class_id``. Used by the keypoint model steps
     (remote execution), the rollup block and the dynamic-block representation
@@ -1117,10 +1118,17 @@ def _place_key_points_in_skeleton_slots(
     in an already taken slot wins, matching the numpy visualizer's scatter.
 
     Returns ``None`` when the ids cannot be trusted, so the caller keeps the
-    packed layout: a negative id, or ids so large that the slotted tensors would
-    exceed the keypoint padding limit. Class ids reach the builders unchecked
-    from remote responses and runtime input, so the width must not follow them
-    blindly (the same rule the numpy Keypoint Visualization applies)."""
+    packed layout: no class names to tell padding from real keypoints, a
+    negative id, an id beyond the per-skeleton slot limit (``MAX_KEYPOINT_SLOTS``),
+    or ids so large that the slotted tensors would exceed the keypoint padding
+    limit. Class ids reach the builders unchecked from remote responses and
+    runtime input, so the width must not follow them blindly: supervision's
+    annotators iterate every slot in Python, so width is CPU time, not only
+    memory (the same rules the numpy Keypoint Visualization applies)."""
+    if per_instance_keypoint_class_names is None:
+        # Padding slots are recognised by class name only; without names a
+        # padding row (class id 0) would overwrite a real slot-0 keypoint.
+        return None
     placed: Dict[Tuple[int, int], Tuple[float, float, float]] = {}
     real_class_ids: List[int] = []
     real_class_names: List[Any] = []
@@ -1154,11 +1162,12 @@ def _place_key_points_in_skeleton_slots(
             real_class_ids.append(slot)
             real_class_names.append(class_name)
     key_points_count = max((slot + 1 for _, slot in placed), default=0)
-    if per_instance_keypoint_class_names is not None and is_coco_skeleton(
-        real_class_ids, real_class_names
-    ):
+    if is_coco_skeleton(real_class_ids, real_class_names):
         key_points_count = max(key_points_count, len(COCO_KEYPOINT_NAMES))
-    if len(normalised_xy) * key_points_count > MAX_KEYPOINTS_PADDING_CELLS:
+    if (
+        key_points_count > MAX_KEYPOINT_SLOTS
+        or len(normalised_xy) * key_points_count > MAX_KEYPOINTS_PADDING_CELLS
+    ):
         return None
     return placed, key_points_count
 

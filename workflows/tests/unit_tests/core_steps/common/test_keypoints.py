@@ -9,6 +9,7 @@ from roboflow_workflows.core_steps.common import keypoints
 from roboflow_workflows.core_steps.common.keypoints import (
     COCO_KEYPOINT_NAMES,
     KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINT_SLOTS,
     is_coco_skeleton,
     real_keypoints_count,
 )
@@ -431,14 +432,136 @@ def test_native_key_points_with_negative_class_id_keep_packed_layout(
 
 
 @pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
-def test_native_key_points_with_oversized_class_id_keep_packed_layout(
+def test_native_key_points_with_class_id_at_the_slot_limit_are_placed(
     builder: str,
 ) -> None:
-    # given: an id that would need a billion slots
-    predictions = _remote_keypoint_dicts([[(0, "nose"), (1_000_000_000, "x")]])
+    # given: the highest class id a skeleton may use
+    predictions = _remote_keypoint_dicts([[(0, "a"), (MAX_KEYPOINT_SLOTS - 1, "z")]])
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, MAX_KEYPOINT_SLOTS, 2)
+    assert key_points.confidence[0, MAX_KEYPOINT_SLOTS - 1].item() > 0
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_with_class_id_beyond_the_slot_limit_keep_packed_layout(
+    builder: str,
+) -> None:
+    # given: one slot past the limit stays far below the padding cell limit, so
+    # only the slot limit stops the widening (and the CPU cost that comes with it)
+    predictions = _remote_keypoint_dicts([[(0, "a"), (MAX_KEYPOINT_SLOTS, "z")]])
 
     # when
     key_points = _build_native_key_points(builder, predictions)
 
     # then
     assert key_points.xy.shape == (1, 2, 2)
+
+
+def test_native_key_points_with_class_ids_but_no_names_keep_packed_layout() -> None:
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        build_native_key_points,
+    )
+
+    # given: ids without names; the padding row carries class id 0 like a nose
+    key_points = build_native_key_points(
+        per_instance_xy=[[[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]]],
+        per_instance_confidence=[[0.9, 0.8, 0.0]],
+        object_class_ids=[0],
+        image_metadata={},
+        per_instance_keypoint_class_ids=[[0, 2, 0]],
+    )
+
+    # then: packed and lossless, nothing overwrote the nose
+    assert key_points.xy.shape == (1, 3, 2)
+    assert key_points.xy[0].tolist() == [[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]]
+
+
+def _padded_sv_keypoints_with_holes() -> sv.Detections:
+    # Two people stored as the numpy producers store them: real keypoints first,
+    # padding after (padding class name, class id 0). The first person is missing
+    # left_eye (1) and left_ear (3); the second has only the shoulders.
+    return sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [10, 10, 20, 20]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.9, 0.8], dtype=np.float32),
+        data={
+            "keypoints_xy": np.array(
+                [
+                    [[100.0, 100.0], [120.0, 140.0], [140.0, 180.0]],
+                    [[150.0, 200.0], [160.0, 220.0], [0.0, 0.0]],
+                ],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.8, 0.7], [0.8, 0.7, 0.0]], dtype=np.float32
+            ),
+            "keypoints_class_name": np.array(
+                [
+                    ["nose", "right_eye", "right_ear"],
+                    ["left_shoulder", "right_shoulder", ""],
+                ],
+                dtype=object,
+            ),
+            "keypoints_class_id": np.array([[0, 2, 4], [5, 6, 0]], dtype=int),
+        },
+    )
+
+
+def test_boundary_keeps_packed_layout_without_class_names() -> None:
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        sv_detections_to_native_key_point_prediction,
+    )
+
+    # given: an id column but no name column, so padding cannot be told apart
+    sv_detections = _padded_sv_keypoints_with_holes()
+    del sv_detections.data["keypoints_class_name"]
+
+    # when
+    key_points, _ = sv_detections_to_native_key_point_prediction(sv_detections)
+
+    # then: packed as stored
+    assert key_points.xy.shape == (2, 3, 2)
+    assert np.array_equal(key_points.xy.numpy(), sv_detections.data["keypoints_xy"])
+
+
+def test_boundary_round_trip_with_holes_is_lossless() -> None:
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        native_key_point_prediction_to_sv,
+        sv_detections_to_native_key_point_prediction,
+    )
+
+    # given
+    sv_detections = _padded_sv_keypoints_with_holes()
+
+    # when: legacy -> native (slotted) -> legacy -> native
+    key_points, detections = sv_detections_to_native_key_point_prediction(sv_detections)
+    round_tripped = native_key_point_prediction_to_sv(
+        (key_points, detections), block_name="block", value_name="predictions"
+    )
+    key_points_again, _ = sv_detections_to_native_key_point_prediction(round_tripped)
+
+    # then: the native side has skeleton slots, the legacy side keeps the packed
+    # columns, and a second crossing yields the same slots
+    assert key_points.xy.shape == (2, 17, 2)
+    assert key_points.xy[0, [0, 2, 4]].tolist() == [
+        [100.0, 100.0],
+        [120.0, 140.0],
+        [140.0, 180.0],
+    ]
+    assert key_points.xy[0, [1, 3]].abs().sum().item() == 0.0
+    assert key_points.xy[1, [5, 6]].tolist() == [[150.0, 200.0], [160.0, 220.0]]
+    for key in (
+        "keypoints_xy",
+        "keypoints_confidence",
+        "keypoints_class_name",
+        "keypoints_class_id",
+    ):
+        assert np.array_equal(round_tripped.data[key], sv_detections.data[key]), key
+    assert np.array_equal(key_points_again.xy.numpy(), key_points.xy.numpy())
+    assert np.array_equal(
+        key_points_again.confidence.numpy(), key_points.confidence.numpy()
+    )

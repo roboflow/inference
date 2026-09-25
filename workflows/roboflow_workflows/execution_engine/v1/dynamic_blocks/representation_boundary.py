@@ -1071,20 +1071,20 @@ def sv_detections_to_native_key_point_prediction(
     )
     per_instance_keypoint_class_ids: Optional[List[List[Any]]] = None
     per_instance_keypoint_class_names: Optional[List[List[Any]]] = None
-    if keypoint_class_id_column is not None:
-        # Place keypoints at their skeleton slots (see build_native_key_points);
-        # the padded columns mark padding by class name, which the builder skips.
+    if keypoint_class_id_column is not None and keypoint_class_name_column is not None:
+        # Place keypoints at their skeleton slots (see build_native_key_points).
+        # Padding is marked by class name only, so both columns are required;
+        # without names the keypoints stay packed as stored.
         per_instance_keypoint_class_ids = [
             np.asarray(keypoint_class_id_column[index]).reshape(-1).tolist()
             for index in range(detections_number)
         ]
-        if keypoint_class_name_column is not None:
-            per_instance_keypoint_class_names = [
-                np.asarray(keypoint_class_name_column[index], dtype=object)
-                .reshape(-1)
-                .tolist()
-                for index in range(detections_number)
-            ]
+        per_instance_keypoint_class_names = [
+            np.asarray(keypoint_class_name_column[index], dtype=object)
+            .reshape(-1)
+            .tolist()
+            for index in range(detections_number)
+        ]
     key_points = build_native_key_points(
         per_instance_xy=per_instance_xy,
         per_instance_confidence=per_instance_confidence,

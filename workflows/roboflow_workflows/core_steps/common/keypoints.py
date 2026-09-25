@@ -26,6 +26,13 @@ KEYPOINT_PADDING_CLASS_NAME = ""
 # torch). A limit on real keypoints alone would not bound ragged padding.
 MAX_KEYPOINTS_PADDING_CELLS = 1_000_000
 
+# Bounds the slot count of one skeleton when keypoints are placed by class id.
+# Class ids arrive unchecked from runtime input and remote responses, and the
+# cell limit above bounds memory only: a single keypoint with class id 999,999
+# stays under it and would still send supervision's annotators through a
+# million-slot Python loop per frame. No real skeleton comes close to this.
+MAX_KEYPOINT_SLOTS = 1_024
+
 
 def validate_keypoints_padding(detections_count: int, max_keypoints: int) -> None:
     padding_cells = detections_count * max_keypoints
