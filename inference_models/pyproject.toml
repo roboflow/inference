@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.38.0"
+version = "0.39.0.dev20260925"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"

@@ -1183,7 +1183,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.38.0"
+version = "0.39.0.dev20260925"
 source = { virtual = "." }
 dependencies = [
     { name = "safetensors" },
