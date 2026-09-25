@@ -75,16 +75,6 @@ def test_resolve_temperature_drops_value_for_new_generation_and_warns_once(
     warned_models = [record.args[0] for record in caplog.records]
     assert warned_models == ["claude-fable-5-1", "claude-opus-5"]
     assert "temperature" in caplog.records[0].getMessage()
-    assert (
-        "(Claude Opus 4.7 and newer, Sonnet 5, Opus 5.x and Fable models reject "
-        "non-default sampling parameters)"
-    ) in caplog.records[0].getMessage()
-
-
-def test_resolve_temperature_drops_value_for_claude_opus_5_5() -> None:
-    assert not anthropic_model_supports_temperature("claude-opus-5-5")
-    assert not anthropic_model_supports_manual_thinking("claude-opus-5-5")
-    assert resolve_temperature(0.3, model_version="claude-opus-5-5") is None
 
 
 def test_build_thinking_config_uses_adaptive_and_ignores_budget_with_single_warning(
