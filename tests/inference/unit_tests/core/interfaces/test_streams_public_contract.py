@@ -21,6 +21,8 @@ from inference.core.interfaces.stream import sinks
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.stream import Stream
 
+from .conftest import require_git_baseline_history
+
 # (qualified name, callable, expected signature hash, expected docstring hash)
 # Hashes are sha256, truncated to 16 hex chars - collision risk is irrelevant
 # here, this is a change-detector, not a security control.
@@ -178,14 +180,17 @@ def test_active_learning_sink_signature_shape_is_unchanged() -> None:
     import subprocess
     from pathlib import Path
 
+    baseline_sha = "65ad2beaaca0825bffc2fbbe99199d3a40994324"
+    project_root = Path(__file__).resolve().parents[5]
+    require_git_baseline_history(baseline_sha, project_root=project_root)
+
     baseline_source = subprocess.run(
         [
             "git",
             "show",
-            "65ad2beaaca0825bffc2fbbe99199d3a40994324:"
-            "inference/core/interfaces/stream/sinks.py",
+            f"{baseline_sha}:inference/core/interfaces/stream/sinks.py",
         ],
-        cwd=Path(__file__).resolve().parents[5],
+        cwd=project_root,
         capture_output=True,
         text=True,
         check=True,
