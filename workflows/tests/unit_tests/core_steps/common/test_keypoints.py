@@ -7,7 +7,10 @@ import pytest
 import supervision as sv
 from roboflow_workflows.core_steps.common import keypoints
 from roboflow_workflows.core_steps.common.keypoints import (
+    COCO_KEYPOINT_NAMES,
     KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINT_SLOTS,
+    is_coco_skeleton,
     real_keypoints_count,
 )
 
@@ -74,8 +77,9 @@ def test_keypoint_padding_rejects_before_allocation(
     monkeypatch.setattr(keypoints, "MAX_KEYPOINTS_PADDING_CELLS", 4)
     predictions = [{"keypoints": []} for _ in range(3)]
     predictions[large_index]["keypoints"] = [
-        {"x": 1, "y": 2, "class": "nose", "class_id": 0, "confidence": 0.9}
-    ] * 2
+        {"x": 1, "y": 2, "class": "tip", "class_id": 0, "confidence": 0.9},
+        {"x": 3, "y": 4, "class": "base", "class_id": 1, "confidence": 0.8},
+    ]
     metadata = [
         {
             "keypoints_xy": [[k["x"], k["y"]] for k in p["keypoints"]],
@@ -189,3 +193,375 @@ def test_workflow_rejects_excessive_keypoint_padding(
     payload["predictions"] = predictions[:2]
     result = engine.run(runtime_parameters={"detections": payload})
     assert result[0]["detections"].data["keypoints_xy"].shape == (2, 2, 2)
+
+
+def test_is_coco_skeleton_requires_ids_at_coco_indices() -> None:
+    assert is_coco_skeleton([0, 2, 4], ["nose", "right_eye", "right_ear"])
+    assert is_coco_skeleton(range(17), COCO_KEYPOINT_NAMES)
+    # COCO names numbered in another order are a different skeleton
+    assert not is_coco_skeleton([0, 1, 2], ["left_eye", "right_eye", "nose"])
+    assert not is_coco_skeleton([0, 1], ["nose", "tip"])
+    assert not is_coco_skeleton([17], ["nose"])
+    assert not is_coco_skeleton([], [])
+
+
+def _remote_keypoint_dicts(per_detection: list) -> list:
+    # per_detection: list of [(class_id, class_name), ...]; one dict per detection,
+    # shaped like the remote keypoint model response after threshold filtering.
+    return [
+        {
+            "x": 10,
+            "y": 20,
+            "width": 100,
+            "height": 200,
+            "confidence": 0.9,
+            "class": "person",
+            "class_id": 0,
+            "keypoints": [
+                {
+                    "x": 100.0 + 10 * class_id,
+                    "y": 100.0 + 20 * class_id,
+                    "confidence": 0.5 + 0.01 * class_id,
+                    "class": class_name,
+                    "class_id": class_id,
+                }
+                for class_id, class_name in keypoints
+            ],
+        }
+        for keypoints in per_detection
+    ]
+
+
+def _build_native_key_points(builder: str, predictions: list):
+    if builder == "native":
+        from roboflow_workflows.core_steps.common.tensor_native import (
+            build_native_key_points,
+        )
+
+        return build_native_key_points(
+            per_instance_xy=[
+                [[k["x"], k["y"]] for k in p["keypoints"]] for p in predictions
+            ],
+            per_instance_confidence=[
+                [k["confidence"] for k in p["keypoints"]] for p in predictions
+            ],
+            object_class_ids=[p["class_id"] for p in predictions],
+            image_metadata={},
+            per_instance_keypoint_class_ids=[
+                [k["class_id"] for k in p["keypoints"]] for p in predictions
+            ],
+            per_instance_keypoint_class_names=[
+                [k["class"] for k in p["keypoints"]] for p in predictions
+            ],
+        )
+    module = import_module(
+        "roboflow_workflows.core_steps.models.roboflow."
+        f"keypoint_detection.{builder}_tensor"
+    )
+    return module._native_key_points_from_inference_predictions(
+        detection_dicts=predictions, image_metadata={}
+    )
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_are_placed_at_class_id_slots(builder: str) -> None:
+    # given: a custom skeleton, first instance missing slots 1 and 3, second missing 0, 2, 4
+    predictions = _remote_keypoint_dicts(
+        [[(0, "a"), (2, "c"), (4, "e")], [(1, "b"), (3, "d")]]
+    )
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (2, 5, 2)
+    for class_id in [0, 2, 4]:
+        assert key_points.xy[0, class_id].tolist() == [
+            100.0 + 10 * class_id,
+            100.0 + 20 * class_id,
+        ]
+        assert key_points.confidence[0, class_id].item() == pytest.approx(
+            0.5 + 0.01 * class_id
+        )
+    for class_id in [1, 3]:
+        assert key_points.xy[1, class_id].tolist() == [
+            100.0 + 10 * class_id,
+            100.0 + 20 * class_id,
+        ]
+    assert key_points.xy[0, [1, 3]].abs().sum().item() == 0.0
+    assert key_points.xy[1, [0, 2, 4]].abs().sum().item() == 0.0
+    visible = key_points.to_supervision().visible
+    assert visible[0].tolist() == [True, False, True, False, True]
+    assert visible[1].tolist() == [False, True, False, True, False]
+    assert key_points.class_id.tolist() == [0, 0]
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_of_coco_skeleton_are_widened_to_full_skeleton(
+    builder: str,
+) -> None:
+    # given: only the upper body (COCO keypoints 0-10) is in frame
+    predictions = _remote_keypoint_dicts(
+        [[(i, COCO_KEYPOINT_NAMES[i]) for i in range(11)]]
+    )
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, 17, 2)
+    visible = key_points.to_supervision().visible
+    assert visible[0, :11].all()
+    assert not visible[0, 11:].any()
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_of_coco_names_in_other_order_are_not_widened(
+    builder: str,
+) -> None:
+    # given: a custom skeleton that reuses COCO names but numbers them differently
+    predictions = _remote_keypoint_dicts(
+        [[(0, "left_eye"), (1, "right_eye"), (2, "nose")]]
+    )
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, 3, 2)
+
+
+def test_native_key_points_without_class_ids_are_packed_leading() -> None:
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        build_native_key_points,
+    )
+
+    # when
+    key_points = build_native_key_points(
+        per_instance_xy=[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0]]],
+        per_instance_confidence=[[0.9, 0.8], [0.7]],
+        object_class_ids=[0, 1],
+        image_metadata={},
+    )
+
+    # then
+    assert key_points.xy.tolist() == [
+        [[1.0, 2.0], [3.0, 4.0]],
+        [[5.0, 6.0], [0.0, 0.0]],
+    ]
+    np.testing.assert_allclose(
+        key_points.confidence.numpy(), [[0.9, 0.8], [0.7, 0.0]], rtol=1e-6
+    )
+
+
+@pytest.mark.parametrize("builder", ["v1", "v2", "v3"])
+def test_remote_keypoints_without_class_ids_keep_their_positions(builder: str) -> None:
+    # given: a response whose keypoints carry no class_id
+    predictions = _remote_keypoint_dicts([[(0, "a"), (1, "b"), (2, "c")]])
+    for keypoint in predictions[0]["keypoints"]:
+        del keypoint["class_id"]
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, 3, 2)
+    assert key_points.xy[0].tolist() == [[100.0, 100.0], [110.0, 120.0], [120.0, 140.0]]
+
+
+def test_boundary_rebuilds_native_key_points_at_skeleton_slots() -> None:
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        sv_detections_to_native_key_point_prediction,
+    )
+
+    # given: padded columns as `add_inference_keypoints_to_sv_detections` stores them;
+    # the first detection has one real keypoint (right_eye) and two padding slots
+    sv_detections = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [10, 10, 20, 20]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.9, 0.8], dtype=np.float32),
+        data={
+            "keypoints_xy": np.array(
+                [
+                    [[120.0, 140.0], [0.0, 0.0], [0.0, 0.0]],
+                    [[150.0, 200.0], [160.0, 220.0], [170.0, 240.0]],
+                ],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.0, 0.0], [0.8, 0.7, 0.6]], dtype=np.float32
+            ),
+            "keypoints_class_name": np.array(
+                [
+                    ["right_eye", "", ""],
+                    ["left_shoulder", "right_shoulder", "left_elbow"],
+                ],
+                dtype=object,
+            ),
+            "keypoints_class_id": np.array([[2, 0, 0], [5, 6, 7]], dtype=int),
+        },
+    )
+
+    # when
+    key_points, _ = sv_detections_to_native_key_point_prediction(sv_detections)
+
+    # then: padding did not land on slot 0 and did not block the COCO widening
+    assert key_points.xy.shape == (2, 17, 2)
+    assert key_points.xy[0, 2].tolist() == [120.0, 140.0]
+    assert key_points.xy[0, 0].tolist() == [0.0, 0.0]
+    assert key_points.xy[1, 5].tolist() == [150.0, 200.0]
+    assert key_points.xy[1, 7].tolist() == [170.0, 240.0]
+    visible = key_points.to_supervision().visible
+    assert visible[0].tolist() == [i == 2 for i in range(17)]
+    assert visible[1].tolist() == [i in (5, 6, 7) for i in range(17)]
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_with_negative_class_id_keep_packed_layout(
+    builder: str,
+) -> None:
+    # given: class ids reach the builders unchecked; a negative one cannot be a slot
+    predictions = _remote_keypoint_dicts([[(0, "nose"), (-1, "right_eye")]])
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then: packed as stored, no widening
+    assert key_points.xy.shape == (1, 2, 2)
+    assert key_points.xy[0].tolist() == [[100.0, 100.0], [90.0, 80.0]]
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_with_class_id_at_the_slot_limit_are_placed(
+    builder: str,
+) -> None:
+    # given: the highest class id a skeleton may use
+    predictions = _remote_keypoint_dicts([[(0, "a"), (MAX_KEYPOINT_SLOTS - 1, "z")]])
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, MAX_KEYPOINT_SLOTS, 2)
+    assert key_points.confidence[0, MAX_KEYPOINT_SLOTS - 1].item() > 0
+
+
+@pytest.mark.parametrize("builder", ["native", "v1", "v2", "v3"])
+def test_native_key_points_with_class_id_beyond_the_slot_limit_keep_packed_layout(
+    builder: str,
+) -> None:
+    # given: one slot past the limit stays far below the padding cell limit, so
+    # only the slot limit stops the widening (and the CPU cost that comes with it)
+    predictions = _remote_keypoint_dicts([[(0, "a"), (MAX_KEYPOINT_SLOTS, "z")]])
+
+    # when
+    key_points = _build_native_key_points(builder, predictions)
+
+    # then
+    assert key_points.xy.shape == (1, 2, 2)
+
+
+def test_native_key_points_with_class_ids_but_no_names_keep_packed_layout() -> None:
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        build_native_key_points,
+    )
+
+    # given: ids without names; the padding row carries class id 0 like a nose
+    key_points = build_native_key_points(
+        per_instance_xy=[[[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]]],
+        per_instance_confidence=[[0.9, 0.8, 0.0]],
+        object_class_ids=[0],
+        image_metadata={},
+        per_instance_keypoint_class_ids=[[0, 2, 0]],
+    )
+
+    # then: packed and lossless, nothing overwrote the nose
+    assert key_points.xy.shape == (1, 3, 2)
+    assert key_points.xy[0].tolist() == [[100.0, 100.0], [120.0, 140.0], [0.0, 0.0]]
+
+
+def _padded_sv_keypoints_with_holes() -> sv.Detections:
+    # Two people stored as the numpy producers store them: real keypoints first,
+    # padding after (padding class name, class id 0). The first person is missing
+    # left_eye (1) and left_ear (3); the second has only the shoulders.
+    return sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10], [10, 10, 20, 20]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.9, 0.8], dtype=np.float32),
+        data={
+            "keypoints_xy": np.array(
+                [
+                    [[100.0, 100.0], [120.0, 140.0], [140.0, 180.0]],
+                    [[150.0, 200.0], [160.0, 220.0], [0.0, 0.0]],
+                ],
+                dtype=np.float32,
+            ),
+            "keypoints_confidence": np.array(
+                [[0.9, 0.8, 0.7], [0.8, 0.7, 0.0]], dtype=np.float32
+            ),
+            "keypoints_class_name": np.array(
+                [
+                    ["nose", "right_eye", "right_ear"],
+                    ["left_shoulder", "right_shoulder", ""],
+                ],
+                dtype=object,
+            ),
+            "keypoints_class_id": np.array([[0, 2, 4], [5, 6, 0]], dtype=int),
+        },
+    )
+
+
+def test_boundary_keeps_packed_layout_without_class_names() -> None:
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        sv_detections_to_native_key_point_prediction,
+    )
+
+    # given: an id column but no name column, so padding cannot be told apart
+    sv_detections = _padded_sv_keypoints_with_holes()
+    del sv_detections.data["keypoints_class_name"]
+
+    # when
+    key_points, _ = sv_detections_to_native_key_point_prediction(sv_detections)
+
+    # then: packed as stored
+    assert key_points.xy.shape == (2, 3, 2)
+    assert np.array_equal(key_points.xy.numpy(), sv_detections.data["keypoints_xy"])
+
+
+def test_boundary_round_trip_with_holes_is_lossless() -> None:
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+        native_key_point_prediction_to_sv,
+        sv_detections_to_native_key_point_prediction,
+    )
+
+    # given
+    sv_detections = _padded_sv_keypoints_with_holes()
+
+    # when: legacy -> native (slotted) -> legacy -> native
+    key_points, detections = sv_detections_to_native_key_point_prediction(sv_detections)
+    round_tripped = native_key_point_prediction_to_sv(
+        (key_points, detections), block_name="block", value_name="predictions"
+    )
+    key_points_again, _ = sv_detections_to_native_key_point_prediction(round_tripped)
+
+    # then: the native side has skeleton slots, the legacy side keeps the packed
+    # columns, and a second crossing yields the same slots
+    assert key_points.xy.shape == (2, 17, 2)
+    assert key_points.xy[0, [0, 2, 4]].tolist() == [
+        [100.0, 100.0],
+        [120.0, 140.0],
+        [140.0, 180.0],
+    ]
+    assert key_points.xy[0, [1, 3]].abs().sum().item() == 0.0
+    assert key_points.xy[1, [5, 6]].tolist() == [[150.0, 200.0], [160.0, 220.0]]
+    for key in (
+        "keypoints_xy",
+        "keypoints_confidence",
+        "keypoints_class_name",
+        "keypoints_class_id",
+    ):
+        assert np.array_equal(round_tripped.data[key], sv_detections.data[key]), key
+    assert np.array_equal(key_points_again.xy.numpy(), key_points.xy.numpy())
+    assert np.array_equal(
+        key_points_again.confidence.numpy(), key_points.confidence.numpy()
+    )
