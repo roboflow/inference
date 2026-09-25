@@ -36,6 +36,7 @@ from roboflow_workflows.prototypes.block import (  # noqa: F401
 
 __all__ = [
     "DEPRECATED_BLOCK_ALWAYS_RAISES",
+    "REMOTE_STEP_EXECUTION_NOT_SUPPORTED",
     "REQUIRES_GPU_FOR_LOCAL_EXECUTION",
     "ROBOFLOW_INTERNAL_ENDPOINT_ONLY",
     "STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION",
@@ -53,6 +54,21 @@ REQUIRES_GPU_FOR_LOCAL_EXECUTION = RuntimeRestriction(
     applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
 )
 """Local execution loads a model that needs CUDA, so a CPU-only host fails."""
+
+
+REMOTE_STEP_EXECUTION_NOT_SUPPORTED = RuntimeRestriction(
+    code="remote_step_execution_not_supported",
+    severity=Severity.HARD,
+    note=(
+        "run() raises NotImplementedError under REMOTE step execution, on every "
+        "runtime and for every input: the block keeps per-video state in its own "
+        "instance and supports LOCAL step execution only."
+    ),
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+)
+"""`run()` rejects REMOTE step execution before loading a model. The runtime,
+the input mode and the host flags do not change that, so the step execution
+mode is the only axis of the condition."""
 
 
 ROBOFLOW_INTERNAL_ENDPOINT_ONLY = RuntimeRestriction(

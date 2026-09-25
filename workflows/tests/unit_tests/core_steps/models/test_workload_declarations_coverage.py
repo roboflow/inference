@@ -39,6 +39,7 @@ MODELS_PACKAGE = "roboflow_workflows.core_steps.models"
 ALLOWED_RESTRICTION_CODES = {
     "deprecated_block_always_raises",
     "hosted_endpoint_disabled_by_flag",
+    "remote_step_execution_not_supported",
     "requires_gpu_for_local_execution",
     "roboflow_internal_endpoint_only",
     "stateful_video_state_resets_on_stateless_http",

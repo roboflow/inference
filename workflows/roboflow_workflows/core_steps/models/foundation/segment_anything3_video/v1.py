@@ -49,6 +49,7 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.vis
     normalise_labeled_points,
 )
 from roboflow_workflows.core_steps.models.workload_presets import (
+    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
     REQUIRES_GPU_FOR_LOCAL_EXECUTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
@@ -338,6 +339,7 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+            REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
         ]
 
     @classmethod
@@ -381,7 +383,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        """Declare the GPU, cross-frame state-loss and still-image caveats.
+        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
 
         Args:
             ignore_environment_restrictions: If True, return every declaration
@@ -398,6 +400,7 @@ class BlockManifest(WorkflowBlockManifest):
                 STATEFUL_VIDEO_ACTUAL_RESTRICTION,
                 REQUIRES_GPU_FOR_LOCAL_EXECUTION,
                 STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
             ],
             node_id=f"$steps.{getattr(self, 'name', '')}",
             ignore_environment_restrictions=ignore_environment_restrictions,

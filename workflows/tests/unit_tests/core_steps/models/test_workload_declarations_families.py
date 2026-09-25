@@ -79,6 +79,7 @@ from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1 impor
 )
 from roboflow_workflows.core_steps.models.workload_presets import (
     DEPRECATED_BLOCK_ALWAYS_RAISES,
+    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
     REQUIRES_GPU_FOR_LOCAL_EXECUTION,
     ROBOFLOW_INTERNAL_ENDPOINT_ONLY,
     UNSUPPORTED_IN_TENSOR_REPRESENTATION,
@@ -370,15 +371,16 @@ def test_streaming_video_block_declares_the_shared_presets_and_gpu() -> None:
     # when
     restrictions = portable_restrictions(manifest)
 
-    # then
+    # then - run() rejects REMOTE step execution, so that caveat is declared too
     assert restrictions == [
+        restriction_metadata_of(REMOTE_STEP_EXECUTION_NOT_SUPPORTED),
         restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
         restriction_metadata_of(STATEFUL_VIDEO_ACTUAL_RESTRICTION),
         restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),
     ]
-    assert restrictions[1].severity is Severity.SOFT
-    assert restrictions[1].when.input_modes == [RuntimeInputMode.VIDEO]
-    assert restrictions[2].when.input_modes == [RuntimeInputMode.IMAGE]
+    assert restrictions[2].severity is Severity.SOFT
+    assert restrictions[2].when.input_modes == [RuntimeInputMode.VIDEO]
+    assert restrictions[3].when.input_modes == [RuntimeInputMode.IMAGE]
 
 
 def test_action_recognition_declares_the_same_restriction_shape() -> None:
@@ -390,6 +392,7 @@ def test_action_recognition_declares_the_same_restriction_shape() -> None:
 
     # then
     assert restrictions == [
+        restriction_metadata_of(REMOTE_STEP_EXECUTION_NOT_SUPPORTED),
         restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
         restriction_metadata_of(STATEFUL_VIDEO_ACTUAL_RESTRICTION),
         restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),

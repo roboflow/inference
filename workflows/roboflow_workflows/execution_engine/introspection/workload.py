@@ -17,6 +17,7 @@ from roboflow_workflows.errors import (
     WorkflowExecutionEngineVersionError,
 )
 from roboflow_workflows.execution_engine.core import (
+    _select_execution_engine,
     retrieve_requested_execution_engine_version,
 )
 from roboflow_workflows.execution_engine.entities.workload import ModelMetadataProvider
@@ -44,17 +45,41 @@ def describe_workflow_workload(
 ) -> WorkflowIntrospection:
     """Describe the compile-time workload of `workflow_definition`.
 
-    * `init_parameters` carries the usual `workflows_core.*` bindings (inner
-      workflow resolver, api key, workspace resolver); nothing in it triggers
-      block initialisation, model loading or code execution.
-    * `execution_engine_version` selects the engine like `ExecutionEngine.init`
-      does with the definition's `version`; only v1 is supported. When omitted
-      the definition's `version` is used.
-    * `model_metadata_provider` is the optional host enrichment hook; without
-      it every inventory entry is `unavailable`.
+    The requested Execution Engine version is checked before anything else
+    runs: no compilation, inner workflow resolution or model metadata lookup
+    happens for a rejected request. Only v1 is supported, and the installed
+    engine must satisfy the requested version as a minimum within its major
+    version, exactly as `ExecutionEngine.init` requires. The engine and its
+    blocks are never initialised. The request dict is never mutated and the
+    result is built fresh per call.
 
-    The request dict is never mutated and the result is built fresh per call.
-    Compilation errors raise the existing compiler error types.
+    Args:
+        workflow_definition: Workflow definition to describe.
+        init_parameters: The usual `workflows_core.*` bindings (inner workflow
+            resolver, api key, workspace resolver). Nothing in it triggers block
+            initialisation, model loading or code execution.
+        execution_engine_version: Requested engine version. Takes precedence
+            over the definition's `version`; when omitted, the definition's
+            `version` is used. The definition must still declare `version`:
+            the workflow schema requires it, so a definition without it
+            raises `WorkflowSyntaxError` during compilation.
+        model_metadata_provider: Optional host enrichment hook. Without it,
+            every model inventory entry is `unavailable`.
+        profiler: Optional profiler passed to the compiler.
+
+    Returns:
+        Compile-time workload facts, reported for the installed v1 engine
+        version.
+
+    Raises:
+        WorkflowExecutionEngineVersionError: If `execution_engine_version`
+            cannot be parsed or does not belong to Execution Engine v1.
+        WorkflowDefinitionError: If the definition's `version` cannot be
+            parsed.
+        WorkflowSyntaxError: If the definition does not match the workflow
+            schema, e.g. it lacks the required `version`.
+        NotSupportedExecutionEngineError: If the installed engine does not
+            satisfy the requested version, e.g. a newer minor or patch.
     """
     requested_version = _resolve_requested_execution_engine_version(
         workflow_definition=workflow_definition,
@@ -66,6 +91,10 @@ def describe_workflow_workload(
             f"Engine v1, requested `{requested_version}`.",
             context="describing_workflow_workload",
         )
+    # same selection `ExecutionEngine.init` performs; the selected engine type
+    # is discarded, never initialised
+    _select_execution_engine(requested_engine_version=requested_version)
+
     compilation_result = compile_workflow_structure(
         workflow_definition=workflow_definition,
         init_parameters=init_parameters,

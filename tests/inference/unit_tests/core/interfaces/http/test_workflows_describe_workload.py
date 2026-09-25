@@ -19,6 +19,7 @@ import pytest
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
     WorkflowIntrospection,
 )
+from roboflow_workflows.execution_engine.v1.core import EXECUTION_ENGINE_V1_VERSION
 from starlette.testclient import TestClient
 
 import inference.core.env as inference_env
@@ -417,6 +418,25 @@ def test_execution_engine_v2_definition_is_rejected(
     # then
     assert response.status_code >= 400
     assert "Execution Engine v1" in json.dumps(response.json())
+
+
+def test_unmet_minimum_execution_engine_version_is_rejected(
+    interface, enrichment_enabled, registry_call
+) -> None:
+    # given - one minor above the installed engine, so it survives releases
+    definition = _single_model_definition()
+    definition["version"] = (
+        f"{EXECUTION_ENGINE_V1_VERSION.major}.{EXECUTION_ENGINE_V1_VERSION.minor + 1}.0"
+    )
+
+    # when
+    with TestClient(interface.app) as client:
+        response = _post_inline(client, definition)
+
+    # then
+    assert response.status_code == 400
+    assert response.json()["error_type"] == "NotSupportedExecutionEngineError"
+    registry_call.assert_not_called()
 
 
 # --------------------------------------------------------------------------
