@@ -19,6 +19,10 @@ from inference_models.models.optimization.fallback_warnings import (
 from inference_models.models.optimization.runtime_components import (
     get_runtime_components,
 )
+from inference_models.models.optimization.runtime_metadata import (
+    OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
+    resolve_stage_device,
+)
 from inference_models.models.rfdetr.optimization.catalog import (
     build_rfdetr_implementation_registry,
 )
@@ -141,6 +145,21 @@ class RFDetrBackendPath:
             selection or self.selections[name]
         ).to_dict()
 
+    def record_device(self, name, *, value):
+        """Attach the device of a completed stage output to the thread's record.
+
+        Args:
+            name (str): Execution-plan stage key already passed to :meth:`record`.
+            value: Stage output; unresolvable outputs leave the record unchanged.
+        """
+        device = resolve_stage_device(value)
+        if device is None:
+            return
+
+        entry = getattr(self._local, "last_execution", {}).get(name)
+        if entry is not None:
+            entry["device"] = device
+
     @property
     def runtime_metadata(self):
         """Describe model selection and the calling thread's last execution.
@@ -149,6 +168,7 @@ class RFDetrBackendPath:
             dict: Serializable plan, stage metadata, and effective selections.
         """
         return {
+            "schema_version": OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
             "execution_plan": self.plan.to_dict(),
             **{
                 name: selection.implementation.metadata.to_dict()
@@ -157,7 +177,10 @@ class RFDetrBackendPath:
             "model_selection": {
                 name: selection.to_dict() for name, selection in self.selections.items()
             },
-            "last_execution": dict(getattr(self._local, "last_execution", {})),
+            "last_execution": {
+                name: dict(entry)
+                for name, entry in getattr(self._local, "last_execution", {}).items()
+            },
         }
 
     def preprocess(
@@ -270,6 +293,7 @@ class RFDetrBackendPath:
             context=context,
             independent_stage_execution=independent_stage_execution,
         )
+        self.record_device("preprocessor", value=tensor)
 
         return tensor, result.metadata
 
@@ -291,6 +315,7 @@ class RFDetrBackendPath:
             stream=stream,
             operation=lambda: self.engine_plugin.execute(operation),
         )
+        self.record_device("engine_plugin", value=result)
 
         return result
 
@@ -305,6 +330,7 @@ class RFDetrBackendPath:
         """
         self.record("postprocessor")
         result = self.postprocessor.execute(operation)
+        self.record_device("postprocessor", value=result)
 
         return result
 

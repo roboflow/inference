@@ -699,6 +699,26 @@ or `auto`; explicit TensorRT-only IDs raise an unknown-implementation error.
 export INFERENCE_MODELS_RFDETR_POSTPROCESSOR="triton-fused-v1"
 ```
 
+**`INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK`**
+Default: `true`
+
+**`INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK`**
+Default: `true`
+
+Fallback policy for RF-DETR execution plans resolved from the environment (Torch,
+ONNX and TensorRT object detection). They map onto the `allow_compatibility_fallback`
+and `allow_runtime_failure_fallback` fields of the execution plan: with the first set
+to `false`, an incompatible explicit stage choice raises instead of falling back; with
+both `false`, a recoverable runtime failure raises as well. Runtime-failure fallback
+needs both flags enabled. An explicit `execution_plan` loader argument, typed or
+serialized, ignores these variables. Values must be `true` or `false`.
+
+```bash
+export INFERENCE_MODELS_RFDETR_PREPROCESSOR="triton-universal-v1"
+export INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK="false"
+export INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK="false"
+```
+
 Code that can pass backend-specific arguments may instead provide a composed, immutable
 execution plan:
 

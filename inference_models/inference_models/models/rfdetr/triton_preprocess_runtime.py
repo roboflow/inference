@@ -409,8 +409,11 @@ class FastPreprocessRuntime:
         ):
             return "static crop, contrast, and grayscale preprocessing are unsupported"
 
-        if network_input.dataset_version_resize_dimensions is not None:
-            return "dataset-version resize is unsupported"
+        # `dataset_version_resize_dimensions` only changes reference pixels for
+        # non-stretch resize modes, and those are rejected below. Under
+        # STRETCH_TO the reference path resizes straight to the training input
+        # size, so the metadata is accepted here exactly as the object-detection
+        # `triton-universal-v1` gate accepts it.
         if network_input.input_channels != 3:
             return "only 3-channel inputs are supported"
         if network_input.scaling_factor not in (None, 255):

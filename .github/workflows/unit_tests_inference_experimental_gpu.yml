@@ -6,6 +6,11 @@ permissions:
 on:
   push:
     branches: [main]
+  pull_request:
+    # Opt-in for pull requests: add the `run-gpu-unit-tests` label. The lane then
+    # runs for that event and again on every later push to the labelled PR. The
+    # job-level `if` keeps fork PRs off the self-hosted runner.
+    types: [labeled, synchronize, reopened]
   workflow_dispatch:
 
 concurrency:
@@ -19,6 +24,16 @@ concurrency:
 jobs:
   unit-tests-inference-models-gpu:
     name: trt_extras:3.12
+    if: >-
+      github.event_name != 'pull_request' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'run-gpu-unit-tests') &&
+        (
+          github.event.action != 'labeled' ||
+          github.event.label.name == 'run-gpu-unit-tests'
+        )
+      )
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 15
     steps:

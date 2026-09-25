@@ -741,3 +741,50 @@ def test_postprocess_nonrecoverable_failure_records_attempted_selection(
     assert selection["fallback_reason"] is None
     assert candidate.calls == 1
     assert base.calls == 0
+
+
+def test_preprocess_records_output_device_for_calling_thread(rfdetr_trt_model_class):
+    candidate, base = _preprocess_stages()
+    model = _build_preprocess_model(
+        rfdetr_trt_model_class,
+        candidate=candidate,
+        base=base,
+    )
+
+    tensor, _ = model.pre_process(images=np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert model._thread_local_storage.last_preprocessor_device == str(tensor.device)
+    assert not hasattr(model._thread_local_storage, "last_engine_plugin_device")
+
+
+def test_record_stage_device_ignores_unresolvable_outputs(rfdetr_trt_model_class):
+    model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
+    model._thread_local_storage = threading.local()
+
+    model._record_stage_device(stage="postprocessor", value=["detections"])
+    assert not hasattr(model._thread_local_storage, "last_postprocessor_device")
+
+    model._record_stage_device(stage="postprocessor", value=(torch.zeros(1),))
+    assert model._thread_local_storage.last_postprocessor_device == "cpu"
+
+    model._record_stage_device(stage="postprocessor", value=None)
+    assert model._thread_local_storage.last_postprocessor_device == "cpu"
+
+
+def test_stage_device_is_thread_local(rfdetr_trt_model_class):
+    model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
+    model._thread_local_storage = threading.local()
+    model._record_stage_device(stage="engine_plugin", value=torch.zeros(1))
+    seen = {}
+
+    def worker():
+        seen["device"] = getattr(
+            model._thread_local_storage, "last_engine_plugin_device", None
+        )
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=5)
+
+    assert seen == {"device": None}
+    assert model._thread_local_storage.last_engine_plugin_device == "cpu"

@@ -54,6 +54,7 @@ from inference_models.models.optimization.runtime_components import (
 from inference_models.models.optimization.runtime_metadata import (
     OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION,
     SelectionSnapshot,
+    resolve_stage_device,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -518,7 +519,13 @@ class RFDetrForObjectDetectionTRT(
                 None,
             )
             if selection is not None:
-                last_execution[stage] = selection.to_dict()
+                entry = selection.to_dict()
+                device = getattr(
+                    self._thread_local_storage, f"last_{stage}_device", None
+                )
+                if device is not None:
+                    entry["device"] = device
+                last_execution[stage] = entry
         if last_execution:
             metadata["last_execution"] = last_execution
 
@@ -664,6 +671,7 @@ class RFDetrForObjectDetectionTRT(
             context=context,
             independent_stage_execution=independent_stage_execution,
         )
+        self._record_stage_device(stage="preprocessor", value=pre_processed_images)
 
         return pre_processed_images, result.metadata
 
@@ -714,6 +722,7 @@ class RFDetrForObjectDetectionTRT(
             pre_processed_images,
             operation=execute_engine,
         )
+        self._record_stage_device(stage="engine_plugin", value=model_results)
 
         return model_results
 
@@ -827,6 +836,7 @@ class RFDetrForObjectDetectionTRT(
                     selection.effective_id,
                     selection.fallback_reason,
                 )
+            self._record_stage_device(stage="postprocessor", value=results)
 
             return results
 
@@ -862,6 +872,21 @@ class RFDetrForObjectDetectionTRT(
             return
 
         setattr(self._thread_local_storage, attribute, selection)
+
+    def _record_stage_device(self, *, stage: str, value: Any) -> None:
+        """Remember where the calling thread's last completed stage output lived.
+
+        Reads only the output's device attribute; no synchronization, no copy.
+        Unknown outputs (test doubles, ``None``) leave the previous value untouched.
+        """
+        device = resolve_stage_device(value)
+        if device is None:
+            return
+        attribute = f"last_{stage}_device"
+        if getattr(self._thread_local_storage, attribute, None) == device:
+            return
+
+        setattr(self._thread_local_storage, attribute, device)
 
     def _record_runtime_selection(
         self,

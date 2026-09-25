@@ -4,6 +4,14 @@
 
 ### Added
 
+- `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
+  `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` set the RF-DETR
+  execution-plan fallback policy for plans resolved from the environment (Torch,
+  ONNX and TensorRT). Both default to `true`, so existing deployments are unchanged;
+  an explicit `execution_plan` argument ignores them.
+- `optimization_runtime_metadata` schema `1.1`: each `last_execution` stage entry
+  may carry a `device` string naming where that stage's latest output lived on the
+  calling thread. The Torch/ONNX backend path now publishes `schema_version` too.
 - RF-DETR Torch and ONNX object detection now use the five-stage execution plan,
   sharing Triton Universal preprocessing, reference fallback, compatibility checks
   and per-request selection metadata with TensorRT.
@@ -28,6 +36,9 @@
 
 ### Fixed
 
+- RF-DETR instance-segmentation TensorRT Triton preprocessing no longer falls back
+  to the PIL path for packages that carry dataset-version resize dimensions under
+  `stretch` resize mode, matching the object-detection `triton-universal-v1` gate.
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
   metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
   flags disabling already-inactive crop, contrast, and grayscale transforms.

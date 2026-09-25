@@ -268,6 +268,19 @@ implementation metadata. Selection snapshots are retained as immutable objects a
 serialized only when the property is read; repeated requests do not append history or
 re-store an unchanged thread-local selection.
 
+Schema `1.1` adds an optional `device` string to each `last_execution` stage entry:
+the device that held that stage's most recent output on the calling thread
+(`preprocessor`, `engine_plugin`, `postprocessor`; buffer strategy and scheduler
+produce no tensor). It is read from the output's `device` attribute after the stage
+completes, without synchronization or copies, and is omitted when the output exposes
+no device. Because stage selections are recorded inside `pre_process`, `forward` and
+`post_process`, the property answers "did this request run where the plan says" on
+both the composed `infer()` path and the stage-split path used by server adapters.
+The same environment variables that pick stage IDs also carry the fallback policy
+(`INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK`,
+`INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK`), so a deployment can make
+the plan strict without code and then prove the outcome through this property.
+
 Profiling uses the same `InferenceExecutionPlan` as production. Its boundary validator
 requires explicit IDs for all five stages, rejects `auto`, and requires both fallback
 flags to be false. An incompatible implementation or recoverable stage failure therefore

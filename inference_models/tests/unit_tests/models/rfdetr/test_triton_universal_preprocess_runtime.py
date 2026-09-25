@@ -622,3 +622,64 @@ def test_runtime_compatibility_inspects_only_first_validated_batch_item(
 def test_universal_runtime_requires_cuda_device() -> None:
     with pytest.raises(ModelRuntimeError, match="requires a CUDA target"):
         UniversalFastPreprocessRuntime(device=torch.device("cpu"))
+
+
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("tensor_input", [False, True])
+@pytest.mark.parametrize("input_color_format", ["rgb", "bgr"])
+@pytest.mark.parametrize("auto_orient", [False, True])
+@pytest.mark.parametrize("dataset_dimensions", [(32, 32), (96, 48), (48, 96)])
+@pytest.mark.parametrize("image_shape", [(48, 80), (91, 37)])
+def test_triton_kernel_matches_reference_for_accepted_workspace_metadata(
+    tensor_input, input_color_format, auto_orient, dataset_dimensions, image_shape
+) -> None:
+    """Compare the Triton kernel against the reference for the widened gate.
+
+    `check_model_compatibility` accepts `STRETCH_TO` packages that carry
+    `dataset_version_resize_dimensions` and/or an `auto-orient` flag. The CPU
+    tests in this file prove the reference path ignores both fields; this is the
+    only place the Triton kernel itself is compared against that reference for
+    those packages, so it must run on the GPU lane rather than be collected as
+    skipped.
+    """
+    height, width = image_shape
+    image = np.random.default_rng(7).integers(
+        0, 256, (height, width, 3), dtype=np.uint8
+    )
+    if tensor_input:
+        image = torch.from_numpy(image).permute(2, 0, 1).cuda()
+    dataset_height, dataset_width = dataset_dimensions
+    network = _network_input().model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(
+                height=dataset_height, width=dataset_width
+            )
+        }
+    )
+    transforms = ImagePreProcessing.model_validate(
+        {"auto-orient": {"enabled": auto_orient}}
+    )
+    expected, expected_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=transforms,
+        network_input=network,
+        target_device=torch.device("cuda"),
+        input_color_format=input_color_format,
+    )
+    runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
+
+    actual = runtime.preprocess(
+        images=image,
+        input_color_format=ColorMode(input_color_format),
+        image_pre_processing=transforms,
+        network_input=network,
+        pre_processing_overrides=None,
+        stream=stream,
+    )
+    stream.synchronize()
+
+    torch.testing.assert_close(actual.tensor, expected, rtol=1e-5, atol=1e-5)
+    assert actual.metadata == expected_metadata

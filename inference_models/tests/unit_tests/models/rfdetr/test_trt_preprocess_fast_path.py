@@ -219,13 +219,14 @@ def test_trt_fast_preprocess_warns_for_unavailable_runtime(
             torch.device("cuda"),
             {
                 "network_input": _network_input(
+                    resize_mode=ResizeMode.LETTERBOX,
                     dataset_version_resize_dimensions=TrainingInputSize(
                         height=8,
                         width=8,
-                    )
+                    ),
                 )
             },
-            "dataset-version resize is unsupported",
+            "resize mode",
         ),
         (
             torch.device("cuda"),
@@ -343,3 +344,29 @@ def test_trt_fast_preprocess_matches_reference_and_metadata(
         width=target_w,
     )
     assert result.tensor._pre_processing_meta == metadata  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("dataset_dimensions", [(8, 8), (24, 12), (12, 24)])
+def test_trt_fast_preprocess_accepts_stretch_dataset_version_dimensions(
+    monkeypatch: pytest.MonkeyPatch, dataset_dimensions
+) -> None:
+    # Under STRETCH_TO the reference path resizes straight to the training input
+    # size, so dataset-version dimensions cannot change pixels. The gate must not
+    # push such packages onto the PIL path (same rule as `triton-universal-v1`).
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", True)
+    monkeypatch.setattr(triton_preprocess_runtime, "_TRITON_AVAILABLE", True)
+    runtime = FastPreprocessRuntime(device=torch.device("cuda"))
+    height, width = dataset_dimensions
+
+    reason = runtime._unsupported_reason(
+        images=np.zeros((8, 8, 3), dtype=np.uint8),
+        image_size=None,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(
+            dataset_version_resize_dimensions=TrainingInputSize(
+                height=height, width=width
+            )
+        ),
+    )
+
+    assert reason is None

@@ -542,3 +542,42 @@ def test_onnx_model_delegates_forward_and_postprocess_through_plan(monkeypatch):
         "engine_plugin",
         "postprocessor",
     }
+
+
+@pytest.mark.usefixtures("_without_pillow_simd")
+@pytest.mark.parametrize("backend", ["torch", "onnx"])
+def test_runtime_metadata_is_versioned_and_reports_stage_devices(backend):
+    """Verify the shared backend path publishes schema version and stage devices.
+
+    Args:
+        backend (str): Backend registry to exercise.
+    """
+    cfg = config()
+    path = RFDetrBackendPath(
+        device=torch.device("cpu"),
+        inference_config=cfg,
+        backend=backend,
+        execution_plan=RFDetrExecutionPlan(preprocessor_id="base"),
+    )
+    image = np.random.default_rng(3).integers(0, 256, (33, 41, 3), dtype=np.uint8)
+
+    assert path.runtime_metadata["schema_version"] == "1.1"
+    assert path.runtime_metadata["last_execution"] == {}
+
+    tensor, _ = path.preprocess(image)
+    forwarded = path.forward(tensor, stream=None, operation=lambda: (tensor, tensor))
+    detections = path.postprocess(lambda: ["opaque-backend-result"])
+
+    assert forwarded == (tensor, tensor)
+    assert detections == ["opaque-backend-result"]
+    last_execution = path.runtime_metadata["last_execution"]
+    assert last_execution["preprocessor"]["device"] == "cpu"
+    assert last_execution["engine_plugin"]["device"] == "cpu"
+    assert "device" not in last_execution["postprocessor"]
+    assert "device" not in last_execution["buffer_strategy"]
+    assert "device" not in last_execution["scheduler"]
+    assert last_execution["preprocessor"]["effective_id"] == "base"
+
+    # The published mapping is a copy: mutating it must not leak into the path.
+    last_execution["preprocessor"]["device"] = "tampered"
+    assert path.runtime_metadata["last_execution"]["preprocessor"]["device"] == "cpu"

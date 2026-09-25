@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, Mapping, Optional, Protocol
 
-OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION = "1.0"
+# 1.1: ``last_execution[<stage>]`` entries may carry an optional ``device`` string
+# describing where that stage's most recent output on the calling thread lived.
+OPTIMIZATION_RUNTIME_METADATA_SCHEMA_VERSION = "1.1"
 
 
 class SupportsOptimizationRuntimeMetadata(Protocol):
@@ -102,3 +104,43 @@ class SelectionSnapshot(Mapping[str, Any]):
             value["fallback_reason"] = self.fallback_reason
 
         return value
+
+
+_STAGE_DEVICE_MAX_DEPTH = 3
+
+
+def resolve_stage_device(value: Any, *, _depth: int = 0) -> Optional[str]:
+    """Describe the device that holds a completed stage output.
+
+    The lookup is duck-typed and never touches tensor data: a ``device`` attribute
+    wins, a NumPy array reports ``"cpu"``, a sequence reports its first resolvable
+    element, and a detections-like object reports its ``xyxy`` tensor. Anything
+    else resolves to ``None`` so callers omit the key instead of guessing. Nesting
+    is followed at most three levels deep, so cyclic or exotic objects cannot
+    recurse without bound.
+
+    Args:
+        value: Stage output such as a tensor, an array, a tuple of tensors, or a
+            list of detections.
+
+    Returns:
+        Device string, or ``None`` when no device can be read.
+    """
+    if value is None or _depth > _STAGE_DEVICE_MAX_DEPTH:
+        return None
+    device = getattr(value, "device", None)
+    if device is not None:
+        return str(device)
+    if type(value).__module__.split(".")[0] == "numpy":
+        return "cpu"
+    if isinstance(value, (list, tuple)):
+        for element in value:
+            resolved = resolve_stage_device(element, _depth=_depth + 1)
+            if resolved is not None:
+                return resolved
+        return None
+    xyxy = getattr(value, "xyxy", None)
+    if xyxy is not None:
+        return resolve_stage_device(xyxy, _depth=_depth + 1)
+
+    return None
