@@ -677,6 +677,24 @@ LEGACY_WITHOUT_PORTABLE = {
         "tests/unit_tests/core_steps/sinks/test_workload_declarations.py"
     ),
     (
+        "roboflow_core/continue_if@v1",
+        (
+            "cooldown_timer_resets_on_stateless_http",
+            "soft",
+            ("dedicated_deployment", "hosted_serverless"),
+            ("remote",),
+            (),
+        ),
+    ): (
+        "get_restrictions() is a CLASSMETHOD and cannot see stop_delay, so it "
+        "declares the grace-period timer caveat unconditionally; the portable "
+        "hook emits it only for a positive or selector-fed stop_delay. This "
+        "census builds a neutral instance with the default stop_delay=0, so "
+        "the two legitimately disagree here. The per-value behaviour is pinned "
+        "by tests/unit_tests/core_steps/control_flow/"
+        "test_continue_if_workload_declarations.py"
+    ),
+    (
         "roboflow_core/local_file_sink@v1",
         (
             "writes_to_deployment_volume_not_retrievable",
