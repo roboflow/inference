@@ -643,6 +643,33 @@ PORTABLE_WITHOUT_LEGACY = {
         "declared the caveat in get_restrictions(); the actual declaration "
         "corrects the omission and the editor method stays unchanged"
     ),
+    (
+        "roboflow_core/microsoft_sql_server_sink@v1",
+        "fire_and_forget_hides_persistence_failures",
+    ): (
+        "with fire_and_forget=True run() schedules the insert in the background "
+        "and reports only that it was scheduled, but the block never declared "
+        "the caveat in get_restrictions(); the actual declaration adds it for a "
+        "literal True only and the editor method stays unchanged"
+    ),
+    (
+        "roboflow_enterprise/event_writer_sink@v1",
+        "fire_and_forget_hides_persistence_failures",
+    ): (
+        "with fire_and_forget=True run() sends the event in the background and "
+        "returns error_status=False with an empty event_id, but the block never "
+        "declared the caveat in get_restrictions(); the actual declaration adds "
+        "it for a literal True only and the editor method stays unchanged"
+    ),
+    (
+        "roboflow_enterprise/opc_writer_sink@v1",
+        "fire_and_forget_hides_persistence_failures",
+    ): (
+        "with fire_and_forget=True run() writes in the background and returns "
+        "error_status=False, but the block never declared the caveat in "
+        "get_restrictions(); the actual declaration adds it for a literal True "
+        "only, next to the cooldown caveat, and the editor method stays unchanged"
+    ),
     ("roboflow_core/modbus_tcp@v1", "requires_lan_access_to_device"): (
         "opens a direct Modbus TCP connection to the PLC but never declared "
         "the reachability requirement in get_restrictions(); the actual "

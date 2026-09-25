@@ -209,8 +209,9 @@ S3_APPEND_BUFFER_RESTRICTION = RuntimeRestriction(
 
 # Fire-and-forget writes hide delivery / persistence failures and pile up when
 # the destination is slower than the video stream. Shared by the sinks that
-# offer the switch (PostgreSQL, Kafka producer), so the note stays neutral
-# about what the destination is.
+# offer the switch (PostgreSQL, Kafka producer, Microsoft SQL Server, Event
+# Writer, OPC UA Writer), so the note stays neutral about what the destination
+# is.
 FIRE_AND_FORGET_RESTRICTION = RuntimeRestriction(
     code="fire_and_forget_hides_persistence_failures",
     severity=Severity.SOFT,

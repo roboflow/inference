@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
+    FIRE_AND_FORGET_RESTRICTION,
     PLC_LAN_ACCESS_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.onvif_movement.v1 import (
@@ -34,6 +35,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Runtime,
     Severity,
     restriction_metadata_of,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
 
@@ -48,18 +50,18 @@ COOLDOWN_CODE = "cooldown_timer_resets_on_stateless_http"
 HOSTED_RUNTIMES = {Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT}
 
 
-def _opc_writer() -> OPCWriterSinkBlockManifest:
-    return OPCWriterSinkBlockManifest.model_validate(
-        {
-            "type": "roboflow_enterprise/opc_writer_sink@v1",
-            "name": "opc_writer",
-            "url": "opc.tcp://10.0.0.5:4840",
-            "namespace": "http://example.com/ns",
-            "object_name": "Line1",
-            "variable_name": "Status",
-            "value": "ok",
-        }
-    )
+def _opc_writer(**overrides: Any) -> OPCWriterSinkBlockManifest:
+    fields: Dict[str, Any] = {
+        "type": "roboflow_enterprise/opc_writer_sink@v1",
+        "name": "opc_writer",
+        "url": "opc.tcp://10.0.0.5:4840",
+        "namespace": "http://example.com/ns",
+        "object_name": "Line1",
+        "variable_name": "Status",
+        "value": "ok",
+    }
+    fields.update(overrides)
+    return OPCWriterSinkBlockManifest.model_validate(fields)
 
 
 def _modbus() -> ModbusTCPBlockManifest:
@@ -129,13 +131,20 @@ def _assert_portable_json(restriction: RestrictionMetadata) -> None:
 
 
 def test_opc_writer_declares_the_actual_cooldown_caveat() -> None:
+    # the default `fire_and_forget=True` adds its own caveat next to the
+    # cooldown; the per-branch declarations are pinned in
+    # test_fire_and_forget_sink_workload_declarations.py
     manifest = _opc_writer()
 
-    assert declared_restrictions(manifest) == [COOLDOWN_ACTUAL_RESTRICTION]
+    assert declared_restrictions(manifest) == [
+        COOLDOWN_ACTUAL_RESTRICTION,
+        FIRE_AND_FORGET_RESTRICTION,
+    ]
     discovery = portable_restrictions_discovery(manifest)
     assert discovery.complete is True
     assert discovery.unknown_reasons == []
-    [restriction] = discovery.items
+    by_code = {restriction.code: restriction for restriction in discovery.items}
+    restriction = by_code[COOLDOWN_CODE]
     assert restriction.code == COOLDOWN_CODE
     assert restriction.severity is Severity.SOFT
     assert set(restriction.when.runtimes) == HOSTED_RUNTIMES
@@ -154,13 +163,35 @@ def test_opc_writer_does_not_use_the_legacy_cooldown_preset() -> None:
     )
 
 
-def test_opc_writer_host_view_keeps_the_unconditional_cooldown_caveat() -> None:
-    discovery = _opc_writer().get_actual_restrictions(
+@pytest.mark.parametrize(
+    "fire_and_forget, expected_items",
+    [
+        (True, [COOLDOWN_ACTUAL_RESTRICTION, FIRE_AND_FORGET_RESTRICTION]),
+        (False, [COOLDOWN_ACTUAL_RESTRICTION]),
+        ("$inputs.fire_and_forget", [COOLDOWN_ACTUAL_RESTRICTION]),
+    ],
+)
+def test_opc_writer_host_view_keeps_the_unconditional_cooldown_caveat(
+    fire_and_forget: Any, expected_items: list
+) -> None:
+    discovery = _opc_writer(fire_and_forget=fire_and_forget).get_actual_restrictions(
         ignore_environment_restrictions=False
     )
 
-    assert discovery.complete is True
-    assert discovery.items == [COOLDOWN_ACTUAL_RESTRICTION]
+    assert discovery.items == expected_items
+    if isinstance(fire_and_forget, bool):
+        assert discovery.complete is True
+        assert discovery.unknown_reasons == []
+    else:
+        assert discovery.complete is False
+        assert discovery.unknown_reasons == [
+            unresolved_selector_problem(
+                node_id="$steps.opc_writer",
+                declaration="restrictions",
+                field="fire_and_forget",
+                selector="$inputs.fire_and_forget",
+            )
+        ]
 
 
 @pytest.mark.parametrize(

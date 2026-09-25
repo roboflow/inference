@@ -850,6 +850,7 @@ USER_CONFIG_ERROR_TYPES = (
 
 from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
+    FIRE_AND_FORGET_RESTRICTION,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
@@ -869,6 +870,8 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RuntimeRestriction,
     WorkOperation,
+    incomplete_discovery,
+    unresolved_selector_problem,
 )
 from roboflow_workflows.prototypes.block import (
     BlockResult,
@@ -876,6 +879,7 @@ from roboflow_workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
     actual_restrictions_of,
+    is_workflow_selector,
 )
 
 BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
@@ -1145,10 +1149,13 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        """Declare the cooldown-timer state-loss caveat for the target deployment.
+        """Declare the cooldown and fire-and-forget caveats for the target deployment.
 
         The cooldown timer lives in the block instance, so it does not throttle
-        across stateless HTTP requests. This corrects an earlier known-empty
+        across stateless HTTP requests; that caveat applies to every
+        ``fire_and_forget`` value. With ``fire_and_forget`` enabled, ``run()``
+        writes in the background and returns ``error_status=False``, so write
+        failures are not returned. These correct an earlier known-empty
         declaration; the legacy editor ``get_restrictions()`` stays unchanged.
 
         Args:
@@ -1158,14 +1165,42 @@ class BlockManifest(WorkflowBlockManifest):
                 entries that definitively do not apply here.
 
         Returns:
-            The step's restrictions. In the host view the discovery is
+            A complete discovery for a literal ``fire_and_forget``: the
+            cooldown caveat, plus the fire-and-forget caveat when the value is
+            True. For a selector, an incomplete discovery that lists the
+            cooldown caveat and gives an unresolved-selector reason for
+            ``fire_and_forget``. In the host view the discovery is also
             incomplete when a configuration predicate cannot be evaluated.
         """
-        return actual_restrictions_of(
-            declared=[COOLDOWN_ACTUAL_RESTRICTION],
-            node_id=f"$steps.{getattr(self, 'name', '')}",
+        node_id = f"$steps.{getattr(self, 'name', '')}"
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
+        if is_workflow_selector(self.fire_and_forget):
+            # A runtime value decides whether the write is awaited, so the
+            # fire-and-forget caveat MAY apply: keep the cooldown caveat that
+            # IS known and declare nothing complete.
+            declared = incomplete_discovery(
+                items=[COOLDOWN_ACTUAL_RESTRICTION],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=node_id,
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
+            )
+        elif self.fire_and_forget:
+            declared = [COOLDOWN_ACTUAL_RESTRICTION, FIRE_AND_FORGET_RESTRICTION]
+        else:
+            declared = [COOLDOWN_ACTUAL_RESTRICTION]
+
+        restrictions = actual_restrictions_of(
+            declared=declared,
+            node_id=node_id,
             ignore_environment_restrictions=ignore_environment_restrictions,
         )
+
+        return restrictions
 
     def discover_dependent_resources(self) -> List[DependentResource]:
         return []
