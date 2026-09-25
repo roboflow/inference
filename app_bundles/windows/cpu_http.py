@@ -13,16 +13,20 @@ from inference.core.env import (
     STREAM_API_PRELOADED_PROCESSES,
 )
 from inference.core.interfaces.http.http_api import HttpInterface
-from inference.core.interfaces.stream_manager.manager_app.app import start
+from inference.core.interfaces.stream_manager.manager_app.bootstrap import (
+    run_stream_manager,
+)
+from inference.core.interfaces.streams_configuration import (
+    LEGACY_PIPELINE_HOST_DESCRIPTOR,
+    server_streams_configuration,
+)
 from inference.core.managers.active_learning import (
     ActiveLearningManager,
     BackgroundTaskActiveLearningManager,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
-from inference.core.registries.roboflow import (
-    RoboflowModelRegistry,
-)
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 print("infernece imports done")
@@ -30,7 +34,14 @@ print("infernece imports done")
 
 if ENABLE_STREAM_API:
     stream_manager_process = Process(
-        target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
+        # The target's module is import-light: a spawned manager installs this
+        # configuration and host before importing the manager runtime.
+        target=partial(
+            run_stream_manager,
+            configuration=server_streams_configuration(),
+            host_descriptor=LEGACY_PIPELINE_HOST_DESCRIPTOR,
+            expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES,
+        ),
     )
     stream_manager_process.start()
     print("Stream Manager started")
@@ -60,6 +71,3 @@ model_manager.init_pingback()
 print("initializing http interface")
 interface = HttpInterface(model_manager)
 app = interface.app
-
-
-

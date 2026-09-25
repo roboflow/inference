@@ -1,0 +1,180 @@
+{
+  "work_package": "WP-A05",
+  "base_head_sha": "65ad2beaaca0825bffc2fbbe99199d3a40994324",
+  "working_tree_dirty": true,
+  "revision_note": "Archived from uncommitted work: base_head_sha is the checked-out HEAD, not a candidate revision. Blob ids are `git hash-object` of the working-tree files when archived; they identify file content only. This manifest's own entry has no blob id (it cannot hash itself).",
+  "move": {
+    "source": {
+      "inference/core/interfaces/camera/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/camera/buffer_strategies.py": "6005c6654bae3b70c473ee9ddf35c6e25c5344ac",
+      "inference/core/interfaces/camera/camera.py": "8794b45bf709b86d380e52d25344c100f1e625f5",
+      "inference/core/interfaces/camera/collection_policy.py": "018a6c276c7d865aae3e7178fe9242f1e2780ac9",
+      "inference/core/interfaces/camera/dgpu_producer.py": "758a87b2323db68b6590ac16a0eadf9d3a4f5e61",
+      "inference/core/interfaces/camera/discoverability.py": "fe28bfed2d3e6040e97e44cb83836a24ed1f5228",
+      "inference/core/interfaces/camera/entities.py": "15aee2e6f333c3f595e9442fdd7f036bcf0130f1",
+      "inference/core/interfaces/camera/exceptions.py": "f5d356e9a7f613a3a27679f67d5b5c0dd06970bb",
+      "inference/core/interfaces/camera/gstreamer_cuda_producer.py": "7f635bbf2dcc8f84ced70efc0762a63cff2c4dfb",
+      "inference/core/interfaces/camera/gstreamer_cuda_tensor_bridge.py": "6b83f48365d91dab7726f3e1eb529414a93abf40",
+      "inference/core/interfaces/camera/gstreamer_rtsp_pipeline.py": "4273b10513de28c1b8365c09a9f3d6a5b98cead6",
+      "inference/core/interfaces/camera/gstreamer_rtsp_producer.py": "5221e562167e217bbda016a34e9c53a066391570",
+      "inference/core/interfaces/camera/jetson_producer.py": "f34eaac53878e2aa42f6d9bc2c45ca5c7714bf63",
+      "inference/core/interfaces/camera/jetson_tensor_bridge.py": "72605fdb4f72936597b9cb43175a0e6fced622be",
+      "inference/core/interfaces/camera/rtsp_opencv_tls.py": "952d6a2aa6da0d34f3f62fa2d337a9e4e8b916c9",
+      "inference/core/interfaces/camera/rtsp_tls.py": "cdf4fb75a1fb4877849ad3655ea816e10627f48b",
+      "inference/core/interfaces/camera/source_reference_sanitizer.py": "c40564a2586de34a7064cd1a37e204556a6a5509",
+      "inference/core/interfaces/camera/source_reference_validation.py": "ab51d070d85cf80a4b99a9855e78361f1280c758",
+      "inference/core/interfaces/camera/stream_error_classifier.py": "1d11567eb469610e4c5bd4959667a42f160cedf4",
+      "inference/core/interfaces/camera/stream_error_codes.py": "09f106a4c4958b96b353994b17005faac008be51",
+      "inference/core/interfaces/camera/test_pattern_producer.py": "d7982378d3199a034fa3c7b74fd2570c336a29b4",
+      "inference/core/interfaces/camera/utils.py": "a432c6d75c69c19ba5df8502bc2070d880de24d0",
+      "inference/core/interfaces/camera/video_source.py": "4cca4e3edd9411f49b2f7987e241fbea73e98e2f",
+      "inference/core/interfaces/stream/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/stream/configuration.py": "2af0bb81e04d3951470796186d6f06711955c64c",
+      "inference/core/interfaces/stream/entities.py": "926c50bc20b1e725c4b89a5377c603938d51e232",
+      "inference/core/interfaces/stream/environment.py": "cd5e947fe9225996e457b13a60afb8aabc17366f",
+      "inference/core/interfaces/stream/exceptions.py": "7a1b16b9a2dc33abd74026c8f700eb6d2d75641b",
+      "inference/core/interfaces/stream/model_handlers/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/stream/model_handlers/workflows.py": "5a82135cd47a10b97fb75dcfd6571f3c406b5f37",
+      "inference/core/interfaces/stream/pipeline.py": "32429d119496ca6ae7c1115d2d9dc46eed6045e9",
+      "inference/core/interfaces/stream/session.py": "201a423bdeef3a85e8eeccb84f205da1d083bc62",
+      "inference/core/interfaces/stream/sinks.py": "5d106deb911fdca72450765af8a64e0084a7dc20",
+      "inference/core/interfaces/stream/support/__init__.py": "2cc025042f6290a729e6264b14e7488468662d4e",
+      "inference/core/interfaces/stream/support/async_queue.py": "f4f702b648ec10cbcd67604d92b857610143aa74",
+      "inference/core/interfaces/stream/support/decorators.py": "784306c4c3c0568303ff01c43fc47d8089934d24",
+      "inference/core/interfaces/stream/support/environment.py": "204424e179974e921f1999e40ac25a0093954953",
+      "inference/core/interfaces/stream/support/images.py": "a51d425312b7f2e73bc334897f6c7a596f0ad5c6",
+      "inference/core/interfaces/stream/utils.py": "ed01a42963f48f1a588a10a7a4309a943c0c7564",
+      "inference/core/interfaces/stream/warnings.py": "55669f341986128b70d76f1e62cfc8e64148bfdb",
+      "inference/core/interfaces/stream/watchdog.py": "e94263b82eabe202741a48d519be2332f5a2244a",
+      "inference/core/interfaces/stream_manager/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/stream_manager/api/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/stream_manager/api/entities.py": "3ece9ee47e02a13d4ec8791fb812bbde660d7166",
+      "inference/core/interfaces/stream_manager/api/errors.py": "e4781ede855158caaedabe5aba4b5d62a90bb546",
+      "inference/core/interfaces/stream_manager/api/stream_manager_client.py": "418c136c7be147fc103cf5c07e9fd188895c2d98",
+      "inference/core/interfaces/stream_manager/manager_app/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/stream_manager/manager_app/app.py": "403f268cd150b8be925768b2fc9ca7f08d302848",
+      "inference/core/interfaces/stream_manager/manager_app/bootstrap.py": "23223952f3fe5f750089aba9522659e450ad67ac",
+      "inference/core/interfaces/stream_manager/manager_app/communication.py": "fa4a98977f791e8bbbd14b60a144f6bf6327c84e",
+      "inference/core/interfaces/stream_manager/manager_app/entities.py": "0f67f34af340febcca64482747d1b5244718a7e2",
+      "inference/core/interfaces/stream_manager/manager_app/errors.py": "725e62aad001256f4ee7a56cf08aa27416cf7b6d",
+      "inference/core/interfaces/stream_manager/manager_app/host.py": "50c68a4503c10b466c0e83de8523b1a75f6d7f4d",
+      "inference/core/interfaces/stream_manager/manager_app/inference_pipeline_manager.py": "6f23b5b340119bfee9845d5941f6a1c3848e5c42",
+      "inference/core/interfaces/stream_manager/manager_app/result_serialization.py": "dd3d8b7fc81c38a26185e4f703d7940d936031ce",
+      "inference/core/interfaces/stream_manager/manager_app/serialisation.py": "46ca8e8aa51baae31398628e1bbe064b9b2c7d57",
+      "inference/core/interfaces/stream_manager/manager_app/tcp_server.py": "5f951b1b6582707a3f70d5e0259fca8823267f81",
+      "inference/core/interfaces/stream_manager/manager_app/webrtc.py": "e37b3e0524f83522a15f6a1fbfe4d7e24c6cc295"
+    },
+    "tests": {
+      "tests/inference/unit_tests/core/interfaces/camera/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/camera/test_camera_log_credential_redaction.py": "62e8ab320c86b9e293c834a9995b9fc9a3373843",
+      "tests/inference/unit_tests/core/interfaces/camera/test_collection_policy.py": "d8c4412cc5abb54e1dbb0aa0e43bd3f03b68397c",
+      "tests/inference/unit_tests/core/interfaces/camera/test_discoverability.py": "289102c46867b26aa396f8a47d5d0618896d2dbb",
+      "tests/inference/unit_tests/core/interfaces/camera/test_gstreamer_cuda_producer.py": "89a86ee49993ed55dc51c37a4f931cc11dc7e9e4",
+      "tests/inference/unit_tests/core/interfaces/camera/test_gstreamer_rtsp_pipeline.py": "92750f3fb367c18f65de975e5e3333f95f0e6390",
+      "tests/inference/unit_tests/core/interfaces/camera/test_jetson_producer.py": "d1851a653e9d5fb6807d94e6ab31ab7c8f2f44ac",
+      "tests/inference/unit_tests/core/interfaces/camera/test_rtsp_opencv_tls.py": "282d8071ef9f8a4f7f9f4af77b2f05910995c63c",
+      "tests/inference/unit_tests/core/interfaces/camera/test_rtsp_tls.py": "db4b66090c00076251dde511f6f1d42564502817",
+      "tests/inference/unit_tests/core/interfaces/camera/test_source_reference_sanitizer.py": "07679857daea208df9eaaae4d96bc63a07712b86",
+      "tests/inference/unit_tests/core/interfaces/camera/test_stream_error_classifier.py": "4dae566e860ea2bec53c227d717fc78af0f55e62",
+      "tests/inference/unit_tests/core/interfaces/camera/test_stream_error_classifier_concurrency.py": "37bb1c1e6d7223965fa7a87e640964aea6653012",
+      "tests/inference/unit_tests/core/interfaces/camera/test_test_pattern_producer.py": "e4a9172399ca301b238e5bcf70c05a4a04ff0729",
+      "tests/inference/unit_tests/core/interfaces/stream/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/stream/test_session.py": "1db4541cc94ed53280ebeb3749846cf3d3f8eb30",
+      "tests/inference/unit_tests/core/interfaces/stream/test_utils.py": "4843f5b513ba12b2e8f821ab1b24220eebab9b11",
+      "tests/inference/unit_tests/core/interfaces/stream/test_watchdog.py": "4e4ce04369c9482af9c82935c5274127c6e2f6ac",
+      "tests/inference/unit_tests/core/interfaces/stream/test_workflow_model_handler.py": "cf9ea62fae62e20b9d9fcd6ed6d8fdda72773ad5",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/api/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/api/test_stream_manager_client.py": "23ba9e99b58b26a5490fd6d3f416637f4bd7f4e7",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_app.py": "561d12b761a4c2b3707745167c4af6e1e7643a84",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_communucation.py": "a0c4d8092d1a9e4799d559128a429639319dc5b3",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_serialisation.py": "20f04239fbe304522c958862fcdb7fd585b26f2e",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_tcp_server.py": "ac5eaab6ec4c03336896a9f77d37adbe6dda2b43"
+    },
+    "test_support": {
+      "tests/inference/unit_tests/core/interfaces/assets/credits.txt": "1976e267882448df34848dc0da8352929cb90da0",
+      "tests/inference/unit_tests/core/interfaces/assets/example_video.mp4": "a57fb573bcf17e8bec1c3c77f2de1fe969d104bb",
+      "tests/inference/unit_tests/core/interfaces/conftest.py": "fafc4a30e209a6e7a58e86ddf68790f6b8950f23"
+    }
+  },
+  "host": {
+    "retained_facades": {
+      "inference.core.interfaces.stream.inference_pipeline": {
+        "path": "inference/core/interfaces/stream/inference_pipeline.py",
+        "target": "inference.core.interfaces.legacy_stream.inference_pipeline",
+        "blob": "81fed6aec6ab759d4894933101bcb25218dfa5de"
+      },
+      "inference.core.interfaces.stream.model_handlers.roboflow_models": {
+        "path": "inference/core/interfaces/stream/model_handlers/roboflow_models.py",
+        "target": "inference.core.interfaces.legacy_stream.model_handlers.roboflow_models",
+        "blob": "0f26f24971205a91bbb4aea8f6cd7e49b7cd7105"
+      },
+      "inference.core.interfaces.stream.model_handlers.yolo_world": {
+        "path": "inference/core/interfaces/stream/model_handlers/yolo_world.py",
+        "target": "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
+        "blob": "52e1241ef3c2f997700744ad829572507ffe0565"
+      },
+      "inference.core.interfaces.stream.stream": {
+        "path": "inference/core/interfaces/stream/stream.py",
+        "target": "inference.core.interfaces.legacy_stream.stream",
+        "blob": "fa373bb0401c741d89012bd6d66ef29ef6f5171a"
+      }
+    },
+    "host_export_hooks": {
+      "inference.core.interfaces.stream.sinks": [
+        [
+          "ActiveLearningMiddleware",
+          "inference.core.active_learning.middlewares"
+        ]
+      ]
+    },
+    "source": {
+      "app_bundles/osx/cpu_http.py": "31ca9ae35a7591c47a0c8eeeb8eb75cd6310705d",
+      "app_bundles/windows/cpu_http.py": "7bc57439ce0e1d1ec649f39461b9ce83bd5fab9f",
+      "docker/config/cpu_http.py": "d6c5edfd0bc1285c9c975b91826bc62f71627eeb",
+      "docker/config/gpu_http.py": "68c279e20007b987e01b76061b867032d1201356",
+      "inference/_workflows_compat.py": "f71cda48bd7df4914024c7acaa460d936079e053",
+      "inference/core/__init__.py": "69e0f587f6c2da2fbcc53dbf4bc626fc6c465da3",
+      "inference/core/exceptions.py": "d1bed61533f0746527e0cb91021b06bfd8326d1f",
+      "inference/core/interfaces/legacy_stream/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/legacy_stream/host.py": "d14cbd6f37170a554522935f065dc908a9286278",
+      "inference/core/interfaces/legacy_stream/inference_pipeline.py": "36820600b99eea5aae2f9cbbc3be77649c80a69e",
+      "inference/core/interfaces/legacy_stream/model_handlers/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "inference/core/interfaces/legacy_stream/model_handlers/roboflow_models.py": "cb2d995a9ec3d69a493a7a0152825f2eb3f1ca15",
+      "inference/core/interfaces/legacy_stream/model_handlers/yolo_world.py": "c95bed20e0cb32c6e720017266b13696befb29b9",
+      "inference/core/interfaces/legacy_stream/stream.py": "dd2594b7d2daf69353f8b96467d81f382a5a8f6f",
+      "inference/core/interfaces/streams_configuration.py": "763cf3572340f268bf2729cd3e150722e3e1c52e",
+      "inference/core/warnings.py": "197148f4fcab9150f52ac58ee3a5dde4713f21ff",
+      "inference/usage_tracking/stream_session.py": "ba2ce8014d203e1e03970d1f860ac43326f92d4e"
+    },
+    "tree_tests": {
+      "tests/inference/unit_tests/core/interfaces/camera/test_utils.py": "867f30005e19e9dcdb32bcc44727b64ee82a451f",
+      "tests/inference/unit_tests/core/interfaces/camera/test_video_source.py": "1c5303697d549c5fdd84b9cf0852535008a3415f",
+      "tests/inference/unit_tests/core/interfaces/stream/test_interface_pipeline.py": "4999f4bba8bb6b901f459ac27ce537cb8be45d27",
+      "tests/inference/unit_tests/core/interfaces/stream/test_sinks.py": "34689a3e35cd52802b62de5e82492952a5283016",
+      "tests/inference/unit_tests/core/interfaces/stream/test_support.py": "b5d3139de6154cab8e8de1edc670a655ec5d7b61",
+      "tests/inference/unit_tests/core/interfaces/stream/test_tensor_sink_boundary.py": "60be8bf93dd4dceedfbc3e7cc84235062ed9cd5b",
+      "tests/inference/unit_tests/core/interfaces/stream/test_workflows.py": "75cd50b3e93a31fb11f21e364775b616422ab7b7",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_host_spawn.py": "5790170b1813966f906e18ca36c5ceb55f3d627d",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_inference_pipeline_manager.py": "d1021c9764871c84de78997731f483ecf9adaf6b",
+      "tests/inference/unit_tests/core/interfaces/stream_manager/manager_app/test_result_serialization.py": "f917299ba9551a046a64a7151323c36c9c433f92"
+    },
+    "tests": {
+      "tests/inference/unit_tests/conftest.py": "c4b58b65a2103b9391718e7bca48aa77ce1d45dc",
+      "tests/inference/unit_tests/core/interfaces/http/test_stream_api_security.py": "e2f1e5a1b6b22a06bfbfbb5808e4041e08b3fe4c",
+      "tests/inference/unit_tests/core/interfaces/legacy_stream/__init__.py": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "tests/inference/unit_tests/core/interfaces/legacy_stream/test_pipeline_wrappers.py": "84fea62d890f9098983331e93e35989a6a1ddb54",
+      "tests/inference/unit_tests/core/interfaces/test_streams_caller_bindings.py": "583e925a497ed89dd6a655f2ac66c58ec458dd53",
+      "tests/inference/unit_tests/core/interfaces/test_streams_configuration.py": "54caa23399e4c8fb31c87f70d4bf8bbad0c49807",
+      "tests/inference/unit_tests/core/interfaces/test_streams_decontamination.py": "d291810efb6be72e0b279687d456f5dca17266fb",
+      "tests/inference/unit_tests/core/interfaces/test_streams_exception_aliases.py": "290c9ace058c30d0388e15cc4dcae72ce13fb330",
+      "tests/inference/unit_tests/core/interfaces/test_streams_public_contract.py": "d12e0bd7ddb9a35182f761e339c33aed7f344af5",
+      "tests/inference/unit_tests/core/interfaces/test_streams_wire_contract.py": "349d7eff9ec3008bdf9872986fb3793fe2f19879",
+      "tests/inference/unit_tests/docker/config/test_stream_manager_launcher_bootstrap.py": "d6547d5b6d0528b7be7505773755203d1b27404a",
+      "tests/inference/unit_tests/streams_a_end_manifest.json": null,
+      "tests/inference/unit_tests/streams_compat_inventory.json": "dd4b3ff4de30b36dbad6246e53ac58a5fb51e6dd",
+      "tests/inference/unit_tests/usage_tracking/test_stream_session.py": "ece2a402737db3c320a56234a5f4caf4dbed7f1c"
+    }
+  }
+}

@@ -3,14 +3,16 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 import torch
-
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.entities import InferenceHandlerResult
-from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.execution_engine.core import ExecutionEngine
+from roboflow_workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowBatchInput,
+)
+
+from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.entities import InferenceHandlerResult
+from inference.core.interfaces.stream.environment import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
 )
 
 logger = logging.getLogger(__name__)

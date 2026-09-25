@@ -21,7 +21,7 @@ SEARCH_ROOTS = ("inference", "inference_cli", "development", "examples")
 
 EXPECTED_ROOTS = {
     "inference/core/interfaces/http/http_api.py": 2,
-    "inference/core/interfaces/stream/inference_pipeline.py": 1,
+    "inference/core/interfaces/stream/pipeline.py": 1,
     "inference_cli/lib/workflows/local_image_adapter.py": 1,
     "development/stream_interface/benchmark_engine_throughput.py": 1,
     "examples/run_perspective_correction.py": 1,

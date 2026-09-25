@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from inference.core.env import (
+from inference.core.interfaces.camera.entities import StatusUpdate, VideoFrame
+from inference.core.interfaces.camera.video_source import SourceMetadata
+from inference.core.interfaces.stream.environment import (
     CLASS_AGNOSTIC_NMS_ENV,
     CONFIDENCE_ENV,
     DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -14,9 +16,10 @@ from inference.core.env import (
     MAX_CANDIDATES_ENV,
     MAX_DETECTIONS_ENV,
 )
-from inference.core.interfaces.camera.entities import StatusUpdate, VideoFrame
-from inference.core.interfaces.camera.video_source import SourceMetadata
-from inference.core.utils.environment import safe_env_to_type, str2bool
+from inference.core.interfaces.stream.support.environment import (
+    safe_env_to_type,
+    str2bool,
+)
 
 AnyPrediction = Any
 ObjectDetectionPrediction = dict

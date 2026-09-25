@@ -18,7 +18,11 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    VideoFrame,
+    VideoFrameProducer,
+)
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
@@ -1096,3 +1100,188 @@ def test_completion_counts_null_predictions_before_sink_failure(monkeypatch) -> 
     pipeline._dispatch_inference_results()
     assert observed == [[1, 0]]
     assert queue.unfinished_tasks == 0
+
+
+class _EmptyVideoFileProducer(VideoFrameProducer):
+    """A video file without frames: its capture worker ends right away."""
+
+    def __init__(self) -> None:
+        self._opened = True
+
+    def grab(self) -> bool:
+        return False
+
+    def retrieve(self) -> Tuple[bool, Any]:
+        return False, None
+
+    def release(self) -> None:
+        self._opened = False
+
+    def isOpened(self) -> bool:
+        return self._opened
+
+    def discover_source_properties(self) -> SourceProperties:
+        return SourceProperties(
+            width=128, height=128, total_frames=0, is_file=True, fps=25
+        )
+
+
+def _video_source(
+    source_id: int,
+    terminated_sources: List[int],
+    startup_entered: Optional[Event] = None,
+    startup_gate: Optional[Event] = None,
+) -> VideoSource:
+    """Real `VideoSource` whose startup, if gated, blocks until `startup_gate`.
+
+    The producer factory runs inside `VideoSource.start()`, under the real
+    state lock, so a gated source holds that lock until the gate opens. Once
+    started, the source waits for its capture worker to end, so it is never
+    INITIALISING when terminated. Terminations are recorded by source id.
+    """
+
+    def open_video() -> VideoFrameProducer:
+        if startup_gate is not None:
+            startup_entered.set()
+            startup_gate.wait()
+        return _EmptyVideoFileProducer()
+
+    def record_termination(status_update: StatusUpdate) -> None:
+        if status_update.payload.get("new_state") is StreamState.TERMINATING:
+            terminated_sources.append(status_update.payload["source_id"])
+
+    video_source = VideoSource.init(
+        video_reference=open_video,
+        status_update_handlers=[record_termination],
+        source_id=source_id,
+    )
+    start = video_source.start
+
+    def start_until_capture_ended() -> None:
+        start()
+        capture_worker = video_source._stream_consumption_thread
+        capture_worker.join(timeout=10)
+        assert not capture_worker.is_alive(), "Capture worker did not stop"
+
+    video_source.start = start_until_capture_ended
+    return video_source
+
+
+def _pipeline_on(video_sources: List[VideoSource]) -> InferencePipeline:
+    return InferencePipeline(
+        on_video_frame=lambda frames: [None] * len(frames),
+        video_sources=video_sources,
+        predictions_queue=Queue(maxsize=8),
+        watchdog=MagicMock(),
+        status_update_handlers=[],
+    )
+
+
+def _terminator(pipeline: InferencePipeline, terminating: Event) -> Thread:
+    def terminate() -> None:
+        terminating.set()
+        pipeline.terminate()
+
+    return Thread(target=terminate, daemon=True)
+
+
+def _stop_leftover_threads(pipeline: InferencePipeline, terminator: Thread) -> None:
+    # Bounded cleanup after a failed assertion, so no worker outlives the test.
+    pipeline._stop = True
+    workers = [
+        terminator,
+        pipeline._inference_thread,
+        pipeline._dispatching_thread,
+    ] + [
+        video_source._stream_consumption_thread
+        for video_source in pipeline._video_sources
+    ]
+    for worker in workers:
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=10)
+
+
+def _join_pipeline(pipeline: InferencePipeline) -> None:
+    joiner = Thread(target=pipeline.join, daemon=True)
+    joiner.start()
+    joiner.join(timeout=10)
+    assert not joiner.is_alive(), "Pipeline workers did not stop"
+
+
+def test_terminate_waits_for_source_holding_its_startup_lock() -> None:
+    # given
+    startup_entered, startup_gate = Event(), Event()
+    terminated_sources = []
+    video_source = _video_source(
+        source_id=0,
+        terminated_sources=terminated_sources,
+        startup_entered=startup_entered,
+        startup_gate=startup_gate,
+    )
+    pipeline = _pipeline_on(video_sources=[video_source])
+    terminating = Event()
+    terminator = _terminator(pipeline=pipeline, terminating=terminating)
+
+    try:
+        pipeline.start(use_main_thread=False)
+        assert startup_entered.wait(timeout=10), "Source startup never began"
+        assert video_source._state_change_lock.locked()
+
+        # when
+        terminator.start()
+        assert terminating.wait(timeout=10), "terminate() was never called"
+        terminator.join(timeout=0.5)
+
+        # then
+        assert terminator.is_alive(), "terminate() returned during startup"
+        assert terminated_sources == []
+
+        startup_gate.set()
+        terminator.join(timeout=10)
+        assert not terminator.is_alive(), "terminate() did not complete"
+        assert terminated_sources == [0]
+        assert video_source.describe_source().state is StreamState.ENDED
+        _join_pipeline(pipeline=pipeline)
+    finally:
+        startup_gate.set()
+        _stop_leftover_threads(pipeline=pipeline, terminator=terminator)
+
+
+def test_terminate_waits_for_whole_startup_before_stopping_any_source() -> None:
+    # given
+    startup_entered, startup_gate = Event(), Event()
+    terminated_sources = []
+    started_source = _video_source(source_id=0, terminated_sources=terminated_sources)
+    gated_source = _video_source(
+        source_id=1,
+        terminated_sources=terminated_sources,
+        startup_entered=startup_entered,
+        startup_gate=startup_gate,
+    )
+    pipeline = _pipeline_on(video_sources=[started_source, gated_source])
+    terminating = Event()
+    terminator = _terminator(pipeline=pipeline, terminating=terminating)
+
+    try:
+        pipeline.start(use_main_thread=False)
+        assert startup_entered.wait(timeout=10), "Second source never began"
+        assert started_source.describe_source().state is StreamState.ENDED
+
+        # when
+        terminator.start()
+        assert terminating.wait(timeout=10), "terminate() was never called"
+        terminator.join(timeout=0.5)
+
+        # then - the source that already started is not stopped while the
+        # next one is still starting
+        assert terminator.is_alive(), "terminate() returned during startup"
+        assert terminated_sources == []
+
+        startup_gate.set()
+        terminator.join(timeout=10)
+        assert not terminator.is_alive(), "terminate() did not complete"
+        assert terminated_sources == [0, 1]
+        _join_pipeline(pipeline=pipeline)
+    finally:
+        startup_gate.set()
+        _stop_leftover_threads(pipeline=pipeline, terminator=terminator)

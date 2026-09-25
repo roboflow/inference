@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import signal
 import threading
@@ -10,28 +11,35 @@ from multiprocessing import Process, Queue
 from queue import Empty
 from threading import Event
 from types import FrameType
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import ValidationError
-
-from inference.core import logger
-from inference.core.exceptions import (
-    MissingApiKeyError,
+from roboflow_workflows.core_steps.common.serializers import serialise_sv_detections
+from roboflow_workflows.errors import WorkflowSyntaxError
+from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
+from roboflow_workflows.prototypes.platform_errors import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
 )
+
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
-from inference.core.interfaces.http.orjson_utils import (
-    serialise_single_workflow_result_element,
+from inference.core.interfaces.stream.environment import (
+    ENABLE_WORKFLOWS_PROFILING,
+    WORKFLOWS_PROFILER_BUFFER_SIZE,
 )
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.exceptions import MissingApiKeyError
+from inference.core.interfaces.stream.pipeline import (
+    InferencePipeline,
+    build_workflows_profiler,
+)
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink, multi_sink
+from inference.core.interfaces.stream.support.async_queue import Queue as SyncAsyncQueue
 from inference.core.interfaces.stream.utils import materialise_video_frame_for_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
@@ -45,6 +53,16 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
+    WorkflowConfiguration,
+)
+from inference.core.interfaces.stream_manager.manager_app.host import (
+    PipelineHost,
+    PipelineHostDescriptor,
+    create_pipeline_host,
+    resolve_host_descriptor,
+)
+from inference.core.interfaces.stream_manager.manager_app.result_serialization import (
+    serialise_single_workflow_result_element,
 )
 from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     describe_error,
@@ -56,12 +74,11 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     get_frame_from_workflow_output,
     init_rtc_peer_connection,
 )
-from inference.core.utils.async_utils import Queue as SyncAsyncQueue
-from inference.core.workflows.core_steps.common.serializers import (
-    serialise_sv_detections,
-)
-from inference.core.workflows.errors import WorkflowSyntaxError
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logger = logging.getLogger(__name__)
+
+PIPELINE_DRAIN_TIMEOUT = 10.0
+PIPELINE_DRAIN_RETRY_INTERVAL = 0.05
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -74,19 +91,34 @@ def ignore_signal(signal_number: int, frame: FrameType) -> None:
 class InferencePipelineManager(Process):
     @classmethod
     def init(
-        cls, pipeline_id: str, command_queue: Queue, responses_queue: Queue
+        cls,
+        pipeline_id: str,
+        command_queue: Queue,
+        responses_queue: Queue,
+        host_descriptor: Optional[PipelineHostDescriptor] = None,
     ) -> "InferencePipelineManager":
         return cls(
             pipeline_id=pipeline_id,
             command_queue=command_queue,
             responses_queue=responses_queue,
+            host_descriptor=host_descriptor,
         )
 
-    def __init__(self, pipeline_id: str, command_queue: Queue, responses_queue: Queue):
+    def __init__(
+        self,
+        pipeline_id: str,
+        command_queue: Queue,
+        responses_queue: Queue,
+        host_descriptor: Optional[PipelineHostDescriptor] = None,
+    ):
         super().__init__()
         self._pipeline_id = pipeline_id
         self._command_queue = command_queue
         self._responses_queue = responses_queue
+        self._host_descriptor = resolve_host_descriptor(host_descriptor)
+        # Built in this process on the first initialisation and closed only
+        # when `run()` exits, after the pipeline running on it was drained.
+        self._host: Optional[PipelineHost] = None
         self._inference_pipeline: Optional[InferencePipeline] = None
         self._watchdog: Optional[PipelineWatchDog] = None
         self._stop = False
@@ -102,17 +134,22 @@ class InferencePipelineManager(Process):
         signal.signal(signal.SIGINT, ignore_signal)
         signal.signal(signal.SIGTERM, self._handle_termination_signal)
 
-        while not self._stop:
-            self._check_pipeline_timeout()
-            # Handle commands from the queue
-            try:
-                command: Optional[Tuple[str, dict]] = self._command_queue.get(timeout=1)
-            except Empty:
-                continue
-            if command is None:
-                break
-            request_id, payload = command
-            self._handle_command(request_id=request_id, payload=payload)
+        try:
+            while not self._stop:
+                self._check_pipeline_timeout()
+                # Handle commands from the queue
+                try:
+                    command: Optional[Tuple[str, dict]] = self._command_queue.get(
+                        timeout=1
+                    )
+                except Empty:
+                    continue
+                if command is None:
+                    break
+                request_id, payload = command
+                self._handle_command(request_id=request_id, payload=payload)
+        finally:
+            self._release_pipeline_resources()
 
     def _check_pipeline_timeout(self) -> None:
         if self._inference_pipeline and self._consumption_timeout is not None:
@@ -126,6 +163,7 @@ class InferencePipelineManager(Process):
                     )
                     if self._inference_pipeline is not None:
                         self._execute_termination()
+                    self._stop = True
                     self._command_queue.put(None)
                     logger.info(f"Timeout Termination successful in process:{pid}...")
                 except Exception as error:
@@ -178,6 +216,7 @@ class InferencePipelineManager(Process):
             )
 
     def _initialise_pipeline(self, request_id: str, payload: dict) -> None:
+        started = False
         try:
             self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
@@ -185,13 +224,15 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
+            workflow_arguments = self._prepare_workflow(
+                processing_configuration=parsed_payload.processing_configuration,
+                api_key=parsed_payload.api_key,
+                workflow_version_id=parsed_payload.processing_configuration.workflow_version_id,
+            )
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=parsed_payload.video_configuration.video_reference,
-                workflow_specification=parsed_payload.processing_configuration.workflow_specification,
-                workspace_name=parsed_payload.processing_configuration.workspace_name,
+                **workflow_arguments,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
-                workflow_version_id=parsed_payload.processing_configuration.workflow_version_id,
-                api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
                 disable_sinks=parsed_payload.processing_configuration.disable_sinks,
@@ -212,6 +253,7 @@ class InferencePipelineManager(Process):
             self._consumption_timeout = parsed_payload.consumption_timeout
             self._last_consume_time = time.monotonic()
             self._inference_pipeline.start(use_main_thread=False)
+            started = True
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
             )
@@ -267,8 +309,12 @@ class InferencePipelineManager(Process):
                 public_error_message="Provided workflow configuration is not valid.",
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
+        finally:
+            if not started:
+                self._release_failed_initialisation()
 
     def _start_webrtc(self, request_id: str, payload: dict):
+        started = False
         try:
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
 
@@ -442,12 +488,15 @@ class InferencePipelineManager(Process):
                 multi_sink, sinks=[buffer_sink.on_prediction, webrtc_sink]
             )
 
+            workflow_arguments = self._prepare_workflow(
+                processing_configuration=parsed_payload.processing_configuration,
+                api_key=parsed_payload.api_key,
+                workflow_version_id=None,
+            )
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=webrtc_producer,
-                workflow_specification=parsed_payload.processing_configuration.workflow_specification,
-                workspace_name=parsed_payload.processing_configuration.workspace_name,
+                **workflow_arguments,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
-                api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
                 disable_sinks=parsed_payload.processing_configuration.disable_sinks,
@@ -466,6 +515,7 @@ class InferencePipelineManager(Process):
                 decoding_buffer_size=parsed_payload.decoding_buffer_size,
             )
             self._inference_pipeline.start(use_main_thread=False)
+            started = True
             logger.info(f"WebRTC pipeline initialised. request_id={request_id}...")
         except (
             ValidationError,
@@ -504,6 +554,52 @@ class InferencePipelineManager(Process):
                 public_error_message="Provided workflow configuration is not valid.",
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
+        finally:
+            if not started:
+                self._release_failed_initialisation()
+
+    def _prepare_workflow(
+        self,
+        processing_configuration: WorkflowConfiguration,
+        *,
+        api_key: Optional[str],
+        workflow_version_id: Optional[str],
+    ) -> Dict[str, Any]:
+        # One profiler records the host's definition fetch and every workflow
+        # run of the pipeline.
+        profiler = build_workflows_profiler(
+            enabled=ENABLE_WORKFLOWS_PROFILING,
+            max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
+        )
+        if self._host is None:
+            self._host = create_pipeline_host(self._host_descriptor)
+        workflow_specification, workflow_init_parameters, step_error_handler = (
+            self._host.prepare_workflow(
+                workflow_specification=processing_configuration.workflow_specification,
+                workspace_name=processing_configuration.workspace_name,
+                workflow_id=processing_configuration.workflow_id,
+                workflow_version_id=workflow_version_id,
+                api_key=api_key,
+                profiler=profiler,
+            )
+        )
+
+        return {
+            "workflow_specification": workflow_specification,
+            "workflow_init_parameters": workflow_init_parameters,
+            "step_error_handler": step_error_handler,
+            "profiler": profiler,
+        }
+
+    def _close_host(self) -> None:
+        if self._host is None:
+            return None
+
+        host, self._host = self._host, None
+        try:
+            host.close()
+        except Exception as error:
+            logger.warning(f"Could not close pipeline host. Error: {error}")
 
     def _terminate_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:
@@ -514,6 +610,7 @@ class InferencePipelineManager(Process):
             return None
         try:
             self._execute_termination()
+            self._stop = True
             logger.info(f"Pipeline terminated. request_id={request_id}...")
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
@@ -527,20 +624,55 @@ class InferencePipelineManager(Process):
             )
 
     def _handle_termination_signal(self, signal_number: int, frame: FrameType) -> None:
+        # Only stops and wakes the command loop. The signal may interrupt this
+        # thread while it creates or starts the very pipeline to drain, so the
+        # pipeline is drained by `run()` once the current command completed.
+        self._stop = True
         try:
             pid = os.getpid()
             logger.info(f"Terminating pipeline in process:{pid}...")
-            if self._inference_pipeline is not None:
-                self._execute_termination()
             self._command_queue.put(None)
-            logger.info(f"Termination successful in process:{pid}...")
         except Exception as error:
             logger.warning(f"Could not terminate pipeline gracefully. Error: {error}")
 
     def _execute_termination(self) -> None:
-        self._inference_pipeline.terminate()
-        self._inference_pipeline.join()
-        self._stop = True
+        # The reference is kept until the pipeline is drained, so a
+        # termination that failed can still be retried on shutdown. Stopping
+        # this process is left to the callers: a failed initialisation drains
+        # its pipeline without stopping it.
+        if self._inference_pipeline is not None:
+            self._inference_pipeline.terminate()
+            self._inference_pipeline.join()
+            self._inference_pipeline = None
+
+    def _release_pipeline_resources(self) -> None:
+        # The single shutdown path, however the command loop ended: the host
+        # is closed only after the pipeline workers running on it are drained.
+        deadline = time.monotonic() + PIPELINE_DRAIN_TIMEOUT
+        while self._inference_pipeline is not None:
+            try:
+                self._execute_termination()
+            except StreamOperationNotAllowedError as error:
+                # A source just started cannot be terminated until its
+                # capture worker takes it out of INITIALISING.
+                if time.monotonic() > deadline:
+                    logger.warning(
+                        f"Could not drain pipeline, leaving its host open. Error: {error}"
+                    )
+                    return None
+                time.sleep(PIPELINE_DRAIN_RETRY_INTERVAL)
+        self._close_host()
+
+    def _release_failed_initialisation(self) -> None:
+        # A failed initialisation does not stop this process, so what it
+        # created is released at once; a retried initialisation builds anew.
+        # The failure has its own response: releasing must not add another.
+        try:
+            self._release_pipeline_resources()
+        except Exception as error:
+            logger.warning(
+                f"Could not release resources of failed initialisation. Error: {error}"
+            )
 
     def _mute_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:

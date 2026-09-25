@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_stream_benchmark_checks:
+        description: "Run stream pipeline benchmark harness tests (manual dispatch only)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -34,6 +40,17 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+      - name: 🕰️ Fetch WP-A00 baseline commit
+        # actions/checkout@v6 only fetches HEAD at depth 1, so this historical
+        # commit is otherwise missing once HEAD moves past it. All four
+        # git-history-dependent tests in test_streams_decontamination.py
+        # (test_manifest_source_paths_match_git_tree_at_baseline_sha,
+        # test_manifest_public_top_level_names_match_git_tree_at_baseline_sha,
+        # test_a_end_manifest_records_a_real_base_commit_and_no_candidate) and
+        # test_streams_public_contract.py
+        # (test_active_learning_sink_signature_shape_is_unchanged) pin this
+        # same SHA. Keep it in sync with BASELINE_SHA there.
+        run: git fetch --depth 1 origin 65ad2beaaca0825bffc2fbbe99199d3a40994324
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -59,7 +76,13 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
+        env:
+          STREAMS_REQUIRE_BASELINE_HISTORY: "1"
         run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
+      - name: 🧪 Stream Pipeline Benchmark Harness Tests
+        if: github.event_name == 'workflow_dispatch' && inputs.run_stream_benchmark_checks
+        timeout-minutes: 10
+        run: python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py

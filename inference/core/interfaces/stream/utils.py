@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -6,9 +7,8 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
+from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
 
-from inference.core import logger
-from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_WORKFLOWS_PROFILING
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     VideoFrame,
@@ -19,7 +19,12 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
-from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
+from inference.core.interfaces.stream.environment import (
+    DEFAULT_BUFFER_SIZE,
+    ENABLE_WORKFLOWS_PROFILING,
+)
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
