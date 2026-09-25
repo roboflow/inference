@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -922,9 +923,8 @@ def build_interactive_segmentation_params(
 ) -> dict:
     if action in ("embed", "embed_images"):
         params: dict = {}
-        image_id = getattr(request, "image_id", None)
-        if image_id:
-            params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
+        image_id = getattr(request, "image_id", None) or uuid.uuid4().hex
+        params["image_hashes"] = [namespace_client_hash_id(image_id, api_key)]
         if action == "embed_images":
             params["return_embeddings"] = False
         return params

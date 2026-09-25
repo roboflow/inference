@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
@@ -55,6 +57,9 @@ async def parse_interactive_instance_segmentation_input(
             )
 
     client_hashes = merged.get("image_hashes")
+    if client_hashes is None and images:
+        client_hashes = [hashlib.sha256(img).hexdigest() for img in images]
+
     if client_hashes is not None:
         merged["image_hashes"] = namespace_client_hash_ids(
             client_hashes, common.api_key

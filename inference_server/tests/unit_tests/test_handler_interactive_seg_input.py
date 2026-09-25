@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 
 from inference_model_manager.hash_namespacing import (
     namespace_client_hash_id,
+    namespace_client_hash_ids,
     tenant_namespace,
 )
 from inference_server.framework.entities import CommonRequestParams, InputParseError
@@ -19,6 +21,15 @@ from inference_server.handlers.interactive_instance_segmentation.input_parser im
 class _FormData(dict):
     def multi_items(self):
         for k, v in self.items():
+            yield k, v
+
+
+class _MultiFormData:
+    def __init__(self, items):
+        self._items = items
+
+    def multi_items(self):
+        for k, v in self._items:
             yield k, v
 
 
@@ -97,6 +108,61 @@ async def test_empty_string_client_hash_with_image_is_namespaced():
 
 
 @pytest.mark.asyncio
+async def test_generated_hash_for_single_image_when_key_absent():
+    img = b"\x93NUMPY" + b"\x00" * 16
+    req = _Req(_FormData({"image": _FilePart(img)}))
+    out = await parse_interactive_instance_segmentation_input(req, _common())
+    expected = namespace_client_hash_id(hashlib.sha256(img).hexdigest(), "k")
+    assert out["params"]["image_hashes"] == [expected]
+
+
+@pytest.mark.asyncio
+async def test_generated_hash_for_single_image_when_key_is_none():
+    img = b"\x93NUMPY" + b"\x00" * 16
+    req = _Req(
+        _FormData(
+            {
+                "image": _FilePart(img),
+                "inputs": json.dumps({"image_hashes": None}),
+            }
+        )
+    )
+    out = await parse_interactive_instance_segmentation_input(req, _common())
+    expected = namespace_client_hash_id(hashlib.sha256(img).hexdigest(), "k")
+    assert out["params"]["image_hashes"] == [expected]
+
+
+@pytest.mark.asyncio
+async def test_generated_hashes_for_two_images():
+    img_a = b"\x93NUMPY" + b"\x00" * 16
+    img_b = b"\x93NUMPY" + b"\x01" * 16
+    req = _Req(
+        _MultiFormData([("image", _FilePart(img_a)), ("image", _FilePart(img_b))])
+    )
+    out = await parse_interactive_instance_segmentation_input(req, _common())
+    expected = namespace_client_hash_ids(
+        [hashlib.sha256(img_a).hexdigest(), hashlib.sha256(img_b).hexdigest()], "k"
+    )
+    assert out["params"]["image_hashes"] == expected
+
+
+@pytest.mark.asyncio
+async def test_generated_hash_differs_per_tenant_for_same_image():
+    img = b"\x93NUMPY" + b"\x00" * 16
+    req_a = _Req(_FormData({"image": _FilePart(img)}))
+    req_b = _Req(_FormData({"image": _FilePart(img)}))
+
+    out_a = await parse_interactive_instance_segmentation_input(
+        req_a, CommonRequestParams(model_id="sam3/sam3_final", api_key="key-a")
+    )
+    out_b = await parse_interactive_instance_segmentation_input(
+        req_b, CommonRequestParams(model_id="sam3/sam3_final", api_key="key-b")
+    )
+
+    assert out_a["params"]["image_hashes"] != out_b["params"]["image_hashes"]
+
+
+@pytest.mark.asyncio
 async def test_no_image_and_no_hashes_still_400():
     req = _Req(_FormData({"inputs": json.dumps({"point_labels": [[1]]})}))
     with pytest.raises(InputParseError) as exc_info:
@@ -129,6 +195,58 @@ async def test_empty_images_issues_single_empty_payload_infer():
     assert kwargs["image"] == b""
     assert kwargs["action"] == "segment_with_visual_prompts"
     assert kwargs["params"]["image_hashes"] == ["h1"]
+
+
+@pytest.mark.asyncio
+async def test_two_images_with_two_hashes_send_one_hash_each():
+    proxy = MagicMock()
+    proxy.infer = AsyncMock(side_effect=[{"a": True}, {"b": True}])
+    common = _common()
+    result = await handle_interactive_instance_segmentation(
+        "segment_with_visual_prompts",
+        {"images": [b"img-a", b"img-b"], "params": {"image_hashes": ["h1", "h2"]}},
+        proxy,
+        ServerHooks(request=None, common=common),
+    )
+    assert result == [{"a": True}, {"b": True}]
+    assert proxy.infer.await_count == 2
+    for call in proxy.infer.await_args_list:
+        assert len(call.kwargs["params"]["image_hashes"]) == 1
+    sent_hashes = sorted(
+        call.kwargs["params"]["image_hashes"][0]
+        for call in proxy.infer.await_args_list
+    )
+    assert sent_hashes == ["h1", "h2"]
+
+
+@pytest.mark.asyncio
+async def test_two_images_with_mismatched_hash_count_is_rejected():
+    proxy = MagicMock()
+    proxy.infer = AsyncMock(return_value={"ok": True})
+    common = _common()
+    with pytest.raises(ValueError):
+        await handle_interactive_instance_segmentation(
+            "segment_with_visual_prompts",
+            {"images": [b"img-a", b"img-b"], "params": {"image_hashes": ["h1"]}},
+            proxy,
+            ServerHooks(request=None, common=common),
+        )
+    assert proxy.infer.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_two_images_with_string_hash_is_rejected():
+    proxy = MagicMock()
+    proxy.infer = AsyncMock(return_value={"ok": True})
+    common = _common()
+    with pytest.raises(ValueError):
+        await handle_interactive_instance_segmentation(
+            "segment_with_visual_prompts",
+            {"images": [b"img-a", b"img-b"], "params": {"image_hashes": "h1"}},
+            proxy,
+            ServerHooks(request=None, common=common),
+        )
+    assert proxy.infer.await_count == 0
 
 
 from dataclasses import dataclass

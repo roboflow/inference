@@ -37,6 +37,14 @@ async def handle_interactive_instance_segmentation(
             request=hooks.request,
         )
 
+    hashes = params.get("image_hashes")
+    if hashes is None:
+        per_call_params = [params] * len(images)
+    elif isinstance(hashes, list) and len(hashes) == len(images):
+        per_call_params = [{**params, "image_hashes": [h]} for h in hashes]
+    else:
+        raise ValueError("image_hashes count must match the number of images")
+
     return await gather_bounded(
         *(
             proxy.infer(
@@ -44,9 +52,9 @@ async def handle_interactive_instance_segmentation(
                 image=img,
                 action=dispatch_action,
                 instance=common.instance,
-                params=params,
+                params=call_params,
                 request=hooks.request,
             )
-            for img in images
+            for img, call_params in zip(images, per_call_params)
         )
     )

@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from inference_model_manager.hash_namespacing import namespace_client_hash_id
+from inference_model_manager.hash_namespacing import (
+    namespace_client_hash_id,
+    tenant_namespace,
+)
 from inference_server.legacy.entities import (
     Sam2EmbeddingRequest,
     Sam2PromptSet,
@@ -32,6 +35,32 @@ def test_embed_params_namespace_client_hash():
         ]
         is False
     )
+
+
+def test_embed_params_generate_namespaced_id_when_missing():
+    req = Sam2EmbeddingRequest(image=IMG)
+    params = build_interactive_segmentation_params("embed", req, "key")
+    assert len(params["image_hashes"]) == 1
+    generated = params["image_hashes"][0]
+    assert generated.startswith(f"{tenant_namespace('key')}:")
+
+
+def test_embed_generated_id_round_trips_to_segment():
+    embed_req = Sam2EmbeddingRequest(image=IMG)
+    embed_params = build_interactive_segmentation_params("embed", embed_req, "key")
+    generated_hash = embed_params["image_hashes"][0]
+
+    embeddings_obj = SimpleNamespace(image_hash=generated_hash)
+    repacked = repack_interactive_segmentation_response(
+        "embed", [embeddings_obj], embed_req, "key"
+    )
+
+    segment_req = Sam2SegmentationRequest(image=IMG, image_id=repacked.image_id)
+    segment_params = build_interactive_segmentation_params(
+        "segment", segment_req, "key"
+    )
+
+    assert segment_params["image_hashes"] == [generated_hash]
 
 
 def test_sam1_segment_params():
