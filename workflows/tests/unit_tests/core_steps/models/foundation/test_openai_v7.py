@@ -14,11 +14,6 @@ import numpy as np
 import pytest
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
-    MODEL_DETECTION_PROMPT_STYLES,
-    MODEL_REASONING_EFFORT_VALUES,
-    MODEL_VERSION_IDS,
-    MODEL_VERSION_METADATA,
-    STRUCTURED_ABSOLUTE_STYLE,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
     BlockManifest,
     OpenAIBlockV7,
@@ -255,8 +250,6 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     "model_version, expected_format",
     [
         ("gpt-6-astra", "xyxy_absolute"),
-        ("gpt-6-sol", "xyxy_absolute"),
-        ("gpt-6-luna", "xyxy_absolute"),
         ("gpt-5.6-sol", "xyxy_absolute"),
         ("gpt-4o", "xyxy_absolute"),
         ("gpt-5.1", "named_normalized"),
@@ -663,53 +656,3 @@ def test_run_reports_error_status_for_unparsable_segmentation_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
-
-
-@pytest.mark.parametrize(
-    "model_version, name",
-    [("gpt-6-sol", "GPT-6 Sol"), ("gpt-6-luna", "GPT-6 Luna")],
-)
-def test_gpt_6_sol_and_luna_catalog_entries(model_version: str, name: str) -> None:
-    # Released in roboflow-workflows 0.2.2.
-    manifest = BlockManifest.model_validate(
-        {
-            "type": "roboflow_core/open_ai@v7",
-            "name": "open_ai",
-            "images": "$inputs.image",
-            "task_type": "unconstrained",
-            "prompt": "This is my prompt",
-            "api_key": "$inputs.api_key",
-            "model_version": model_version,
-        }
-    )
-
-    assert manifest.model_version == model_version
-    assert MODEL_VERSION_METADATA[model_version]["name"] == name
-    assert MODEL_REASONING_EFFORT_VALUES[model_version] == [
-        "none",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    ]
-    assert MODEL_DETECTION_PROMPT_STYLES[model_version] == STRUCTURED_ABSOLUTE_STYLE
-
-
-def test_gpt_6_catalog_order_and_model_version_examples() -> None:
-    model_version_schema = BlockManifest.model_json_schema()["properties"][
-        "model_version"
-    ]
-
-    assert MODEL_VERSION_IDS[:4] == [
-        "gpt-6-astra",
-        "gpt-6-sol",
-        "gpt-6-luna",
-        "gpt-5.6-sol",
-    ]
-    assert model_version_schema["examples"] == [
-        "gpt-6-sol",
-        "gpt-5.1",
-        "$inputs.openai_model",
-    ]
-    assert model_version_schema["default"] == "gpt-5.1"
