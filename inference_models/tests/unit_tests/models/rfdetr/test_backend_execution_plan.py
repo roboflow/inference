@@ -486,6 +486,11 @@ def test_onnx_model_delegates_forward_and_postprocess_through_plan(monkeypatch):
     Args:
         monkeypatch (pytest.MonkeyPatch): ONNX execution replacement fixture.
     """
+    # The adapter requires ORT at import time, even with the session double below.
+    pytest.importorskip(
+        "onnxruntime", reason="ONNX adapter requires the optional ONNX Runtime extra"
+    )
+
     from inference_models.models.rfdetr import rfdetr_object_detection_onnx as adapter
 
     received = []
