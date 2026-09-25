@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from dataclasses import FrozenInstanceError
 
@@ -47,7 +48,6 @@ from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
     RFDETR_POSTPROCESSOR_TRITON_FUSED_V1,
     RFDETR_PREPROCESSOR_BASE,
-    RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.optimization.readiness import (
@@ -248,7 +248,7 @@ def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
     )
     profiling_plan = RFDetrExecutionPlan(
-        preprocessor_id=RFDETR_PREPROCESSOR_THREADED_EXACT_V1,
+        preprocessor_id=RFDETR_PREPROCESSOR_BASE,
         buffer_strategy_id="base",
         scheduler_id="base",
         postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
@@ -260,7 +260,7 @@ def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
     resolved = RFDetrExecutionPlan.from_dict(profiling_plan.to_dict())
 
     assert isinstance(resolved, RFDetrExecutionPlan)
-    assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
+    assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_BASE
     assert resolved.buffer_strategy_id == "base"
     assert resolved.scheduler_id == "base"
     assert resolved.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
@@ -315,15 +315,15 @@ def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     )
 
 
-def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
+def test_rfdetr_auto_preferences_skip_unavailable_triton_and_arm_simd() -> None:
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
-        preprocessor_max_workers=2,
     )
     context = ExecutionContext(
         device_kind="gpu",
         device="cuda:0",
         runtime_components={"triton": False},
+        host_architecture="aarch64",
     )
 
     preprocessor = registry.resolve(
@@ -337,10 +337,106 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
         context=context,
     )
 
-    assert (
-        preprocessor.metadata.implementation_id == RFDETR_PREPROCESSOR_THREADED_EXACT_V1
-    )
+    assert preprocessor.metadata.implementation_id == "base"
     assert postprocessor.metadata.implementation_id == RFDETR_POSTPROCESSOR_BASE
+
+
+@pytest.mark.parametrize("backend", ["torch", "onnx", "trt"])
+@pytest.mark.parametrize("simd_available", [True, False])
+def test_auto_and_full_request_chain_with_real_preprocessors(
+    monkeypatch, backend, simd_available
+):
+    from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+        PreprocessorSelector,
+    )
+    from inference_models.models.rfdetr.optimization.preprocessors import pillow_simd
+
+    def load():
+        if not simd_available:
+            raise ImportError("SIMD not installed")
+        return object()
+
+    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", load)
+    monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cuda"), backend=backend
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda",
+        host_architecture="x86_64",
+        runtime_components={"triton": True},
+    )
+    selector = PreprocessorSelector(
+        registry=registry,
+        context=context,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+    primary = selector.resolve_model(
+        requested_id="auto", allow_fallback=True
+    ).implementation
+    assert primary.metadata.implementation_id == "triton-universal-v1"
+    request = PreprocessRequest(
+        images=np.zeros((32, 32, 3), dtype=np.uint8),
+        input_color_format="rgb",
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+        image_size_wh=(48, 48),
+    )
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=request,
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == ("pillow-simd-v1" if simd_available else "base")
+    # Same shape, but tensor inputs must skip SIMD. Neither fallback is sticky.
+    tensor_request = dataclasses.replace(request, images=torch.zeros((3, 32, 32)))
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=tensor_request,
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == "base"
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=dataclasses.replace(request, image_size_wh=None),
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == "triton-universal-v1"
+    # Model-level auto selection also checks native availability, not just metadata.
+    no_triton = PreprocessorSelector(
+        registry=registry,
+        context=dataclasses.replace(context, runtime_components={"triton": False}),
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+    assert no_triton.resolve_model(
+        requested_id="auto", allow_fallback=True
+    ).effective_id == ("pillow-simd-v1" if simd_available else "base")
+
+
+@pytest.mark.parametrize("backend", ["trt", "torch", "onnx"])
+def test_registry_rejects_removed_threaded_preprocessor(backend) -> None:
+    """Reject the removed implementation rather than silently selecting base.
+
+    Args:
+        backend (str): Object-detection registry to inspect.
+    """
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cpu"), backend=backend
+    )
+    with pytest.raises(ModelRuntimeError, match="Unknown RF-DETR preprocess"):
+        registry.resolve_selection(
+            stage=OptimizationStage.PREPROCESS,
+            requested_id="threaded-exact-v1",
+            context=ExecutionContext(device_kind="cpu", device="cpu"),
+            allow_fallback=True,
+        )
 
 
 @pytest.mark.parametrize("allow_fallback", [False, True])
@@ -357,7 +453,6 @@ def test_model_eval_request_retains_triton_preprocessor(
     monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
-        preprocessor_max_workers=2,
     )
     context = _context()
     network = _network_input().model_copy(
