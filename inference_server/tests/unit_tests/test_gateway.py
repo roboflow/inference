@@ -1041,6 +1041,31 @@ class _VanishingManager:
         return {"served": model_id}
 
 
+class _EvictingManager:
+    """Manager double whose first process_async call evicts the model, so a
+    mid-request reload must actually run rather than short-circuit as healthy."""
+
+    def __init__(self, error):
+        self.error = error
+        self.process_calls = 0
+        self.load_calls: list[tuple[str, str]] = []
+        self.loaded: set[str] = set()
+
+    def __contains__(self, model_id):
+        return model_id in self.loaded
+
+    def load(self, model_id, api_key, **kwargs):
+        self.load_calls.append((api_key, kwargs.get("device", "")))
+        self.loaded.add(model_id)
+
+    async def process_async(self, model_id, **kwargs):
+        self.process_calls += 1
+        if self.process_calls == 1:
+            self.loaded.discard(model_id)
+            raise self.error
+        return {"served": model_id}
+
+
 class TestInferRetriesLostModel:
     @pytest.mark.asyncio
     async def test_infer_reloads_and_retries_once_after_key_error(self):
@@ -1080,6 +1105,44 @@ class TestInferRetriesLostModel:
             await wrapper.infer(model_id="m", image=b"x")
         assert mgr.process_calls == 1
         assert mgr.load_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_infer_reload_reuses_original_load_context(self):
+        mgr = _EvictingManager(KeyError("Model 'm' is not loaded"))
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.ensure_loaded("m", "", "authorized-key", "cuda:1") == (
+            "model_ready",
+        )
+        assert await wrapper.ensure_loaded("m") == ("model_ready",)
+
+        assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
+        assert mgr.load_calls == [
+            ("authorized-key", "cuda:1"),
+            ("authorized-key", "cuda:1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_infer_raises_server_busy_when_reload_times_out(self):
+        from inference_server.errors import ServerBusyError
+
+        mgr = _VanishingManager([KeyError("Model 'm' is not loaded")])
+        wrapper = ModelManagerGateway(mgr)
+        wrapper.ensure_loaded = AsyncMock(return_value=("load_timeout", 5))
+
+        with pytest.raises(ServerBusyError):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_infer_raises_runtime_error_when_reload_fails(self):
+        mgr = _VanishingManager([KeyError("Model 'm' is not loaded")])
+        wrapper = ModelManagerGateway(mgr)
+        wrapper.ensure_loaded = AsyncMock(return_value=("error", 5))
+
+        with pytest.raises(RuntimeError, match="reload after eviction failed"):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
 
 
 class _Stage:

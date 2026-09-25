@@ -121,6 +121,9 @@ class ModelManagerGateway:
         # so a timed-out load() keeps loading and later calls await the same
         # future instead of double-loading.
         self._pending_loads: dict[str, asyncio.Future] = {}
+        # api_key/device the model last loaded with, for a mid-request
+        # reload to reuse instead of falling back to anonymous defaults.
+        self._load_context: dict[str, tuple[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle (lifespan)
@@ -233,6 +236,7 @@ class ModelManagerGateway:
         future = asyncio.get_running_loop().run_in_executor(
             self._model_executor, _reload
         )
+        self._load_context[key] = (api_key, device or "")
         self._pending_loads[key] = future
 
         def _forget(_f: asyncio.Future) -> None:
@@ -437,7 +441,14 @@ class ModelManagerGateway:
                         "— reloading and retrying once",
                         key,
                     )
-                    await self.ensure_loaded(model_id, instance)
+                    api_key, device = self._load_context.get(key, ("", ""))
+                    status = await self.ensure_loaded(
+                        model_id, instance, api_key, device
+                    )
+                    if status[0] == "load_timeout":
+                        raise ServerBusyError(f"reload timed out for '{key}'")
+                    if status[0] == "error":
+                        raise RuntimeError("reload after eviction failed")
                     return await _process()
             except asyncio.CancelledError:
                 raise
