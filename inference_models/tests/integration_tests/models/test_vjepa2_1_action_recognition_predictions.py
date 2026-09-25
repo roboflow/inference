@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import supervision as sv
 import torch
 from safetensors import safe_open
 
@@ -146,25 +147,27 @@ def test_real_weights_predict_scored_spans_and_filter_them(
     not torch.cuda.is_available(), reason="CUDA is required for predictions"
 )
 def test_t7_predictions_match_pinned_reference(
-    loaded_model, vjepa_action_recognition_package, vjepa_prediction_frames
+    loaded_model, vjepa_action_recognition_package, vjepa_prediction_video
 ) -> None:
     expected = json.loads(
         (
             Path(__file__).parent / "fixtures" / "vjepa2_1_t7_predictions.json"
         ).read_text()
     )
-    frames = vjepa_prediction_frames
+    video_info = sv.VideoInfo.from_video_path(str(vjepa_prediction_video))
+    assert video_info.fps == pytest.approx(expected["sample_fps"])
+    frames = [
+        np.ascontiguousarray(frame[:, :, ::-1])
+        for frame in sv.get_video_frames_generator(str(vjepa_prediction_video))
+    ]
     assert len(frames) == expected["frame_count"]
-    assert sha256(frames.tobytes()).hexdigest() == expected["frames_sha256"]
     weights_hash = sha256()
     with (vjepa_action_recognition_package / "model.safetensors").open("rb") as weights:
         for block in iter(lambda: weights.read(1024 * 1024), b""):
             weights_hash.update(block)
     assert weights_hash.hexdigest() == expected["weights_sha256"]
 
-    predictions = loaded_model.infer(
-        frames=list(frames), fps=expected["sample_fps"], confidence=0
-    )
+    predictions = loaded_model.infer(frames=frames, fps=video_info.fps, confidence=0)
 
     assert len(predictions) == expected["prediction_count"]
     # Serving uses BF16; the independent reference was captured in FP32.

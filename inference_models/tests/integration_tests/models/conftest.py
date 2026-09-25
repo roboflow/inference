@@ -2,7 +2,6 @@ import os
 import zipfile
 from pathlib import Path
 
-import numpy as np
 import pytest
 import requests
 from filelock import FileLock
@@ -33,7 +32,7 @@ GLM_OCR_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
 )
 VJEPA_ACTION_RECOGNITION_T7_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/action-recognition-vitb-384-t7.zip"
-VJEPA_PREDICTION_FRAMES_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/synthetic-086-first-window-v1.npz"
+VJEPA_PREDICTION_VIDEO_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/synthetic-086-first-window-h264-v1.mp4"
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
@@ -451,22 +450,20 @@ def vjepa_action_recognition_package() -> Path:
 
 
 @pytest.fixture(scope="module")
-def vjepa_prediction_frames() -> np.ndarray:
-    """Read the pinned, lossless RGB window for the prediction regression.
+def vjepa_prediction_video() -> Path:
+    """Locate the H.264 clip for the prediction regression.
 
     Returns:
-        The first 64 frames sampled at 4 fps from synthetic test video 086.
+        Path to the 16-second clip at 4 fps from synthetic test video 086.
     """
-    local_path = os.environ.get("VJEPA_ACTION_RECOGNITION_FRAMES_PATH")
+    local_path = os.environ.get("VJEPA_ACTION_RECOGNITION_VIDEO_PATH")
     if local_path:
         path = Path(local_path).expanduser()
     else:
-        path = Path(ASSETS_DIR) / "synthetic-086-first-window-v1.npz"
-        _download_if_not_exists(file_path=str(path), url=VJEPA_PREDICTION_FRAMES_URL)
-    with np.load(path, allow_pickle=False) as data:
-        frames = data["frames"]
+        path = Path(ASSETS_DIR) / "synthetic-086-first-window-h264-v1.mp4"
+        _download_if_not_exists(file_path=str(path), url=VJEPA_PREDICTION_VIDEO_URL)
 
-    return frames
+    return path
 
 
 @pytest.fixture(scope="module")
