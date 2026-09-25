@@ -35,12 +35,11 @@ serialiser unwraps the tuple back to the bbox ``Detections``.
 import uuid
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-import torch
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
-from roboflow_workflows.core_steps.common.keypoints import validate_keypoints_padding
 from roboflow_workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
+    build_native_key_points,
     native_detections_from_inference_predictions,
     take_prediction_by_mask,
 )
@@ -645,11 +644,15 @@ def _native_key_points_from_inference_predictions(
     image_metadata: Optional[dict],
     device: Optional[Any] = None,
 ) -> KeyPoints:
-    """Rebuild a padded native ``KeyPoints`` from remote keypoint dicts so the REMOTE
-    output keeps the native tuple shape. Padded to a uniform ``K`` (ragged keypoint
-    counts across instances) with confidence 0.0 in the padding rows."""
+    """Rebuild a native ``KeyPoints`` from remote keypoint dicts so the REMOTE output
+    keeps the native tuple shape. The remote response omits keypoints below the
+    keypoint confidence threshold, so each keypoint is placed at the slot given by
+    its ``class_id`` (the fixed skeleton order the locally executed model emits)
+    instead of being packed leading; see ``build_native_key_points``."""
     per_instance_xy: List[List[List[float]]] = []
     per_instance_confidence: List[List[float]] = []
+    per_instance_keypoint_class_ids: List[List[int]] = []
+    per_instance_keypoint_class_names: List[List[Optional[str]]] = []
     object_class_ids: List[int] = []
     for detection_dict in detection_dicts:
         keypoints = detection_dict.get(KEYPOINTS_KEY, []) or []
@@ -659,31 +662,22 @@ def _native_key_points_from_inference_predictions(
         per_instance_confidence.append(
             [float(keypoint.get(CONFIDENCE_KEY, 0.0)) for keypoint in keypoints]
         )
+        per_instance_keypoint_class_ids.append(
+            [
+                int(keypoint.get("class_id", keypoint_index))
+                for keypoint_index, keypoint in enumerate(keypoints)
+            ]
+        )
+        per_instance_keypoint_class_names.append(
+            [keypoint.get("class") for keypoint in keypoints]
+        )
         object_class_ids.append(int(detection_dict.get("class_id", 0)))
-    number_of_instances = len(detection_dicts)
-    max_key_points = max((len(xy) for xy in per_instance_xy), default=0)
-    validate_keypoints_padding(number_of_instances, max_key_points)
-    xy_tensor = torch.zeros(
-        (number_of_instances, max_key_points, 2), dtype=torch.float32, device=device
-    )
-    confidence_tensor = torch.zeros(
-        (number_of_instances, max_key_points), dtype=torch.float32, device=device
-    )
-    for index in range(number_of_instances):
-        count = len(per_instance_xy[index])
-        if count > 0:
-            xy_tensor[index, :count] = torch.as_tensor(
-                per_instance_xy[index], dtype=torch.float32, device=device
-            )
-            confidence_tensor[index, :count] = torch.as_tensor(
-                per_instance_confidence[index], dtype=torch.float32, device=device
-            )
-    class_id_tensor = torch.as_tensor(
-        object_class_ids, dtype=torch.long, device=device
-    ).reshape(-1)
-    return KeyPoints(
-        xy=xy_tensor,
-        class_id=class_id_tensor,
-        confidence=confidence_tensor,
+    return build_native_key_points(
+        per_instance_xy=per_instance_xy,
+        per_instance_confidence=per_instance_confidence,
+        object_class_ids=object_class_ids,
         image_metadata=image_metadata,
+        per_instance_keypoint_class_ids=per_instance_keypoint_class_ids,
+        per_instance_keypoint_class_names=per_instance_keypoint_class_names,
+        device=device,
     )

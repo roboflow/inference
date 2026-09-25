@@ -4,12 +4,22 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.keypoints import (
+    COCO_KEYPOINT_NAMES,
+    KEYPOINT_PADDING_CLASS_NAME,
+    MAX_KEYPOINT_SLOTS,
+    MAX_KEYPOINTS_PADDING_CELLS,
+    is_coco_skeleton,
+)
 from roboflow_workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
     VisualizationManifest,
 )
 from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color
+from roboflow_workflows.execution_engine.constants import (
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -216,6 +226,79 @@ class KeypointManifest(VisualizationManifest):
         return []
 
 
+def _keypoints_in_skeleton_slots(
+    detections: sv.Detections,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Place each keypoint at the slot given by its keypoint class id.
+
+    Model responses omit keypoints below the keypoint confidence threshold, and
+    `add_inference_keypoints_to_sv_detections` right-pads the remaining ones, so
+    a keypoint's position in `keypoints_xy` shifts whenever an earlier keypoint
+    is missing. Supervision's annotators address keypoints by position (edges are
+    index pairs, and the default skeleton is looked up by keypoint count), so
+    partial skeletons were drawn between the wrong joints, or not at all.
+
+    Scattering by `keypoints_class_id` restores the fixed skeleton order and
+    leaves undetected slots at (0, 0), which supervision's annotators skip. When
+    every keypoint sits at its COCO position (its class id is that name's index
+    in `COCO_KEYPOINT_NAMES`, see `is_coco_skeleton`), the slots are widened to
+    all 17 so the COCO skeleton is found even when trailing joints are missing
+    everywhere.
+
+    Keypoints are returned as stored when they carry no class ids, or when the
+    ids cannot be trusted: a negative id, an id beyond the per-skeleton slot
+    limit (`MAX_KEYPOINT_SLOTS`), or ids so large that the slotted arrays would
+    exceed the keypoint padding limit. Class ids reach this block unchecked from
+    runtime input, so the width must not follow them blindly: the annotators
+    iterate every slot in Python, so width is CPU time, not only memory.
+    """
+    keypoints_xy = np.asarray(detections.data["keypoints_xy"], dtype=np.float32)
+    keypoints_confidence = np.asarray(
+        detections.data["keypoints_confidence"], dtype=np.float32
+    )
+    keypoints_class_name = np.asarray(
+        detections.data["keypoints_class_name"], dtype=object
+    )
+    if KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS not in detections.data:
+        return keypoints_xy, keypoints_confidence, keypoints_class_name
+    keypoints_class_id = np.asarray(
+        detections.data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS], dtype=int
+    )
+    is_real = keypoints_class_name.astype(str) != KEYPOINT_PADDING_CLASS_NAME
+    if not is_real.any():
+        return keypoints_xy, keypoints_confidence, keypoints_class_name
+    real_class_id = keypoints_class_id[is_real]
+    if real_class_id.min() < 0:
+        return keypoints_xy, keypoints_confidence, keypoints_class_name
+    slots = max(keypoints_xy.shape[1], int(real_class_id.max()) + 1)
+    if is_coco_skeleton(real_class_id, keypoints_class_name[is_real]):
+        slots = max(slots, len(COCO_KEYPOINT_NAMES))
+    detections_count = keypoints_xy.shape[0]
+    if (
+        slots > MAX_KEYPOINT_SLOTS
+        or detections_count * slots > MAX_KEYPOINTS_PADDING_CELLS
+    ):
+        return keypoints_xy, keypoints_confidence, keypoints_class_name
+
+    slotted_xy = np.zeros((detections_count, slots, 2), dtype=np.float32)
+    slotted_confidence = np.zeros((detections_count, slots), dtype=np.float32)
+    slotted_class_name = np.full(
+        (detections_count, slots), KEYPOINT_PADDING_CLASS_NAME, dtype=object
+    )
+    detection_index, keypoint_index = np.nonzero(is_real)
+    slot_index = keypoints_class_id[detection_index, keypoint_index]
+    slotted_xy[detection_index, slot_index] = keypoints_xy[
+        detection_index, keypoint_index
+    ]
+    slotted_confidence[detection_index, slot_index] = keypoints_confidence[
+        detection_index, keypoint_index
+    ]
+    slotted_class_name[detection_index, slot_index] = keypoints_class_name[
+        detection_index, keypoint_index
+    ]
+    return slotted_xy, slotted_confidence, slotted_class_name
+
+
 class KeypointVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -284,9 +367,9 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
     def convert_detections_to_keypoints(self, detections):
         if len(detections) == 0:
             return sv.KeyPoints.empty()
-        keypoints_xy = detections.data["keypoints_xy"]
-        keypoints_confidence = detections.data["keypoints_confidence"]
-        keypoints_class_name = detections.data["keypoints_class_name"]
+        keypoints_xy, keypoints_confidence, keypoints_class_name = (
+            _keypoints_in_skeleton_slots(detections)
+        )
         class_id = detections.class_id
 
         keypoints_kwargs = {

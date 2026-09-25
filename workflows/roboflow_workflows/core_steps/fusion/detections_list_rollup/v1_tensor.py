@@ -976,6 +976,12 @@ def merge_crop_predictions(
             ],
             object_class_ids=merged_class_ids,
             image_metadata=image_metadata,
+            per_instance_keypoint_class_ids=all_keypoints_data[
+                KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS
+            ],
+            per_instance_keypoint_class_names=all_keypoints_data[
+                KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS
+            ],
         )
         return (key_points, result), crop_zones
 
