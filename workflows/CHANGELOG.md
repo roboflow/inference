@@ -48,6 +48,10 @@ for contributor and maintainer responsibilities.
   like `ExecutionEngine.init`. A newer requested minor or patch version than the
   installed engine raises `NotSupportedExecutionEngineError` before compilation,
   inner-workflow fetches or model metadata lookups. Supported requests are unchanged.
+- The duplicate dynamic block warning now names the skipped and the retained
+  definitions by position (for example
+  `steps[2].workflow_definition.dynamic_blocks_definitions[1]`) instead of logging
+  the request-provided `block_type`. Which definition is kept is unchanged.
 
 ---
 
