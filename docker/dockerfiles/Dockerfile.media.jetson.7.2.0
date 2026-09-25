@@ -12,6 +12,8 @@ ARG OPENCV_CUDA_ARCH_BIN=8.7;11.0
 ARG OPENCV_CUDA_ARCH_PTX=
 ARG JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES=87;110
 ARG L4T_REPOSITORY=r39.2
+ARG NVJPEG_VERSION=13.2.1.68
+ARG NVJPEG_SHA256=298f946d674de7e35a13535d2a62c8ed19a083b286de0845c7a90cb300e2a702
 
 FROM ubuntu:24.04 AS codec-fixture-builder
 
@@ -250,6 +252,22 @@ RUN chmod +x \
 FROM gstreamer-builder AS cuda-runtime-export
 
 ARG CUDA_IMAGE_VERSION
+ARG NVJPEG_VERSION
+ARG NVJPEG_SHA256
+
+# CUDA 13.2's nvjpegCreate* fails on Orin (NVIDIA issue 6176492).
+# Use the ABI-compatible nvJPEG component from CUDA 13.3 Update 1 without
+# replacing the JetPack CUDA runtime, driver, or framework wheel bundle.
+RUN curl -fsSL "https://developer.download.nvidia.com/compute/cuda/redist/libnvjpeg/linux-sbsa/libnvjpeg-linux-sbsa-${NVJPEG_VERSION}-archive.tar.xz" \
+        -o /tmp/nvjpeg.tar.xz && \
+    echo "${NVJPEG_SHA256}  /tmp/nvjpeg.tar.xz" | sha256sum -c - && \
+    mkdir -p /tmp/nvjpeg && \
+    tar -xJf /tmp/nvjpeg.tar.xz --strip-components=1 -C /tmp/nvjpeg && \
+    mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
+    cp -L /tmp/nvjpeg/lib/libnvjpeg.so.13 /opt/cuda-runtime/lib/libnvjpeg.so.13 && \
+    cp /tmp/nvjpeg/LICENSE /opt/cuda-runtime/share/licenses/libnvjpeg && \
+    sha256sum /opt/cuda-runtime/lib/libnvjpeg.so.13 > /opt/cuda-runtime/share/libnvjpeg.sha256 && \
+    rm -rf /tmp/nvjpeg /tmp/nvjpeg.tar.xz
 
 RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
     cuda_minor="$(echo "${CUDA_IMAGE_VERSION}" | cut -d. -f2)" && \
@@ -257,7 +275,6 @@ RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
     mkdir -p /opt/cuda-runtime/lib /opt/cuda-runtime/share/licenses && \
     for library in \
         "libcudart.so.${cuda_major}" \
-        "libnvjpeg.so.${cuda_major}" \
         "libnppc.so.${cuda_major}" \
         "libnppial.so.${cuda_major}" \
         "libnppicc.so.${cuda_major}" \
@@ -272,10 +289,10 @@ RUN cuda_major="${CUDA_IMAGE_VERSION%%.*}" && \
     done && \
     cp "/usr/share/doc/cuda-cudart-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/cuda-cudart && \
-    cp "/usr/share/doc/libnvjpeg-${cuda_package_suffix}/copyright" \
-        /opt/cuda-runtime/share/licenses/libnvjpeg && \
     cp "/usr/share/doc/libnpp-${cuda_package_suffix}/copyright" \
         /opt/cuda-runtime/share/licenses/libnpp && \
+    test -s /opt/cuda-runtime/lib/libnvjpeg.so.13 && \
+    sha256sum -c /opt/cuda-runtime/share/libnvjpeg.sha256 && \
     test "$(du -sm /opt/cuda-runtime | cut -f1)" -lt 165
 
 FROM ubuntu:24.04 AS runtime

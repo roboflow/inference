@@ -19,6 +19,16 @@
   parsing and strict profiling validation, while versioned `optimization_runtime_metadata`
   reports requested, effective, and request-time stage selections together
   with fallback details.
+- `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
+  `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` let a deployment that
+  has no explicit `RFDetrExecutionPlan` reject RF-DETR stage fallback. Both
+  default to `true`, so existing behavior is unchanged.
+- Opt-in RF-DETR TensorRT execution diagnostics, disabled by default:
+  `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true` publishes the latest completed
+  call's stage devices and selections as
+  `RFDetrForObjectDetectionTRT.last_inference_diagnostics`. This is a placement
+  and backend-selection diagnostic, not a timing surface: the package exposes no
+  per-stage timing API.
 
 ### Changed
 

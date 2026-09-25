@@ -1,3 +1,4 @@
+import math
 import time
 from copy import copy
 from dataclasses import dataclass
@@ -31,6 +32,8 @@ from inference.core.interfaces.camera.source_reference_sanitizer import (
 from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
 
 MINIMAL_FPS = 0.01
+DROP_BURST_WINDOW_SECONDS = 0.2
+MINIMAL_DROP_BURST_FRAMES = 2
 
 T = TypeVar("T")
 
@@ -94,7 +97,10 @@ def get_video_frames_generator(
         source_properties=video.describe_source().source_properties,
     )
     yield from limit_frame_rate(
-        frames_generator=video, max_fps=max_fps, strategy=limiter_strategy
+        frames_generator=video,
+        max_fps=max_fps,
+        strategy=limiter_strategy,
+        on_frame_dropped=lambda frame: video.record_frame_dropped(frame, "FPS limiter"),
     )
     if is_managed_source:
         video.terminate(purge_frames_buffer=True)
@@ -372,8 +378,19 @@ def multiplex_videos(
         limiter_strategy = negotiate_rate_limiter_strategy_for_multiple_sources(
             video_sources=video_sources.all_sources,
         )
+    sources_by_id = {source.source_id: source for source in video_sources.all_sources}
+
+    def report_dropped_batch(frames: List[VideoFrame]) -> None:
+        for frame in frames:
+            source = sources_by_id.get(frame.source_id)
+            if source is not None:
+                source.record_frame_dropped(frame, "FPS limiter")
+
     yield from limit_frame_rate(
-        frames_generator=generator, max_fps=max_fps, strategy=limiter_strategy
+        frames_generator=generator,
+        max_fps=max_fps,
+        strategy=limiter_strategy,
+        on_frame_dropped=report_dropped_batch,
     )
 
 
@@ -540,7 +557,20 @@ def limit_frame_rate(
     frames_generator: Iterable[T],
     max_fps: Union[float, int],
     strategy: FPSLimiterStrategy,
+    on_frame_dropped: Optional[Callable[[T], None]] = None,
 ) -> Generator[T, None, None]:
+    # Live arrivals can straddle a nominal frame deadline due to scheduling or
+    # network jitter. DROP preserves accumulated fractional credit rather than
+    # resetting the next deadline to each accepted arrival. WAIT retains strict
+    # minimum spacing, which is appropriate for lossless file playback.
+    if strategy is FPSLimiterStrategy.DROP:
+        drop_limiter = _DropRateLimiter(desired_fps=max_fps)
+        for frame_data in frames_generator:
+            if drop_limiter.try_acquire():
+                yield frame_data
+            elif on_frame_dropped is not None:
+                on_frame_dropped(frame_data)
+        return
     rate_limiter = RateLimiter(desired_fps=max_fps)
     for frame_data in frames_generator:
         delay = rate_limiter.estimate_next_action_delay()
@@ -574,3 +604,40 @@ class RateLimiter:
         desired_delay = 1 / self._desired_fps
         time_since_last_tick = time.monotonic() - self._last_tick
         return max(desired_delay - time_since_last_tick, 0.0)
+
+
+class _DropRateLimiter:
+    """DROP budget allowing a bounded 200 ms arrival burst.
+
+    Capacity is ceil(desired_fps * 0.2), with a minimum of two frames. The
+    200 ms allowance accommodates packet/decoder delivery jitter without
+    resetting the rate's phase on every accepted frame. It does not add a
+    playback delay. At low FPS the two-frame minimum exceeds 200 ms of credit.
+
+    Any interval of duration D admits at most capacity + desired_fps * D
+    frames. Idle time never accumulates more than capacity, so recovery after
+    a long stall cannot produce an unbounded catch-up burst. WAIT semantics
+    remain strict minimum spacing.
+    """
+
+    def __init__(self, desired_fps: Union[float, int]):
+        self._desired_fps = max(desired_fps, MINIMAL_FPS)
+        self._capacity = max(
+            MINIMAL_DROP_BURST_FRAMES,
+            math.ceil(self._desired_fps * DROP_BURST_WINDOW_SECONDS),
+        )
+        self._tokens = float(self._capacity)
+        self._last_update: Optional[float] = None
+
+    def try_acquire(self) -> bool:
+        now = time.monotonic()
+        if self._last_update is not None:
+            self._tokens = min(
+                self._capacity,
+                self._tokens + (now - self._last_update) * self._desired_fps,
+            )
+        self._last_update = now
+        if self._tokens < 1.0:
+            return False
+        self._tokens -= 1.0
+        return True
