@@ -3,6 +3,7 @@
 import ctypes
 import ctypes.util
 import os
+import struct
 import subprocess
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -75,6 +76,12 @@ _SOFTWARE_DECODER_ELEMENTS = (
     "libde265dec",
     "openh264dec",
 )
+_VIDIOC_ENUM_FMT = 0xC0405602
+_VIDIOC_REQBUFS = 0xC0145608
+_V4L2_FMTDESC = struct.Struct("II4x32sII12x")
+_V4L2_REQUESTBUFFERS = struct.Struct("IIIII")
+_V4L2_RAW_TO_GST_FORMAT = {"UYVY": "UYVY", "YUYV": "YUY2"}
+_V4L2_COMPRESSED_FORMATS = frozenset({"MJPG", "JPEG", "H264", "HEVC"})
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
     ".m4v": "qtdemux",
@@ -158,6 +165,8 @@ def required_gstreamer_elements(
     if _is_csi_source(video):
         return tuple(elements + ["nvarguscamerasrc"])
     if _is_v4l2_source(video):
+        if _nvv4l2camerasrc_format(video) is not None:
+            return tuple(elements + ["nvv4l2camerasrc"])
         return tuple(
             elements
             + [
@@ -238,6 +247,13 @@ def build_gstreamer_pipeline(
         )
     if _is_v4l2_source(video):
         device = _v4l2_device(video)
+        camera_format = _nvv4l2camerasrc_format(video)
+        if camera_format is not None:
+            return (
+                f'nvv4l2camerasrc device="{_quote_gstreamer_value(device)}" ! '
+                f"video/x-raw(memory:NVMM),format={camera_format} ! "
+                f"{sink}"
+            )
         return (
             f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
             f"decodebin ! {sink}"
@@ -545,6 +561,88 @@ def _is_v4l2_source(video: Union[str, int]) -> bool:
 
 def _v4l2_device(video: Union[str, int]) -> str:
     return f"/dev/video{video}" if isinstance(video, int) else video
+
+
+def _v4l2_pixel_formats(device: str) -> set:
+    try:
+        import fcntl
+
+        fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
+    except (ImportError, OSError):
+        return set()
+
+    formats = set()
+    try:
+        index = 0
+        while True:
+            buffer = bytearray(_V4L2_FMTDESC.pack(index, 1, b"", 0, 0))
+            fcntl.ioctl(fd, _VIDIOC_ENUM_FMT, buffer)
+            pixel_format = _V4L2_FMTDESC.unpack(buffer)[3]
+            formats.add(pixel_format.to_bytes(4, "little").decode("ascii", "replace"))
+            index += 1
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+    return formats
+
+
+def _v4l2_supports_dmabuf_import(device: str) -> bool:
+    try:
+        import fcntl
+
+        fd = os.open(device, os.O_RDWR | os.O_NONBLOCK)
+    except (ImportError, OSError):
+        return False
+
+    try:
+        request = bytearray(_V4L2_REQUESTBUFFERS.pack(0, 1, 4, 0, 0))
+        fcntl.ioctl(fd, _VIDIOC_REQBUFS, request)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+@lru_cache(maxsize=None)
+def _nvv4l2camerasrc_formats() -> frozenset:
+    try:
+        result = subprocess.run(
+            ["gst-inspect-1.0", "nvv4l2camerasrc"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+
+    if result.returncode != 0:
+        return frozenset()
+
+    supported_formats = frozenset(
+        gst_format
+        for gst_format in _V4L2_RAW_TO_GST_FORMAT.values()
+        if gst_format.encode("ascii") in result.stdout
+    )
+
+    return supported_formats
+
+
+def _nvv4l2camerasrc_format(video: Union[str, int]) -> Optional[str]:
+    device = _v4l2_device(video)
+    device_formats = _v4l2_pixel_formats(device)
+    if not device_formats or device_formats & _V4L2_COMPRESSED_FORMATS:
+        return None
+
+    supported = _nvv4l2camerasrc_formats()
+    for v4l2_format, gst_format in _V4L2_RAW_TO_GST_FORMAT.items():
+        if v4l2_format in device_formats and gst_format in supported:
+            if _v4l2_supports_dmabuf_import(device):
+                return gst_format
+            return None
+    return None
 
 
 def _is_live_source(video: Union[str, int]) -> bool:
