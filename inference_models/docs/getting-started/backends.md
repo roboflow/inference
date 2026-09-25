@@ -269,7 +269,7 @@ All GPU backends for maximum flexibility and performance.
 uv pip install "inference-models[torch-jp6-cu126,onnx-cu12]"
 ```
 
-Optimized for NVIDIA Jetson devices with JetPack 6.
+Optimized for NVIDIA Jetson devices with JetPack 6.2.
 
 ## Backend Selection Priority
 
