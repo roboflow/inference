@@ -67,11 +67,14 @@ from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RuntimeRestriction,
     WorkOperation,
+    incomplete_discovery,
+    invalid_resource_identifier_problem,
 )
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
+    DependentResourceType,
     Runtime,
     Severity,
     WorkflowBlock,
@@ -279,13 +282,32 @@ class BlockManifest(WorkflowBlockManifest):
         """Return list of model_id variants that can satisfy this block."""
         return ["sam3/sam3_final"]
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+    def discover_dependent_resources(
+        self,
+    ) -> Optional[Union[List[DependentResource], Discovery[DependentResource]]]:
+        """Declare the SAM3 model this step uses.
+
+        Returns:
+            ``[]`` under proxy execution (``SAM3_EXEC_MODE == "remote"``): the
+            proxy runs its own fixed SAM3 server-side. Otherwise the platform
+            model named by ``model_id`` (a selector is returned verbatim). A
+            missing ``model_id`` (``None``) gives an incomplete discovery with
+            an ``invalid_resource_identifier`` problem.
+        """
         if SAM3_EXEC_MODE == "remote":
             # Proxy execution ignores the configured model id — the proxy runs
             # its own fixed SAM3 server-side; nothing to declare.
             return []
         if self.model_id is None:
-            return []
+            # LOCAL and SDK REMOTE execution both pass `model_id` on, and None
+            # names no model: the resource is unknown, not a known absence.
+            missing_model_id = invalid_resource_identifier_problem(
+                node_id=f"$steps.{self.name}",
+                declaration="resources",
+                field="model_id",
+                resource_type=DependentResourceType.ROBOFLOW_PLATFORM_MODEL.value,
+            )
+            return incomplete_discovery([], [missing_model_id])
         return [roboflow_platform_model(model_id=self.model_id)]
 
     def discover_work_operations(self) -> List[WorkOperation]:
