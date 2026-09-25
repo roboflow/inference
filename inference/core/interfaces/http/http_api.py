@@ -4654,6 +4654,10 @@ class HttpInterface(BaseInterface):
                         "zero-shot model answers in its own words and ignores it."
                     ),
                 ),
+                include_candidates: bool = Query(
+                    False,
+                    description="Action recognition: return raw scored candidates",
+                ),
                 labels: Optional[bool] = Query(
                     False,
                     description="If true, labels will be include in any inference visualization.",
@@ -4749,9 +4753,16 @@ class HttpInterface(BaseInterface):
                 )
                 api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
+                if isinstance(confidence, (int, float)) and confidence >= 1:
+                    confidence /= 100
+
+                # Action recognition permits zero and uses its saved default when omitted.
+                action_confidence = (
+                    confidence
+                    if "confidence" in request.query_params and confidence != "default"
+                    else None
+                )
                 if isinstance(confidence, (int, float)):
-                    if confidence >= 1:
-                        confidence /= 100
                     if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
                         # allowing lower confidence results in RAM usage explosion
                         confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
@@ -4825,6 +4836,15 @@ class HttpInterface(BaseInterface):
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 if task_type == "action-recognition":
+                    if action_confidence == "best":
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                'Action recognition does not support confidence="best". '
+                                'Pass a numeric threshold or "default" instead.'
+                            ),
+                        )
+
                     # The payload is a clip, so none of the image-shaped
                     # arguments below apply to it. The `image` query parameter
                     # carries a URL here, which is the transport to prefer: a
@@ -4845,6 +4865,8 @@ class HttpInterface(BaseInterface):
                             class_filter=_parse_legacy_class_filter(
                                 class_filter=class_filter
                             ),
+                            confidence=action_confidence,
+                            include_candidates=include_candidates,
                         ),
                     )
                     logger.debug("Response ready.")

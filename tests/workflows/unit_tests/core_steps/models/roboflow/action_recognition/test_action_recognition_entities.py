@@ -1,5 +1,8 @@
 import ast
+import json
 from pathlib import Path
+
+import pytest
 
 # tests/workflows/unit_tests/core_steps/models/roboflow/action_recognition/<file>
 # -> parents[7] is the repo root
@@ -88,3 +91,36 @@ def test_schema_description_survives_the_move() -> None:
     schema = ActionRecognitionPrediction.model_json_schema()
     assert "One classified frame range of a video." in schema["description"]
     assert schema["properties"]["class"]["title"] == "Class"
+
+
+@pytest.mark.parametrize("confidence", [None, 0.0, 0.8, 1.0])
+def test_optional_confidence_serializes_in_nested_responses(confidence) -> None:
+    from inference.core.entities.responses.action_recognition import (
+        ActionRecognitionInferenceResponse,
+        ActionRecognitionPrediction,
+    )
+
+    prediction = ActionRecognitionPrediction(
+        start_frame_idx=0,
+        end_frame_idx=10,
+        class_name="wave",
+        class_id=0,
+        confidence=confidence,
+    )
+    response = ActionRecognitionInferenceResponse(
+        timeline=[prediction], source_fps=30, frame_count=11, windows_classified=1
+    )
+    expected = {
+        "start_frame_idx": 0,
+        "end_frame_idx": 10,
+        "class": "wave",
+        "class_id": 0,
+    }
+    if confidence is not None:
+        expected["confidence"] = confidence
+
+    assert prediction.model_dump(by_alias=True) == expected
+    assert response.model_dump(by_alias=True)["timeline"] == [expected]
+    payload = response.model_dump_json(by_alias=True)
+    assert json.loads(payload)["timeline"] == [expected]
+    assert ActionRecognitionInferenceResponse.model_validate_json(payload) == response
