@@ -32,13 +32,19 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Widened `zxing-cpp` from `~=2.2.0` to `>=2.2.0,<=2.3.0` so installs can pick 2.3.0: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
+- `zxing-cpp` is now pinned per Python version: `~=2.2.0` on Python < 3.13 (unchanged from before) and `==2.3.0` on Python 3.13, which is the first release with 3.13 wheels. The pin is split rather than widened because neither 2.2.0 nor 2.3.0 ships aarch64 wheels, so Jetson installs compile from source, and the 2.3.0 sources need C++20 concepts, which the JetPack 5 toolchain (GCC 9.4) does not support.
 
 ### Execution Engine Change
 
 - Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions. Each entity `type` carries its contract version (e.g. `workflow_introspection_v1`); there is no separate `schema_version`.
 - Report unresolved resource identities explicitly and include streaming-video models without changing how they load.
 - Align static and actual restriction codes, and correct stateful-block and industrial-sink caveats without changing editor payloads.
+- **Run-scoped thread pool for executor-less runs** — runs that receive no
+  host-provided executor (standalone `roboflow-workflows`, SDK and embedded
+  usage) now reuse one run-scoped thread pool across step waves instead of
+  constructing a `ThreadPoolExecutor` per wave, lowering latency on multi-wave
+  chains; host-provided executors and scheduling are unchanged. No migration
+  is needed.
 - Reject cyclic saved inner-workflow references during resolution with a composition
   error instead of `RecursionError`. Enforce nesting depth and total inner-workflow
   count limits during reference expansion, before fetching or expanding children
