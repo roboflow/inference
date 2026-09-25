@@ -1,0 +1,2056 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/workflows/workload_introspection/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../favicon.png">
+      <meta name="generator" content="zensical-0.0.33">
+    
+    
+      
+        <title>Workload introspection - Roboflow Inference</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.53a7feaf.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7Cui-monospace:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../styles.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/kit/custom-icons.css" rel="stylesheet">
+
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#workload-introspection" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Workload introspection
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://docs.roboflow.com/deployment/self-hosted/self-hosted" class="md-tabs__link">
+        
+  
+  Get Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://docs.roboflow.com/models/supported-models" class="md-tabs__link">
+        
+  
+  Models
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://docs.roboflow.com/workflows" class="md-tabs__link">
+        
+  
+  Workflows
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://docs.roboflow.com/reference/inference/choosing-the-right-tool" class="md-tabs__link">
+        
+  
+  Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://github.com/roboflow/inference/releases" class="md-tabs__link">
+        
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+        
+      
+
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://docs.roboflow.com/deployment/self-hosted/self-hosted" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://docs.roboflow.com/models/supported-models" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://docs.roboflow.com/workflows" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://docs.roboflow.com/reference/inference/choosing-the-right-tool" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trying-it-from-a-notebook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trying it from a notebook
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Response">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step metadata
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step metadata">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reading-input_dimensionality-and-output_dimensionality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading input_dimensionality and output_dimensionality
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-known-known-absent-and-unknown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery: known, known-absent and unknown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery problems
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-step-completeness-of-resource-identities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-step completeness of resource identities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#declaring-resources-block-authors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Declaring resources (block authors)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restrictions-are-conditional-not-evaluated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restrictions are conditional, not evaluated
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Restrictions are conditional, not evaluated">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#runtimes-do-not-describe-hardware-except-the-two-self-hosted-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtimes do not describe hardware, except the two self-hosted values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-reachability-is-not-always-a-runtime-restriction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network reachability is not always a runtime restriction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-a-block-declares-a-restriction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a block declares a restriction
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How a block declares a restriction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State-loss restrictions: editor view and actual view differ on purpose
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignore_environment_restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ignore_environment_restrictions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model inventory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model inventory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-lookup-reaches-the-platform-and-what-that-costs-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the lookup reaches the platform, and what that costs you
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dimensionality-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dimensionality summary
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dimensionality summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dimensionality-is-not-multiplicity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dimensionality is not multiplicity
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-is-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this is not
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-detection-crop-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: detection, crop, classification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-a-step-with-populated-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: a step with populated restrictions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+
+
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/workflows/workload_introspection.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="workload-introspection">Workload introspection<a class="headerlink" href="#workload-introspection" title="Permanent link">&para;</a></h1>
+<p>Workload introspection answers one question about a Workflow definition: <strong>what work does this definition describe?</strong> It compiles the definition structurally — no block is initialised, no model is loaded or registered, no custom Python is evaluated, nothing is executed — and returns the compiled graph, the per-step declarations the blocks make about themselves, and an inventory of the models the definition refers to.</p>
+<p>The answer is designed to be <em>portable</em>: it describes the definition, not the server that answered. Portability is a design goal, not a guarantee for every block: some parts of the answer can depend on the process that answers. Cases documented on this page:</p>
+<ul>
+<li>the optional model-metadata enrichment in the inventory (<code>summary.models.items[].metadata</code>): whether it is populated depends on the answering server's <code>USE_INFERENCE_MODELS</code> gate, on the credentials in the request and on the server's access to the model registry;</li>
+<li>one host-configured resource identity: CLIP comparison v1 declares the CLIP variant configured on the answering process (see <a href="#discovery-known-known-absent-and-unknown">Discovery</a>).</li>
+</ul>
+<p>Consumers (a cost estimator, a scheduler, a capacity planner) apply their own hardware assumptions to the portable part.</p>
+<h2 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Experimental</p>
+<p>Both <code>describe_workload</code> endpoints and their request and response contracts are <strong>experimental</strong>. Their OpenAPI summary and description start with <code>[EXPERIMENTAL]</code>.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Body</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /workflows/describe_workload</code></td>
+<td><code>{"api_key": "...", "specification": {...}}</code></td>
+<td>describe an inline definition</td>
+</tr>
+<tr>
+<td><code>POST /{workspace_name}/workflows/{workflow_id}/describe_workload</code></td>
+<td><code>{"api_key": "...", "use_cache": true, "workflow_version_id": null}</code></td>
+<td>describe a saved definition</td>
+</tr>
+</tbody>
+</table>
+<p>Both accept the api key in the request body or as an <code>Authorization: Bearer &lt;key&gt;</code> header, exactly like <code>/workflows/describe_interface</code>; a request with neither is rejected with HTTP 400 and the same error envelope. The saved-definition route forwards <code>use_cache</code> and <code>workflow_version_id</code> to the ordinary saved-definition lookup.</p>
+<p>Two server environment variables control whether the endpoints exist. Both default to <code>False</code>. Both are read once, when the server starts.</p>
+<table>
+<thead>
+<tr>
+<th><code>DISABLE_WORKFLOW_ENDPOINTS</code></th>
+<th><code>DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS</code></th>
+<th><code>describe_workload</code> endpoints</th>
+<th>Other Workflow endpoints (<code>describe_interface</code>, <code>run</code>, ...)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>False</code> (default)</td>
+<td><code>False</code> (default)</td>
+<td>registered</td>
+<td>registered</td>
+</tr>
+<tr>
+<td><code>False</code></td>
+<td><code>True</code></td>
+<td>not registered</td>
+<td>registered</td>
+</tr>
+<tr>
+<td><code>True</code></td>
+<td>any value</td>
+<td>not registered</td>
+<td>not registered</td>
+</tr>
+</tbody>
+</table>
+<p>A disabled endpoint is absent from routing and from <code>/openapi.json</code>. A request to its path is then handled by the server's existing fallback routes, such as the static app mounted at <code>/</code> or, for the two-segment inline path, the legacy <code>POST /{dataset_id}/{version_id}</code> route. Those routes decide the HTTP response, so do not rely on a specific status code.</p>
+<p>The Python entry point is <code>roboflow_workflows.execution_engine.introspection.workload.describe_workflow_workload(definition, init_parameters=None, execution_engine_version=None, model_metadata_provider=None)</code>. It lives in the standalone <code>roboflow-workflows</code> package and needs no inference server.</p>
+<h2 id="trying-it-from-a-notebook">Trying it from a notebook<a class="headerlink" href="#trying-it-from-a-notebook" title="Permanent link">&para;</a></h2>
+<p>The cell below describes a saved workflow and shows the complete response as an expandable tree. Set <code>BASE_URL</code> to an inference server that runs this feature (an image built from this repository or newer); the default assumes a local server on port 9001. The call inspects the definition only — it runs no inference, loads no model and sends no image. Whether the model inventory is enriched is decided by the server's <code>USE_INFERENCE_MODELS</code> setting; there is no request-body field for it.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">getpass</span><span class="w"> </span><span class="kn">import</span> <span class="n">getpass</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">JSON</span><span class="p">,</span> <span class="n">display</span>
+
+<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">"http://localhost:9001"</span>  <span class="c1"># a server running workload introspection</span>
+<span class="n">WORKSPACE_NAME</span> <span class="o">=</span> <span class="s2">"&lt;your workspace&gt;"</span>
+<span class="n">WORKFLOW_ID</span> <span class="o">=</span> <span class="s2">"&lt;your workflow id&gt;"</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span>
+<span class="n">session</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s2">"Authorization"</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"Bearer </span><span class="si">{</span><span class="n">getpass</span><span class="p">(</span><span class="s1">'Roboflow API key: '</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">describe_workload</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">120</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">response</span><span class="o">.</span><span class="n">ok</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"HTTP </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2"> from </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="p">[:</span><span class="mi">2000</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+
+
+<span class="c1"># Saved workflow: use_cache=False fetches the current definition from the platform.</span>
+<span class="n">description</span> <span class="o">=</span> <span class="n">describe_workload</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">"/</span><span class="si">{</span><span class="n">WORKSPACE_NAME</span><span class="si">}</span><span class="s2">/workflows/</span><span class="si">{</span><span class="n">WORKFLOW_ID</span><span class="si">}</span><span class="s2">/describe_workload"</span><span class="p">,</span>
+    <span class="p">{</span><span class="s2">"use_cache"</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">JSON</span><span class="p">(</span><span class="n">description</span><span class="p">,</span> <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+</code></pre></div>
+<p>To describe a definition you already hold in memory, post it to the inline endpoint. <code>specification</code> is the raw definition dictionary (<code>version</code>, <code>inputs</code>, <code>steps</code>, <code>outputs</code>), not a whole request envelope:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># specification = {"version": "1.0", "inputs": [...], "steps": [...], "outputs": [...]}</span>
+<span class="n">description</span> <span class="o">=</span> <span class="n">describe_workload</span><span class="p">(</span><span class="s2">"/workflows/describe_workload"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"specification"</span><span class="p">:</span> <span class="n">specification</span><span class="p">})</span>
+<span class="n">display</span><span class="p">(</span><span class="n">JSON</span><span class="p">(</span><span class="n">description</span><span class="p">,</span> <span class="n">expanded</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+</code></pre></div>
+<h2 id="response">Response<a class="headerlink" href="#response" title="Permanent link">&para;</a></h2>
+<p>The response is a <code>WorkflowIntrospection</code> document. Every entity object in it carries a defaulted <code>type</code> discriminator, at every nesting level, so another service can parse it without Python callables. Plain JSON maps that are not entities — <code>steps_by_dimensionality</code> (on the summary and on every model entry), a restriction's <code>configuration_equals</code> and a discovery problem's <code>details</code> — carry no <code>type</code>, and their contents are arbitrary JSON data.</p>
+<p>Each <code>type</code> value names the entity and the version of its contract, for example <code>workflow_introspection_v1</code>, <code>step_metadata_v1</code>, <code>discovery_v1</code> or <code>roboflow_platform_model_v1</code>. There is no separate document-wide schema version. The <code>_v1</code> suffix is independent of <code>execution_engine_version</code> (the compiler that produced the document) and of the workflow definition's <code>version</code>. Only <code>type</code> tags carry the suffix: enum values (<code>resource_type</code>, <code>kind</code>, <code>code</code>, <code>severity</code>, operations, runtimes and modes) and the plain JSON maps are unchanged. The Python models reject any other <code>type</code> value, the unsuffixed names included.</p>
+<p>The full JSON Schema is published in the server's <code>/openapi.json</code> under <code>components.schemas.WorkflowIntrospection</code>, and in Python as <code>WorkflowIntrospection.model_json_schema()</code> from <code>roboflow_workflows.execution_engine.introspection.workload_entities</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code></td>
+<td><code>"workflow_introspection_v1"</code>: the document entity and its contract version.</td>
+</tr>
+<tr>
+<td><code>execution_engine_version</code></td>
+<td>the Execution Engine version that compiled the definition.</td>
+</tr>
+<tr>
+<td><code>nodes</code></td>
+<td>one entry per input, step and output, with <code>kind</code> in <code>input</code> / <code>step</code> / <code>output</code>. Ids are canonical selectors (<code>$inputs.image</code>, <code>$steps.detection</code>, <code>$outputs.predictions</code>). Internal compiler nodes are never exposed.</td>
+</tr>
+<tr>
+<td><code>edges</code></td>
+<td>deduplicated <code>(source, target, kind)</code> triples, <code>kind</code> in <code>data</code> / <code>control</code>. The same node pair may carry both. This is connectivity, not a schedule.</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>one <code>StepMetadata</code> per compiled step.</td>
+</tr>
+<tr>
+<td><code>summary</code></td>
+<td>the model inventory, <code>max_dimensionality</code> and the step histogram.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-metadata">Step metadata<a class="headerlink" href="#step-metadata" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>block_type</code></td>
+<td>the canonical manifest identifier including the version (<code>roboflow_core/dynamic_crop@v1</code>), never the alias a definition happened to use.</td>
+</tr>
+<tr>
+<td><code>input_dimensionality</code></td>
+<td>the depth of the step's <strong>dimensionality-reference input</strong> — the compiled reference lineage, not the deepest input the step consumes and not the executor's loop depth. See below.</td>
+</tr>
+<tr>
+<td><code>output_dimensionality</code></td>
+<td>the compiled <strong>output</strong> depth of the step: the depth of the data the step produces for its successors.</td>
+</tr>
+<tr>
+<td><code>accepts_batch_input</code></td>
+<td>the normalised manifest capability. It is not a promise that the block computes a batch simultaneously.</td>
+</tr>
+<tr>
+<td><code>resources</code></td>
+<td><code>Discovery[DependentResource]</code> — the Roboflow models, Roboflow projects and third-party models the step needs. See <a href="#resources">Resources</a>.</td>
+</tr>
+<tr>
+<td><code>restrictions</code></td>
+<td><code>Discovery[RestrictionMetadata]</code> — portable, conditional restrictions. See <a href="#restrictions-are-conditional-not-evaluated">Restrictions are conditional, not evaluated</a>.</td>
+</tr>
+<tr>
+<td><code>operations</code></td>
+<td><code>Discovery[WorkOperation]</code> — what kind of work the block performs, from a fixed 25-member enum.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="reading-input_dimensionality-and-output_dimensionality">Reading <code>input_dimensionality</code> and <code>output_dimensionality</code><a class="headerlink" href="#reading-input_dimensionality-and-output_dimensionality" title="Permanent link">&para;</a></h4>
+<p>A manifest nominates one input property as its <strong>dimensionality reference</strong> (<code>get_dimensionality_reference_property()</code>); other properties may be declared to arrive one or more levels deeper (<code>get_input_dimensionality_offsets()</code>). <code>input_dimensionality</code> is the compiled depth of that <em>reference</em> property. The deeper side inputs are real, but they are <strong>not</strong> exposed by this document — by design, because the reference lineage is what determines the step's own position in the graph.</p>
+<p>Four real blocks, all four values taken from an actual response:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What it reads</th>
+<th>Reported</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>roboflow_core/dynamic_crop@v1</code> on a whole image</td>
+<td>image at depth 1, detections at depth 1</td>
+<td><code>in=1 out=2</code> — an <strong>expansion</strong>: one image in, a list of crops out</td>
+</tr>
+<tr>
+<td><code>roboflow_core/roboflow_classification_model@v2</code> on those crops</td>
+<td>crops at depth 2</td>
+<td><code>in=2 out=2</code> — an ordinary step one level deeper</td>
+</tr>
+<tr>
+<td><code>roboflow_core/detections_stitch@v1</code></td>
+<td><code>reference_image</code> (the reference property) at depth 1, <code>predictions</code> at depth <strong>2</strong></td>
+<td><code>in=1 out=1</code> — a <strong>reducer</strong>: it consumes depth‑2 data but sits at depth 1, and the depth‑2 side input is not visible in the response</td>
+</tr>
+<tr>
+<td><code>roboflow_core/detections_classes_replacement@v1</code></td>
+<td>detections at depth 1, classifications at depth 2</td>
+<td><code>in=1 out=1</code> — same shape as above</td>
+</tr>
+</tbody>
+</table>
+<p>A block whose manifest declares an output dimensionality offset of −1 (an explicit collapse) reports <code>in=2 out=1</code>: its reference input really is one level deeper than its output.</p>
+<p>The practical consequence for a consumer: <code>steps_by_dimensionality</code> places a stitch/reducer step at depth <strong>1</strong>, not at the depth of the batch it merges. If you need "how much data does this step touch", combine <code>input_dimensionality</code> with the <code>output_dimensionality</code> of its predecessors from <code>edges</code> — the document gives you both, but it never pre-computes that number for you.</p>
+<h3 id="discovery-known-known-absent-and-unknown">Discovery: known, known-absent and unknown<a class="headerlink" href="#discovery-known-known-absent-and-unknown" title="Permanent link">&para;</a></h3>
+<p>Every declaration is wrapped in a <code>Discovery</code>. A complete declaration with no items looks like this on the wire:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"> </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]}</span>
+</code></pre></div>
+<ul>
+<li><code>complete: true</code> with an empty <code>items</code> means <strong>known absence</strong> — the block declares that it does none of this. It is a positive statement, not a gap in the data.</li>
+<li><code>complete: false</code> means the list may be incomplete; <code>unknown_reasons</code> then carries at least one <code>DiscoveryProblem</code> object saying why.</li>
+<li>A complete result never carries reasons, and reasons never carry exception traces or secrets.</li>
+</ul>
+<p>A block that declares nothing (a third-party plugin that has not been annotated) is reported as unknown, never as empty. Every block registered in this repository — core, enterprise and the server's own plugin — writes all three hooks explicitly in its manifest; the one exception is <code>roboflow_core/inner_workflow@v1</code>, which does not write the resources hook because its dispatched child may pull anything. For restrictions the hook is <code>get_actual_restrictions()</code>; see <a href="#how-a-block-declares-a-restriction">How a block declares a restriction</a>.</p>
+<p>Writing a hook is not the same as knowing its answer. An explicitly written hook may still answer "unknown" or "partly known":</p>
+<ul>
+<li><strong>Audited unknown.</strong> Some model blocks write the resources hook and return <code>None</code> on purpose, because their model has no identity they could declare truthfully. Four model families do this today: Google Vision OCR, Seg Preview, Stability AI inpainting and Stability AI outpainting. Their steps report <code>resources.complete: false</code> with <code>declaration_unavailable</code>. No id is guessed for them.</li>
+<li><strong>Host-configured identity.</strong> CLIP comparison v1 (<code>roboflow_core/clip_comparison@v1</code>, numpy and tensor) has no version field: it runs the default CLIP variant configured where it executes. It declares <code>clip/{CLIP_VERSION_ID}</code>, filled with the <code>CLIP_VERSION_ID</code> configured on the process that <strong>answers</strong> introspection (default <code>ViT-B-16</code>). The step reports this id as a complete literal. A target configured with a different <code>CLIP_VERSION_ID</code> can run a different variant than the one declared, so compare the id with your target's configuration. CLIP comparison v2 has a <code>version</code> field and declares <code>clip/&lt;version&gt;</code> from the definition.</li>
+<li><strong>Conditional declarations.</strong> Some blocks declare a resource only under a condition in their own configuration, for example an active-learning target project that matters only while active learning is enabled. A literal condition is evaluated by the block. When the condition itself comes from a selector (for example <code>disable_active_learning: "$inputs.flag"</code>), the block declares the resource it might use; the document does not model whether the condition will hold at run time.</li>
+<li><strong>Unknown identities.</strong> A declared resource whose identity is a selector or a blank literal makes the step's resources incomplete. See <a href="#resources">Resources</a>.</li>
+</ul>
+<h3 id="discovery-problems">Discovery problems<a class="headerlink" href="#discovery-problems" title="Permanent link">&para;</a></h3>
+<p>Every entry of <code>unknown_reasons</code> is a <code>DiscoveryProblem</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_problem_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unresolved_selector"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Field `model_id` of the roboflow_platform_model declared by step `$steps.detection` is set by selector `$inputs.model`, which is only known at run time, so the resources are not fully known."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"details"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"declaration"</span><span class="p">:</span><span class="w"> </span><span class="s2">"resources"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"field"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model_id"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.model"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"resource_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_platform_model"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>code</code> is the machine-readable reason. The set is <strong>closed</strong> and owned by the Execution Engine; a new member is an Execution Engine change, never a producer's free choice.</li>
+<li><code>description</code> is display text. Branch on <code>code</code> and read <code>details</code> — <strong>never parse the description</strong>. Its wording may change without a contract version change.</li>
+<li><code>details</code> is an open JSON map understood <strong>per code</strong>. The conventions below are documented, not shape-enforced: a producer may add context to a problem without a contract version change, so read the keys you know and ignore the rest.</li>
+</ul>
+<p>Two problems are the same problem when their <code>code</code> and their <code>details</code> match; the wording plays no part. Reasons are deduplicated on that identity and ordered deterministically by it, so the same definition always produces the same list, in the same order, whatever order the steps were visited in. Distinct contexts stay distinct: two steps hitting the same unresolved selector, or one step with two unresolved fields, are two entries.</p>
+<table>
+<thead>
+<tr>
+<th><code>code</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>declaration_unavailable</code></td>
+<td>the declaration is not available as a complete, portable statement. Three cases carry it: the block does not declare this domain at all (the hook returned <code>None</code>, e.g. an unannotated plugin); a block's restrictions come from the legacy <code>get_restrictions()</code> fallback (then <code>details.source</code> is <code>"get_restrictions"</code>); or a restriction's condition names configuration this process cannot evaluate (then <code>details.configuration_keys</code> lists those keys). Read <code>details</code> to tell them apart.</td>
+</tr>
+<tr>
+<td><code>declaration_failed</code></td>
+<td>the declaration hook raised, or answered with something that is not a valid declaration. Introspection stays non-fatal: the step is reported with an empty, incomplete declaration rather than failing the whole response.</td>
+</tr>
+<tr>
+<td><code>unresolved_selector</code></td>
+<td>a value the declaration depends on is a workflow selector, so it is only known at run time.</td>
+</tr>
+<tr>
+<td><code>invalid_resource_identifier</code></td>
+<td>a resource identifier names nothing: an empty or whitespace-only literal, or a missing (<code>null</code>) model id that the block would use. No identifier is ever fabricated.</td>
+</tr>
+<tr>
+<td><code>opaque_remote_workflow</code></td>
+<td>the step dispatches a child workflow to a remote server, which compiles it; nothing about the child is visible here.</td>
+</tr>
+<tr>
+<td><code>custom_python_internals_unknown</code></td>
+<td>the step runs user-supplied Python; what the code does beyond the declared items is not statically analysable.</td>
+</tr>
+</tbody>
+</table>
+<p>Details the built-in problems carry:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Present on</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>node_id</code></td>
+<td>every built-in problem</td>
+<td>the canonical <code>$steps.&lt;name&gt;</code> id of the step the problem belongs to.</td>
+</tr>
+<tr>
+<td><code>declaration</code></td>
+<td>every built-in problem</td>
+<td>which declaration the problem is <strong>about</strong>: <code>resources</code>, <code>operations</code> or <code>restrictions</code>. A problem carried by the model inventory keeps the <code>resources</code> of the step it came from.</td>
+</tr>
+<tr>
+<td><code>block_type</code></td>
+<td><code>declaration_unavailable</code>, <code>declaration_failed</code></td>
+<td>the canonical manifest identifier, where the reporter knows it.</td>
+</tr>
+<tr>
+<td><code>field</code></td>
+<td><code>unresolved_selector</code>, <code>invalid_resource_identifier</code></td>
+<td>the manifest field whose value caused the problem, or — when <code>resource_type</code> is present — the resource metadata field. The identity fields reported are <code>model_id</code>, <code>provider</code> and <code>project_url</code>.</td>
+</tr>
+<tr>
+<td><code>selector</code></td>
+<td><code>unresolved_selector</code></td>
+<td>the selector as written in the definition (<code>$inputs.model</code>, <code>$steps.a.b</code>). It is never resolved and never guessed from an input's default value.</td>
+</tr>
+<tr>
+<td><code>resource_type</code></td>
+<td><code>unresolved_selector</code> on a resource identity field, <code>invalid_resource_identifier</code></td>
+<td>the values emitted are <code>roboflow_platform_model</code>, <code>third_party_model</code> and <code>roboflow_platform_project</code>.</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td><code>declaration_unavailable</code> on a restriction declaration</td>
+<td>present, and equal to <code>"get_restrictions"</code>, when the answer came from the legacy <code>get_restrictions()</code> fallback — whether the block overrode that classmethod or inherited its empty default. It marks the fallback; absent otherwise.</td>
+</tr>
+<tr>
+<td><code>configuration_keys</code></td>
+<td><code>declaration_unavailable</code> on a restriction declaration</td>
+<td>the sorted, de-duplicated NAMES of the configuration keys the local (<code>ignore_environment_restrictions=False</code>) view could not evaluate. Never the host's values for them.</td>
+</tr>
+</tbody>
+</table>
+<p>The rows above describe what the built-in problems emit <strong>today</strong>. <code>resource_type</code> and <code>field</code> are general keys of the convention — a future producer may use them for another resource kind. Read the keys you know and ignore the rest; do not assume a key is present because the convention allows it.</p>
+<p><code>field</code> names where the problem was seen; it is not a lineage and does not claim to name the original input binding. An <code>invalid_resource_identifier</code> deliberately does <strong>not</strong> echo the invalid value back. Neither a description nor a details map ever contains raw exception text, a traceback, a credential or an authorization header — a block hook that raises with a secret in its message yields a plain <code>declaration_failed</code> problem.</p>
+<p>A restriction-side example: the Kafka producer keeps the restriction it does know and explains the rest.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_problem_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unresolved_selector"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Field `fire_and_forget` of step `$steps.producer` is set by selector `$inputs.wait_for_ack`, which is only known at run time, so the restrictions are not fully known."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"details"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.producer"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"declaration"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restrictions"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"field"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fire_and_forget"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.wait_for_ack"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="resources">Resources<a class="headerlink" href="#resources" title="Permanent link">&para;</a></h3>
+<p>A step's <code>resources</code> discovery lists <code>DependentResource</code> entries: the external things the step needs. Each entry carries a <code>resource_type</code> and a typed <code>metadata</code> object whose <code>type</code> always agrees with <code>resource_type</code>. The <code>resource_type</code> values carry no version suffix; the <code>metadata.type</code> tags do:</p>
+<table>
+<thead>
+<tr>
+<th><code>resource_type</code></th>
+<th><code>metadata.type</code></th>
+<th>Metadata fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>roboflow_platform_model</code></td>
+<td><code>roboflow_platform_model_v1</code></td>
+<td><code>model_id</code>, <code>required_action</code>, <code>execution_location</code></td>
+</tr>
+<tr>
+<td><code>roboflow_platform_project</code></td>
+<td><code>roboflow_platform_project_v1</code></td>
+<td><code>project_url</code></td>
+</tr>
+<tr>
+<td><code>third_party_model</code></td>
+<td><code>third_party_model_v1</code></td>
+<td><code>provider</code>, <code>model_id</code></td>
+</tr>
+</tbody>
+</table>
+<p>A Roboflow model reference declares what the step needs from the model:</p>
+<ul>
+<li><code>required_action</code> is <code>execution</code> (the step runs the model: weights are pulled or inference is requested from a service) or <code>access</code> (the step only needs the model entity to be reachable on the platform, for example to attach monitoring metadata; nothing executes).</li>
+<li><code>execution_location</code> is set only for <code>execution</code> and is <code>null</code> for <code>access</code>. Its values are <code>local</code> (always in-process), <code>remote</code> (always on a remote service) and <code>environment_defined</code>. Most model blocks declare <code>environment_defined</code>: the location is decided at runtime by the step-execution-mode configuration of whichever service or runtime eventually executes the definition. It is <strong>not</strong> a statement about the backend the inspecting server has selected — the document never reports that.</li>
+</ul>
+<p>A model id or project url supplied through a selector (<code>$inputs.model</code>) is preserved verbatim in the per-step declaration and is never resolved by introspection.</p>
+<h4 id="per-step-completeness-of-resource-identities">Per-step completeness of resource identities<a class="headerlink" href="#per-step-completeness-of-resource-identities" title="Permanent link">&para;</a></h4>
+<p>A step may know which resources it uses without knowing who they are. Each declared resource has identity fields:</p>
+<table>
+<thead>
+<tr>
+<th><code>resource_type</code></th>
+<th>Identity fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>roboflow_platform_model</code></td>
+<td><code>model_id</code></td>
+</tr>
+<tr>
+<td><code>third_party_model</code></td>
+<td><code>provider</code>, <code>model_id</code></td>
+</tr>
+<tr>
+<td><code>roboflow_platform_project</code></td>
+<td><code>project_url</code></td>
+</tr>
+</tbody>
+</table>
+<p>For every identity field of every declared item:</p>
+<ul>
+<li>a selector value adds an <code>unresolved_selector</code> problem with <code>field</code>, <code>selector</code> and <code>resource_type</code>;</li>
+<li>a blank literal (empty or whitespace-only) adds an <code>invalid_resource_identifier</code> problem with <code>field</code> and <code>resource_type</code>, never the value.</li>
+</ul>
+<p>Either problem makes the step's <code>resources</code> <code>complete: false</code>. The item itself stays in <code>items</code>, verbatim. Problems the block reported itself stay next to the new ones. A block may report <code>invalid_resource_identifier</code> itself, with <code>field</code> and <code>resource_type</code>, when a model id it would use is missing (<code>null</code>); no item is listed for that model. Selectors are never resolved and no default id is guessed. So <code>StepMetadata.resources.complete == true</code> means every declared resource of the step is identified by a literal.</p>
+<p>The model inventory is about <strong>models</strong> only (see <a href="#model-inventory">Model inventory</a>):</p>
+<ul>
+<li>model identity problems (<code>roboflow_platform_model</code>, <code>third_party_model</code>) make <code>summary.models</code> incomplete too;</li>
+<li>project identity problems (<code>roboflow_platform_project</code>) keep the step incomplete but do <strong>not</strong> make <code>summary.models</code> incomplete: a project is not a model;</li>
+<li>every other step problem — an unavailable or failed declaration, an opaque remote workflow — still makes <code>summary.models</code> incomplete.</li>
+</ul>
+<h4 id="declaring-resources-block-authors">Declaring resources (block authors)<a class="headerlink" href="#declaring-resources-block-authors" title="Permanent link">&para;</a></h4>
+<p><code>discover_dependent_resources()</code> returns a plain list (a complete declaration), a <code>Discovery</code> (explicit completeness with reasons) or <code>None</code> (unknown). Return the configured id verbatim, selector included; introspection reports its completeness. Do not return a guessed default.</p>
+<p>The Execution Engine's runtime model preloader (<code>dependencies_pre_init</code>) accepts all three answers. It uses the known items: all items of a list, the items of a <code>Discovery</code> whether complete or incomplete, and nothing for <code>None</code>. The declared <code>DependentResource</code> objects reach the preloader unchanged, so <code>model_id_resolver</code>, <code>model_registration_kwargs</code> and <code>preloadable</code> still apply.</p>
+<p><code>roboflow_platform_model()</code> accepts a keyword-only <code>preloadable</code> argument, default <code>True</code>. It is an in-process aid for the Execution Engine, like <code>model_id_resolver</code> and <code>model_registration_kwargs</code>: it never appears in this document, in <code>to_dict()</code> or in the JSON schema. <code>preloadable=False</code> means "the generic Execution Engine model-manager preloader must not register this model". Use it for a block that loads and owns its model itself. It says nothing about whether the block loads weights or runs remotely. The streaming video blocks (SAM2 video, SAM3 video, action recognition) declare their model this way, with <code>required_action: "execution"</code> and <code>execution_location: "local"</code>. SAM3 video declares only the model its literal <code>tracking_mode</code> selects: <code>model_id</code> for <code>concept</code>, <code>visual_model_id</code> for <code>visual</code>.</p>
+<p>Per-step <code>resources</code> and the inventory at <code>summary.models.items</code> answer different questions. The per-step declaration says what <em>this step</em> needs and whether it executes the model or only needs access to it. The inventory deduplicates model references across steps and may carry an optional enriched <code>metadata</code> block (<code>model_type</code>, <code>model_variant</code>, <code>task_type</code>) that per-step declarations never carry. See <a href="#model-inventory">Model inventory</a>.</p>
+<h3 id="restrictions-are-conditional-not-evaluated">Restrictions are conditional, not evaluated<a class="headerlink" href="#restrictions-are-conditional-not-evaluated" title="Permanent link">&para;</a></h3>
+<p>A <code>RestrictionMetadata</code> carries a <code>code</code>, a <code>severity</code> and a <code>when</code> condition; it is <strong>not</strong> filtered against the answering server's configuration. The condition ANDs across its axes (<code>runtimes</code>, <code>step_execution_modes</code>, <code>input_modes</code>, <code>configuration_equals</code>) and ORs within each populated axis; an axis left as <code>null</code> is unrestricted, and an axis is never an empty list. A custom Python step, for example, always reports</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"custom_python_execution_disabled"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"severity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hard"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"when"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_condition_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"runtimes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"step_execution_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"input_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"configuration_equals"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE"</span><span class="p">:</span><span class="w"> </span><span class="s2">"local"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>whether or not this server allows custom Python. The consumer decides what the restriction means for its own target configuration.</p>
+<p>The builder asks the block for that portable view explicitly, with
+<code>get_actual_restrictions(ignore_environment_restrictions=True)</code>, and projects each answer onto the DTO above.</p>
+<h4 id="runtimes-do-not-describe-hardware-except-the-two-self-hosted-values">Runtimes do not describe hardware, except the two self-hosted values<a class="headerlink" href="#runtimes-do-not-describe-hardware-except-the-two-self-hosted-values" title="Permanent link">&para;</a></h4>
+<p>The <code>runtimes</code> values are <code>hosted_serverless</code>, <code>dedicated_deployment</code>, <code>self_hosted_cpu</code>, <code>self_hosted_gpu</code> and <code>inference_pipeline</code>. Only <code>self_hosted_cpu</code> and <code>self_hosted_gpu</code> name hardware. <code>inference_pipeline</code> has no CPU/GPU variant.</p>
+<p>The GPU restriction shows the consequence:</p>
+<div class="highlight"><pre><span></span><code>requires_gpu_for_local_execution (hard)
+    when runtimes = [self_hosted_cpu] AND step_execution_modes = [local]
+</code></pre></div>
+<p>Evaluated as written, this condition does not match <code>inference_pipeline</code>. That result says nothing about the pipeline's hardware: it neither states that an inference pipeline has a GPU nor that the block runs there without one. A consumer that evaluates restrictions for an inference pipeline must supply its own assumption about the target hardware.</p>
+<h4 id="network-reachability-is-not-always-a-runtime-restriction">Network reachability is not always a runtime restriction<a class="headerlink" href="#network-reachability-is-not-always-a-runtime-restriction" title="Permanent link">&para;</a></h4>
+<p>The PLC reader and writer (<code>roboflow_core/plc_reader@v1</code>, <code>roboflow_core/plc_writer@v1</code>) show where the document stops. Their <code>connection_mode</code> decides what they declare:</p>
+<table>
+<thead>
+<tr>
+<th><code>connection_mode</code></th>
+<th>Declared restriction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ethernet_ip</code>, <code>modbus</code> (direct)</td>
+<td><code>requires_lan_access_to_device</code>, hard, <code>runtimes: ["dedicated_deployment", "hosted_serverless"]</code>: the process must reach the PLC on the customer's network</td>
+</tr>
+<tr>
+<td><code>relay</code> (the default)</td>
+<td>none, complete</td>
+</tr>
+</tbody>
+</table>
+<p>In relay mode the block sends HTTP requests to a PLC Relay service. The address defaults to loopback (<code>127.0.0.1</code>, port 8007), which is a relay running on the same device. The address field also accepts another host or IP, or a full <code>http://</code> / <code>https://</code> URL, which is used as given. The block code has no hosted-runtime guard and no address allowlist for the relay. The process executing the workflow must be able to reach the relay address. A hosted runtime can use a relay at a reachable external URL, so relay mode declares no hosted restriction. The default loopback address works only where a relay runs next to the executor; the document does not check that, and a consumer must judge it for its own target.</p>
+<h3 id="how-a-block-declares-a-restriction">How a block declares a restriction<a class="headerlink" href="#how-a-block-declares-a-restriction" title="Permanent link">&para;</a></h3>
+<p>A block authors restrictions with ONE entity type, <code>RuntimeRestriction</code>, and two public methods return it. The state-loss caveats are the exception to sharing declarations: they are declared separately for each method on purpose (see <a href="#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose">below</a>). For the editor, <code>get_restrictions()</code> keeps its notes, severity, ordering and condition scopes, and its <code>to_dict()</code> serialization shape is unchanged. Which entries a block lists can still change when a declaration is corrected: the BoT-SORT, Continue If and PostgreSQL editor views gained caveats they were missing, and the LMM blocks lost a false one.</p>
+<p>When both methods describe the same caveat, they give it the same <code>code</code>. Their scopes can still differ on purpose: the state-loss mode axis below, and storage caveats that the editor view emits per host flag while the actual view pins the flag in <code>applies_to_configuration</code>. <code>to_dict()</code> still omits <code>code</code> and <code>applies_to_configuration</code>, so the editor payload keeps its shape.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Level</th>
+<th>Returns</th>
+<th>Filtered against this host?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get_restrictions()</code></td>
+<td>classmethod</td>
+<td><code>List[RuntimeRestriction]</code></td>
+<td>yes — the legacy, editor-facing view; it evaluates this host's flags itself and emits only the matching branch (state-loss caveats differ from the actual view on purpose, see below)</td>
+</tr>
+<tr>
+<td><code>get_actual_restrictions(*, ignore_environment_restrictions=False)</code></td>
+<td>instance</td>
+<td><code>Discovery[RuntimeRestriction]</code></td>
+<td>only when the flag is <code>False</code>, and only the configuration predicates</td>
+</tr>
+</tbody>
+</table>
+<p><code>RuntimeRestriction</code> keeps <code>severity</code>, <code>note</code> and its three <code>applies_to_*</code> axes, and adds two defaulted fields at the end, so every existing constructor call is still valid:</p>
+<ul>
+<li><code>code</code> — a stable machine-readable identifier authored from the restriction's meaning. It defaults to <code>generic_restriction</code>, which says "this caveat has no dedicated identifier". In the Python <code>Discovery[RuntimeRestriction]</code> the note is part of a restriction's identity, so two <code>generic_restriction</code> entries explaining different failure modes stay two entries. On the wire that distinction is gone by design: <code>RestrictionMetadata</code> carries no note, so two such entries project onto the same DTO and the document's existing de-duplication by <code>(code, severity, condition)</code> coalesces them into one.</li>
+<li><code>applies_to_configuration</code> — a <code>key == value</code> map describing the TARGET deployment's configuration (e.g. <code>{"ENABLE_TENSOR_DATA_REPRESENTATION": true}</code>).</li>
+</ul>
+<p><code>to_dict()</code>, the editor payload, carries <strong>neither</strong> of the two new fields.</p>
+<p>The wire DTO is derived, never authored twice: <code>restriction_metadata_of(restriction)</code> maps the code, the severity and the three axes plus <code>applies_to_configuration</code> onto a <code>RestrictionMetadata</code>, dropping the human note (the portable form has no <code>note</code> field).</p>
+<h4 id="state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose">State-loss restrictions: editor view and actual view differ on purpose<a class="headerlink" href="#state-loss-restrictions-editor-view-and-actual-view-differ-on-purpose" title="Permanent link">&para;</a></h4>
+<p>Some blocks keep state in their workflow block instance: trackers and other per-video analytics, frame / heat / trace history, cooldown and rate-limit timers, the S3 append-log buffer and the model-monitoring aggregation buffer. For these caveats the two methods intentionally differ:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>get_restrictions()</code> (editor)</th>
+<th><code>get_actual_restrictions()</code> (this document)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>code</td>
+<td>same code as the actual view (e.g. <code>stateful_video_state_resets_on_stateless_http</code>); not part of <code>to_dict()</code></td>
+<td>same code as the editor view</td>
+</tr>
+<tr>
+<td>severity, runtimes, input modes</td>
+<td>unchanged</td>
+<td>same values as the editor view</td>
+</tr>
+<tr>
+<td>step execution modes</td>
+<td><code>["remote"]</code>, as before</td>
+<td><code>null</code> — applies to either mode</td>
+</tr>
+<tr>
+<td>note</td>
+<td>unchanged</td>
+<td>explains state loss independently of the model execution mode</td>
+</tr>
+</tbody>
+</table>
+<p>Why the mode is dropped. <code>step_execution_modes</code> says where the Execution Engine runs a model step: <code>local</code> inside the engine's process, <code>remote</code> through an inference service. It does not say whether block state survives. A workflow request that builds a fresh workflow / block instance starts from empty state, even on the same CPU worker, whether its models run locally or remotely.</p>
+<p>Who decides the lifecycle. Stable cross-frame behaviour needs the target to preserve the same step's state for the same logical stream across calls. That is a property of the target service that runs the workflow. The server answering this introspection call does not know it and does not evaluate it. Reusing some engine or process, request affinity, or CPU versus GPU hardware does not guarantee it by itself.</p>
+<p>Current limitation. The runtime axis cannot fully tell a persistent embedded engine apart from a self-hosted server that builds fresh instances for every HTTP request. These caveats keep their existing <code>hosted_serverless</code> and <code>dedicated_deployment</code> scope, and a consumer evaluating the conditions as written should honour that runtime predicate. A self-hosted deployment that serves each request with fresh instances can still lose state the same way; recognising that case needs the consumer's own knowledge of its target's lifecycle, which this document does not encode.</p>
+<p>A tracker, for example, reports:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stateful_video_state_resets_on_stateless_http"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"severity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"soft"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"when"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_condition_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"runtimes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"dedicated_deployment"</span><span class="p">,</span><span class="w"> </span><span class="s2">"hosted_serverless"</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"step_execution_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"input_modes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"video"</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"configuration_equals"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The BoT-SORT tracker (<code>roboflow_core/trackers_botsort@v1</code>, numpy and tensor) lists the stateful-video and still-image caveats in both views, like SORT, OC-SORT and ByteTrack.</p>
+<p>Some blocks keep state only under a setting. Continue If (<code>roboflow_core/continue_if@v1</code>) keeps a grace-period timer in the block instance only when <code>stop_delay</code> is positive:</p>
+<table>
+<thead>
+<tr>
+<th><code>stop_delay</code></th>
+<th><code>get_actual_restrictions()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code> (the default)</td>
+<td>complete and empty: no state is kept</td>
+</tr>
+<tr>
+<td>positive literal</td>
+<td>complete: <code>cooldown_timer_resets_on_stateless_http</code>, soft, <code>runtimes: ["dedicated_deployment", "hosted_serverless"]</code>, <code>step_execution_modes: null</code></td>
+</tr>
+<tr>
+<td>selector</td>
+<td>conservative: the same restriction, with <code>complete: false</code> and an <code>unresolved_selector</code> problem for <code>stop_delay</code></td>
+</tr>
+</tbody>
+</table>
+<p>The editor <code>get_restrictions()</code> is a classmethod and cannot see <code>stop_delay</code>. It always lists the cooldown caveat, with its <code>["remote"]</code> mode axis. The selector row describes what the declaration hook answers. It is not a claim that a selector, or an explicit <code>0</code>, passes the field's current validation (<code>gt=0</code>).</p>
+<h4 id="ignore_environment_restrictions"><code>ignore_environment_restrictions</code><a class="headerlink" href="#ignore_environment_restrictions" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>True</code> — the <strong>portable</strong> view, and what this document carries. No host evaluation at all: every applicable declaration is returned with its condition intact, for the downstream target to evaluate. It does <strong>not</strong> drop environment-dependent restrictions.</li>
+<li><code>False</code> (the default) — the <strong>host</strong> view. Only the <code>applies_to_configuration</code> predicates are evaluated, against the configuration installed in this process (the parsed package configuration, never <code>os.environ</code>). An entry whose predicate definitively does not hold here is removed; the runtime, input-mode and step-execution-mode axes are never evaluated and never guessed, and no condition is ever stripped from a surviving entry.</li>
+</ul>
+<p>Evaluation is three-valued and the predicates are ANDed. A key this package cannot evaluate only matters while the condition is still open: if another, evaluable predicate of the SAME restriction already does not hold, the restriction definitively does not apply here and is dropped with no problem reported. Otherwise the entry is kept AND the result becomes incomplete, with a <code>declaration_unavailable</code> problem listing the unevaluable key names (never their values).</p>
+<h4 id="authoring">Authoring<a class="headerlink" href="#authoring" title="Permanent link">&para;</a></h4>
+<p>There is exactly one hook. A block overrides <code>get_actual_restrictions(self, *, ignore_environment_restrictions=False) -&gt; Discovery[RuntimeRestriction]</code> and builds its declaration there, refined by the instance's own literal settings. A block that declares no restriction returns an empty complete discovery directly:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_actual_restrictions</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">ignore_environment_restrictions</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Discovery</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="n">Discovery</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">](</span><span class="n">items</span><span class="o">=</span><span class="p">[],</span> <span class="n">complete</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unknown_reasons</span><span class="o">=</span><span class="p">[])</span>
+</code></pre></div>
+<p>A block that does declare something passes the data through <code>actual_restrictions_of()</code>, which normalises it (<code>None</code> = unknown, a plain list = a complete declaration, a <code>Discovery</code> = explicit completeness with reasons) and applies the flag:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_actual_restrictions</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">ignore_environment_restrictions</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Discovery</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="n">actual_restrictions_of</span><span class="p">(</span>
+        <span class="n">declared</span><span class="o">=</span><span class="p">[</span><span class="n">STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION</span><span class="p">],</span>
+        <span class="n">node_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">"$steps.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">ignore_environment_restrictions</span><span class="o">=</span><span class="n">ignore_environment_restrictions</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div>
+<p><code>actual_restrictions_of()</code> takes restriction DATA, not a manifest: it calls nothing back and picks between no implementations. A plugin that subclasses a built-in can extend what it inherits by calling <code>super().get_actual_restrictions(ignore_environment_restrictions=...)</code> and adding to the result.</p>
+<p><code>actual_restrictions_of()</code> validates every entry by projecting it onto the wire DTO, then rebuilds the entry from that validated projection. A rebuilt entry has:</p>
+<ul>
+<li>each axis as a new list of enum members, in the authored order, or <code>None</code> when the axis was <code>None</code>;</li>
+<li><code>applies_to_configuration</code> as a new plain <code>dict</code> built from the validated projection, or <code>None</code> when it was <code>None</code>;</li>
+<li>the authored <code>note</code>, unchanged.</li>
+</ul>
+<p>The declared completeness and reasons are kept. Shared preset objects are never mutated or returned by identity.</p>
+<p>A declaration the portable contract cannot express is reported as <code>declaration_failed</code> with no items, rather than published as a complete declaration the wire cannot carry. Examples: a blank or non-identifier <code>code</code>, an axis declared as an empty list, an unknown or repeated axis value, a note that is not a string, a blank or non-string configuration key, a configuration value that is not JSON. The host view (<code>ignore_environment_restrictions=False</code>) evaluates this host's configuration inside the same boundary: an exception during that evaluation also yields only <code>declaration_failed</code>. In both cases the problem carries no exception text and none of the declared or configured values. The <code>RuntimeRestriction</code> constructor itself stays permissive; the contract begins at the new API. A hook that raises is sanitised the same way at the workload-builder boundary.</p>
+<h4 id="compatibility">Compatibility<a class="headerlink" href="#compatibility" title="Permanent link">&para;</a></h4>
+<p>A block that does not override <code>get_actual_restrictions()</code> gets the default body, which simply calls <code>self.get_restrictions()</code> — the block's own legacy override through ordinary Python dispatch, or the inherited <code>[]</code> — and wraps whatever comes back. That fallback is <strong>always incomplete</strong>: a legacy getter may already have filtered its entries against the flags of the host that answered, and the inherited default declares nothing at all, so neither a short list nor an empty one proves absence. The items themselves are reported as declared, codes included — a legacy declaration may well carry a specific <code>code</code>. The reason carries <code>"source": "get_restrictions"</code>.</p>
+<p><code>ignore_environment_restrictions=True</code> does not change that verdict: the flag governs what this package evaluates, and it cannot undo filtering that happened inside the classmethod. With <code>False</code> the fallback still behaves like any other declaration — the <code>applies_to_configuration</code> predicates a legacy entry carries are evaluated against this host as usual.</p>
+<p>A block whose class-level list IS complete and environment independent can say so, by wrapping it explicitly instead of taking the fallback:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_actual_restrictions</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">ignore_environment_restrictions</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Discovery</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="n">actual_restrictions_of</span><span class="p">(</span>
+        <span class="n">declared</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_restrictions</span><span class="p">()),</span>
+        <span class="n">node_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">"$steps.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">ignore_environment_restrictions</span><span class="o">=</span><span class="n">ignore_environment_restrictions</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div>
+<h3 id="model-inventory">Model inventory<a class="headerlink" href="#model-inventory" title="Permanent link">&para;</a></h3>
+<p><code>summary.models</code> is a discovery whose <code>items</code> are <code>ModelSummary</code> entries: an inventory of model <strong>references</strong>, deduplicated by <code>(provider, model_id)</code>, with the referring step ids preserved and counted by the input depth of each referring step:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model_summary_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-project/3"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"used_by_steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"$steps.crop_detection"</span><span class="p">,</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"steps_by_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"1"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">"2"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"metadata_status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disabled"</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>Two steps using one model id produce <strong>one</strong> entry with two <code>used_by_steps</code>, not two entries.</li>
+<li><code>steps_by_dimensionality</code> is the per-model counterpart of the summary histogram: for every step in <code>used_by_steps</code>, its compiled <strong>input</strong> depth (the reference-lineage depth described above) is counted once. Here the model is referenced by <code>detection</code> at depth 1 and by <code>crop_detection</code> on the crops at depth 2. Keys are strings on the wire and sorted ascending, values are positive, depths with no referring step are omitted, and the values always sum to the length of <code>used_by_steps</code>. The field is always populated from compilation; it does not depend on the metadata gate.</li>
+<li>A step is counted <strong>once</strong> per model whatever it declares: a step that lists the same model twice (for example once with <code>required_action: "execution"</code> and once with <code>"access"</code>) is one entry in <code>used_by_steps</code> and one count in the histogram, while a step that references two different models contributes one count to each of the two entries. Different providers with the same model id remain separate entries with separate histograms.</li>
+<li>Roboflow platform references use the provider <code>roboflow</code>; an explicit third-party provider is preserved as declared. Roboflow <em>projects</em> are not model entries.</li>
+<li>A model id supplied through a selector (<code>$inputs.model</code>) is never invented into an id and never sent to a metadata lookup: it stays a per-step unresolved reference and makes the inventory incomplete with an <code>unresolved_selector</code> problem naming the step, the resource field and the selector. A blank literal id or provider yields an <code>invalid_resource_identifier</code> problem naming the field. A step whose resources are unknown or incomplete propagates its own problems into the inventory unchanged, with all the context they carry — except selector or blank problems about a project identity, which keep only the step incomplete (see <a href="#per-step-completeness-of-resource-identities">Per-step completeness of resource identities</a>). Literal models of a partly known step are still listed. Unresolved and unknown references contribute nothing to any histogram; only literal, known references are counted, so an incomplete inventory carries exact counts for what it does list.</li>
+<li>Being listed is not a claim that the reference executes at runtime — a step may only need access to the model. The per-step <code>resources</code> entry keeps that distinction in <code>required_action</code>. Access-only references are inventoried and counted like every other reference: the histogram counts referring steps, not model calls.</li>
+</ul>
+<p><code>metadata_status</code> is <code>disabled</code>, <code>available</code> or <code>unavailable</code>:</p>
+<table>
+<thead>
+<tr>
+<th><code>USE_INFERENCE_MODELS</code></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>False</code></td>
+<td>every entry is <code>disabled</code> with <code>metadata: null</code>, and <strong>zero</strong> metadata lookups happen.</td>
+</tr>
+<tr>
+<td><code>True</code></td>
+<td>the server resolves metadata once per unique model id (not per step) and maps <code>model_type</code>, <code>model_variant</code>, <code>task_type</code>. Resolution is not the same as a remote request: a resolution answered by the in-memory cache described below issues no call at all, so a request may make fewer remote calls than it has unique model ids. A failed or empty resolution yields <code>unavailable</code> without dropping the entry, and without making an otherwise complete inventory incomplete.</td>
+</tr>
+</tbody>
+</table>
+<p>A standalone package call with no metadata provider yields <code>unavailable</code> — the package makes no claim about any server flag.</p>
+<h4 id="how-the-lookup-reaches-the-platform-and-what-that-costs-you">How the lookup reaches the platform, and what that costs you<a class="headerlink" href="#how-the-lookup-reaches-the-platform-and-what-that-costs-you" title="Permanent link">&para;</a></h4>
+<p>The server performs the lookup through the existing registry helper <code>get_model_metadata_from_inference_models_registry()</code> (<code>GET /models/v1/external/stat</code>). That call is <strong>metadata only</strong>: no weights are downloaded, no model is registered with the model manager, and the model-type resolution paths that would enforce this deployment's model support are deliberately not used.</p>
+<p>Repeat lookups are absorbed by an <strong>in-memory cache inside the server process</strong>, shared by every request and every provider instance. It holds at most 1000 entries (the least recently used entry is evicted at that bound) and expires them after <code>MODELS_CACHE_AUTH_CACHE_TTL</code> (default 15 minutes), the TTL the authorization cache already uses. Its key does contain the api key, and it never leaves the process. The key is an exact tuple, not a hash:</p>
+<div class="highlight"><pre><span></span><code>(api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)
+</code></pre></div>
+<ul>
+<li><code>api_key</code> as given, so "no key" (<code>None</code>) and an empty key are different entries.</li>
+<li><code>authorised_workspace</code> is the workspace the call would send in the <code>x-assume-identity-authorised-workspace</code> header, resolved per call before the lookup — set only when the service access token is configured and the per-request workspace id is header-safe, and <code>None</code> otherwise. When it is <code>None</code>, the api key, model id and authorization mode still key the entry.</li>
+<li><code>MODELS_CACHE_AUTH_ENABLED</code> is the authorization policy in force when the entry was written. It keeps each policy's entries apart. Switching back to a policy whose entry is still live reuses that entry.</li>
+</ul>
+<p>Only successful, usable metadata is cached. Exceptions, <code>unavailable</code> results and payloads whose every field is unknown are not stored, so the next request retries. The <code>USE_INFERENCE_MODELS</code>, provider and <code>OFFLINE_MODE</code> gates are all evaluated before the cache is consulted. The cache lives in one process: with several workers each keeps its own, and concurrent first-time lookups of the same key may issue more than one request — there is no request coalescing.</p>
+<p><strong>Every in-memory miss is authorized by the platform for that caller, in both authorization modes.</strong> On a miss, introspection calls the helper with a fresh, single-use cache prefix: a fixed namespace plus a random nonce from <code>secrets.token_hex(16)</code>. No api key, credential digest, token or workspace id feeds that prefix.</p>
+<div class="highlight"><pre><span></span><code>lookup(api_key, model_id):
+    key = (api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)
+    if key has a live in-memory entry:
+        return it                        # authorized earlier for this exact tuple
+    prefix = "workload_introspection:inference_models_registry:" + random_nonce()
+    helper(api_key, model_id, cache_prefix=prefix)
+        MODELS_CACHE_AUTH_ENABLED=False: shared-cache read of prefix:model_id -&gt; always a miss
+        MODELS_CACHE_AUTH_ENABLED=True:  no shared-cache read
+        -&gt; platform call with the caller's own api key and identity headers
+        on success: shared-cache write of prefix:model_id, expire=10 s   # nobody reads it
+    keep the answer in memory only when it is a usable success
+</code></pre></div>
+<p>What this means:</p>
+<ul>
+<li>A cold tuple, an expired or evicted entry, and a retry after a failure all reach the platform with the caller's credentials and identity. An in-memory hit returns only an answer the platform already authorized for the same <code>(api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)</code> tuple, within the TTL.</li>
+<li>Introspection never reads, writes or purges the helper's shared entries under its default prefix. The model-resolution path keeps its existing use of that default cache, unchanged.</li>
+<li>The unchanged helper still writes each successful answer under the single-use prefix with <code>expire=10</code>. No later lookup reads that entry.</li>
+<li>Cost: with <code>MODELS_CACHE_AUTH_ENABLED=False</code>, a cold lookup could formerly be answered by the default shared entry with no platform call. It now makes one authorized metadata call and one short-lived cache write. Some additional authenticated cold calls are therefore expected. Repeat lookups for the same tuple are still answered from memory.</li>
+</ul>
+<p>Two consequences of reusing that helper, which is shared with the loading paths and is not modified by this feature:</p>
+<ul>
+<li><strong>On hosted serverless the request carries the credits-verification header.</strong> When <code>ENFORCE_CREDITS_VERIFICATION</code> is on, the helper adds <code>ENFORCE_CREDITS_VERIFICATION_HEADER</code> to every call, including this one. A workspace without credits therefore gets a platform error, which surfaces as <code>metadata_status: "unavailable"</code> for that entry — the inventory itself is unaffected. On the platform side an introspection lookup is indistinguishable from a model-load lookup.</li>
+<li><strong>Turning the metadata gate off also turns tensor mode off.</strong> The server defines <code>ENABLE_TENSOR_DATA_REPRESENTATION</code> as the environment value <strong>and</strong> <code>USE_INFERENCE_MODELS</code>, so a deployment (or a test) that sets <code>USE_INFERENCE_MODELS=False</code> to avoid the lookup silently runs in numpy mode as well. This does not change the introspection response — it is identical in both representations — but it is worth knowing before reading a flag matrix.</li>
+</ul>
+<h3 id="dimensionality-summary">Dimensionality summary<a class="headerlink" href="#dimensionality-summary" title="Permanent link">&para;</a></h3>
+<p><code>steps_by_dimensionality</code> counts every compiled step once, by its <strong>input</strong> depth (the reference-lineage depth described above); keys are strings on the wire, values are positive, dimensions with no steps are omitted, and the values sum to the number of steps. <code>max_dimensionality</code> is the deepest compiled input or output depth in the graph, including the input-to-output depth of a workflow with no steps at all.</p>
+<p>Each <code>ModelSummary</code> carries a <code>steps_by_dimensionality</code> of its own with the same encoding, restricted to that model's <code>used_by_steps</code> (see <a href="#model-inventory">Model inventory</a>). The per-model maps are not a partition of the summary map: a step that references two models appears in both of their histograms, and a step that references no model appears in neither.</p>
+<h4 id="dimensionality-is-not-multiplicity">Dimensionality is not multiplicity<a class="headerlink" href="#dimensionality-is-not-multiplicity" title="Permanent link">&para;</a></h4>
+<p>Dimensionality is the nesting depth of the data, not the number of items. In <code>image -&gt; dynamic crop -&gt; classifier</code> the classifier sits at depth 2 whether the crop step yields 3 crops or 300.</p>
+<ul>
+<li>Counts per depth count <strong>graph steps</strong>, not inference items. <code>{"2": 1}</code> means one step works on depth-2 data. It does not mean one model call.</li>
+<li>A step at depth 2 that classifies N items may batch them into fewer model calls than N.</li>
+<li>The work under nested expansion depends on the actual child counts: their sum over parents at one level, and their products across levels. Input sizes and the number of detections decide those counts at run time; this document does not know them.</li>
+</ul>
+<p>The document carries no item counts, cardinality estimate, work expression or cost score. A service that needs them supplies its own assumptions, for example target-service heuristics about typical detection counts.</p>
+<h2 id="what-this-is-not">What this is not<a class="headerlink" href="#what-this-is-not" title="Permanent link">&para;</a></h2>
+<p>This is compile-time introspection, not an estimator and not a profiler. The document deliberately contains <strong>no</strong>:</p>
+<ul>
+<li>cost score, latency estimate, weight or any other number derived from hardware assumptions;</li>
+<li>lineage identifiers, input bindings or origin paths;</li>
+<li>compute/IO classification of a step;</li>
+<li>execution groups, worker counts or a schedule;</li>
+<li>selected custom-Python backend, selected model backend or any other statement about how <em>this</em> server would run the definition.</li>
+</ul>
+<p>Answering those is the job of the service that consumes this document.</p>
+<h2 id="example-detection-crop-classification">Example: detection, crop, classification<a class="headerlink" href="#example-detection-crop-classification" title="Permanent link">&para;</a></h2>
+<p>Request (<code>POST /workflows/describe_workload</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"api_key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;your key&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"specification"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.0"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"WorkflowImage"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"image"</span><span class="p">}],</span>
+<span class="w">    </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/roboflow_object_detection_model@v3"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"detection"</span><span class="p">,</span>
+<span class="w">       </span><span class="nt">"images"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span><span class="w"> </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-project/3"</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/dynamic_crop@v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"crop"</span><span class="p">,</span>
+<span class="w">       </span><span class="nt">"images"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span><span class="w"> </span><span class="nt">"predictions"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection.predictions"</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/roboflow_classification_model@v2"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"classification"</span><span class="p">,</span>
+<span class="w">       </span><span class="nt">"images"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop.crops"</span><span class="p">,</span><span class="w"> </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-other-project/1"</span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"JsonField"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"classes"</span><span class="p">,</span>
+<span class="w">                 </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.classification.predictions"</span><span class="p">}]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The complete response below shows the result with <code>USE_INFERENCE_MODELS=False</code> on the server (the same output the package compiler produces with a disabled metadata provider), so both inventory entries report <code>metadata_status: "disabled"</code> with <code>metadata: null</code> and no registry lookup happens. With the gate on, only those two fields of the inventory entries could differ; everything else is identical.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"workflow_introspection_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"execution_engine_version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.16.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"nodes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_node_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"input"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_node_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_node_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_node_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.classification"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_node_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$outputs.classes"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"output"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"edges"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_edge_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span><span class="w"> </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"data"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_edge_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span><span class="w"> </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"data"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_edge_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.classification"</span><span class="p">,</span><span class="w"> </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$outputs.classes"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"data"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_edge_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop"</span><span class="p">,</span><span class="w"> </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.classification"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"data"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph_edge_v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">,</span><span class="w"> </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop"</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"data"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step_metadata_v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.detection"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/roboflow_object_detection_model@v3"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"input_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"output_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"accepts_batch_input"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"resources"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dependent_resource_v1"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"resource_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_platform_model"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_platform_model_v1"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-project/3"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"required_action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execution"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"execution_location"</span><span class="p">:</span><span class="w"> </span><span class="s2">"environment_defined"</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">          </span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"restrictions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"operations"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"model_inference"</span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step_metadata_v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.crop"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/dynamic_crop@v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"input_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"output_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"accepts_batch_input"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"resources"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"restrictions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"operations"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"image_crop"</span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step_metadata_v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.classification"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_core/roboflow_classification_model@v2"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"input_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"output_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"accepts_batch_input"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"resources"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dependent_resource_v1"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"resource_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_platform_model"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_platform_model_v1"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-other-project/1"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"required_action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execution"</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">"execution_location"</span><span class="p">:</span><span class="w"> </span><span class="s2">"environment_defined"</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">          </span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"restrictions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"operations"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"model_inference"</span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"summary"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"workflow_summary_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model_summary_v1"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-other-project/1"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"used_by_steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"$steps.classification"</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">"steps_by_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"2"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<span class="w">          </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"metadata_status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disabled"</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model_summary_v1"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-project/3"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"used_by_steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"$steps.detection"</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">"steps_by_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"1"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<span class="w">          </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"metadata_status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disabled"</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"max_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"steps_by_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"1"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">"2"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>What the response says:</p>
+<ul>
+<li><strong>Resources.</strong> The detection step and the classification step each declare exactly one Roboflow model, with <code>required_action: "execution"</code> and <code>execution_location: "environment_defined"</code>: the model runs, and where it runs is left to the runtime that executes the definition. The crop step declares a complete, empty resource list: it is known to need no model, project or third-party model. That empty list is a known absence, not a missing or unknown declaration.</li>
+<li><strong>Restrictions.</strong> All three steps declare complete, empty restriction lists. None of these blocks has a portable restriction, and the document says so explicitly rather than leaving the field out.</li>
+<li><strong>Inventory versus per-step declarations.</strong> <code>summary.models.items</code> holds the same two model ids, deduplicated and mapped back to their steps. Because the metadata gate is off, the entries carry no enriched <code>metadata</code>; the per-step <code>resources</code> entries never carry it, whatever the gate.</li>
+<li><strong>Dimensionality.</strong> The crop raises the dimension, so the classification step reads depth‑2 data: two steps at depth 1, one at depth 2, and the values sum to the three compiled steps. Per model, the detection model is referenced by one step at depth 1 (<code>{"1": 1}</code>) and the classification model by one step at depth 2 (<code>{"2": 1}</code>); each map sums to the length of its <code>used_by_steps</code>. The crop step references no model, so it is counted in the summary histogram only.</li>
+</ul>
+<h2 id="example-a-step-with-populated-restrictions">Example: a step with populated restrictions<a class="headerlink" href="#example-a-step-with-populated-restrictions" title="Permanent link">&para;</a></h2>
+<p>The Kafka producer sink is an enterprise block, so the server must be started with <code>LOAD_ENTERPRISE_BLOCKS=True</code> for this definition to compile. Introspection never connects to the broker: no Kafka cluster needs to exist at <code>localhost:9092</code>.</p>
+<p>Request (<code>POST /workflows/describe_workload</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"api_key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;your key&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"specification"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.0"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"WorkflowParameter"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"message"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"default_value"</span><span class="p">:</span><span class="w"> </span><span class="s2">"metadata-only example"</span><span class="p">}],</span>
+<span class="w">    </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_enterprise/kafka_producer_sink@v1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"producer"</span><span class="p">,</span>
+<span class="w">       </span><span class="nt">"bootstrap_servers"</span><span class="p">:</span><span class="w"> </span><span class="s2">"localhost:9092"</span><span class="p">,</span><span class="w"> </span><span class="nt">"topic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"events"</span><span class="p">,</span>
+<span class="w">       </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.message"</span><span class="p">,</span><span class="w"> </span><span class="nt">"fire_and_forget"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"JsonField"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"error_status"</span><span class="p">,</span>
+<span class="w">                 </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.producer.error_status"</span><span class="p">}]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The complete response has the same envelope as the previous example (three nodes, two data edges, an empty complete model inventory, <code>max_dimensionality: 0</code> and <code>steps_by_dimensionality: {"0": 1}</code>). Only the single step entry is shown here. This is the complete <code>steps[0]</code> object extracted from that response, not a whole <code>WorkflowIntrospection</code> document:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"step_metadata_v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"node_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.producer"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"roboflow_enterprise/kafka_producer_sink@v1"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"input_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"output_dimensionality"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"accepts_batch_input"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"resources"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">    </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"restrictions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fire_and_forget_hides_persistence_failures"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"severity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"soft"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"when"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_condition_v1"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"runtimes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"inference_pipeline"</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">"step_execution_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"input_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"configuration_equals"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_v1"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unavailable_on_hosted_platform"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"severity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hard"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"when"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"restriction_condition_v1"</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"runtimes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"hosted_serverless"</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">"step_execution_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"input_modes"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">"configuration_equals"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"operations"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discovery_v1"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"external_request"</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"complete"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"unknown_reasons"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>What the step says:</p>
+<ul>
+<li><strong>A hard restriction on hosted serverless.</strong> <code>unavailable_on_hosted_platform</code> applies when the target runtime is <code>hosted_serverless</code>; the other axes are <code>null</code>, so nothing else narrows it. The block does not publish from the hosted platform. The condition names the runtime; it is not the answering server's own <code>GCP_SERVERLESS</code> or <code>LAMBDA</code> flag.</li>
+<li><strong>A soft restriction on the inference pipeline.</strong> <code>fire_and_forget_hides_persistence_failures</code> applies when the target runtime is <code>inference_pipeline</code>. The block still runs and returns the right output shape, but delivery failures are only logged, not returned.</li>
+<li><strong>Known-empty resources.</strong> The producer needs no model, project or third-party model, and it declares that as a complete empty list.</li>
+<li><strong>How <code>fire_and_forget</code> shapes the declaration.</strong> The block reads its own manifest value when declaring restrictions. A literal <code>true</code> (as here, and the default) yields both restrictions. A literal <code>false</code> yields only the hard hosted-platform restriction, because the run then waits for the broker's acknowledgement and the caveat does not exist. A selector such as <code>$inputs.wait_for_ack</code> cannot be resolved at compile time, so the block keeps the hard restriction it does know and returns <code>complete: false</code> with the <code>unresolved_selector</code> problem shown in <a href="#discovery-problems">Discovery problems</a> instead of guessing.</li>
+</ul>
+<p>Other sinks with a <code>fire_and_forget</code> switch declare the same soft caveat by the same rule: a literal <code>true</code> (their default) adds <code>fire_and_forget_hides_persistence_failures</code> for <code>inference_pipeline</code>, a literal <code>false</code> omits it, and a selector makes the restrictions <code>complete: false</code> with an <code>unresolved_selector</code> problem for <code>fire_and_forget</code>. What else each one declares differs:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Also declared, for every <code>fire_and_forget</code> value, selector included</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>roboflow_core/postgresql_sink@v1</code></td>
+<td><code>unavailable_on_hosted_platform</code>, hard, <code>runtimes: ["hosted_serverless"]</code>, like Kafka. The block's <code>run()</code> already refuses to write on the hosted platform. The editor <code>get_restrictions()</code> lists this restriction too.</td>
+</tr>
+<tr>
+<td><code>roboflow_enterprise/opc_writer_sink@v1</code></td>
+<td><code>cooldown_timer_resets_on_stateless_http</code>, soft: its cooldown timer lives in the block instance</td>
+</tr>
+<tr>
+<td><code>roboflow_core/microsoft_sql_server_sink@v1</code></td>
+<td>nothing</td>
+</tr>
+<tr>
+<td><code>roboflow_enterprise/event_writer_sink@v1</code></td>
+<td>nothing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
+<p>The routes reuse the existing error handling: a malformed definition, an unknown block or an invalid selector returns the error the ordinary compilation path would return. A partially compiled or invented graph is never returned in place of an error.</p>
+<p><strong>Execution Engine version.</strong> Introspection selects the engine exactly as workflow execution (<code>ExecutionEngine.init</code>) does. The requested version is a minimum within its major version: the installed engine must satisfy <code>&gt;=requested,&lt;next major</code>. So prerelease minimums such as <code>1.0.0rc1</code>, or an <code>rc</code> of the installed minor line, are accepted when the installed engine satisfies them. An unsupported request — for example <code>0.9</code>, <code>2.0</code>, or a minor or patch newer than the installed engine — returns HTTP 400 with <code>error_type: NotSupportedExecutionEngineError</code> and the same message that execution returns. The check runs before compilation, inner-workflow fetches and model metadata lookups. In the Python API, an explicit <code>execution_engine_version</code> that cannot be parsed still raises <code>WorkflowExecutionEngineVersionError</code>.</p>
+<p><strong>Dynamic blocks.</strong> A <code>dynamic_blocks_definitions</code> entry that does not match the dynamic block schema (for example <code>{}</code>) returns HTTP 400 with <code>error_type: DynamicBlockError</code>. The message names the entry's index and the failing field locations, and the inner validation error is kept as the cause. Introspection stays structural: it evaluates no custom Python for these definitions. On the execution path, the existing custom-Python policy check still runs before this schema check.</p>
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2026. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M549.7 124.1c-6.2-23.7-24.8-42.3-48.3-48.6C458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5c-23.5 6.3-42 24.9-48.3 48.6C15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8C117.3 448 288.1 448 288.1 448s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6V175.2l142.7 81.2z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["announce.dismiss","content.action.edit","content.code.copy","content.tabs.link","navigation.footer","navigation.indexes","navigation.instant","navigation.instant.prefetch","navigation.instant.preview","navigation.instant.progress","navigation.prune","navigation.tabs","navigation.tabs.sticky","navigation.top","navigation.tracking","optimize","toc.follow"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":1.0}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.63456bd9.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../javascript/cookbooks.js"></script>
+      
+        <script src="../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../assets/home.js"></script>
+      
+        <script src="../../js/segment.js"></script>
+      
+    
+  </body>
+</html>
