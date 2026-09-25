@@ -20,6 +20,7 @@ from roboflow_workflows.errors import (
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
 )
+from roboflow_workflows.execution_engine import core as engine_core
 from roboflow_workflows.execution_engine.core import ExecutionEngine
 from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadata,
@@ -31,6 +32,9 @@ from roboflow_workflows.execution_engine.entities.workload import (
     invalid_resource_identifier_problem,
     opaque_remote_workflow_problem,
     unresolved_selector_problem,
+)
+from roboflow_workflows.execution_engine.introspection import (
+    workload as workload_module,
 )
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
@@ -616,9 +620,12 @@ def test_supported_engine_versions(execution_engine_version) -> None:
     assert introspection.execution_engine_version == str(EXECUTION_ENGINE_V1_VERSION)
 
 
-@pytest.mark.parametrize("execution_engine_version", ["2.0.0", Version("0.9.0")])
+@pytest.mark.parametrize(
+    "execution_engine_version", ["2.0.0", "0.9", Version("0.9.0"), Version("2.0")]
+)
 def test_unsupported_engine_versions_raise(execution_engine_version) -> None:
-    with pytest.raises(WorkflowExecutionEngineVersionError):
+    # same error class as `ExecutionEngine.init` raises for these versions
+    with pytest.raises(NotSupportedExecutionEngineError):
         describe_workflow_workload(
             workflow_definition=_definition(steps=[_model("model")]),
             execution_engine_version=execution_engine_version,
@@ -633,10 +640,13 @@ def test_unparsable_engine_version_raises() -> None:
         )
 
 
-def test_definition_version_selects_engine() -> None:
-    with pytest.raises(WorkflowExecutionEngineVersionError):
+@pytest.mark.parametrize("definition_version", ["0.9", "2.0"])
+def test_definition_version_selects_engine(definition_version: str) -> None:
+    with pytest.raises(NotSupportedExecutionEngineError):
         describe_workflow_workload(
-            workflow_definition=_definition(steps=[_model("model")], version="2.0")
+            workflow_definition=_definition(
+                steps=[_model("model")], version=definition_version
+            )
         )
 
 
@@ -645,8 +655,19 @@ INSTALLED = EXECUTION_ENGINE_V1_VERSION
 FUTURE_MINOR = f"{INSTALLED.major}.{INSTALLED.minor + 1}.0"
 FUTURE_PATCH = f"{INSTALLED.major}.{INSTALLED.minor}.{INSTALLED.micro + 1}"
 OLDER_PATCH_LINE = f"{INSTALLED.major}.{INSTALLED.minor}.0"
-FUTURE_VERSIONS = [FUTURE_MINOR, FUTURE_PATCH]
-ACCEPTED_VERSIONS = ["1.0.0", OLDER_PATCH_LINE, str(INSTALLED)]
+# pre-releases compare below their release, e.g. `1.0.0rc1` < `1.0.0`
+OLDEST_PRERELEASE = "1.0.0rc1"
+INSTALLED_LINE_PRERELEASE = f"{OLDER_PATCH_LINE}rc1"
+FUTURE_MINOR_PRERELEASE = f"{FUTURE_MINOR}rc1"
+UNSUPPORTED_MAJORS = ["0.9", "2.0"]
+FUTURE_VERSIONS = [FUTURE_MINOR, FUTURE_PATCH, FUTURE_MINOR_PRERELEASE]
+ACCEPTED_VERSIONS = [
+    "1.0.0",
+    OLDER_PATCH_LINE,
+    str(INSTALLED),
+    OLDEST_PRERELEASE,
+    INSTALLED_LINE_PRERELEASE,
+]
 
 
 def _definition_without_version(steps: List[dict], **kwargs) -> dict:
@@ -745,8 +766,24 @@ def test_explicit_engine_version_overrides_the_definition_minimum() -> None:
         (str(INSTALLED), None),
         (FUTURE_MINOR, NotSupportedExecutionEngineError),
         (FUTURE_PATCH, NotSupportedExecutionEngineError),
+        (OLDEST_PRERELEASE, None),
+        (INSTALLED_LINE_PRERELEASE, None),
+        (FUTURE_MINOR_PRERELEASE, NotSupportedExecutionEngineError),
+        ("0.9", NotSupportedExecutionEngineError),
+        ("2.0", NotSupportedExecutionEngineError),
     ],
-    ids=["missing", "oldest", "installed", "future_minor", "future_patch"],
+    ids=[
+        "missing",
+        "oldest",
+        "installed",
+        "future_minor",
+        "future_patch",
+        "oldest_prerelease",
+        "installed_line_prerelease",
+        "future_minor_prerelease",
+        "older_major",
+        "next_major",
+    ],
 )
 def test_engine_version_acceptance_matches_execution_engine_init(
     definition_version: Optional[str],
@@ -779,7 +816,10 @@ def test_engine_version_acceptance_matches_execution_engine_init(
         assert describe_error.public_message == init_error.public_message
 
 
-def test_unmet_engine_version_stops_before_resolver_and_enrichment() -> None:
+@pytest.mark.parametrize("requested", [FUTURE_MINOR, *UNSUPPORTED_MAJORS])
+def test_unmet_engine_version_stops_before_resolver_and_enrichment(
+    requested: str,
+) -> None:
     # given
     resolver_calls = []
 
@@ -799,13 +839,15 @@ def test_unmet_engine_version_stops_before_resolver_and_enrichment() -> None:
             },
         ],
         outputs=[_output("crops", "$steps.inner.crops")],
-        version=FUTURE_MINOR,
+        version=requested,
     )
     frozen = copy.deepcopy(definition)
     provider = RecordingProvider()
 
     # when
-    with pytest.raises(NotSupportedExecutionEngineError):
+    with mock.patch.object(
+        workload_module, "compile_workflow_structure"
+    ) as compile_workflow_structure, pytest.raises(NotSupportedExecutionEngineError):
         describe_workflow_workload(
             workflow_definition=definition,
             init_parameters={WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
@@ -813,21 +855,45 @@ def test_unmet_engine_version_stops_before_resolver_and_enrichment() -> None:
         )
 
     # then
+    compile_workflow_structure.assert_not_called()
     assert resolver_calls == []
     assert provider.calls == []
     assert definition == frozen
 
 
-def test_unmet_engine_version_is_reported_before_compilation_errors() -> None:
+@pytest.mark.parametrize("requested", [FUTURE_PATCH, *UNSUPPORTED_MAJORS])
+def test_unmet_engine_version_is_reported_before_compilation_errors(
+    requested: str,
+) -> None:
     # given - compiling this definition would fail on the unknown block type
     definition = _definition(
         steps=[{"type": "not_installed/block@v1", "name": "x"}],
-        version=FUTURE_PATCH,
+        version=requested,
     )
 
     # when
     with pytest.raises(NotSupportedExecutionEngineError):
         describe_workflow_workload(workflow_definition=definition)
+
+
+def test_selected_engine_other_than_v1_is_not_supported() -> None:
+    # given - a hypothetical v2 engine that `ExecutionEngine.init` would select
+    other_engine = mock.MagicMock()
+    definition = _definition(steps=[_model("model")], version="2.0")
+
+    # when
+    with mock.patch.dict(
+        engine_core.REGISTERED_ENGINES, {Version("2.0.0"): other_engine}
+    ), mock.patch.object(
+        workload_module, "compile_workflow_structure"
+    ) as compile_workflow_structure, pytest.raises(
+        NotSupportedExecutionEngineError, match="only supported for Execution Engine v1"
+    ):
+        describe_workflow_workload(workflow_definition=definition)
+
+    # then - selected, never initialised, nothing compiled
+    other_engine.init.assert_not_called()
+    compile_workflow_structure.assert_not_called()
 
 
 def test_tracker_state_caveat_does_not_depend_on_model_execution_mode() -> None:

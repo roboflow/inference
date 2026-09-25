@@ -8,7 +8,7 @@ workflow definitions below are compiled for real by
 auth contract and the `USE_INFERENCE_MODELS` gate end to end.
 """
 
-import json
+import copy
 import os
 import subprocess
 import sys
@@ -16,6 +16,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from roboflow_workflows.errors import NotSupportedExecutionEngineError
+from roboflow_workflows.execution_engine.core import ExecutionEngine
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
     WorkflowIntrospection,
 )
@@ -404,20 +406,73 @@ def test_saved_route_requires_an_api_key(monkeypatch, interface) -> None:
     fetch.assert_not_called()
 
 
-def test_execution_engine_v2_definition_is_rejected(
-    interface, enrichment_disabled
+def _post_saved(monkeypatch, client, definition):
+    import inference.core.interfaces.http.http_api as http_api
+
+    fetch = MagicMock(return_value=definition)
+    monkeypatch.setattr(http_api, "get_workflow_specification", fetch)
+    return client.post(SAVED_ROUTE, json={"api_key": API_KEY})
+
+
+def _post_to_route(route, monkeypatch, client, definition):
+    if route == "inline":
+        return _post_inline(client, definition)
+    return _post_saved(monkeypatch, client, definition)
+
+
+def _execution_engine_init_error(definition: dict) -> NotSupportedExecutionEngineError:
+    # engine selection fails before any block or model is touched
+    with pytest.raises(NotSupportedExecutionEngineError) as error:
+        ExecutionEngine.init(workflow_definition=copy.deepcopy(definition))
+    return error.value
+
+
+@pytest.mark.parametrize("route", ["inline", "saved"])
+@pytest.mark.parametrize("requested", ["0.9", "2.0"])
+def test_unsupported_major_is_rejected_with_the_execution_error(
+    monkeypatch, interface, enrichment_enabled, registry_call, route, requested
 ) -> None:
     # given
     definition = _single_model_definition()
-    definition["version"] = "2.0"
+    definition["version"] = requested
+    init_error = _execution_engine_init_error(definition)
 
     # when
     with TestClient(interface.app) as client:
-        response = _post_inline(client, definition)
+        response = _post_to_route(route, monkeypatch, client, definition)
+
+    # then - same error class and message as workflow execution
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_type"] == "NotSupportedExecutionEngineError"
+    assert body["message"] == init_error.public_message
+    registry_call.assert_not_called()
+
+
+@pytest.mark.parametrize("route", ["inline", "saved"])
+@pytest.mark.parametrize(
+    "requested",
+    [
+        "1.0.0rc1",
+        f"{EXECUTION_ENGINE_V1_VERSION.major}.{EXECUTION_ENGINE_V1_VERSION.minor}.0rc1",
+    ],
+)
+def test_prerelease_minimum_accepted_by_execution_is_described(
+    monkeypatch, interface, enrichment_disabled, route, requested
+) -> None:
+    # given
+    definition = _single_model_definition()
+    definition["version"] = requested
+
+    # when
+    with TestClient(interface.app) as client:
+        response = _post_to_route(route, monkeypatch, client, definition)
 
     # then
-    assert response.status_code >= 400
-    assert "Execution Engine v1" in json.dumps(response.json())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["execution_engine_version"] == str(EXECUTION_ENGINE_V1_VERSION)
+    assert [step["node_id"] for step in body["steps"]] == ["$steps.detection"]
 
 
 def test_unmet_minimum_execution_engine_version_is_rejected(

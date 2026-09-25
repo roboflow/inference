@@ -233,15 +233,12 @@ def handle_describe_workflow_workload(
     platform bindings the compiler needs to inline saved inner workflows, and
     the optional model metadata lookup performed by
     `ServerModelMetadataProvider`.
+
+    The requested Execution Engine version is checked by
+    `describe_workflow_workload()` with the same selection workflow execution
+    uses, so an unsupported version raises `NotSupportedExecutionEngineError`
+    before any inner workflow fetch or model metadata lookup.
     """
-    requested_execution_engine_version = retrieve_requested_execution_engine_version(
-        workflow_definition=definition
-    )
-    if not SpecifierSet(f">=1.0.0,<2.0.0").contains(requested_execution_engine_version):
-        raise WorkflowExecutionEngineVersionError(
-            public_message="Describing workflow workload is only supported for Execution Engine v1.",
-            context="describing_workflow_workload",
-        )
     init_parameters = install_workflows_platform_bindings(
         {
             "workflows_core.api_key": api_key,

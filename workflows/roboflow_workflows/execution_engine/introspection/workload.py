@@ -10,10 +10,9 @@ not an estimator.
 
 from typing import Any, Callable, Dict, Optional, Union
 
-from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 from roboflow_workflows.errors import (
-    WorkflowDefinitionError,
+    NotSupportedExecutionEngineError,
     WorkflowExecutionEngineVersionError,
 )
 from roboflow_workflows.execution_engine.core import (
@@ -28,12 +27,13 @@ from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
 from roboflow_workflows.execution_engine.v1.compiler.core import (
     compile_workflow_structure,
 )
-from roboflow_workflows.execution_engine.v1.core import EXECUTION_ENGINE_V1_VERSION
+from roboflow_workflows.execution_engine.v1.core import (
+    EXECUTION_ENGINE_V1_VERSION,
+    ExecutionEngineV1,
+)
 from roboflow_workflows.execution_engine.v1.introspection.workload import (
     build_workflow_introspection,
 )
-
-EXECUTION_ENGINE_V1_SPECIFIER = SpecifierSet(">=1.0.0,<2.0.0")
 
 
 def describe_workflow_workload(
@@ -47,11 +47,13 @@ def describe_workflow_workload(
 
     The requested Execution Engine version is checked before anything else
     runs: no compilation, inner workflow resolution or model metadata lookup
-    happens for a rejected request. Only v1 is supported, and the installed
-    engine must satisfy the requested version as a minimum within its major
-    version, exactly as `ExecutionEngine.init` requires. The engine and its
-    blocks are never initialised. The request dict is never mutated and the
-    result is built fresh per call.
+    happens for a rejected request. The engine is selected exactly as
+    `ExecutionEngine.init` selects it: the installed engine must satisfy the
+    requested version as a minimum within its major version, so a pre-release
+    request such as `1.0.0rc1` is accepted whenever `ExecutionEngine.init`
+    accepts it. Only the v1 engine can be described. The selected engine and
+    its blocks are never initialised. The request dict is never mutated and
+    the result is built fresh per call.
 
     Args:
         workflow_definition: Workflow definition to describe.
@@ -73,27 +75,29 @@ def describe_workflow_workload(
 
     Raises:
         WorkflowExecutionEngineVersionError: If `execution_engine_version`
-            cannot be parsed or does not belong to Execution Engine v1.
+            cannot be parsed.
         WorkflowDefinitionError: If the definition's `version` cannot be
             parsed.
+        NotSupportedExecutionEngineError: If no installed engine satisfies the
+            requested version, raised exactly as `ExecutionEngine.init` raises
+            it, e.g. for `0.9`, `2.0` or a newer minor or patch than installed.
+            Also raised if the selected engine is not the v1 engine.
         WorkflowSyntaxError: If the definition does not match the workflow
             schema, e.g. it lacks the required `version`.
-        NotSupportedExecutionEngineError: If the installed engine does not
-            satisfy the requested version, e.g. a newer minor or patch.
     """
     requested_version = _resolve_requested_execution_engine_version(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
     )
-    if not EXECUTION_ENGINE_V1_SPECIFIER.contains(requested_version):
-        raise WorkflowExecutionEngineVersionError(
+    # same selection `ExecutionEngine.init` performs; the selected engine type
+    # is only compared, never initialised
+    engine_type = _select_execution_engine(requested_engine_version=requested_version)
+    if engine_type is not ExecutionEngineV1:
+        raise NotSupportedExecutionEngineError(
             public_message="Describing workflow workload is only supported for Execution "
             f"Engine v1, requested `{requested_version}`.",
             context="describing_workflow_workload",
         )
-    # same selection `ExecutionEngine.init` performs; the selected engine type
-    # is discarded, never initialised
-    _select_execution_engine(requested_engine_version=requested_version)
 
     compilation_result = compile_workflow_structure(
         workflow_definition=workflow_definition,
