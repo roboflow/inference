@@ -15,6 +15,9 @@ import pytest
 from roboflow_workflows.core_steps.models.roboflow.object_detection.v3 import (
     BlockManifest as ObjectDetectionV3Manifest,
 )
+from roboflow_workflows.core_steps.models.roboflow.object_detection.v3_tensor import (
+    BlockManifest as ObjectDetectionV3TensorManifest,
+)
 from roboflow_workflows.errors import (
     RuntimeInputError,
     WorkflowEnvironmentConfigurationError,
@@ -914,15 +917,17 @@ def _unavailable_resources_problem(step_name: str):
 
 def _declare_resources_per_step(monkeypatch, declarations: dict) -> None:
     # Every object-detection step answers with the declaration registered
-    # under its own step name.
+    # under its own step name. Both manifests are patched: the loader
+    # registers the tensor-native one when tensor representation is enabled.
     def discover_dependent_resources(self):
         return declarations[self.name]
 
-    monkeypatch.setattr(
-        ObjectDetectionV3Manifest,
-        "discover_dependent_resources",
-        discover_dependent_resources,
-    )
+    for manifest_class in (ObjectDetectionV3Manifest, ObjectDetectionV3TensorManifest):
+        monkeypatch.setattr(
+            manifest_class,
+            "discover_dependent_resources",
+            discover_dependent_resources,
+        )
 
 
 def _init_engine_with_pre_loading(model_manager) -> ExecutionEngineV1:
