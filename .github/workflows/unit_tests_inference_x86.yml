@@ -36,9 +36,14 @@ jobs:
         uses: actions/checkout@v6
       - name: 🕰️ Fetch WP-A00 baseline commit
         # actions/checkout@v6 only fetches HEAD at depth 1, so this historical
-        # commit (needed by test_manifest_source_paths_match_git_tree_at_baseline_sha
-        # in test_streams_decontamination.py) is otherwise missing once HEAD
-        # moves past it. Keep this SHA in sync with BASELINE_SHA there.
+        # commit is otherwise missing once HEAD moves past it. All four
+        # git-history-dependent tests in test_streams_decontamination.py
+        # (test_manifest_source_paths_match_git_tree_at_baseline_sha,
+        # test_manifest_public_top_level_names_match_git_tree_at_baseline_sha,
+        # test_a_end_manifest_records_a_real_base_commit_and_no_candidate) and
+        # test_streams_public_contract.py
+        # (test_active_learning_sink_signature_shape_is_unchanged) pin this
+        # same SHA. Keep it in sync with BASELINE_SHA there.
         run: git fetch --depth 1 origin 65ad2beaaca0825bffc2fbbe99199d3a40994324
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
@@ -65,6 +70,8 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
+        env:
+          STREAMS_REQUIRE_BASELINE_HISTORY: "1"
         run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5

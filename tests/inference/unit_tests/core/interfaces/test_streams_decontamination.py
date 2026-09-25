@@ -26,6 +26,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import pytest
 
+from .conftest import require_git_baseline_history
+
 BASELINE_SHA = "65ad2beaaca0825bffc2fbbe99199d3a40994324"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[5]
@@ -401,6 +403,7 @@ def test_manifest_source_paths_match_git_tree_at_baseline_sha(tree_name: str) ->
     )
     manifest = json.loads(inventory_path.read_text())
     assert manifest["baseline_sha"] == BASELINE_SHA
+    require_git_baseline_history(BASELINE_SHA, project_root=PROJECT_ROOT)
 
     manifest_paths = {
         entry["source_path"]
@@ -572,6 +575,7 @@ def test_manifest_public_top_level_names_match_git_tree_at_baseline_sha(
         / "streams_compat_inventory.json"
     )
     manifest = json.loads(inventory_path.read_text())
+    require_git_baseline_history(BASELINE_SHA, project_root=PROJECT_ROOT)
 
     for entry in manifest["modules"]:
         if entry["tree"] != tree_name:
@@ -832,16 +836,14 @@ def _a_end_manifest() -> dict:
 
 
 def test_a_end_manifest_records_a_real_base_commit_and_no_candidate() -> None:
-    import subprocess
-
     manifest = _a_end_manifest()
-    subprocess.run(
-        ["git", "cat-file", "-e", f"{manifest['base_head_sha']}^{{commit}}"],
-        cwd=PROJECT_ROOT,
-        check=True,
-    )
     assert manifest["working_tree_dirty"] is True
     assert "candidate_sha" not in manifest
+    # Checked before the history guard so a corrupted provenance SHA still
+    # fails in portable mode, where there is no history to check it against.
+    assert manifest["base_head_sha"] == BASELINE_SHA
+
+    require_git_baseline_history(manifest["base_head_sha"], project_root=PROJECT_ROOT)
 
 
 def test_a_end_manifest_matches_the_movable_and_host_split() -> None:
