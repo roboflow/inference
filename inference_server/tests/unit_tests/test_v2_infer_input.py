@@ -546,6 +546,48 @@ async def test_fetch_image_from_url_non_global_opt_in():
     assert data == b"ok"
 
 
+@pytest.mark.asyncio
+async def test_fetch_images_from_urls_allow_url_input_disabled():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_images_from_urls
+
+    async def _resolve_should_not_reach(host: str):
+        raise AssertionError("must not resolve")
+
+    with patch("inference_server.configuration.ALLOW_URL_INPUT", False), patch(
+        "inference_server.configuration.OFFLINE_MODE", False
+    ), patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host",
+        _resolve_should_not_reach,
+    ):
+        images, err = await fetch_images_from_urls(["https://example.com/a.jpg"])
+    assert images is None
+    assert err is not None
+    assert err.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_from_urls_offline_mode_enabled():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_images_from_urls
+
+    async def _resolve_should_not_reach(host: str):
+        raise AssertionError("must not resolve")
+
+    with patch("inference_server.configuration.OFFLINE_MODE", True), patch(
+        "inference_server.configuration.ALLOW_URL_INPUT", True
+    ), patch(
+        "inference_server.framework.input_parsers.url_fetch.resolve_host",
+        _resolve_should_not_reach,
+    ):
+        images, err = await fetch_images_from_urls(["https://example.com/a.jpg"])
+    assert images is None
+    assert err is not None
+    assert err.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # DNS rebinding — the connection is pinned to the validated addresses
 # ---------------------------------------------------------------------------

@@ -174,6 +174,13 @@ async def fetch_image_from_url(
     Every hop's connection is pinned to the addresses its check validated, so
     the connect cannot land somewhere the check never saw.
     """
+    if configuration.OFFLINE_MODE or not configuration.ALLOW_URL_INPUT:
+        return None, error_response(
+            403,
+            "URL_INPUT_DISABLED",
+            "loading images from URLs is disabled on this server",
+        )
+
     timeout = aiohttp.ClientTimeout(total=URL_FETCH_TIMEOUT_S)
     current = url
     pinned: dict[str, list[str]] = {}
