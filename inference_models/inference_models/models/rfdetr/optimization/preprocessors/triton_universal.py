@@ -22,7 +22,7 @@ from inference_models.models.rfdetr.optimization.contracts import (
     PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
@@ -31,7 +31,7 @@ from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
 
 
 class TritonUniversalPreprocessor:
-    """Run the explicit universal CUDA/Triton preprocessing path."""
+    """Run the universal CUDA/Triton preprocessing path selected by the plan."""
 
     metadata = OptimizationMetadata(
         implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
@@ -52,7 +52,7 @@ class TritonUniversalPreprocessor:
             layouts=("HWC", "NHWC", "CHW", "NCHW"),
         ),
         dependencies=("torch", "torchvision", "triton"),
-        fallback_id=RFDETR_PREPROCESSOR_BASE,
+        fallback_id=RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
         changes_numerics=False,
         supports_concurrency=True,
         supports_cuda_graphs=False,
@@ -176,7 +176,7 @@ class TritonUniversalPreprocessor:
         request: PreprocessRequest,
         context: ExecutionContext,
     ) -> PreprocessResult:
-        """Run universal Triton preprocessing.
+        """Run universal Triton preprocessing after execution-plan validation.
 
         Args:
             request: Typed preprocessing request.
@@ -196,12 +196,10 @@ class TritonUniversalPreprocessor:
                     "#modelruntimeerror"
                 ),
             )
-        runtime_result = self._runtime.preprocess(
+        runtime_result = self._runtime._preprocess_validated(
             images=request.images,
             input_color_format=request.input_color_format,
-            image_pre_processing=request.image_pre_processing,
             network_input=request.network_input,
-            pre_processing_overrides=request.pre_processing_overrides,
             stream=stream,
         )
         result = PreprocessResult(

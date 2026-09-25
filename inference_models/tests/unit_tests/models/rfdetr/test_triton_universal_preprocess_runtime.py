@@ -138,7 +138,7 @@ def test_universal_candidate_is_explicitly_selectable() -> None:
         RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
     ]
     assert metadata.validation_records == ()
-    assert metadata.fallback_id == "base"
+    assert metadata.fallback_id == "pillow-simd-v1"
 
 
 @pytest.mark.parametrize(
@@ -521,6 +521,74 @@ def test_recorded_uint8_jit_failure_preserves_float_runtime_path() -> None:
 
     assert not uint8_compatibility.supported
     assert float_compatibility.supported
+
+
+def test_standalone_runtime_retains_checks_and_selected_stage_does_not_repeat_them(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from inference_models.models.optimization.contracts import (
+        CompatibilityResult,
+        ExecutionContext,
+    )
+    from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
+    from inference_models.models.rfdetr.optimization.preprocessors.triton_universal import (
+        TritonUniversalPreprocessor,
+    )
+
+    stage = TritonUniversalPreprocessor(device=torch.device("cuda"))
+    runtime = stage._runtime
+    model_check = Mock(return_value=CompatibilityResult.compatible())
+    request_check = Mock(return_value=CompatibilityResult.compatible())
+    execute = Mock(
+        return_value=SimpleNamespace(
+            tensor=torch.zeros((1, 3, 64, 64)),
+            metadata=[],
+            ready_event=None,
+            input_kind="uint8",
+        )
+    )
+    monkeypatch.setattr(runtime, "check_model_compatibility", model_check)
+    monkeypatch.setattr(runtime, "check_request_compatibility", request_check)
+    monkeypatch.setattr(runtime, "_preprocess_validated", execute)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format="rgb",
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+    stream = object()
+    runtime.preprocess(
+        images=request.images,
+        input_color_format=request.input_color_format,
+        image_pre_processing=request.image_pre_processing,
+        network_input=request.network_input,
+        pre_processing_overrides=None,
+        stream=stream,
+    )
+    model_check.assert_called_once()
+    request_check.assert_called_once()
+    stage.preprocess(
+        request,
+        ExecutionContext(device_kind="gpu", device="cuda", current_stream=stream),
+    )
+    model_check.assert_called_once()
+    request_check.assert_called_once()
+    assert execute.call_count == 2
+    model_check.return_value = CompatibilityResult.incompatible("unsupported model")
+    with pytest.raises(ModelRuntimeError, match="unsupported model"):
+        runtime.preprocess(
+            images=request.images,
+            input_color_format=request.input_color_format,
+            image_pre_processing=request.image_pre_processing,
+            network_input=request.network_input,
+            pre_processing_overrides=None,
+            stream=stream,
+        )
+    assert execute.call_count == 2
 
 
 def test_runtime_compatibility_inspects_only_first_validated_batch_item(

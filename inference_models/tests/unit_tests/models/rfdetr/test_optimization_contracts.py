@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from dataclasses import FrozenInstanceError
 
@@ -314,7 +315,7 @@ def test_registry_auto_selects_a_preferred_compatible_candidate() -> None:
     )
 
 
-def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
+def test_rfdetr_auto_preferences_skip_unavailable_triton_and_arm_simd() -> None:
     registry = build_rfdetr_implementation_registry(
         device=torch.device("cuda:0"),
     )
@@ -322,6 +323,7 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
         device_kind="gpu",
         device="cuda:0",
         runtime_components={"triton": False},
+        host_architecture="aarch64",
     )
 
     preprocessor = registry.resolve(
@@ -337,6 +339,85 @@ def test_rfdetr_auto_preferences_skip_unavailable_triton() -> None:
 
     assert preprocessor.metadata.implementation_id == "base"
     assert postprocessor.metadata.implementation_id == RFDETR_POSTPROCESSOR_BASE
+
+
+@pytest.mark.parametrize("backend", ["torch", "onnx", "trt"])
+@pytest.mark.parametrize("simd_available", [True, False])
+def test_auto_and_full_request_chain_with_real_preprocessors(
+    monkeypatch, backend, simd_available
+):
+    from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+        PreprocessorSelector,
+    )
+    from inference_models.models.rfdetr.optimization.preprocessors import pillow_simd
+
+    def load():
+        if not simd_available:
+            raise ImportError("SIMD not installed")
+        return object()
+
+    monkeypatch.setattr(pillow_simd, "load_pillow_simd_image", load)
+    monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cuda"), backend=backend
+    )
+    context = ExecutionContext(
+        device_kind="gpu",
+        device="cuda",
+        host_architecture="x86_64",
+        runtime_components={"triton": True},
+    )
+    selector = PreprocessorSelector(
+        registry=registry,
+        context=context,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+    primary = selector.resolve_model(
+        requested_id="auto", allow_fallback=True
+    ).implementation
+    assert primary.metadata.implementation_id == "triton-universal-v1"
+    request = PreprocessRequest(
+        images=np.zeros((32, 32, 3), dtype=np.uint8),
+        input_color_format="rgb",
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+        image_size_wh=(48, 48),
+    )
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=request,
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == ("pillow-simd-v1" if simd_available else "base")
+    # Same shape, but tensor inputs must skip SIMD. Neither fallback is sticky.
+    tensor_request = dataclasses.replace(request, images=torch.zeros((3, 32, 32)))
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=tensor_request,
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == "base"
+    selected = selector.resolve_request(
+        implementation=primary,
+        request=dataclasses.replace(request, image_size_wh=None),
+        context=context,
+        allow_fallback=True,
+    )
+    assert selected.effective_id == "triton-universal-v1"
+    # Model-level auto selection also checks native availability, not just metadata.
+    no_triton = PreprocessorSelector(
+        registry=registry,
+        context=dataclasses.replace(context, runtime_components={"triton": False}),
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+    )
+    assert no_triton.resolve_model(
+        requested_id="auto", allow_fallback=True
+    ).effective_id == ("pillow-simd-v1" if simd_available else "base")
 
 
 @pytest.mark.parametrize("backend", ["trt", "torch", "onnx"])

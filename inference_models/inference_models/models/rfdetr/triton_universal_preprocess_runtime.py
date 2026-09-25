@@ -192,6 +192,23 @@ class UniversalFastPreprocessRuntime:
         pre_processing_overrides: Optional[PreProcessingOverrides],
         stream: torch.cuda.Stream,
     ) -> UniversalFastPreprocessResult:
+        """Validate and preprocess a standalone request.
+
+        Args:
+            images: Source image or batch.
+            input_color_format (ColorFormat, optional): Source channel order.
+            image_pre_processing (ImagePreProcessing): Model transformations.
+            network_input (NetworkInputDefinition): Model input contract.
+            pre_processing_overrides (PreProcessingOverrides, optional): Request overrides.
+            stream (torch.cuda.Stream): Stream for GPU preprocessing.
+
+        Returns:
+            UniversalFastPreprocessResult: Tensor, metadata and readiness event.
+
+        Raises:
+            ModelRuntimeError: If model or request compatibility fails.
+            RecoverableStageExecutionError: If a recognized Triton failure occurs.
+        """
         model_compatibility = self.check_model_compatibility(
             image_pre_processing=image_pre_processing,
             network_input=network_input,
@@ -202,6 +219,28 @@ class UniversalFastPreprocessRuntime:
             pre_processing_overrides=pre_processing_overrides,
         )
         self._raise_for_incompatibility(request_compatibility)
+        result = self._preprocess_validated(
+            images=images,
+            input_color_format=input_color_format,
+            network_input=network_input,
+            stream=stream,
+        )
+
+        return result
+
+    def _preprocess_validated(
+        self,
+        *,
+        images,
+        input_color_format: Optional[ColorFormat],
+        network_input: NetworkInputDefinition,
+        stream: torch.cuda.Stream,
+    ) -> UniversalFastPreprocessResult:
+        """Execute after the execution-plan selector validates model and request.
+
+        Standalone callers must use ``preprocess`` to retain validation. The
+        model-owned stage uses this entry point to avoid repeating those checks.
+        """
         batch = _canonicalize_batch(images)
         caller_mode = (
             ColorMode(input_color_format)

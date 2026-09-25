@@ -75,6 +75,9 @@ from inference_models.models.rfdetr.optimization.contracts import (
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
+from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+    PreprocessorSelector,
+)
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_postprocessor_for_request,
     resolve_postprocessor_runtime_fallback,
@@ -337,7 +340,14 @@ class RFDetrForObjectDetectionTRT(
             device=self._device,
         )
         resolution_context = self._execution_stage_context(current_stream=None)
+        self._preprocessor_selector = PreprocessorSelector(
+            registry=self._implementation_registry,
+            context=resolution_context,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+        )
         preprocessor_selection = resolve_preprocessor_for_model(
+            selector=self._preprocessor_selector,
             registry=self._implementation_registry,
             requested_id=requested_plan.preprocessor_id,
             context=resolution_context,
@@ -594,6 +604,7 @@ class RFDetrForObjectDetectionTRT(
         )
         context = self._execution_stage_context(current_stream=stream)
         selection = resolve_preprocessor_for_request(
+            selector=self._preprocessor_selector,
             registry=self._implementation_registry,
             implementation=self._preprocessor,
             request=request,
@@ -607,46 +618,44 @@ class RFDetrForObjectDetectionTRT(
         )
         try:
             selection = resolve_preprocessor_runtime_fallback(
+                selector=self._preprocessor_selector,
                 registry=self._implementation_registry,
                 selection=selection,
                 request=request,
                 context=context,
                 allow_fallback=allow_runtime_failure_fallback,
             )
-            self._record_runtime_selection(
-                stage="preprocessor",
-                requested_id=selection.requested_id,
-                effective_id=selection.effective_id,
-                fallback_reason=selection.fallback_reason,
-            )
-            try:
-                result = selection.implementation.preprocess(
-                    request=request,
-                    context=context,
-                )
-            except RecoverableStageExecutionError:
-                if not allow_runtime_failure_fallback:
-                    raise
-                fallback_selection = resolve_preprocessor_runtime_fallback(
-                    registry=self._implementation_registry,
-                    selection=selection,
-                    request=request,
-                    context=context,
-                    allow_fallback=allow_runtime_failure_fallback,
-                )
-                if fallback_selection.implementation is selection.implementation:
-                    raise
-                selection = fallback_selection
+            attempted = set()
+            while True:
+                attempted.add(selection.effective_id)
                 self._record_runtime_selection(
                     stage="preprocessor",
                     requested_id=selection.requested_id,
                     effective_id=selection.effective_id,
                     fallback_reason=selection.fallback_reason,
                 )
-                result = selection.implementation.preprocess(
-                    request=request,
-                    context=context,
-                )
+                try:
+                    result = selection.implementation.preprocess(
+                        request=request,
+                        context=context,
+                    )
+                    break
+                except RecoverableStageExecutionError:
+                    if not allow_runtime_failure_fallback:
+                        raise
+
+                    fallback_selection = resolve_preprocessor_runtime_fallback(
+                        selector=self._preprocessor_selector,
+                        registry=self._implementation_registry,
+                        selection=selection,
+                        request=request,
+                        context=context,
+                        allow_fallback=allow_runtime_failure_fallback,
+                    )
+                    if fallback_selection.effective_id in attempted:
+                        raise
+
+                    selection = fallback_selection
         except RecoverableStageExecutionError as error:
             raise _as_model_runtime_error(error) from error
         if selection.used_fallback and self._request_fallback_warnings.claim(

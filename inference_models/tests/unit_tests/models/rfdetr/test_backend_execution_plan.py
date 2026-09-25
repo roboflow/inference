@@ -340,6 +340,7 @@ def test_runtime_failure_policy_and_future_short_circuit(allow_runtime):
         RecoverableStageExecutionError(message="JIT failed")
     )
     path.preprocessor = candidate
+    path.registry.register(candidate)
     image = np.zeros((50, 60, 3), dtype=np.uint8)
     if not allow_runtime:
         with pytest.raises(ModelRuntimeError, match="JIT failed"):
@@ -361,8 +362,34 @@ def test_unclassified_failure_propagates():
         device=torch.device("cpu"), inference_config=config(), backend="onnx"
     )
     path.preprocessor = _FailingPreprocessor(ValueError("unexpected"))
+    path.registry.register(path.preprocessor)
     with pytest.raises(ValueError, match="unexpected"):
         path.preprocess(np.zeros((50, 60, 3), dtype=np.uint8))
+
+
+@pytest.mark.parametrize("backend", ["torch", "onnx"])
+def test_two_recoverable_execution_failures_reach_base(backend):
+    path = RFDetrBackendPath(
+        device=torch.device("cpu"),
+        inference_config=config(),
+        backend=backend,
+        execution_plan=RFDetrExecutionPlan(preprocessor_id="base"),
+    )
+    primary = _FailingPreprocessor(
+        RecoverableStageExecutionError(message="primary failed")
+    )
+    middle = _FailingPreprocessor(
+        RecoverableStageExecutionError(message="middle failed")
+    )
+    primary.metadata = replace(primary.metadata, fallback_id="middle")
+    middle.metadata = replace(middle.metadata, implementation_id="middle")
+    path.registry.register(primary)
+    path.registry.register(middle)
+    path.preprocessor = primary
+    for _ in range(2):
+        result, _ = path.preprocess(np.zeros((50, 60, 3), dtype=np.uint8))
+        assert result.shape == (1, 3, 32, 32)
+    assert primary.calls == middle.calls == 1
 
 
 def test_scheduler_waits_for_the_exact_tensor_and_standalone_synchronizes():

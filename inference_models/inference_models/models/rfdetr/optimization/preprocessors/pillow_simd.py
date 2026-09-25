@@ -1,4 +1,4 @@
-"""Explicit, numerically approximate CPU resize for RF-DETR NumPy images."""
+"""Numerically approximate CPU resize for RF-DETR NumPy images."""
 
 from dataclasses import replace
 
@@ -23,7 +23,7 @@ from inference_models.models.rfdetr.optimization.preprocessors.compatibility imp
 
 
 class PillowSIMDPreprocessor(BasePreprocessor):
-    """Opt-in Pillow-SIMD; regular Pillow remains the exact base/fallback."""
+    """Pillow-SIMD auto candidate; regular Pillow remains the exact base/fallback."""
 
     metadata = replace(
         BasePreprocessor.metadata,

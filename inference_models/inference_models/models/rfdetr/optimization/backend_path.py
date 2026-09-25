@@ -26,6 +26,9 @@ from inference_models.models.rfdetr.optimization.contracts import PreprocessRequ
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
 )
+from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+    PreprocessorSelector,
+)
 from inference_models.models.rfdetr.optimization.selection import (
     resolve_preprocessor_for_model,
     resolve_preprocessor_for_request,
@@ -54,8 +57,15 @@ class RFDetrBackendPath:
             backend=backend,
         )
         context = self.context()
+        self._preprocessor_selector = PreprocessorSelector(
+            registry=self.registry,
+            context=context,
+            image_pre_processing=self.config.image_pre_processing,
+            network_input=self.config.network_input,
+        )
         selections = {
             "preprocessor": resolve_preprocessor_for_model(
+                selector=self._preprocessor_selector,
                 registry=self.registry,
                 requested_id=requested.preprocessor_id,
                 context=context,
@@ -189,6 +199,7 @@ class RFDetrBackendPath:
             image_size_wh=image_size,
         )
         selection = resolve_preprocessor_for_request(
+            selector=self._preprocessor_selector,
             registry=self.registry,
             implementation=self.preprocessor,
             request=request,
@@ -201,32 +212,36 @@ class RFDetrBackendPath:
         )
         try:
             selection = resolve_preprocessor_runtime_fallback(
+                selector=self._preprocessor_selector,
                 registry=self.registry,
                 selection=selection,
                 request=request,
                 context=context,
                 allow_fallback=runtime_fallback,
             )
-            self.record("preprocessor", selection=selection)
-            try:
-                result = selection.implementation.preprocess(request, context)
-            except RecoverableStageExecutionError:
-                if not runtime_fallback:
-                    raise
-
-                fallback = resolve_preprocessor_runtime_fallback(
-                    registry=self.registry,
-                    selection=selection,
-                    request=request,
-                    context=context,
-                    allow_fallback=True,
-                )
-                if fallback.implementation is selection.implementation:
-                    raise
-
-                selection = fallback
+            attempted = set()
+            while True:
+                attempted.add(selection.effective_id)
                 self.record("preprocessor", selection=selection)
-                result = selection.implementation.preprocess(request, context)
+                try:
+                    result = selection.implementation.preprocess(request, context)
+                    break
+                except RecoverableStageExecutionError:
+                    if not runtime_fallback:
+                        raise
+
+                    fallback = resolve_preprocessor_runtime_fallback(
+                        selector=self._preprocessor_selector,
+                        registry=self.registry,
+                        selection=selection,
+                        request=request,
+                        context=context,
+                        allow_fallback=True,
+                    )
+                    if fallback.effective_id in attempted:
+                        raise
+
+                    selection = fallback
         except RecoverableStageExecutionError as error:
             raise ModelRuntimeError(
                 message=str(error),

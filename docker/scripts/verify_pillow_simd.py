@@ -2,6 +2,17 @@
 
 Standalone on purpose: CPU images may install inference-models from PyPI.
 This is an isolation and native-load smoke check, not a package provenance audit.
+
+The five x86 ONNX images share requirements/requirements.pillow-simd.txt. To move
+from its HTTPS Git pin to a published release, use pillow-simd==VERSION; this
+verifier is independent of the installation source. The standard Pillow version
+range comes from requirements/_requirements.txt.
+
+Verify that standard Pillow loads outside the isolated SIMD directory, the SIMD
+alias loads inside it, and their native extensions are separate. Loading SIMD and
+one small RGB resize must leave standard Pillow unchanged, with at most one uint8
+level of resize difference. Broader numerical coverage belongs in preprocessor
+tests. Package hashes and installation provenance are intentionally not audited.
 """
 
 import importlib

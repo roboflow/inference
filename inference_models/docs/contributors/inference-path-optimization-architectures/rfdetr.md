@@ -8,31 +8,34 @@ Torch/ONNX use the same selection and readiness contracts through `backend_path.
 and `backend_stages.py`, preserving their own forward and postprocessing callbacks.
 Instance segmentation is not migrated yet.
 
-All backends share preprocessing choices, including explicit `pillow-simd-v1`.
-This optional Linux x86-64 SSE4.1 stage loads an isolated Pillow-SIMD >=12.3.0.post0
-module, declares numerical differences, and is intentionally excluded from `auto`.
-Architecture and device-type metadata reject incompatible targets before native
-construction. Missing SIMD or unsupported requests resolve to `base`; standard
-Pillow is never replaced. The reference NumPy path swaps channels after resizing.
+All backends share preprocessing choices. `auto` prefers `triton-universal-v1`,
+then `pillow-simd-v1`, then `base`; explicit choices remain supported. The same
+order forms Triton's declared fallback chain. Every candidate reached is checked
+for static/dependency, model, request and runtime compatibility before execution.
+Pillow-SIMD remains optional and declares numerical differences; incompatible
+architectures or missing native installations skip it without preventing `base`.
+Its installation smoke check is documented in `docker/scripts/verify_pillow_simd.py`.
 
-The five x86 ONNX Docker images share the pin in
-`requirements/requirements.pillow-simd.txt`, currently an HTTPS Git commit. Their
-standalone build verifier checks that standard Pillow loads outside the isolated
-SIMD directory, the aliased SIMD modules load inside it, and their native
-extensions are separate. It verifies that loading SIMD and performing one small
-RGB resize leaves standard Pillow unchanged, allowing at most one uint8 level of
-resize difference. Standard Pillow's compatible version range comes from
-`requirements/_requirements.txt`. Broader numerical coverage lives in the native
-preprocessor tests, not the Docker build check. The verifier does not audit package
-hashes or installation provenance. To adopt a published release, replace the shared
-pin with `pillow-simd==VERSION`; the verifier is independent of the installation
-source. Runtime selection and fallback policies are unchanged.
+Each model owns a `PreprocessorSelector`. It caches static/dependency and model
+eligibility (including rejection), constructing fallback stages lazily. Metadata
+is checked before native construction. The cache assumes the registry, dependency
+snapshot, target and model configuration stay fixed; changing them requires a new
+selector. Request inputs, overrides, streams and runtime-failure state are never
+cached. Warm dispatch checks only request compatibility and current failure state,
+without repeating the selected stage's request check during runtime resolution.
+
+Request fallback is not sticky: each request starts from the model-selected
+primary. Recorded runtime failures are checked afresh, allowing an implementation
+to skip a failed input path while retaining other supported paths. Traversal
+validates every fallback, detects cycles and respects the execution plan's separate
+compatibility and runtime-failure fallback flags. Reasons remain visible in
+runtime selection metadata. Postprocessor resolution is unchanged.
 
 Torch/ONNX register only `base` for the four non-preprocessing stages. In composed
 CUDA execution, preprocessing records readiness for the exact returned tensor;
 the backend consumer stream waits on it and records allocator ownership. Public
 standalone preprocessing synchronizes before returning. CPU paths require no CUDA
-stream. Per-request image-size overrides unsupported by Triton use the reference
+stream. Per-request image-size overrides unsupported by Triton use a compatible
 fallback and remain visible in runtime selection metadata.
 
 The TensorRT semantic forward pass remains protected and is not a selectable
@@ -237,7 +240,7 @@ TensorRT forward does not need to know which preprocessor produced its input.
   reuse across engine outputs and postprocessing requires a contract extension.
 - `auto` resolves those base-only categories to `base`; an unknown explicit ID raises a
   registry error listing the available implementations.
-- Preprocessing `auto` prefers `triton-universal-v1`;
+- Preprocessing `auto` prefers `triton-universal-v1`, then `pillow-simd-v1`;
   postprocessing `auto` prefers `triton-fused-v1`. Each stage uses `base` when no listed
   candidate is compatible.
 - Validation records remain informational provenance and do not participate in

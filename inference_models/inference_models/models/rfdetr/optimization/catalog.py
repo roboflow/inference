@@ -128,6 +128,7 @@ def build_rfdetr_implementation_registry(
             stage=OptimizationStage.PREPROCESS,
             implementation_ids=(
                 TritonUniversalPreprocessor.metadata.implementation_id,
+                PillowSIMDPreprocessor.metadata.implementation_id,
             ),
         )
         return registry
@@ -150,7 +151,10 @@ def build_rfdetr_implementation_registry(
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.PREPROCESS,
-        implementation_ids=(TritonUniversalPreprocessor.metadata.implementation_id,),
+        implementation_ids=(
+            TritonUniversalPreprocessor.metadata.implementation_id,
+            PillowSIMDPreprocessor.metadata.implementation_id,
+        ),
     )
     registry.set_auto_preferences(
         stage=OptimizationStage.POSTPROCESS,
