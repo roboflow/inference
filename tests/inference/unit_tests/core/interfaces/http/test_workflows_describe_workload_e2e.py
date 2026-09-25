@@ -544,12 +544,22 @@ def test_branched_example_with_metadata_enrichment(
         }
     ]
 
-    # then - no credential reaches the client, and the registry helper was
-    # called with its default cache prefix (nothing credential-derived)
+    # then - no credential reaches the client; every lookup ran under the
+    # request's key with an opaque cache prefix that is fresh per lookup (so it
+    # is not a function of the credential), names no credential, and is not the
+    # helper's default prefix whose shared entry other callers populate
     assert API_KEY not in response.text
-    assert {tuple(sorted(call.kwargs)) for call in registry_call.call_args_list} == {
-        ("api_key", "model_id")
+    calls = registry_call.call_args_list
+    assert {tuple(sorted(call.kwargs)) for call in calls} == {
+        ("api_key", "cache_prefix", "model_id")
     }
+    assert {call.kwargs["api_key"] for call in calls} == {API_KEY}
+    prefixes = [call.kwargs["cache_prefix"] for call in calls]
+    assert len(set(prefixes)) == len(prefixes)
+    for prefix in prefixes:
+        assert isinstance(prefix, str) and prefix
+        assert API_KEY not in prefix
+        assert prefix != "roboflow_api_data:inference_models_registry"
     assert all("type" in entity for entity in _entity_dicts(body))
     assert (
         WorkflowIntrospection.model_validate_json(response.text).model_dump(mode="json")

@@ -845,16 +845,27 @@ def test_response_never_leaks_the_api_key(
 
     # then
     assert API_KEY not in response.text
-    # ... but the lookups really did run under that credential, and the helper
-    # was called with its default cache prefix: nothing credential-derived is
-    # passed to it, so nothing credential-derived can reach the shared cache
+    # ... but the lookups really did run under that credential, one per model id
     assert registry_call.call_count == 2
-    assert {call.kwargs["api_key"] for call in registry_call.call_args_list} == {
-        API_KEY
+    calls = registry_call.call_args_list
+    assert {call.kwargs["api_key"] for call in calls} == {API_KEY}
+    assert {call.kwargs["model_id"] for call in calls} == {
+        "my-project/3",
+        "my-other-project/1",
     }
-    assert {tuple(sorted(call.kwargs)) for call in registry_call.call_args_list} == {
-        ("api_key", "model_id")
+    # ... each with an opaque cache prefix: fresh per lookup (so not a function of
+    # the credential), naming no credential, and never the helper's default
+    # prefix whose shared entry other callers populate - so nothing
+    # credential-derived can reach the shared cache
+    assert {tuple(sorted(call.kwargs)) for call in calls} == {
+        ("api_key", "cache_prefix", "model_id")
     }
+    prefixes = [call.kwargs["cache_prefix"] for call in calls]
+    assert len(set(prefixes)) == len(prefixes)
+    for prefix in prefixes:
+        assert isinstance(prefix, str) and prefix
+        assert API_KEY not in prefix
+        assert prefix != DEFAULT_REGISTRY_CACHE_PREFIX
 
 
 def test_existing_describe_interface_route_is_unchanged(
@@ -1209,23 +1220,34 @@ def test_enforced_auth_reuses_the_memory_entry_within_one_workspace(
         "workspace-db-a",
         "workspace-db-a",
     ]
-    # the helper still writes its own shared entry, keyed by model id only
-    assert sorted(store) == [SHARED_CACHE_KEY]
+    # the one lookup never touched the helper's default, model-id-keyed shared
+    # entry; the single key it did write names no caller
+    assert SHARED_CACHE_KEY not in store
+    assert len(store) == 1
+    for identity in ("query-a", "query-b", "workspace-db-a", ASSUME_IDENTITY_TOKEN):
+        assert all(identity not in key for key in store)
 
 
-def test_unenforced_auth_keeps_the_helpers_shared_model_id_cache_policy(
+def test_unenforced_auth_still_authorises_each_workspace_on_its_own(
     serverless_auth_not_enforced,
 ) -> None:
-    """The accepted behaviour of `MODELS_CACHE_AUTH_ENABLED=False`.
+    """Regression: `MODELS_CACHE_AUTH_ENABLED=False` must not share answers.
 
-    The registry helper READS its shared, model-id-keyed cache for every caller.
-    A memory miss in another workspace is therefore answered from the entry the
-    first workspace populated, with no second lookup. That is the helper's
-    pre-existing policy for all of its callers and is unchanged by workload
-    introspection; hosted per-workspace isolation relies on enabling
-    `MODELS_CACHE_AUTH_ENABLED`.
+    With enforcement off the registry helper reads its shared, model-id-keyed
+    cache BEFORE it authorises anybody. Introspection must not consume that
+    entry: a memory miss in each workspace reaches the platform with that
+    workspace's own identity headers and gets that workspace's own answer -
+    even when model resolution has already left a warm shared entry behind.
     """
     interface, fetched, store = serverless_auth_not_enforced
+    # a shared entry for this model id, as model resolution would leave it
+    seeded_entry = {
+        "modelType": "seeded-by-model-resolution",
+        "taskType": "object-detection",
+        "modelVariant": None,
+        "modelLatencyMs": None,
+    }
+    store[SHARED_CACHE_KEY] = dict(seeded_entry)
 
     # when - two different authorised workspaces, same model id
     with TestClient(interface.app) as client:
@@ -1233,16 +1255,26 @@ def test_unenforced_auth_keeps_the_helpers_shared_model_id_cache_policy(
             _post_as(client, query_key) for query_key in ("query-a", "query-b")
         ]
 
-    # then - one platform call; the shared entry answered the second workspace
+    # then - one platform call per workspace, each answered in its own name
     for response in responses:
         assert response.status_code == 200, response.text
-    assert fetched == ["workspace-db-a"]
+    assert fetched == ["workspace-db-a", "workspace-db-b"]
     assert [_model_type_of(response) for response in responses] == [
         "workspace-db-a",
-        "workspace-db-a",
+        "workspace-db-b",
     ]
-    # and the shared key carries no credential material - just the model id
-    assert sorted(store) == [SHARED_CACHE_KEY]
+    # ... the seeded shared entry was neither served nor overwritten, and the
+    # keys the lookups wrote name no caller
+    assert store[SHARED_CACHE_KEY] == seeded_entry
+    assert len(store) == 3
+    for identity in (
+        "query-a",
+        "query-b",
+        "workspace-db-a",
+        "workspace-db-b",
+        ASSUME_IDENTITY_TOKEN,
+    ):
+        assert all(identity not in key for key in store)
 
 
 def test_credentials_never_reach_the_response(serverless_auth_enforced) -> None:

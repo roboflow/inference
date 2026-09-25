@@ -18,16 +18,24 @@ Three hard rules shape the implementation:
 * **`USE_INFERENCE_MODELS=False` means zero calls.** The flag is read through
   the `inference.core.env` module at call time, so the gate reflects the process
   configuration in effect when the request is served.
-* **No credential material is ever turned into a SHARED cache key.** The
-  registry helper is called with its DEFAULT prefix, exactly like every other
-  caller, so no credential-derived key reaches the shared cache
-  (`inference.core.cache.cache`: Redis, with an in-process `MemoryCache`
-  fallback when Redis is not configured or cannot be reached). Repeat lookups
-  are absorbed by the in-memory cache below, whose key does contain the api key
-  but never leaves the process. The flip side of the default prefix: with
-  `MODELS_CACHE_AUTH_ENABLED=False` introspection reads and writes the same
-  shared, model-id-keyed entries as the model-resolution path - the same
-  metadata-only payload, written by the same helper.
+* **Every answer is authorised for the caller that receives it, and no
+  credential material is ever turned into a SHARED cache key.** With
+  `MODELS_CACHE_AUTH_ENABLED=False` the registry helper answers from the shared
+  cache (`inference.core.cache.cache`: Redis, with an in-process `MemoryCache`
+  fallback when Redis is not configured or cannot be reached), keyed by
+  `{cache_prefix}:{model_id}` alone, BEFORE it authorises anybody. Under the
+  default prefix a cold caller would therefore receive whatever entry another
+  caller left for the same model id. Each uncached lookup instead passes a
+  single-use prefix: a fixed namespace plus a fresh random nonce (see
+  `_single_use_cache_prefix()`). Nothing can have been stored under it, so the
+  helper always reaches the platform with this call's own key and
+  assume-identity headers. The nonce is random, so the prefix holds no api
+  key, digest, token or workspace id. The helper still writes its answer under
+  that prefix with its usual 10 s expiry; nobody ever reads that entry. Shared
+  entries under the default prefix are neither read nor written nor purged
+  here, so the model-resolution path keeps its policy. Repeat lookups are
+  absorbed by the in-memory cache below, whose key does contain the api key but
+  never leaves the process.
 
 In-memory cache
 ---------------
@@ -47,10 +55,10 @@ The key is an exact Python tuple - no hashing, no string concatenation:
   call - before the lookup - because it lives in a per-request ContextVar. It is
   `None` when no such header would be sent; the api key, model id and
   authorization mode still key the entry.
-* `models_cache_auth_enabled` is the authorization policy that produced the
-  entry, read off `roboflow_api` - the very module attribute the helper itself
-  consults. Including it means a result obtained while enforcement was OFF can
-  never be served as an enforcement-ON authorization success.
+* `models_cache_auth_enabled` is the authorization policy in force when the
+  entry was written, read off `roboflow_api` - the very module attribute the
+  helper itself consults. Every entry comes from an authorised platform call in
+  either mode; the component keeps each policy's entries apart all the same.
 
 Only successful, usable metadata is cached, as an immutable tuple of the three
 mapped fields; every response object is rebuilt from it, so a caller can never
@@ -59,19 +67,27 @@ all-unknown metadata are not cached, so the next call retries.
 
 `MODELS_CACHE_AUTH_ENABLED=True` vs `False`
 -------------------------------------------
-With enforcement ON the registry helper does not read its shared cache, so an
-in-memory miss reaches the platform carrying this call's own key and headers;
-a hit reuses that answer for the TTL. With enforcement OFF the helper keeps its
-existing shared model-id-keyed cache policy: an in-memory miss can be answered
-from the shared cache populated by another caller for the same model id. That
-is the pre-existing policy of the helper for every caller, and it is unchanged
-here - hosted per-workspace isolation relies on `MODELS_CACHE_AUTH_ENABLED=True`.
+Both policies behave the same way for introspection: an in-memory miss reaches
+the platform carrying this call's own key and headers, and a hit reuses that
+answer for the TTL, for that exact key tuple only. With enforcement ON the
+helper skips its shared-cache read by itself. With enforcement OFF the helper
+still performs its cache `get`, but on the fresh single-use key it always
+misses: the prefix is what prevents shared-entry reuse. The prefix is used in
+both modes,
+so no read of the mode between this module and the helper can pick the
+default prefix by mistake. A hit therefore only ever serves an answer the
+platform authorised for that exact tuple within the TTL. Switching to a
+workspace, api key or policy whose tuple already holds a live entry reuses that
+entry, including switching back to a policy that is still warm. A cold tuple,
+an expired or evicted entry and a retry after a failure (never cached) are
+misses, and each one is authorised again.
 
 The cache is per process only. Concurrent cold misses for the same key may
 issue more than one registry request; there is no request coalescing.
 """
 
 import logging
+import secrets
 import threading
 from typing import Any, Optional, Tuple
 
@@ -90,6 +106,11 @@ logger = logging.getLogger(__name__)
 # Everything else (an explicit third-party model reference) is reported as
 # `unavailable` WITHOUT a call - the inventory entry itself is kept.
 ROBOFLOW_PROVIDER = "roboflow"
+
+# Fixed part of the single-use registry cache prefix. It is deliberately
+# outside the helper's default `roboflow_api_data:` namespace, so a single-use
+# key can never coincide with an entry another caller reads.
+_SINGLE_USE_CACHE_NAMESPACE = "workload_introspection:inference_models_registry"
 
 # Hard bound on the number of cached entries; the least recently used entry is
 # evicted once it is reached.
@@ -139,7 +160,9 @@ class ServerModelMetadataProvider:
 
     The instance holds nothing but the api key: the metadata cache is process
     level, so a provider built per request still benefits from what earlier
-    requests in the same identity already resolved.
+    requests in the same identity already resolved. The registry cache prefix
+    is drawn per lookup and never kept on the instance, so one provider can
+    safely serve several workspace contexts.
     """
 
     def __init__(self, api_key: Optional[str]) -> None:
@@ -150,6 +173,26 @@ class ServerModelMetadataProvider:
         provider: str,
         model_id: str,
     ) -> ModelMetadataLookup:
+        """Resolve registry metadata of one model for this provider's caller.
+
+        An in-memory hit is served only for the exact
+        `(api_key, model_id, authorised_workspace, models_cache_auth_enabled)`
+        tuple that obtained it. A miss always reaches the platform with this
+        call's own api key and assume-identity headers, whatever the
+        `MODELS_CACHE_AUTH_ENABLED` policy. It never takes an answer from the
+        shared registry cache that another caller populated.
+
+        Args:
+            provider: Provider the compiler resolved for the model reference.
+                Only `roboflow` model ids address the platform registry.
+            model_id: Literal model id declared by the workflow.
+
+        Returns:
+            `disabled` when `USE_INFERENCE_MODELS` is off; `unavailable` for a
+            non-`roboflow` provider, in `OFFLINE_MODE`, on any lookup failure
+            (including a denied authorization) or when no usable field came
+            back; otherwise `available` with the mapped metadata.
+        """
         if not inference_env.USE_INFERENCE_MODELS:
             # Contract: the flag being off is reported as `disabled`, and NOT a
             # single lookup is issued.
@@ -174,6 +217,7 @@ class ServerModelMetadataProvider:
             api_data = roboflow_api.get_model_metadata_from_inference_models_registry(
                 api_key=self._api_key,
                 model_id=model_id,
+                cache_prefix=_single_use_cache_prefix(),
             )
         except Exception as error:
             # Deliberately not `logger.exception`: a failed lookup is an
@@ -193,6 +237,19 @@ class ServerModelMetadataProvider:
         with _METADATA_CACHE_LOCK:
             _METADATA_CACHE[cache_key] = fields
         return _available_lookup(fields=fields)
+
+
+def _single_use_cache_prefix() -> str:
+    """A registry cache prefix no other lookup has used or will use.
+
+    The helper reads `{prefix}:{model_id}` from the shared cache before it
+    authorises anybody when `MODELS_CACHE_AUTH_ENABLED=False`. A fresh 128-bit
+    random nonce guarantees that read misses, so the lookup is authorised by
+    the platform. The nonce comes from `secrets`: it is not derived from, and
+    reveals nothing about, any api key, token or workspace.
+    """
+    prefix = f"{_SINGLE_USE_CACHE_NAMESPACE}:{secrets.token_hex(16)}"
+    return prefix
 
 
 def _available_lookup(fields: _MetadataFields) -> ModelMetadataLookup:

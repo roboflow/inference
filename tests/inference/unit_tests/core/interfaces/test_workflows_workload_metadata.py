@@ -9,15 +9,19 @@ The contract under test:
   `taskType -> task_type`, with `modelLatencyMs` dropped.
 * every failure mode -> `unavailable`, never an exception.
 * successful lookups are reused from a process-wide in-memory cache keyed by
-  `(api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)`; the
-  registry helper itself is called with its DEFAULT cache prefix, so no
-  credential-derived key ever reaches the shared cache.
+  `(api_key, model_id, authorised_workspace, MODELS_CACHE_AUTH_ENABLED)`.
+* an in-memory miss is always authorised by the platform for THIS caller, in
+  both authorization policies: the registry helper gets a fresh, credential-free
+  single-use cache prefix, so it can never answer from a shared entry another
+  caller populated.
 """
 
 import logging
+import re
 from unittest import mock
 
 import pytest
+import requests
 from cachetools import TTLCache
 from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadataLookup,
@@ -39,8 +43,12 @@ REGISTRY_PAYLOAD = {
 }
 
 # The prefix `get_model_metadata_from_inference_models_registry` uses when no
-# `cache_prefix` is passed - the adapter must not pass one.
+# `cache_prefix` is passed - the one model resolution reads and writes.
 DEFAULT_REGISTRY_CACHE_PREFIX = "roboflow_api_data:inference_models_registry"
+DEFAULT_SHARED_CACHE_KEY = f"{DEFAULT_REGISTRY_CACHE_PREFIX}:my-project/3"
+
+# The fixed part of the adapter's single-use prefix; a random nonce follows it.
+SINGLE_USE_CACHE_NAMESPACE = "workload_introspection:inference_models_registry"
 
 ASSUME_IDENTITY_TOKEN = "dummy-assume-token"
 
@@ -265,10 +273,20 @@ def test_successful_lookup_maps_registry_fields_and_drops_latency(
         "task_type": "object-detection",
     }
     registry_call.assert_called_once()
-    assert registry_call.call_args.kwargs == {
-        "api_key": "some-key",
-        "model_id": "my-project/3",
-    }, "the helper is called with its default cache prefix and nothing else"
+    kwargs = registry_call.call_args.kwargs
+    assert sorted(kwargs) == ["api_key", "cache_prefix", "model_id"]
+    assert kwargs["api_key"] == "some-key"
+    assert kwargs["model_id"] == "my-project/3"
+    # ... an opaque single-use prefix outside the helper's default namespace:
+    # the fixed namespace plus 32 hex characters, so no raw credential or
+    # workspace id fits in it (a fresh value per lookup is pinned by the retry
+    # test below; independence from credentials comes from the source drawing
+    # the nonce with `secrets.token_hex`, which these assertions cannot prove)
+    assert re.fullmatch(
+        rf"{re.escape(SINGLE_USE_CACHE_NAMESPACE)}:[0-9a-f]{{32}}",
+        kwargs["cache_prefix"],
+    )
+    assert not kwargs["cache_prefix"].startswith(DEFAULT_REGISTRY_CACHE_PREFIX)
 
 
 def test_lookup_never_asks_for_loading_or_weights(
@@ -534,11 +552,11 @@ def test_a_workspace_the_header_check_rejects_is_ignored(
 def test_an_enforcement_off_result_is_never_reused_as_enforcement_on(
     monkeypatch, enrichment_enabled, registry_call
 ) -> None:
-    """A policy-mode transition must not promote an unauthorised answer.
+    """Each authorization policy keeps its own in-memory entries.
 
-    With `MODELS_CACHE_AUTH_ENABLED=False` the helper may answer from the shared
-    model-id-keyed cache without authorising the caller. That answer must not
-    become an authorization success once enforcement is turned on.
+    Every entry already comes from an authorised platform call; the policy
+    component of the key still makes a switch in either direction a miss for
+    the other policy's entries.
     """
     # given
     from inference.core import roboflow_api
@@ -587,6 +605,9 @@ def test_an_exception_is_not_cached_and_the_next_call_retries(
     assert first.status == "unavailable"
     assert second.status == "available"
     assert registry_call.call_count == 2
+    # ... and the retry did not reuse the failed attempt's prefix
+    prefixes = {call.kwargs["cache_prefix"] for call in registry_call.call_args_list}
+    assert len(prefixes) == 2
 
 
 @pytest.mark.parametrize(
@@ -690,8 +711,10 @@ def test_a_caller_cannot_poison_a_later_response(
 def real_registry(monkeypatch):
     """The real helper over a fake shared cache and a fake HTTP fetch.
 
-    Returns `(store, fetched)`: the shared-cache dict the helper reads/writes and
-    the list of request headers that actually reached the platform.
+    Returns `(store, fetched, denied)`: the shared-cache dict the helper
+    reads/writes, the list of request headers that actually reached the
+    platform, and a set of api keys / authorised workspaces the fake platform
+    refuses with HTTP 401 (every other request is served).
     """
     from inference.core import roboflow_api
 
@@ -705,9 +728,21 @@ def real_registry(monkeypatch):
             store[key] = value
 
     fetched = []
+    denied = set()
 
     def _fake_get_from_url(url, headers=None, json_response=True):
-        fetched.append(dict(headers or {}))
+        headers = dict(headers or {})
+        fetched.append(headers)
+        identity = {
+            headers.get("Authorization", "").removeprefix("Bearer "),
+            headers.get(roboflow_api.ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER),
+        }
+        if identity & denied:
+            # what `requests` raises for a 401; the helper's error wrapper turns
+            # it into `RoboflowAPINotAuthorizedError`, exactly as in production
+            response = requests.Response()
+            response.status_code = 401
+            raise requests.exceptions.HTTPError(response=response)
         return {
             "modelMetadata": {
                 "modelArchitecture": f"arch-{len(fetched)}",
@@ -721,7 +756,21 @@ def real_registry(monkeypatch):
     monkeypatch.setattr(roboflow_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", False)
     monkeypatch.setattr(roboflow_api, "ROBOFLOW_INTERNAL_SERVICE_SECRET", None)
-    return store, fetched
+    return store, fetched, denied
+
+
+def _assert_shared_keys_are_credential_free(store, *identities) -> None:
+    """Only the default entry and single-use entries exist; none names a caller."""
+    for key in store:
+        assert key == DEFAULT_SHARED_CACHE_KEY or key.startswith(
+            f"{SINGLE_USE_CACHE_NAMESPACE}:"
+        ), key
+        for identity in identities:
+            assert identity not in key, key
+
+
+def _authorizations(fetched) -> list:
+    return [headers.get("Authorization") for headers in fetched]
 
 
 def test_enforcement_on_reaches_the_platform_despite_a_preseeded_shared_cache(
@@ -729,8 +778,8 @@ def test_enforcement_on_reaches_the_platform_despite_a_preseeded_shared_cache(
 ) -> None:
     """A memory miss must not be answered by somebody else's shared entry."""
     # given - the shared cache already holds an entry for this model id
-    store, fetched = real_registry
-    store[f"{DEFAULT_REGISTRY_CACHE_PREFIX}:my-project/3"] = {
+    store, fetched, _ = real_registry
+    store[DEFAULT_SHARED_CACHE_KEY] = {
         "modelType": "someone-elses-arch",
         "taskType": "object-detection",
         "modelVariant": None,
@@ -755,15 +804,20 @@ def test_enforcement_on_reaches_the_platform_despite_a_preseeded_shared_cache(
         fetched[0][assume_identity_enabled.ASSUME_IDENTITY_ACCESS_TOKEN_HEADER]
         == ASSUME_IDENTITY_TOKEN
     )
-    # ... and the shared cache key it wrote carries no credential material
-    assert sorted(store) == [f"{DEFAULT_REGISTRY_CACHE_PREFIX}:my-project/3"]
+    # ... the seeded entry is left as it was, and the one key the helper wrote is
+    # single-use and carries no credential material
+    assert store[DEFAULT_SHARED_CACHE_KEY]["modelType"] == "someone-elses-arch"
+    assert len(store) == 2
+    _assert_shared_keys_are_credential_free(
+        store, "key-one", "workspace-db-a", ASSUME_IDENTITY_TOKEN
+    )
 
 
 def test_enforcement_on_reuses_the_memory_entry_for_that_context_only(
     real_registry, assume_identity_enabled, auth_enforcement_enabled, enrichment_enabled
 ) -> None:
     # given
-    _, fetched = real_registry
+    _, fetched, _ = real_registry
 
     def _resolve_as(api_key, workspace):
         token = _with_authorised_workspace(assume_identity_enabled, workspace)
@@ -796,30 +850,129 @@ def test_enforcement_on_reuses_the_memory_entry_for_that_context_only(
     assert other_key.metadata.model_type == "arch-3"
 
 
-def test_enforcement_off_keeps_the_helpers_shared_model_id_cache_policy(
+def test_enforcement_off_cold_miss_never_takes_another_callers_shared_entry(
     monkeypatch, real_registry, enrichment_enabled
 ) -> None:
-    """The accepted trade-off of `MODELS_CACHE_AUTH_ENABLED=False`.
+    """Regression: a denied caller must not inherit an authorised caller's answer.
 
-    The helper reads its shared cache for every caller and keys it by model id
-    under the DEFAULT prefix. A second credential therefore gets the first
-    credential's entry without a platform call - the pre-existing policy of the
-    helper, unchanged here. Hosted per-workspace isolation relies on enabling
-    `MODELS_CACHE_AUTH_ENABLED`.
+    With `MODELS_CACHE_AUTH_ENABLED=False` (the default) the helper reads its
+    shared, model-id-keyed cache BEFORE it authorises anybody. Tenant A's model
+    resolution seeds that entry; tenant B, whom the platform refuses, must still
+    be checked by the platform and must receive nothing.
     """
     # given
     from inference.core import roboflow_api
 
-    store, fetched = real_registry
+    store, fetched, denied = real_registry
     monkeypatch.setattr(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", False)
+    clock = _install_test_cache(monkeypatch, ttl=900.0)
+    denied.add("key-b")
+    # ... tenant A's model resolution seeds the default shared entry
+    seeded = roboflow_api.get_model_metadata_from_inference_models_registry(
+        api_key="key-a",
+        model_id="my-project/3",
+    )
+    assert seeded["modelType"] == "arch-1"
+    assert sorted(store) == [DEFAULT_SHARED_CACHE_KEY]
 
-    # when - two different credentials, the same model id
-    first = _resolve(ServerModelMetadataProvider(api_key="key-one"))
-    second = _resolve(ServerModelMetadataProvider(api_key="key-two"))
+    # when - tenant B's cold miss, then its retry
+    denied_first = _resolve(ServerModelMetadataProvider(api_key="key-b"))
+    denied_retry = _resolve(ServerModelMetadataProvider(api_key="key-b"))
 
-    # then - one platform call, and the shared entry answered the second caller
-    assert [headers["Authorization"] for headers in fetched] == ["Bearer key-one"]
-    assert first.metadata.model_type == "arch-1"
-    assert second.metadata.model_type == "arch-1"
-    # ... under the helper's default, credential-free key
-    assert sorted(store) == [f"{DEFAULT_REGISTRY_CACHE_PREFIX}:my-project/3"]
+    # then - both reached the platform under B's own key and both were refused;
+    # the refusal was not cached as a success
+    assert denied_first == ModelMetadataLookup(status="unavailable")
+    assert denied_first.metadata is None
+    assert denied_retry == ModelMetadataLookup(status="unavailable")
+    assert _authorizations(fetched) == ["Bearer key-a", "Bearer key-b", "Bearer key-b"]
+
+    # when - tenant A introspects, twice, through separate provider objects
+    allowed = _resolve(ServerModelMetadataProvider(api_key="key-a"))
+    allowed_again = _resolve(ServerModelMetadataProvider(api_key="key-a"))
+
+    # then - A is authorised on its own, then served from memory
+    assert allowed.metadata.model_type == "arch-4"
+    assert allowed_again.metadata.model_type == "arch-4"
+    assert len(fetched) == 4
+
+    # when - A's in-memory entry expires while the shared entry is still there
+    clock.now = 901.0
+    expired = _resolve(ServerModelMetadataProvider(api_key="key-a"))
+
+    # then - A is authorised again instead of being served the shared entry
+    assert expired.metadata.model_type == "arch-5"
+    assert _authorizations(fetched)[-1] == "Bearer key-a"
+    # ... and the seeded entry was neither consumed nor purged, and no key names
+    # a caller
+    assert store[DEFAULT_SHARED_CACHE_KEY]["modelType"] == "arch-1"
+    _assert_shared_keys_are_credential_free(store, "key-a", "key-b")
+
+
+def test_enforcement_off_one_provider_is_authorised_per_workspace_context(
+    monkeypatch, real_registry, assume_identity_enabled, enrichment_enabled
+) -> None:
+    """One provider object, one api key, two authorised workspaces.
+
+    The prefix is drawn per lookup, never held on the provider, so switching the
+    per-request ContextVar to a workspace with no live entry makes the platform
+    authorise that workspace; switching back to a warm one is a memory hit.
+    """
+    # given
+    store, fetched, denied = real_registry
+    monkeypatch.setattr(assume_identity_enabled, "MODELS_CACHE_AUTH_ENABLED", False)
+    denied.add("workspace-db-b")
+    provider = ServerModelMetadataProvider(api_key="same-key")
+
+    def _resolve_in(workspace):
+        token = _with_authorised_workspace(assume_identity_enabled, workspace)
+        try:
+            return _resolve(provider)
+        finally:
+            assume_identity_enabled.assume_identity_authorised_workspace_db_id.reset(
+                token
+            )
+
+    # when
+    in_a = _resolve_in("workspace-db-a")
+    in_b = _resolve_in("workspace-db-b")
+    in_a_again = _resolve_in("workspace-db-a")
+
+    # then - workspace b was checked by the platform in its own name and refused;
+    # workspace a's repeat is a memory hit
+    assert in_a.metadata.model_type == "arch-1"
+    assert in_b == ModelMetadataLookup(status="unavailable")
+    assert in_a_again.metadata.model_type == "arch-1"
+    assert [
+        headers[assume_identity_enabled.ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER]
+        for headers in fetched
+    ] == ["workspace-db-a", "workspace-db-b"]
+    assert set(_authorizations(fetched)) == {"Bearer same-key"}
+    _assert_shared_keys_are_credential_free(
+        store, "same-key", "workspace-db-a", "workspace-db-b", ASSUME_IDENTITY_TOKEN
+    )
+
+
+def test_an_enforcement_on_lookup_does_not_seed_an_enforcement_off_answer(
+    monkeypatch, real_registry, enrichment_enabled
+) -> None:
+    """A policy switch must not turn one caller's lookup into another's answer."""
+    # given - tenant A introspects while enforcement is on
+    from inference.core import roboflow_api
+
+    store, fetched, denied = real_registry
+    monkeypatch.setattr(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+    assert _resolve(ServerModelMetadataProvider(api_key="key-a")).status == (
+        "available"
+    )
+    denied.add("key-b")
+
+    # when - enforcement is switched off and a refused tenant B looks up the same
+    # model
+    monkeypatch.setattr(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", False)
+    result = _resolve(ServerModelMetadataProvider(api_key="key-b"))
+
+    # then - B was checked by the platform and refused
+    assert result == ModelMetadataLookup(status="unavailable")
+    assert _authorizations(fetched) == ["Bearer key-a", "Bearer key-b"]
+    assert DEFAULT_SHARED_CACHE_KEY not in store
+    _assert_shared_keys_are_credential_free(store, "key-a", "key-b")
