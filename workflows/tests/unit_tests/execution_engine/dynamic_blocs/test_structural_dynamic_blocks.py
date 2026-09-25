@@ -12,6 +12,7 @@ from typing import Optional
 from unittest import mock
 
 import pytest
+from pydantic import ValidationError
 from roboflow_workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -364,6 +365,107 @@ def test_structural_compilation_still_validates_dimensionality_reference(
             dynamic_blocks_definitions=[definition],
             structural=True,
         )
+    _assert_inert(spies=inertness_spies, marker_path=marker_path)
+
+
+def _definition_without_run_function_code(marker_path: str) -> dict:
+    definition = _definition(marker_path=marker_path)
+    del definition["code"]["run_function_code"]
+    return definition
+
+
+def _validation_error() -> ValidationError:
+    try:
+        DynamicBlockDefinition.model_validate({})
+    except ValidationError as error:
+        return error
+    raise AssertionError("an empty dynamic block definition must not validate")
+
+
+@pytest.mark.parametrize("structural", [True, False])
+@pytest.mark.parametrize(
+    "malformed, expected_location",
+    [
+        (lambda marker_path: {}, "manifest: Field required"),
+        (
+            _definition_without_run_function_code,
+            "code.run_function_code: Field required",
+        ),
+        (lambda marker_path: "not-a-definition", "<root>: Input should be"),
+    ],
+    ids=["empty", "missing_run_function_code", "not_a_mapping"],
+)
+def test_malformed_definition_is_a_dynamic_block_error(
+    inertness_spies: dict,
+    marker_path: str,
+    structural: bool,
+    malformed,
+    expected_location: str,
+) -> None:
+    # given - a valid sibling first: validation of every definition precedes
+    # assembly, so not even the valid block is assembled
+    definitions = [_definition(marker_path=marker_path), malformed(marker_path)]
+
+    # when
+    with mock.patch.object(
+        block_assembler, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True
+    ), mock.patch.object(
+        block_assembler, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+    ), mock.patch.object(
+        block_assembler,
+        "create_dynamic_block_specification",
+        wraps=create_dynamic_block_specification,
+    ) as assembly, pytest.raises(
+        DynamicBlockError
+    ) as raised:
+        compile_dynamic_blocks(
+            dynamic_blocks_definitions=definitions,
+            api_key="secret",
+            workspace_resolver=inertness_spies["resolver"],
+            structural=structural,
+        )
+
+    # then
+    error = raised.value
+    assert isinstance(error.inner_error, ValidationError)
+    assert error.__cause__ is error.inner_error
+    assert "Dynamic block definition at index 1 is malformed" in error.public_message
+    assert expected_location in error.public_message
+    assert error.context == "workflow_compilation | dynamic_blocks_compilation"
+    assembly.assert_not_called()
+    _assert_inert(spies=inertness_spies, marker_path=marker_path)
+
+
+@pytest.mark.parametrize("structural", [True, False])
+@pytest.mark.parametrize(
+    "assembly_error",
+    [RuntimeError("assembly failed"), _validation_error()],
+    ids=["runtime_error", "validation_error"],
+)
+def test_assembly_failures_of_a_valid_definition_are_not_reclassified(
+    inertness_spies: dict,
+    marker_path: str,
+    structural: bool,
+    assembly_error: Exception,
+) -> None:
+    # when - only schema validation of the request is translated
+    with mock.patch.object(
+        block_assembler, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True
+    ), mock.patch.object(
+        block_assembler,
+        "create_dynamic_block_specification",
+        side_effect=assembly_error,
+    ), pytest.raises(
+        type(assembly_error)
+    ) as raised:
+        compile_dynamic_blocks(
+            dynamic_blocks_definitions=[_definition(marker_path=marker_path)],
+            structural=structural,
+        )
+
+    # then
+    assert raised.value is assembly_error
+    assert not isinstance(raised.value, DynamicBlockError)
     _assert_inert(spies=inertness_spies, marker_path=marker_path)
 
 

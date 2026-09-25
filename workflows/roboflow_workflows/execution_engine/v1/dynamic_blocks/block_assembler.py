@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from roboflow_workflows.environment import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -85,6 +85,26 @@ def compile_dynamic_blocks(
     evaluated (locally or in Modal), no workspace is resolved, and the returned
     block class is a placeholder that refuses to initialise or run.
     `skip_class_eval` alone does not give that - the gates run before it.
+
+    Args:
+        dynamic_blocks_definitions: Raw dynamic block definitions from the
+            workflow definition.
+        profiler: Optional profiler recording the compilation phase.
+        api_key: Api key used to resolve the workspace in executable mode.
+        workspace_resolver: Resolves the workspace in executable mode.
+        skip_class_eval: If True, the block class is not evaluated.
+        structural: If True, compile for inspection only, as described above.
+
+    Returns:
+        One block specification per dynamic block definition.
+
+    Raises:
+        WorkflowEnvironmentConfigurationError: If custom Python is not allowed
+            in this installation and `structural` is False.
+        DynamicBlockError: If a definition does not match the
+            `DynamicBlockDefinition` schema, with the Pydantic
+            `ValidationError` as inner error, or if a valid definition cannot
+            be assembled into a block.
     """
     if not dynamic_blocks_definitions:
         return []
@@ -95,8 +115,8 @@ def compile_dynamic_blocks(
     all_defined_kinds = load_all_defined_kinds()
     kinds_lookup = {kind.name: kind for kind in all_defined_kinds}
     dynamic_blocks = [
-        DynamicBlockDefinition.model_validate(dynamic_block)
-        for dynamic_block in dynamic_blocks_definitions
+        _parse_dynamic_block_definition(dynamic_block, index=index)
+        for index, dynamic_block in enumerate(dynamic_blocks_definitions)
     ]
     compiled_blocks = []
     for dynamic_block in dynamic_blocks:
@@ -110,6 +130,31 @@ def compile_dynamic_blocks(
         )
         compiled_blocks.append(block_specification)
     return compiled_blocks
+
+
+def _parse_dynamic_block_definition(
+    dynamic_block: Any,
+    *,
+    index: int,
+) -> DynamicBlockDefinition:
+    # Only schema validation of the request is a client error here; failures of
+    # later assembly steps keep their own error types.
+    try:
+        dynamic_block_definition = DynamicBlockDefinition.model_validate(dynamic_block)
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in problem['loc']) or '<root>'}: "
+            f"{problem['msg']}"
+            for problem in error.errors(include_url=False)
+        )
+        raise DynamicBlockError(
+            public_message=f"Dynamic block definition at index {index} is malformed: "
+            f"{problems}. Details available in inner error object.",
+            context="workflow_compilation | dynamic_blocks_compilation",
+            inner_error=error,
+        ) from error
+
+    return dynamic_block_definition
 
 
 def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> None:

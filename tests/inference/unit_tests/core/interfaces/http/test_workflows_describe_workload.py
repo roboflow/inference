@@ -690,6 +690,54 @@ def test_custom_python_block_is_described_with_local_execution_forbidden(
     assert custom_step["operations"]["unknown_reasons"]
 
 
+@pytest.mark.parametrize("route", ["inline", "saved"])
+def test_malformed_dynamic_block_definition_is_a_client_error(
+    monkeypatch, interface, enrichment_enabled, registry_call, route
+) -> None:
+    # given - a valid custom Python block next to a malformed `{}` entry, on a
+    # server that forbids local custom Python
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
+        block_assembler,
+        block_scaffolding,
+        modal_executor,
+    )
+
+    monkeypatch.setattr(
+        block_assembler, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False
+    )
+    monkeypatch.setattr(
+        block_scaffolding, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False
+    )
+    assembly = MagicMock(wraps=block_assembler.create_dynamic_block_specification)
+    monkeypatch.setattr(block_assembler, "create_dynamic_block_specification", assembly)
+    create_dynamic_module = MagicMock()
+    monkeypatch.setattr(
+        block_scaffolding, "create_dynamic_module", create_dynamic_module
+    )
+    validate_code_in_modal = MagicMock()
+    monkeypatch.setattr(
+        modal_executor, "validate_code_in_modal", validate_code_in_modal
+    )
+    definition = _custom_python_definition()
+    definition["dynamic_blocks_definitions"].append({})
+
+    # when
+    with TestClient(interface.app) as client:
+        response = _post_to_route(route, monkeypatch, client, definition)
+
+    # then - 400 with the validation details, and nothing guarded was reached
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error_type"] == "DynamicBlockError"
+    assert "index 1 is malformed" in body["message"]
+    assert "manifest: Field required" in body["message"]
+    assert body["inner_error_type"] == "ValidationError"
+    assembly.assert_not_called()
+    create_dynamic_module.assert_not_called()
+    validate_code_in_modal.assert_not_called()
+    registry_call.assert_not_called()
+
+
 def test_branching_crop_workflow_reports_graph_dimensions_and_counts(
     interface, enrichment_disabled
 ) -> None:
