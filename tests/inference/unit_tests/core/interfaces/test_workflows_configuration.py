@@ -99,6 +99,18 @@ FIELDS = [
             else list(c.engine.kafka_sinks_whitelisted_bootstrap_servers)
         ),
     ),
+    (
+        "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST",
+        lambda c: c.engine.allow_mqtt_blocks_user_provided_host,
+    ),
+    (
+        "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS",
+        lambda c: (
+            None
+            if c.engine.mqtt_blocks_whitelisted_hosts is None
+            else list(c.engine.mqtt_blocks_whitelisted_hosts)
+        ),
+    ),
     ("ENABLE_TENSOR_DATA_REPRESENTATION", lambda c: c.tensor.representation_enabled),
     ("WORKFLOWS_IMAGE_TENSOR_DEVICE", lambda c: c.tensor.image_tensor_device),
     (
@@ -226,7 +238,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 78, len(tabled)
+    assert len(tabled) == 80, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -291,6 +303,11 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
             "KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS",
             ["kafka-2:9092", "kafka-1:9092"],
         ),
+        ("MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", False),
+        ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", None),
+        ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", []),
+        # order preserved, not sorted
+        ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker-2:1883", "broker-1"]),
         ("LAMBDA", True),
     ],
 )

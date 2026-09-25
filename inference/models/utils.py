@@ -1224,6 +1224,12 @@ if USE_INFERENCE_MODELS:
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
         InferenceModelsKeyPointsDetectionAdapter
     )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-two-stage")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-stage2")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
 
     # PatchCore and FoundAD anomaly detection are inference_models-only
     # (no legacy implementation), so we add entries directly.
