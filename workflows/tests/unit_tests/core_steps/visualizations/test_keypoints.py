@@ -502,3 +502,47 @@ def test_keypoints_of_non_coco_skeleton_are_not_widened_to_coco() -> None:
     # then
     assert key_points.xy.shape == (1, 5, 2)
     assert tuple(key_points.xy[0, 4]) == (140.0, 180.0)
+
+
+def test_keypoints_with_coco_names_out_of_coco_order_are_not_widened() -> None:
+    # given: a custom two-point skeleton reusing COCO names at other positions
+    predictions = _partial_pose_predictions([0, 1])
+    predictions.data["keypoints_class_name"] = np.array(
+        [["left_wrist", "right_wrist"]], dtype=object
+    )
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then: COCO's first bone would otherwise join the two wrists
+    assert key_points.xy.shape == (1, 2, 2)
+
+
+def test_keypoints_with_oversized_class_id_are_used_as_stored() -> None:
+    # given: runtime input can carry any class id
+    predictions = _partial_pose_predictions([0])
+    predictions.data["keypoints_class_id"] = np.array([[1_000_000_000]], dtype=int)
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert key_points.xy.shape == (1, 1, 2)
+
+
+def test_keypoints_with_negative_class_id_are_used_as_stored() -> None:
+    # given
+    predictions = _partial_pose_predictions([0, 2])
+    predictions.data["keypoints_class_id"] = np.array([[0, -1]], dtype=int)
+
+    # when
+    key_points = KeypointVisualizationBlockV1().convert_detections_to_keypoints(
+        predictions
+    )
+
+    # then
+    assert np.array_equal(key_points.xy, predictions.data["keypoints_xy"])
