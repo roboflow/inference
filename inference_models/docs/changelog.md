@@ -15,6 +15,12 @@
   reports requested, effective, and request-time stage selections together
   with fallback details.
 
+### Fixed
+
+- RF-DETR Triton preprocessing no longer falls back for dataset-version resize
+  metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
+  flags disabling already-inactive crop, contrast, and grayscale transforms.
+
 ---
 
 ## `0.38.0`
