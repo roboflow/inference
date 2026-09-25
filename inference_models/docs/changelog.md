@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- RF-DETR TensorRT models accept a typed or canonical mapping execution plan
+  through the `execution_plan` loader argument, replacing
+  `rfdetr_execution_plan`. The old name remains a deprecated alias until
+  October 24, 2026, and emits a `FutureWarning` directing callers to
+  `execution_plan`. Supplying the alias together with a non-`None`
+  `execution_plan` raises a `TypeError` to avoid silently discarding either
+  argument. Execution plans support canonical
+  parsing and strict profiling validation, while versioned `optimization_runtime_metadata`
+  reports requested, effective, and request-time stage selections together
+  with fallback details.
+
 ### Fixed
 
 - RF-DETR Triton preprocessing no longer falls back for dataset-version resize
