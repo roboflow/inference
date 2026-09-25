@@ -5,6 +5,7 @@ from docker.models.containers import Container
 
 import docker
 from inference_cli.lib import container_adapter
+from inference_cli.lib import podman_adapter
 
 docker_image = "us-central1-docker.pkg.dev/roboflow-proxy-425409/inference/tunnel"
 
@@ -44,6 +45,14 @@ def start_tunnel_container(api_key, inference_port: int = 9001) -> Container:
 
 
 def find_running_tunnel_container() -> Optional[Container]:
+    if (
+        container_adapter.detect_container_runtime()
+        == container_adapter.CONTAINER_RUNTIME_PODMAN
+    ):
+        running = podman_adapter.find_running_podman_containers(
+            predicate=is_tunnel_image
+        )
+        return running[0] if running else None
     docker_client = docker.from_env()
     for container in docker_client.containers.list():
         if is_tunnel_container(container):
@@ -51,9 +60,13 @@ def find_running_tunnel_container() -> Optional[Container]:
                 return container
 
 
+def is_tunnel_image(image_name: str) -> bool:
+    return "/inference/tunnel" in image_name
+
+
 def is_tunnel_container(container: Container) -> bool:
     image_tags = container.image.tags
-    return any("/inference/tunnel" in t for t in image_tags)
+    return any(is_tunnel_image(t) for t in image_tags)
 
 
 def extract_tunnel_url(container: Container) -> str:
