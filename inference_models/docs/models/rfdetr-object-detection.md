@@ -94,20 +94,31 @@ cv2.imwrite("annotated.jpg", annotated_image)
 
 ### Selecting preprocessing
 
-All three object-detection backends accept `rfdetr_execution_plan=RFDetrExecutionPlan(...)`.
+All three object-detection loaders accept `execution_plan=RFDetrExecutionPlan(...)`
+or the canonical mapping returned by `plan.to_dict()`. An explicit plan overrides
+environment selection and preserves both fallback policy flags. Torch's standalone
+`from_checkpoint_file()` loader follows the same contract. The old
+`rfdetr_execution_plan` keyword emits `FutureWarning` and remains supported until
+October 24, 2026; supplying it alongside a non-`None` `execution_plan` raises
+`TypeError`.
+
 The default `auto` selection prefers `triton-universal-v1` on compatible CUDA
-devices, with `base` as the reference fallback. CPU and
+devices, then `pillow-simd-v1`, with `base` as the reference fallback. CPU and
 MPS do not construct the CUDA-only Triton preprocessor. Torch's `image_size`
-override falls back to reference preprocessing when Triton cannot preserve it.
+override falls back to compatible preprocessing when Triton cannot preserve it.
 
 `base` uses standard Pillow and performs BGR/RGB conversion after resizing, so
 large camera images do not require a full-resolution channel-copy operation.
-`pillow-simd-v1` is a separate, explicit opt-in for Linux x86-64 SSE4.1 hosts with
-an isolated Pillow-SIMD >=12.3.0.post0 installation. It is not selected by `auto`:
-bilinear downscales are not byte-identical to standard Pillow, and its metadata
+`pillow-simd-v1` is a separate implementation for Linux x86-64 SSE4.1 hosts with
+an isolated Pillow-SIMD >=12.3.0.post0 installation, selected explicitly or after
+Triton in `auto`. Bilinear downscales are not byte-identical to standard Pillow, and its metadata
 declares `changes_numerics=True`. Unsupported hosts (including Jetson ARM) or
 requests fall back observably to `base`, unless compatibility fallback is disabled.
 It accepts uint8 NumPy images; float/tensor requests retain reference behavior.
+
+To require reference preprocessing without fallback, pass
+`execution_plan=RFDetrExecutionPlan(preprocessor_id="base", postprocessor_id="base",
+allow_compatibility_fallback=False, allow_runtime_failure_fallback=False)`.
 
 Use `model.optimization_runtime_metadata` to inspect model selection, last-request
 effective IDs and fallback reasons. Torch and ONNX currently retain their existing

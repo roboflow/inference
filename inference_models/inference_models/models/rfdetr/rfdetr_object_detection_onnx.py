@@ -1,7 +1,7 @@
 """RF-DETR object detection with ONNX and selectable execution-plan stages."""
 
 import threading
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -42,6 +42,7 @@ from inference_models.models.rfdetr.optimization.backend_path import (
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
+    _normalize_execution_plan_argument,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -83,7 +84,7 @@ class RFDetrForObjectDetectionONNX(
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
-        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
         """Load an ONNX package and resolve its object-detection execution plan.
@@ -95,16 +96,25 @@ class RFDetrForObjectDetectionONNX(
             device (torch.device): Requested inference device.
             rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
             recommended_parameters (RecommendedParameters, optional): Model defaults.
-            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
-                fallback policies; None resolves environment/default choices.
+            execution_plan (RFDetrExecutionPlan | Mapping, optional): Stage choices
+                and fallback policies; None resolves environment/default choices.
             **kwargs: Extra loader options accepted for shared API compatibility.
+                The deprecated rfdetr_execution_plan alias emits FutureWarning
+                and is supported until October 24, 2026. Use execution_plan instead.
 
         Returns:
             RFDetrForObjectDetectionONNX: Initialized model with resolved stages.
 
         Raises:
             EnvironmentConfigurationError: If no ONNX execution provider is selected.
+            TypeError: If both a non-None execution_plan and its alias are supplied.
+            ValueError: If a serialized execution plan is invalid.
         """
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan, kwargs=kwargs
+        )
+        execution_plan = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
+
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -178,7 +188,7 @@ class RFDetrForObjectDetectionONNX(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
-            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_execution_plan=execution_plan,
         )
 
         return model

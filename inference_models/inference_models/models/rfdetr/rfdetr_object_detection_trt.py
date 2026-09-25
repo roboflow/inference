@@ -1,5 +1,4 @@
 import threading
-import warnings
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
@@ -74,6 +73,7 @@ from inference_models.models.rfdetr.optimization.contracts import (
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
+    _normalize_execution_plan_argument,
 )
 from inference_models.models.rfdetr.optimization.preprocessor_selection import (
     PreprocessorSelector,
@@ -144,16 +144,7 @@ class RFDetrForObjectDetectionTRT(
         execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]],
     ) -> RFDetrExecutionPlan:
         """Normalize loader input into a typed RF-DETR execution plan."""
-        if execution_plan is None:
-            resolved_plan = RFDetrExecutionPlan.resolve()
-
-            return resolved_plan
-
-        if isinstance(execution_plan, RFDetrExecutionPlan):
-            return execution_plan
-
-        parsed_plan = RFDetrExecutionPlan.from_dict(execution_plan)
-        resolved_plan = cast(RFDetrExecutionPlan, parsed_plan)
+        resolved_plan = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
 
         return resolved_plan
 
@@ -197,20 +188,9 @@ class RFDetrForObjectDetectionTRT(
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
-        if "rfdetr_execution_plan" in kwargs:
-            if execution_plan is not None:
-                raise TypeError(
-                    "Cannot pass both 'rfdetr_execution_plan' and 'execution_plan'; "
-                    "use 'execution_plan' only."
-                )
-
-            warnings.warn(
-                "'rfdetr_execution_plan' is deprecated and will be removed on "
-                "October 24, 2026. Use 'execution_plan' instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            execution_plan = kwargs.pop("rfdetr_execution_plan")
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan, kwargs=kwargs
+        )
 
         if device.type != "cuda":
             raise ModelRuntimeError(

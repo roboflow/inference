@@ -3,7 +3,7 @@
 import os.path
 from copy import deepcopy
 from threading import RLock
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -47,6 +47,7 @@ from inference_models.models.rfdetr.optimization.backend_path import (
 )
 from inference_models.models.rfdetr.optimization.execution_plan import (
     RFDetrExecutionPlan,
+    _normalize_execution_plan_argument,
 )
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
@@ -99,7 +100,7 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
-        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
         """Load a model package or checkpoint and resolve its execution plan.
@@ -112,9 +113,11 @@ class RFDetrForObjectDetectionTorch(
             resolution (int, optional): Override checkpoint network input resolution.
             rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
             recommended_parameters (RecommendedParameters, optional): Package defaults.
-            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
-                fallback policies; None resolves environment/default choices.
+            execution_plan (RFDetrExecutionPlan | Mapping, optional): Stage choices
+                and fallback policies; None resolves environment/default choices.
             **kwargs: Extra loader options accepted for shared API compatibility.
+                The deprecated rfdetr_execution_plan alias emits FutureWarning
+                and is supported until October 24, 2026. Use execution_plan instead.
 
         Returns:
             RFDetrForObjectDetectionTorch: Initialized model with resolved stages.
@@ -122,7 +125,14 @@ class RFDetrForObjectDetectionTorch(
         Raises:
             CorruptedModelPackageError: If the package specifies an unknown variant.
             MissingModelInitParameterError: If checkpoint metadata is insufficient.
+            TypeError: If both a non-None execution_plan and its alias are supplied.
+            ValueError: If a serialized execution plan is invalid.
         """
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan, kwargs=kwargs
+        )
+        execution_plan = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
+
         if os.path.isfile(model_name_or_path):
             loaded_model = cls.from_checkpoint_file(
                 checkpoint_path=model_name_or_path,
@@ -131,7 +141,7 @@ class RFDetrForObjectDetectionTorch(
                 resolution=resolution,
                 rf_detr_max_input_resolution=rf_detr_max_input_resolution,
                 device=device,
-                rfdetr_execution_plan=rfdetr_execution_plan,
+                execution_plan=execution_plan,
             )
 
             return loaded_model
@@ -209,7 +219,7 @@ class RFDetrForObjectDetectionTorch(
             post_processor=post_processor,
             resolution=model_config.resolution,
             recommended_parameters=recommended_parameters,
-            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_execution_plan=execution_plan,
         )
 
         return loaded_model
@@ -223,7 +233,8 @@ class RFDetrForObjectDetectionTorch(
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        rfdetr_execution_plan: Optional[RFDetrExecutionPlan] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
+        **kwargs,
     ):
         """Load a standalone checkpoint with explicit architecture metadata.
 
@@ -234,15 +245,24 @@ class RFDetrForObjectDetectionTorch(
             resolution (int, optional): Network input resolution override.
             device (torch.device): Device for model execution.
             rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
-            rfdetr_execution_plan (RFDetrExecutionPlan, optional): Stage choices and
-                fallback policies.
+            execution_plan (RFDetrExecutionPlan | Mapping, optional): Stage choices
+                and fallback policies; None resolves environment/default choices.
+            **kwargs: The deprecated rfdetr_execution_plan alias emits FutureWarning
+                and is supported until October 24, 2026. Use execution_plan instead.
 
         Returns:
             RFDetrForObjectDetectionTorch: Initialized checkpoint model.
 
         Raises:
             MissingModelInitParameterError: If required architecture metadata is absent.
+            TypeError: If both a non-None execution_plan and its alias are supplied.
+            ValueError: If a serialized execution plan is invalid.
         """
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan, kwargs=kwargs
+        )
+        execution_plan = RFDetrExecutionPlan.resolve(execution_plan=execution_plan)
+
         if model_type is None:
             raise MissingModelInitParameterError(
                 message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
@@ -337,7 +357,7 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
-            rfdetr_execution_plan=rfdetr_execution_plan,
+            rfdetr_execution_plan=execution_plan,
         )
 
         return loaded_model

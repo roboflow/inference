@@ -8,6 +8,12 @@ Torch/ONNX use the same selection and readiness contracts through `backend_path.
 and `backend_stages.py`, preserving their own forward and postprocessing callbacks.
 Instance segmentation is not migrated yet.
 
+All three backend loaders accept the canonical `execution_plan` argument as a
+typed `RFDetrExecutionPlan` or its serialized mapping. Torch checkpoint loading
+uses the same contract. The deprecated `rfdetr_execution_plan` alias warns and
+cannot accompany a non-`None` canonical argument; explicit plans override the
+environment and retain their fallback policies.
+
 All backends share preprocessing choices. `auto` prefers `triton-universal-v1`,
 then `pillow-simd-v1`, then `base`; explicit choices remain supported. The same
 order forms Triton's declared fallback chain. Every candidate reached is checked
