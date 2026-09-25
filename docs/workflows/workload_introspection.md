@@ -573,7 +573,7 @@ The complete response below shows the result with `USE_INFERENCE_MODELS=False` o
 ```json
 {
   "type": "workflow_introspection_v1",
-  "execution_engine_version": "1.15.2",
+  "execution_engine_version": "1.16.0",
   "nodes": [
     {"type": "graph_node_v1", "id": "$inputs.image", "kind": "input"},
     {"type": "graph_node_v1", "id": "$steps.detection", "kind": "step"},

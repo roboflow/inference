@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.3`
+
+Bundled execution engine: `1.16.0`.
+
 ### Fixed
 
 - Blur Visualization: instance segmentation predictions are now blurred in the shape of each mask, as the block's description always said, instead of as a rectangle covering the bounding box. The blur also covers mask pixels that reach past the box. Predictions without masks (object detection, keypoints) are blurred exactly as before. Masks can leave thin edges such as hair or fingers uncovered where the box used to hide them; set the new `padding` to widen the blur.
@@ -46,7 +50,7 @@ for contributor and maintainer responsibilities.
 
 - Widened `zxing-cpp` from `~=2.2.0` to `>=2.2.0,<=2.3.0` so installs can pick 2.3.0: 2.2.0 ships no Python 3.13 wheels, so installs on 3.13 compiled it from source.
 
-### Execution Engine Change
+### Execution engine
 
 - Add compile-time workload introspection with graph structure, dimensionality, model usage, resources and conditional restrictions. Each entity `type` carries its contract version (e.g. `workflow_introspection_v1`); there is no separate `schema_version`.
 - Report unresolved resource identities explicitly and include streaming-video models without changing how they load.
