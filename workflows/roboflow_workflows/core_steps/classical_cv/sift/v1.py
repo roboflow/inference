@@ -14,8 +14,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     NUMPY_ARRAY_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -120,6 +126,19 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
                 kind=[NUMPY_ARRAY_KIND],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ANALYSIS]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class SIFTBlockV1(WorkflowBlock):

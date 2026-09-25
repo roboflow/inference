@@ -2,18 +2,27 @@ import os
 from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.workload_presets import (
+    ENVIRONMENT_VARIABLE_ACCESS_DISABLED_RESTRICTION,
+)
 from roboflow_workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
 )
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import SECRET_KIND
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -94,10 +103,17 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restrictions = []
         if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES:
             restrictions.append(
                 RuntimeRestriction(
+                    code="environment_variable_access_disabled",
                     severity=Severity.HARD,
                     note=(
                         "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
@@ -112,6 +128,21 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.ENVIRONMENT_READ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[ENVIRONMENT_VARIABLE_ACCESS_DISABLED_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class EnvironmentSecretsStoreBlockV1(WorkflowBlock):

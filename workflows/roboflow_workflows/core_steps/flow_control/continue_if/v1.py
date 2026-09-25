@@ -8,17 +8,32 @@ from roboflow_workflows.core_steps.common.query_language.entities.operations imp
 from roboflow_workflows.core_steps.common.query_language.evaluation_engine.core import (
     build_eval_function,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     Selector,
     StepSelector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    unresolved_selector_problem,
+)
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
 from roboflow_workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
+    RESTRICTIONS_DECLARATION,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
+    is_workflow_selector,
 )
 
 LONG_DESCRIPTION = """
@@ -131,6 +146,70 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        This classmethod cannot see ``stop_delay``, so it declares the
+        grace-period timer caveat conservatively, for every instance.
+
+        Returns:
+            Restrictions for the workflow editor.
+        """
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.FLOW_CONTROL, WorkOperation.EXPRESSION_EVALUATION]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the grace-period timer caveat when ``stop_delay`` enables it.
+
+        A positive ``stop_delay`` keeps the time of the last successful
+        condition in the block instance, so the grace period only works when
+        the target preserves this step's state across calls. The default zero
+        keeps no state and declares nothing. A selector-fed ``stop_delay`` is
+        only known at run time: the caveat is declared conservatively and the
+        discovery is incomplete.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions.
+        """
+        node_id = f"$steps.{getattr(self, 'name', '')}"
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]] = []
+        if is_workflow_selector(self.stop_delay):
+            declared = incomplete_discovery(
+                items=[COOLDOWN_ACTUAL_RESTRICTION],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=node_id,
+                        declaration=RESTRICTIONS_DECLARATION,
+                        field="stop_delay",
+                        selector=self.stop_delay,
+                    )
+                ],
+            )
+        elif self.stop_delay > 0:
+            declared = [COOLDOWN_ACTUAL_RESTRICTION]
+
+        actual_restrictions = actual_restrictions_of(
+            declared=declared,
+            node_id=node_id,
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+        return actual_restrictions
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class ContinueIfBlockV1(WorkflowBlock):

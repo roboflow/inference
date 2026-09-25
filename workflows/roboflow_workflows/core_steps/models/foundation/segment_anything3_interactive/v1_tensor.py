@@ -53,6 +53,10 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything_common.vis
     SYNTHETIC_POINT_PROMPT_CLASS_NAME,
     normalise_labeled_points,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
@@ -88,15 +92,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
@@ -255,8 +264,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
@@ -266,6 +281,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not CORE_MODEL_SAM3_ENABLED:
             restrictions.append(
                 RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
                     severity=Severity.HARD,
                     note=(
                         "CORE_MODEL_SAM3_ENABLED=False on Roboflow Hosted "
@@ -289,6 +305,21 @@ class BlockManifest(WorkflowBlockManifest):
             # declare.
             return []
         return [roboflow_platform_model(model_id=SAM3_INTERACTIVE_MODEL_ID)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM3_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegmentAnything3InteractiveBlockV1(WorkflowBlock):

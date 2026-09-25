@@ -5,6 +5,9 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -16,15 +19,21 @@ from roboflow_workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
 
@@ -163,7 +172,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restriction = RuntimeRestriction(
+            code="stateful_video_state_resets_on_stateless_http",
             severity=Severity.SOFT,
             note=(
                 "Frame stack is stored in process memory per video_identifier. "
@@ -181,6 +197,21 @@ class BlockManifest(WorkflowBlockManifest):
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ENCODING, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _compress_frame(

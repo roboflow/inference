@@ -5,6 +5,11 @@ from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -29,6 +34,7 @@ from inference.core.workflows.prototypes.background_tasks import BackgroundTaskS
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -186,6 +192,21 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Attaches metadata to inference ids inside the api key's own workspace -
+        # no Roboflow model, no Roboflow project, no third-party model.
+        return []
 
 
 class RoboflowCustomMetadataBlockV1(WorkflowBlock):

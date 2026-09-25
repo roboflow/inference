@@ -11,8 +11,17 @@ import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
+)
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 from roboflow_workflows.errors import WorkflowEnvironmentConfigurationError
 from roboflow_workflows.execution_engine.entities.base import (
@@ -33,15 +42,22 @@ from roboflow_workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
-from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-    BlockResult,
-    Runtime,
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
     RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    ModelExecutionLocation,
+    ModelRequiredAction,
+    Runtime,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
+    roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.utils.action_recognition import merge_window_segments
@@ -201,15 +217,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         return [
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; action recognition needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+            REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
         ]
 
     @classmethod
@@ -217,6 +240,61 @@ class BlockManifest(WorkflowBlockManifest):
         # Fine-tuned packages carry their own base weights, so the block
         # depends on no separately cached foundation model.
         return None
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        """Declare the action recognition model of the block's local run path.
+
+        The block supports LOCAL step execution only (its run path rejects any
+        other mode) and owns its model loading: it asks the model provider for
+        the model through `load_action_recognition_model()`, not through the
+        generic `add_model()` registration. The declared dependency describes
+        that supported execution path, so it is LOCAL and kept away from the
+        generic preloader. The configured id is returned verbatim, selector
+        included. The tensor sibling re-exports this manifest.
+
+        Returns:
+            The configured action recognition model.
+        """
+        return [
+            roboflow_platform_model(
+                self.model_id,
+                required_action=ModelRequiredAction.EXECUTION,
+                execution_location=ModelExecutionLocation.LOCAL,
+                preloadable=False,
+            )
+        ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[
+                STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class ActionRecognitionModelBlockV1(WorkflowBlock):

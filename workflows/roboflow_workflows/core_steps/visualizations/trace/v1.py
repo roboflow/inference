@@ -3,6 +3,9 @@ from typing import Any, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.visualizations.common.base import OUTPUT_IMAGE_KEY
 from roboflow_workflows.core_steps.visualizations.common.base_colorable import (
     ColorableVisualizationBlock,
@@ -14,14 +17,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from supervision.annotators.base import BaseAnnotator
 
@@ -135,7 +144,14 @@ class TraceManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restriction = RuntimeRestriction(
+            code="stateful_video_state_resets_on_stateless_http",
             severity=Severity.SOFT,
             note=(
                 "Trajectory history is stored inside a cached TraceAnnotator "
@@ -153,6 +169,21 @@ class TraceManifest(ColorableVisualizationManifest):
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class TraceVisualizationBlockV1(ColorableVisualizationBlock):

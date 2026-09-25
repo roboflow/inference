@@ -47,14 +47,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Annotated
 
@@ -163,6 +169,47 @@ connection is opened once and reused for every frame.
 This block is not available on the Roboflow hosted platform. Self-hosted servers enable
 enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
+
+
+# The two restrictions this block declares through
+# `get_actual_restrictions()`.
+#
+# `run()` short-circuits on the Roboflow hosted platform, so the condition names
+# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+KAFKA_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
+    code="unavailable_on_hosted_platform",
+    severity=Severity.HARD,
+    note=(
+        "On the Roboflow hosted platform every run returns "
+        "`error_status=true` with no record, and no Kafka connection is "
+        "opened from the hosted platform."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+)
+
+
+# The consumer, its position and the last returned record live in the block
+# instance. Over the HTTP API every request builds a fresh instance, so each
+# request pays its own broker connection and any record it returns is new to
+# that instance (a run that reads nothing, or fails, still reports
+# `is_new=False`).
+KAFKA_CONSUMER_PER_REQUEST_RESTRICTION = RuntimeRestriction(
+    code="connection_and_state_rebuilt_per_request",
+    severity=Severity.SOFT,
+    note=(
+        "The consumer and the last-returned record live in this block "
+        "instance. Over HTTP every request builds a fresh instance, so each "
+        "request pays a broker connection and `is_new` is always True. "
+        "Results are still correct; a long-lived InferencePipeline avoids "
+        "the per-request connection."
+    ),
+    applies_to_runtimes=[
+        Runtime.SELF_HOSTED_CPU,
+        Runtime.SELF_HOSTED_GPU,
+        Runtime.DEDICATED_DEPLOYMENT,
+    ],
+    applies_to_input_modes=[RuntimeInputMode.IMAGE],
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -343,8 +390,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         return [
             RuntimeRestriction(
+                code="unavailable_on_hosted_platform",
                 severity=Severity.HARD,
                 note=(
                     "On the Roboflow hosted platform every run returns "
@@ -354,6 +408,7 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
             RuntimeRestriction(
+                code="connection_and_state_rebuilt_per_request",
                 severity=Severity.SOFT,
                 note=(
                     "The consumer and the last-returned record live in this block "
@@ -370,6 +425,29 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_input_modes=[RuntimeInputMode.IMAGE],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # Broker I/O (metadata, watermarks, polling) plus the cross-run state
+        # this block keeps in process memory: the consumer position and the
+        # last returned record survive between runs and are returned again
+        # (with `is_new=False`) when nothing new arrived.
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        # Both apply unconditionally: no manifest field switches either on.
+        return actual_restrictions_of(
+            declared=[
+                KAFKA_HOSTED_PLATFORM_RESTRICTION,
+                KAFKA_CONSUMER_PER_REQUEST_RESTRICTION,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class _Record(NamedTuple):

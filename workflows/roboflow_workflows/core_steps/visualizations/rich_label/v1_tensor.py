@@ -31,7 +31,16 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from roboflow_workflows.execution_engine.entities.types import Selector
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+)
 
 
 class RichLabelManifest(_NumpyRichLabelManifest):
@@ -51,6 +60,19 @@ class RichLabelManifest(_NumpyRichLabelManifest):
         description="Model predictions to visualize.",
         examples=["$steps.object_detection_model.predictions"],
     )
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.VISUALIZATION]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class RichLabelVisualizationBlockV1(_NumpyRichLabelVisualizationBlockV1):

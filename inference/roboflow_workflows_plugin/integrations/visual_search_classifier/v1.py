@@ -5,6 +5,11 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 from pydantic import ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from typing_extensions import Annotated
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
@@ -192,6 +197,16 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [roboflow_platform_project(project_url=self.target_project)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):

@@ -17,6 +17,9 @@ except ImportError:
     psycopg = None
     sql = None
 
+from roboflow_workflows.core_steps.common.workload_presets import (
+    FIRE_AND_FORGET_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.environment import (
     ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
@@ -35,13 +38,22 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    unresolved_selector_problem,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
+    is_workflow_selector,
 )
 
 logger = get_logger(__name__)
@@ -149,6 +161,23 @@ Column order within a dictionary does not matter. Values retain their native dri
 representation; `None` becomes SQL NULL. Nested objects are not automatically
 converted to JSON.
 """
+
+
+# The unconditional hard restriction this block declares through
+# `get_actual_restrictions()`.
+#
+# `run()` short-circuits on the Roboflow hosted platform, so the condition names
+# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+POSTGRESQL_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
+    code="unavailable_on_hosted_platform",
+    severity=Severity.HARD,
+    note=(
+        "On the Roboflow hosted platform the sink writes nothing and opens no "
+        "PostgreSQL connection; an enabled sink returns `error_status=true` on "
+        "every run."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+)
 
 
 # Local copy of the SSRF address primitives from
@@ -335,13 +364,82 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         return [
+            POSTGRESQL_HOSTED_PLATFORM_RESTRICTION,
             RuntimeRestriction(
+                code="fire_and_forget_hides_persistence_failures",
                 severity=Severity.SOFT,
                 note="Use fire_and_forget=false to observe persistence failures and avoid accumulating background writes when the database is slower than the stream.",
                 applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the restrictions of this step on a target deployment.
+
+        The hosted-platform restriction applies to every ``fire_and_forget``
+        value; its condition is the ``hosted_serverless`` runtime axis, never
+        this host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags. The fire-and-forget
+        caveat applies only when the run does not wait for the commit.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            A complete discovery for a literal ``fire_and_forget``: the
+            hosted-platform restriction, plus the fire-and-forget caveat when
+            the value is True. For a selector, an incomplete discovery that
+            lists the hosted-platform restriction and gives an
+            unresolved-selector reason for ``fire_and_forget``.
+        """
+        # The hosted-platform restriction is unconditional; the persistence
+        # caveat exists only when the run does not wait for the commit.
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
+        if is_workflow_selector(self.fire_and_forget):
+            # A runtime value decides whether writes are awaited, so the caveat
+            # MAY apply. Claiming it applies would be as wrong as claiming it
+            # does not: keep the restriction that IS known and declare nothing
+            # complete.
+            declared = incomplete_discovery(
+                items=[POSTGRESQL_HOSTED_PLATFORM_RESTRICTION],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
+            )
+        elif self.fire_and_forget:
+            declared = [
+                POSTGRESQL_HOSTED_PLATFORM_RESTRICTION,
+                FIRE_AND_FORGET_RESTRICTION,
+            ]
+        else:
+            declared = [POSTGRESQL_HOSTED_PLATFORM_RESTRICTION]
+        return actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class PostgreSQLSinkBlockV1(WorkflowBlock):

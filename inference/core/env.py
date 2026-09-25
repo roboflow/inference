@@ -1007,6 +1007,11 @@ HOSTED_CORE_MODEL_URL = os.getenv(
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
+# Removes only the experimental `describe_workload` routes; every other Workflow
+# route stays. `DISABLE_WORKFLOW_ENDPOINTS=True` still removes all of them.
+DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = str2bool(
+    os.getenv("DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", False)
+)
 WORKFLOWS_STEP_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_STEP_EXECUTION_MODE", "local"
 ).lower()

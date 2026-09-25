@@ -62,6 +62,10 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything3.v2_tensor
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.prompts import (
     Sam3Prompt,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
@@ -93,15 +97,23 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    invalid_resource_identifier_problem,
+)
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
+    DependentResourceType,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
@@ -262,8 +274,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
@@ -273,6 +291,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not CORE_MODEL_SAM3_ENABLED:
             restrictions.append(
                 RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
                     severity=Severity.HARD,
                     note=(
                         "CORE_MODEL_SAM3_ENABLED=False on Roboflow Hosted "
@@ -289,14 +308,48 @@ class BlockManifest(WorkflowBlockManifest):
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return ["sam3/sam3_final"]
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+    def discover_dependent_resources(
+        self,
+    ) -> Optional[Union[List[DependentResource], Discovery[DependentResource]]]:
+        """Declare the SAM3 model this step uses.
+
+        Returns:
+            ``[]`` under proxy execution (``SAM3_EXEC_MODE == "remote"``): the
+            proxy runs its own fixed SAM3 server-side. Otherwise the platform
+            model named by ``model_id`` (a selector is returned verbatim). A
+            missing ``model_id`` (``None``) gives an incomplete discovery with
+            an ``invalid_resource_identifier`` problem.
+        """
         if SAM3_EXEC_MODE == "remote":
             # Proxy execution ignores the configured model id — the proxy runs
             # its own fixed SAM3 server-side; nothing to declare.
             return []
         if self.model_id is None:
-            return []
+            # LOCAL and SDK REMOTE execution both pass `model_id` on, and None
+            # names no model: the resource is unknown, not a known absence.
+            missing_model_id = invalid_resource_identifier_problem(
+                node_id=f"$steps.{self.name}",
+                declaration="resources",
+                field="model_id",
+                resource_type=DependentResourceType.ROBOFLOW_PLATFORM_MODEL.value,
+            )
+            return incomplete_discovery([], [missing_model_id])
         return [roboflow_platform_model(model_id=self.model_id)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("CORE_MODEL_SAM3_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegmentAnything3BlockV3(WorkflowBlock):

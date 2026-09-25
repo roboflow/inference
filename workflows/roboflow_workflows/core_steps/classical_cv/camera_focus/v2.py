@@ -31,8 +31,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -218,6 +224,38 @@ class CameraFocusManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare the work this step performs.
+
+        Returns:
+            Image analysis, plus visualization when any overlay option is
+            enabled or ``grid_overlay`` draws a grid. With every overlay off,
+            image analysis only.
+        """
+        # Same overlay switch as the numpy and device run paths: with every
+        # overlay off the input image is returned unchanged, nothing is drawn.
+        draws_overlay = (
+            self.show_zebra_warnings
+            or self.show_hud
+            or self.show_focus_peaking
+            or self.show_center_marker
+            or GRID_DIVISIONS.get(self.grid_overlay, 0) > 0
+        )
+        if draws_overlay:
+            return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
+
+        return [WorkOperation.IMAGE_ANALYSIS]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class CameraFocusBlockV2(WorkflowBlock):

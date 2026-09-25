@@ -45,9 +45,12 @@ nested deeper than list/tuple containers (e.g. inside dicts) are likewise
 buffered as-is.
 """
 
-from typing import Any, Optional, Type, Union
+from typing import Any, List, Optional, Type, Union
 
 from pydantic import ConfigDict
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
     LONG_DESCRIPTION as NUMPY_LONG_DESCRIPTION,
 )
@@ -58,7 +61,17 @@ from roboflow_workflows.core_steps.fusion.frame_delay.v1 import (
     FrameDelayBlockV1 as NumpyFrameDelayBlockV1,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
-from roboflow_workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    WorkflowBlockManifest,
+    actual_restrictions_of,
+)
 
 TENSOR_MODE_ADDENDUM = """
 ## Tensor Data Representation Behavior
@@ -87,6 +100,21 @@ class BlockManifest(NumpyBlockManifest):
             "long_description": LONG_DESCRIPTION,
         }
     )
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _spill_images_to_host(data: Any) -> Any:

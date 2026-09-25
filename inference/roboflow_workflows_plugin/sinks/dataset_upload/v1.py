@@ -27,6 +27,11 @@ from uuid import uuid4
 
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 
 from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
@@ -275,6 +280,16 @@ class BlockManifest(WorkflowBlockManifest):
             # project is ever accessed.
             return []
         return [roboflow_platform_project(project_url=self.target_project)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class RoboflowDatasetUploadBlockV1(WorkflowBlock):

@@ -196,19 +196,23 @@ def _resolve_execution_observer(
     return observer
 
 
-def _is_locally_executed_platform_model(
+def _is_eligible_for_generic_preloading(
     dependency: DependentResource,
     step_execution_mode: StepExecutionMode,
 ) -> bool:
-    """True for declarations that will pull model weights into this process.
+    """True for declarations the generic model-manager preloader may register.
 
-    Excludes non-model resources, ACCESS-only usage, remote-only execution,
-    and `ENVIRONMENT_DEFINED` execution when the effective step execution
-    mode is not LOCAL.
+    Excludes non-model resources, declarations marked `preloadable=False`
+    (blocks that load and own their model in-process), ACCESS-only usage,
+    remote-only execution, and `ENVIRONMENT_DEFINED` execution when the
+    effective step execution mode is not LOCAL. Checked before any input is
+    resolved, so an ineligible declaration never reaches the model manager.
     """
     if dependency.resource_type is not DependentResourceType.ROBOFLOW_PLATFORM_MODEL:
         return False
     metadata = dependency.metadata
+    if not metadata.preloadable:
+        return False
     if metadata.required_action is not ModelRequiredAction.EXECUTION:
         return False
     if metadata.execution_location is ModelExecutionLocation.REMOTE:
@@ -255,12 +259,12 @@ def _pre_load_roboflow_platform_models(
     Returns dependencies whose model id is an `$inputs.<name>` selector — they
     can only be resolved on the first run, once runtime parameters are known.
     `$steps.<name>.<property>` references are dropped (never statically
-    resolvable) and so are declarations that will not pull weights locally
-    (see `_is_locally_executed_platform_model`).
+    resolvable) and so are declarations the generic preloader must not
+    register (see `_is_eligible_for_generic_preloading`).
     """
     pending, loaded_model_ids = [], set()
     for dependency in dependencies:
-        if not _is_locally_executed_platform_model(
+        if not _is_eligible_for_generic_preloading(
             dependency=dependency, step_execution_mode=step_execution_mode
         ):
             continue
@@ -293,7 +297,7 @@ def _resolve_and_pre_load_runtime_dependencies(
 ) -> None:
     loaded_model_ids = set()
     for dependency in pending_dependencies:
-        if not _is_locally_executed_platform_model(
+        if not _is_eligible_for_generic_preloading(
             dependency=dependency, step_execution_mode=step_execution_mode
         ):
             continue

@@ -22,6 +22,7 @@ import pytest
 import roboflow_workflows.environment as workflows_environment
 from roboflow_workflows import configuration as configuration_module
 from roboflow_workflows.configuration import (
+    EngineConfiguration,
     WorkflowsConfiguration,
     configure_process,
     default_configuration,
@@ -166,6 +167,51 @@ def test_secrets_are_kept_out_of_the_repr() -> None:
     assert "SECRET-API-KEY" not in rendered
     assert "SECRET-SERVICE-SECRET" not in rendered
     assert "SECRET-MODAL-TOKEN" not in rendered
+
+
+# --------------------------------------------------------------------------
+# Custom Python execution mode - validated, never normalised
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mode", ["", "remote", "moda", "Modal", "LOCAL", " local", "modal\n", None]
+)
+def test_engine_configuration_rejects_an_unknown_custom_python_mode(mode) -> None:
+    with pytest.raises(WorkflowEnvironmentConfigurationError) as raised:
+        EngineConfiguration(custom_python_execution_mode=mode)
+    assert "engine.custom_python_execution_mode" in raised.value.public_message
+    assert repr(mode) in raised.value.public_message
+
+
+def test_replacing_the_custom_python_mode_is_validated_too() -> None:
+    base = default_configuration()
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        dataclasses.replace(base.engine, custom_python_execution_mode="Modal")
+
+
+@pytest.mark.parametrize("mode", ["local", "modal"])
+@pytest.mark.parametrize("allow_custom_python_execution", [True, False])
+def test_engine_configuration_accepts_every_custom_python_mode(
+    mode: str, allow_custom_python_execution: bool
+) -> None:
+    # `allow_custom_python_execution=False` with Modal is a valid deployment:
+    # Modal mode is exempt from the local-execution switch
+    engine = EngineConfiguration(
+        allow_custom_python_execution=allow_custom_python_execution,
+        custom_python_execution_mode=mode,
+    )
+    configuration = WorkflowsConfiguration(engine=engine)
+
+    configure_process(configuration)
+
+    assert get_configuration().engine.custom_python_execution_mode == mode
+    assert (
+        get_configuration().engine.allow_custom_python_execution
+        is allow_custom_python_execution
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        engine.custom_python_execution_mode = "local"
 
 
 # --------------------------------------------------------------------------
