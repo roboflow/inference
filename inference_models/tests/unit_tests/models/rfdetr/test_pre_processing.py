@@ -187,7 +187,7 @@ def test_one_step_stretch_with_bgr_input_matches_rgb_reference() -> None:
         dataset_version_dims=None,
     )
     rng = np.random.default_rng(seed=7)
-    rgb_image = rng.integers(0, 256, size=(64, 64, 3), dtype=np.uint8)
+    rgb_image = rng.integers(0, 256, size=(160, 200, 3), dtype=np.uint8)
     bgr_image = rgb_image[:, :, ::-1].copy()
 
     actual_tensor, _ = pre_process_network_input(
