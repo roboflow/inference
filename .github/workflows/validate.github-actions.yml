@@ -6,6 +6,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   push:
     branches:
       - main
@@ -13,10 +14,19 @@ on:
       - ".github/workflows/**"
       - ".github/actions/**"
       - ".github/actionlint.y*"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   actionlint:
@@ -33,3 +43,24 @@ jobs:
           # Shell/Python static analysis belongs to their dedicated checks;
           # this gate is strictly for Actions YAML, expressions, and actions.
           args: -no-color -shellcheck= -pyflakes=
+
+      # Every pull_request/push-triggered workflow must carry the shared
+      # concurrency block (see the `concurrency:` comment in any workflow), and
+      # workflow names must be unique because github.workflow is the group key.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Check concurrency blocks and unique workflow names
+        run: |
+          uv pip install --system pyyaml
+          python .github/scripts/check_workflow_concurrency.py
+      - name: Install locked handoff test dependency
+        run: |
+          uv export --locked --script .github/scripts/maintainer_review.py --format requirements-txt --output-file "$RUNNER_TEMP/handoff-requirements.txt"
+          uv pip install --system --require-hashes --requirements "$RUNNER_TEMP/handoff-requirements.txt"
+      - name: Test maintainer review handoff
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py'

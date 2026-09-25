@@ -4,9 +4,13 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 from inference.core.env import (
+    ALLOW_UNSAFE_GSTREAMER_PIPELINES,
     DEFAULT_BUFFER_SIZE,
     PREDICTIONS_QUEUE_SIZE,
     WEBRTC_REALTIME_PROCESSING,
+)
+from inference.core.interfaces.camera.source_reference_validation import (
+    validate_video_references,
 )
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -54,6 +58,14 @@ class CommandType(str, Enum):
 class VideoConfiguration(BaseModel):
     type: Literal["VideoConfiguration"]
     video_reference: Union[str, int, List[Union[str, int]]]
+
+    @field_validator("video_reference")
+    @classmethod
+    def validate_video_reference(cls, value):
+        return validate_video_references(
+            value, allow_unsafe=ALLOW_UNSAFE_GSTREAMER_PIPELINES
+        )
+
     max_fps: Optional[Union[float, int]] = None
     source_buffer_filling_strategy: Optional[BufferFillingStrategy] = (
         BufferFillingStrategy.DROP_OLDEST

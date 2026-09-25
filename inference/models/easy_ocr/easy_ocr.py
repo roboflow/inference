@@ -127,8 +127,11 @@ class EasyOCR(RoboflowCoreModel):
             for image in request.image:
                 request_copy.image = image
                 response.append(self.single_request(request=request_copy))
+            self._attach_resolved_model_metadata(response)
             return response
-        return self.single_request(request)
+        response = self.single_request(request)
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def single_request(self, request: EasyOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()

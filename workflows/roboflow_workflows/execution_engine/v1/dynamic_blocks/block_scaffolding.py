@@ -1,0 +1,601 @@
+import hashlib
+import json
+import logging
+import sys
+import threading
+import time
+import types
+from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, Dict, List, Optional, Type
+
+from roboflow_workflows._compat_names import get_logger
+from roboflow_workflows.environment import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    MODAL_ANONYMOUS_WORKSPACE_NAME,
+    WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+)
+from roboflow_workflows.errors import (
+    DynamicBlockCodeError,
+    DynamicBlockError,
+    WorkflowEnvironmentConfigurationError,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
+    BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+    BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+    BLOCK_DURATION_SOURCE_UNAVAILABLE,
+    clear_block_duration,
+    peek_block_duration,
+    record_block_duration,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    get_active_collector,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
+    ManifestDescription,
+    PythonCode,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+    create_dynamic_block_code_error,
+    extract_code_snippet,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+    collect_declared_input_kind_names,
+    collect_declared_output_kind_names,
+    convert_block_result_to_native,
+    convert_kwargs_to_legacy,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+from roboflow_workflows.prototypes.observer import (
+    NULL_EXECUTION_OBSERVER,
+    ExecutionObserver,
+)
+from roboflow_workflows.prototypes.workspace_resolver import (
+    NULL_WORKSPACE_RESOLVER,
+    WorkspaceResolver,
+)
+
+logger = get_logger(__name__)
+
+try:
+    from inference_sdk.config import execution_id as _execution_id_ctxvar
+except ImportError:
+    _execution_id_ctxvar = None
+
+IMPORTS_LINES = [
+    "from typing import Any, List, Dict, Set, Optional",
+    "import supervision as sv",
+    "import numpy as np",
+    "import math",
+    "import time",
+    "import json",
+    "import os",
+    "import requests",
+    "import cv2",
+    "import shapely",
+    "from roboflow_workflows.execution_engine.entities.base import Batch, WorkflowImageData",
+    "from roboflow_workflows.prototypes.block import BlockResult",
+    "from roboflow_workflows.execution_engine.v1.dynamic_blocks.workflow_debug import debug_traces",
+]
+
+# Authoring surface for `tensor_compatibility=tensor_native` dynamic blocks: the
+# native prediction types plus the metadata helpers that mint serializer-compliant
+# outputs (`image_metadata['class_names']` + per-box `detection_id`), and the
+# device native tensors pin to. Appended to IMPORTS_LINES ONLY under the flag
+# (load-time, mirroring the pivot's swap philosophy) so the flag-off generated
+# module source — including error-line offsets derived from it — stays
+# byte-identical to the legacy list above. The numpy imports stay available in
+# tensor mode too (user code may mix representations for its own math).
+# NOTE: `modal/modal_app.py` mirrors this list into the remote sandbox namespace
+# via a guarded import of this constant — keep it importable and self-contained.
+# The device is read from the Workflows configuration facade, not from the
+# server's env module: the generated code must be importable wherever the
+# workflows package is, including the Modal sandbox, where the sandbox's own
+# `inference/core/__init__.py` installs its configuration.
+TENSOR_NATIVE_IMPORTS_LINES = [
+    "import torch",
+    "from roboflow_workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE",
+    "from inference_models.models.base.object_detection import Detections",
+    "from inference_models.models.base.instance_segmentation import InstanceDetections",
+    "from inference_models.models.base.keypoints_detection import KeyPoints",
+    "from inference_models.models.base.classification import ClassificationPrediction, MultiLabelClassificationPrediction",
+    "from roboflow_workflows.core_steps.common.tensor_native import build_native_image_metadata, attach_native_detection_metadata",
+]
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    IMPORTS_LINES = IMPORTS_LINES + TENSOR_NATIVE_IMPORTS_LINES
+
+# Shared globals dict for all custom python blocks in local mode
+_LOCAL_SHARED_GLOBALS = {}
+
+
+@dataclass
+class _ModalExecutorCacheEntry:
+    executor: Any
+    active_count: int
+    last_used_at: float
+
+
+_MODAL_EXECUTOR_CACHE: Dict[str, _ModalExecutorCacheEntry] = {}
+_MODAL_EXECUTOR_CACHE_LOCK = threading.RLock()
+
+
+def _close_modal_executor(executor: Any) -> None:
+    close = getattr(executor, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:
+        logger.debug("Failed to close cached Modal executor", exc_info=True)
+
+
+def _pop_idle_modal_executors(now: float) -> List[Any]:
+    if WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS <= 0:
+        return []
+    evicted_executors = []
+    for workspace_id, entry in list(_MODAL_EXECUTOR_CACHE.items()):
+        if entry.active_count > 0:
+            continue
+        if now - entry.last_used_at <= WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS:
+            continue
+        evicted_executors.append(entry.executor)
+        del _MODAL_EXECUTOR_CACHE[workspace_id]
+    return evicted_executors
+
+
+def _close_modal_executors(executors: List[Any]) -> None:
+    for executor in executors:
+        _close_modal_executor(executor)
+
+
+@contextmanager
+def _acquire_modal_executor(workspace_id: str):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+        get_modal_executor,
+    )
+
+    evicted_executors = []
+    with _MODAL_EXECUTOR_CACHE_LOCK:
+        now = time.monotonic()
+        evicted_executors = _pop_idle_modal_executors(now)
+        entry = _MODAL_EXECUTOR_CACHE.get(workspace_id)
+        if entry is None:
+            entry = _ModalExecutorCacheEntry(
+                executor=get_modal_executor(workspace_id),
+                active_count=0,
+                last_used_at=now,
+            )
+            _MODAL_EXECUTOR_CACHE[workspace_id] = entry
+        entry.active_count += 1
+
+    _close_modal_executors(evicted_executors)
+
+    try:
+        yield entry.executor
+    finally:
+        evicted_executors = []
+        with _MODAL_EXECUTOR_CACHE_LOCK:
+            entry.active_count -= 1
+            entry.last_used_at = time.monotonic()
+            evicted_executors = _pop_idle_modal_executors(entry.last_used_at)
+        _close_modal_executors(evicted_executors)
+
+
+def _current_workflow_execution_id() -> Optional[str]:
+    """Return the current workflow execution id, sourced from the existing
+    ``inference_sdk.config.execution_id`` ContextVar.
+
+    The execution engine sets that ContextVar inside every worker thread via
+    ``safe_execute_step`` so it is reliably populated by the time a block's
+    ``run()`` method executes.
+    """
+    if _execution_id_ctxvar is None:
+        return None
+    return _execution_id_ctxvar.get()
+
+
+USAGE_BLOCK_KIND = "custom_python"
+
+
+def compute_block_code_fingerprint(python_code: PythonCode) -> str:
+    """Stable identity for a custom Python block, used as its usage resource id.
+
+    Keyed on the code rather than on the author-chosen block type, so the same
+    snippet aggregates across the workflows that embed it and two unrelated
+    blocks that happen to share a name stay separate. Deliberately independent
+    of the Modal executor's code hash, which keys a sandbox namespace cache and
+    must match the sandbox's own implementation.
+    """
+    # JSON rather than a join: concatenating with a separator that can occur
+    # inside the parts is not injective, so a newline moved from the end of the
+    # run code to the start of the init code would keep the same digest.
+    content = json.dumps(
+        [
+            python_code.run_function_code or "",
+            python_code.init_function_code or "",
+            list(python_code.imports or []),
+        ]
+    )
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+
+
+def _usage_tracked_run(self, *args, **kwargs) -> BlockResult:
+    """The ``run`` the engine sees; the host observes the call inside it.
+
+    The block's own inputs are handed to the observer in a single
+    ``block_kwargs`` mapping rather than spread over ``**kwargs``. A dynamic
+    block's parameter names come straight from the workflow definition with no
+    reserved-name validation, so spreading them would let an input named after
+    one of a host's own bookkeeping arguments bind to it - suppressing billing
+    or redirecting a usage row - and be swallowed before the user's function
+    ever saw it.
+    """
+    # `run()` is called once per SIMD element inside a single context
+    # (`executor/core.py` `run_simd_step_in_non_batch_mode`), so a measurement
+    # left behind by an element whose observation failed must not be billed to
+    # the next one.
+    clear_block_duration()
+    return self._execution_observer.observe_block_run(
+        block=self,
+        block_args=args,
+        block_kwargs=kwargs,
+        run=partial(self._run_dynamic_block, *args, **kwargs),
+    )
+
+
+def _record_remote_block_execution(
+    wall_clock_duration: float,
+    *,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Fill in a duration for a remote invocation the sandbox did not measure.
+
+    The executor publishes the sandbox's own runtime straight into the
+    measurement channel, so when it reported one there is nothing to add.
+
+    A failed call is recorded as zero rather than as the client's wall clock,
+    whatever raised it: that wall clock is dominated by connect timeouts and
+    sandbox cold start, none of which is time the block ran. Classifying on the
+    exception type instead would split user-code failures from transport
+    failures - `DynamicBlockCodeError` is not a `DynamicBlockError` - and bill
+    the two differently for the same non-event.
+
+    A *successful* call the sandbox did not measure still falls back to the
+    client's wall clock: the block did run, and over-reporting by the round trip
+    beats reporting nothing. `duration_source` marks it as an estimate.
+    """
+    if peek_block_duration() is not None:
+        return
+    if error is not None:
+        record_block_duration(
+            duration=0,
+            source=BLOCK_DURATION_SOURCE_UNAVAILABLE,
+        )
+        return
+    record_block_duration(
+        duration=wall_clock_duration,
+        source=BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
+    )
+
+
+def _record_logs_to_active_collector(
+    step_name: str,
+    stdout_buf,
+    stderr_buf,
+) -> None:
+    collector = get_active_collector()
+    if collector is None:
+        return
+    collector.record(
+        step_name=step_name,
+        stdout=stdout_buf.getvalue() or None,
+        stderr=stderr_buf.getvalue() or None,
+    )
+
+
+def assembly_custom_python_block(
+    block_type_name: str,
+    unique_identifier: str,
+    manifest: Type[WorkflowBlockManifest],
+    python_code: PythonCode,
+    api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
+    skip_class_eval: Optional[bool] = False,
+    manifest_description: Optional[ManifestDescription] = None,
+) -> Type[WorkflowBlock]:
+
+    code_module = create_dynamic_module(
+        block_type_name=block_type_name,
+        python_code=python_code,
+        module_name=f"dynamic_module_{unique_identifier}",
+        api_key=api_key,
+        workspace_resolver=workspace_resolver,
+        skip_class_eval=skip_class_eval,
+    )
+
+    if not hasattr(code_module, python_code.run_function_name):
+        raise DynamicBlockError(
+            public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
+            f"dynamic block: `{block_type_name}`",
+            context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
+        )
+    run_function = getattr(code_module, python_code.run_function_name)
+
+    # Declared-kind lookups are static per block — computed once at assembly so
+    # the boundary does not re-derive them per kwarg per run().
+    declared_input_kinds = collect_declared_input_kind_names(manifest_description)
+    declared_output_kinds = collect_declared_output_kind_names(manifest_description)
+
+    def run_dynamic_block(self, *args, **kwargs) -> BlockResult:
+        step_name = getattr(self, "_workflow_step_name", None) or block_type_name
+        # Representation boundary: under ENABLE_TENSOR_DATA_REPRESENTATION,
+        # `legacy_compatibility` blocks receive the documented sv/numpy
+        # representations instead of native tensor objects, and their returned
+        # legacy objects are converted back. Identity when the flag is off or
+        # the block declared `tensor_native`. D2-REVISED (Option A, symmetric
+        # sv-hop): BOTH execution arms convert on both sides — Modal inputs
+        # ride the modal serializer's existing sv arms, and Modal results
+        # (rebuilt as sv by the numpy deserializers on the return leg) are
+        # converted to native here. Boundary calls sit OUTSIDE
+        # capture_output/run_function on purpose: a boundary failure is an
+        # engine-boundary error, not a user-code crash. Each arm converts
+        # AFTER its own execution gate so misconfiguration errors keep
+        # precedence over conversion errors.
+        if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
+            # Remote execution via Modal - allowed even if local execution is disabled
+            from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+                ModalExecutor,
+            )
+
+            kwargs = convert_kwargs_to_legacy(
+                kwargs=kwargs,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_input_kinds=declared_input_kinds,
+            )
+
+            workspace_id = self._workspace_resolver.resolve_workspace(self._api_key)
+
+            if not workspace_id:
+                workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
+
+            with _acquire_modal_executor(workspace_id) as executor:
+                started_at = time.monotonic()
+                try:
+                    remote_result = executor.execute_remote(
+                        block_type_name=block_type_name,
+                        python_code=python_code,
+                        inputs=kwargs,
+                        workspace_id=workspace_id,
+                        workflow_context=self.get_workflow_context(),
+                    )
+                finally:
+                    # `sys.exc_info()` rather than binding the exception to a
+                    # local: `except ... as e` is deleted on purpose, and
+                    # rebinding would keep this frame - and the decoded input
+                    # images in `kwargs` - alive until the cycle collector runs.
+                    _record_remote_block_execution(
+                        time.monotonic() - started_at,
+                        error=sys.exc_info()[1],
+                    )
+            return convert_block_result_to_native(
+                result=remote_result,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_output_kinds=declared_output_kinds,
+            )
+        else:
+            # Local execution - check if allowed
+            if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+                raise WorkflowEnvironmentConfigurationError(
+                    public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
+                    "This can be changed by setting environmental variable "
+                    "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+                    context="workflow_execution | step_execution | dynamic_step",
+                )
+            kwargs = convert_kwargs_to_legacy(
+                kwargs=kwargs,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_input_kinds=declared_input_kinds,
+            )
+            import_lines_count = len(_get_python_code_imports(python_code).splitlines())
+            try:
+                with capture_output() as (stdout_buf, stderr_buf):
+                    # stdout/stderr already reach the process streams in real time via the
+                    # tee in capture_output(); buffers are also forwarded to the active
+                    # debug collector (if any) and used to attach context on error.
+                    #
+                    # Timed here, innermost, so the measurement excludes the
+                    # engine's representation-boundary conversions AND - on the
+                    # error path - the traceback extraction and log forwarding
+                    # below, which run before any enclosing `finally` would.
+                    started_at = time.monotonic()
+                    try:
+                        result = run_function(self, *args, **kwargs)
+                    finally:
+                        record_block_duration(
+                            duration=time.monotonic() - started_at,
+                            source=BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
+                        )
+            except Exception as error:
+                # Record on failure too: the error payload carries this step's
+                # streams via BlockTraceback, but the collector is the only place
+                # where logs of ALL steps of the run are aggregated.
+                _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
+                raise create_dynamic_block_code_error(
+                    error=error,
+                    user_code=python_code.run_function_code or "",
+                    import_lines_count=import_lines_count,
+                    stdout=stdout_buf.getvalue() or None,
+                    stderr=stderr_buf.getvalue() or None,
+                    block_type_name=block_type_name,
+                ) from error
+            _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
+            return convert_block_result_to_native(
+                result=result,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_output_kinds=declared_output_kinds,
+            )
+
+    if python_code.init_function_code is not None and not hasattr(
+        code_module, python_code.init_function_name
+    ):
+        raise DynamicBlockError(
+            public_message=f"Cannot find function: {python_code.init_function_name} in declared code for "
+            f"dynamic block: `{block_type_name}`",
+            context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
+        )
+
+    init_function = getattr(code_module, python_code.init_function_name, dict)
+
+    def constructor(
+        self,
+        api_key: Optional[str] = None,
+        workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
+        execution_observer: Optional[ExecutionObserver] = None,
+    ):
+        self._init_results = init_function()
+        self._api_key = api_key
+        self._workspace_resolver = workspace_resolver
+        self._execution_observer = (
+            execution_observer
+            if execution_observer is not None
+            else NULL_EXECUTION_OBSERVER
+        )
+
+    def get_workflow_context(self) -> Dict[str, Any]:
+        return {
+            "step_name": getattr(self, "_workflow_step_name", None),
+            "step_selector": getattr(self, "_workflow_step_selector", None),
+            "block_type": getattr(self, "_workflow_step_type", block_type_name),
+            "workflow_execution_id": _current_workflow_execution_id(),
+        }
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["api_key", "workspace_resolver", "execution_observer"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return manifest
+
+    return type(
+        f"DynamicBlock[{unique_identifier}]",
+        (WorkflowBlock,),
+        {
+            "__init__": constructor,
+            "get_workflow_context": get_workflow_context,
+            "get_init_parameters": get_init_parameters,
+            "get_manifest": get_manifest,
+            "run": _usage_tracked_run,
+            "_run_dynamic_block": run_dynamic_block,
+            # Read by the usage collector to identify this block's rows.
+            "_usage_block_kind": USAGE_BLOCK_KIND,
+            "_usage_block_type": block_type_name,
+            "_usage_resource_id": (
+                f"{USAGE_BLOCK_KIND}/{compute_block_code_fingerprint(python_code)}"
+            ),
+            # AUTHORITATIVE source of the raw dynamic-block manifest description
+            # (carries `tensor_compatibility`): run() reads self._manifest_description,
+            # it is introspectable, and the Step-1 assembler tests pin it. The
+            # constructor parameter of assembly_custom_python_block is only the
+            # input that seeds this attribute (None for callers predating the knob).
+            "_manifest_description": manifest_description,
+        },
+    )
+
+
+def _get_python_code_imports(python_code: PythonCode) -> str:
+    return "\n".join(IMPORTS_LINES) + "\n" + "\n".join(python_code.imports) + "\n\n"
+
+
+def create_dynamic_module(
+    block_type_name: str,
+    python_code: PythonCode,
+    module_name: str,
+    api_key: Optional[str] = None,
+    workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
+    skip_class_eval: Optional[bool] = False,
+) -> types.ModuleType:
+
+    if skip_class_eval:
+        # Create a stub module for local reference
+        dynamic_module = types.ModuleType(module_name)
+        # Add placeholder function
+        setattr(
+            dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None
+        )
+        if python_code.init_function_code:
+            setattr(dynamic_module, python_code.init_function_name, lambda: {})
+        return dynamic_module
+
+    imports = _get_python_code_imports(python_code)
+    code = python_code.run_function_code
+    if python_code.init_function_code:
+        code += "\n\n" + python_code.init_function_code
+    code = imports + code
+
+    # If using Modal and local execution is disabled, validate code remotely
+    if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
+        # Validate code in Modal sandbox for security
+        from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+            validate_code_in_modal,
+        )
+
+        validation_workspace = workspace_resolver.resolve_workspace(api_key)
+
+        # Fall back to "anonymous" for non-authenticated users
+        if not validation_workspace:
+            validation_workspace = MODAL_ANONYMOUS_WORKSPACE_NAME
+
+        # This will raise if validation fails
+        validate_code_in_modal(python_code, validation_workspace)
+
+        # Create a stub module for local reference
+        dynamic_module = types.ModuleType(module_name)
+        # Add placeholder function
+        setattr(
+            dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None
+        )
+        if python_code.init_function_code:
+            setattr(dynamic_module, python_code.init_function_name, lambda: {})
+        return dynamic_module
+    else:
+        # Local validation and module creation
+        try:
+            dynamic_module = types.ModuleType(module_name)
+            # Inject the shared globals dict into the module namespace
+            dynamic_module.__dict__["globals"] = _LOCAL_SHARED_GLOBALS
+            exec(code, dynamic_module.__dict__)
+            return dynamic_module
+        except Exception as error:
+            error_line = getattr(error, "lineno", None)
+            code_snippet = None
+            if error_line and python_code.run_function_code:
+                import_lines_offset = len(
+                    _get_python_code_imports(python_code).splitlines()
+                )
+                error_line -= import_lines_offset
+                snippet = extract_code_snippet(
+                    python_code.run_function_code, error_line
+                )
+                code_snippet = snippet.lstrip("\n") if snippet else None
+
+            raise DynamicBlockCodeError(
+                public_message=f"{error.__class__.__name__}: {error}",
+                context="dynamic_block_code_compilation",
+                inner_error=error,
+                block_type_name=block_type_name,
+                error_line=error_line,
+                code_snippet=code_snippet,
+            ) from error

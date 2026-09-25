@@ -1,0 +1,110 @@
+name: Maintainer Review Slack Handoff
+
+on:
+  workflow_run:
+    workflows: [Claude PR Review]
+    types: [completed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  eligibility:
+    # This job has no Slack environment or shared queue. Unrelated comments and
+    # external contributors cannot compete with eligible notifications.
+    if: >-
+      vars.MAINTAINER_REVIEW_SLACK_ENABLED == 'true' &&
+      github.repository == 'roboflow/inference' &&
+      (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+         github.event.comment.user.type == 'User' &&
+         contains(fromJSON('["MEMBER","OWNER","COLLABORATOR"]'), github.event.comment.author_association) &&
+         startsWith(github.event.comment.body, '/maintainer-review '))
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.eligible.outputs.number }}
+    steps:
+      - name: Reject external and unrelated requests before queuing
+        id: eligible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+            number="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+            login="$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")"
+            if permission_response="$(gh api --include "repos/${REPO}/collaborators/${login}/permission" --jq '.permission')"; then
+              permission="$(printf '%s\n' "$permission_response" | tail -n 1)"
+            else
+              # Missing/inaccessible collaborator records are ineligible. Keep
+              # other API or transport failures visible so they can be retried.
+              status="$(printf '%s\n' "$permission_response" | awk 'NR == 1 { print $2 }')"
+              case "$status" in
+                403|404) echo "::notice::Cannot verify requester permission (HTTP ${status}); skipping."; exit 0 ;;
+                *) echo "::error::Requester permission lookup failed."; exit 1 ;;
+              esac
+            fi
+            case "$permission" in write|maintain|admin) ;; *) exit 0 ;; esac
+          else
+            event="$(jq -r '.workflow_run.event' "$GITHUB_EVENT_PATH")"
+            case "$event" in pull_request_target|workflow_dispatch) ;; *) exit 0 ;; esac
+            number="$(jq -r '.workflow_run.display_title | capture("^Claude review PR #(?<number>[1-9][0-9]*) at [0-9a-f]{40} using workflow [0-9a-f]{40}$").number' "$GITHUB_EVENT_PATH")"
+          fi
+          [[ "$number" =~ ^[1-9][0-9]*$ ]] || exit 0
+          pr="$(gh api "repos/${REPO}/pulls/${number}")"
+          echo "$pr" | jq -e --arg repo "$REPO" '
+            .state == "open" and .draft == false and .base.ref == "main" and
+            .base.repo.full_name == $repo and .head.repo.full_name == $repo
+          ' >/dev/null || exit 0
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+
+  notify:
+    needs: eligibility
+    if: needs.eligibility.outputs.number != ''
+    # Serialize state updates for each PR while retaining bursts of requests.
+    # GitHub supports queue: max for jobs and workflows (up to 100 pending):
+    # https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues/
+    concurrency:
+      group: ${{ github.workflow }}-${{ needs.eligibility.outputs.number }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Configure this environment to allow the main BRANCH only (no PR refs or
+    # tags). Store SLACK_REVIEW_BOT_TOKEN here, never as a repository secret.
+    environment: maintainer-review-slack
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      # workflow_run and issue_comment execute on the default branch. Never
+      # replace this with a checkout of the triggering PR or run's head SHA.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.31"
+          enable-cache: false
+      - name: Install locked CLI dependency before exposing credentials
+        run: |
+          uv venv "$RUNNER_TEMP/maintainer-review"
+          uv export --locked --script .github/scripts/maintainer_review.py --format requirements-txt --output-file "$RUNNER_TEMP/handoff-requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/maintainer-review/bin/python" --require-hashes --requirements "$RUNNER_TEMP/handoff-requirements.txt"
+      - name: Notify the maintainer in Slack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLACK_REVIEW_BOT_TOKEN: ${{ secrets.SLACK_REVIEW_BOT_TOKEN }}
+          SLACK_REVIEW_CHANNEL_ID: ${{ vars.SLACK_REVIEW_CHANNEL_ID }}
+          SLACK_REVIEW_MAINTAINER_IDS: ${{ vars.SLACK_REVIEW_MAINTAINER_IDS }}
+        run: '"$RUNNER_TEMP/maintainer-review/bin/python" .github/scripts/maintainer_review.py notify'

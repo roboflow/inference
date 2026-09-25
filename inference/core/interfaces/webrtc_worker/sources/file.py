@@ -12,6 +12,8 @@ from av import VideoFrame
 from inference.core import logger
 from inference.core.interfaces.webrtc_worker.entities import VideoFileUploadState
 
+VIDEO_FRAME_QUEUE_SIZE = 60
+
 
 def _decode_worker(filepath: str, frame_queue, stop_event):
     """Decode video frames in a separate thread and put them on a queue.
@@ -72,7 +74,7 @@ class ThreadedVideoFileTrack(MediaStreamTrack):
 
     kind = "video"
 
-    def __init__(self, filepath: str, queue_size: int = 60):
+    def __init__(self, filepath: str, queue_size: int = VIDEO_FRAME_QUEUE_SIZE):
         # TODO: add parameter queue size in settings
         super().__init__()
         self._queue = queue.Queue(maxsize=queue_size)

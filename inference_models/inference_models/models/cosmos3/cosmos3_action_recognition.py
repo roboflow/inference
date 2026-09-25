@@ -310,6 +310,10 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         video_sampling: Optional[VideoSampling] = None,
     ):
         self._reasoner = reasoner
+        # The auto-loader stamps the package on the object it returns. When that
+        # was the reasoner, carry it over; a loader that returns this wrapper
+        # overwrites the attribute after construction.
+        self.resolved_model = getattr(reasoner, "resolved_model", None)
         self._class_names = class_names
         self._video_sampling = video_sampling or VideoSampling()
 

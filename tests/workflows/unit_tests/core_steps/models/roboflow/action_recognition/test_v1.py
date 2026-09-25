@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-import inference.core.env as core_env
+from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
 )
@@ -164,7 +164,6 @@ def _make_block(
         TensorActionRecognitionModelBlockV1 if tensor else ActionRecognitionModelBlockV1
     )
     block = block_type(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
     )
@@ -222,9 +221,9 @@ def test_get_model_wraps_hosted_cosmos3_reasoner(monkeypatch):
     load_model = MagicMock(return_value=reasoner)
     monkeypatch.setattr(AutoModel, "from_pretrained", load_model)
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
+        model_manager=ModelManager(model_registry=MagicMock()),
     )
 
     loaded = block._get_model(model_id="cosmos-3-edge")
@@ -242,9 +241,9 @@ def test_get_model_rejects_model_without_video_classification_support(monkeypatc
         MagicMock(return_value=object()),
     )
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.LOCAL,
+        model_manager=ModelManager(model_registry=MagicMock()),
     )
 
     with pytest.raises(
@@ -995,7 +994,6 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
 
 def test_remote_mode_raises():
     block = ActionRecognitionModelBlockV1(
-        model_manager=MagicMock(),
         api_key=None,
         step_execution_mode=StepExecutionMode.REMOTE,
     )
@@ -1048,18 +1046,35 @@ def test_tensor_sibling_normalizes_mixed_window_to_rgb_numpy():
 
 
 @pytest.mark.parametrize("tensor_enabled", [False, True])
-def test_loader_registers_block_kind_and_codecs_for_both_modes(
-    monkeypatch, tensor_enabled
-):
+def test_loader_registers_block_kind_and_codecs_for_both_modes(tensor_enabled):
+    import dataclasses
+    import importlib
+
+    from inference.core.workflows import configuration as workflows_configuration
+    from inference.core.workflows import environment as workflows_environment
     from inference.core.workflows.core_steps import loader
 
-    original = core_env.ENABLE_TENSOR_DATA_REPRESENTATION
+    previous = workflows_configuration.get_configuration()
     try:
-        monkeypatch.setattr(
-            core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor_enabled
+        workflows_configuration.reset_configuration()
+        workflows_configuration.configure_process(
+            dataclasses.replace(
+                previous,
+                tensor=dataclasses.replace(
+                    previous.tensor,
+                    representation_enabled=tensor_enabled,
+                    image_tensor_device=(
+                        workflows_configuration.resolve_image_tensor_device(
+                            tensor_enabled
+                        )
+                    ),
+                ),
+            )
         )
+        importlib.reload(workflows_environment)
         reloaded_loader = importlib.reload(loader)
 
+        assert reloaded_loader.ENABLE_TENSOR_DATA_REPRESENTATION is tensor_enabled
         assert reloaded_loader.ActionRecognitionModelBlockV1 in (
             reloaded_loader.load_blocks()
         )
@@ -1080,7 +1095,9 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(
             is deserialize_action_recognition_prediction_kind
         )
     finally:
-        monkeypatch.setattr(core_env, "ENABLE_TENSOR_DATA_REPRESENTATION", original)
+        with workflows_configuration._INSTALL_LOCK:
+            workflows_configuration._CONFIGURATION = previous
+        importlib.reload(workflows_environment)
         importlib.reload(loader)
 
 

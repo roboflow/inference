@@ -5,7 +5,9 @@ instead of carrying their own copy of the tables:
 
 - **CI** — `.github/prompts/claude-pr-review.md` (Skill Dispatch section).
 - **Local review tooling** — any agent or script reviewing this repo can
-  resolve skills through this file from its own checkout.
+  resolve skills through this file from its own checkout. The
+  [local pre-review skill](review-local/SKILL.md) provides a contributor-facing
+  entry point for reviewing branch and working-tree changes without posting.
 
 Editing rule: this file is the single source of truth for path→skill and
 signal→skill routing and for the shared review contract below. Do not restate
@@ -21,8 +23,8 @@ Load every surface skill whose paths the PR touches:
 
 | Changed path (glob) | Surface skill |
 | --- | --- |
-| `inference/core/workflows/core_steps/**` | `review-workflows-blocks` |
-| `inference/core/workflows/execution_engine/**`, other `inference/core/workflows/**` | `review-workflows-execution-engine` |
+| `workflows/roboflow_workflows/core_steps/**`, `workflows/roboflow_workflows/enterprise_blocks/**` | `review-workflows-blocks` |
+| `workflows/roboflow_workflows/execution_engine/**`, other `workflows/roboflow_workflows/**`, `.cursor/rules/execution-engine-version-changelog.mdc` | `review-workflows-execution-engine` |
 | `inference_models/**` | `review-inference-models-pkg` |
 | `inference/models/**`, `inference/core/models/**`, `inference/core/registries/**` | `review-legacy-models-registries` |
 | `inference/core/interfaces/http/**`, `inference_cli/server.py` | `review-http-api-server` |
@@ -32,7 +34,7 @@ Load every surface skill whose paths the PR touches:
 | other `inference/core/**` (env, version, entities, utils, roboflow_api, exceptions) | `review-core-infra` |
 
 A changed **test** file dispatches to the same surface skill as the product code
-it exercises (`tests/workflows/**` → the workflow skills;
+it exercises (`workflows/tests/**`, `tests/workflows/**` → the workflow skills;
 `tests/inference/**/http/**` → `review-http-api-server`;
 `tests/inference_models/**` → `review-inference-models-pkg`;
 `tests/inference_sdk/**` → `review-sdk`) — in addition to

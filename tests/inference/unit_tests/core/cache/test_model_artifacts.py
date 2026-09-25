@@ -5,7 +5,6 @@ from unittest import mock
 from unittest.mock import MagicMock, call
 
 import pytest
-from humanfriendly.testing import touch
 
 from inference.core.cache import model_artifacts
 from inference.core.cache.model_artifacts import (
@@ -29,6 +28,13 @@ from tests.inference.unit_tests.core.utils.test_file_system import (
     assert_bytes_file_content_correct,
     assert_text_file_content_correct,
 )
+
+
+def touch(filename: str) -> None:
+    """Create ``filename`` (and missing parent directories) as an empty file."""
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, "a"):
+        pass
 
 
 @mock.patch.object(model_artifacts, "get_cache_dir")

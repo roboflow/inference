@@ -37,6 +37,17 @@ RUN pip3 install \
     "setuptools~=83.0.0" \
     && rm -rf ~/.cache/pip
 
+# Build & install roboflow-workflows from source so the source-copy runtime
+# image has all workflows runtime deps + fonts + wheel metadata.
+COPY workflows workflows
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && rm -rf ~/.cache/pip
+
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
 WORKDIR /app
@@ -59,8 +70,6 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     && rm -rf /var/lib/apt/lists/*
 
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/udp_stream_config.py udp_stream_config.py
 

@@ -90,7 +90,10 @@ def _assert_request_query_seen(requests_mock: Mocker, expected_query: str) -> No
     assert queried[-1].query == expected_query, [request.query for request in queried]
 
 
-@pytest.mark.parametrize("workspace_id", ["workspace", "my-workspace", "my_workspace"])
+@pytest.mark.parametrize(
+    "workspace_id",
+    ["workspace", "my-workspace", "my_workspace", "-li3oe", "_workspace"],
+)
 def test_workspace_id_validation_accepts_workspace_slugs(workspace_id: str) -> None:
     assert roboflow_api.workspace_id_is_valid(workspace_id) is True
 
@@ -628,19 +631,22 @@ def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) ->
     roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
 )
 @pytest.mark.asyncio
-async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
+@pytest.mark.parametrize("workspace_id", ["my_workspace", "-li3oe", "_workspace"])
+async def test_get_roboflow_workspace_async_when_response_is_valid(
+    workspace_id: str,
+) -> None:
     # given
     with aioresponses() as request_mock:
         request_mock.get(
             f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
-            payload={"workspace": "my_workspace"},
+            payload={"workspace": workspace_id},
         )
 
         # when
         result = await get_roboflow_workspace_async(api_key="my_api_key")
 
         # then
-        assert result == "my_workspace"
+        assert result == workspace_id
         registered_requests = request_mock.requests[
             ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
         ]
@@ -705,13 +711,16 @@ async def test_get_serverless_usage_check_async_when_workspace_is_billing_restri
     roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
 )
 @pytest.mark.asyncio
-async def test_get_serverless_usage_check_async_when_response_is_valid() -> None:
+@pytest.mark.parametrize("workspace_id", ["my_workspace", "-li3oe", "_workspace"])
+async def test_get_serverless_usage_check_async_when_response_is_valid(
+    workspace_id: str,
+) -> None:
     with aioresponses() as request_mock:
         request_mock.get(
             f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
             payload={
                 "workspaceId": "workspace-db-id",
-                "workspace": "my_workspace",
+                "workspace": workspace_id,
                 "underCap": True,
             },
         )
@@ -720,7 +729,7 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
 
         assert result == ServerlessUsageCheckResponse(
             status_code=200,
-            workspace_id="my_workspace",
+            workspace_id=workspace_id,
             workspace_db_id="workspace-db-id",
             under_cap=True,
         )
@@ -1367,6 +1376,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": 2.3,
             "taskType": "object-detection",
         },
     }
@@ -1388,6 +1398,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "rfdetr",
         "taskType": "object-detection",
         "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": 2.3,
     }
 
 
@@ -1403,6 +1414,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
             "modelId": "rfdetr-nano",
             "modelArchitecture": "rfdetr",
             "modelVariant": "rfdetr-nano",
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1424,6 +1436,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
         "modelType": "rfdetr",
         "taskType": "object-detection",
         "modelVariant": "rfdetr-nano",
+        "modelLatencyMs": None,
     }
 
 
@@ -1441,6 +1454,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1469,6 +1483,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1487,6 +1502,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1521,6 +1537,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_workspac
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1539,6 +1556,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1563,6 +1581,7 @@ def test_get_model_metadata_from_inference_models_registry_does_not_send_token_w
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
 
 
@@ -1581,6 +1600,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
             "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
             "modelVariant": None,
+            "modelLatencyMs": None,
             "taskType": "object-detection",
         },
     }
@@ -1602,6 +1622,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
         "modelType": "yolov8",
         "taskType": "object-detection",
         "modelVariant": None,
+        "modelLatencyMs": None,
     }
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
@@ -5499,7 +5520,7 @@ def test_get_workflow_specification_returns_when_ephemeral_cache_set_fails(
 # when LICENSE_SERVER is configured (air-gapped deployment support).
 
 SECURE_GATEWAY_HOST = "gateway.local"
-PROXY_PREFIX = f"http://{SECURE_GATEWAY_HOST}/proxy?url="
+PROXY_PREFIX = f"https://{SECURE_GATEWAY_HOST}/proxy?url="
 
 
 @mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)

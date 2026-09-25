@@ -3,6 +3,9 @@ import pytest
 import supervision as sv
 
 from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -458,6 +461,7 @@ def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_valid_mod
         workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        step_error_handler=resolve_step_error_handler(),
     )
 
     # when

@@ -47,7 +47,7 @@ from inference_models.weights_providers.roboflow import (
     roboflow_secure_gateway_proxy_url_builder,
 )
 
-DUMMY_PROXY_PREFIX = "http://gateway.local/proxy?url="
+DUMMY_PROXY_PREFIX = "https://gateway.local/proxy?url="
 
 
 def test_get_roboflow_model_does_not_request_metadata_in_offline_mode() -> None:
@@ -1697,7 +1697,7 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     # given
     requests_mock.register_uri(
         "GET",
-        re.compile(r"http://gateway\.local/proxy"),
+        re.compile(r"https://gateway\.local/proxy"),
         [
             {
                 "status_code": 200,
@@ -1800,7 +1800,7 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     assert requests_mock.call_count == 2
     for history_entry in requests_mock.request_history:
         parsed = urllib.parse.urlparse(history_entry.url)
-        assert parsed.scheme == "http"
+        assert parsed.scheme == "https"
         assert parsed.netloc == "gateway.local"
         assert parsed.path == "/proxy"
         outer_params = urllib.parse.parse_qs(parsed.query)
@@ -1826,7 +1826,7 @@ def test_basic_url_no_query():
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
     assert outer.netloc == "gateway.local:8080"
     assert outer.path == "/proxy"
 
@@ -1927,20 +1927,20 @@ def test_proxy_url_structure():
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
     assert outer.netloc == "proxy.internal:9090"
     assert outer.path == "/proxy"
     assert "url" in urllib.parse.parse_qs(outer.query)
 
 
 @patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
-def test_proxy_uses_http_not_https():
+def test_proxy_uses_https_by_default():
     result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
     outer = _parse_proxy_result(result)
-    assert outer.scheme == "http"
+    assert outer.scheme == "https"
 
 
 @patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
@@ -2072,8 +2072,8 @@ def test_bare_host_gateway_preserves_base_path():
         query=None,
     )
     outer = _parse_proxy_result(result)
-    # Bare host keeps the historical http:// scheme and the base path.
-    assert outer.scheme == "http"
+    # Bare host defaults to HTTPS and preserves the base path.
+    assert outer.scheme == "https"
     assert outer.netloc == "gw.local:8080"
     assert outer.path == "/edge/proxy"
 

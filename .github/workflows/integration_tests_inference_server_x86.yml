@@ -14,6 +14,31 @@ on:
           - all
           - "true"
           - "false"
+      image_tag:
+        description: "Prebuilt roboflow/roboflow-inference-server-cpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
+        type: string
+        default: ""
+  workflow_call:
+    # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
+    # the 15-minute in-job image build is skipped.
+    inputs:
+      use-inference-models:
+        type: string
+        default: all
+      image_tag:
+        type: string
+        default: ""
+
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  # The literal file id keeps groups distinct when this workflow is called
+  # (github.workflow is the caller's name inside a called workflow).
+  group: ${{ github.workflow }}-integration_tests_inference_server_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   build:
     if: ${{ !github.event.act }}
@@ -21,7 +46,7 @@ jobs:
       group: group8core
     strategy:
       matrix:
-        use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
     timeout-minutes: 60
 
     steps:
@@ -44,10 +69,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
       - name: 🔨 Build and Push Test Docker
+        if: ${{ inputs.image_tag == '' }}
         run: |
           docker pull roboflow/roboflow-inference-server-cpu:test
           docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
           docker push roboflow/roboflow-inference-server-cpu:test
+      - name: 📥 Pull prebuilt image ${{ inputs.image_tag }}
+        if: ${{ inputs.image_tag != '' }}
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          docker pull "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}"
+          docker tag "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" roboflow/roboflow-inference-server-cpu:test
+          echo "Image under test: roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
       - name: 🔋 Start Test Docker
         run: |
           USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu

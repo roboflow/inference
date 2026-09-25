@@ -241,7 +241,7 @@ def run_inference_models_benchmark(
     output_location: Optional[str] = None,
     model_package_id: Optional[str] = None,
     turn_images_to_tensors: bool = True,
-    allow_untrusted_packages: bool = True,
+    allow_untrusted_packages: bool = False,
 ) -> None:
     ensure_inference_models_is_installed()
 

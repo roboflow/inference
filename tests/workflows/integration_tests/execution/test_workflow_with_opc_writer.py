@@ -644,7 +644,11 @@ def test_connection_invalidation_creates_new_connection(
     assert stats["total_connections"] == 1
 
     # Invalidate the connection
-    manager.invalidate_connection(test_opc_server["url"], test_opc_server["user_name"])
+    manager.invalidate_connection(
+        test_opc_server["url"],
+        test_opc_server["user_name"],
+        test_opc_server["password"],
+    )
 
     # Should have 0 connections now
     stats = manager.get_pool_stats()
@@ -823,7 +827,9 @@ def test_pooled_session_survives_idling_past_its_own_session_timeout(
         assert error_status == False
 
         key = manager._get_connection_key(
-            test_opc_server["url"], test_opc_server["user_name"]
+            test_opc_server["url"],
+            test_opc_server["user_name"],
+            test_opc_server["password"],
         )
         client = manager._connections[key]
         # The server echoes the request back, so this is what it will actually hold
@@ -875,7 +881,9 @@ def test_pooled_session_asks_the_server_for_the_configured_timeout(
 
     client = manager._connections[
         manager._get_connection_key(
-            test_opc_server["url"], test_opc_server["user_name"]
+            test_opc_server["url"],
+            test_opc_server["user_name"],
+            test_opc_server["password"],
         )
     ]
     assert client.aio_obj.session_timeout == int(SESSION_TIMEOUT_SECONDS * 1000)
@@ -923,3 +931,42 @@ def test_shutdown_hands_the_session_back_to_the_server(
     assert error_status_after_shutdown == True
     assert "SHUTTING DOWN" in message_after_shutdown
     assert InternalSession._current_connections == sessions_before
+
+
+@pytest.mark.timeout(20)
+@pytest.mark.parametrize("wrong_password", ["wrong-password", "", None])
+def test_real_server_rejects_password_mismatch_without_reusing_pooled_session(
+    test_opc_server, reset_connection_manager, wrong_password
+):
+    """A disposable local server must reject writes with mismatched credentials."""
+    manager = reset_connection_manager
+    params = {
+        "url": test_opc_server["url"],
+        "namespace": test_opc_server["namespace"],
+        "user_name": test_opc_server["user_name"],
+        "object_name": test_opc_server["object_name"],
+        "variable_name": "Int32Var",
+        "timeout": 2,
+    }
+    password = test_opc_server["password"]
+    error, message = opc_connect_and_write_value(
+        **params, password=password, value=1001, value_type="Int32"
+    )
+    assert error is False, message
+    key = manager._get_connection_key(params["url"], params["user_name"], password)
+    original_client = manager._connections[key]
+
+    error, message = opc_connect_and_write_value(
+        **params, password=wrong_password, value=2002, value_type="Int32"
+    )
+    assert error is True
+    assert "AUTH ERROR" in message
+    assert _opc_connect_and_read_value(**params, password=password) == 1001
+    assert manager._connections[key] is original_client
+
+    error, message = opc_connect_and_write_value(
+        **params, password=password, value=1002, value_type="Int32"
+    )
+    assert error is False, message
+    assert manager._connections[key] is original_client
+    assert _opc_connect_and_read_value(**params, password=password) == 1002

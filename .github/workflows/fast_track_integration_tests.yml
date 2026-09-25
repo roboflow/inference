@@ -1,0 +1,229 @@
+name: Fast-track integration tests
+# Build-once, test-many integration run for a fast-track branch.
+#
+# Dispatch this on the fast-track branch (fast-track/post-vX.Y.Z-ptN). It
+# builds the CPU and GPU server images once with the given tag suffix through
+# the regular build workflows (same Depot cache, same tags the deployment will
+# use: <VERSION>-<custom_tag>), then runs the selected integration suites
+# against those prebuilt images instead of rebuilding them inside every test
+# job. That removes ~15 min from the CPU suite and ~32 min per leg from the
+# T4 suite.
+#
+# Resume: re-dispatch with the same custom_tag and build_images=false; only
+# the suites left enabled run against the already published image. The T4
+# suite also takes t4_test_name to re-run a single stage.
+#
+# Default scope (fast-track policy): USE_INFERENCE_MODELS=true only, T4 preset
+# `fast_track` (regression without torch preprocessing, SAM2, SAM3). The
+# inference-models GPU suite is opt-in and only meaningful when
+# inference_models/ changed on the branch.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      custom_tag:
+        description: "Tag suffix, same as in the build workflows; the image under test is <VERSION>-<custom_tag> (e.g. rc1 -> 1.6.2-post3-rc1)."
+        type: string
+        required: true
+      build_images:
+        description: "Build and push the CPU and GPU images first. false = resume: test the already published <VERSION>-<custom_tag> image."
+        type: boolean
+        default: true
+      run_server_cpu:
+        description: "Run INTEGRATION TESTS - Inference Server CPU x86"
+        type: boolean
+        default: true
+      run_t4:
+        description: "Run Code Quality & Regression Tests - NVIDIA T4"
+        type: boolean
+        default: true
+      run_models_gpu:
+        description: "Run INTEGRATION TESTS - inference-models (GPU); only when inference_models/ changed"
+        type: boolean
+        default: false
+      use_inference_models:
+        description: "USE_INFERENCE_MODELS value for the server suites"
+        type: choice
+        default: "true"
+        options:
+          - "true"
+          - "false"
+          - all
+      t4_test_name:
+        description: "T4 stage selection; fast_track = regression w/o torch + SAM2 + SAM3; empty = every stage"
+        type: choice
+        default: fast_track
+        options:
+          - fast_track
+          - ""
+          - regression_without_torch
+          - regression_with_torch
+          - paligemma
+          - florence
+          - sam2
+          - sam3
+          - moondream2
+      models_gpu_extras:
+        description: "inference-models GPU suite marker selection; empty = all"
+        type: choice
+        default: ""
+        options:
+          - ""
+          - onnx_extras
+          - trt_extras
+          - torch_models
+          - hf_vlm_models
+
+run-name: "Fast-track integration tests - ${{ github.ref_name }} - ${{ inputs.custom_tag }} - ${{ inputs.build_images && 'build' || 'resume' }}"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve image tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve
+        id: resolve
+        env:
+          BUILD_IMAGES: ${{ inputs.build_images }}
+          CUSTOM_TAG: ${{ inputs.custom_tag }}
+        run: |
+          set -euo pipefail
+          version=$(DISABLE_VERSION_CHECK=true python3 ./inference/core/version.py)
+          if [ -z "$CUSTOM_TAG" ]; then
+            echo "::error::custom_tag is required (an empty suffix would build to the released :$version tag)"
+            exit 1
+          fi
+          image_tag="$version-$CUSTOM_TAG"
+          if [ "$BUILD_IMAGES" != "true" ]; then
+            for repo in roboflow-inference-server-cpu roboflow-inference-server-gpu; do
+              docker manifest inspect "roboflow/$repo:$image_tag" >/dev/null 2>&1 \
+                || echo "::warning::roboflow/$repo:$image_tag not found in Docker Hub; a suite that needs it will fail at pull"
+            done
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Fast-track integration tests"
+            echo "- ref: \`${GITHUB_REF_NAME}\` @ \`${GITHUB_SHA}\`"
+            echo "- version.py: \`$version\`"
+            echo "- image tag: \`$image_tag\` (build: $BUILD_IMAGES)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-cpu:
+    name: Build CPU image
+    needs: resolve
+    if: ${{ inputs.build_images && inputs.run_server_cpu }}
+    # The build workflow authenticates to GCP with OIDC; a called workflow
+    # cannot hold more permissions than its caller grants here.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docker.cpu.yml
+    with:
+      custom_tag: ${{ inputs.custom_tag }}
+      force_push: true
+    secrets: inherit
+
+  build-gpu:
+    name: Build GPU image
+    needs: resolve
+    if: ${{ inputs.build_images && inputs.run_t4 }}
+    # The build workflow authenticates to GCP with OIDC; a called workflow
+    # cannot hold more permissions than its caller grants here.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docker.gpu.yml
+    with:
+      custom_tag: ${{ inputs.custom_tag }}
+      force_push: true
+    secrets: inherit
+
+  server-cpu:
+    name: Server CPU regression
+    needs: [resolve, build-cpu]
+    # Run when the suite is enabled and the build either succeeded or was
+    # skipped on purpose (resume); never after a failed or cancelled build.
+    if: ${{ !cancelled() && inputs.run_server_cpu && (needs.build-cpu.result == 'success' || (needs.build-cpu.result == 'skipped' && !inputs.build_images)) }}
+    uses: ./.github/workflows/integration_tests_inference_server_x86.yml
+    with:
+      # The tag the build actually pushed wins; the resolved tag is the
+      # fallback for resume runs, where no build happened.
+      image_tag: ${{ needs.build-cpu.outputs.image_tag || needs.resolve.outputs.image_tag }}
+      use-inference-models: ${{ inputs.use_inference_models }}
+    secrets: inherit
+
+  t4:
+    name: NVIDIA T4 regression
+    needs: [resolve, build-gpu]
+    if: ${{ !cancelled() && inputs.run_t4 && (needs.build-gpu.result == 'success' || (needs.build-gpu.result == 'skipped' && !inputs.build_images)) }}
+    uses: ./.github/workflows/test.nvidia_t4.yml
+    with:
+      image_tag: ${{ needs.build-gpu.outputs.image_tag || needs.resolve.outputs.image_tag }}
+      use-inference-models: ${{ inputs.use_inference_models }}
+      test_name: ${{ inputs.t4_test_name }}
+    secrets: inherit
+
+  models-gpu:
+    name: inference-models GPU integration
+    needs: resolve
+    if: ${{ inputs.run_models_gpu }}
+    uses: ./.github/workflows/integration_tests_inference_experimental_gpu.yml
+    with:
+      extras: ${{ inputs.models_gpu_extras }}
+      python_version: "3.12"
+    secrets: inherit
+
+  summary:
+    name: Summary
+    needs: [resolve, build-cpu, build-gpu, server-cpu, t4, models-gpu]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        env:
+          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+          BUILT_CPU_TAG: ${{ needs.build-cpu.outputs.image_tag }}
+          BUILT_GPU_TAG: ${{ needs.build-gpu.outputs.image_tag }}
+          R_BUILD_CPU: ${{ needs.build-cpu.result }}
+          R_BUILD_GPU: ${{ needs.build-gpu.result }}
+          R_SERVER_CPU: ${{ needs.server-cpu.result }}
+          R_T4: ${{ needs.t4.result }}
+          R_MODELS_GPU: ${{ needs.models-gpu.result }}
+        run: |
+          {
+            echo "## Results for image tag \`$IMAGE_TAG\`"
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| build-cpu | $R_BUILD_CPU |"
+            echo "| build-gpu | $R_BUILD_GPU |"
+            echo "| server-cpu | $R_SERVER_CPU |"
+            echo "| t4 | $R_T4 |"
+            echo "| models-gpu | $R_MODELS_GPU |"
+            echo
+            echo "Resume a failed suite: re-dispatch with the same custom_tag, build_images=false, and only that suite enabled (image $IMAGE_TAG is already published)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          for built in "$BUILT_CPU_TAG" "$BUILT_GPU_TAG"; do
+            if [ -n "$built" ] && [ "$built" != "$IMAGE_TAG" ]; then
+              echo "::error::build pushed tag '$built' but this run resolved '$IMAGE_TAG'; the suites tested the built tag, fix the tag derivation before trusting the deploy tag"
+              exit 1
+            fi
+          done
+          for r in "$R_BUILD_CPU" "$R_BUILD_GPU" "$R_SERVER_CPU" "$R_T4" "$R_MODELS_GPU"; do
+            case "$r" in
+              failure|cancelled|timed_out) echo "::error::a job ended with $r"; exit 1 ;;
+            esac
+          done

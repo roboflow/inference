@@ -7,14 +7,14 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+from inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
 
 
 @patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_run_not_in_reporting_range_success(
     get_roboflow_workspace_mock: MagicMock,
@@ -72,10 +72,10 @@ def test_run_not_in_reporting_range_success(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
 )
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_run_in_reporting_range_success_with_object_detection(
     get_roboflow_workspace_mock: MagicMock,
@@ -177,10 +177,10 @@ def test_run_in_reporting_range_success_with_object_detection(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
 )
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_run_in_reporting_range_success_with_single_label_classification(
     get_roboflow_workspace_mock: MagicMock,
@@ -263,10 +263,10 @@ def test_run_in_reporting_range_success_with_single_label_classification(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
 )
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_run_in_reporting_range_success_with_multi_label_classification(
     get_roboflow_workspace_mock: MagicMock,
@@ -369,10 +369,10 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
 )
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_send_inference_results_to_model_monitoring_failure(
     get_roboflow_workspace_mock: MagicMock,
@@ -434,7 +434,7 @@ def test_send_inference_results_to_model_monitoring_failure(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 @patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_not_in_reporting_range(
@@ -497,7 +497,7 @@ def test_run_when_not_in_reporting_range(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 @patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_fire_and_forget_with_background_tasks(
@@ -563,7 +563,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 @patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_fire_and_forget_with_thread_pool(

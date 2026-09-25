@@ -1,0 +1,3051 @@
+[
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_coords_overlap_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_data_aggregator_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_detection_event_log_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_line_counter_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_line_counter_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_line_counter_v2_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_path_deviation_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_path_deviation_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_tensor_native_empty_selection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_time_in_zone_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_time_in_zone_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_time_in_zone_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_time_in_zone_v3_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_velocity.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/analytics/test_zone_geometry_parity.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/cache/test_cache.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_auto_rotate_on_edges.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_blur.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_camera_focus.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_camera_focus_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_contours_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_contrast_enhancement.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_contrast_equalization.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_detections_nearest_neighbor.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_distance_measurement.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_dominant_color.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_grayscale.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_image_preprocessing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_mask_area_measurement.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_mask_edge_snap.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_morphological_transform.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_morphological_transformation.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_morphological_transformation_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_motion_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_pixel_color_count.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_sift.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_sift_comparison.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_sift_comparison_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_size_measurement.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_template_matching.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/classical_cv/test_threshold.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/detection/test_base.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/detections/test_base.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_classification_results_operations.py",
+  "imps": [
+   "inference.core.entities.responses.inference",
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_detections_operations.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_dictionaries_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_image_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_numbers_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_sequences_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_strings_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/operations/test_video_frame_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/query_language/test_introspection_operations.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_deserializers.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_detections_mismatch.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_keypoints.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_load_core_model.py",
+  "imps": [
+   "inference.core.roboflow_api"
+  ],
+  "strs": [
+   "inference.core.entities"
+  ],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_openrouter.py",
+  "imps": [
+   "inference.core.exceptions"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_platform_client_injection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_reasoning_contract.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_rle_compact.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_rle_embed.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_run_in_parallel_context.py",
+  "imps": [
+   "inference.core.managers.model_load_collector"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_segmentation_entities.py",
+  "imps": [
+   "inference.core.entities.responses"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_serializers.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_tensor_native_host_mirror.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_tensor_native_root_coordinates.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_tensor_native_selection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_token_usage.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_utils.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_vlm_decoding.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_vlm_decoding_legacy_parity.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_vlm_decoding_tensor.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/common/test_vlm_json.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/control_flow/test_control_flow.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/control_flow/test_inner_workflow_dispatch.py",
+  "imps": [
+   "inference.core.entities.requests.workflows",
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/control_flow/test_rate_limiter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/control_flow/test_switch_case.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_anthropic_claude.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_clip.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_clip_comparison.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_cosmos3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_dataset_upload.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_depth_estimation.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_easy_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_florence2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_glm_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_google_gemini.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_google_gemma.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_kimi_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_llama_vision.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_lmm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_lmm_classifier.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_model_monitoring.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_moondream2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_ocr_doctr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_openai.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_openai_compatible.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_perception_encoder.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_pp_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen25vl.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen3_5_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen3_5vl.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen3_6_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen3vl.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_qwen_vlm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_instance_segmentation.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_keypoint_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_multi_class_classification.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_multi_label_classification.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_object_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_roboflow_semantic_segmentation.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything2_video.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything3_3d.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything3_interactive.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_segment_anything3_video.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_smolvlm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_stability_ai_image_gen.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_visual_search.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.integrations.visual_search.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_visual_search_classifier.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_yolo_world.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/dependent_resources/test_zai_vlm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_anthropic_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_csv.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_current_time.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_empty_vlm_root_coordinates.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_expression.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_first_non_empty_or_default.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_gemini_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_json_parser.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_muse_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_openai_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_property_extraction.py",
+  "imps": [
+   "inference.core.entities.responses.inference",
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_qwen_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_spacexai_detection_parsing.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_string_template.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/test_tensor_formatters_no_materialization.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_classifier/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_classifier/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_detector/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_detector/test_v1_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_detector/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/formatters/vlm_as_detector/test_v2_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_buffer.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_classes_replacement.py",
+  "imps": [
+   "inference.core.entities.responses.inference"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_consensus.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_consensus_v1_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_difference.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_difference_v1_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_stitch.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_detections_stitch_v1_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_dimension_rollup.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_domension_collapse.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_frame_delay.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_frame_delay_v1_tensor.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_image_stack.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_overlap_analysis.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/fusion/test_overlap_analysis_v1_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search/test_helpers.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.integrations.visual_search.helpers"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search/test_v1.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.integrations.visual_search",
+   "inference.roboflow_workflows_plugin.integrations.visual_search.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search_classifier/test_classification_annotations.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.classification_annotations"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/integrations/roboflow/visual_search_classifier/test_v1.py",
+  "imps": [
+   "inference.core.env",
+   "inference.core.utils.image_utils",
+   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier",
+   "inference.roboflow_workflows_plugin.integrations.visual_search_classifier.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/math/test_cosine_similarity.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_anthropic_claude.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_anthropic_claude_model_capabilities.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_anthropic_claude_v4.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_anthropic_claude_v4_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_anthropic_claude_v5.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_clip.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_clip_comparison.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_cog_vlm_deprecated.py",
+  "imps": [
+   "inference.core.exceptions"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_cosmos3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_depth_estimation.py",
+  "imps": [
+   "inference.core.env",
+   "inference.core.utils.depth_encoding"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_easy_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_florence2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_gaze_deprecated.py",
+  "imps": [
+   "inference.core.exceptions"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_glm_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemini.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemini_v5.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemini_v6.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemma.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemma_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemma_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_google_gemma_v4.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_image_prep_before_registration.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_kimi_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_kimi_openrouter_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_kimi_openrouter_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_llama_3_2_vision.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_llama_vision_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_lmm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_lmm_classifier.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_meta_vlm_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_meta_vlm_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_meta_vlm_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_offline_remote_execution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_compatible_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_v4.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_v5.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_v6.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openai_v7.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openrouter_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_openrouter_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_perception_encoder.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_platform_client_headers.py",
+  "imps": [],
+  "strs": [
+   "inference.core.roboflow_api",
+   "inference.core.utils.url_utils"
+  ],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_port_requests_match_legacy_clip.py",
+  "imps": [
+   "inference.core.entities.requests.clip",
+   "inference.core.entities.requests.perception_encoder",
+   "inference.core.interfaces.workflows_models_provider",
+   "inference.core.roboflow_api"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "reason": "plan Phase E: server response/request parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_port_requests_match_legacy_lmm.py",
+  "imps": [
+   "inference.core.entities.requests.inference",
+   "inference.core.entities.requests.moondream2",
+   "inference.core.interfaces.workflows_models_provider"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "reason": "plan Phase E: server response/request parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_port_requests_match_legacy_ocr.py",
+  "imps": [
+   "inference.core.entities.requests.doctr",
+   "inference.core.entities.requests.easy_ocr",
+   "inference.core.entities.requests.pp_ocr",
+   "inference.core.entities.requests.yolo_world",
+   "inference.core.interfaces.workflows_models_provider",
+   "inference.core.roboflow_api"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "reason": "plan Phase E: server response/request parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_port_requests_match_legacy_sam.py",
+  "imps": [
+   "inference.core.entities.requests.sam2",
+   "inference.core.entities.requests.sam3",
+   "inference.core.entities.requests.sam3_3d",
+   "inference.core.interfaces.workflows_models_provider"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "reason": "plan Phase E: server response/request parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_pp_ocr.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen3_5_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen3_5vl.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen3_6_openrouter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen_vlm.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen_vlm_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen_vlm_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_qwen_vlm_v4.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_sam_prompts.py",
+  "imps": [
+   "inference.core.entities.requests"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything2.py",
+  "imps": [
+   "inference.core.entities.responses.inference",
+   "inference.core.roboflow_api"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything2_video.py",
+  "imps": [
+   "inference.core.interfaces.workflows_execution_observer",
+   "inference.usage_tracking",
+   "inference.usage_tracking.collector"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything3_3d.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything3_interactive.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything3_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_segment_anything3_video.py",
+  "imps": [
+   "inference.core.interfaces.workflows_execution_observer",
+   "inference.usage_tracking",
+   "inference.usage_tracking.collector"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_spacexai.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_spacexai_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_spacexai_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_streaming_video_common.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_streaming_video_common_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_vlm_blocks_in_block_decoding_smoke.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_vlm_remote_execution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_yolo_world.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_zai_vlm_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/foundation/test_zai_vlm_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/action_recognition/test_action_recognition_entities.py",
+  "imps": [
+   "inference.core.entities.responses.action_recognition",
+   "inference.core.models.action_recognition"
+  ],
+  "strs": [
+   "inference.core.entities"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/action_recognition/test_v1.py",
+  "imps": [
+   "inference.core.managers.base"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_v3_stream_pipeline.py",
+  "imps": [
+   "inference.core.entities.requests.inference",
+   "inference.core.entities.responses.inference",
+   "inference.core.interfaces.workflows_models_provider"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/instance_segmentation/test_v4.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/keypoint_detection/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/keypoint_detection/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/keypoint_detection/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/keypoint_detection/test_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_class_classification/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_class_classification/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_class_classification/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_class_classification/test_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_label_classification/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_label_classification/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_label_classification/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/multi_label_classification/test_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/object_detection/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/object_detection/test_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/object_detection/test_v1_local_execution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/object_detection/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/object_detection/test_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/semantic_segmentation/test_hosted_api_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/semantic_segmentation/test_v1.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/semantic_segmentation/test_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/test_port_requests_match_legacy.py",
+  "imps": [
+   "inference.core.entities.requests.inference",
+   "inference.core.interfaces.workflows_models_provider"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "reason": "plan Phase E: server response/request parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/roboflow/test_remote_api_key_transport.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/test_remote_billing_forwarding.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/third_party/test_barcode_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/models/third_party/test_qr_code_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sampling/test_identify_changes.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sampling/test_identify_outliers.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/asset_library_attributes/test_v1.py",
+  "imps": [
+   "inference.core.cache",
+   "inference.roboflow_workflows_plugin.sinks.asset_library_attributes",
+   "inference.roboflow_workflows_plugin.sinks.asset_library_attributes.v1"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/roboflow_dataset_upload/test_v1.py",
+  "imps": [
+   "inference.core.cache",
+   "inference.core.env",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v1_tensor"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/roboflow_dataset_upload/test_v2.py",
+  "imps": [
+   "inference.core.cache",
+   "inference.core.env",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2",
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2_tensor"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/test_model_monitoring_inference_aggregator.py",
+  "imps": [
+   "inference.core.cache",
+   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+  ],
+  "strs": [
+   "inference.core.roboflow_api.send_inference_results_to_model_monitoring",
+   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.get_roboflow_workspace",
+   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/test_roboflow_custom_metadata.py",
+  "imps": [
+   "inference.core.cache",
+   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1"
+  ],
+  "strs": [
+   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata",
+   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request",
+   "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.get_roboflow_workspace"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/vision_events/test_v1.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.sinks.vision_events",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1"
+  ],
+  "strs": [
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/roboflow/vision_events_bundle/test_v1.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.sinks",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1",
+   "inference.roboflow_workflows_plugin.sinks.vision_events.v1_tensor",
+   "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1",
+   "inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1_tensor"
+  ],
+  "strs": [
+   "inference.core.env"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_email.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_email_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_email_v2_inline_images.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_event_writer_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_execution_policy.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.loader"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_local_file.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_modbus_tcp.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_mqtt_writer.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_onvif_movement.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_opc_writer.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_plc.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_plc_ethernetip.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_postgresql.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_s3_sink.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_slack_notification.py",
+  "imps": [
+   "inference.core.cache"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_twilio_sms_notification.py",
+  "imps": [
+   "inference.core.cache"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_twilio_sms_v2.py",
+  "imps": [
+   "inference.core.exceptions"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/sinks/test_webhook.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/test_dependent_resources.py",
+  "imps": [
+   "inference.roboflow_workflows_plugin.sinks.dataset_upload.v2",
+   "inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1"
+  ],
+  "strs": [
+   "inference.roboflow_workflows_plugin.loader"
+  ],
+  "action": "RETAIN",
+  "reason": "plan Phase E table: split package-only vs server parity",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/test_init_files.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/test_loader_block_filtering.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/test_loader_tensor_mode_parity.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/trackers/botsort/test_botsort_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/trackers/bytetrack/test_byte_track_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/trackers/ocsort/test_ocsort_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/trackers/sort/test_sort_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_absolute_static_crop.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_bounding_rect.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_byte_track_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_byte_track_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_byte_track_v3.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_byte_tracker_tensor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_crop.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_detection_offset.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_detections_combine.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_detections_merge.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_dynamic_zones.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_geotag_detection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_image_slicer_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_image_slicer_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_per_class_confidence_filter.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_perspective_correction.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_qr_code_generator.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_relative_static_crop.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_stabilize_detections.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_stitch.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_stitch_ocr_detections_v1.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_stitch_ocr_detections_v2.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/transformations/test_track_class_lock.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_adaptive_text_size.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_blur.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_bounding_box.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_bounding_box_v1_tensor_gpu.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_circle.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_classification_label.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_color.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_corner.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_crop.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_dot.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_ellipse.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_fonts_download.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_fonts_registry.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_grid.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_halo.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_host_mirror_viz.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_icon.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_icon_alpha.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_icon_local_file_gate.py",
+  "imps": [
+   "inference.core.exceptions",
+   "inference.core.interfaces.workflows_image_codec",
+   "inference.core.utils"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_keypoints.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_label.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_label_v1_tensor_gpu.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_label_v2_and_font_schema.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_line_counter_zone.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_mask.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_mask_v1_tensor_gpu.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_model_comparison.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_negative_safe_palette.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_pixelate.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_polygon.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_polygon_zone.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_rich_label.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_str_to_color.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_tensor_overlap_owner_regression.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_text_display.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_triangle.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/core_steps/visualizations/test_viz_phase_transfer_audit.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_cache.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_core.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_core_dynamic_blocks_in_inner_workflow.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_duplicate_dynamic_block_warning.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_graph_constructor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_graph_traversal.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_reference_type_checker.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_steps_initialiser.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_utils.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_validator.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/compiler/test_workflow_schema_detections_property.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_block_assembler.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_block_duration.py",
+  "imps": [
+   "inference.usage_tracking"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_block_scaffolding.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_block_usage_metering.py",
+  "imps": [
+   "inference.core.interfaces.workflows_execution_observer",
+   "inference.usage_tracking",
+   "inference.usage_tracking.block_execution",
+   "inference.usage_tracking.collector"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_debug_logs.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_app_result_serialization.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_code_hash.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_configuration_source.py",
+  "imps": [],
+  "strs": [
+   "inference.core.env"
+  ],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_endpoint_urls.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_execution_timing.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_executor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_semantic_segmentation_transport.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_ws_chunking.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_ws_contract.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_ws_protocol.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_modal_ws_server_dedup.py",
+  "imps": [],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "MOVE reclassified as RETAIN: loads modal/modal_app.py (server-adjacent deploy code)"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_representation_boundary.py",
+  "imps": [
+   "inference.core.entities.responses.inference"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: asserts against server response models"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_tensor_native_imports_lines.py",
+  "imps": [],
+  "strs": [
+   "inference.core.env"
+  ],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_workflow_debug.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/dynamic_blocs/test_workspace_resolver.py",
+  "imps": [
+   "inference.core.exceptions",
+   "inference.core.interfaces.roboflow_platform_client",
+   "inference.core.roboflow_api"
+  ],
+  "strs": [
+   "inference.core.exceptions",
+   "inference.core.roboflow_api"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/entities/test_base.py",
+  "imps": [
+   "inference.core.env"
+  ],
+  "strs": [],
+  "action": "MOVE_ENV"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/execution_data_manager/test_branching_manager.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/execution_data_manager/test_dynamic_batches_manager.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/execution_data_manager/test_execution_cache.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/execution_data_manager/test_step_input_assembler.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/execution_data_manager/test_step_output_future_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_flow_coordinator.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_future_resolution_utils.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_output_constructor.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_run_steps_in_parallel.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_runtime_input_assembler.py",
+  "imps": [
+   "inference.core.interfaces.workflows_image_codec"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_runtime_input_validator.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_step_observer.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/executor/test_stream_pipeline_flush.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_compiler_bridge.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_composition.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_dynamic_blocks_collection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_inline.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_inline_nested_continue_if_crop_lineage_shape.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_parameter_bindings_validation.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_reference_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/inner_workflow/test_spec_resolver_default.py",
+  "imps": [
+   "inference.core.interfaces.roboflow_platform_client"
+  ],
+  "strs": [
+   "inference.core.roboflow_api"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_blocks_loader.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_connections_discovery.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_describe_outputs.py",
+  "imps": [
+   "inference.core.entities.requests.workflows",
+   "inference.core.interfaces.http.handlers.workflows"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_inputs_discovery.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_plugin_block_source.py",
+  "imps": [],
+  "strs": [
+   "inference.enterprise"
+  ],
+  "action": "MOVE",
+  "executed_notes": "SPLIT reclassified as MOVE: only aliased workflows imports; residual inference.* strings are decontamination assertions"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_schema_parser.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_selectors_parser.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_types_discovery.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/introspection/test_utils.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/profiling/test_base_profiler.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/profiling/test_null_profiler.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_configuration_injection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE",
+  "reason": "plan Phase E table: split package-only vs server parity",
+  "executed_notes": "SPLIT reclassified as MOVE: only aliased workflows imports; residual inference.* strings are decontamination assertions"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_core.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_dependencies_pre_loading.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_image_codec_injection.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_model_manager_bind_hook.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_observer_resolution.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/execution_engine/test_step_error_handler_default.py",
+  "imps": [],
+  "strs": [
+   "inference.core.exceptions"
+  ],
+  "action": "MOVE",
+  "executed_notes": "SPLIT reclassified as MOVE: only aliased workflows imports; residual inference.* strings are decontamination assertions"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_background_tasks.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_cache.py",
+  "imps": [
+   "inference.core.cache.base"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_image_codec.py",
+  "imps": [
+   "inference.core.utils"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_models_provider.py",
+  "imps": [
+   "inference.core.interfaces.workflows_models_provider",
+   "inference.core.managers.base",
+   "inference.core.managers.decorators.base"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_observer.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_platform_client.py",
+  "imps": [
+   "inference.core.interfaces.roboflow_platform_client",
+   "inference.core.roboflow_api",
+   "inference.core.utils.requests",
+   "inference.core.utils.url_utils",
+   "inference.core.version"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/prototypes/test_platform_errors.py",
+  "imps": [
+   "inference.core",
+   "inference.core.interfaces.workflows_step_error_handlers"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/test_configuration.py",
+  "imps": [],
+  "strs": [],
+  "action": "SPLIT",
+  "reason": "plan Phase E table: split package-only vs server parity"
+ },
+ {
+  "path": "tests/workflows/unit_tests/test_decontamination_lint.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE",
+  "reason": "plan Phase E table: decontamination/env scans/isolation move"
+ },
+ {
+  "path": "tests/workflows/unit_tests/test_no_server_env_imports.py",
+  "imps": [],
+  "strs": [
+   "inference.core.env"
+  ],
+  "action": "MOVE",
+  "reason": "plan Phase E table: decontamination/env scans/isolation move"
+ },
+ {
+  "path": "tests/workflows/unit_tests/test_observer_decontamination.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE",
+  "reason": "plan Phase E table: decontamination/env scans/isolation move"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_action_recognition_copy.py",
+  "imps": [
+   "inference.core.managers.base",
+   "inference.core.managers.decorators.base",
+   "inference.core.models.action_recognition"
+  ],
+  "strs": [
+   "inference.core.entities"
+  ],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_image_encoding.py",
+  "imps": [
+   "inference.core.utils"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_images.py",
+  "imps": [
+   "inference.core.utils.preprocess"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_images_delegates.py",
+  "imps": [
+   "inference.core.utils"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_in_memory_cache.py",
+  "imps": [
+   "inference.core.cache.memory"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_lru_cache.py",
+  "imps": [
+   "inference.core.cache.lru_cache"
+  ],
+  "strs": [],
+  "action": "RETAIN"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_text.py",
+  "imps": [
+   "inference.core.utils.environment",
+   "inference.core.utils.file_system",
+   "inference.core.utils.function",
+   "inference.core.utils.postprocess",
+   "inference.core.warnings"
+  ],
+  "strs": [],
+  "action": "RETAIN",
+  "executed_notes": "SPLIT reclassified as RETAIN: server-parity/adapter/platform coverage"
+ },
+ {
+  "path": "tests/workflows/unit_tests/utils/test_url_input.py",
+  "imps": [],
+  "strs": [],
+  "action": "MOVE"
+ }
+]

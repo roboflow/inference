@@ -18,7 +18,6 @@ from typing import List, Literal, Optional, get_args
 
 import pytest
 
-from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     BlockManifest as ClipV1Manifest,
 )
@@ -37,15 +36,10 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
     BlockManifest as ObjectDetectionV3Manifest,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
-    BlockManifest as DatasetUploadV2Manifest,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
-    BlockManifest as ModelMonitoringV1Manifest,
-)
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_blocks_from_plugin,
     load_core_workflow_blocks,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
@@ -63,6 +57,13 @@ from inference.core.workflows.prototypes.block import (
     roboflow_platform_model,
     roboflow_platform_project,
     third_party_model,
+)
+from inference.core.workflows.prototypes.models_provider import CORE_MODEL_ENDPOINT_TYPE
+from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
+    BlockManifest as DatasetUploadV2Manifest,
+)
+from inference.roboflow_workflows_plugin.sinks.model_monitoring_inference_aggregator.v1 import (
+    BlockManifest as ModelMonitoringV1Manifest,
 )
 
 # ---------------------------------------------------------------------------
@@ -326,7 +327,7 @@ def test_clip_v1_synthesizes_core_model_id_from_version() -> None:
     # Core models must register in the model manager the same way
     # load_core_model() does.
     assert resources[0].metadata.model_registration_kwargs == {
-        "endpoint_type": ModelEndpointType.CORE_MODEL
+        "endpoint_type": CORE_MODEL_ENDPOINT_TYPE
     }
 
 
@@ -516,7 +517,9 @@ def _declares_resource_kind_field(manifest_class) -> bool:
 
 def test_every_block_with_resource_kind_fields_declares_dependencies() -> None:
     flagged_types, missing_declarations = [], []
-    for block in load_core_workflow_blocks():
+    for block in load_core_workflow_blocks() + load_blocks_from_plugin(
+        plugin_name="inference.roboflow_workflows_plugin.loader"
+    ):
         if not _declares_resource_kind_field(block.manifest_class):
             continue
         block_type = _canonical_block_type(block.manifest_class)
@@ -534,6 +537,12 @@ def test_every_block_with_resource_kind_fields_declares_dependencies() -> None:
         "Blocks declaring roboflow_model_id / roboflow_project fields without "
         f"discover_dependent_resources() override: {sorted(missing_declarations)}"
     )
+    assert {
+        "roboflow_core/visual_search@v1",
+        "roboflow_core/visual_search_classifier@v1",
+        "roboflow_core/roboflow_dataset_upload@v2",
+        "roboflow_core/model_monitoring_inference_aggregator@v1",
+    } <= set(flagged_types), "relocated blocks left the dependent-resources guard"
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import os
+import shlex
 
 from inference.core.env import (
     CELERY_LOG_LEVEL,
@@ -22,11 +23,16 @@ def _gunicorn_ssl_flags() -> str:
         raise RuntimeError(
             "ENABLE_HTTPS is set but SSL_CERTFILE and SSL_KEYFILE must both be configured."
         )
-    flags = f"--certfile={SSL_CERTFILE} --keyfile={SSL_KEYFILE}"
+    flags = (
+        f"--certfile={shlex.quote(SSL_CERTFILE)} --keyfile={shlex.quote(SSL_KEYFILE)}"
+    )
     if SSL_KEYFILE_PASSWORD:
-        flags += f" --ssl-keyfile-password={SSL_KEYFILE_PASSWORD}"
+        raise RuntimeError(
+            "The parallel Gunicorn launcher does not support SSL_KEYFILE_PASSWORD. "
+            "Use the Uvicorn launcher for encrypted TLS keys; no key password is ignored."
+        )
     if SSL_CA_CERTS:
-        flags += f" --ca-certs={SSL_CA_CERTS}"
+        flags += f" --ca-certs={shlex.quote(SSL_CA_CERTS)} --cert-reqs=2"
     return " " + flags
 
 

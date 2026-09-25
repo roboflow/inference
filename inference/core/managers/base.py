@@ -94,6 +94,32 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
+    def __workflows_bind__(
+        self,
+        init_parameters: Dict[str, Any],
+        step_error_handler: Any,
+    ) -> Any:
+        """Class-level Workflows compatibility hook for a raw ModelManager.
+
+        `ExecutionEngine.init` invokes this when its effective
+        `model_manager` is a raw `ModelManager` (or a subclass such as
+        `ModelManagerDecorator`); it wraps `self` with
+        `ModelManagerModelsProvider` and installs the historical server
+        services into the engine's private `init_parameters`, returning the
+        effective `step_error_handler`. The server helper is imported lazily
+        so `inference/core/workflows` does not gain a reverse import of this
+        module.
+        """
+        from inference.core.interfaces.workflows_models_provider import (
+            bind_model_manager_to_workflows,
+        )
+
+        return bind_model_manager_to_workflows(
+            model_manager=self,
+            init_parameters=init_parameters,
+            step_error_handler=step_error_handler,
+        )
+
     def add_model(
         self,
         model_id: str,
@@ -222,6 +248,25 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
+
+    def load_action_recognition_model(
+        self, model_id: str, api_key: Optional[str] = None, **kwargs
+    ):
+        """Load an action-recognition model the way every entry point loads it.
+
+        Forwarder so the Workflow block reaches the loader through the models
+        port instead of importing
+        `inference.core.models.inference_models_adapters` directly. The import
+        stays function-local for the same reason it was in the block: loading
+        the adapters module is expensive.
+        """
+        from inference.core.models.inference_models_adapters import (
+            load_action_recognition_model,
+        )
+
+        return load_action_recognition_model(
+            model_id=model_id, api_key=api_key, **kwargs
+        )
 
     def record_request_metadata(
         self,
@@ -579,6 +624,52 @@ class ModelManager:
         """
         model = self._get_model_reference(model_id=model_id)
         return model.class_names
+
+    def get_keypoints_classes(self, model_id: str) -> List[List[str]]:
+        """Per-object-class keypoint class names, indexed by object class id.
+
+        Only the `inference_models` adapters expose this; the workflow keypoint
+        blocks read it to label the keypoints they emit.
+        """
+        model = self._get_model_reference(model_id=model_id)
+        return model.key_points_classes
+
+    def model_supports_stream_pipeline(self, model_id: str) -> bool:
+        """True when the loaded model runs a depth>1 async inference pipeline."""
+        if model_id not in self:
+            return False
+        model = self._get_model_reference(model_id=model_id)
+        return (
+            callable(getattr(model, "flush", None))
+            and getattr(model, "_pipeline_depth", 1) > 1
+        )
+
+    def get_model_pipeline_depth(self, model_id: str) -> int:
+        """The model's async pipeline depth; 1 when it has none or is not loaded."""
+        if model_id not in self:
+            return 1
+        model = self._get_model_reference(model_id=model_id)
+        return int(getattr(model, "_pipeline_depth", 1))
+
+    def flush_model_stream_pipeline(self, model_id: str) -> Optional[List[Any]]:
+        """Drain the model's in-flight pipeline, or None when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        flush_fn = getattr(model, "flush", None)
+        if not callable(flush_fn):
+            return None
+        return flush_fn()
+
+    def shutdown_model_stream_pipeline(self, model_id: str) -> None:
+        """Stop the model's pipeline workers. A no-op when it has none."""
+        if model_id not in self:
+            return None
+        model = self._get_model_reference(model_id=model_id)
+        shutdown_fn = getattr(model, "shutdown_pipeline", None)
+        if callable(shutdown_fn):
+            shutdown_fn()
+        return None
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Retrieves the task type for a given model.
