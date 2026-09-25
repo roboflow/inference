@@ -66,7 +66,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 78, total_fields
+    assert total_fields == 80, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -90,6 +90,8 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
         configuration.engine.allow_kafka_sinks_user_provided_bootstrap_servers is True
     )
     assert configuration.engine.kafka_sinks_whitelisted_bootstrap_servers is None
+    assert configuration.engine.allow_mqtt_blocks_user_provided_host is True
+    assert configuration.engine.mqtt_blocks_whitelisted_hosts is None
     assert configuration.models.vlm_segmentation_max_polygon_vertices == 500
     assert configuration.tensor.representation_enabled is False
     assert configuration.tensor.image_tensor_device is None
@@ -412,7 +414,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 78, sorted(exported)
+    assert len(exported) == 80, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)

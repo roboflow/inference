@@ -720,9 +720,14 @@ plan = RFDetrExecutionPlan(
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
-    rfdetr_execution_plan=plan,
+    execution_plan=plan,
 )
 ```
+
+The previous `rfdetr_execution_plan` keyword remains supported as a deprecated
+alias until October 24, 2026. It emits a `FutureWarning`; migrate calls to
+`execution_plan`. Passing the alias together with a non-`None` `execution_plan`
+raises a `TypeError`.
 
 Public preprocessing synchronizes by default, so its result can be consumed by an
 independent `forward()` call without relying on model-owned readiness state:
@@ -731,7 +736,7 @@ independent `forward()` call without relying on model-owned readiness state:
 model = AutoModel.from_pretrained(
     "rfdetr-small",
     backend="trt",
-    rfdetr_execution_plan=plan,
+    execution_plan=plan,
 )
 preprocessed, metadata = model.pre_process(image)
 raw_predictions = model.forward(preprocessed)

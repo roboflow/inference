@@ -1,15 +1,17 @@
 ---
-description: Record unreleased Execution Engine changes; maintainers version them at release
-globs: inference/core/workflows/execution_engine/**/*.py
+description: Record engine behavior changes in the Workflows package changelog; maintainers version them at release
+globs: workflows/roboflow_workflows/execution_engine/**/*.py
 alwaysApply: false
 ---
 
 # Execution Engine version and changelog
 
 When you change **behavior** of workflow **compilation** or **execution** under
-`inference/core/workflows/execution_engine/`, add a user-facing entry to the
-Execution Engine changelog in the **same PR**. Do not bump a version; maintainers
-do that when preparing a release.
+`workflows/roboflow_workflows/execution_engine/`, add a user-facing entry to
+`workflows/CHANGELOG.md` in the **same PR**, under `## Unreleased` →
+`### Execution engine`. This single entry satisfies both package and engine
+changelog requirements. No parallel changelog PR in `roboflow/docs` is required.
+Contributors do not choose or bump versions; maintainers do that at release.
 
 ## When this applies
 
@@ -23,44 +25,66 @@ do that when preparing a release.
 - Workflow **block** implementations in `core_steps/` (unless they require an EE change)
 - Documentation or tests that only mirror existing behavior
 
+Block and other package changes still follow the package changelog requirements
+in the root `AGENTS.md`; they do not require an engine version bump by themselves.
+
 ## Required updates
 
-1. **Changelog** — add short **What changed** bullets (user-facing behavior, not
-   file lists) under `## Unreleased` in the Execution Engine changelog. The
-   changelog now lives in the [roboflow/docs](https://github.com/roboflow/docs)
-   repository at `workflows/developer-guide/execution-engine-changelog.md`,
-   published at
-   <https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog>.
-   Open a PR against that repository in parallel with the code change.
-   `docs/workflows/execution_engine_changelog.md` in this repository is now only
-   a redirect stub: do not edit it.
+1. **Changelog** — describe the user-visible compile/run change, affected
+   workflows, and any migration needed under `### Execution engine`. Do not
+   duplicate the same entry under another package changelog subsection.
 2. **Tests** — add or update behavior tests for the change. Do not update
    hardcoded version assertions in a contributor PR.
 
+## Two version numbers
+
+The `roboflow-workflows` package version identifies the entire distribution.
+`EXECUTION_ENGINE_V1_VERSION` is a separate compatibility version used by
+workflow definitions and `get_execution_engine_compatibility()` on blocks.
+Keep both: a package release can change blocks or dependencies without changing
+engine behavior. Do not replace engine compatibility ranges with package versions
+or raise their minimum simply because a newer engine is available.
+
+For older capabilities, consult the
+[historical engine changelog](https://docs.roboflow.com/workflows/developer-guide/developer-guide/execution-engine-changelog).
+For subsequent changes, use the package changelog's engine entries and bundled
+engine version. Preserve the historical page and the redirect at
+`docs/workflows/execution_engine_changelog.md`.
+
 ## Maintainer release updates
 
-When preparing a release, maintainers:
+When preparing a `roboflow-workflows` release, maintainers:
 
-1. Choose the Execution Engine version (patch for a fix, minor for a new
-   capability, major for a coordinated breaking change).
-2. Bump `EXECUTION_ENGINE_V1_VERSION` in
-   `inference/core/workflows/execution_engine/v1/core.py`.
-3. In the [roboflow/docs](https://github.com/roboflow/docs) repository, move the
-   `## Unreleased` entries in
-   `workflows/developer-guide/execution-engine-changelog.md` under
-   `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\`` using the release
-   value from `inference/core/version.py`, then leave a fresh `## Unreleased`
-   section at the top.
-4. Update hardcoded EE version assertions in
+1. If engine behavior changed, choose its version bump (patch for a fix, minor
+   for a new capability, major for a coordinated breaking change) and update
+   `EXECUTION_ENGINE_V1_VERSION` in
+   `workflows/roboflow_workflows/execution_engine/v1/core.py`.
+2. Update hardcoded EE version assertions when the engine version changes in
    `tests/inference/integration_tests/test_workflow_endpoints.py` and
    `tests/inference/hosted_platform_tests/test_workflows.py`.
+3. Apply the package version, dependency pins, and lockfile updates described in
+   the root `AGENTS.md`. Move `Unreleased` entries into the final package version
+   section in `workflows/CHANGELOG.md`, retaining `### Execution engine` when
+   present, and leave a fresh `## Unreleased` section.
+4. Record ``Bundled execution engine: `X.Y.Z`.`` immediately below each package
+   release heading, using the constant in that release's source even when it is
+   unchanged. This is the package-to-engine mapping; do not infer an engine
+   version from the Inference version or historical documentation headings.
 
-## Example changelog entry
+**Unreleased capability exception:** if a block must declare a minimum engine
+version for a capability still under `Unreleased`, coordinate with a maintainer
+to choose and bump the engine constant and mirrored assertions before the block
+ships. Record the assigned engine version alongside that capability's entry
+under `Unreleased`; do not finalize the package release heading early. At release,
+record the bundled engine version as above.
+
+## Example contributor entry
 
 ```markdown
 ## Unreleased
 
-**What changed**
+### Execution engine
 
-* **Short title** — One or two sentences on compile/run impact for workflow authors.
+- **Short title** — Describe the compile/run impact for workflow authors and
+  any required migration.
 ```

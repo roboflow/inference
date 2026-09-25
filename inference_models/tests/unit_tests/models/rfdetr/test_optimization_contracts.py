@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models import PreProcessingOverrides
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
@@ -25,6 +26,7 @@ from inference_models.models.optimization.contracts import (
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.ids import AUTO_IMPLEMENTATION_ID
 from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.rfdetr import triton_universal_preprocess_runtime
 from inference_models.models.rfdetr.optimization.catalog import (
     RFDETR_BUFFER_STRATEGY_IMPLEMENTATIONS,
     RFDETR_ENGINE_PLUGIN_IMPLEMENTATIONS,
@@ -237,6 +239,35 @@ def test_execution_plan_preserves_all_explicit_stage_ids() -> None:
     assert resolved.allow_runtime_failure_fallback
 
 
+def test_profiling_execution_plan_is_explicit_and_forbids_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "INFERENCE_MODELS_RFDETR_PREPROCESSOR",
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+    )
+    profiling_plan = RFDetrExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_BASE,
+        buffer_strategy_id="base",
+        scheduler_id="base",
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        engine_plugin_id="base",
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved = RFDetrExecutionPlan.from_dict(profiling_plan.to_dict())
+
+    assert isinstance(resolved, RFDetrExecutionPlan)
+    assert resolved.preprocessor_id == RFDETR_PREPROCESSOR_BASE
+    assert resolved.buffer_strategy_id == "base"
+    assert resolved.scheduler_id == "base"
+    assert resolved.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert resolved.engine_plugin_id == "base"
+    assert not resolved.allow_compatibility_fallback
+    assert not resolved.allow_runtime_failure_fallback
+
+
 def test_registry_resolves_explicit_and_auto_base() -> None:
     registry = ImplementationRegistry(scope_name="RF-DETR")
     base = _Stage("base")
@@ -325,6 +356,60 @@ def test_registry_rejects_removed_threaded_preprocessor(backend) -> None:
             context=ExecutionContext(device_kind="cpu", device="cpu"),
             allow_fallback=True,
         )
+
+
+@pytest.mark.parametrize("allow_fallback", [False, True])
+def test_model_eval_request_retains_triton_preprocessor(
+    monkeypatch: pytest.MonkeyPatch,
+    allow_fallback: bool,
+) -> None:
+    """Resolve model-eval metadata and disable flags through the real stage registry.
+
+    Args:
+        monkeypatch: Fixture simulating Triton availability without GPU execution.
+        allow_fallback: Whether an incompatible selection may fall back to base.
+    """
+    monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
+    registry = build_rfdetr_implementation_registry(
+        device=torch.device("cuda:0"),
+    )
+    context = _context()
+    network = _network_input().model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(height=32, width=48)
+        }
+    )
+    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    model_selection = resolve_preprocessor_for_model(
+        registry=registry,
+        requested_id="auto",
+        context=context,
+        image_pre_processing=transforms,
+        network_input=network,
+        allow_fallback=allow_fallback,
+    )
+    request_selection = resolve_preprocessor_for_request(
+        registry=registry,
+        implementation=model_selection.implementation,
+        request=PreprocessRequest(
+            images=np.zeros((48, 80, 3), dtype=np.uint8),
+            input_color_format=ColorMode.BGR,
+            image_pre_processing=transforms,
+            network_input=network,
+            pre_processing_overrides=PreProcessingOverrides(
+                disable_contrast_enhancement=True,
+                disable_grayscale=True,
+                disable_static_crop=True,
+            ),
+        ),
+        context=context,
+        allow_fallback=allow_fallback,
+    )
+
+    for selection in (model_selection, request_selection):
+        assert selection.effective_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+        assert not selection.used_fallback
+        assert selection.fallback_reason is None
 
 
 def test_registry_rejects_unknown_and_incompatible_explicit_selection() -> None:
