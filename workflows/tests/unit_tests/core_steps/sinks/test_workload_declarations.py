@@ -11,6 +11,7 @@ from typing import Any, List
 
 import pytest
 import roboflow_workflows.core_steps.sinks.local_file.v1 as local_file_module
+import roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 as postgresql_module
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
@@ -26,10 +27,14 @@ from roboflow_workflows.core_steps.sinks.webhook.v1 import (
     BlockManifest as WebhookManifest,
 )
 from roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 import (
+    POSTGRESQL_HOSTED_PLATFORM_RESTRICTION,
+)
+from roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 import (
     BlockManifest as PostgreSQLManifest,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
+    RestrictionMetadata,
     Runtime,
     Severity,
     WorkOperation,
@@ -46,6 +51,10 @@ from tests.unit_tests.workload_declaration_helpers import (
 )
 
 LOCAL_STORAGE_FLAG = "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE"
+HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
+FIRE_AND_FORGET_CODE = "fire_and_forget_hides_persistence_failures"
+HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
+POSTGRESQL_FIRE_AND_FORGET_VALUES = [True, False, "$inputs.fire_and_forget"]
 
 
 def _local_file() -> LocalFileManifest:
@@ -243,28 +252,85 @@ def _postgresql(fire_and_forget: Any) -> PostgreSQLManifest:
     )
 
 
+def _assert_postgresql_hosted_restriction(restriction: RestrictionMetadata) -> None:
+    """The hosted gate is HARD and conditioned on the target runtime only."""
+    assert restriction.code == HOSTED_RESTRICTION_CODE
+    assert restriction.severity is Severity.HARD
+    assert restriction.when.runtimes == [Runtime.HOSTED_SERVERLESS]
+    assert restriction.when.step_execution_modes is None
+    assert restriction.when.input_modes is None
+    # the runtime axis carries the condition; no host flag is named
+    assert restriction.when.configuration_equals == {}
+
+
 @pytest.mark.parametrize(
     "fire_and_forget, expected",
-    [(True, ["fire_and_forget_hides_persistence_failures"]), (False, [])],
+    [
+        (True, [FIRE_AND_FORGET_CODE, HOSTED_RESTRICTION_CODE]),
+        (False, [HOSTED_RESTRICTION_CODE]),
+    ],
 )
 def test_postgresql_caveat_follows_the_literal_fire_and_forget(
     fire_and_forget: bool, expected: List[str]
 ) -> None:
+    declared = portable_restrictions_discovery(_postgresql(fire_and_forget))
+    assert declared.complete is True, "a literal switch is fully knowable"
+    assert declared.unknown_reasons == []
+    assert [restriction.code for restriction in declared.items] == expected
+
+
+@pytest.mark.parametrize("fire_and_forget", POSTGRESQL_FIRE_AND_FORGET_VALUES)
+def test_postgresql_declares_the_hosted_gate_in_every_branch(
+    fire_and_forget: Any,
+) -> None:
+    """`run()` fails on the hosted platform before `fire_and_forget` is read."""
     declared = portable_restrictions(_postgresql(fire_and_forget))
-    assert isinstance(declared, list), "a literal switch is fully knowable"
-    assert [restriction.code for restriction in declared] == expected
+    hard = [
+        restriction for restriction in declared if restriction.severity is Severity.HARD
+    ]
+    assert len(hard) == 1
+    _assert_postgresql_hosted_restriction(hard[0])
+    assert hard[0] == restriction_metadata_of(POSTGRESQL_HOSTED_PLATFORM_RESTRICTION)
+
+
+@pytest.mark.parametrize(
+    "gcp_serverless, lambda_runtime",
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_postgresql_declaration_ignores_this_host_hosted_platform_flags(
+    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool, lambda_runtime: bool
+) -> None:
+    """`run()` branches on the flags; the declaration must not.
+
+    The flags are patched as module CONSTANTS, which is what the block imports
+    and what `run()` genuinely reads.
+    """
+    baseline = [
+        portable_restrictions_discovery(_postgresql(value))
+        for value in POSTGRESQL_FIRE_AND_FORGET_VALUES
+    ]
+    for flag, value in zip(HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)):
+        assert hasattr(postgresql_module, flag), flag
+        monkeypatch.setattr(postgresql_module, flag, value)
+    assert [
+        portable_restrictions_discovery(_postgresql(value))
+        for value in POSTGRESQL_FIRE_AND_FORGET_VALUES
+    ] == baseline
 
 
 def test_postgresql_reports_a_selector_as_unknown_not_as_absence() -> None:
     """A runtime value means the caveat MAY apply.
 
     Declaring it would be as wrong as declaring its absence, so nothing is
-    claimed complete and the reason names the field and the step.
+    claimed complete and the reason names the field and the step. The hosted
+    gate does not depend on the value and stays declared.
     """
     declared = portable_restrictions_discovery(_postgresql("$inputs.fire_and_forget"))
     assert isinstance(declared, Discovery)
     assert declared.complete is False
-    assert declared.items == []
+    assert declared.items == [
+        restriction_metadata_of(POSTGRESQL_HOSTED_PLATFORM_RESTRICTION)
+    ]
     assert declared.unknown_reasons == [
         unresolved_selector_problem(
             node_id="$steps.database",
@@ -275,19 +341,53 @@ def test_postgresql_reports_a_selector_as_unknown_not_as_absence() -> None:
     ]
 
 
-def test_the_legacy_postgresql_and_s3_declarations_are_unchanged() -> None:
+def test_the_legacy_postgresql_and_s3_declarations_stay_mode_blind() -> None:
     """`get_restrictions()` is a classmethod and stays mode-blind.
 
     F003/F004 changed only the portable hooks. The legacy API keeps returning
-    its single unconditional note for both blocks, whatever the manifest says.
+    its unconditional notes, whatever the manifest says: S3 its append note,
+    PostgreSQL its fire-and-forget note plus the hosted gate.
     """
-    for manifest_class, expected_codes in (
+    for manifest_class, expected_count in (
         (S3Manifest, 1),
-        (PostgreSQLManifest, 1),
+        (PostgreSQLManifest, 2),
     ):
         legacy = manifest_class.get_restrictions()
-        assert len(legacy) == expected_codes
-        assert legacy[0].note
+        assert len(legacy) == expected_count
+        assert all(restriction.note for restriction in legacy)
+
+
+def test_the_legacy_postgresql_declaration_carries_the_hosted_gate() -> None:
+    """The editor sees the same hosted gate as the portable declaration.
+
+    The legacy fire-and-forget note is kept unconditionally, because the
+    classmethod cannot see the manifest's `fire_and_forget` value.
+    """
+    legacy = {
+        restriction.code: restriction
+        for restriction in PostgreSQLManifest.get_restrictions()
+    }
+    assert set(legacy) == {FIRE_AND_FORGET_CODE, HOSTED_RESTRICTION_CODE}
+    hosted = legacy[HOSTED_RESTRICTION_CODE]
+    assert hosted.severity is Severity.HARD
+    assert hosted.applies_to_runtimes == [Runtime.HOSTED_SERVERLESS]
+    assert hosted.applies_to_step_execution_modes is None
+    assert hosted.applies_to_input_modes is None
+    assert hosted.applies_to_configuration is None
+    assert "hosted platform" in hosted.note
+    fire_and_forget = legacy[FIRE_AND_FORGET_CODE]
+    assert fire_and_forget.severity is Severity.SOFT
+    assert fire_and_forget.applies_to_runtimes == [Runtime.INFERENCE_PIPELINE]
+    # the default manifest (`fire_and_forget=True`) is the branch the legacy
+    # list describes: both carry the same codes and severities
+    portable = portable_restrictions(_postgresql(True))
+    portable_codes = {
+        (restriction.code, restriction.severity) for restriction in portable
+    }
+    legacy_codes = {
+        (code, restriction.severity) for code, restriction in legacy.items()
+    }
+    assert portable_codes == legacy_codes
 
 
 # Adopted from the Codex round-001 reviewer reproducers, through the public
@@ -322,7 +422,7 @@ def test_s3_append_restriction_through_the_public_api(output_mode: str) -> None:
     )
 
 
-@pytest.mark.parametrize("fire_and_forget", [True, False, "$inputs.fire_and_forget"])
+@pytest.mark.parametrize("fire_and_forget", POSTGRESQL_FIRE_AND_FORGET_VALUES)
 def test_postgresql_restriction_through_the_public_api(fire_and_forget) -> None:
     from roboflow_workflows.execution_engine.introspection import blocks_loader
 
@@ -358,16 +458,18 @@ def test_postgresql_restriction_through_the_public_api(fire_and_forget) -> None:
             restrictions = describe_workflow_workload(definition).steps[0].restrictions
         finally:
             blocks_loader.clear_caches()
-    codes = {restriction.code for restriction in restrictions.items}
+    by_code = {restriction.code: restriction for restriction in restrictions.items}
+    # the hard restriction holds whatever the switch turns out to be
+    _assert_postgresql_hosted_restriction(by_code[HOSTED_RESTRICTION_CODE])
     if isinstance(fire_and_forget, bool):
         assert restrictions.complete
-        assert (
-            "fire_and_forget_hides_persistence_failures" in codes
-        ) is fire_and_forget
+        assert restrictions.unknown_reasons == []
+        assert (FIRE_AND_FORGET_CODE in by_code) is fire_and_forget
+        assert len(by_code) == 1 + int(fire_and_forget)
     else:
         # the input's default_value is True; the declaration must NOT adopt it
         assert not restrictions.complete
-        assert restrictions.items == []
+        assert list(by_code) == [HOSTED_RESTRICTION_CODE]
         assert restrictions.unknown_reasons == [
             unresolved_selector_problem(
                 node_id="$steps.sink",
