@@ -31,6 +31,7 @@ from inference_sdk.utils.logging import get_logger
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.datachannel import ChunkReassembler
 from inference_sdk.webrtc.sources import StreamSource, VideoFileSource
+from inference_sdk.webrtc.turn_probe import prefer_reachable_turn
 
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel, RTCPeerConnection
@@ -1079,8 +1080,10 @@ class WebRTCSession:
 
         # Fetch TURN configuration (auto-fetch or user-provided)
         turn_config = await self._get_turn_config()
+        # aiortc uses only the first TURN URL; the server still gets the full list
+        local_config = await prefer_reachable_turn(turn_config)
 
-        pc = RTCPeerConnection(configuration=turn_config)
+        pc = RTCPeerConnection(configuration=local_config)
         self._pc = pc
         relay = MediaRelay()
 

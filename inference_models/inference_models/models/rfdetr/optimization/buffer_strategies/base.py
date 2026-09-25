@@ -28,7 +28,7 @@ class BaseBufferStrategy:
         implementation_id=RFDETR_BUFFER_STRATEGY_BASE,
         stage=OptimizationStage.BUFFER_STRATEGY,
         version="1",
-        target=DeviceCompatibility(device_kind="gpu"),
+        target=DeviceCompatibility(device_kind="any"),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping({"batch": ">=1"}),
@@ -47,7 +47,7 @@ class BaseBufferStrategy:
                 "layout": "unchanged",
                 "ownership": "framework tensor retained by caller",
                 "aliasing": "exact preprocessing tensor; no copy",
-                "lifetime": "through TensorRT consumption",
+                "lifetime": "through backend consumption",
             }
         ),
         numerical_behavior="identity; does not inspect or modify tensor values",
