@@ -71,6 +71,27 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        # Check if there's an ongoing mutation (add/remove) for this model.
+        # If so, we must wait for it to complete to preserve mutation ordering.
+        lifecycle_lock = self.model_manager._get_lifecycle_lock(model_id)
+        if lifecycle_lock is not None:
+            # A mutation is in progress. Defer to the wrapped manager which
+            # will wait on the per-model lock and recheck existence.
+            logger.debug(
+                f"Detected ongoing mutation for {model_id} in decorator - "
+                f"deferring to wrapped manager to preserve ordering."
+            )
+            self.model_manager.add_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+            return
+
+        # No ongoing mutation, safe to check existence
         if model_id in self:
             self.model_manager.record_request_metadata(
                 model_id=model_id,
@@ -81,6 +102,7 @@ class ModelManagerDecorator(ModelManager):
             if ids_collector is not None:
                 ids_collector.add(model_id)
             return
+
         self.model_manager.add_model(
             model_id,
             api_key,
