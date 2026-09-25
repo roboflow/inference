@@ -1,9 +1,12 @@
 import importlib
 import sys
 import threading
+import warnings
+from contextlib import nullcontext
 from importlib.machinery import ModuleSpec
 from types import MethodType, ModuleType, SimpleNamespace
 from typing import List
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -20,10 +23,16 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.runtime_metadata import (
+    SelectionSnapshot,
+)
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     PreprocessRequest,
     PreprocessResult,
+)
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
 )
 from inference_models.models.rfdetr.optimization.ids import (
     RFDETR_POSTPROCESSOR_BASE,
@@ -106,6 +115,149 @@ def rfdetr_trt_model_class(monkeypatch):
                     delattr(parent, attribute)
             else:
                 setattr(parent, attribute, previous_attribute)
+
+
+def test_model_boundary_parses_serialized_rfdetr_execution_plan(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan(
+        preprocessor_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        postprocessor_id=RFDETR_POSTPROCESSOR_BASE,
+        allow_compatibility_fallback=False,
+        allow_runtime_failure_fallback=False,
+    )
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan.to_dict(),
+    )
+
+    assert isinstance(resolved_plan, RFDetrExecutionPlan)
+    assert resolved_plan.preprocessor_id == RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    assert resolved_plan.postprocessor_id == RFDETR_POSTPROCESSOR_BASE
+    assert not resolved_plan.allow_compatibility_fallback
+    assert not resolved_plan.allow_runtime_failure_fallback
+
+
+def test_model_boundary_accepts_typed_plan_and_rejects_invalid_mapping(
+    rfdetr_trt_model_class,
+) -> None:
+    execution_plan = RFDetrExecutionPlan()
+
+    resolved_plan = rfdetr_trt_model_class._resolve_requested_execution_plan(
+        execution_plan=execution_plan,
+    )
+
+    assert resolved_plan is execution_plan
+
+    with pytest.raises(ValueError, match="must contain exactly"):
+        rfdetr_trt_model_class._resolve_requested_execution_plan(
+            execution_plan={},
+        )
+
+
+@pytest.fixture
+def loader_constructor(rfdetr_trt_model_class, monkeypatch):
+    """Replace package and GPU boundaries to inspect loader constructor arguments."""
+    module = sys.modules[_MODEL_MODULE]
+    monkeypatch.setattr(
+        module,
+        "get_model_package_contents",
+        lambda **kwargs: {name: name for name in kwargs["elements"]},
+    )
+    monkeypatch.setattr(module, "parse_class_names_file", Mock(return_value=["cat"]))
+    monkeypatch.setattr(
+        module,
+        "parse_inference_config",
+        Mock(return_value=SimpleNamespace(class_names_operations=None)),
+    )
+    monkeypatch.setattr(module, "parse_trt_config", Mock())
+    monkeypatch.setattr(module.cuda, "init", Mock(), raising=False)
+    monkeypatch.setattr(module.cuda, "Device", Mock())
+    monkeypatch.setattr(
+        module, "use_primary_cuda_context", lambda **kwargs: nullcontext()
+    )
+    monkeypatch.setattr(module, "load_trt_model", Mock())
+    monkeypatch.setattr(
+        module,
+        "get_trt_engine_inputs_and_outputs",
+        Mock(return_value=(["images"], ["dets", "labels"])),
+    )
+    monkeypatch.setattr(module, "establish_trt_cuda_graph_cache", Mock())
+    constructor = Mock(return_value=None)
+    monkeypatch.setattr(rfdetr_trt_model_class, "__init__", constructor)
+
+    return constructor
+
+
+@pytest.mark.parametrize(
+    "legacy_plan", [None, RFDetrExecutionPlan(), RFDetrExecutionPlan().to_dict()]
+)
+@pytest.mark.parametrize("include_execution_plan", [False, True])
+def test_loader_warns_and_preserves_deprecated_plan_argument(
+    rfdetr_trt_model_class,
+    loader_constructor,
+    legacy_plan,
+    include_execution_plan,
+) -> None:
+    kwargs = {"rfdetr_execution_plan": legacy_plan}
+    if include_execution_plan:
+        kwargs["execution_plan"] = None
+
+    with pytest.warns(
+        FutureWarning,
+        match="'rfdetr_execution_plan' is deprecated.*October 24, 2026.*'execution_plan'",
+    ) as captured:
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            **kwargs,
+        )
+
+    assert len(captured) == 1
+    assert captured[0].filename == __file__
+    assert loader_constructor.call_args.kwargs["execution_plan"] is legacy_plan
+
+
+@pytest.mark.parametrize("execution_plan", [None, RFDetrExecutionPlan()])
+def test_loader_accepts_current_plan_argument_without_warning(
+    rfdetr_trt_model_class,
+    loader_constructor,
+    execution_plan,
+) -> None:
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            execution_plan=execution_plan,
+        )
+
+    assert not captured
+    assert loader_constructor.call_args.kwargs["execution_plan"] is execution_plan
+
+
+@pytest.mark.parametrize("legacy_plan", [None, RFDetrExecutionPlan()])
+def test_loader_rejects_conflicting_plan_arguments_before_loading(
+    rfdetr_trt_model_class,
+    monkeypatch,
+    legacy_plan,
+) -> None:
+    load_package = Mock(side_effect=AssertionError("Model loading must not start"))
+    monkeypatch.setattr(
+        sys.modules[_MODEL_MODULE], "get_model_package_contents", load_package
+    )
+    with pytest.raises(
+        TypeError,
+        match="Cannot pass both 'rfdetr_execution_plan' and 'execution_plan'",
+    ):
+        rfdetr_trt_model_class.from_pretrained(
+            "unused-model-package",
+            device=torch.device("cuda:0"),
+            rfdetr_execution_plan=legacy_plan,
+            execution_plan=RFDetrExecutionPlan(),
+        )
+
+    load_package.assert_not_called()
 
 
 class _RuntimeStage:
@@ -566,10 +718,13 @@ def test_diagnostics_copies_only_thread_local_execution(
     model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
     model._thread_local_storage = threading.local()
     model._runtime_diagnostics_enabled = True
-    model._thread_local_storage.last_preprocessor_selection = {
-        "effective_id": "triton-universal-v1",
-        "fallback_reason": None,
-    }
+    # Stage selections are SelectionSnapshot instances since #2903; they are frozen,
+    # so the risk this test guards is no longer aliasing a mutable dict but reading
+    # thread-local state later than the call being reported on.
+    model._thread_local_storage.last_preprocessor_selection = SelectionSnapshot(
+        requested_id="triton-universal-v1",
+        effective_id="triton-universal-v1",
+    )
     tensor = torch.zeros((1, 3, 2, 2))
     model.pre_process = lambda **kwargs: (tensor, [])
     model.forward = lambda *args, **kwargs: (tensor, tensor)
@@ -585,7 +740,12 @@ def test_diagnostics_copies_only_thread_local_execution(
     )
     model.infer(tensor)
     snapshot = model.last_inference_diagnostics["execution"]
-    model._thread_local_storage.last_preprocessor_selection["effective_id"] = "changed"
+    # Replacing the thread-local entry must not retroactively alter what the completed
+    # call reported.
+    model._thread_local_storage.last_preprocessor_selection = SelectionSnapshot(
+        requested_id="triton-universal-v1",
+        effective_id="changed",
+    )
     assert snapshot["preprocessor"]["effective_id"] == "triton-universal-v1"
 
 
@@ -596,7 +756,10 @@ def test_last_execution_metadata_is_caller_thread_local(rfdetr_trt_model_class):
     outputs = {}
 
     def worker(name):
-        model._thread_local_storage.last_preprocessor_selection = {"effective_id": name}
+        model._thread_local_storage.last_preprocessor_selection = SelectionSnapshot(
+            requested_id=name,
+            effective_id=name,
+        )
         barrier.wait(timeout=5)
         outputs[name] = model._last_execution_metadata()
 
@@ -608,7 +771,15 @@ def test_last_execution_metadata_is_caller_thread_local(rfdetr_trt_model_class):
     for thread in threads:
         thread.join(timeout=10)
     assert not any(thread.is_alive() for thread in threads)
+    # SelectionSnapshot.to_dict() omits fallback_reason while no fallback occurred.
     assert outputs == {
-        name: {"preprocessor": {"effective_id": name}} for name in ("first", "second")
+        name: {
+            "preprocessor": {
+                "requested_id": name,
+                "effective_id": name,
+                "fallback_occurred": False,
+            }
+        }
+        for name in ("first", "second")
     }
     assert model._last_execution_metadata() == {}

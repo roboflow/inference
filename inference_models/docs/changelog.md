@@ -4,6 +4,16 @@
 
 ### Added
 
+- RF-DETR TensorRT models accept a typed or canonical mapping execution plan
+  through the `execution_plan` loader argument, replacing
+  `rfdetr_execution_plan`. The old name remains a deprecated alias until
+  October 24, 2026, and emits a `FutureWarning` directing callers to
+  `execution_plan`. Supplying the alias together with a non-`None`
+  `execution_plan` raises a `TypeError` to avoid silently discarding either
+  argument. Execution plans support canonical
+  parsing and strict profiling validation, while versioned `optimization_runtime_metadata`
+  reports requested, effective, and request-time stage selections together
+  with fallback details.
 - `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
   `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` let a deployment that
   has no explicit `RFDetrExecutionPlan` reject RF-DETR stage fallback. Both
