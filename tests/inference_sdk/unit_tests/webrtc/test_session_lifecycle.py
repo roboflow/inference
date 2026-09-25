@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 import requests
+from aiortc import RTCConfiguration, RTCIceServer
 
 from inference_sdk.config import WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
@@ -265,6 +266,42 @@ class TestSessionLifecycle:
             "loop_closed": True,
             "thread_alive": False,
             "source_cleanup_calls": 1,
+        }
+
+    def test_peer_gets_reachable_turn_but_server_gets_full_list(self, mock_session):
+        """Test that only the local peer sees the probed TURN order."""
+        urls = ["turn:t:3478", "turns:t:443?transport=tcp"]
+        fetched = RTCConfiguration(
+            iceServers=[RTCIceServer(urls=urls, username="u", credential="c")]
+        )
+        probed = RTCConfiguration(iceServers=[RTCIceServer(urls=urls[1])])
+        peer_connection = AsyncPeerConnectionStub()
+        peer_connection.createOffer = AsyncMock()
+        peer_connection.setLocalDescription = AsyncMock()
+        peer_connection.iceGatheringState = "complete"
+        peer_connection.localDescription = MagicMock(type="offer", sdp="sdp")
+        mock_session._source = MagicMock(
+            configure_peer_connection=AsyncMock(),
+            get_initialization_params=MagicMock(return_value={}),
+        )
+
+        with (
+            patch("aiortc.RTCPeerConnection", return_value=peer_connection) as peer,
+            patch.object(
+                mock_session, "_get_turn_config", new=AsyncMock(return_value=fetched)
+            ),
+            patch(
+                "inference_sdk.webrtc.session.prefer_reachable_turn",
+                new=AsyncMock(return_value=probed),
+            ),
+            patch("requests.post", side_effect=RuntimeError("stop")) as post,
+        ):
+            with pytest.raises(RuntimeError, match="stop"):
+                asyncio.run(mock_session._init())
+
+        assert peer.call_args.kwargs["configuration"] is probed
+        assert post.call_args.kwargs["json"]["webrtc_config"] == {
+            "iceServers": [{"urls": urls, "username": "u", "credential": "c"}]
         }
 
     def test_failure_after_peer_creation_closes_partial_resources(self, mock_session):
