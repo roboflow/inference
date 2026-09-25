@@ -3992,7 +3992,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.3rc2"
+version = "0.2.3rc3"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
