@@ -15,12 +15,11 @@
   and backend-selection diagnostic, not a timing surface: the package exposes no
   per-stage timing API.
 
-### Changed
+### Fixed
 
-- The `triton-universal-v1` RF-DETR preprocessor now accepts `STRETCH_TO`
-  packages that carry dataset-version resize dimensions or auto-orient metadata.
-  Neither changes the decoded pixels on that path, so these packages no longer
-  fall back to the reference preprocessor.
+- RF-DETR Triton preprocessing no longer falls back for dataset-version resize
+  metadata on stretch inputs, auto-orient metadata on decoded inputs, or request
+  flags disabling already-inactive crop, contrast, and grayscale transforms.
 
 ---
 

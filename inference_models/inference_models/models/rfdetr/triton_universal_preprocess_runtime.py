@@ -446,8 +446,8 @@ class UniversalFastPreprocessRuntime:
         unsupported = []
         if network_input.resize_mode is not ResizeMode.STRETCH_TO:
             unsupported.append(f"resize_mode={network_input.resize_mode!r}")
-        # Dataset-version dimensions do not add a resize for STRETCH_TO;
-        # the reference RF-DETR path performs one resize to the network size.
+        # STRETCH_TO uses one resize to the network size in the reference path,
+        # regardless of the dataset-version dimensions.
         if network_input.input_channels != 3:
             unsupported.append(f"input_channels={network_input.input_channels}")
         if network_input.scaling_factor not in (None, 255):
@@ -471,8 +471,8 @@ class UniversalFastPreprocessRuntime:
             and image_pre_processing.grayscale.enabled
         ):
             unsupported.append("grayscale")
-        # Inputs here are decoded arrays/tensors. EXIF orientation is handled
-        # by image loading, not by either RF-DETR pixel preprocessor.
+        # EXIF orientation is handled when decoding, before these arrays/tensors
+        # reach either the reference or Triton pixel preprocessor.
         if unsupported:
             result = CompatibilityResult.incompatible(*unsupported)
         else:
@@ -495,15 +495,10 @@ class UniversalFastPreprocessRuntime:
         Returns:
             Compatibility result with every unsupported request characteristic.
         """
+        # Model compatibility already requires these transforms to be inactive;
+        # request flags that only disable them cannot change the pixel operations.
+        del pre_processing_overrides
         unsupported = []
-        if pre_processing_overrides is not None and any(
-            (
-                pre_processing_overrides.disable_contrast_enhancement,
-                pre_processing_overrides.disable_grayscale,
-                pre_processing_overrides.disable_static_crop,
-            )
-        ):
-            unsupported.append("active pre-processing overrides")
 
         raw_items = _raw_batch_items(images)
         if not raw_items:

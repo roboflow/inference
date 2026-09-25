@@ -1,4 +1,5 @@
 import threading
+from itertools import product
 
 import numpy as np
 import pytest
@@ -185,19 +186,37 @@ def test_model_compatibility_reports_base_supported_transformations(
     assert reason in compatibility.reasons
 
 
-def test_model_compatibility_reports_non_stretch_resize() -> None:
+@pytest.mark.parametrize("dataset_size", [None, 32, 128])
+def test_model_compatibility_reports_non_stretch_resize(
+    dataset_size: int | None,
+) -> None:
+    """Keep non-stretch resize incompatible even with dataset resize metadata.
+
+    Args:
+        dataset_size: Optional dataset resize dimension.
+    """
+    network = _network_input(resize_mode=ResizeMode.LETTERBOX)
+    if dataset_size is not None:
+        network = network.model_copy(
+            update={
+                "dataset_version_resize_dimensions": TrainingInputSize(
+                    height=dataset_size, width=dataset_size
+                )
+            }
+        )
     compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
         image_pre_processing=ImagePreProcessing(),
-        network_input=_network_input(resize_mode=ResizeMode.LETTERBOX),
+        network_input=network,
     )
 
     assert not compatibility.supported
     assert any(reason.startswith("resize_mode=") for reason in compatibility.reasons)
 
 
-def test_request_compatibility_reports_active_overrides_and_heterogeneous_shapes() -> (
+def test_request_compatibility_rejects_heterogeneous_shapes_with_disable_flags() -> (
     None
 ):
+    """Keep rejecting mixed image sizes when harmless disable flags are present."""
     compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
         images=[
             np.zeros((8, 9, 3), dtype=np.uint8),
@@ -207,7 +226,6 @@ def test_request_compatibility_reports_active_overrides_and_heterogeneous_shapes
     )
 
     assert not compatibility.supported
-    assert "active pre-processing overrides" in compatibility.reasons
     assert any(
         reason.startswith("heterogeneous source dimensions")
         for reason in compatibility.reasons
@@ -237,10 +255,16 @@ def test_request_compatibility_accepts_no_op_overrides(monkeypatch) -> None:
         PreProcessingOverrides(disable_static_crop=True),
     ],
 )
-def test_request_compatibility_rejects_each_active_override(
-    monkeypatch,
+def test_request_compatibility_accepts_each_disable_override(
+    monkeypatch: pytest.MonkeyPatch,
     pre_processing_overrides: PreProcessingOverrides,
 ) -> None:
+    """Accept flags that cannot enable an unsupported model transformation.
+
+    Args:
+        monkeypatch: Fixture simulating Triton availability for compatibility checks.
+        pre_processing_overrides: One transformation-disable override.
+    """
     monkeypatch.setattr(
         "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
         "TRITON_AVAILABLE",
@@ -252,8 +276,75 @@ def test_request_compatibility_rejects_each_active_override(
         pre_processing_overrides=pre_processing_overrides,
     )
 
-    assert not compatibility.supported
-    assert "active pre-processing overrides" in compatibility.reasons
+    assert compatibility.supported
+
+
+@pytest.mark.parametrize("input_kind", ["numpy", "uint8_tensor", "float_tensor"])
+@pytest.mark.parametrize("dataset_size", [32, 64, 128])
+@pytest.mark.parametrize("disable_flags", list(product([False, True], repeat=3)))
+def test_workspace_metadata_and_disable_flags_preserve_reference_pixels(
+    monkeypatch: pytest.MonkeyPatch,
+    input_kind: str,
+    dataset_size: int,
+    disable_flags: tuple[bool, bool, bool],
+) -> None:
+    """Verify that accepted metadata and disable flags leave reference output intact.
+
+    Args:
+        monkeypatch: Fixture simulating availability for compatibility checks only.
+        input_kind: Decoded NumPy, uint8 tensor, or floating tensor input.
+        dataset_size: Dataset resize dimension, independent of the network size.
+        disable_flags: Contrast, grayscale, and crop disable flags.
+    """
+    monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
+    image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
+    if input_kind != "numpy":
+        image = torch.from_numpy(image).permute(2, 0, 1)
+        if input_kind == "float_tensor":
+            image = image.float() / 255
+
+    network = _network_input()
+    workspace_network = network.model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(
+                height=dataset_size, width=dataset_size
+            )
+        }
+    )
+    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    overrides = PreProcessingOverrides(
+        disable_contrast_enhancement=disable_flags[0],
+        disable_grayscale=disable_flags[1],
+        disable_static_crop=disable_flags[2],
+    )
+    model_compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+    )
+    request_compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=image,
+        pre_processing_overrides=overrides,
+    )
+    assert model_compatibility.supported, model_compatibility.reasons
+    assert request_compatibility.supported, request_compatibility.reasons
+
+    expected, expected_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+    actual, actual_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=overrides,
+    )
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert actual_metadata == expected_metadata
 
 
 def test_supported_uint8_request_is_compatible_when_triton_is_available(
