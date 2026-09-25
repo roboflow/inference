@@ -226,6 +226,18 @@ class CameraFocusManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_work_operations(self) -> List[WorkOperation]:
+        # Same overlay switch as the numpy and device run paths: with every
+        # overlay off the input image is returned unchanged, nothing is drawn.
+        draws_overlay = (
+            self.show_zebra_warnings
+            or self.show_hud
+            or self.show_focus_peaking
+            or self.show_center_marker
+            or GRID_DIVISIONS.get(self.grid_overlay, 0) > 0
+        )
+        if draws_overlay:
+            return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
+
         return [WorkOperation.IMAGE_ANALYSIS]
 
     def get_actual_restrictions(

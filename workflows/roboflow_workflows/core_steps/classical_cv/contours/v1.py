@@ -144,7 +144,7 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     def discover_work_operations(self) -> List[WorkOperation]:
-        return [WorkOperation.IMAGE_ANALYSIS]
+        return [WorkOperation.IMAGE_ANALYSIS, WorkOperation.VISUALIZATION]
 
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False

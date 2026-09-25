@@ -145,7 +145,11 @@ def test_a_filter_declares_filtering_and_an_analyser_declares_analysis() -> None
         image="$inputs.image",
     )
     assert blur.discover_work_operations() == [WorkOperation.IMAGE_FILTERING]
-    assert contours.discover_work_operations() == [WorkOperation.IMAGE_ANALYSIS]
+    # contours are analysed and also drawn onto the output image
+    assert contours.discover_work_operations() == [
+        WorkOperation.IMAGE_ANALYSIS,
+        WorkOperation.VISUALIZATION,
+    ]
 
 
 def test_motion_detection_declares_its_cross_frame_history() -> None:
