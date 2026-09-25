@@ -88,11 +88,55 @@ def test_rejected_connack_is_not_treated_as_connected():
 
         # then
         assert result["error_status"] is True
+        assert "not authorised" in result["message"]
+        assert "code 5" in result["message"]
         assert not block._connected.is_set()
         assert broker.messages == []
     finally:
         block.close()
         broker.finish()
+
+
+@pytest.mark.timeout(15)
+def test_refused_connection_is_reported_once_and_not_retried():
+    # given - a broker that refuses the credentials and would accept any retry
+    broker = FakeMQTTBroker(connack_reason_code=5, keep_serving=True)
+    broker_thread = threading.Thread(target=broker.serve, daemon=True)
+    broker_thread.start()
+    block = MQTTWriterSinkBlockV1()
+    kwargs = dict(
+        host=broker.host,
+        port=broker.port,
+        topic="RoboflowTopic",
+        message="should not be delivered",
+        timeout=0.5,
+    )
+
+    try:
+        # when - the first run hits the refusal, then the block lives on past
+        # several reconnect intervals (max delay is 2 * timeout)
+        started = time.monotonic()
+        first = block.run(**kwargs)
+        first_elapsed = time.monotonic() - started
+        time.sleep(2.5)
+        started = time.monotonic()
+        second = block.run(**kwargs)
+        second_elapsed = time.monotonic() - started
+
+        # then - the refusal is named at once, the loop stopped, nothing published
+        assert first["error_status"] is True
+        assert "not authorised" in first["message"]
+        assert "Check username and password" in first["message"]
+        assert "Raise 'timeout'" not in first["message"]
+        assert first_elapsed < 0.4
+        assert second == first
+        assert second_elapsed < 0.1
+        assert broker.connections_accepted == 1
+        assert broker.messages == []
+    finally:
+        block.close()
+        broker.finish()
+        broker_thread.join(timeout=2)
 
 
 @pytest.mark.timeout(15)
@@ -246,6 +290,38 @@ def test_second_broker_is_rejected_instead_of_publishing_to_first(fake_mqtt_brok
     finally:
         block.close()
         other_broker.finish()
+
+
+@pytest.mark.timeout(15)
+def test_publish_over_tls_with_ca_certificate(mqtt_test_certificates):
+    # given
+    broker = FakeMQTTBroker(tls_context=mqtt_test_certificates.server_context)
+    broker.messages_count_to_wait_for = 1
+    broker_thread = threading.Thread(target=broker.start)
+    broker_thread.start()
+    block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+
+    try:
+        # when
+        result = block.run(
+            host=broker.host,
+            port=broker.port,
+            topic="RoboflowTopic",
+            message="encrypted payload",
+            timeout=5.0,
+            encryption="tls",
+            ca_certificate_path=mqtt_test_certificates.ca_path,
+        )
+        broker_thread.join(timeout=2)
+
+        # then
+        assert result["error_status"] is False, result["message"]
+        assert result["message"] == "Message published successfully"
+        assert b"encrypted payload" in broker.messages[-1]
+        assert broker.handshake_failures == 0
+    finally:
+        block.close()
+        broker.finish()
 
 
 MQTT_SINK_WORKFLOW = {

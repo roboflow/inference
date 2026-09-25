@@ -1,4 +1,5 @@
 import numpy as np
+import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
 from pydantic import ValidationError
@@ -146,3 +147,43 @@ def test_halo_visualization_block_v2() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
+
+def _rle_square_detections() -> sv.Detections:
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:60, 20:60] = 1
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return sv.Detections(
+        xyxy=np.array([[20, 20, 60, 60]], dtype=np.float64),
+        mask=None,
+        class_id=np.array([1]),
+        data={
+            "class_name": np.array(["cat"]),
+            "rle_mask": np.array([rle], dtype=object),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "block_cls", [HaloVisualizationBlockV1, HaloVisualizationBlockV2]
+)
+def test_halo_visualization_renders_rle_masks(block_cls) -> None:
+    output = block_cls().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        ),
+        predictions=_rle_square_detections(),
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=[],
+        color_axis="CLASS",
+        opacity=0.8,
+        kernel_size=5,
+    )
+
+    result = output["image"].numpy_image
+    assert result.shape == (100, 100, 3)
+    assert not np.array_equal(result, np.zeros((100, 100, 3), dtype=np.uint8))

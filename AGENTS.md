@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This guide governs the entire repository. If a subfolder provides its own
-`AGENTS.md`, instructions there override this file for that subtree.
+`AGENTS.md`, its instructions supplement this file for that subtree.
 
 ## Overview
 Roboflow Inference is a set of Python packages that run computer vision models
@@ -88,15 +88,56 @@ make check_code_quality
 The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 
 ## Contribution / PR Guidelines
-- Ensure all relevant tests pass before opening a pull request.
+- Ensure all relevant tests pass before marking a pull request ready for review.
 - Keep commit messages concise and in the present tense, e.g. "Add model loader".
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
 
+### Internal contributions (Roboflow team only)
+
+These process requirements apply to internal contributors. External contributors
+do not need access to Roboflow's Slack or Slab; follow the general guidelines above.
+
+- Before substantial implementation of a major feature or structural change,
+  prepare an implementation plan and share it in `#discuss-inference-release`
+  for maintainer agreement on the approach. Use the
+  [repository plan template](.github/implementation-plan-template.md) to draft
+  or review a plan without Slab access. It contains the same requirements as the
+  [Slab guide](https://roboflow.slab.com/posts/inference-contributions-implementation-plan-1sb5nyqz);
+  keep both aligned when changing the process. Agents can help investigate and
+  draft a plan, but the contributor must understand and own the recommendation
+  and unresolved questions.
+- A plan is generally unnecessary for documentation corrections or examples of
+  existing functionality, added tests or regression coverage, contained fixes
+  restoring established behavior, and local refactoring that preserves behavior
+  and interfaces. New workflow blocks also qualify when they follow existing
+  patterns and introduce no new execution behavior or execution-engine changes.
+  Discuss changes to shared infrastructure, compatibility, security, or package
+  dependencies with maintainers first, even for a small diff. If unsure, share a
+  short description in the channel to establish whether a plan is needed.
+- Keep unfinished work in a draft PR. Before marking it ready, inspect the diff,
+  run relevant checks, record the commands and results (including limitations),
+  and be available to address feedback. Plan exemptions do not waive testing or
+  review. Contributors remain responsible for follow-up issues after merge.
+- Use the optional [local pre-review skill](.claude/skills/review-local/SKILL.md)
+  to check work before requesting CI review. In Claude Code, invoke
+  `/review-local`; other agents can read and follow that file directly. Local
+  findings are advisory and do not replace CI review or maintainer approval.
+- Claude provides the first CI review. Address its findings and add the
+  `claude-review` label to request another pass; the label is consumed when review
+  starts, and new commits alone do not trigger another review. An eligible agent
+  pass requests maintainer review through the Slack handoff bot. If disagreeing
+  with a finding, explain why in a PR comment beginning
+  `/maintainer-review <reason>` to escalate. The handoff requires an open,
+  non-draft, same-repository PR; escalation also requires repository write access
+  or higher. Coordinate in the linked Slack thread and record final approval in
+  GitHub. See [handoff behavior](.github/maintainer-review-slack.md) for details.
+
 ## Workflows Package (roboflow-workflows)
 
-The Workflows block library lives in `workflows/` as a standalone Python project.
+The Workflows execution engine and block library live in `workflows/` as a
+standalone Python project.
 
 ### Project layout
 ```
@@ -120,7 +161,10 @@ workflows/
 `roboflow-workflows` is published to PyPI separately from `inference` and
 pinned by `requirements/requirements.workflows.txt`. Contributors: add an entry
 under `## Unreleased` in `workflows/CHANGELOG.md` for any change in
-`roboflow_workflows/`. Maintainers: at release, bump `version` in
+`roboflow_workflows/`. Engine behavior changes go in its `### Execution engine`
+subsection; the same entry satisfies the package and engine changelog requirements.
+Read `.cursor/rules/execution-engine-version-changelog.mdc` for engine compatibility
+versioning and release metadata. Maintainers: at release, bump `version` in
 `workflows/pyproject.toml`, the pin in `requirements/requirements.workflows.txt`,
 the hardcoded `roboflow_workflows-<version>-py3-none-any.whl` in
 `.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing uses
@@ -185,3 +229,32 @@ python -m pytest tests/workflows/integration_tests
 ```bash
 cd workflows && uv lock
 ```
+
+## Canonical repository rules
+
+The files under `.cursor/rules/` are the canonical detailed instructions for
+this repository. Do not copy or restate their contents in `AGENTS.md` files.
+Before acting on a task, read every applicable rule file completely and follow
+its instructions. If a task spans multiple categories, read all matching files.
+
+Always read:
+
+- `.cursor/rules/uv-package-management.mdc`
+
+Before editing or reviewing Python code, read:
+
+- `.cursor/rules/empty-lines.mdc`
+- `.cursor/rules/function-call.mdc`
+- `.cursor/rules/google-docstrings.mdc`
+- `.cursor/rules/pathlib.mdc`
+- `.cursor/rules/return-values.mdc`
+
+Also read the following rule when its condition applies:
+
+- `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
+- `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.
+- `.cursor/rules/pr-description.mdc` when the user requests a Roboflow-format PR
+  body or explicitly names that rule.
+- `.cursor/rules/execution-engine-version-changelog.mdc` for behavior changes
+  under `workflows/roboflow_workflows/execution_engine/`; the subtree
+  `AGENTS.md` repeats this routing requirement at the point of use.

@@ -1,4 +1,5 @@
 import numpy as np
+import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
 import torch
@@ -224,6 +225,32 @@ def test_rich_label_visualization_block(bundled_fonts) -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((400, 400, 3), dtype=np.uint8)
     ), "Image should be modified by label rendering"
+
+
+def test_rich_label_center_of_mass_with_rle_masks(bundled_fonts) -> None:
+    mask = np.zeros((400, 400), dtype=np.uint8)
+    mask[40:160, 40:160] = 1
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    detections = sv.Detections(
+        xyxy=np.array([[40, 40, 160, 160]], dtype=np.float64),
+        mask=None,
+        class_id=np.array([0]),
+        data={
+            "class_name": np.array(["cat"]),
+            "rle_mask": np.array([rle], dtype=object),
+        },
+    )
+
+    output = _run_block(
+        RichLabelVisualizationBlockV1(),
+        predictions=detections,
+        text_position="CENTER_OF_MASS",
+    )
+
+    result = output["image"].numpy_image
+    assert result.shape == (400, 400, 3)
+    assert not np.array_equal(result, np.zeros((400, 400, 3), dtype=np.uint8))
 
 
 def test_rich_label_visualization_block_raises_on_unknown_font_delivered_at_runtime() -> (

@@ -1,4 +1,9 @@
+import copy
+
+import numpy as np
+import pycocotools.mask as mask_utils
 import supervision as sv
+from roboflow_workflows.execution_engine.constants import RLE_MASK_KEY_IN_SV_DETECTIONS
 
 UNKNOWN_CLASS_COLOR = sv.Color.GREY
 UNKNOWN_CLASS_COLOR_RGB = UNKNOWN_CLASS_COLOR.as_rgb()
@@ -35,6 +40,27 @@ class NegativeSafeColorPalette(sv.ColorPalette):
         if not self.colors:
             raise ValueError("A color palette must contain at least one color.")
         return self.colors[idx % len(self.colors)]
+
+
+def ensure_dense_masks(detections: sv.Detections) -> sv.Detections:
+    """Decode RLE side-channel masks so Supervision annotators can read ``mask``.
+
+    RLE-first blocks return ``mask=None`` with COCO RLE in ``data["rle_mask"]``.
+    Returns a shallow copy with ``mask`` set; the input is unchanged.
+    """
+    if (
+        detections.mask is not None
+        or RLE_MASK_KEY_IN_SV_DETECTIONS not in detections.data
+    ):
+        return detections
+    detections = copy.copy(detections)
+    detections.mask = np.array(
+        [
+            mask_utils.decode(rle).astype(bool)
+            for rle in detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+        ]
+    )
+    return detections
 
 
 def wrap_color_palette(palette: sv.ColorPalette) -> NegativeSafeColorPalette:

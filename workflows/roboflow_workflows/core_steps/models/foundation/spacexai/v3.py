@@ -74,7 +74,13 @@ from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_ima
 XAI_BASE_URL = "https://api.x.ai/v1"
 
 # grok-4.5 `xhigh` excluded: xAI silently downgrades it to `high`.
+# grok-4.7 was not re-benchmarked; it reuses the 4.5/4.6 detection prompt.
 GROK_MODELS = [
+    {
+        "id": "grok-4.7",
+        "name": "Grok 4.7",
+        "reasoning_levels": ["low", "medium", "high", "xhigh"],
+    },
     {
         "id": "grok-4.6",
         "name": "Grok 4.6",
@@ -149,6 +155,7 @@ Confidence scores are optional; when absent decoded detections are assigned
 
 Images for object detection are sent at original resolution as lossless PNG
 with `detail: "high"`, matching the vlm-exam benchmark setup for Grok 4.5/4.6.
+Grok 4.7 uses the same prompt and image handling.
 
 ## Version Differences
 
@@ -278,7 +285,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="grok-4.6",
         description="Model to be used",
-        examples=["grok-4.6", "grok-4.5", "$inputs.grok_model"],
+        examples=["grok-4.7", "grok-4.6", "grok-4.5", "$inputs.grok_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -293,9 +300,10 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "Optional reasoning effort passed to xAI as "
             '`reasoning: {"effort": ...}`. Grok models default to "high" and '
-            'cannot disable reasoning. "xhigh" is only supported by grok-4.6. '
-            "For requests with a direct xAI key, the request is retried "
-            "without reasoning when the model rejects the parameter."
+            'cannot disable reasoning. "xhigh" is not supported by grok-4.5. '
+            "With a direct xAI key, if the model rejects the `reasoning` "
+            "parameter the request is retried without it, so the model falls "
+            "back to its default effort."
         ),
         examples=["low", "high"],
     )
@@ -563,7 +571,15 @@ def encode_image_for_task(
 
 
 def _encode_image_to_png_bytes(image: np.ndarray) -> bytes:
-    _, encoded_image = cv2.imencode(".png", image)
+    # OpenCV's default PNG compression (level 1) puts the large drone frames
+    # in the detection benchmark over xAI's 25MB upload limit, so those
+    # requests 400. Level 9 is still lossless and stays under the limit,
+    # matching the benchmark's PIL encoder.
+    _, encoded_image = cv2.imencode(
+        ".png",
+        image,
+        [cv2.IMWRITE_PNG_COMPRESSION, 9],
+    )
     return encoded_image.tobytes()
 
 

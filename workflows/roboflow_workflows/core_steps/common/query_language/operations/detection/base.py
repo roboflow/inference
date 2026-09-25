@@ -36,6 +36,15 @@ from roboflow_workflows.execution_engine.constants import (
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
 )
 
+
+def _extract_class_name(detection: tuple) -> str:
+    class_name = detection[5].get("class_name")
+    # Object arrays yield Python strings; Unicode arrays yield NumPy strings.
+    if isinstance(class_name, str):
+        return str(class_name)
+    return class_name.item()
+
+
 DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.X_MIN: lambda x: x[0][0].item(),
     DetectionsProperty.Y_MIN: lambda x: x[0][1].item(),
@@ -43,7 +52,7 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.Y_MAX: lambda x: x[0][3].item(),
     DetectionsProperty.CONFIDENCE: lambda x: x[2].item(),
     DetectionsProperty.CLASS_ID: lambda x: x[3].item(),
-    DetectionsProperty.CLASS_NAME: lambda x: x[5].get("class_name").item(),
+    DetectionsProperty.CLASS_NAME: _extract_class_name,
     DetectionsProperty.SIZE: lambda x: (
         (x[0][3] - x[0][1]) * (x[0][2] - x[0][0])
     ).item(),

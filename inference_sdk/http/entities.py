@@ -159,6 +159,7 @@ class InferenceConfiguration:
     class_agnostic_nms: Optional[bool] = None
     class_filter: Optional[List[str]] = None
     fix_batch_size: Optional[bool] = None
+    include_anomaly_map: Optional[bool] = None
     visualize_predictions: bool = False
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
@@ -331,6 +332,7 @@ class InferenceConfiguration:
             Dict[str, Any]: The classification parameters.
         """
         parameters_specs = [
+            ("include_anomaly_map", "include_anomaly_map"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
