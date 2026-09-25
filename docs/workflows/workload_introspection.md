@@ -6,12 +6,26 @@ The answer is *portable*: it describes the definition, not the server that answe
 
 ## Endpoints
 
+!!! warning "Experimental"
+
+    Both `describe_workload` endpoints and their request and response contracts are **experimental**. Their OpenAPI summary and description start with `[EXPERIMENTAL]`.
+
 | Endpoint | Body | Purpose |
 | --- | --- | --- |
 | `POST /workflows/describe_workload` | `{"api_key": "...", "specification": {...}}` | describe an inline definition |
 | `POST /{workspace_name}/workflows/{workflow_id}/describe_workload` | `{"api_key": "...", "use_cache": true, "workflow_version_id": null}` | describe a saved definition |
 
-Both accept the api key in the request body or as an `Authorization: Bearer <key>` header, exactly like `/workflows/describe_interface`; a request with neither is rejected with HTTP 400 and the same error envelope. Both are removed together with the other Workflow endpoints when `DISABLE_WORKFLOW_ENDPOINTS=True`. The saved-definition route forwards `use_cache` and `workflow_version_id` to the ordinary saved-definition lookup.
+Both accept the api key in the request body or as an `Authorization: Bearer <key>` header, exactly like `/workflows/describe_interface`; a request with neither is rejected with HTTP 400 and the same error envelope. The saved-definition route forwards `use_cache` and `workflow_version_id` to the ordinary saved-definition lookup.
+
+Two server environment variables control whether the endpoints exist. Both default to `False`. Both are read once, when the server starts.
+
+| `DISABLE_WORKFLOW_ENDPOINTS` | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `describe_workload` endpoints | Other Workflow endpoints (`describe_interface`, `run`, ...) |
+| --- | --- | --- | --- |
+| `False` (default) | `False` (default) | registered | registered |
+| `False` | `True` | not registered | registered |
+| `True` | any value | not registered | not registered |
+
+A disabled endpoint is absent from routing and from `/openapi.json`. A request to its path is then handled by the server's existing fallback routes, such as the static app mounted at `/` or, for the two-segment inline path, the legacy `POST /{dataset_id}/{version_id}` route. Those routes decide the HTTP response, so do not rely on a specific status code.
 
 The Python entry point is `roboflow_workflows.execution_engine.introspection.workload.describe_workflow_workload(definition, init_parameters=None, execution_engine_version=None, model_metadata_provider=None)`. It lives in the standalone `roboflow-workflows` package and needs no inference server.
 

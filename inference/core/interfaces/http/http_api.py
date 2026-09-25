@@ -182,6 +182,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
+    DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
     ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG,
@@ -2354,67 +2355,73 @@ class HttpInterface(BaseInterface):
                     definition=workflow_request.specification,
                 )
 
-            @app.post(
-                "/{workspace_name}/workflows/{workflow_id}/describe_workload",
-                response_model=WorkflowIntrospection,
-                summary="Endpoint to describe compile-time workload of predefined workflow",
-                description="Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
-                "and describes the graph, per-step work operations, restrictions, dependent resources and model "
-                "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
-                "code is evaluated.",
-            )
-            @with_route_exceptions
-            def describe_predefined_workflow_workload(
-                workspace_name: str,
-                workflow_id: str,
-                workflow_request: PredefinedWorkflowDescribeWorkloadRequest,
-            ) -> WorkflowIntrospection:
-                workflow_request.api_key = api_key_override(workflow_request.api_key)
-                if workflow_request.api_key is None:
-                    raise MissingApiKeyError(
-                        "Required Roboflow API key is missing. Pass it as the "
-                        "`api_key` field of the request payload or as the "
-                        "`Authorization: Bearer <api_key>` header."
-                    )
-                workflow_specification = get_workflow_specification(
-                    api_key=workflow_request.api_key,
-                    workspace_id=workspace_name,
-                    workflow_id=workflow_id,
-                    use_cache=workflow_request.use_cache,
-                    workflow_version_id=workflow_request.workflow_version_id,
-                )
-                return handle_describe_workflow_workload(
-                    definition=workflow_specification,
-                    api_key=workflow_request.api_key,
-                )
+            if not DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS:
 
-            @app.post(
-                "/workflows/describe_workload",
-                response_model=WorkflowIntrospection,
-                summary="Endpoint to describe compile-time workload of workflow given in request",
-                description="Parses and structurally inspects the workflow definition, describing the graph, "
-                "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
-                "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
-            )
-            @with_route_exceptions
-            def describe_workflow_workload_route(
-                workflow_request: WorkflowSpecificationDescribeWorkloadRequest,
-            ) -> WorkflowIntrospection:
-                # Mirrors `describe_workflow_interface`: the key may arrive in
-                # the body or the Bearer header, and one of the two channels is
-                # required. Here the key is also the credential the optional
-                # model-metadata lookup runs under.
-                workflow_request.api_key = api_key_override(workflow_request.api_key)
-                if workflow_request.api_key is None:
-                    raise MissingApiKeyError(
-                        "Required Roboflow API key is missing. Pass it as the "
-                        "`api_key` field of the request payload or as the "
-                        "`Authorization: Bearer <api_key>` header."
-                    )
-                return handle_describe_workflow_workload(
-                    definition=workflow_request.specification,
-                    api_key=workflow_request.api_key,
+                @app.post(
+                    "/{workspace_name}/workflows/{workflow_id}/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of predefined workflow",
+                    description="[EXPERIMENTAL] Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
+                    "and describes the graph, per-step work operations, restrictions, dependent resources and model "
+                    "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
+                    "code is evaluated.",
                 )
+                @with_route_exceptions
+                def describe_predefined_workflow_workload(
+                    workspace_name: str,
+                    workflow_id: str,
+                    workflow_request: PredefinedWorkflowDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    workflow_specification = get_workflow_specification(
+                        api_key=workflow_request.api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                        use_cache=workflow_request.use_cache,
+                        workflow_version_id=workflow_request.workflow_version_id,
+                    )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_specification,
+                        api_key=workflow_request.api_key,
+                    )
+
+                @app.post(
+                    "/workflows/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of workflow given in request",
+                    description="[EXPERIMENTAL] Parses and structurally inspects the workflow definition, describing the graph, "
+                    "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
+                    "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
+                )
+                @with_route_exceptions
+                def describe_workflow_workload_route(
+                    workflow_request: WorkflowSpecificationDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    # Mirrors `describe_workflow_interface`: the key may arrive in
+                    # the body or the Bearer header, and one of the two channels is
+                    # required. Here the key is also the credential the optional
+                    # model-metadata lookup runs under.
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_request.specification,
+                        api_key=workflow_request.api_key,
+                    )
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",

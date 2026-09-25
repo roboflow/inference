@@ -9,6 +9,10 @@ auth contract and the `USE_INFERENCE_MODELS` gate end to end.
 """
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -22,6 +26,7 @@ from inference.core.interfaces import workflows_workload_metadata
 
 INLINE_ROUTE = "/workflows/describe_workload"
 SAVED_ROUTE = "/my-workspace/workflows/my-workflow/describe_workload"
+SAVED_ROUTE_TEMPLATE = "/{workspace_name}/workflows/{workflow_id}/describe_workload"
 
 OBJECT_DETECTION_MODEL = "roboflow_core/roboflow_object_detection_model@v3"
 CLASSIFICATION_MODEL = "roboflow_core/roboflow_classification_model@v2"
@@ -52,9 +57,9 @@ class _DummyInstrumentator:
         self.stream_manager_client = stream_manager_client
 
 
-@pytest.fixture
-def interface(monkeypatch):
-    """The real `HttpInterface`, with no auth middleware - self-hosted default."""
+def _build_interface(monkeypatch, **http_api_overrides):
+    """Build the real `HttpInterface` with no auth middleware, applying
+    `http_api_overrides` (module-level flags) before the routes are registered."""
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -65,10 +70,25 @@ def interface(monkeypatch):
     monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
+    for name, value in http_api_overrides.items():
+        monkeypatch.setattr(http_api, name, value)
     model_manager = MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
-    return http_api.HttpInterface(model_manager=model_manager)
+
+    built_interface = http_api.HttpInterface(model_manager=model_manager)
+
+    return built_interface
+
+
+@pytest.fixture
+def interface(monkeypatch):
+    """The real `HttpInterface`, with no auth middleware - self-hosted default."""
+    return _build_interface(
+        monkeypatch,
+        DISABLE_WORKFLOW_ENDPOINTS=False,
+        DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS=False,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -740,7 +760,7 @@ def test_routes_are_registered_and_documented(interface) -> None:
 
     # then
     assert INLINE_ROUTE in paths
-    assert "/{workspace_name}/workflows/{workflow_id}/describe_workload" in paths
+    assert SAVED_ROUTE_TEMPLATE in paths
     # the response model really is exported into the OpenAPI document, generics
     # included - a schema that cannot be generated breaks /openapi.json for
     # every route, not just these two
@@ -763,31 +783,120 @@ def test_routes_are_registered_and_documented(interface) -> None:
     } <= set(spec["components"]["schemas"])
 
 
-def test_routes_follow_the_workflow_endpoints_kill_switch(monkeypatch) -> None:
-    # given
-    import inference.core.interfaces.http.http_api as http_api
-
-    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
-    monkeypatch.setattr(
-        http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
-    )
-    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
-    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
-    monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
-    monkeypatch.setattr(http_api, "DISABLE_WORKFLOW_ENDPOINTS", True)
-    model_manager = MagicMock()
-    model_manager.pingback = None
-    model_manager.num_errors = 0
-
+def test_both_routes_are_marked_experimental_in_openapi(interface) -> None:
     # when
-    disabled_interface = http_api.HttpInterface(model_manager=model_manager)
+    with TestClient(interface.app) as client:
+        spec = client.get("/openapi.json").json()
+
+    # then
+    for path in (INLINE_ROUTE, SAVED_ROUTE_TEMPLATE):
+        operation = spec["paths"][path]["post"]
+        assert operation["summary"].startswith("[EXPERIMENTAL] ")
+        assert operation["description"].startswith("[EXPERIMENTAL] ")
+        # the original description text is kept after the marker
+        assert "Nothing is executed" in operation["description"]
+
+
+def test_routes_follow_the_workflow_endpoints_kill_switch(monkeypatch) -> None:
+    # when - the global switch wins even with the dedicated switch left off
+    disabled_interface = _build_interface(
+        monkeypatch,
+        DISABLE_WORKFLOW_ENDPOINTS=True,
+        DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS=False,
+    )
 
     # then - the new routes are gated exactly like describe_interface
     paths = {route.path for route in disabled_interface.app.routes}
     assert INLINE_ROUTE not in paths
-    assert "/{workspace_name}/workflows/{workflow_id}/describe_workload" not in paths
+    assert SAVED_ROUTE_TEMPLATE not in paths
     assert "/workflows/describe_interface" not in paths
+
+
+def test_dedicated_switch_removes_only_the_workload_routes(
+    monkeypatch, enrichment_disabled
+) -> None:
+    # given - the legacy POST `/{dataset_id}/{version_id}` route would otherwise
+    # capture the two-segment inline path and run its handler once the
+    # workload route is gone
+    disabled_interface = _build_interface(
+        monkeypatch,
+        DISABLE_WORKFLOW_ENDPOINTS=False,
+        DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS=True,
+        LEGACY_ROUTE_ENABLED=False,
+    )
+
+    # when
+    with TestClient(disabled_interface.app) as client:
+        spec = client.get("/openapi.json").json()
+        inline_response = _post_inline(client, _single_model_definition())
+        saved_response = client.post(SAVED_ROUTE, json={"api_key": API_KEY})
+        interface_response = client.post(
+            "/workflows/describe_interface",
+            json={"api_key": API_KEY, "specification": _single_model_definition()},
+        )
+
+    # then - both workload routes are gone from routing and from OpenAPI
+    paths = {route.path for route in disabled_interface.app.routes}
+    assert INLINE_ROUTE not in paths
+    assert SAVED_ROUTE_TEMPLATE not in paths
+    assert INLINE_ROUTE not in spec["paths"]
+    assert SAVED_ROUTE_TEMPLATE not in spec["paths"]
+    # no POST route serves either path any more. The unmatched request falls
+    # through to existing routes, including the StaticFiles app mounted at "/",
+    # which answers 405 to a POST; 404 and 405 both mean "not served here".
+    assert inline_response.status_code in {404, 405}
+    assert saved_response.status_code in {404, 405}
+    # every other Workflow route stays registered and working
+    assert {
+        "/workflows/describe_interface",
+        "/{workspace_name}/workflows/{workflow_id}/describe_interface",
+        "/workflows/run",
+        "/{workspace_name}/workflows/{workflow_id}",
+    } <= paths
+    assert interface_response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "raw_value, expected_value",
+    [(None, False), ("False", False), ("True", True)],
+)
+def test_dedicated_switch_is_parsed_from_the_environment(
+    tmp_path, raw_value, expected_value
+) -> None:
+    # given - a fresh interpreter, so the module-level value is read anew; the
+    # temporary working directory keeps any checkout `.env` file out of play
+    repository_root = Path(__file__).resolve().parents[6]
+    environment = os.environ.copy()
+    environment.pop("DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", None)
+    if raw_value is not None:
+        environment["DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS"] = raw_value
+    existing_python_path = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [
+            str(repository_root),
+            *([existing_python_path] if existing_python_path else []),
+        ]
+    )
+
+    # when
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference.core.env import DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS;"
+            "print(repr(DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS))",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    # then
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == repr(expected_value)
 
 
 # ---------------------------------------------------------------------------
