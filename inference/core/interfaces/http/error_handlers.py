@@ -41,6 +41,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
     WorkspaceStreamQuotaError,
 )
+from inference.core.interfaces.http.error_diagnostics import workflow_error_diagnostics
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,
     ProcessesManagerClientError,
@@ -151,6 +152,7 @@ def _build_execution_error_response(
         context=error.context,
         inner_error_type=error.inner_error_type,
         inner_error_message=str(error.inner_error) if error.inner_error else None,
+        diagnostics=workflow_error_diagnostics(error),
         blocks_errors=[
             WorkflowBlockError(
                 block_id=block_id,
@@ -272,6 +274,7 @@ def with_route_exceptions(route):
                 context=str(error.context),
                 inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
+                diagnostics=workflow_error_diagnostics(error),
                 blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
@@ -543,6 +546,7 @@ def with_route_exceptions(route):
                 context=str(error.context),
                 inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
+                diagnostics=workflow_error_diagnostics(error),
                 blocks_errors=[
                     WorkflowBlockError(
                         block_id=error.block_id,
@@ -752,6 +756,7 @@ def with_route_exceptions_async(route):
                 context=str(error.context),
                 inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
+                diagnostics=workflow_error_diagnostics(error),
                 blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
@@ -1023,6 +1028,7 @@ def with_route_exceptions_async(route):
                 context=str(error.context),
                 inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
+                diagnostics=workflow_error_diagnostics(error),
                 blocks_errors=[
                     WorkflowBlockError(
                         block_id=error.block_id,
