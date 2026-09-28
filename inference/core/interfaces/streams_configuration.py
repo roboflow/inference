@@ -36,8 +36,7 @@ from inference.core.interfaces.stream_manager.manager_app.host import (
     install_default_host_descriptor,
 )
 
-# Referenced by path: the host module imports the models stack, which this
-# bootstrap-time module must not.
+# Referenced by path: importing the host module here would pull in the models stack.
 LEGACY_PIPELINE_HOST_DESCRIPTOR = PipelineHostDescriptor(
     factory="inference.core.interfaces.legacy_stream.host:LegacyPipelineHost",
 )
@@ -68,8 +67,7 @@ def build_configuration_from_env() -> StreamsConfiguration:
         stream_manager_max_active_pipelines=env.STREAM_MANAGER_MAX_ACTIVE_PIPELINES,
         stream_manager_max_ram_mb=env.STREAM_MANAGER_MAX_RAM_MB,
         stream_manager_ram_usage_queue_size=env.STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
-        # Left unset: see the module docstring. `manager_app/app.py` resolves
-        # them itself, at its own import, the first time it needs them.
+        # Left unset: see the module docstring; `manager_app/app.py` resolves them.
         stream_manager_host=None,
         stream_manager_port=None,
         stream_manager_socket_timeout=None,

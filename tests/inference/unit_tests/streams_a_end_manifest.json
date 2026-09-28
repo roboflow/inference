@@ -1,5 +1,5 @@
 {
-  "work_package": "WP-A05",
+  "work_package": "stream-decontamination",
   "base_head_sha": "65ad2beaaca0825bffc2fbbe99199d3a40994324",
   "working_tree_dirty": true,
   "revision_note": "Archived from uncommitted work: base_head_sha is the checked-out HEAD, not a candidate revision. Blob ids are `git hash-object` of the working-tree files when archived; they identify file content only. This manifest's own entry has no blob id (it cannot hash itself).",

@@ -1,22 +1,16 @@
-"""WP-A00 decontamination ratchet for camera/stream/stream_manager.
+"""Decontamination ratchet for camera/stream/stream_manager.
 
-This is NOT a "zero forbidden imports" gate: at G0 (baseline SHA below) these
-three trees are still fully contaminated with `inference.core`/`inference.models`
-imports (see EXTRACT_INFERENCE_PIPELINE_AND_MANAGER_PLAN.MD, WP-A01..A05). The
-frozen ``_ALLOWLIST`` below is an exact snapshot of the current violations, not
-a target. `test_forbidden_imports_match_frozen_allowlist` fails on either a
-*new* forbidden import (regression) or a *stale* allowlist entry (an import
-that was actually removed, meaning the allowlist must shrink) - both directions
-matter so later work packages can shrink this list without it silently going
-out of date.
+The frozen ``_ALLOWLIST`` below is empty and must stay empty: this scan
+fails on any forbidden import found in these three trees. The four legacy
+facade files are excluded from the scan by their exact source path, not by
+prefix, because they self-replace in sys.modules.
 
 Precedent: workflows/tests/unit_tests/test_decontamination_lint.py:1 (single
 tree, single allowed prefix, already-zero target). This generalizes the same
-AST + relative-import + quoted-import scan to three trees with a non-empty
-frozen allowlist, plus one extra rule: the four modules that WP-A02 will turn
-into legacy facades (D:core/interfaces/legacy_stream in the plan) are forbidden
-import sources for every *other* host-neutral module in these trees, even
-though their dotted name lies under an otherwise-allowed prefix.
+AST + relative-import + quoted-import scan to three trees, with one extra
+rule: the four facade modules are forbidden import sources for every *other*
+host-neutral module in these trees, even though their dotted name lies under
+an otherwise-allowed prefix.
 """
 
 import ast
@@ -28,6 +22,7 @@ import pytest
 
 from .conftest import require_git_baseline_history
 
+# Baseline commit that every frozen manifest in this suite is pinned to.
 BASELINE_SHA = "65ad2beaaca0825bffc2fbbe99199d3a40994324"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[5]
@@ -38,11 +33,7 @@ for _tree in TREES:
 
 ALLOWED_PREFIXES = tuple(f"inference.core.interfaces.{tree}" for tree in TREES)
 
-# The four modules WP-A02 extracts into core/interfaces/legacy_stream, leaving
-# these as thin facades (plan §"D. Other retained modules" and the B02 `git rm`
-# list). Since A02 they are exact aliases of host-owned implementations, so
-# no host-neutral module may import them (WP-A03 removed the manager's last
-# one: its pipelines now get the workflow from an injected host).
+# Host-owned facade aliases; no host-neutral module in these trees may import them.
 FACADE_MODULES = frozenset(
     {
         "inference.core.interfaces.stream.inference_pipeline",
@@ -52,11 +43,7 @@ FACADE_MODULES = frozenset(
     }
 )
 
-# WP-A02: each facade file is now an exact alias of its host-owned
-# implementation under core/interfaces/legacy_stream (it replaces itself in
-# sys.modules). The four files are therefore host-owned code, excluded from
-# the host-neutral scan by exact path - never by directory - and checked
-# instead by test_facade_files_only_alias_their_exact_legacy_target.
+# Facade files self-replace in sys.modules; excluded from the scan by exact path only.
 LEGACY_PREFIX = "inference.core.interfaces.legacy_stream"
 FACADE_TARGETS = {
     "inference.core.interfaces.stream.inference_pipeline": (
@@ -91,9 +78,7 @@ def _resolve_relative(module: str, level: int, path: Path) -> str:
 
 
 def _module_exists_on_disk(module: str) -> bool:
-    # Distinguishes `from pkg import submodule` (submodule is itself a module,
-    # e.g. the FACADE_MODULES case) from `from pkg import some_name` (some_name
-    # is just an attribute/class/function inside pkg, not a module at all).
+    # Distinguishes a submodule import from a plain attribute import by disk check.
     if not module:
         return False
     rel = Path(*module.split("."))
@@ -129,8 +114,7 @@ def _is_forbidden(module: str) -> bool:
         return True
     if not module.startswith("inference."):
         return False
-    # Exact boundary match: "inference.core.interfaces.streamx" must not be
-    # treated as living under the "inference.core.interfaces.stream" prefix.
+    # Boundary match: "streamx" must not match under the "stream" prefix.
     return not any(
         module == prefix or module.startswith(f"{prefix}.")
         for prefix in ALLOWED_PREFIXES
@@ -155,39 +139,7 @@ def collect_violations(root: Path = INTERFACES_ROOT) -> Set[Tuple[str, str]]:
     return violations
 
 
-# Started as the exact snapshot at BASELINE_SHA (`git show <sha>:<path>` for
-# every entry), regenerated with the same ast.walk/_resolve_relative logic
-# above, not typed by hand. Update only alongside a real A01+ import removal
-# or addition; a diff here that isn't backed by a corresponding source change
-# is a bug in this test, not license to widen the allowlist.
-#
-# WP-A02 removed every entry of the four facade files (now host-owned
-# aliases, see FACADE_SOURCE_PATHS), sinks.py's active-learning import (the
-# middleware is injected structurally) and the manager's two imports of the
-# inference_pipeline facade (they only needed a core status constant, now
-# imported from stream/pipeline.py). The five stream/pipeline.py entries are
-# the host-neutral pipeline's share of the old inference_pipeline.py edges,
-# relocated rather than added: exceptions and the Workflows modules are
-# WP-A04's, the session module WP-A05's.
-#
-# WP-A03 removed inference_pipeline_manager.py's import of the
-# inference_pipeline facade: the manager builds the host-neutral pipeline from
-# what its injected host prepares.
-#
-# WP-A04 removed every utility, exception, HTTP serializer and
-# `inference.core.workflows` edge: the helpers are stream-owned copies under
-# stream/support, the exceptions and experimental warning are defined in
-# stream/{exceptions,warnings}.py (or the Workflows platform-error module) and
-# aliased by `inference.core.{exceptions,warnings}`, result serialisation is
-# manager_app/result_serialization.py, and Workflows is imported by its
-# canonical `roboflow_workflows` name. Only the session module (WP-A05's)
-# remained.
-#
-# WP-A05 moved the session ContextVar into stream/session.py (the historical
-# usage_tracking module re-exports it): movable files have no production
-# dependency left. The allowlist is empty and must stay empty - the four
-# retained facades are host code with their own manifest (FACADE_TARGETS and
-# the A-end manifest), never an allowlisted dependency of movable files.
+# Generated by the ast scan above; shrink only alongside a real import removal.
 _ALLOWLIST = frozenset()
 
 
@@ -229,9 +181,7 @@ def test_checker_catches_function_local_forbidden_import() -> None:
 
 
 def test_checker_catches_relative_forbidden_import() -> None:
-    # `from ...roboflow_api import x` inside camera/foo.py climbs to
-    # `inference.core.roboflow_api`, exactly as contaminating as the
-    # absolute form.
+    # Relative "from ...roboflow_api import x" resolves to inference.core.roboflow_api.
     fake_path = INTERFACES_ROOT / "camera" / "_fixture_relative_import.py"
     source = "from ...roboflow_api import get_roboflow_model_data\n"
     tree = _parse_fixture(source, fake_path)
@@ -241,9 +191,7 @@ def test_checker_catches_relative_forbidden_import() -> None:
 
 
 def test_checker_catches_quoted_string_import() -> None:
-    # Mirrors the real precedent this regex exists for: a source string later
-    # exec()'d into an assembled code block, invisible to ast.parse on this
-    # file (workflows/tests/unit_tests/test_decontamination_lint.py:29-34).
+    # Mirrors a string later exec()'d into code - invisible to ast.parse on this file.
     source = (
         "TEMPLATE = "
         '"from inference.core.roboflow_api import get_roboflow_model_data"\n'
@@ -254,19 +202,14 @@ def test_checker_catches_quoted_string_import() -> None:
 
 
 def test_checker_resolves_submodule_import_but_not_attribute_import() -> None:
-    # `from inference.core import logger` imports the *submodule*
-    # inference/core/logger.py - it must resolve to "inference.core.logger",
-    # not just the parent "inference.core" (the bug this guards: alias
-    # children of an ImportFrom were never checked against the filesystem).
+    # import logger from inference.core must resolve the submodule, not just the parent.
     fake_path = INTERFACES_ROOT / "camera" / "_fixture_submodule_import.py"
     submodule_source = "from inference.core import logger\n"
     modules = _imported_modules(_parse_fixture(submodule_source, fake_path), fake_path)
     assert "inference.core.logger" in modules
     assert "inference.core" in modules
 
-    # `from inference.core.exceptions import EngineExecutionError` imports an
-    # attribute (a class), not a module - "inference.core.exceptions.
-    # EngineExecutionError" does not exist on disk and must not be recorded.
+    # Importing a class (not a module) must not be recorded as a module path.
     attribute_source = "from inference.core.exceptions import EngineExecutionError\n"
     modules = _imported_modules(_parse_fixture(attribute_source, fake_path), fake_path)
     assert "inference.core.exceptions" in modules
@@ -280,10 +223,7 @@ def test_module_exists_on_disk_matches_checker_resolution() -> None:
 
 
 def test_checker_boundary_matches_allowed_prefixes_exactly() -> None:
-    # A hypothetical sibling tree "streamx" must not be treated as living
-    # under the "stream" prefix just because it shares that string prefix
-    # (the bug this guards: a plain str.startswith check with no path
-    # boundary would incorrectly allow this).
+    # "streamx" must not match "stream" via a naive startswith with no path boundary.
     assert _is_forbidden("inference.core.interfaces.streamx.entities")
     assert _is_forbidden("inference.core.interfaces.streamx")
     # The exact prefix itself, and genuine children of it, stay allowed.
@@ -292,8 +232,7 @@ def test_checker_boundary_matches_allowed_prefixes_exactly() -> None:
 
 
 def test_checker_does_not_flag_inference_models_or_inference_sdk() -> None:
-    # `inference_models`/`inference_sdk` are separate distributions; the
-    # startswith("inference.") check must not treat them as `inference.*`.
+    # inference_models/inference_sdk are separate distributions, not "inference.*".
     assert not _is_forbidden("inference_models.models.base")
     assert not _is_forbidden("inference_sdk.http.client")
 
@@ -305,9 +244,7 @@ def test_checker_allows_same_tree_non_facade_imports() -> None:
 
 
 def test_facade_modules_are_forbidden_even_under_an_allowed_prefix() -> None:
-    # The four modules land under `inference.core.interfaces.stream`, an
-    # otherwise-allowed prefix, but WP-A02 turns them into host-only facades;
-    # importing them from another host-neutral module must stay forbidden.
+    # The four facades sit under an allowed prefix but stay forbidden as host-only.
     for module in FACADE_MODULES:
         assert module.startswith(ALLOWED_PREFIXES)
         assert _is_forbidden(module)
@@ -318,9 +255,7 @@ def test_facade_modules_are_exactly_four() -> None:
 
 
 def test_facade_source_paths_are_exactly_the_four_facade_files() -> None:
-    # The exclusion from the host-neutral scan is by exact file, never by
-    # directory: model_handlers/workflows.py sits next to two facades and is
-    # still scanned (see its allowlist entries).
+    # Exclusion is by exact file path, not directory - a sibling module still scanned.
     assert FACADE_SOURCE_PATHS == {
         "inference/core/interfaces/stream/inference_pipeline.py",
         "inference/core/interfaces/stream/stream.py",
@@ -416,15 +351,12 @@ def test_facade_name_resolves_to_the_legacy_module_object(
     assert getattr(importlib.import_module(parent_name), child_name) is target
 
 
-# WP-A03: the stream manager's `inference` pipeline host. New in A03, so it
-# has no historical name and no facade.
+# The stream manager's pipeline host; new module, so it has no historical facade.
 LEGACY_HOST_MODULE = f"{LEGACY_PREFIX}.host"
 
 
 def test_legacy_stream_holds_exactly_the_four_facade_targets() -> None:
-    # The host-owned side of the facades: nothing else may grow under
-    # legacy_stream without being named here (and, until Stage B, behind a
-    # facade of its own).
+    # Host-owned side of the facades; nothing may grow under legacy_stream unnamed here.
     legacy_root = INTERFACES_ROOT / "legacy_stream"
     modules = {
         ".".join(path.relative_to(PROJECT_ROOT).with_suffix("").parts)
@@ -435,8 +367,7 @@ def test_legacy_stream_holds_exactly_the_four_facade_targets() -> None:
 
 
 def test_host_neutral_trees_never_import_legacy_stream() -> None:
-    # Core imports back into the host-owned implementations are forbidden,
-    # directly or through the facades (covered by FACADE_MODULES above).
+    # Imports into host-owned implementations are forbidden, directly or via facades.
     for target in FACADE_TARGETS.values():
         assert _is_forbidden(target)
     assert _is_forbidden(LEGACY_PREFIX)
@@ -527,11 +458,7 @@ def test_manifest_marks_exactly_the_four_retained_facades() -> None:
 
 
 def test_manifest_expected_canonical_names_match_mapping_rule() -> None:
-    # Every module is expected to move from the legacy "inference.core.interfaces."
-    # namespace to "roboflow_streams." by prefix substitution, EXCEPT the 4
-    # facade modules, which stay as host-only legacy facades and therefore have
-    # no canonical name (None). A per-entry check (not just a count) guards
-    # against a manifest that drifts on *which* modules got which name.
+    # Every module maps to "roboflow_streams." except the 4 facades, which map to None.
     import json
 
     inventory_path = (
@@ -556,11 +483,7 @@ def test_manifest_expected_canonical_names_match_mapping_rule() -> None:
 
 
 def _module_dunder_all(tree: ast.Module) -> Optional[Set[str]]:
-    # If a module declares __all__, that list *is* its public surface (the
-    # convention `from module import *` and every other export tool honors),
-    # overriding rather than adding to the underscore-based heuristic below -
-    # see gstreamer_rtsp_producer.py, which imports several non-underscore
-    # names it does not intend to re-export alongside its narrower __all__.
+    # A declared __all__ overrides the underscore heuristic, not just adds to it.
     for node in tree.body:
         targets = None
         if isinstance(node, ast.Assign):
@@ -597,9 +520,7 @@ def _top_level_public_names(source: str) -> Set[str]:
             if isinstance(node.target, ast.Name) and not node.target.id.startswith("_"):
                 names.add(node.target.id)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            # Re-exported imports (absolute or relative, aliased or not) are
-            # part of a module's importable public surface too - e.g. sinks.py
-            # re-exposes VideoFrame/SinkHandler this way with no local def.
+            # Re-exported imports count as public surface (e.g. sinks.py's VideoFrame).
             for alias in node.names:
                 if alias.name == "*":
                     continue
@@ -616,11 +537,7 @@ def _top_level_public_names(source: str) -> Set[str]:
 def test_manifest_public_top_level_names_match_git_tree_at_baseline_sha(
     tree_name: str,
 ) -> None:
-    # "module exports" freeze: each manifest entry's public_top_level_names is
-    # supposed to be the exact set of non-underscore top-level def/class/assign
-    # names in that module. A per-module check (not just counts) guards against
-    # the manifest drifting on *which* names a module exports - the same class
-    # of gap as the canonical-name mapping check above.
+    # Freezes each module's exact non-underscore top-level names, checked per module.
     import json
     import subprocess
 
@@ -651,10 +568,7 @@ def test_manifest_public_top_level_names_match_git_tree_at_baseline_sha(
 
 
 def test_top_level_public_names_includes_imported_public_names() -> None:
-    # The regression this guards: a module that only re-exports a name via
-    # import (no local def/class/assign), e.g. sinks.py's `VideoFrame`/
-    # `SinkHandler`, must still show up as part of its importable public
-    # surface, exactly like the real fixture below.
+    # A name only re-exported via import (no local def) must still count as public.
     source = (
         "from .entities import VideoFrame\n"
         "from ..camera.entities import SinkHandler as _SinkHandlerAlias\n"
@@ -664,8 +578,7 @@ def test_top_level_public_names_includes_imported_public_names() -> None:
         "from .other import public_name, _hidden_name\n"
         "def local_public(): ...\n"
     )
-    # `_SinkHandlerAlias` and `_hidden_name` stay excluded - the leading
-    # underscore convention applies identically to aliases and plain names.
+    # The leading-underscore convention applies to aliases just like plain names.
     assert _top_level_public_names(source) == {
         "VideoFrame",
         "inference",
@@ -690,9 +603,7 @@ def test_top_level_public_names_respects_dunder_all_override() -> None:
 
 
 def test_sinks_manifest_entry_covers_its_imported_public_names() -> None:
-    # Focused regression for the exact gap being fixed: the real sinks.py
-    # manifest entry must list VideoFrame/SinkHandler, not just its locally
-    # defined names.
+    # Regression: sinks.py entry must list VideoFrame/SinkHandler, not just locals.
     import json
 
     inventory_path = (
@@ -711,18 +622,13 @@ def test_sinks_manifest_entry_covers_its_imported_public_names() -> None:
     assert {"VideoFrame", "SinkHandler"} <= set(entry["public_top_level_names"])
 
 
-# WP-A05: the direct scan above sees only each file's own imports. The checks
-# below close the import graph, so that no allowed-looking module - a facade,
-# a package `__init__`, a dynamic import or a host-installed loader hook - can
-# bring host modules back into what moves.
+# Closes the import graph so no facade, __init__, or loader hook leaks host code.
 TESTS_ROOT = PROJECT_ROOT / "tests" / "inference" / "unit_tests" / "core" / "interfaces"
 A_END_MANIFEST_PATH = (
     PROJECT_ROOT / "tests" / "inference" / "unit_tests" / "streams_a_end_manifest.json"
 )
 
-# The one historical export a host loader hook binds onto a movable module
-# (inference/_workflows_compat.py `_HOST_EXPORTS`); it runs only in the
-# `inference` host, never as an import made by the movable module itself.
+# _workflows_compat._HOST_EXPORTS binds this onto sinks at runtime, not via import.
 HOST_EXPORT_HOOKS = {
     "inference.core.interfaces.stream.sinks": (
         ("ActiveLearningMiddleware", "inference.core.active_learning.middlewares"),
@@ -764,9 +670,7 @@ def tree_test_paths_by_owner() -> Dict[str, Set[str]]:
 
 
 def test_movable_files_name_no_host_module_in_string_literals() -> None:
-    # Catches `importlib.import_module("inference.core....")`-style imports
-    # the AST scan cannot see; the stream manager's host factory arrives as
-    # a descriptor from the caller, never as a literal here.
+    # Catches importlib.import_module(...) string imports invisible to the AST scan.
     literals = set()
     for relative in sorted(movable_source_paths()):
         source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
@@ -792,10 +696,7 @@ def test_host_export_hooks_are_exactly_the_declared_manifest() -> None:
             assert _is_forbidden(host_module)
 
 
-# Imports the given modules with `inference`, `inference.core` and
-# `inference.core.interfaces` replaced by empty packages - the host roots the
-# moved package will not have - and reports every other `inference.*` module
-# outside the three trees that got loaded, with the frames that loaded it.
+# Stubs inference's host-root packages; reports other inference.* modules loaded.
 _STUBBED_ROOTS_PROBE = """
 import importlib, json, sys, traceback, types
 root, trees, modules = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
@@ -877,8 +778,7 @@ def test_movable_import_closure_loads_no_host_module() -> None:
 
 
 def test_import_closure_probe_sees_host_imports_behind_a_facade() -> None:
-    # Positive control: a facade is an allowed-looking name that resolves to
-    # host code; the probe must report what it pulls in.
+    # Positive control: allowed-looking facade resolves to host code the probe catches.
     facade = "inference.core.interfaces.stream.model_handlers.roboflow_models"
 
     result = _import_with_stubbed_host_roots([facade])
@@ -896,8 +796,7 @@ def test_a_end_manifest_records_a_real_base_commit_and_no_candidate() -> None:
     manifest = _a_end_manifest()
     assert manifest["working_tree_dirty"] is True
     assert "candidate_sha" not in manifest
-    # Checked before the history guard so a corrupted provenance SHA still
-    # fails in portable mode, where there is no history to check it against.
+    # Checked before the history guard so a corrupted SHA fails without git history.
     assert manifest["base_head_sha"] == BASELINE_SHA
 
     require_git_baseline_history(manifest["base_head_sha"], project_root=PROJECT_ROOT)

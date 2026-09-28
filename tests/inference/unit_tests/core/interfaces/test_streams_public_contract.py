@@ -1,4 +1,4 @@
-"""WP-A00 public-contract freeze for the stream package's user-facing surface.
+"""Public-contract freeze for the stream package's user-facing surface.
 
 `InferencePipeline.init*`, `Stream.__init__`, and the `sinks` module are the
 call paths external callers actually use; a future extraction that
@@ -38,27 +38,16 @@ from inference.core.interfaces.stream import sinks
 from ._stream_contract_probe import _stable_signature
 from .conftest import require_git_baseline_history
 
-# Five levels up from tests/inference/unit_tests/core/interfaces/ is the repo
-# root - used as the subprocess's cwd so `import inference` resolves the
-# local checkout the same way the harness's own PYTHONPATH-driven pytest
-# invocation does.
+# parents[5] is the repo root; used as the subprocess cwd so imports match the harness.
 _PROJECT_ROOT = Path(__file__).resolve().parents[5]
 _PROBE_SCRIPT = Path(__file__).resolve().parent / "_stream_contract_probe.py"
 
-# Running the probe as `python _stream_contract_probe.py` would put its own
-# directory (this one) first on sys.path - which shadows the stdlib `http`
-# package with the sibling `http/` fixture directory used elsewhere in this
-# test suite. `runpy.run_path` executes the file without that insertion, so
-# stdlib imports inside `inference` (e.g. `torch` -> `urllib.request` ->
-# `http.client`) keep resolving to the real stdlib.
+# runpy.run_path avoids a sys.path insertion that would shadow stdlib http.
 _RUN_PROBE_SNIPPET = (
     "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
 )
 
-# Every environment variable a frozen contract's literal defaults are bound
-# from (see the module docstring). Removed from the child environment before
-# every capture, then `env_overrides` is layered back on top for the cases
-# that deliberately probe a nondefault value.
+# Stripped from the child before capture; env_overrides layers specific ones back.
 _ISOLATED_ENV_KEYS = (
     "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE",
     "VIDEO_SOURCE_BUFFER_SIZE",
@@ -149,11 +138,7 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
     return captured
 
 
-# (qualified name, expected signature hash, expected docstring hash) - the
-# live signatures/docstrings are captured by `_stream_contract_probe.py`,
-# never imported directly into this process. Hashes are sha256, truncated to
-# 16 hex chars - collision risk is irrelevant here, this is a change-detector,
-# not a security control.
+# hashes are sha256[:16] - a change-detector, not a security control.
 _FROZEN_CONTRACTS = [
     (
         "InferencePipeline.init",
@@ -188,11 +173,7 @@ _FROZEN_CONTRACTS = [
         "e3b0c44298fc1c14",
     ),
     ("sinks.multi_sink", "c989ebaff3f51249", "e4fee59b9518c801"),
-    # WP-A02 (plan §4.D) replaced the concrete ActiveLearningMiddleware
-    # annotation of `active_learning_middleware` with the structural
-    # `sinks.ActiveLearningBatchRegistrar`; the baseline hash was
-    # "bd6d542bf3dcee6e". Everything else about the signature is pinned
-    # separately by test_active_learning_sink_signature_shape_is_unchanged.
+    # Only the middleware annotation changed; rest is pinned by the shape test below.
     (
         "sinks.active_learning_sink",
         "66435a496fcd65c7",
@@ -224,9 +205,8 @@ def test_public_signature_and_docstring_are_frozen(
     captured = canonical_contracts["contracts"][name]
 
     assert captured["sig_hash"] == expected_sig_hash, (
-        f"{name} signature changed - update EXTRACT_INFERENCE_PIPELINE_AND_"
-        f"MANAGER_PLAN.MD if intentional, then refreeze this hash:\n"
-        f"{captured['signature']}"
+        f"{name} signature changed - if the change is intentional, refreeze "
+        f"this hash:\n{captured['signature']}"
     )
     assert captured["doc_hash"] == expected_doc_hash, (
         f"{name} docstring changed - refreeze this hash if intentional "
@@ -237,9 +217,6 @@ def test_public_signature_and_docstring_are_frozen(
 def test_canonical_environment_yields_documented_defaults(
     canonical_contracts: dict,
 ) -> None:
-    # Absence of every isolated variable must reproduce the documented
-    # defaults (plan P5): queue 512, buffer 64, tensor mode off, and the
-    # queue size not marked explicit.
     assert canonical_contracts["config"] == {
         "predictions_queue_size": 512,
         "predictions_queue_size_explicit": False,
@@ -274,8 +251,7 @@ _CONFIGURATION_OVERRIDE_CASES = [
         {
             "predictions_queue_size": 512,
             "predictions_queue_size_explicit": False,
-            # Tensor mode's implicit buffer: 8, not the numpy-path default of
-            # 64, when VIDEO_SOURCE_BUFFER_SIZE is absent (env.py:1763).
+            # Implicit buffer is 8, not numpy's 64, when unset (env.py:1763).
             "decoding_buffer_size": 8,
             "enable_tensor_data_representation": True,
         },
@@ -295,9 +271,7 @@ _CONFIGURATION_OVERRIDE_CASES = [
         {"INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE": "512"},
         {
             "predictions_queue_size": 512,
-            # Explicit even though it equals the canonical default - the
-            # explicit flag records whether the host set it, not whether the
-            # value differs (configuration.py's `predictions_queue_size_explicit`).
+            # Records whether the host set it, not whether the value differs.
             "predictions_queue_size_explicit": True,
             "decoding_buffer_size": 64,
             "enable_tensor_data_representation": False,
@@ -335,19 +309,13 @@ def test_configuration_overrides_change_factory_defaults(
 
 
 def test_api_key_override_reflects_only_the_synthetic_sentinel() -> None:
-    # A configured API key changes `Stream.__init__`'s literal default - but
-    # only a synthetic sentinel is ever used here; the real parent-process
-    # key (if any) is always stripped before the child starts
-    # (`_ISOLATED_ENV_KEYS`), so it can never reach the subprocess.
+    # Only a synthetic sentinel is used; the real API key is always stripped first.
     sentinel = "sentinel-do-not-use-0f2c9b"
 
     captured = _capture_contracts({"ROBOFLOW_API_KEY": sentinel})
     signature = captured["contracts"]["Stream.__init__"]["signature"]
 
-    # Checked as a plain bool, not inline in the `assert` expression: pytest's
-    # assertion rewriting reintrospects the operands of an `in` comparison and
-    # would print the raw (unredacted) signature/sentinel on failure even
-    # though the explicit message here is redacted.
+    # A plain bool, not inline - pytest rewriting would print the raw secret on failure.
     found = f"api_key: <class 'str'> = {sentinel!r}" in signature
     assert found, _redact_api_key(signature, sentinel)
 
@@ -362,9 +330,7 @@ def test_redact_api_key_scrubs_configured_secret() -> None:
 
 
 def test_active_learning_sink_signature_shape_is_unchanged() -> None:
-    # The one intended A02 change is the middleware annotation; parameter
-    # names, kinds, defaults, the other annotations and the return annotation
-    # must still be exactly the baseline's.
+    # Only the middleware annotation is expected to differ from the baseline shape.
     import ast
     import subprocess
     from pathlib import Path

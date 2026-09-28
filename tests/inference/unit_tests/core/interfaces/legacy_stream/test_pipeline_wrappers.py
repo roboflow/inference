@@ -1,4 +1,4 @@
-"""WP-A02: the legacy `InferencePipeline` wrappers over the host-neutral pipeline.
+"""The legacy `InferencePipeline` wrappers over the host-neutral pipeline.
 
 Engine-facing assertions capture the arguments of the real
 `ExecutionEngine.init` call (the engine itself is replaced by a recording
@@ -146,9 +146,7 @@ class _DuckModelManager:
         return True
 
 
-# ---------------------------------------------------------------------------
 # Legacy init_with_workflow: what the Execution Engine and pipeline receive
-# ---------------------------------------------------------------------------
 
 
 def test_legacy_workflow_wrapper_forwards_every_argument(
@@ -304,8 +302,7 @@ def test_legacy_workflow_wrapper_overwrites_observer_but_keeps_bare_observer(
 def test_legacy_workflow_wrapper_hands_the_binders_provider_to_the_engine(
     engine_init: _EngineInitCapture, video_sources, monkeypatch
 ) -> None:
-    # The provider the explicit binder installs is the very object the engine
-    # receives: the host-neutral pipeline must not rewrap it.
+    # the binder's provider is the very object the engine receives, not a rewrap
     installed = []
     real_binder = legacy_module.bind_model_manager_to_workflows
 
@@ -514,8 +511,7 @@ def test_legacy_workflow_wrapper_passes_the_resolved_step_error_handler(
 def test_legacy_workflow_wrapper_rejects_mismatched_configuration_before_engine(
     engine_init: _EngineInitCapture, video_sources
 ) -> None:
-    # Same error the real engine raises for this configuration; the binder
-    # raises it before touching the process-wide codec or the engine.
+    # the binder raises the engine's own error before touching the codec or engine
     not_a_configuration = object()
     with pytest.raises(WorkflowEnvironmentConfigurationError) as engine_error:
         ensure_process_configuration_matches(not_a_configuration)
@@ -594,7 +590,7 @@ def test_legacy_workflow_wrapper_wraps_engine_import_errors(monkeypatch) -> None
 def test_prepare_workflow_for_pipeline_is_the_wrappers_composition(
     monkeypatch,
 ) -> None:
-    # The shared helper the stream manager's legacy host reuses (WP-A03).
+    # the shared helper the stream manager's legacy host reuses
     monkeypatch.setattr(legacy_module, "API_KEY", "env-key")
     caller_parameters: Dict[str, Any] = {}
     duck = _DuckModelManager()
@@ -624,9 +620,7 @@ def test_prepare_workflow_for_pipeline_is_the_wrappers_composition(
     assert "workflows_core.disable_sinks" not in caller_parameters
 
 
-# ---------------------------------------------------------------------------
 # The host-neutral constructor
-# ---------------------------------------------------------------------------
 
 
 def test_core_workflow_constructor_passes_host_bindings_through_unchanged(
@@ -650,8 +644,7 @@ def test_core_workflow_constructor_passes_host_bindings_through_unchanged(
     assert engine_kwargs["init_parameters"] is init_parameters
     assert engine_kwargs["step_error_handler"] is handler
     assert engine_kwargs["profiler"] is profiler
-    # Only the pipeline-owned keys are added: no API key, observer, provider
-    # wrapping or platform/codec/configuration bindings.
+    # only pipeline-owned keys added: no API key, observer, or platform/codec bindings
     assert set(init_parameters) == {
         "workflows_core.model_manager",
         "workflows_core.thread_pool_executor",
@@ -747,8 +740,7 @@ def test_legacy_yolo_world_forwards_config_and_wraps_import_errors(
     assert pipeline._on_video_frame is handler
     assert type(pipeline) is LegacyInferencePipeline
 
-    # Undone here rather than at test teardown: `stub_ultralytics_if_missing`
-    # tears down first and must not have the stub-backed handler put back after.
+    # undone here, not at teardown: stub_ultralytics_if_missing tears down first
     with monkeypatch.context() as patch:
         patch.setitem(
             sys.modules,
@@ -762,9 +754,7 @@ def test_legacy_yolo_world_forwards_config_and_wraps_import_errors(
     assert isinstance(error.value.__cause__, ImportError)
 
 
-# ---------------------------------------------------------------------------
 # Prediction-queue cap under stream-pipelined RF-DETR
-# ---------------------------------------------------------------------------
 
 
 def test_legacy_queue_cap_checks_the_environment_when_the_pipeline_is_built(
@@ -824,9 +814,7 @@ def test_queue_cap_is_not_applied_without_stream_pipelined_rfdetr(
     assert pipeline._predictions_queue.maxsize == 64
 
 
-# ---------------------------------------------------------------------------
 # Frames reach the WorkflowRunner unchanged
-# ---------------------------------------------------------------------------
 
 
 class _FileSourceStub:
@@ -900,9 +888,7 @@ def test_workflow_pipeline_hands_frame_pixels_to_the_engine_unchanged(
     assert sink_calls[1][1].image is tensor
 
 
-# ---------------------------------------------------------------------------
 # Active learning sink: structural injection
-# ---------------------------------------------------------------------------
 
 
 def test_active_learning_sink_accepts_any_batch_registrar() -> None:
@@ -946,9 +932,7 @@ def test_model_config_stays_canonical_in_stream_entities(
     assert yolo_world.ModelConfig is ModelConfig
 
 
-# ---------------------------------------------------------------------------
 # In-process WebRTC worker: the model manager reaches the engine at every layer
-# ---------------------------------------------------------------------------
 
 
 def _webrtc_workflow_configuration() -> WorkflowConfiguration:
@@ -1010,8 +994,7 @@ def test_webrtc_video_track_passes_model_manager_to_the_engine(
 def test_webrtc_peer_connection_init_passes_model_manager_to_the_engine(
     monkeypatch, stream_output: List[str]
 ) -> None:
-    # The engine records its inputs and then fails with an error the worker
-    # reports through `send_answer`, so nothing past pipeline creation runs.
+    # the engine records inputs then fails; the worker reports it via send_answer
     from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
     from inference.core.interfaces.webrtc_worker.webrtc import (
         init_rtc_peer_connection_with_loop,
@@ -1049,9 +1032,7 @@ def test_webrtc_peer_connection_init_passes_model_manager_to_the_engine(
     assert [answer.exception_type for answer in answers] == ["MissingApiKeyError"]
 
 
-# ---------------------------------------------------------------------------
 # Composition points reachable through the historical module names
-# ---------------------------------------------------------------------------
 
 
 def test_historical_names_are_the_legacy_modules() -> None:
@@ -1120,8 +1101,7 @@ def test_historical_profiler_patch_controls_fetch_and_engine_profiler(
         "get_workflow_specification",
         MagicMock(return_value=dict(MINIMAL_SPEC)),
     )
-    # The patch targets development/stream_interface/run_workflow_on_video.py
-    # has always used.
+    # patches the same attrs development/stream_interface/run_workflow_on_video.py uses
     monkeypatch.setattr(f"{HISTORICAL_PIPELINE}.ENABLE_WORKFLOWS_PROFILING", True)
     monkeypatch.setattr(f"{HISTORICAL_PIPELINE}.WORKFLOWS_PROFILER_BUFFER_SIZE", 3)
     monkeypatch.setattr(
@@ -1202,8 +1182,7 @@ def test_historical_composition_patches_steer_legacy_pipelines_only(
     list(legacy._generate_frames())
     list(core._generate_frames())
 
-    # Frame dropping moves the FPS limit into the source (desired_source_fps)
-    # and out of the multiplexer (max_fps).
+    # frame dropping moves the FPS limit from the multiplexer into the source
     assert [call["desired_source_fps"] for call in legacy_sources] == [5]
     assert [call["desired_source_fps"] for call in core_sources] == [None]
     assert [call["max_fps"] for call in multiplexed] == [None, 5]

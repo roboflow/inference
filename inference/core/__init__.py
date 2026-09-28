@@ -6,14 +6,7 @@ from packaging import version as packaging_version
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 
-# Hand the stream runtime its configuration before anything can READ it (the
-# same invariant as for Workflows below): `install_streams_configuration()`
-# runs before any import of `inference.core.interfaces.stream.environment`, so
-# the camera/stream/stream-manager defaults are the fully resolved env.py
-# values (including the tensor-dependent buffer defaults). It imports only
-# `inference.core.env` and the import-light
-# `inference.core.interfaces.stream.configuration` and
-# `inference.core.interfaces.stream_manager.manager_app.host`.
+# Must be installed before any import of inference.core.interfaces.stream.environment.
 from inference.core.interfaces.streams_configuration import (
     install_streams_configuration,
 )

@@ -322,8 +322,6 @@ class Stream(BaseInterface):
         if self.use_main_thread:
             self.inference_request_thread()
         else:
-            # start a thread that looks for the predictions
-            # and call the callbacks
             inference_request_thread = threading.Thread(
                 target=self.inference_request_thread
             )

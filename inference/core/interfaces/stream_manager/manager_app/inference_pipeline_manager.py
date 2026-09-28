@@ -116,8 +116,7 @@ class InferencePipelineManager(Process):
         self._command_queue = command_queue
         self._responses_queue = responses_queue
         self._host_descriptor = resolve_host_descriptor(host_descriptor)
-        # Built in this process on the first initialisation and closed only
-        # when `run()` exits, after the pipeline running on it was drained.
+        # Built on first initialisation; closed by `run()` after draining the pipeline.
         self._host: Optional[PipelineHost] = None
         self._inference_pipeline: Optional[InferencePipeline] = None
         self._watchdog: Optional[PipelineWatchDog] = None
@@ -461,9 +460,7 @@ class InferencePipelineManager(Process):
                             "Please try to adjust the scene so models detect objects"
                         )
                         errors.append("or stop preview, update workflow and try again.")
-                        # The WebRTC preview needs CPU pixels; the pipeline
-                        # hands tensor frames through unmaterialised, so
-                        # convert at this consumer boundary.
+                        # WebRTC preview needs CPU pixels; materialise the tensor frame.
                         frame = materialise_video_frame_for_sink(
                             video_frame
                         ).image.copy()
@@ -565,8 +562,7 @@ class InferencePipelineManager(Process):
         api_key: Optional[str],
         workflow_version_id: Optional[str],
     ) -> Dict[str, Any]:
-        # One profiler records the host's definition fetch and every workflow
-        # run of the pipeline.
+        # One profiler records both the definition fetch and every workflow run.
         profiler = build_workflows_profiler(
             enabled=ENABLE_WORKFLOWS_PROFILING,
             max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -624,9 +620,8 @@ class InferencePipelineManager(Process):
             )
 
     def _handle_termination_signal(self, signal_number: int, frame: FrameType) -> None:
-        # Only stops and wakes the command loop. The signal may interrupt this
-        # thread while it creates or starts the very pipeline to drain, so the
-        # pipeline is drained by `run()` once the current command completed.
+        # Stops and wakes the command loop; a signal may land mid-init, so
+        # `run()` drains only after the current command finishes building it.
         self._stop = True
         try:
             pid = os.getpid()
@@ -636,25 +631,20 @@ class InferencePipelineManager(Process):
             logger.warning(f"Could not terminate pipeline gracefully. Error: {error}")
 
     def _execute_termination(self) -> None:
-        # The reference is kept until the pipeline is drained, so a
-        # termination that failed can still be retried on shutdown. Stopping
-        # this process is left to the callers: a failed initialisation drains
-        # its pipeline without stopping it.
+        # Kept until drained so a failed init can retry; caller owns termination.
         if self._inference_pipeline is not None:
             self._inference_pipeline.terminate()
             self._inference_pipeline.join()
             self._inference_pipeline = None
 
     def _release_pipeline_resources(self) -> None:
-        # The single shutdown path, however the command loop ended: the host
-        # is closed only after the pipeline workers running on it are drained.
+        # Single shutdown path: the host closes only after its pipeline drains.
         deadline = time.monotonic() + PIPELINE_DRAIN_TIMEOUT
         while self._inference_pipeline is not None:
             try:
                 self._execute_termination()
             except StreamOperationNotAllowedError as error:
-                # A source just started cannot be terminated until its
-                # capture worker takes it out of INITIALISING.
+                # A just-started source can't terminate until it leaves INITIALISING.
                 if time.monotonic() > deadline:
                     logger.warning(
                         f"Could not drain pipeline, leaving its host open. Error: {error}"
@@ -664,9 +654,8 @@ class InferencePipelineManager(Process):
         self._close_host()
 
     def _release_failed_initialisation(self) -> None:
-        # A failed initialisation does not stop this process, so what it
-        # created is released at once; a retried initialisation builds anew.
-        # The failure has its own response: releasing must not add another.
+        # Sends no response of its own; on an uncaught error, cleanup runs first.
+        # Doesn't stop the process, so what it created is released for a retry.
         try:
             self._release_pipeline_resources()
         except Exception as error:

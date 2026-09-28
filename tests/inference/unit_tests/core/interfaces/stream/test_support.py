@@ -1,4 +1,4 @@
-"""WP-A04 characterization of the utilities the stream package copies.
+"""Characterization of the utilities the stream package copies.
 
 Every behavior is pinned with concrete values first, then each stream-owned
 copy is checked against the unchanged legacy helper it replaces
@@ -45,8 +45,7 @@ EXPERIMENTAL_DECORATORS = [legacy_function.experimental, decorators.experimental
 
 
 def test_copies_are_separate_objects_from_the_legacy_helpers() -> None:
-    # Guards the oracle: parametrising both sides only compares anything
-    # while they are distinct implementations.
+    # guards the oracle: parametrising only compares while both sides differ
     for implementations in (
         QUEUE_CLASSES,
         LETTERBOX_FUNCTIONS,
@@ -75,9 +74,7 @@ def _stop_loop(loop: asyncio.AbstractEventLoop, thread: threading.Thread) -> Non
     loop.close()
 
 
-# --------------------------------------------------------------------------
 # Queue
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.timeout(30)
@@ -127,8 +124,7 @@ def test_queue_created_inside_running_loop_binds_that_loop(queue_class: type) ->
 def test_queue_created_for_foreign_loop_shares_it_between_sync_and_async_sides(
     queue_class: type,
 ) -> None:
-    # The manager's WebRTC path: the loop runs in its own thread and the
-    # queue is created from sync code, then used from both sides.
+    # the manager's WebRTC path: loop runs in its own thread, created from sync code
     loop, thread = _start_loop_in_thread()
     try:
         queue = queue_class(loop=loop, maxsize=10)
@@ -150,11 +146,7 @@ def test_queue_created_for_foreign_loop_shares_it_between_sync_and_async_sides(
 @pytest.mark.timeout(30)
 @pytest.mark.parametrize("queue_class", QUEUE_CLASSES)
 def test_queue_waits_time_out_with_builtin_timeout_error(queue_class: type) -> None:
-    # Both implementations propagate whatever `asyncio.wait_for` raises,
-    # unchanged. `asyncio.TimeoutError` *is* the builtin `TimeoutError` from
-    # Python 3.11 onward, but on 3.10 it is still its own distinct type; this
-    # asserts against `asyncio.TimeoutError` so the test pins the same legacy
-    # behavior on every supported interpreter instead of only on 3.11+.
+    # asyncio.TimeoutError, not builtin TimeoutError, pins behavior on 3.10 too
     queue = queue_class()
 
     with pytest.raises(asyncio.TimeoutError):
@@ -187,8 +179,7 @@ def test_queue_nowait_operations_raise_asyncio_queue_errors(queue_class: type) -
 def test_queue_wakes_blocked_sync_consumer_and_delivers_close_sentinel(
     queue_class: type,
 ) -> None:
-    # WebRTCVideoFrameProducer.retrieve blocks in sync_get() and treats a
-    # `None` item as the end of the stream.
+    # WebRTCVideoFrameProducer.retrieve treats a None item as end of stream
     queue = queue_class(maxsize=10)
     received: List[Optional[str]] = []
 
@@ -237,8 +228,7 @@ def test_queue_sync_put_waits_for_space_on_a_full_queue(queue_class: type) -> No
 def test_queue_wakes_blocked_async_consumer_from_another_thread(
     queue_class: type,
 ) -> None:
-    # VideoTransformTrack awaits frames on the loop while the pipeline thread
-    # produces them with sync_put.
+    # VideoTransformTrack awaits on the loop while the pipeline thread does sync_put
     loop, thread = _start_loop_in_thread()
     try:
         queue = queue_class(loop=loop, maxsize=10)
@@ -254,9 +244,7 @@ def test_queue_wakes_blocked_async_consumer_from_another_thread(
         _stop_loop(loop, thread)
 
 
-# --------------------------------------------------------------------------
 # Images: resize / letterbox
-# --------------------------------------------------------------------------
 
 
 def _gradient_image(height: int, width: int, channels: Optional[int] = 3) -> np.ndarray:
@@ -332,23 +320,19 @@ def test_letterbox_keeps_grayscale_two_dimensional(letterbox: Callable) -> None:
 
 @pytest.mark.parametrize("letterbox", LETTERBOX_FUNCTIONS)
 def test_letterbox_rejects_non_ndarray_images(letterbox: Callable) -> None:
-    # Legacy only takes a tensor path under USE_PYTORCH_FOR_PREPROCESSING
-    # (off here); the sinks materialise frames before letterboxing.
+    # legacy only takes the tensor path under USE_PYTORCH_FOR_PREPROCESSING (off here)
     assert legacy_preprocess.USE_PYTORCH_FOR_PREPROCESSING is False
 
     with pytest.raises(ValueError, match="Received an image of unknown type"):
         letterbox(image=[[0, 0], [0, 0]], desired_size=(4, 4))
 
 
-# --------------------------------------------------------------------------
 # Images: tiles
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("create_tiles", CREATE_TILES_FUNCTIONS)
 def test_create_tiles_concrete_two_image_grid(create_tiles: Callable) -> None:
-    # avg tile size: width round(avg(2, 4)) = 3, height 2; first image padded
-    # on the right, second resized to 3x1 and padded at the bottom.
+    # avg tile size: width round(avg(2,4))=3, height 2; padded right/bottom
     images = [
         np.full((2, 2, 3), 7, dtype=np.uint8),
         np.full((2, 4, 3), 9, dtype=np.uint8),
@@ -527,9 +511,7 @@ def test_create_tiles_output_shapes(
     assert result.dtype == np.uint8
 
 
-# --------------------------------------------------------------------------
 # Environment parsing
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("str2bool", STR2BOOL_FUNCTIONS)
@@ -561,13 +543,13 @@ def test_str2bool_rejects_other_values_with_legacy_error(
 def test_safe_env_to_type_reads_only_set_variables(
     safe_env_to_type: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("A04_UNSET_VARIABLE", raising=False)
-    monkeypatch.setenv("A04_SET_VARIABLE", "0.25")
+    monkeypatch.delenv("STREAMS_UNSET_VARIABLE", raising=False)
+    monkeypatch.setenv("STREAMS_SET_VARIABLE", "0.25")
 
-    assert safe_env_to_type("A04_UNSET_VARIABLE", default_value=3) == 3
-    assert safe_env_to_type("A04_UNSET_VARIABLE") is None
-    assert safe_env_to_type("A04_SET_VARIABLE", default_value=3) == "0.25"
-    assert safe_env_to_type("A04_SET_VARIABLE", 3, float) == 0.25
+    assert safe_env_to_type("STREAMS_UNSET_VARIABLE", default_value=3) == 3
+    assert safe_env_to_type("STREAMS_UNSET_VARIABLE") is None
+    assert safe_env_to_type("STREAMS_SET_VARIABLE", default_value=3) == "0.25"
+    assert safe_env_to_type("STREAMS_SET_VARIABLE", 3, float) == 0.25
 
 
 @pytest.mark.parametrize("safe_env_to_type", SAFE_ENV_TO_TYPE_FUNCTIONS)
@@ -577,15 +559,13 @@ def test_safe_env_to_type_propagates_boolean_conversion_error(
     str2bool: Callable,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("A04_BOOLEAN_VARIABLE", "maybe")
+    monkeypatch.setenv("STREAMS_BOOLEAN_VARIABLE", "maybe")
 
     with pytest.raises(InvalidEnvironmentVariableError):
-        safe_env_to_type("A04_BOOLEAN_VARIABLE", False, str2bool)
+        safe_env_to_type("STREAMS_BOOLEAN_VARIABLE", False, str2bool)
 
 
-# --------------------------------------------------------------------------
 # Experimental decorator
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("experimental", EXPERIMENTAL_DECORATORS)
@@ -611,9 +591,7 @@ def test_experimental_warns_with_legacy_category_at_caller(
     assert caught[0].filename == __file__
 
 
-# --------------------------------------------------------------------------
 # Copies against the legacy helpers
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -675,8 +653,7 @@ def test_create_tiles_copy_is_pixel_identical_to_legacy(
 def test_tile_rows_match_legacy_create_batches(
     rows: int, columns: int, images_count: int
 ) -> None:
-    # `_generate_tiles` slices rows where the legacy helper used
-    # `inference.core.models.utils.batching.create_batches`.
+    # _generate_tiles slices rows; legacy used utils.batching.create_batches
     tiles = [np.full((2, 3, 3), index, dtype=np.uint8) for index in range(images_count)]
     tile_kwargs = {
         "grid_size": (rows, columns),

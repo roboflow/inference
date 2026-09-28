@@ -1272,8 +1272,7 @@ def test_terminate_waits_for_whole_startup_before_stopping_any_source() -> None:
         assert terminating.wait(timeout=10), "terminate() was never called"
         terminator.join(timeout=0.5)
 
-        # then - the source that already started is not stopped while the
-        # next one is still starting
+        # then - the already-started source is not stopped while the next one starts
         assert terminator.is_alive(), "terminate() returned during startup"
         assert terminated_sources == []
 

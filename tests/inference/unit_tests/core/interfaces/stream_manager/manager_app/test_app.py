@@ -241,8 +241,7 @@ def _handle_raw_request(payload: bytes) -> dict:
     return json.loads(socket.get_data_that_was_sent()[4:].decode("utf-8"))
 
 
-# Carried over from the removed enterprise stream manager's handler tests
-# (WP-A05): the manager fails closed on requests it cannot trust.
+# The manager fails closed on requests it cannot trust.
 @pytest.mark.timeout(30)
 @pytest.mark.parametrize(
     "payload",
@@ -274,8 +273,7 @@ def test_pipeline_manager_handler_rejects_invalid_requests(payload: bytes) -> No
         ("mute", "not_found"),
         ("resume", "not_found"),
         ("consume_result", "not_found"),
-        # Unlike the removed enterprise manager (not_found), termination looks
-        # the pipeline up before dispatching the command; still a failure.
+        # terminate looks up the pipeline before dispatching, so its error differs.
         ("terminate", "invalid_payload"),
     ],
 )

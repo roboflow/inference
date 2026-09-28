@@ -64,17 +64,12 @@ class StreamsConfiguration:
     enable_workflows_profiling: bool = False
     workflows_profiler_buffer_size: int = 64
     predictions_queue_size: int = 512
-    # Whether the host set the predictions-queue size explicitly - the tensor
-    # pipeline only caps an omitted size, never an explicit one, even when the
-    # explicit value equals the default.
+    # Whether set explicitly; the tensor pipeline's cap applies to an omitted size only.
     predictions_queue_size_explicit: bool = False
     stream_manager_max_active_pipelines: int = 8
     stream_manager_max_ram_mb: Optional[float] = None
     stream_manager_ram_usage_queue_size: int = 10
-    # Standalone defaults, matching the historical `os.getenv` fallbacks. A
-    # host that resolves these itself (see `streams_configuration.py`) passes
-    # `None` explicitly to defer resolution to
-    # `manager_app/app.py`'s own import instead of overriding it here.
+    # A host resolving these itself (see `streams_configuration.py`) passes `None`.
     stream_manager_host: Optional[str] = "127.0.0.1"
     stream_manager_port: Optional[int] = 7070
     stream_manager_socket_timeout: Optional[float] = 5.0

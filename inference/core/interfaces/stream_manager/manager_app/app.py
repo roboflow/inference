@@ -90,13 +90,7 @@ PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
 PROCESSES_TABLE_LOCK = Lock()
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
-# STREAM_MANAGER_HOST/PORT/SOCKET_TIMEOUT have no `env.py` counterpart and are
-# left unresolved (`None`) by the facade unless a host names them explicitly
-# in its `StreamsConfiguration` (see `configuration.py`). This module is the
-# only manager-address consumer, so it resolves an unset value itself, with
-# the same `os.getenv` expressions it has always used, at its own import -
-# not at the facade's import, which happens far earlier for unrelated camera
-# and pipeline settings.
+# STREAM_MANAGER_HOST/PORT/SOCKET_TIMEOUT have no `env.py` counterpart; resolved here.
 HOST = (
     STREAM_MANAGER_HOST
     if STREAM_MANAGER_HOST is not None
@@ -350,8 +344,7 @@ def execute_termination(
         pipeline_ids = list(processes_table.keys())
         for pipeline_id in pipeline_ids:
             managed_pipeline = processes_table[pipeline_id]
-            # SIGTERM lets the pipeline process drain its pipeline and close
-            # its host before it exits.
+            # SIGTERM lets the pipeline process drain its pipeline and close its host.
             logger.info(f"Terminating pipeline: {pipeline_id}")
             managed_pipeline.pipeline_manager.terminate()
             logger.info(f"Pipeline: {pipeline_id} terminated.")
@@ -511,8 +504,7 @@ def get_or_spawn_pipeline_process(
             )
             + _get_current_process_ram_usage_mb()
         )
-        # pipelines spawned since the last check_process_health sweep have no RAM
-        # samples yet, hence the defaults
+        # Pipelines spawned since the last health sweep have no RAM samples yet.
         highest_pipeline_ram_usage = max(
             (
                 max(managed_pipeline.ram_usage_queue, default=0)
@@ -548,8 +540,7 @@ def ensure_idle_pipelines_warmed_up(
     while True:
         with PROCESSES_TABLE_LOCK:
             idle_pipelines = len(get_idle_pipelines_id(processes_table=PROCESSES_TABLE))
-            # the warm pool must not push the manager past the limit that
-            # get_or_spawn_pipeline_process enforces - busy pipelines count against it too
+            # The warm pool must not push past the same limit get_or_spawn enforces.
             if (
                 idle_pipelines < expected_warmed_up_pipelines
                 and len(PROCESSES_TABLE) < STREAM_MANAGER_MAX_ACTIVE_PIPELINES
@@ -583,8 +574,7 @@ def spawn_managed_pipeline_process(
     pipeline_id = str(uuid4())
     command_queue = Queue()
     responses_queue = Queue()
-    # The process imports the pipeline runtime only after installing this
-    # process's configuration, so it is safe under every start method.
+    # Imports the pipeline runtime only after installing config; safe under any start.
     inference_pipeline_manager = PipelineManagerProcess(
         pipeline_id=pipeline_id,
         command_queue=command_queue,
@@ -634,8 +624,7 @@ def start(
         PipelineHostNotConfiguredError: No descriptor was passed or installed.
     """
     host_descriptor = resolve_host_descriptor(host_descriptor)
-    # Fails on a bad descriptor before anything starts; a forked pipeline
-    # process also inherits the host's modules instead of importing them.
+    # Fails fast on a bad descriptor; forked pipelines inherit this import.
     import_attribute(host_descriptor.factory)
 
     signal.signal(

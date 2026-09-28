@@ -97,8 +97,7 @@ class PipelineManagerProcess(Process):
         self._manager_class = manager_class
 
     def run(self) -> None:
-        # The pipeline manager ignores SIGINT (the stream manager terminates it
-        # with SIGTERM); do so already while the runtime is being imported.
+        # Ignore SIGINT before importing the runtime; the manager sends SIGTERM instead.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         install_process_settings(
             configuration=self._configuration,
@@ -106,8 +105,7 @@ class PipelineManagerProcess(Process):
         )
 
         manager_class = import_attribute(self._manager_class)
-        # Imports the host's modules while the process is still idle, as a
-        # forked process inherits them, so the first request does not.
+        # Imports while idle; a forked pipeline inherits it, skipping the first request.
         import_attribute(self._host_descriptor.factory)
 
         manager = manager_class.init(

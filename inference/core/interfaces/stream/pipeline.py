@@ -237,9 +237,7 @@ class InferencePipeline:
             thread_pool_executor = ThreadPoolExecutor(
                 max_workers=workflows_thread_pool_workers
             )
-            # Deliberately a separate pool: sharing one executor between
-            # fire-and-forget sink tasks and step execution lets slow sinks
-            # block the whole pipeline.
+            # Separate pool: a slow sink must not block step execution.
             execution_engine_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=execution_engine_thread_pool_workers
             )
@@ -474,9 +472,7 @@ class InferencePipeline:
             _rfdetr_stream_pipeline_enabled()
             and not cls._predictions_queue_size_set_explicitly()
         ):
-            # Stream-pipelined RF-DETR returns async response futures. Letting
-            # the producer queue hundreds of full-resolution VideoFrame objects
-            # can exhaust host memory on 4K videos before dispatch catches up.
+            # RF-DETR pipelining: cap queue depth so 4K frames can't exhaust memory.
             predictions_queue_size = min(predictions_queue_size, 4)
         predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
@@ -497,15 +493,10 @@ class InferencePipeline:
 
     @classmethod
     def _predictions_queue_size_set_explicitly(cls) -> bool:
-        # The stream-pipelined RF-DETR cap applies only to an omitted size,
-        # never to an explicit one - even one equal to the default - so the
-        # configuration records presence separately from the resolved value.
+        # The RF-DETR cap applies only to an omitted size, never an explicit one.
         return PREDICTIONS_QUEUE_SIZE_EXPLICIT
 
-    # Like the queue-size check above, the settings and the source factory
-    # below are looked up through `cls`, so a host subclass can read them from
-    # its own module - the legacy `inference` pipeline reads the ones patched
-    # through its historical module name.
+    # Looked up through `cls` so a host subclass can override via its own module.
     @classmethod
     def _frame_drop_on_video_file_rate_limiting_enabled(cls) -> bool:
         return ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING
@@ -552,13 +543,10 @@ class InferencePipeline:
         self._sink_mode = sink_mode
         self._stream_session_id = exec_session_id or mint_stream_session_id()
         self._collection_policy = collection_policy
-        # The inference thread starts the sources; `terminate()` stops only
-        # those it did start, once it has finished starting them.
+        # terminate() stops only sources the inference thread actually started.
         self._sources_startup_finished = Event()
         self._started_sources: List[VideoSource] = []
-        # Set while the inference thread runs without anything consuming its
-        # results - between its start and the dispatcher's - so that `join()`
-        # discards them if the dispatcher never came to be.
+        # True between inference-thread start and dispatcher start; join() drains if so.
         self._results_consumer_missing = False
 
     def start(self, use_main_thread: bool = True) -> None:
@@ -617,11 +605,9 @@ class InferencePipeline:
             and self._inference_thread.is_alive()
             and self._inference_thread is not current_thread()
         ):
-            # A source failing to start ends the startup: the sources after it
-            # are never started, so there is nothing of them to stop.
+            # A startup failure stops the sequence; later sources were never started.
             self._sources_startup_finished.wait()
-        # Each source is stopped once, so a call repeated after an error only
-        # stops those still running.
+        # Sources are stopped once; a retried call only stops those still pending.
         while self._started_sources:
             self._started_sources[0].terminate(
                 wait_on_frames_consumption=False, purge_frames_buffer=True
@@ -656,9 +642,7 @@ class InferencePipeline:
             self._on_pipeline_end()
 
     def _discard_inference_results(self) -> None:
-        # The dispatcher never started, so a full results queue would block
-        # the inference thread for good: its results - never meant for the
-        # sinks - are dropped up to its final sentinel.
+        # No dispatcher running: drain so a full queue can't block the inference thread.
         while self._predictions_queue.get() is not None:
             self._predictions_queue.task_done()
         self._predictions_queue.task_done()
@@ -849,8 +833,7 @@ class InferencePipeline:
         predictions: List[AnyPrediction],
         video_frames: List[VideoFrame],
     ) -> None:
-        # This function makes it possible to always call sinks with payloads aligned to order of
-        # video sources - marking empty frames as None
+        # Aligns sink payloads to video-source order, marking skipped frames as None.
         results_by_source_id = {
             video_frame.source_id: (frame_predictions, video_frame)
             for frame_predictions, video_frame in zip(predictions, video_frames)
@@ -872,11 +855,7 @@ class InferencePipeline:
         video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         try:
-            # Frames are handed to the sink AS-IS: under
-            # ENABLE_TENSOR_DATA_REPRESENTATION that is the original on-device
-            # tensor frame (no per-frame device-to-host materialisation here).
-            # Pixel-consuming sinks materialise at their own boundary via
-            # stream.utils.materialise_video_frame_for_sink.
+            # Tensor frame passed as-is; pixel sinks materialise at their own boundary.
             self._on_prediction(
                 predictions,
                 video_frames,

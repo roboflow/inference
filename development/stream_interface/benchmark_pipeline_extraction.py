@@ -2416,8 +2416,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         return args
     if args.host != "legacy":
         parser.error(
-            f"--host {args.host} is not implemented yet: the next-gen hosts arrive in "
-            "WP-P401/P403; only the legacy runtime of this checkout can be measured"
+            f"--host {args.host} is not implemented yet: next-gen runtime is not part "
+            "of this checkout; only the legacy runtime can be measured"
         )
     if args.compare and not args.workflow:
         if not args.output:

@@ -29,8 +29,7 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 if ENABLE_STREAM_API:
     stream_manager_process = Process(
-        # The target's module is import-light: a spawned manager installs this
-        # configuration and host before importing the manager runtime.
+        # Import-light target: installs config/host before importing the runtime.
         target=partial(
             run_stream_manager,
             configuration=server_streams_configuration(),

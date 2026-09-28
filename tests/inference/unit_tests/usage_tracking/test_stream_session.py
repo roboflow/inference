@@ -1,4 +1,4 @@
-"""WP-A05: the usage side of the stream session identity.
+"""The usage side of the stream session identity.
 
 ``inference.usage_tracking.stream_session`` is the historical name of the
 stream session module; the collector and the Workflows observer read the
@@ -89,8 +89,7 @@ def test_importing_the_historical_usage_path_stays_import_light() -> None:
 
 
 def test_step_pool_workers_record_usage_under_the_pipeline_session() -> None:
-    # given - the Workflows observer hands the session to a reused pool thread
-    # that still holds a previous pipeline's id
+    # given - a reused pool thread already holds a previous pipeline's session id
     observer = UsageTrackingExecutionObserver()
     recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
     seen = {}

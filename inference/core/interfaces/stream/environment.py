@@ -47,14 +47,7 @@ PREDICTIONS_QUEUE_SIZE_EXPLICIT = _CONFIGURATION.predictions_queue_size_explicit
 STREAM_MANAGER_MAX_ACTIVE_PIPELINES = _CONFIGURATION.stream_manager_max_active_pipelines
 STREAM_MANAGER_MAX_RAM_MB = _CONFIGURATION.stream_manager_max_ram_mb
 STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = _CONFIGURATION.stream_manager_ram_usage_queue_size
-# No `env.py` counterpart: unlike every other setting above, these are not
-# parsed when the server's configuration is built (see
-# `streams_configuration.py`'s docstring), and this facade must not parse them
-# either - camera and pipeline modules import it for unrelated settings, long
-# before anything needs the manager's address. `None` here means "no host
-# override installed"; `manager_app/app.py` is the only module that resolves
-# an unset value, with the historical `os.getenv` expressions, at its own
-# import.
+# No `env.py` counterpart; `None` means "no host override" (resolved late by app.py).
 STREAM_MANAGER_HOST = _CONFIGURATION.stream_manager_host
 STREAM_MANAGER_PORT = _CONFIGURATION.stream_manager_port
 STREAM_MANAGER_SOCKET_TIMEOUT = _CONFIGURATION.stream_manager_socket_timeout

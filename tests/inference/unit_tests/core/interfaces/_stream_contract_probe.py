@@ -22,9 +22,7 @@ import json
 from enum import Enum
 from typing import Callable, Dict, Tuple
 
-# (frozen-contract name, "module.path:Qualified.attribute") - kept in the
-# same order as `_FROZEN_CONTRACTS` in test_streams_public_contract.py, whose
-# expected hashes this probe's output is compared against.
+# (name, "module.path:Qualified.attribute") - order matches _FROZEN_CONTRACTS
 _CONTRACT_PATHS: Tuple[Tuple[str, str], ...] = (
     (
         "InferencePipeline.init",

@@ -13,9 +13,7 @@ PAYLOAD = {
         "workflow_specification": {"version": "1.0", "inputs": [], "steps": []},
     },
 }
-# The request models every stream initialisation is validated through: the
-# video configuration alone, and nested in the regular and WebRTC payloads
-# (these carry the checks once made on the removed enterprise request model).
+# these schemas carry checks once done by the now-removed enterprise request model
 SCHEMAS = ["manager", "initialise_payload", "webrtc_payload"]
 ROUTES = [
     ("GET", "/list"),

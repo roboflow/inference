@@ -1,4 +1,4 @@
-"""WP-A03: every server launcher starts the stream manager through the bootstrap.
+"""Every server launcher starts the stream manager through the bootstrap.
 
 Each launcher module is executed for real, with only its HTTP-server half
 stubbed, and its stream manager process is spawned: explicitly by the GPU
@@ -57,8 +57,7 @@ def main():
 
     if os.environ["FORCE_SPAWN"] == "1":
         multiprocessing.set_start_method("spawn", force=True)
-    # Only the stream manager launch is under test: the model manager and HTTP
-    # interface the launcher also builds are replaced.
+    # Only the stream manager launch is under test; other launcher pieces are stubbed.
     for name in (
         "inference.core.cache",
         "inference.core.interfaces.http.http_api",
@@ -135,8 +134,7 @@ def test_launcher_installs_settings_before_the_manager_app_is_imported(
     manager_records = [
         record for record in import_records if record["pid"] == result["manager_pid"]
     ]
-    # Recorded only because the manager was spawned: a forked child would have
-    # inherited these modules instead of importing them.
+    # Only a spawned manager imports these modules; a forked child would inherit them.
     assert MANAGER_APP_MODULE in {record["module"] for record in manager_records}
     for record in manager_records:
         assert "bootstrap.py:run_stream_manager" in record["stack"], record

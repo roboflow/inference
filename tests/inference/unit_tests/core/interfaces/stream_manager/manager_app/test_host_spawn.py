@@ -1,4 +1,4 @@
-"""WP-A03: every pipeline process builds its own host from a picklable descriptor.
+"""Every pipeline process builds its own host from a picklable descriptor.
 
 The spawn tests run a driver script in a fresh interpreter with the `spawn`
 start method. A spawned child re-imports its parent's main script (as
@@ -117,9 +117,7 @@ if __name__ == "__mp_main__":
     _probe_sys.addaudithook(_record_watched_import)
 """
 
-# Imported by the pipeline manager module. That module itself is loaded with
-# `importlib.import_module`, which raises no `import` audit event; import
-# statements and unpickling do.
+# The audit hook fires on `import` statements, not `importlib.import_module`.
 PIPELINE_RUNTIME_MODULES = (
     "inference.core.interfaces.camera.video_source",
     "inference.core.interfaces.stream.environment",
@@ -188,9 +186,7 @@ def run_spawn_driver(
     return result, records
 
 
-# ---------------------------------------------------------------------------
 # Pipeline processes under spawn
-# ---------------------------------------------------------------------------
 
 _PIPELINE_PROCESSES_DRIVER = '''
 import json
@@ -364,8 +360,7 @@ def test_spawned_pipeline_processes_configure_themselves_before_the_runtime(
     for line in host_record_path.read_text().splitlines():
         event = json.loads(line)
         host_events.setdefault(event["pid"], []).append(event)
-    # a fresh host per pipeline process, built there and closed once when the
-    # process shut down after the failed initialisation
+    # Each pipeline process builds and closes its own host after the failed init.
     assert set(host_events) == pipeline_pids
     for events in host_events.values():
         assert [event["event"] for event in events] == ["created", "prepare", "closed"]
@@ -391,13 +386,10 @@ def test_spawned_pipeline_processes_configure_themselves_before_the_runtime(
         assert record["configuration"] == result["configuration"], record
 
 
-# ---------------------------------------------------------------------------
 # Host contract of the pipeline manager, in process
-# ---------------------------------------------------------------------------
 
 _STUB_HOST_EVENTS: List[Tuple[str, dict]] = []
-# Worker threads of real pipelines started by a test, checked when the host
-# closes: nothing may still run on a closed host.
+# Worker threads of real pipelines started by a test; none may outlive a closed host.
 _PIPELINE_WORKERS: List[threading.Thread] = []
 _STUB_SPECIFICATION = {"version": "1.0", "inputs": [], "steps": [], "outputs": []}
 _STUB_INIT_PARAMETERS = {"workflows_core.api_key": "prepared"}
@@ -479,8 +471,7 @@ def _reset_stub_host_events():
     _PIPELINE_WORKERS.clear()
     _WORKER_OWNING_HOSTS.clear()
     yield
-    # Releases the workers of hosts a regression left open, after the test
-    # recorded its failure, so they cannot hang the suite.
+    # Releases workers a regression left open so they cannot hang the suite.
     for host in _WORKER_OWNING_HOSTS:
         host.released.set()
     _STUB_HOST_EVENTS.clear()
@@ -692,7 +683,7 @@ def _recording_pipeline() -> MagicMock:
 def test_signal_during_host_prepare_drains_and_closes_the_late_pipeline(
     pipeline_init_mock: MagicMock,
 ) -> None:
-    """WP-A03: SIGTERM during `host.prepare_workflow` must not leak the
+    """SIGTERM during `host.prepare_workflow` must not leak the
     pipeline and host that initialisation creates afterwards."""
     pipeline_instance = _recording_pipeline()
     pipeline_init_mock.return_value = pipeline_instance
@@ -712,8 +703,7 @@ def test_signal_during_host_prepare_drains_and_closes_the_late_pipeline(
     assert request_id == "1"
     assert response[STATUS_KEY] == OperationStatus.SUCCESS
     pipeline_instance.start.assert_called_once()
-    # the pipeline created after the signal was drained, then the host closed,
-    # instead of being left running past the termination already recorded
+    # The pipeline created after the signal is drained, then the host closed.
     assert [event for event, _ in _STUB_HOST_EVENTS] == [
         "created",
         "prepare",
@@ -773,8 +763,7 @@ def test_signal_after_successful_init_terminates_pipeline_exactly_once(
     collected: Dict[str, tuple] = {}
 
     def send_signal_once_initialised():
-        # Waiting for the init response ensures the signal lands on an
-        # already-running pipeline, not during `host.prepare_workflow`.
+        # Waits for the init response so the signal lands on a running pipeline.
         collected["response"] = responses_queue.get(timeout=10)
         os.kill(os.getpid(), signal.SIGTERM)
 
@@ -806,15 +795,14 @@ def test_signal_at_pipeline_start_drains_real_workers_before_closing_host(
     init_rtc_peer_connection_mock: AsyncMock,
     command_type: CommandType,
 ) -> None:
-    """WP-A03: SIGTERM once the pipeline is assigned but before `start()`
+    """SIGTERM once the pipeline is assigned but before `start()`
     runs - its source still NOT_STARTED - must not leave the workers that
     `start()` then launches running on a closed host."""
     init_rtc_peer_connection_mock.return_value = _FakePeerConnection()
     created = {}
 
     def init_real_pipeline(**kwargs):
-        # A real pipeline on an endless source, keeping the manager's sink and
-        # watchdog; only the workflow is replaced by a trivial frame handler.
+        # Real pipeline on an endless source; only the workflow logic is stubbed.
         pipeline = inference_pipeline_manager.InferencePipeline.init_with_custom_logic(
             video_reference="TestPatternStreamProducer",
             on_video_frame=lambda video_frames: [{} for _ in video_frames],
@@ -955,8 +943,7 @@ def _register_capture_worker(video_source) -> None:
 
 
 def _stop_leaked_pipeline(pipeline) -> None:
-    # Stops what a regression leaves running, after the test recorded its
-    # failure, so it cannot hang the suite.
+    # Stops what a regression leaves running so it cannot hang the suite.
     pipeline._stop = True
     for video_source in pipeline._video_sources:
         worker = video_source._stream_consumption_thread
@@ -1030,7 +1017,7 @@ def test_pipeline_whose_sources_failed_to_start_is_drained_and_its_host_closed(
     loop_end: str,
     tmp_path: Path,
 ) -> None:
-    """WP-A03: a source failing to start ends the pipeline's workers and
+    """A source failing to start ends the pipeline's workers and
     leaves the sources after it NOT_STARTED for good. Termination must stop
     the sources that did start, join the pipeline and close the host,
     instead of waiting for sources that can no longer start."""
@@ -1069,8 +1056,7 @@ def test_pipeline_whose_sources_failed_to_start_is_drained_and_its_host_closed(
             before_next_command=await_startup_failure,
         )
 
-        # the reproduced state: the pipeline's workers finished, the missing
-        # source is in ERROR and the one after it was never started
+        # Reproduced state: workers finished, missing source ERROR, next NOT_STARTED.
         assert startup_failure["workers_alive"] == [False, False]
         assert startup_failure["states"][missing_index] is StreamState.ERROR
         assert startup_failure["states"][-1] is StreamState.NOT_STARTED
@@ -1119,7 +1105,7 @@ def test_failed_initialisation_closes_the_host_before_the_next_command(
     command_type: CommandType,
     error: str,
 ) -> None:
-    """WP-A03: a failed initialisation leaves the pipeline process serving
+    """A failed initialisation leaves the pipeline process serving
     commands, so it must close the host at once - not only on a later
     TERMINATE or shutdown - and a retried initialisation builds a new one."""
     init_rtc_peer_connection_mock.return_value = _FakePeerConnection()
@@ -1166,7 +1152,7 @@ def test_failed_pipeline_creation_or_start_is_drained_before_the_host_closes(
     pipeline_init_mock: MagicMock,
     failure: str,
 ) -> None:
-    """WP-A03: initialisation failing once the host prepared the workflow -
+    """Initialisation failing once the host prepared the workflow -
     creating the pipeline, or starting it after its workers were launched -
     drains what exists and closes the host before the next command."""
     created = {}
@@ -1283,9 +1269,7 @@ def _thread_start_failing_pipeline_builder(
 
 
 def _rescue_leaked_pipeline(pipeline) -> None:
-    # Stops what a regression leaves running, after the test recorded its
-    # failure: an inference worker blocked on a results queue nobody consumes
-    # is released by draining the queue until it finishes.
+    # Drains the results queue to release an inference worker blocked on it.
     _stop_leaked_pipeline(pipeline)
     deadline = time.monotonic() + 10
     worker = pipeline._inference_thread
@@ -1303,7 +1287,7 @@ def test_pipeline_whose_worker_failed_to_start_is_drained_and_its_host_closed(
     pipeline_init_mock: MagicMock,
     failing_worker: str,
 ) -> None:
-    """WP-A03: a pipeline worker whose `Thread.start` raised never ran, so it
+    """A pipeline worker whose `Thread.start` raised never ran, so it
     cannot be joined; and an inference worker started before the dispatcher
     failed to start has nobody consuming its results, so a full queue blocks
     it - and the join of it - forever. The failed initialisation must still
@@ -1405,9 +1389,7 @@ def test_legacy_configuration_installs_the_legacy_host_as_process_default() -> N
     )
 
 
-# ---------------------------------------------------------------------------
 # A real manager on localhost, with the legacy host and a tiny workflow
-# ---------------------------------------------------------------------------
 
 
 def _free_port() -> int:
@@ -1463,8 +1445,7 @@ def _init_command(specification: dict) -> dict:
 
 
 def _new_pipeline_pid(manager_process: psutil.Process, known: set) -> int:
-    # A manager using the spawn start method also starts multiprocessing's
-    # resource tracker when it creates its first pipeline queues.
+    # Spawn also starts multiprocessing's resource tracker as a child process.
     new_children = [
         child for child in manager_process.children() if child.pid not in known
     ]

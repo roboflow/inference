@@ -1,8 +1,8 @@
-"""WP-A04 characterization of the exceptions and warning the streams raise.
+"""Characterization of the exceptions and warning the streams raise.
 
 Pins, per historical class: its name (including the RoboflowAPINotNotFoundError
 typo), exact base chain, constructor/message behavior, pickling and the error
-payload the stream manager builds from it. After WP-A04 the historical names in
+payload the stream manager builds from it. The historical names in
 `inference.core.exceptions` / `inference.core.warnings` are the very classes
 defined by the stream package or the Workflows platform-error module, so every
 existing `except` clause and `isinstance` check keeps matching.
@@ -119,8 +119,7 @@ def test_stream_owned_definitions_import_nothing() -> None:
 
 
 def test_workflows_platform_errors_do_not_replace_legacy_status_mapping() -> None:
-    # Adding the classes to Workflows must not change which legacy classes are
-    # related: the host keeps translating each one to its own ErrorType.
+    # adding classes to Workflows must not change the host's per-class ErrorType mapping
     from roboflow_workflows.prototypes import platform_errors
 
     assert not issubclass(

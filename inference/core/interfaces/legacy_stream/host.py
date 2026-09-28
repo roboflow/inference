@@ -10,8 +10,7 @@ default model manager stack.
 
 from typing import Any, Dict, Optional, Tuple
 
-# Through the module, not the name, so a patch made through the historical
-# `inference.core.interfaces.stream.inference_pipeline` name applies here too.
+# Via the module, so a patch made through the historical name applies here too.
 from inference.core.interfaces.legacy_stream import inference_pipeline
 
 
@@ -45,6 +44,5 @@ class LegacyPipelineHost:
         )
 
     def close(self) -> None:
-        # The host keeps nothing between requests: the model manager built for
-        # a pipeline is owned by that pipeline's workflow.
+        # Nothing kept between requests: the model manager is owned by the workflow.
         return None

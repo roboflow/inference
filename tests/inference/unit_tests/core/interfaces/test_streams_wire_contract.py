@@ -1,4 +1,4 @@
-"""WP-A00 wire characterization for the client <-> manager TCP boundary.
+"""Wire characterization for the client <-> manager TCP boundary.
 
 Framing/codec mechanics (fragmented reads, malformed header, overflow
 recovery, JSON decode errors) already have direct unit coverage in
@@ -13,9 +13,9 @@ file does not repeat that; it freezes what those files leave implicit:
   (the client's actual `.dict(...)` call, api/stream_manager_client.py:112,130)
   drops None-valued optional fields but keeps explicit falsy values;
 - `inner_error_type`, which nothing else exercises directly;
-- the real normal-vs-WebRTC init error-handling asymmetry (plan correction
-  #12) end to end through the actual `InferencePipelineManager`, not just
-  read off the source.
+- the real normal-vs-WebRTC init error-handling asymmetry, end to end
+  through the actual `InferencePipelineManager`, not just read off the
+  source.
 """
 
 import asyncio
@@ -98,9 +98,7 @@ from tests.inference.unit_tests.core.interfaces.stream_manager.api.test_stream_m
     assert_correct_command_sent,
 )
 
-# ---------------------------------------------------------------------------
 # Enum wire vocabulary
-# ---------------------------------------------------------------------------
 
 
 def test_command_type_wire_values_are_frozen() -> None:
@@ -127,18 +125,13 @@ def test_error_type_wire_values_are_frozen() -> None:
 
 
 def test_error_type_to_client_exception_mapping_covers_every_value() -> None:
-    # Every ErrorType the manager can emit must resolve to a distinct client
-    # exception; a value missing here would silently fall back to the
-    # generic ProcessesManagerClientError branch in dispatch_error.
+    # a value missing here silently falls back to ProcessesManagerClientError
     assert set(stream_manager_client.ERRORS_MAPPING) == {e.value for e in ErrorType}
     assert len(set(stream_manager_client.ERRORS_MAPPING.values())) == len(ErrorType)
 
 
 def test_envelope_key_names_are_frozen() -> None:
-    # These literal strings ARE the wire format: an unmoved legacy manager
-    # talking to a moved client (or vice versa) during a rolling upgrade
-    # only interoperates if both sides agree on the literal key spelling,
-    # not merely on the same Python constant name.
+    # interop needs the literal key spelling to match, not just the constant name
     assert (
         STATUS_KEY,
         STATE_KEY,
@@ -168,9 +161,7 @@ def test_envelope_key_names_are_frozen() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # Framing: both sides must agree on header size independently of each other
-# ---------------------------------------------------------------------------
 
 
 def test_client_and_server_default_framing_constants_match() -> None:
@@ -182,9 +173,7 @@ def test_client_and_server_default_framing_constants_match() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # Payload schemas: required fields, defaults, and exclude_none=True omission
-# ---------------------------------------------------------------------------
 
 
 def _valid_video_configuration() -> VideoConfiguration:
@@ -232,8 +221,7 @@ def test_initialise_pipeline_payload_defaults_bind_to_current_env() -> None:
     )
     assert payload.consumption_timeout is None
     assert payload.api_key is None
-    # Bound at class-definition/import time from core.env, not at call time -
-    # this is the exact seam WP-A01 replaces with StreamsConfiguration.
+    # bound at class-definition/import time from core.env, not at call time
     assert payload.predictions_queue_size == PREDICTIONS_QUEUE_SIZE
     assert payload.decoding_buffer_size == DEFAULT_BUFFER_SIZE
 
@@ -275,9 +263,7 @@ def test_consume_results_payload_default_excluded_fields_is_empty_list() -> None
 
 
 def test_video_configuration_rejects_unsafe_gstreamer_by_default() -> None:
-    # Locks in the validator wiring (entities.py:62-67) to core.env, not just
-    # its existence: an unsafe launch string is only accepted when the flag
-    # is explicitly on, which is not this test environment's default.
+    # validator (entities.py) is wired to core.env; off by default in this env
     if ALLOW_UNSAFE_GSTREAMER_PIPELINES:
         pytest.skip("ALLOW_UNSAFE_GSTREAMER_PIPELINES is enabled in this environment")
     with pytest.raises(Exception):
@@ -288,8 +274,7 @@ def test_video_configuration_rejects_unsafe_gstreamer_by_default() -> None:
 
 
 def test_client_command_dict_omits_none_but_keeps_explicit_falsy_values() -> None:
-    # Reproduces api/stream_manager_client.py:112,130 exactly: the real
-    # command dict a client sends over the wire.
+    # reproduces api/stream_manager_client.py:112,130 - the real wire command dict
     payload = InitialisePipelinePayload(
         video_configuration=_valid_video_configuration(),
         processing_configuration=WorkflowConfiguration(type="WorkflowConfiguration"),
@@ -306,8 +291,7 @@ def test_client_command_dict_omits_none_but_keeps_explicit_falsy_values() -> Non
     assert command["processing_configuration"]["disable_sinks"] is False
     assert command["predictions_queue_size"] == PREDICTIONS_QUEUE_SIZE
 
-    # The command as actually JSON-encoded on the wire (send_message's own
-    # serializer, api/stream_manager_client.py:265/296).
+    # the command as actually JSON-encoded on the wire (send_message's own serializer)
     wire_bytes = json.dumps(
         command, default=stream_manager_client._json_serializer
     ).encode(ENCODING)
@@ -321,10 +305,7 @@ def test_client_command_dict_omits_none_but_keeps_explicit_falsy_values() -> Non
 async def test_client_initialise_pipeline_omits_none_fields_on_the_real_wire(
     establish_socket_connection_mock: AsyncMock,
 ) -> None:
-    # Unlike the hand-built dict above, this drives the actual
-    # client.initialise_pipeline() -> _handle_command -> send_command ->
-    # send_message call chain and inspects the bytes that chain really wrote,
-    # rather than a dict simulating what that chain is assumed to do.
+    # drives the real client chain and inspects the actual wire bytes, not a fake dict
     payload = InitialisePipelinePayload(
         video_configuration=_valid_video_configuration(),
         processing_configuration=WorkflowConfiguration(type="WorkflowConfiguration"),
@@ -357,10 +338,7 @@ async def test_client_initialise_pipeline_omits_none_fields_on_the_real_wire(
     )
 
 
-# ---------------------------------------------------------------------------
-# inner_error_type: identical shape on both client- and server-side error
-# base classes, exercised nowhere else.
-# ---------------------------------------------------------------------------
+# inner_error_type: same shape on client- and server-side error base classes
 
 
 @pytest.mark.parametrize(
@@ -386,10 +364,7 @@ def test_inner_error_type_reports_the_wrapped_exceptions_class_name(error_cls) -
     assert error.public_message == "public boom"
 
 
-# ---------------------------------------------------------------------------
 # Normal vs WebRTC init error asymmetry, through the real manager
-# (plan correction #12; nothing exercised `_start_webrtc` before this).
-# ---------------------------------------------------------------------------
 
 
 def _assembly_init_payload() -> dict:
@@ -504,13 +479,7 @@ def test_webrtc_init_maps_the_same_roboflow_timeout_to_internal_error(
     init_rtc_peer_connection_mock: AsyncMock,
     pipeline_init_mock: MagicMock,
 ) -> None:
-    # This is plan correction #12: `_start_webrtc` does not catch
-    # RoboflowAPITimeoutError/RoboflowAPIConnectionError the way
-    # `_initialise_pipeline` does, so the SAME underlying error that maps to
-    # OPERATION_ERROR on the normal init path falls through to
-    # `_handle_command`'s generic `except Exception` and is reported as
-    # INTERNAL_ERROR with a generic public message instead. Preserve this
-    # asymmetry across the extraction rather than "fixing" it silently.
+    # unlike _initialise_pipeline, _start_webrtc doesn't catch this; asymmetry kept
     init_rtc_peer_connection_mock.return_value = _FakePeerConnection()
     pipeline_init_mock.side_effect = RoboflowAPITimeoutError("timed out")
     command_queue, responses_queue = Queue(), Queue()
@@ -522,11 +491,7 @@ def test_webrtc_init_maps_the_same_roboflow_timeout_to_internal_error(
 
     manager.run()
 
-    # Unlike the normal init path, WebRTC init reports success (the SDP
-    # answer) as soon as the peer connection is up, *before* the pipeline
-    # itself is constructed - so the same request_id produces two responses:
-    # an immediate success, then a later failure once init_with_workflow
-    # actually raises.
+    # WebRTC reports success (SDP) once the peer is up, before the pipeline exists
     first_request_id, first_response = responses_queue.get()
     assert first_request_id == "1"
     assert first_response[STATUS_KEY] == OperationStatus.SUCCESS
@@ -542,12 +507,7 @@ def test_webrtc_init_maps_the_same_roboflow_timeout_to_internal_error(
     ), "WebRTC path loses the specific timeout message the normal path gives"
 
 
-# ---------------------------------------------------------------------------
-# CONSUME_RESULT through the real manager and its real (unmocked)
-# InMemoryBufferSink - only InferencePipeline.init_with_workflow is mocked,
-# same as the asymmetry tests above; nothing else drives _consume_results
-# with an actually-buffered prediction.
-# ---------------------------------------------------------------------------
+# CONSUME_RESULT through the real manager and its real (unmocked) InMemoryBufferSink
 
 
 @mock.patch.object(inference_pipeline_manager.InferencePipeline, "init_with_workflow")
@@ -563,9 +523,7 @@ def test_consume_results_serialises_a_really_buffered_prediction(
     assert init_request_id == "1"
     assert init_response[STATUS_KEY] == OperationStatus.SUCCESS
 
-    # init_with_workflow is mocked, but _initialise_pipeline still builds a
-    # real InMemoryBufferSink; seed it exactly as a running pipeline's
-    # on_prediction callback would.
+    # _initialise_pipeline still builds a real sink; seed it like the pipeline would
     frame = VideoFrame(
         image=None,
         frame_id=7,

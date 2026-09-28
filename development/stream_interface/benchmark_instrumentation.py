@@ -80,9 +80,7 @@ class BoundaryProbe:
         self._workflow_ns: Dict[Tuple[int, int], int] = {}
         self.consumed_ids: Dict[int, Set[int]] = {}
         self.completed_ids: Dict[int, Set[int]] = {}
-        # ids observed as FRAME_CONSUMED during a `VideoSourcesManager` retrieval
-        # call that itself returned `None` (terminate-time discard): the multiplexer
-        # already consumed these frames but dropped the whole batch on stop.
+        # Ids whose retrieval returned None: the multiplexer dropped the batch.
         self.terminate_discard_ids: Dict[int, Set[int]] = {}
         self._retrieval_local = threading.local()
         # [source_id, frame_id, captured_wall_ns, capture_to_sink_ns, workflow_ns]
@@ -97,8 +95,7 @@ class BoundaryProbe:
         self.decoders: List[str] = []
         self._pipeline_ref: Any = None
         self.pending_at_termination: List[List[int]] = []
-        # True only once terminate() + join() returned: every completed output has
-        # then been dispatched to the sink. None: termination never finished.
+        # True only once terminate()+join() returned and every output reached the sink.
         self.drained: Optional[bool] = None
         self.errors: List[str] = []
         self.cuda_trace: Optional["CudaCopyTrace"] = None
@@ -131,9 +128,7 @@ class BoundaryProbe:
                         if consumed is not None:
                             self._workflow_ns[key] = perf_now - consumed
                 elif event == "FRAME_DROPPED":
-                    # Retire the capture timestamp: a dropped frame never reaches the
-                    # sink, so `_captured` would otherwise keep growing for the rest
-                    # of the run. Only the drop count is evidence anyone needs.
+                    # Dropped frames never reach the sink; retire the timestamp.
                     self._captured.pop(
                         (payload.get("source_id") or 0, payload.get("frame_id")), None
                     )
@@ -154,9 +149,7 @@ class BoundaryProbe:
                             continue
                         key = (frame.source_id or 0, frame.frame_id)
                         captured = self._captured.pop(key, None)
-                        # None when the sink wins the race against
-                        # INFERENCE_COMPLETED (the result is enqueued before that
-                        # event is sent); export() joins it by frame identity.
+                        # None if the sink wins the race; export() joins by frame id.
                         self.sink_entries.append(
                             [
                                 key[0],
@@ -465,9 +458,7 @@ def deactivate() -> None:
     _ACTIVE_PROBE = None
 
 
-# ---------------------------------------------------------------------------------
 # Optional CUDA copy trace (diagnostic run, never a timed baseline)
-# ---------------------------------------------------------------------------------
 
 
 CUDA_TRACE_SAMPLE = 32
@@ -653,9 +644,7 @@ def summarize_cuda_trace(
             launches[args["correlation"]] = event
         elif category in _DEVICE_COPY_CATEGORIES:
             copies.append(event)
-    # CPU ops and runtime launches share OS thread ids only if the owner's ranges
-    # carry the id the owner thread reported itself; otherwise only External ids
-    # link launches to threads.
+    # CPU ops and launches share thread ids only when the owner's ranges report them.
     tids_verified = owner is not None and owner in ranges
 
     def attribute(launch: Optional[dict]) -> Tuple[str, str]:
@@ -672,13 +661,7 @@ def summarize_cuda_trace(
         if tid == owner:
             inside = _inside(ranges.get(owner, []), launch["ts"])
             return ("model_call" if inside else "outside_model_call"), issuer
-        # `others` only lists threads whose model call was itself profiled (started
-        # after the trace was armed). A thread not in `others` may still have a model
-        # call in flight when the trace armed - `record_model_call` snapshots the
-        # trace once, at entry, so that call was never registered here. Without a
-        # call registry there is no way to tell "no model call" from "unregistered
-        # model call" apart, so this copy stays unattributed rather than asserting
-        # `outside_model_call`.
+        # A thread missing from `others` may have had an unregistered in-flight call.
         return "unattributed", issuer
 
     device_copies: Dict[str, Dict[str, Dict[str, int]]] = {}
@@ -707,9 +690,7 @@ def summarize_cuda_trace(
                 )
                 entry["inside_model_call" if inside else "outside_model_call"] += 1
     model_call_ranges = sum(len(r) for r in ranges.values())
-    # DtoD/Memset never touch host memory, so a missing launch record for one of
-    # them cannot hide a host transfer; every other kind (including "other", whose
-    # direction is itself unknown) can, so it still blocks host-transfer coverage.
+    # DtoD/Memset never touch host memory; other kinds missing a launch block coverage.
     non_host_kinds = {"DtoD", "Memset"}
     unattributed = sum(
         by_attribution.get("unattributed", {}).get("count", 0)
@@ -759,11 +740,7 @@ def summarize_cuda_trace(
     return {
         "status": "complete" if complete else "unproven",
         "reasons": reasons,
-        # Independent, narrower claim: every HtoD/DtoH (and any unknown-direction)
-        # copy is attributed, even if some known-safe DtoD/Memset copies are not.
-        # This is what backs `model_call_host_device_copies` below; it does not
-        # imply full device-copy attribution (`status` above) and never proves
-        # `input_host_round_trip`.
+        # HtoD/DtoH copies are attributed when complete; DtoD/Memset aren't claimed.
         "host_transfer_coverage_status": (
             "complete" if host_transfer_complete else "unproven"
         ),
@@ -778,9 +755,7 @@ def summarize_cuda_trace(
         "launch_thread_ids_verified": tids_verified,
         # {kind: {model_call|outside_model_call|unattributed: {count, bytes}}}
         "device_copies": device_copies,
-        # Copies launched inside model calls; comparable between runs only when
-        # both have complete host-transfer coverage. Not linked to model
-        # inputs/outputs.
+        # Comparable across runs only when both have complete host-transfer coverage.
         "model_call_host_device_copies": (
             {
                 "count": sum(e["count"] for e in model_call_host_device),
@@ -823,14 +798,11 @@ def _sanitize_nested(value: Any) -> Any:
     return value
 
 
-# ---------------------------------------------------------------------------------
 # Manager child process: hooks installed inside run(), so they survive spawn
-# ---------------------------------------------------------------------------------
 
 
 def _install_pipeline_hooks(probe: BoundaryProbe) -> None:
-    # The class the manager actually builds pipelines with: the legacy wrapper
-    # at the baseline, the host-neutral pipeline since WP-A03.
+    # Class the manager builds: legacy wrapper or host-neutral pipeline.
     from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
         InferencePipeline,
     )
@@ -843,9 +815,7 @@ def _install_pipeline_hooks(probe: BoundaryProbe) -> None:
         if kwargs.get("on_prediction") is not None:
             kwargs["on_prediction"] = probe.wrap_sink(kwargs["on_prediction"])
         pipeline = original(*args, **kwargs)
-        # Decoders are sampled later (after `start()`/drain): at this point
-        # `pipeline.start()` has not run yet, so every `VideoSource._video` is
-        # still `None`.
+        # Decoders are sampled later; before start(), every VideoSource._video is None.
         probe.note_pipeline_reference(pipeline)
         return pipeline
 
@@ -884,7 +854,7 @@ class InstrumentedInferencePipelineManager(InferencePipelineManager):
     def run(self) -> None:
         probe = BoundaryProbe()
         self._benchmark_probe = probe
-        # Before anything else in this child: see `_maybe_init_cuda_on_child_main_thread`.
+        # Before anything else here: see `_maybe_init_cuda_on_child_main_thread`.
         probe.note_cuda_child_main_thread_init(_maybe_init_cuda_on_child_main_thread())
         activate(probe)
         _install_pipeline_hooks(probe)
@@ -901,9 +871,7 @@ class InstrumentedInferencePipelineManager(InferencePipelineManager):
         finally:
             self._benchmark_probe.note_pending(self._buffer_sink)
             self._benchmark_probe.note_drained(drained)
-            # Sources have started (or, on the drain path, already run and been
-            # released without clearing `_video`) by now, so the retained pipeline
-            # reference reports the actual producer class instead of `NoneType`.
+            # Sources started by now, so the retained pipeline reports the real class.
             self._benchmark_probe.note_decoders()
 
     def _write_probe(self, probe: BoundaryProbe) -> None:
@@ -912,8 +880,7 @@ class InstrumentedInferencePipelineManager(InferencePipelineManager):
             return
         path = os.path.join(directory, f"{self._pipeline_id}.json")
         try:
-            # Sanitize before writing: this scratch file can outlive a crashed run
-            # and is read back into the parent result verbatim.
+            # Sanitized before writing: this scratch file can outlive a crash.
             with open(path + ".tmp", "w") as f:
                 json.dump(_sanitize_nested(probe.export()), f)
             os.replace(path + ".tmp", path)

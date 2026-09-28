@@ -1,4 +1,4 @@
-"""WP-A04 characterization of the stream manager's result serialisation.
+"""Characterization of the stream manager's result serialisation.
 
 The manager used to serialise buffered workflow results with the deprecated
 HTTP helper `inference.core.interfaces.http.orjson_utils`. These tests pin its
@@ -118,9 +118,7 @@ def _set_legacy_tensor_mode(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> N
 
 
 def _set_stream_tensor_mode(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
-    # The manager's helper reads the installed streams configuration, never
-    # `inference.core.env`: pin the legacy flag to the opposite value to prove
-    # it is not consulted.
+    # Pins the legacy flag opposite to prove the manager's helper doesn't read it.
     monkeypatch.setattr(
         stream_environment, "ENABLE_TENSOR_DATA_REPRESENTATION", enabled
     )
@@ -278,9 +276,7 @@ def test_legacy_http_helpers_stay_callable_and_deprecated() -> None:
     )
 
 
-# --------------------------------------------------------------------------
 # The manager's CONSUME_RESULT command
-# --------------------------------------------------------------------------
 
 
 def _find_tensors(value: Any) -> List[Any]:
@@ -430,9 +426,7 @@ def test_manager_consumption_never_hands_a_live_tensor_to_the_ipc_queue(
     device: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Jetson/Tegra: pickling a live CUDA tensor into the responses queue uses
-    # CUDA IPC, which fails there. The serialiser's `.detach().cpu()` is the
-    # same call regardless of the source device, so both are exercised here.
+    # Jetson/Tegra: pickling a live CUDA tensor uses CUDA IPC, which fails there.
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
     _set_manager_tensor_mode(monkeypatch, True)

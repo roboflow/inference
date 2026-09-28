@@ -134,8 +134,7 @@ def example_text_file() -> str:
     return os.path.join(ASSETS_DIR_PATH, "example_text_file.txt")
 
 
-# Everything whose import needs `ultralytics`: the yolo_world model and the
-# stream handler built on it, under its legacy and historical (facade) names.
+# import needs ultralytics: yolo_world model + its legacy/historical facade names
 _ULTRALYTICS_DEPENDENT_MODULES = (
     "ultralytics",
     "inference.models.yolo_world.yolo_world",
@@ -196,17 +195,7 @@ def stub_ultralytics_if_missing() -> Generator[None, None, None]:
             models._MODEL_REGISTRY.pop("YOLOWorld", None)
 
 
-# --- aiohttp 3.14 / aioresponses compatibility shim --------------------------
-# aiohttp 3.14.0 made `stream_writer` a required keyword-only argument of
-# ClientResponse.__init__. aioresponses (<=0.7.8) builds its mock response
-# without it, raising at construction time:
-#   TypeError: ClientResponse.__init__() missing 1 required keyword-only
-#   argument: 'stream_writer'
-# The upstream fix is unmerged (pnuckowski/aioresponses#288) and unreleased, so
-# we replicate it locally: default aioresponses' response class to a subclass
-# that injects Mock(output_size=0) (the only attribute aiohttp reads at init).
-# Signature-guarded, so it is a no-op on aiohttp < 3.14 and can be deleted once
-# a fixed aioresponses ships.
+# aiohttp 3.14 requires stream_writer kwarg that aioresponses (<=0.7.8) omits; shim it
 import inspect as _inspect
 from unittest.mock import Mock as _Mock
 
@@ -227,6 +216,5 @@ class _CompatClientResponse(_ClientResponse):
 
 @pytest.fixture(autouse=True)
 def _patch_aioresponses_stream_writer(monkeypatch):
-    # aioresponses._build_response defaults response_class to the module-global
-    # ClientResponse; swap it for the compat subclass for the duration of each test.
+    # swap the module-global ClientResponse for the compat subclass per test
     monkeypatch.setattr(_aioresponses_core, "ClientResponse", _CompatClientResponse)

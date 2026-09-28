@@ -1,4 +1,4 @@
-"""WP-A05: the pipeline's stream session identity.
+"""The pipeline's stream session identity.
 
 The pipeline binds its session id in its inference thread, where usage
 recording reads it. Only stream modules are imported here, so these checks
@@ -126,8 +126,7 @@ def test_inference_thread_resets_the_session_when_it_ends(fails: bool) -> None:
         session.stream_session_id.reset(token)
 
 
-# Module-name fragments a session import must never load: video, the stream
-# runtime, the Workflows engine, the usage collector and the HTTP server.
+# module-name fragments a session import must never load
 HEAVY_MODULE_MARKERS = (
     "inference.core.interfaces.camera",
     "inference.core.interfaces.stream.pipeline",

@@ -1,4 +1,4 @@
-"""WP-A01 characterization of stream/camera/stream_manager configuration.
+"""Characterization of stream/camera/stream_manager configuration.
 
 Section 1 pins what the consumers of `inference.core.env` observe today - the
 value, type and binding time of every setting the three trees read - through
@@ -21,9 +21,7 @@ from inference.core.interfaces.stream.entities import ModelConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
-# Every environment variable behind a setting this file pins. The child
-# interpreter starts from the parent's environment with all of these removed,
-# so an operator's shell cannot leak into an expectation.
+# Vars behind pinned settings; stripped from the child so the shell can't leak in.
 _CONTROLLED_VARIABLES = (
     "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
     "DEBUG_AIORTC_QUEUES",
@@ -54,9 +52,7 @@ _CONTROLLED_VARIABLES = (
     "VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES",
     "WEBRTC_REALTIME_PROCESSING",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
-    # inference_models latches OFFLINE_MODE into the environment of the process
-    # that imported it (the pytest parent included); a child inheriting the
-    # latch would ignore its own OFFLINE_MODE.
+    # inference_models latches OFFLINE_MODE; a child would ignore its own value.
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START",
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_STARTUP_ERROR",
 )
@@ -92,9 +88,7 @@ def _run_child(script: str, overrides: Optional[Dict[str, str]] = None) -> dict:
     return result
 
 
-# --------------------------------------------------------------------------
 # Section 1 - consumer-observed behavior
-# --------------------------------------------------------------------------
 
 _BUFFER_DEFAULTS_SCRIPT = """
 import inspect
@@ -161,9 +155,7 @@ def test_buffer_defaults_follow_tensor_mode_and_explicit_overrides(
     expected_backpressure: bool,
     entry_module: str,
 ) -> None:
-    # `inference.core.exceptions` is on env.py's own import path; entering the
-    # process through it must still leave the stream defaults bound to the
-    # fully resolved env values (tensor-dependent defaults, env.py:1684/:1734).
+    # Entering via inference.core.exceptions still binds defaults to the resolved env.
     result = _run_child(
         _BUFFER_DEFAULTS_SCRIPT.format(entry_module=entry_module),
         {"USE_INFERENCE_MODELS": "True", **overrides},
@@ -470,9 +462,7 @@ def test_model_config_init_propagates_unparseable_environment_values(
         ModelConfig.init()
 
 
-# --------------------------------------------------------------------------
 # Section 2 - the configuration, its facade and the legacy installation
-# --------------------------------------------------------------------------
 
 # (facade name, inference.core.env name or None when env.py has no counterpart)
 FIELDS = [
@@ -527,8 +517,7 @@ FIELDS = [
     ("DEFAULT_MAX_DETECTIONS", "DEFAULT_MAX_DETECTIONS"),
 ]
 
-# Settings that belong to the host (model construction, credentials, legacy
-# Stream-only env) and must never become package configuration.
+# Host-only settings (model, credentials) must never become package configuration.
 _HOST_ONLY_NAMES = (
     "ACTIVE_LEARNING_ENABLED",
     "API_KEY",
@@ -600,11 +589,7 @@ def test_the_facade_equals_env_field_by_field(name: str, env_name: str) -> None:
 
 
 def test_manager_address_settings_match_the_historical_expressions() -> None:
-    # The facade itself no longer resolves these - it is imported far too
-    # early, by camera and pipeline modules that have nothing to do with the
-    # manager. Only `manager_app/app.py`, at its own import, resolves an
-    # unset value with the historical expressions, so that is where this
-    # must be checked.
+    # Only manager_app/app.py's import resolves these; the facade loads too early.
     from inference.core.interfaces.stream_manager.manager_app import app
 
     assert app.HOST == os.getenv("STREAM_MANAGER_HOST", "127.0.0.1")
@@ -683,9 +668,7 @@ from inference.core.interfaces.streams_configuration import build_configuration_
 
 standalone = StreamsConfiguration()
 legacy = build_configuration_from_env()
-# The manager address settings are deliberately excluded: the legacy builder
-# defers them to `manager_app/app.py`'s own import (`None`), while the
-# standalone default is the historical `os.getenv` fallback value.
+# Manager address fields excluded here; each side resolves them differently.
 _DEFERRED_FIELDS = {
     "stream_manager_host",
     "stream_manager_port",
@@ -806,9 +789,7 @@ print(json.dumps({"imported": True}))
 
 
 def test_core_exceptions_import_survives_an_invalid_manager_only_setting() -> None:
-    # STREAM_MANAGER_PORT has no `env.py` counterpart and is manager-only: it
-    # must not be parsed on the bootstrap path every `inference.core` import
-    # runs, so an invalid value here cannot break unrelated imports.
+    # STREAM_MANAGER_PORT is manager-only; must not parse on the bootstrap import path.
     result = _run_child(_CORE_EXCEPTIONS_ONLY_SCRIPT, _MANAGER_ONLY_INVALID_ENV)
 
     assert result == {"imported": True}
@@ -820,8 +801,7 @@ import inference.core.interfaces.stream_manager.manager_app.app  # noqa: E402
 
 
 def test_manager_app_import_still_rejects_an_invalid_manager_only_setting() -> None:
-    # The same invalid value must still be rejected once the manager app
-    # actually needs it - deferring the parse must not weaken validation.
+    # Deferring the parse must not weaken validation once the manager app needs it.
     environment = {
         name: value
         for name, value in os.environ.items()
@@ -872,11 +852,7 @@ def test_manager_env_set_after_core_import_still_reaches_the_manager_app() -> No
     assert result == {"host": "0.0.0.0", "port": 7171, "timeout": 2.0}
 
 
-# A01 regression: `inference.core.interfaces.stream.environment` is imported
-# by camera and pipeline modules for settings that have nothing to do with
-# the manager, well before anything needs the manager's address. It must not
-# parse `STREAM_MANAGER_PORT`/`STREAM_MANAGER_SOCKET_TIMEOUT` as a side effect
-# of that import - only `manager_app/app.py`, at its own later import, may.
+# environment must not parse STREAM_MANAGER_* as a side effect of its own import.
 _CAMERA_FIRST_THEN_MANAGER_SETTING_SCRIPT = """
 import json
 import os
@@ -937,8 +913,7 @@ def test_camera_import_survives_an_invalid_manager_setting_that_still_fails_the_
     script = _CAMERA_FIRST_THEN_MANAGER_SETTING_SCRIPT.format(
         host=host, port=port, timeout=timeout
     )
-    # Pass manager settings via overrides so they exist before camera import,
-    # testing that camera doesn't parse invalid manager-only settings.
+    # Overrides set manager settings before camera import, to prove camera ignores them.
     result = _run_child(
         script,
         {
@@ -954,8 +929,7 @@ def test_camera_import_survives_an_invalid_manager_setting_that_still_fails_the_
 def test_falsy_explicit_manager_settings_are_honored_over_the_environment(
     monkeypatch,
 ) -> None:
-    # `is not None`, not `or`: an explicitly configured falsy value (port `0`,
-    # timeout `0.0`, host `""`) must win over the environment too.
+    # Uses "is not None", not "or": an explicit falsy value (0, 0.0, "") must still win.
     import importlib
 
     from inference.core.interfaces.stream import environment
@@ -983,10 +957,7 @@ import sys
 import types
 from pathlib import Path
 
-# As in the canonical-first script above: bypass `inference/core/__init__.py`
-# (the legacy bootstrap) so a host installing its own configuration first -
-# the future standalone-package order - is what is under test, not the
-# bootstrap's own conflict detection.
+# Bypasses the legacy core/__init__.py bootstrap to test standalone config order.
 root = Path.cwd()
 for package in (
     "inference",
@@ -1022,8 +993,7 @@ print(json.dumps({
 
 
 def test_explicit_standalone_manager_address_configuration_is_not_lost() -> None:
-    # STREAM_MANAGER_HOST/PORT/SOCKET_TIMEOUT are set in the environment too,
-    # but an explicitly installed configuration must win over them.
+    # Env vars are set too, but an explicit configuration must win over them.
     result = _run_child(
         _EXPLICIT_STANDALONE_MANAGER_CONFIGURATION_SCRIPT,
         {
@@ -1036,10 +1006,7 @@ def test_explicit_standalone_manager_address_configuration_is_not_lost() -> None
     assert result == {"host": "10.0.0.1", "port": 9999, "timeout": 1.5}
 
 
-# The package modules are loaded from their files under stub parent packages,
-# so neither `inference/__init__.py` nor `inference/core/__init__.py` (the
-# legacy bootstrap) runs: this is the future standalone-package order, where a
-# caller installs its own configuration before anything reads it.
+# Stub parents skip inference's __init__ bootstrap - config installs before any read.
 _CANONICAL_FIRST_SCRIPT = """
 import json
 import sys
@@ -1115,9 +1082,7 @@ def test_collection_policy_reads_the_tensor_flag_at_call_time(monkeypatch) -> No
     assert numpy_mode is None
 
 
-# --------------------------------------------------------------------------
 # Buffer strategy enums
-# --------------------------------------------------------------------------
 
 
 def test_buffer_strategy_enums_are_shared_between_old_and_new_paths() -> None:
@@ -1173,9 +1138,7 @@ def test_buffer_strategy_pickles_keep_the_historical_reference(protocol: int) ->
         assert b"buffer_strategies" not in payload
 
 
-# --------------------------------------------------------------------------
 # Wire entities import weight
-# --------------------------------------------------------------------------
 
 _WIRE_IMPORT_SCRIPT = """
 import json
@@ -1191,16 +1154,13 @@ print(json.dumps(sorted(set(sys.modules) - baseline)))
 
 
 def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None:
-    # cv2 itself is already loaded by the bootstrap (inference_models ->
-    # supervision), so the check is on what the entities add on top of it.
+    # cv2 loads via inference_models -> supervision already; check what's added on top.
     new_modules = set(_run_child(_WIRE_IMPORT_SCRIPT))
 
     assert not {
         name for name in new_modules if name.split(".")[0] in {"cv2", "aiortc", "av"}
     }
-    # WP-A03: the (empty) stream_manager and manager_app packages are already
-    # loaded by `inference.core`, which installs the default pipeline host
-    # descriptor from the import-light manager_app.host.
+    # inference.core preloads stream_manager/manager_app via light manager_app.host.
     assert {name for name in new_modules if name.startswith("inference.")} == {
         "inference.core.interfaces.camera",
         "inference.core.interfaces.camera.buffer_strategies",
@@ -1210,16 +1170,13 @@ def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None
     }
 
 
-# --------------------------------------------------------------------------
 # Logger hierarchy
-# --------------------------------------------------------------------------
 
 _STDLIB_LOGGER_MODULES = (
     "inference.core.interfaces.camera.camera",
     "inference.core.interfaces.camera.utils",
     "inference.core.interfaces.camera.video_source",
-    # A facade since WP-A02: the legacy module keeps this historical logger
-    # name, while the pipeline runtime logs through stream.pipeline.
+    # Legacy facade keeps the historical logger name; pipeline logs via stream.pipeline.
     "inference.core.interfaces.stream.inference_pipeline",
     "inference.core.interfaces.stream.pipeline",
     "inference.core.interfaces.stream.sinks",
@@ -1244,9 +1201,7 @@ class _ProbeHandler:
 
 @pytest.mark.parametrize("module_name", _STDLIB_LOGGER_MODULES)
 def test_module_logger_reaches_the_inference_logger_handler(module_name: str) -> None:
-    # caplog listens on the root logger, which `inference` never propagates to
-    # (inference/core/logger.py sets `propagate = False`), so the probe is
-    # attached to the `inference` logger itself - where the real handler is.
+    # inference sets propagate=False; probe attaches to its logger, not caplog's root.
     import importlib
     import logging
 

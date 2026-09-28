@@ -134,9 +134,7 @@ from inference.usage_tracking.stream_session import (
     stream_session_id,
 )
 
-# The historical logger name: log configuration keyed on it keeps matching the
-# records this module emits (the pipeline runtime itself logs through
-# `inference.core.interfaces.stream.pipeline`).
+# Pinned so log configuration keyed on the historical module name keeps matching.
 logger = logging.getLogger("inference.core.interfaces.stream.inference_pipeline")
 
 PREDICTIONS_QUEUE_SIZE_ENV = "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE"
@@ -265,10 +263,7 @@ def prepare_workflow_for_pipeline(
         workflow_init_parameters["workflows_core.execution_observer"] = (
             UsageTrackingExecutionObserver()
         )
-        # Installs the provider, then the platform, codec and configuration
-        # bindings the caller left unset. A caller-supplied configuration is
-        # validated before the process-wide codec is touched, and still
-        # reaches `ExecutionEngine.init` unchanged.
+        # A caller-supplied config is validated before the process-wide codec is set.
         step_error_handler = bind_model_manager_to_workflows(
             model_manager=model_manager,
             init_parameters=workflow_init_parameters,
@@ -864,10 +859,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
             * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
                 from Roboflow API is needed
         """
-        # Built from this module's globals, as before the split, so the
-        # profiler classes and settings patched through the historical module
-        # name steer the one profiler that records the definition fetch and
-        # every Execution Engine run.
+        # Built from this module's globals so patches via the historical name apply.
         if ENABLE_WORKFLOWS_PROFILING:
             profiler = BaseWorkflowsProfiler.init(
                 max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -920,13 +912,10 @@ class InferencePipeline(HostNeutralInferencePipeline):
 
     @classmethod
     def _predictions_queue_size_set_explicitly(cls) -> bool:
-        # Checked when each pipeline is built, as it always was - not frozen
-        # when `inference.core` configured the stream runtime.
+        # Checked per pipeline build, not frozen at stream-runtime configuration.
         return PREDICTIONS_QUEUE_SIZE_ENV in os.environ
 
-    # The neutral pipeline looks these up through `cls`; reading this
-    # module's globals keeps patches made through the historical module name
-    # effective for pipelines built by this class.
+    # Looked up through `cls`, so patches via this module's historical name apply.
     @classmethod
     def _frame_drop_on_video_file_rate_limiting_enabled(cls) -> bool:
         return ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING
