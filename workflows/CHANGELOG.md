@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+
 ## `0.2.3`
 
 Bundled execution engine: `1.16.0`.
