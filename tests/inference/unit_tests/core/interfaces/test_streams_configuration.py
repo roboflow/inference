@@ -69,7 +69,11 @@ def _run_child(script: str, overrides: Optional[Dict[str, str]] = None) -> dict:
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
         }
     )
@@ -668,12 +672,6 @@ from inference.core.interfaces.streams_configuration import build_configuration_
 
 standalone = StreamsConfiguration()
 legacy = build_configuration_from_env()
-# Manager address fields excluded here; each side resolves them differently.
-_DEFERRED_FIELDS = {
-    "stream_manager_host",
-    "stream_manager_port",
-    "stream_manager_socket_timeout",
-}
 pairs = [
     (standalone, legacy),
     (standalone.model_config_defaults, legacy.model_config_defaults),
@@ -681,8 +679,6 @@ pairs = [
 mismatches = []
 for left_group, right_group in pairs:
     for member in fields(left_group):
-        if member.name in _DEFERRED_FIELDS:
-            continue
         left = getattr(left_group, member.name)
         right = getattr(right_group, member.name)
         if left != right or type(left) is not type(right):
@@ -737,15 +733,13 @@ observed = {}
 
 class Recorder:
     def find_spec(self, name, path=None, target=None):
-        if name == "inference.core.interfaces.stream.configuration":
+        if name == "streamvision.stream.configuration":
             env_module = sys.modules.get("inference.core.env")
             observed["env_complete_before_configuration"] = hasattr(
                 env_module, "DEFAULT_BUFFER_SIZE"
             )
-        if name == "inference.core.interfaces.stream.environment":
-            configuration = sys.modules[
-                "inference.core.interfaces.stream.configuration"
-            ]
+        if name == "streamvision.stream.environment":
+            configuration = sys.modules["streamvision.stream.configuration"]
             observed["installed_before_facade"] = (
                 configuration._CONFIGURATION is not None
             )
@@ -812,7 +806,11 @@ def test_manager_app_import_still_rejects_an_invalid_manager_only_setting() -> N
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
             **_MANAGER_ONLY_INVALID_ENV,
         }
@@ -954,22 +952,9 @@ def test_falsy_explicit_manager_settings_are_honored_over_the_environment(
 _EXPLICIT_STANDALONE_MANAGER_CONFIGURATION_SCRIPT = """
 import json
 import sys
-import types
-from pathlib import Path
 
-# Bypasses the legacy core/__init__.py bootstrap to test standalone config order.
-root = Path.cwd()
-for package in (
-    "inference",
-    "inference.core",
-    "inference.core.interfaces",
-    "inference.core.interfaces.stream",
-):
-    module = types.ModuleType(package)
-    module.__path__ = [str(root.joinpath(*package.split(".")))]
-    sys.modules[package] = module
-
-from inference.core.interfaces.stream.configuration import (
+# The canonical package skips the legacy core/__init__.py bootstrap.
+from streamvision.stream.configuration import (
     StreamsConfiguration,
     configure_process,
 )
@@ -982,7 +967,7 @@ configure_process(
     )
 )
 
-from inference.core.interfaces.stream import environment
+from streamvision.stream import environment
 
 print(json.dumps({
     "host": environment.STREAM_MANAGER_HOST,
@@ -1006,26 +991,16 @@ def test_explicit_standalone_manager_address_configuration_is_not_lost() -> None
     assert result == {"host": "10.0.0.1", "port": 9999, "timeout": 1.5}
 
 
-# Stub parents skip inference's __init__ bootstrap - config installs before any read.
+# The canonical package skips inference's bootstrap - config installs before any read.
 _CANONICAL_FIRST_SCRIPT = """
 import json
 import sys
-import types
-from pathlib import Path
 
-root = Path.cwd()
-for package in (
-    "inference",
-    "inference.core",
-    "inference.core.interfaces",
-    "inference.core.interfaces.stream",
-):
-    module = types.ModuleType(package)
-    module.__path__ = [str(root.joinpath(*package.split(".")))]
-    sys.modules[package] = module
+import streamvision.stream
+
 baseline = set(sys.modules)
 
-from inference.core.interfaces.stream.configuration import (
+from streamvision.stream.configuration import (
     StreamsConfiguration,
     configure_process,
 )
@@ -1037,7 +1012,7 @@ configure_process(
         offline_mode=True,
     )
 )
-from inference.core.interfaces.stream import environment
+from streamvision.stream import environment
 
 print(json.dumps({
     "values": [
@@ -1048,7 +1023,8 @@ print(json.dumps({
     "new_modules": sorted(
         name
         for name in set(sys.modules) - baseline
-        if name.split(".")[0] in {"inference", "cv2", "numpy", "torch", "pydantic"}
+        if name.split(".")[0]
+        in {"streamvision", "inference", "cv2", "numpy", "torch", "pydantic"}
     ),
 }))
 """
@@ -1060,8 +1036,8 @@ def test_a_canonical_configuration_installed_first_reaches_the_facade() -> None:
     assert result == {
         "values": [3, True, True],
         "new_modules": [
-            "inference.core.interfaces.stream.configuration",
-            "inference.core.interfaces.stream.environment",
+            "streamvision.stream.configuration",
+            "streamvision.stream.environment",
         ],
     }
 
@@ -1133,8 +1109,7 @@ def test_buffer_strategy_pickles_keep_the_historical_reference(protocol: int) ->
         payload = pickle.dumps(member, protocol=protocol)
 
         assert pickle.loads(payload) is member
-        # Readable by a process that only has the pre-extraction module.
-        assert b"inference.core.interfaces.camera.video_source" in payload
+        assert b"streamvision.camera.video_source" in payload
         assert b"buffer_strategies" not in payload
 
 
@@ -1161,12 +1136,16 @@ def test_request_entities_do_not_import_the_decoder_webrtc_or_pipeline() -> None
         name for name in new_modules if name.split(".")[0] in {"cv2", "aiortc", "av"}
     }
     # inference.core preloads stream_manager/manager_app via light manager_app.host.
-    assert {name for name in new_modules if name.startswith("inference.")} == {
-        "inference.core.interfaces.camera",
-        "inference.core.interfaces.camera.buffer_strategies",
-        "inference.core.interfaces.camera.source_reference_validation",
-        "inference.core.interfaces.stream.environment",
-        "inference.core.interfaces.stream_manager.manager_app.entities",
+    assert {
+        name for name in new_modules if name.startswith(("inference.", "streamvision."))
+    } == {
+        "streamvision.camera",
+        "streamvision.camera.buffer_strategies",
+        "streamvision.camera.source_reference_validation",
+        "streamvision.stream.environment",
+        "streamvision.stream_manager.manager_app.entities",
+        "inference.core.interfaces.stream_manager",
+        "inference.core.interfaces.stream_manager.manager_app",
     }
 
 
@@ -1206,7 +1185,12 @@ def test_module_logger_reaches_the_inference_logger_handler(module_name: str) ->
     import logging
 
     module = importlib.import_module(module_name)
-    inference_logger = logging.getLogger("inference")
+    # Retained host modules keep their historical logger; moved ones log canonically.
+    if module.__name__.startswith("inference."):
+        expected_logger_name = module_name
+    else:
+        expected_logger_name = module.__name__
+    inference_logger = logging.getLogger(expected_logger_name.split(".")[0])
     probe = _ProbeHandler()
     previous_level = inference_logger.level
     inference_logger.addHandler(probe.handler)
@@ -1217,7 +1201,7 @@ def test_module_logger_reaches_the_inference_logger_handler(module_name: str) ->
         inference_logger.removeHandler(probe.handler)
         inference_logger.setLevel(previous_level)
 
-    assert module.logger.name == module_name
+    assert module.logger.name == expected_logger_name
     assert module.logger.propagate is True
     assert not module.logger.handlers
     assert [record.getMessage() for record in probe.records] == [

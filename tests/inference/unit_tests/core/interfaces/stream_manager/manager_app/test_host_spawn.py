@@ -90,12 +90,8 @@ _WATCHED_MODULES = frozenset(
 def _record_watched_import(event, arguments):
     if event != "import" or arguments[0] not in _WATCHED_MODULES:
         return
-    host = _probe_sys.modules.get(
-        "inference.core.interfaces.stream_manager.manager_app.host"
-    )
-    configuration = _probe_sys.modules.get(
-        "inference.core.interfaces.stream.configuration"
-    )
+    host = _probe_sys.modules.get("streamvision.stream_manager.manager_app.host")
+    configuration = _probe_sys.modules.get("streamvision.stream.configuration")
     stack = []
     frame = _probe_sys._getframe(1)
     while frame is not None:
@@ -119,10 +115,10 @@ if __name__ == "__mp_main__":
 
 # The audit hook fires on `import` statements, not `importlib.import_module`.
 PIPELINE_RUNTIME_MODULES = (
-    "inference.core.interfaces.camera.video_source",
-    "inference.core.interfaces.stream.environment",
-    "inference.core.interfaces.stream.pipeline",
-    "inference.core.interfaces.stream_manager.manager_app.entities",
+    "streamvision.camera.video_source",
+    "streamvision.stream.environment",
+    "streamvision.stream.pipeline",
+    "streamvision.stream_manager.manager_app.entities",
 )
 
 TINY_WORKFLOW = {
@@ -160,6 +156,7 @@ def run_spawn_driver(
                     str(REPO_ROOT),
                     str(REPO_ROOT / "workflows"),
                     str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
                 ]
             ),
             "STREAMS_IMPORT_ORDER_PROBE": str(probe_path),
@@ -191,6 +188,9 @@ def run_spawn_driver(
 _PIPELINE_PROCESSES_DRIVER = '''
 import json
 import os
+
+# Like the legacy host module: installs the server's process defaults on import.
+import inference.core
 
 
 class RecordingHost:

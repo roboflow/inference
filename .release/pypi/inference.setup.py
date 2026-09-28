@@ -46,8 +46,10 @@ setuptools.setup(
             "development.*",
             "inference_models",
             "inference_models.*",
-            "frame_flow",
-            "frame_flow.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
             "inference_sdk",
             "inference_sdk.*",
             "roboflow_workflows",
@@ -74,7 +76,8 @@ setuptools.setup(
             "requirements/requirements.sdk.http.txt",
             "requirements/requirements.workflows.txt",
         ]
-    ) + [f"inference-sdk=={__version__}"],
+    )
+    + [f"inference-sdk=={__version__}"],
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "easy-ocr": read_requirements("requirements/requirements.easyocr.txt"),
@@ -102,5 +105,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.14"
+    python_requires=">=3.10,<3.14",
 )

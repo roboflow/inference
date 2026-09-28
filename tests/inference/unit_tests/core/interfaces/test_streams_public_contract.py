@@ -142,23 +142,23 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 _FROZEN_CONTRACTS = [
     (
         "InferencePipeline.init",
-        "627d57d8713d9b42",
-        "374e25e04372baa3",
+        "87ac083f88c84541",
+        "8dfadbcb1c108685",
     ),
     (
         "InferencePipeline.init_with_yolo_world",
-        "c8170bd0ad38cb20",
-        "56febab383103087",
+        "03e562b3c5e60eb9",
+        "3ddf0036fd5a7aaa",
     ),
     (
         "InferencePipeline.init_with_workflow",
-        "760611c783a67072",
-        "0ab9a69949b8cd59",
+        "c1a048f36d371750",
+        "65e3dc93aae69dc0",
     ),
     (
         "InferencePipeline.init_with_custom_logic",
-        "a93da889f006ec31",
-        "f1af5463774d8132",
+        "072e4f2946ee2a47",
+        "7afc6c7b6aaf0890",
     ),
     ("Stream.__init__", "ad88b06bfd0ef5aa", "a3785ad7cc10ce9a"),
     (
@@ -166,17 +166,17 @@ _FROZEN_CONTRACTS = [
         "f8e554f57455543c",
         "e3b0c44298fc1c14",
     ),
-    ("sinks.render_boxes", "09f7d31d9d2f5569", "2c90c3fea73de025"),
+    ("sinks.render_boxes", "bd087e986582eec5", "141c9f6f8746df93"),
     (
         "sinks.render_statistics",
         "12aa6eb0579b10d5",
         "e3b0c44298fc1c14",
     ),
-    ("sinks.multi_sink", "c989ebaff3f51249", "e4fee59b9518c801"),
+    ("sinks.multi_sink", "f665e4f385adb432", "53ffb292a998199d"),
     # Only the middleware annotation changed; rest is pinned by the shape test below.
     (
         "sinks.active_learning_sink",
-        "66435a496fcd65c7",
+        "4c5b2c7e4b2c1f03",
         "6c08e7c5e5752f95",
     ),
 ]

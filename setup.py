@@ -1,7 +1,7 @@
 import setuptools
 from setuptools import find_packages
 
-with open("README.md", "r", encoding='utf-8') as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -33,8 +33,10 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
-            "frame_flow",
-            "frame_flow.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
             "roboflow_workflows",
             "roboflow_workflows.*",
             "workflows",
@@ -72,7 +74,9 @@ setuptools.setup(
     ),
     extras_require={
         "sam": read_requirements("requirements/requirements.sam.txt"),
-        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
+        "cloud-storage": read_requirements(
+            "requirements/requirements.cloud_storage.txt"
+        ),
     },
     classifiers=[
         "Programming Language :: Python :: 3",

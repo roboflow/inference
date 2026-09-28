@@ -926,7 +926,7 @@ def test_model_config_stays_canonical_in_stream_entities(
         yolo_world,
     )
 
-    assert ModelConfig.__module__ == "inference.core.interfaces.stream.entities"
+    assert ModelConfig.__module__ == "streamvision.stream.entities"
     assert legacy_module.ModelConfig is ModelConfig
     assert roboflow_models.ModelConfig is ModelConfig
     assert yolo_world.ModelConfig is ModelConfig
@@ -1292,7 +1292,11 @@ def test_historical_sinks_export_in_a_fresh_interpreter(first: str) -> None:
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(repo_root / "workflows"), str(repo_root / "inference_models")]
+                [
+                    str(repo_root / "workflows"),
+                    str(repo_root / "inference_models"),
+                    str(repo_root / "stream_vision"),
+                ]
             ),
         }
     )

@@ -106,7 +106,11 @@ def _run_child(
             "PYTHONDONTWRITEBYTECODE": "1",
             "DISABLE_VERSION_CHECK": "True",
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
         }
     )

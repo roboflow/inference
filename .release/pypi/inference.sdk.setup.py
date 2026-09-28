@@ -60,8 +60,10 @@ setuptools.setup(
             "development.*",
             "inference_models",
             "inference_models.*",
-            "frame_flow",
-            "frame_flow.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
             "roboflow_workflows",
             "roboflow_workflows.*",
             "workflows",
@@ -87,5 +89,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.14"
+    python_requires=">=3.10,<3.14",
 )

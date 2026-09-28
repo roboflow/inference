@@ -58,8 +58,10 @@ setuptools.setup(
             "development.*",
             "inference_models",
             "inference_models.*",
-            "frame_flow",
-            "frame_flow.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
             "inference_sdk",
             "inference_sdk.*",
             "roboflow_workflows",
@@ -75,13 +77,18 @@ setuptools.setup(
     },
     extras_require={
         "cloud-deploy": read_requirements("requirements/requirements.cloud_deploy.txt"),
-        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
+        "cloud-storage": read_requirements(
+            "requirements/requirements.cloud_storage.txt"
+        ),
     },
     package_data={"": ["configs/*.yml"]},
-    install_requires=read_requirements([
-        "requirements/requirements.cli.txt",
-        "requirements/requirements.sdk.http.txt",
-    ]) + [f"inference-sdk=={__version__}"],
+    install_requires=read_requirements(
+        [
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
+        ]
+    )
+    + [f"inference-sdk=={__version__}"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
@@ -97,5 +104,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.14"
+    python_requires=">=3.10,<3.14",
 )

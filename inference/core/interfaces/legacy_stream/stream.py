@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from PIL import Image
+from streamvision.camera.camera import WebcamStream
 
 import inference.core.entities.requests.inference
 from inference.core.active_learning.middlewares import (
@@ -32,7 +33,6 @@ from inference.core.env import (
     STREAM_ID,
 )
 from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.registries.roboflow import get_model_type
 from inference.models.utils import get_model
 
