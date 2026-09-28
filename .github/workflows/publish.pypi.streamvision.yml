@@ -1,4 +1,4 @@
-name: Publish frame-flow to PyPI
+name: Publish streamvision to PyPI
 on:
   release:
     types: [created]
@@ -29,21 +29,21 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: 🛞 Build frame-flow wheel
-        run: make create_frame_flow_wheel
+      - name: 🛞 Build streamvision wheel
+        run: make create_streamvision_wheel
       - name: 🔍 Verify wheel is not empty
         # packages-dir uploads everything in dist/, so require exactly one
-        # frame_flow wheel and nothing else, containing actual Python modules.
+        # streamvision wheel and nothing else, containing actual Python modules.
         run: |
           ls -la dist/
           test "$(ls dist | wc -l)" -eq 1
-          unzip -l dist/frame_flow-*.whl | grep -qE ' frame_flow/.+\.py$'
+          unzip -l dist/streamvision-*.whl | grep -qE ' streamvision/.+\.py$'
       - name: 📤 Upload built wheel as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frame-flow-wheel
-          path: dist/frame_flow-*.whl
-      - name: 🚀 Publish frame-flow to PyPI
+          name: streamvision-wheel
+          path: dist/streamvision-*.whl
+      - name: 🚀 Publish streamvision to PyPI
         # Release-triggered runs always publish. Manual dispatches publish
         # only when the operator explicitly opts in — default is build-only
         # so smoke-testing the packaging never accidentally re-tags PyPI.
