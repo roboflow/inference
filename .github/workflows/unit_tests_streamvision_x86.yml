@@ -48,7 +48,7 @@ jobs:
         run: |
           pip install --find-links "${{ github.workspace }}/dist" \
             "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[test,webrtc]" \
-            "${{ github.workspace }}"/dist/roboflow_workflows-*.whl \
+            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
       - name: Package unit tests

@@ -65,10 +65,10 @@ jobs:
         with:
           path: workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets
           key: workflows-fonts-${{ hashFiles('workflows/roboflow_workflows/core_steps/visualizations/common/fonts/registry.py') }}
-      - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
-          make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          make create_workflows_wheel create_streamvision_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows (tensor-native)
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.
