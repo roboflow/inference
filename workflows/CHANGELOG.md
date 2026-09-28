@@ -31,6 +31,7 @@ for contributor and maintainer responsibilities.
 ### Fixed
 
 - SAM3 v1/v2/v3 remote SDK execution, with NumPy or tensor predictions, now honors `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` across the input batch while sending one image per HTTP request. Results retain input order, formats and class mapping; empty batches issue no requests. Local execution and the inference-proxy transport are unchanged.
+- Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs are unchanged (same boxes, order and masks, still dense arrays); a mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
 
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
