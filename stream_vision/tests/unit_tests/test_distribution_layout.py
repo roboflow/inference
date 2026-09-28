@@ -34,7 +34,7 @@ def _load_pyproject() -> dict:
 def test_project_metadata() -> None:
     project = _load_pyproject()["project"]
     assert project["name"] == "streamvision"
-    assert project["version"] == "0.1.0rc1"
+    assert project["version"] == "0.1.0rc2"
     assert project["requires-python"] == ">=3.10,<3.14"
 
 

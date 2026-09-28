@@ -8,10 +8,9 @@ from collections import deque
 from datetime import datetime
 from threading import Lock
 from time import monotonic
-from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
 import supervision as sv
-from aiortc import RTCPeerConnection
 from streamvision.camera.entities import StatusUpdate, UpdateSeverity, VideoFrame
 from streamvision.camera.video_source import VideoSource
 from streamvision.stream.entities import (
@@ -21,6 +20,9 @@ from streamvision.stream.entities import (
     PipelineStateReport,
     SourceCompletionStatistics,
 )
+
+if TYPE_CHECKING:
+    from aiortc import RTCPeerConnection
 
 T = TypeVar("T")
 
@@ -291,7 +293,7 @@ class BasePipelineWatchDog(PipelineWatchDog):
 
 
 class WebRTCPipelineWatchDog(BasePipelineWatchDog):
-    def __init__(self, webrtc_peer_connection: RTCPeerConnection):
+    def __init__(self, webrtc_peer_connection: "RTCPeerConnection"):
         super().__init__()
         self._webrtc_peer_connection = webrtc_peer_connection
 

@@ -1,5 +1,9 @@
+import os
+import subprocess
+import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Event, Thread
 from typing import Optional
 from unittest.mock import MagicMock
@@ -339,3 +343,28 @@ def test_completion_statistics_are_atomic_detached_snapshots() -> None:
     assert [s.last_frame_id for s in final.sources] == [12, 13, None]
     assert [s.completed_frames for s in initial.sources] == [0, 0, 0]
     assert asdict(final)["sources"][0]["completed_frames"] == 1000
+
+
+def test_watchdog_imports_without_aiortc_installed() -> None:
+    # aiortc is only required by the [webrtc] extra; watchdog must import without it.
+    probe = (
+        "import sys\n"
+        "sys.modules['aiortc'] = None\n"
+        "import streamvision.stream.watchdog\n"
+        "print('ok')\n"
+    )
+    package_root = Path(__file__).resolve().parents[3]
+    workflows_root = package_root.parent / "workflows"
+    child_env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(package_root), str(workflows_root)]),
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=str(package_root),
+        env=child_env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip() == "ok"

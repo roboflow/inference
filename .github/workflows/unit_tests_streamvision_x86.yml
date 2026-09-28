@@ -54,3 +54,12 @@ jobs:
       - name: Package unit tests
         working-directory: stream_vision
         run: python -m pytest tests/unit_tests
+      - name: Installed-wheel isolation tests
+        working-directory: stream_vision
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          PIP_CONSTRAINT: ${{ github.workspace }}/workflows/tests/isolation/constraints-cpu.txt
+          STREAMVISION_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
+        run: |
+          STREAMVISION_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)" \
+            python -m pytest tests/isolation
