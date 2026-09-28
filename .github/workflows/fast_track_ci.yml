@@ -20,6 +20,17 @@ name: Fast-track CI
 # what keeps main's Actions cache out of reach of the branch code. Each
 # dispatched run is reported back as a commit status on the PR head.
 #
+# A workflow whose `pull_request` trigger is path-filtered to directories
+# that do not exist on the branch (a suite for packages that have not landed
+# on the release the branch was cut from) is dormant there: a PR to main
+# would never start it, and workflow_dispatch, which ignores path filters,
+# would only run it against nothing. Such a workflow is skipped and reported
+# as a successful status, with the absent roots named in the summary.
+#
+# A maintainer's re-run of one of the dispatched runs does not pass through
+# this workflow; fast_track_ci_status_sync.yml refreshes the commit status
+# from the re-run attempt.
+#
 # Runs with `pull_request_target` (main-branch definition, secrets). The gate
 # only admits same-repository PRs, and the label needs triage rights.
 
@@ -52,7 +63,9 @@ env:
   # plus the model licence check. Every one of them has a workflow_dispatch
   # trigger on main. A workflow that cannot be dispatched on the branch (file
   # missing, or no workflow_dispatch on that release) gets an `error` commit
-  # status and fails this run, unless listed in OPTIONAL_WORKFLOWS.
+  # status and fails this run, unless listed in OPTIONAL_WORKFLOWS. A
+  # path-filtered workflow whose roots are all absent on the branch is
+  # dormant there and skipped with a `success` status (see the header).
   TEST_WORKFLOWS: >-
     static_code_analysis.yml
     check_model_licenses.yml
@@ -202,14 +215,65 @@ jobs:
           # and cancellable if a later lookup fails.
           echo "runs_file=$runs_file" >> "$GITHUB_OUTPUT"
           : > "$RUNNER_TEMP/skipped.txt"
+          : > "$RUNNER_TEMP/dormant.tsv"   # workflow<TAB>absent roots
+          python3 -c 'import yaml' 2>/dev/null \
+            || python3 -m pip install --quiet --user --break-system-packages pyyaml 2>/dev/null \
+            || python3 -m pip install --quiet --user pyyaml
 
           status() {  # context state description [target_url]
             gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
               -f context="fast-track-ci / $1" -f state="$2" -f description="$3" -f target_url="${4:-$ORCHESTRATOR_URL}"
           }
 
+          # Reads the workflow file as it is on the branch and prints the
+          # literal roots of its `on.pull_request.paths` patterns, one per
+          # line; a lone `.` means a pattern matches from the repository root.
+          # Prints nothing when the trigger has no path filter.
+          path_filter_roots() {
+            gh api "repos/$REPO/contents/.github/workflows/$1?ref=$HEAD_SHA" --jq .content 2>/dev/null | base64 -d 2>/dev/null | python3 -c '
+          import re, sys, yaml
+          try:
+              doc = yaml.safe_load(sys.stdin) or {}
+          except yaml.YAMLError:
+              sys.exit(0)
+          on = doc.get("on", doc.get(True)) or {}   # PyYAML reads a bare `on:` key as True
+          trigger = on.get("pull_request") if isinstance(on, dict) else None
+          paths = trigger.get("paths") if isinstance(trigger, dict) else None
+          for pattern in paths or []:
+              pattern = str(pattern)
+              if pattern.startswith("!"):
+                  continue
+              root = re.split(r"[*?\[]", pattern, maxsplit=1)[0].strip("/")
+              print(root or ".")
+          '
+          }
+
+          # Succeeds, printing the absent roots, when every root of the path
+          # filter is missing on the branch; fails otherwise (no path filter,
+          # a root-level pattern, or at least one root present).
+          dormant_paths() {
+            local roots root absent=""
+            roots=$(path_filter_roots "$1")
+            [ -n "$roots" ] || return 1
+            while read -r root; do
+              [ -n "$root" ] || continue
+              [ "$root" = "." ] && return 1
+              if gh api "repos/$REPO/contents/$root?ref=$HEAD_SHA" --silent 2>/dev/null; then
+                return 1
+              fi
+              absent="${absent:+$absent, }$root"
+            done <<<"$roots"
+            [ -n "$absent" ] && echo "$absent"
+          }
+
           for wf in $TEST_WORKFLOWS; do
             name="${wf%.yml}"
+            if absent=$(dormant_paths "$wf"); then
+              echo "::notice::$wf is dormant on $HEAD_REF: $absent absent; not dispatched"
+              printf '%s\t%s\n' "$name" "$absent" >> "$RUNNER_TEMP/dormant.tsv"
+              status "$name" success "dormant on this branch: $absent absent"
+              continue
+            fi
             # Runs created before this instant belong to somebody else.
             since=$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ)
             if ! out=$(gh workflow run "$wf" --repo "$REPO" --ref "$HEAD_REF" 2>&1); then
@@ -319,6 +383,10 @@ jobs:
             [ -n "$name" ] || continue
             echo "| $name | skipped (optional): not dispatchable on this branch | – |" >> "$GITHUB_STEP_SUMMARY"
           done < "$RUNNER_TEMP/skipped.txt"
+          while IFS=$'\t' read -r name absent; do
+            [ -n "$name" ] || continue
+            echo "| $name | skipped (dormant): path-filtered to \`$absent\`, absent on this branch | – |" >> "$GITHUB_STEP_SUMMARY"
+          done < "$RUNNER_TEMP/dormant.tsv"
           if [ -s "$RUNNER_TEMP/failed_dispatch.txt" ]; then
             while read -r name; do
               [ -n "$name" ] || continue
