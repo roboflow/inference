@@ -23,9 +23,9 @@ Create a Python environment and install the repo in editable mode:
 ```bash
 conda create -n inference-development python=3.10
 conda activate inference-development
-pip install -e ./inference_models -e ./workflows -e .
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e .
 # optional models
-pip install -e ./inference_models -e ./workflows -e ".[sam]"
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e ".[sam]"
 ```
 
 Run development commands from the repository root so the checkout's SDK source

@@ -70,6 +70,7 @@ setuptools.setup(
             "requirements/requirements.test.integration.txt",
             "requirements/requirements.transformers.txt",
             "requirements/requirements.workflows.txt",
+            "requirements/requirements.streamvision.txt",
         ]
     ),
     extras_require={

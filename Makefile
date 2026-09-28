@@ -57,14 +57,14 @@ create_models_wheel:
 	cd inference_models && uv build --wheel --out-dir ../dist
 
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
-create_isolation_wheels: create_workflows_wheel create_models_wheel
+create_isolation_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel requests
 	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	rm -rf build/*
 
-create_wheels: create_workflows_wheel create_models_wheel
+create_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -rf build/*
@@ -80,7 +80,7 @@ create_wheels: create_workflows_wheel create_models_wheel
 	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
-create_wheels_for_gpu_notebook: create_workflows_wheel
+create_wheels_for_gpu_notebook: create_workflows_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests
 	rm -rf build/*

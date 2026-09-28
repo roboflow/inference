@@ -75,6 +75,7 @@ setuptools.setup(
             "requirements/requirements.cli.txt",
             "requirements/requirements.sdk.http.txt",
             "requirements/requirements.workflows.txt",
+            "requirements/requirements.streamvision.txt",
         ]
     )
     + [f"inference-sdk=={__version__}"],

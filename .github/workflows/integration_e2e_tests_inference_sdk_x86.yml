@@ -106,6 +106,7 @@ jobs:
           make create_isolation_wheels
           pip install --find-links "${{ github.workspace }}/dist" \
             "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
+            "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]" \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
 

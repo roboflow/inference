@@ -43,7 +43,7 @@ jobs:
             stream_vision/pyproject.toml
             stream_vision/uv.lock
       - name: Build same-checkout wheels and check lock
-        run: make create_isolation_wheels create_streamvision_wheel
+        run: make create_isolation_wheels
       - name: Install only standalone package dependencies
         run: |
           pip install --find-links "${{ github.workspace }}/dist" \
