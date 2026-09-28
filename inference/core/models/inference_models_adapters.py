@@ -217,6 +217,15 @@ def _get_enabled_inference_models_backends() -> List[str]:
 def _get_requested_inference_models_backends(kwargs: dict) -> Union[str, List[str]]:
     from inference.core.exceptions import ModelPackageSelectionError
 
+    if kwargs.get("model_package_id") is not None:
+        if (
+            "validate_model_package"
+            not in signature(AutoModel.from_pretrained).parameters
+        ):
+            raise ModelPackageSelectionError(
+                "This inference-models version cannot validate pinned package policy."
+            )
+        kwargs["validate_model_package"] = True
     requested_backend = kwargs.pop("backend", None)
     enabled_backends = _get_enabled_inference_models_backends()
     if requested_backend is None:
@@ -271,6 +280,8 @@ def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
 
 
 class InferenceModelsObjectDetectionAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -437,6 +448,8 @@ class InferenceModelsObjectDetectionAdapter(Model):
 
 
 class InferenceModelsInstanceSegmentationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1150,6 +1163,8 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1371,6 +1386,8 @@ def model_keypoints_to_response(
 
 
 class InferenceModelsClassificationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -1774,6 +1791,8 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
 
 
 class InferenceModelsSemanticSegmentationAdapter(Model):
+    supports_model_package_selection = True
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -2061,6 +2080,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
     a window length or a frame rate. Windows tile from the start of the clip
     and the trailing remainder is dropped, which is how training validates.
     """
+
+    supports_model_package_selection = True
 
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()

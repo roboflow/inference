@@ -4205,3 +4205,52 @@ def test_matching_package_loader_forwards_artifact_cache() -> None:
         initialize.call_args.kwargs["content_addressed_artifact_cache"]
         is artifact_cache
     )
+
+
+def test_pinned_package_backend_policy_rejects_before_loading() -> None:
+    from inference_models.errors import ModelPackagePolicyError
+
+    package = ModelPackageMetadata(
+        package_id="pinned-trt",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=True,
+    )
+    metadata = ModelMetadata(
+        model_id="workspace/model/1",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=[package],
+    )
+    with mock.patch.object(
+        core, "get_model_from_provider", return_value=metadata
+    ), mock.patch.object(core, "attempt_loading_matching_model_packages") as load:
+        with pytest.raises(ModelPackagePolicyError):
+            core.AutoModel.from_pretrained(
+                "workspace/model/1",
+                model_package_id="pinned-trt",
+                backend=["onnx"],
+                validate_model_package=True,
+                use_auto_resolution_cache=False,
+            )
+    load.assert_not_called()
+
+
+def test_pinned_validation_has_distinct_resolution_cache_identity() -> None:
+    with mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=MagicMock()
+    ) as cached_load:
+        for validate in [False, True]:
+            core.AutoModel.from_pretrained(
+                "workspace/model/1",
+                model_package_id="pinned-trt",
+                backend=["onnx"],
+                validate_model_package=validate,
+                auto_resolution_cache=MagicMock(),
+            )
+    hashes = [
+        call.kwargs["auto_negotiation_hash"] for call in cached_load.call_args_list
+    ]
+    assert hashes[0] != hashes[1]

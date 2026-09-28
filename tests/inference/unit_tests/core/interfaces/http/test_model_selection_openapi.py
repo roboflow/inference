@@ -1,9 +1,16 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from inference.core.constants import MODEL_SELECTION_HEADER
 from inference.core.interfaces.http import http_api
+
+
+@pytest.fixture(autouse=True)
+def disable_usage_push(monkeypatch):
+    monkeypatch.setattr(
+        http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
+    )
 
 
 @pytest.fixture

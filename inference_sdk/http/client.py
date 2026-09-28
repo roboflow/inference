@@ -52,6 +52,7 @@ from inference_sdk.http.errors import (
     InvalidParameterError,
     ModelNotInitializedError,
     ModelNotSelectedError,
+    ModelSelectionNotConfirmedError,
     ModelTaskTypeNotSupportedError,
     RetryError,
     WrongClientModeError,
@@ -1146,7 +1147,7 @@ class InferenceHTTPClient:
         registered_models = RegisteredModels.from_dict(response_payload)
         if selectors:
             if not registered_models.selected_model_id:
-                raise InvalidParameterError(
+                raise ModelSelectionNotConfirmedError(
                     "The server did not return the selected model ID. Upgrade the inference server to use model selection."
                 )
             self.__model_selection_ids[(model_id, tuple(sorted(selectors.items())))] = (
@@ -2773,6 +2774,7 @@ class InferenceHTTPClient:
         )
         response = requests.post(url, params=params, data=data, headers=headers)
         api_key_safe_raise_for_status(response=response)
+        ensure_model_selection_applied(response.headers, params)
         return response.json()
 
     async def infer_on_video_from_api_v0_async(
@@ -2789,6 +2791,7 @@ class InferenceHTTPClient:
                 url, params=params, data=data, headers=headers
             ) as response:
                 response.raise_for_status()
+                ensure_model_selection_applied(response.headers, params)
                 return await response.json()
 
     def infer_on_video_from_api_v1(
@@ -2807,6 +2810,7 @@ class InferenceHTTPClient:
             url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
         )
         api_key_safe_raise_for_status(response=response)
+        ensure_model_selection_applied(response.headers, payload)
         return response.json()
 
     async def infer_on_video_from_api_v1_async(
@@ -2827,6 +2831,7 @@ class InferenceHTTPClient:
                 url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
             ) as response:
                 response.raise_for_status()
+                ensure_model_selection_applied(response.headers, payload)
                 return await response.json()
 
     def __resolve_video_model_id(self, model_id: Optional[str]) -> str:
@@ -2846,7 +2851,10 @@ class InferenceHTTPClient:
             raise InvalidModelIdentifier(
                 f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
             )
-        params = self.__legacy_api_key_payload()
+        params = {
+            **self.__legacy_api_key_payload(),
+            **self.__inference_configuration.to_model_selection_parameters(),
+        }
         class_filter = self.__inference_configuration.class_filter
         if class_filter:
             params["class_filter"] = ",".join(class_filter)
@@ -2872,7 +2880,10 @@ class InferenceHTTPClient:
                 f"for one image or infer_on_stream() to classify a video frame by frame."
             )
         video_type, video = _resolve_video_payload(video_reference=video_reference)
-        payload = self.__initialise_payload()
+        payload = {
+            **self.__initialise_payload(),
+            **self.__inference_configuration.to_model_selection_parameters(),
+        }
         payload["model_id"] = model_id
         payload["video"] = {"type": video_type, "value": video}
         class_filter = self.__inference_configuration.class_filter

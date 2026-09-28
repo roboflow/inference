@@ -91,6 +91,10 @@ class ModelPackageNegotiationError(BaseInferenceModelsError):
     pass
 
 
+class ModelPackagePolicyError(ModelPackageNegotiationError):
+    """The pinned model package does not satisfy backend or runtime policy."""
+
+
 class UnknownBackendTypeError(ModelPackageNegotiationError):
     pass
 

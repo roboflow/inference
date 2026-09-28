@@ -24,6 +24,7 @@ from inference.core.models.base import Model
 
 
 class PackageModel(Model):
+    supports_model_package_selection = True
     task_type = "object-detection"
     batch_size = 1
     img_size_h = 32
@@ -45,6 +46,23 @@ class PackageModel(Model):
 
     def clear_cache(self, delete_from_disk=True):
         pass
+
+
+def test_clip_selection_rejects_before_loading_packages(monkeypatch):
+    from inference.models.clip.clip_inference_models import InferenceModelsClipAdapter
+    from inference_models import AutoModel
+
+    loader = Mock()
+    monkeypatch.setattr(AutoModel, "from_pretrained", loader)
+    monkeypatch.setattr(base_module, "USE_INFERENCE_MODELS", True)
+    registry = Mock()
+    registry.get_model.return_value = InferenceModelsClipAdapter
+    manager = ModelManager(registry, content_addressed_artifact_cache=Mock())
+
+    with pytest.raises(ModelPackageSelectionError, match="does not support"):
+        manager.add_model("clip/ViT-B-16", "key", backend="onnx")
+
+    loader.assert_not_called()
 
 
 @pytest.fixture(autouse=True)

@@ -28,6 +28,7 @@ from inference.core.managers.base import (
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.managers.model_selection import public_model_id
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -95,7 +96,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
-            ids_collector.add(queue_id)
+            ids_collector.add(public_model_id(queue_id))
         if queue_id in self:
             self.validate_model_selection(
                 queue_id,

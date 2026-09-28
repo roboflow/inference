@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import numpy as np
@@ -6,7 +7,10 @@ from aioresponses import aioresponses
 
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.entities import ApiKeyTransport
-from inference_sdk.http.errors import InvalidParameterError, ModelNotInitializedError
+from inference_sdk.http.errors import (
+    ModelNotInitializedError,
+    ModelSelectionNotConfirmedError,
+)
 
 
 def register_response(
@@ -48,7 +52,7 @@ def test_v0_selection_requires_server_acknowledgment(requests_mock, acknowledged
             np.zeros((2, 2, 3), dtype=np.uint8), model_id="project/1"
         ) == {"predictions": []}
     else:
-        with pytest.raises(InvalidParameterError, match="did not confirm"):
+        with pytest.raises(ModelSelectionNotConfirmedError, match="did not confirm"):
             client.infer(np.zeros((2, 2, 3), dtype=np.uint8), model_id="project/1")
     assert requests_mock.last_request.qs["backend"] == ["trt"]
     assert requests_mock.last_request.qs["quantization"] == ["fp16"]
@@ -57,8 +61,6 @@ def test_v0_selection_requires_server_acknowledgment(requests_mock, acknowledged
 @pytest.mark.asyncio
 @pytest.mark.parametrize("acknowledged", [True, False])
 async def test_async_v0_selection_requires_server_acknowledgment(acknowledged):
-    import re
-
     headers = {"X-Roboflow-Model-Selection": "applied"} if acknowledged else {}
     client = InferenceHTTPClient(api_url="http://server", api_key="key").select_api_v0()
     client.configure(InferenceConfiguration(model_package_id="engine-1"))
@@ -73,7 +75,9 @@ async def test_async_v0_selection_requires_server_acknowledgment(acknowledged):
                 np.zeros((2, 2, 3), dtype=np.uint8), model_id="project/1"
             ) == {"predictions": []}
         else:
-            with pytest.raises(InvalidParameterError, match="did not confirm"):
+            with pytest.raises(
+                ModelSelectionNotConfirmedError, match="did not confirm"
+            ):
                 await client.infer_async(
                     np.zeros((2, 2, 3), dtype=np.uint8), model_id="project/1"
                 )
@@ -241,7 +245,7 @@ async def test_selected_load_rejects_missing_server_handle(
             registry_payload("project/1"),
             {"X-Roboflow-Model-Selection": "applied"},
         )
-        with pytest.raises(InvalidParameterError, match="selected model ID"):
+        with pytest.raises(ModelSelectionNotConfirmedError, match="selected model ID"):
             await call_client(client, method, asynchronous, "project/1")
 
 
@@ -331,3 +335,150 @@ async def test_unload_selected_model_uses_confirmed_handle_and_auth(
         else:
             assert headers["Authorization"] == "Bearer key"
         assert payload == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("api_version", [0, 1])
+@pytest.mark.parametrize("acknowledged", [False, True])
+@pytest.mark.parametrize(
+    "selectors",
+    [{"model_package_id": "engine-1"}, {"backend": "trt", "quantization": "fp16"}],
+)
+async def test_video_selection_is_sent_and_requires_acknowledgment(
+    requests_mock, asynchronous, api_version, acknowledged, selectors
+):
+    client = InferenceHTTPClient(api_url="http://server", api_key="key")
+    getattr(client, f"select_api_v{api_version}")()
+    client.configure(InferenceConfiguration(**selectors))
+    headers = {"X-Roboflow-Model-Selection": "applied"} if acknowledged else {}
+    path = "/project/1" if api_version == 0 else "/infer/action_recognition"
+    with aioresponses() as responses:
+        if api_version == 1:
+            register_response(
+                requests_mock,
+                responses,
+                "get",
+                "/model/registry?api_key=key",
+                {
+                    "models": [
+                        {"model_id": "server-handle", "task_type": "action-recognition"}
+                    ]
+                },
+            )
+            register_response(
+                requests_mock,
+                responses,
+                "post",
+                "/model/add",
+                {
+                    "models": [
+                        {"model_id": "server-handle", "task_type": "action-recognition"}
+                    ],
+                    "selected_model_id": "server-handle",
+                },
+                {"X-Roboflow-Model-Selection": "applied"},
+            )
+        requests_mock.post(
+            f"http://server{path}", json={"timeline": []}, headers=headers
+        )
+        responses.post(
+            re.compile(r"http://server" + path.split("?")[0] + r".*"),
+            payload={"timeline": []},
+            headers=headers,
+        )
+        if acknowledged:
+            assert await call_client(
+                client,
+                "infer_on_video",
+                asynchronous,
+                "https://example.com/clip.mp4",
+                model_id="project/1",
+            ) == {"timeline": []}
+        else:
+            with pytest.raises(ModelSelectionNotConfirmedError, match="proxy"):
+                await call_client(
+                    client,
+                    "infer_on_video",
+                    asynchronous,
+                    "https://example.com/clip.mp4",
+                    model_id="project/1",
+                )
+        if asynchronous:
+            (_, url), calls = list(responses.requests.items())[-1]
+            sent = calls[0].kwargs["json"] if api_version else dict(url.query)
+        else:
+            sent = (
+                requests_mock.last_request.json()
+                if api_version
+                else {
+                    key: values[0]
+                    for key, values in requests_mock.last_request.qs.items()
+                }
+            )
+        for name, value in selectors.items():
+            assert sent[name] == value
+        if api_version:
+            assert sent["model_id"] == "project/1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("acknowledged", [False, True])
+@pytest.mark.parametrize(
+    "selectors",
+    [{"model_package_id": "engine-1"}, {"backend": "trt", "quantization": "fp16"}],
+)
+async def test_v1_inference_sends_selection_in_body_and_requires_acknowledgment(
+    requests_mock, asynchronous, acknowledged, selectors
+):
+    client = InferenceHTTPClient(api_url="http://server", api_key="key")
+    client.configure(InferenceConfiguration(**selectors))
+    with aioresponses() as responses:
+        register_response(
+            requests_mock,
+            responses,
+            "get",
+            "/model/registry?api_key=key",
+            registry_payload("server-handle"),
+        )
+        register_response(
+            requests_mock,
+            responses,
+            "post",
+            "/model/add",
+            registry_payload("server-handle", selected_model_id="server-handle"),
+            {"X-Roboflow-Model-Selection": "applied"},
+        )
+        register_response(
+            requests_mock,
+            responses,
+            "post",
+            "/infer/object_detection",
+            {"predictions": []},
+            {"X-Roboflow-Model-Selection": "applied"} if acknowledged else {},
+        )
+        image = np.zeros((2, 2, 3), dtype=np.uint8)
+        if acknowledged:
+            assert await call_client(
+                client, "infer", asynchronous, image, model_id="project/1"
+            ) == {"predictions": []}
+        else:
+            with pytest.raises(
+                ModelSelectionNotConfirmedError, match="did not confirm"
+            ):
+                await call_client(
+                    client, "infer", asynchronous, image, model_id="project/1"
+                )
+        if asynchronous:
+            sent = next(
+                calls[0].kwargs["json"]
+                for (_, url), calls in responses.requests.items()
+                if url.path == "/infer/object_detection"
+            )
+        else:
+            sent = requests_mock.last_request.json()
+        assert sent["model_id"] == "project/1"
+        assert sent["image"]["type"] == "base64"
+        for name, value in selectors.items():
+            assert sent[name] == value

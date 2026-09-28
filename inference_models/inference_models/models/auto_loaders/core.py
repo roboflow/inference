@@ -1530,6 +1530,7 @@ class AutoModel:
         content_addressed_artifact_cache: Optional[
             ContentAddressedArtifactCache
         ] = None,
+        validate_model_package: bool = False,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1562,6 +1563,7 @@ class AutoModel:
                 requested backend/quantization. Use `AutoModel.describe_model()` to see
                 available packages.
 
+            validate_model_package: Check a pinned package against backend and runtime policy.
             backend: Preferred inference backend(s). Can be:
                 - Single backend: "torch", "onnx", "trt" (TensorRT), "hugging-face"
                 - List of allowed backends: ["trt", "torch"] (the normal
@@ -1853,6 +1855,11 @@ class AutoModel:
                     "provider": weights_provider,
                     "model_id": model_id_or_path,
                     "requested_model_package_id": model_package_id,
+                    **(
+                        {"validate_model_package": True}
+                        if validate_model_package
+                        else {}
+                    ),
                     "requested_backends": _canonicalize_unordered_request_values(
                         backend,
                         case_insensitive=True,
@@ -2043,6 +2050,7 @@ class AutoModel:
                 task_type=model_metadata.task_type,
                 model_packages=model_metadata.model_packages,
                 requested_model_package_id=model_package_id,
+                validate_model_package=validate_model_package,
                 requested_backends=backend,
                 requested_batch_size=batch_size,
                 requested_quantization=quantization,

@@ -1,10 +1,17 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 from inference.core.interfaces.http import http_api
+
+
+@pytest.fixture(autouse=True)
+def disable_usage_push(monkeypatch):
+    monkeypatch.setattr(
+        http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
+    )
 
 
 @pytest.fixture
@@ -108,6 +115,7 @@ def package_client(monkeypatch, request):
         served_package: str
 
     class PackageModel:
+        supports_model_package_selection = True
         task_type = getattr(request, "param", "object-detection")
         batch_size = 1
         img_size_h = 32
@@ -194,6 +202,7 @@ def test_http_selected_package_coexists_with_automatic_package(
         automatic.json()["served_package"] == again.json()["served_package"] == "onnx-1"
     )
     assert selected.json()["served_package"] == "engine-1"
+    assert selected.headers["X-Model-Id"] == "project/1"
     registered = package_client.get("/model/registry").json()["models"]
     assert len(registered) == 2
     removal = {"model_id": "project/1", **selectors}
@@ -365,3 +374,48 @@ def test_action_recognition_selected_package_coexists_with_default(
     mismatch = infer({"backend": "trt", "quantization": "fp32"})
     assert mismatch.status_code == 400
     assert "X-Roboflow-Model-Selection" not in mismatch.headers
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_selected_package_telemetry_uses_public_model_id(
+    package_client, monkeypatch, legacy
+):
+    from inference.core.managers import base
+
+    spans = MagicMock()
+    loaded = MagicMock()
+    inferred = MagicMock()
+    monkeypatch.setattr(base, "start_span", spans)
+    monkeypatch.setattr(base, "record_model_loaded", loaded)
+    monkeypatch.setattr(base, "record_inference", inferred)
+    selectors = {"backend": "trt", "quantization": "fp16"}
+    if legacy:
+        response = package_client.post(
+            "/project/1",
+            params={"image": "https://example.com/image.jpg", **selectors},
+        )
+    else:
+        response = package_client.post(
+            "/infer/object_detection",
+            json={
+                "model_id": "project/1",
+                "image": {"type": "url", "value": "https://example.com/image.jpg"},
+                "disable_model_monitoring": True,
+                **selectors,
+            },
+        )
+    assert response.status_code == 200
+    assert response.headers["X-Model-Id"] == "project/1"
+    assert loaded.call_args.args[0] == "project/1"
+    assert inferred.call_args.args[0] == "project/1"
+    model_spans = [
+        call.args[1]["model.id"]
+        for call in spans.call_args_list
+        if len(call.args) > 1 and "model.id" in call.args[1]
+    ]
+    assert model_spans == ["project/1", "project/1"]
+    selected = package_client.post(
+        "/model/add", json={"model_id": "project/1", **selectors}
+    )
+    assert ":package:" in selected.json()["selected_model_id"]
+    assert selected.headers["X-Model-Id"] == "project/1"

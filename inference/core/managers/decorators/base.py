@@ -13,6 +13,7 @@ from inference.core.managers.base import (
     validate_public_model_id,
 )
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.managers.model_selection import public_model_id
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -96,7 +97,7 @@ class ModelManagerDecorator(ModelManager):
             )
             ids_collector = request_model_ids.get(None)
             if ids_collector is not None:
-                ids_collector.add(cache_key)
+                ids_collector.add(public_model_id(cache_key))
             return
         self.model_manager.add_model(
             model_id,

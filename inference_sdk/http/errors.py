@@ -54,6 +54,12 @@ class HTTPCallErrorError(HTTPClientError):
         return self.__repr__()
 
 
+class ModelSelectionNotConfirmedError(HTTPClientError):
+    """Raised when the server does not acknowledge model package selection."""
+
+    pass
+
+
 class InvalidInputFormatError(HTTPClientError):
     """Error for invalid input format."""
 

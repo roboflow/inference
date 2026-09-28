@@ -22,3 +22,7 @@ def model_selection_cache_key(
     # codeql[py/weak-sensitive-data-hashing]: HMAC with a random server secret identifies cache entries; this is not password storage.
     digest = hmac.digest(_MODEL_SELECTION_SECRET, payload, "sha256").hex()
     return f"{model_id}:package:{digest}"
+
+
+def public_model_id(model_id: str) -> str:
+    return model_id.partition(":package:")[0]

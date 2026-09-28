@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, U
 import numpy as np
 from fastapi.encoders import jsonable_encoder
 
+import inference_models.errors as inference_models_errors
 from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
@@ -37,6 +38,7 @@ from inference.core.managers.model_load_collector import (
     model_load_info,
     request_model_ids,
 )
+from inference.core.managers.model_selection import public_model_id
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
@@ -192,7 +194,7 @@ class ModelManager:
         )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
-            ids_collector.add(resolved_identifier)
+            ids_collector.add(lookup_identifier)
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
@@ -207,7 +209,7 @@ class ModelManager:
                 )
                 return
             try:
-                with start_span("model.load", {"model.id": resolved_identifier}):
+                with start_span("model.load", {"model.id": lookup_identifier}):
                     logger.debug("ModelManager - model initialisation...")
                     t_load_start = time.perf_counter()
                     vram_before = _get_cuda_memory_allocated()
@@ -217,6 +219,12 @@ class ModelManager:
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    if selectors and not getattr(
+                        model_class, "supports_model_package_selection", False
+                    ):
+                        raise ModelPackageSelectionError(
+                            "This model does not support explicit package selection."
+                        )
 
                     extra_init_kwargs = {}
                     extra_init_kwargs.update(selectors)
@@ -266,7 +274,7 @@ class ModelManager:
                     load_time = time.perf_counter() - t_load_start
                     vram_delta = getattr(model, "_vram_bytes", None)
                     set_span_attribute("model.load_time_seconds", load_time)
-                    record_model_loaded(resolved_identifier, load_time)
+                    record_model_loaded(lookup_identifier, load_time)
                     logger.info(
                         "Model loaded: model_id=%s, load_time=%.2fs, task_type=%s, vram_bytes=%s",
                         resolved_identifier,
@@ -278,11 +286,18 @@ class ModelManager:
                     collector = model_load_info.get(None)
                     if collector is not None:
                         collector.record(
-                            model_id=resolved_identifier, load_time=load_time
+                            model_id=lookup_identifier, load_time=load_time
                         )
             except Exception as error:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
+                if selectors and isinstance(
+                    error,
+                    getattr(inference_models_errors, "ModelPackagePolicyError", ()),
+                ):
+                    raise ModelPackageSelectionError(
+                        "The requested model package is incompatible with this server's backend policy or runtime."
+                    ) from error
                 if selectors and isinstance(error, NoModelPackagesAvailableError):
                     if model_package_id is not None:
                         raise ModelPackageNotFoundError() from error
@@ -428,14 +443,19 @@ class ModelManager:
             self.pingback.fallback_api_key = request.api_key
         with start_span(
             "model.infer",
-            {"model.id": model_id, "model.infer.caller": "infer_from_request"},
+            {
+                "model.id": public_model_id(model_id),
+                "model.infer.caller": "infer_from_request",
+            },
         ):
             try:
                 t_infer_start = time.perf_counter()
                 rtn_val = await self.model_infer(
                     model_id=model_id, request=request, **kwargs
                 )
-                record_inference(model_id, time.perf_counter() - t_infer_start)
+                record_inference(
+                    public_model_id(model_id), time.perf_counter() - t_infer_start
+                )
                 logger.debug(
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
@@ -534,14 +554,19 @@ class ModelManager:
             self.pingback.fallback_api_key = request.api_key
         with start_span(
             "model.infer",
-            {"model.id": model_id, "model.infer.caller": "infer_from_request_sync"},
+            {
+                "model.id": public_model_id(model_id),
+                "model.infer.caller": "infer_from_request_sync",
+            },
         ):
             try:
                 t_infer_start = time.perf_counter()
                 rtn_val = self.model_infer_sync(
                     model_id=model_id, request=request, **kwargs
                 )
-                record_inference(model_id, time.perf_counter() - t_infer_start)
+                record_inference(
+                    public_model_id(model_id), time.perf_counter() - t_infer_start
+                )
                 logger.debug(
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
@@ -633,7 +658,7 @@ class ModelManager:
         with start_span(
             "model.infer",
             {
-                "model.id": model_id,
+                "model.id": public_model_id(model_id),
                 "model.infer.caller": "run_tensor_native_inference",
             },
         ):
@@ -641,7 +666,9 @@ class ModelManager:
                 t_infer_start = time.perf_counter()
                 model = self._get_model_reference(model_id=model_id)
                 result = model.run_tensor_native_inference(**kwargs)
-                record_inference(model_id, time.perf_counter() - t_infer_start)
+                record_inference(
+                    public_model_id(model_id), time.perf_counter() - t_infer_start
+                )
                 return result
             except Exception as error:
                 record_error(error)

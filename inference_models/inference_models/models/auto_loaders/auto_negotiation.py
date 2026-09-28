@@ -11,6 +11,7 @@ from inference_models.errors import (
     AssumptionError,
     InvalidRequestedBatchSizeError,
     ModelPackageNegotiationError,
+    ModelPackagePolicyError,
     NoModelPackagesAvailableError,
     UnknownBackendTypeError,
     UnknownQuantizationError,
@@ -74,6 +75,7 @@ def negotiate_model_packages(
     trt_engine_host_code_allowed: bool = True,
     nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
+    validate_model_package: bool = False,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
         "The following model packages were exposed by weights provider:",
@@ -100,6 +102,30 @@ def negotiate_model_packages(
                 f"source and cannot be loaded while `allow_untrusted_packages=False`.",
                 help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
+        if validate_model_package:
+            eligible_packages = [selected_package]
+            if requested_backends is not None:
+                eligible_packages, _ = filter_model_packages_by_requested_backend(
+                    model_packages=eligible_packages,
+                    requested_backends=requested_backends,
+                    verbose=verbose,
+                )
+            if eligible_packages:
+                eligible_packages, _ = (
+                    filter_model_packages_matching_runtime_environment(
+                        model_packages=eligible_packages,
+                        device=device,
+                        onnx_execution_providers=onnx_execution_providers,
+                        trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+                        verbose=verbose,
+                    )
+                )
+            if not eligible_packages:
+                raise ModelPackagePolicyError(
+                    message=f"Requested model package `{requested_model_package_id}` is not available "
+                    f"under the allowed backends and runtime environment.",
+                    help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
+                )
         return [selected_package]
     model_packages, discarded_packages = remove_packages_not_matching_implementation(
         model_architecture=model_architecture,
@@ -479,7 +505,7 @@ def model_package_matches_batch_size_request(
 
 def filter_model_packages_matching_runtime_environment(
     model_packages: List[ModelPackageMetadata],
-    device: torch.device,
+    device: Optional[torch.device],
     onnx_execution_providers: Optional[List[Union[str, tuple]]],
     trt_engine_host_code_allowed: bool,
     verbose: bool = False,

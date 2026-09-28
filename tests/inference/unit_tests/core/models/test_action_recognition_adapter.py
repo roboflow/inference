@@ -383,8 +383,15 @@ def test_action_loader_preserves_package_selection_when_wrapping_a_reasoner(sele
     )
     reasoner = SimpleNamespace(resolved_model=resolved)
     wrapped = _FakeModel(responses=[])
+
+    def from_pretrained(model_id_or_path, validate_model_package=False, **kwargs):
+        return reasoner
+
     with patch.object(
-        adapters.AutoModel, "from_pretrained", return_value=reasoner
+        adapters.AutoModel,
+        "from_pretrained",
+        autospec=from_pretrained,
+        return_value=reasoner,
     ) as load, patch.object(
         adapters, "_as_action_recognition_model", return_value=wrapped
     ):
