@@ -18,6 +18,9 @@ from roboflow_workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    ROBOFLOW_INTERNAL_ENDPOINT_ONLY,
+)
 from roboflow_workflows.environment import (
     API_BASE_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -37,15 +40,21 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.offline import ensure_builtin_remote_execution_allowed
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.prototypes.platform_client import (
     OFFLINE_PLATFORM_CLIENT,
@@ -115,8 +124,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         return [
             RuntimeRestriction(
+                code="roboflow_internal_endpoint_only",
                 severity=Severity.HARD,
                 note=(
                     "Seg Preview calls the Roboflow-internal "
@@ -137,6 +152,27 @@ class BlockManifest(WorkflowBlockManifest):
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
         """This block requires internet access to the remote inference proxy."""
         return AirGappedAvailability(available=False, reason="requires_internet")
+
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        # Roboflow-internal proxy endpoint: the served model is chosen server side
+        # and is never named in the manifest.
+        return None
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[ROBOFLOW_INTERNAL_ENDPOINT_ONLY],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegPreviewBlockV1(WorkflowBlock):

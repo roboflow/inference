@@ -122,10 +122,11 @@ def test_factory_logs_construction_failures_before_falling_back(
     producer_class_mock,
     machine_mock,
     system_mock,
-    caplog,
+    inference_caplog,
 ) -> None:
     # given - the probe passes but the producer constructor raises; without a
     # log line the caller-side fallback to cv2 is undiagnosable
+    caplog = inference_caplog
     with caplog.at_level("WARNING"):
         producer = build_hw_producer("sample.mp4")
 

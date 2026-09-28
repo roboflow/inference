@@ -6,6 +6,11 @@ from roboflow_workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
 from roboflow_workflows.execution_engine.entities.base import InputType, JsonField
+from roboflow_workflows.execution_engine.entities.workload import (
+    DeclarationDomain,
+    declaration_unavailable_problem,
+    normalize_declaration,
+)
 from roboflow_workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     ExecutionGraphNode,
@@ -14,6 +19,8 @@ from roboflow_workflows.execution_engine.v1.compiler.entities import (
 from roboflow_workflows.prototypes.block import DependentResource, WorkflowBlockManifest
 
 NodeTypeVar = TypeVar("NodeTypeVar", bound=ExecutionGraphNode)
+
+RESOURCES_DECLARATION: DeclarationDomain = "resources"
 
 
 def get_input_parameters_selectors(inputs: List[InputType]) -> Set[str]:
@@ -159,9 +166,29 @@ def node_as(
 def deduce_blocks_dependencies(
     compiled_workflow: CompiledWorkflow,
 ) -> List[DependentResource]:
+    """Collect the resources every step declares, for runtime pre-loading.
+
+    Each step's ``discover_dependent_resources()`` answer goes through
+    ``normalize_declaration()``, so a legacy list, ``None`` and a
+    ``Discovery[DependentResource]`` all reduce to their known items. An
+    incomplete discovery still contributes the items it knows. The declared
+    ``DependentResource`` objects are passed on as they are, keeping their
+    in-process aids (model id resolvers, registration kwargs, preloadability).
+
+    Args:
+        compiled_workflow: The compiled workflow whose steps are inspected.
+
+    Returns:
+        The known dependent resources of all steps, in step order.
+    """
     dependencies = []
     for step_manifest in compiled_workflow.workflow_definition.steps:
-        declared_dependencies = step_manifest.discover_dependent_resources()
-        if declared_dependencies:
-            dependencies.extend(declared_dependencies)
+        declared_dependencies = normalize_declaration(
+            step_manifest.discover_dependent_resources(),
+            declaration_unavailable_problem(
+                node_id=f"$steps.{step_manifest.name}",
+                declaration=RESOURCES_DECLARATION,
+            ),
+        )
+        dependencies.extend(declared_dependencies.items)
     return dependencies

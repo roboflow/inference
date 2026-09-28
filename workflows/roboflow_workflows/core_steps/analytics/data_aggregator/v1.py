@@ -11,6 +11,9 @@ from roboflow_workflows.core_steps.common.query_language.entities.operations imp
 from roboflow_workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
@@ -19,13 +22,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
-    RuntimeRestriction,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -238,6 +247,21 @@ class BlockManifest(WorkflowBlockManifest):
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DATA_AGGREGATION, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 INTERVAL_UNIT_TO_SECONDS = {

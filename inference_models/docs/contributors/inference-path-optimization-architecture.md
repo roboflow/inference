@@ -150,9 +150,10 @@ log messages.
 
 ## Model-path integrations
 
-- [RF-DETR TensorRT](inference-path-optimization-architectures/rfdetr.md) is the base
-  example. It uses five independently selectable stage categories and currently
-  provides optimized preprocessing and postprocessing implementations.
+- [RF-DETR object detection](inference-path-optimization-architectures/rfdetr.md)
+  uses five independently selectable stage categories on TensorRT, Torch and ONNX.
+  All three share preprocessing implementations; TensorRT additionally provides
+  optimized postprocessing.
 
 Model-path-specific defaults, environment configuration, request orchestration,
 implementation inventory, and current limitations belong in the corresponding

@@ -274,8 +274,9 @@ def test_non_ascii_sqlstate_is_not_exposed(connect):
 def test_serverless_manifest_contract():
     from roboflow_workflows.prototypes.block import Runtime, Severity
 
-    assert not any(
-        restriction.severity == Severity.HARD
+    assert any(
+        restriction.code == "unavailable_on_hosted_platform"
+        and restriction.severity == Severity.HARD
         and Runtime.HOSTED_SERVERLESS in restriction.applies_to_runtimes
         for restriction in v1.BlockManifest.get_restrictions()
     )

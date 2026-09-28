@@ -5,6 +5,7 @@ from typing import List, get_args
 from unittest.mock import patch
 
 import pytest
+import roboflow_workflows.environment as workflows_environment
 from pydantic import ValidationError
 from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader import v1
@@ -24,10 +25,22 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1 import (
     mqtt_on_message,
     mqtt_on_subscribe,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    WorkOperation,
+    restriction_metadata_of,
+)
+from roboflow_workflows.execution_engine.introspection import blocks_loader
+from roboflow_workflows.execution_engine.introspection.workload import (
+    describe_workflow_workload,
+)
 
 CLIENT_CLASS_PATH = (
     "roboflow_workflows.enterprise_blocks.sinks.mqtt_reader.v1.mqtt.Client"
 )
+ENTERPRISE_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
+HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
+PER_REQUEST_RESTRICTION_CODE = "connection_and_state_rebuilt_per_request"
+HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
 
 
 def manifest_payload(**overrides) -> dict:
@@ -269,6 +282,200 @@ class TestManifest:
         assert MQTTReaderBlockV1.get_init_parameters() == [
             "allow_access_to_file_system"
         ]
+
+
+def by_code(restrictions) -> list:
+    return sorted(restrictions, key=lambda restriction: restriction.code)
+
+
+class TestWorkloadDeclarations:
+    def test_declares_broker_io_and_buffering_between_runs(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+
+        assert manifest.discover_work_operations() == [
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+
+    def test_declares_a_known_empty_resource_set(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+
+        # [] means "pulls no model or project"; None would mean "unknown"
+        assert manifest.discover_dependent_resources() == []
+
+    @pytest.mark.parametrize("ignore_environment_restrictions", [True, False])
+    def test_actual_restrictions_are_complete_in_both_views(
+        self, ignore_environment_restrictions
+    ):
+        manifest = BlockManifest.model_validate(manifest_payload())
+
+        discovery = manifest.get_actual_restrictions(
+            ignore_environment_restrictions=ignore_environment_restrictions
+        )
+
+        assert discovery.complete is True
+        assert discovery.unknown_reasons == []
+        assert [restriction.code for restriction in by_code(discovery.items)] == [
+            PER_REQUEST_RESTRICTION_CODE,
+            HOSTED_RESTRICTION_CODE,
+        ]
+        # the editor declaration carries the same entries, codes included
+        assert by_code(discovery.items) == by_code(BlockManifest.get_restrictions())
+
+    def test_view_switch_is_keyword_only(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+
+        with pytest.raises(TypeError):
+            manifest.get_actual_restrictions(True)
+
+    @pytest.mark.parametrize("ignore_environment_restrictions", [True, False])
+    @pytest.mark.parametrize(
+        "gcp_serverless, lambda_runtime",
+        [(False, False), (True, False), (False, True), (True, True)],
+    )
+    def test_actual_restrictions_ignore_this_host_hosted_platform_flags(
+        self,
+        monkeypatch,
+        gcp_serverless,
+        lambda_runtime,
+        ignore_environment_restrictions,
+    ):
+        # run() reads the flags its module imported; the declaration must not
+        manifest = BlockManifest.model_validate(manifest_payload())
+        baseline = manifest.get_actual_restrictions(
+            ignore_environment_restrictions=ignore_environment_restrictions
+        )
+        for module in (v1, workflows_environment):
+            for flag, value in zip(
+                HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)
+            ):
+                assert hasattr(module, flag), flag
+                monkeypatch.setattr(module, flag, value)
+
+        flipped = manifest.get_actual_restrictions(
+            ignore_environment_restrictions=ignore_environment_restrictions
+        )
+
+        assert flipped == baseline
+        assert flipped.complete is True
+
+    def test_codes_keep_the_runtime_and_input_mode_axes(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+        discovery = manifest.get_actual_restrictions(
+            ignore_environment_restrictions=True
+        )
+
+        portable = {
+            restriction.code: restriction_metadata_of(restriction)
+            for restriction in discovery.items
+        }
+
+        hosted = portable[HOSTED_RESTRICTION_CODE]
+        per_request = portable[PER_REQUEST_RESTRICTION_CODE]
+        assert hosted.severity is v1.Severity.HARD
+        assert hosted.when.runtimes == [v1.Runtime.HOSTED_SERVERLESS]
+        assert hosted.when.input_modes is None
+        assert hosted.when.step_execution_modes is None
+        # the runtime axis carries the condition; no host flag is named
+        assert hosted.when.configuration_equals == {}
+        assert per_request.severity is v1.Severity.SOFT
+        assert set(per_request.when.runtimes) == {
+            v1.Runtime.SELF_HOSTED_CPU,
+            v1.Runtime.SELF_HOSTED_GPU,
+            v1.Runtime.DEDICATED_DEPLOYMENT,
+        }
+        assert per_request.when.input_modes == [v1.RuntimeInputMode.IMAGE]
+        assert per_request.when.step_execution_modes is None
+        assert per_request.when.configuration_equals == {}
+
+    def test_mutating_returned_restrictions_does_not_leak_into_later_calls(self):
+        manifest = BlockManifest.model_validate(manifest_payload())
+        legacy = BlockManifest.get_restrictions()
+        actual = manifest.get_actual_restrictions(ignore_environment_restrictions=True)
+
+        legacy[0].applies_to_runtimes.append(v1.Runtime.SELF_HOSTED_CPU)
+        legacy[1].applies_to_input_modes.append(v1.RuntimeInputMode.VIDEO)
+        actual.items[0].applies_to_runtimes.clear()
+        legacy.pop()
+
+        later_legacy = BlockManifest.get_restrictions()
+        later_actual = manifest.get_actual_restrictions(
+            ignore_environment_restrictions=True
+        )
+        assert [restriction.applies_to_runtimes for restriction in later_legacy] == [
+            [v1.Runtime.HOSTED_SERVERLESS],
+            [
+                v1.Runtime.SELF_HOSTED_CPU,
+                v1.Runtime.SELF_HOSTED_GPU,
+                v1.Runtime.DEDICATED_DEPLOYMENT,
+            ],
+        ]
+        assert later_legacy[1].applies_to_input_modes == [v1.RuntimeInputMode.IMAGE]
+        assert later_actual.complete is True
+        assert by_code(later_actual.items) == by_code(later_legacy)
+
+    def test_legacy_editor_payload_carries_no_code(self):
+        payloads = [
+            restriction.to_dict() for restriction in BlockManifest.get_restrictions()
+        ]
+
+        notes = [payload.pop("note") for payload in payloads]
+        assert all(notes)
+        assert payloads == [
+            {
+                "severity": "hard",
+                "applies_to_runtimes": [v1.Runtime.HOSTED_SERVERLESS.value],
+            },
+            {
+                "severity": "soft",
+                "applies_to_runtimes": [
+                    v1.Runtime.SELF_HOSTED_CPU.value,
+                    v1.Runtime.SELF_HOSTED_GPU.value,
+                    v1.Runtime.DEDICATED_DEPLOYMENT.value,
+                ],
+                "applies_to_input_modes": [v1.RuntimeInputMode.IMAGE.value],
+            },
+        ]
+
+    def test_public_introspection_describes_the_step_completely(
+        self, monkeypatch, clients
+    ):
+        definition = {
+            "version": "1.0",
+            "inputs": [{"type": "WorkflowParameter", "name": "mqtt_topic"}],
+            "steps": [manifest_payload(topic="$inputs.mqtt_topic")],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "value",
+                    "selector": "$steps.reader.value",
+                }
+            ],
+        }
+        # the plugin list is read at load time: clear the caches on both sides
+        monkeypatch.setenv("WORKFLOWS_PLUGINS", ENTERPRISE_PLUGIN)
+        blocks_loader.clear_caches()
+        try:
+            description = describe_workflow_workload(definition)
+        finally:
+            blocks_loader.clear_caches()
+
+        [step] = description.steps
+        codes = [restriction.code for restriction in step.restrictions.items]
+        assert step.node_id == "$steps.reader"
+        assert step.operations.complete is True
+        assert step.operations.items == [
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.TEMPORAL_BUFFERING,
+        ]
+        assert step.restrictions.complete is True
+        assert sorted(codes) == [PER_REQUEST_RESTRICTION_CODE, HOSTED_RESTRICTION_CODE]
+        assert step.resources.complete is True
+        assert step.resources.items == []
+        assert description.summary.models.complete is True
+        assert description.summary.models.items == []
+        # compile-time facts only: no MQTT client was built
+        assert clients == []
 
 
 class TestCallbacks:
