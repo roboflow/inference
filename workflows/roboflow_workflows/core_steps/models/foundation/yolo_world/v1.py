@@ -8,6 +8,9 @@ from roboflow_workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
+from roboflow_workflows.core_steps.models.workload_presets import (
+    UNSUPPORTED_IN_TENSOR_REPRESENTATION,
+)
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -30,11 +33,17 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
     roboflow_platform_model,
 )
@@ -158,6 +167,21 @@ class BlockManifest(WorkflowBlockManifest):
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        # The tensor-native sibling of this block raises
+        # FeatureDeprecatedError: there is no inference_models path for
+        # YOLO-World.
+        return actual_restrictions_of(
+            declared=[UNSUPPORTED_IN_TENSOR_REPRESENTATION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):

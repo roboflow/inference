@@ -31,12 +31,21 @@ from roboflow_workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     VideoSessionBookkeeping,
     build_obj_id_metadata_from_boxes,
     decide_prompt_vs_track,
     extract_box_prompts,
     masks_to_sv_detections,
+)
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -55,15 +64,22 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
-from roboflow_workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-    BlockResult,
-    Runtime,
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
     RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    ModelExecutionLocation,
+    ModelRequiredAction,
+    Runtime,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
+    roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 from roboflow_workflows.prototypes.observer import (
@@ -207,15 +223,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         return [
             STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; the streaming SAM2 video model needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+            REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
         ]
 
     @classmethod
@@ -228,9 +251,60 @@ class BlockManifest(WorkflowBlockManifest):
             "sam3trackervideo",
         ]
 
-    # `discover_dependent_resources()` deliberately not implemented: this
-    # block loads its weights via AutoModel.from_pretrained, not the model
-    # manager — dependencies stay undeclared (None) for now.
+    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+        """Declare the streaming tracker model of the block's local run path.
+
+        The block supports LOCAL step execution only (its run path rejects any
+        other mode) and owns its model loading: it calls
+        `AutoModel.from_pretrained()` itself, sharing the model provider's
+        artifact cache, rather than the generic `add_model()` registration.
+        The declared dependency describes that supported execution path, so it
+        is LOCAL and kept away from the generic preloader. The configured id is
+        returned verbatim, selector included.
+
+        Returns:
+            The configured SAM2 video model.
+        """
+        return [
+            roboflow_platform_model(
+                self.model_id,
+                required_action=ModelRequiredAction.EXECUTION,
+                execution_location=ModelExecutionLocation.LOCAL,
+                preloadable=False,
+            )
+        ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.TRACKING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[
+                STATEFUL_VIDEO_ACTUAL_RESTRICTION,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):

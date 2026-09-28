@@ -309,6 +309,9 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
         # order preserved, not sorted
         ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker-2:1883", "broker-1"]),
         ("LAMBDA", True),
+        # every mode env.py accepts passes the standalone validation
+        ("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"),
+        ("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"),
     ],
 )
 def test_server_configuration_preserves_new_settings(monkeypatch, name, value):
@@ -368,7 +371,9 @@ def test_importing_inference_core_installs_before_any_workflows_module_loads() -
         text=True,
         env={
             **os.environ,
-            "PYTHONPATH": str(REPO_ROOT / "inference_models"),
+            "PYTHONPATH": os.pathsep.join(
+                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+            ),
             "ENABLE_TENSOR_DATA_REPRESENTATION": "True",
             "USE_INFERENCE_MODELS": "True",
         },

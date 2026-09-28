@@ -5,10 +5,10 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.container_adapter import (
-    ensure_container_runtime_is_running,
-    stop_inference_containers,
     CONTAINER_RUNTIME_PODMAN,
     detect_container_runtime,
+    ensure_container_runtime_is_running,
+    stop_inference_containers,
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
 

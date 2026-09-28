@@ -1,31 +1,50 @@
 import json
+import logging
 import socket
 from collections import deque
 from datetime import datetime
 from functools import partial
-from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, Tuple, Union
 
 import cv2
 import numpy as np
 import supervision as sv
 from supervision.annotators.base import BaseAnnotator
 
-from inference.core import logger
-from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import SinkHandler
+from inference.core.interfaces.stream.support.images import (
+    create_tiles,
+    letterbox_image,
+)
 from inference.core.interfaces.stream.utils import (
     materialise_video_frame_for_sink,
     wrap_in_list,
 )
-from inference.core.utils.drawing import create_tiles
-from inference.core.utils.preprocess import letterbox_image
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BBOX_ANNOTATOR = sv.BoxAnnotator()
 DEFAULT_LABEL_ANNOTATOR = sv.LabelAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
 ImageWithSourceID = Tuple[Optional[int], np.ndarray]
+
+
+class ActiveLearningBatchRegistrar(Protocol):
+    """What `active_learning_sink` needs from an Active Learning middleware.
+
+    The host supplies the middleware (in `inference`, an
+    `ActiveLearningMiddleware`); the sink only registers batches with it.
+    """
+
+    def register_batch(
+        self,
+        inference_inputs: List[Any],
+        predictions: List[dict],
+        prediction_type: str,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None: ...
 
 
 def display_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
@@ -375,7 +394,7 @@ def multi_sink(
 def active_learning_sink(
     predictions: Union[dict, List[Optional[dict]]],
     video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
-    active_learning_middleware: ActiveLearningMiddleware,
+    active_learning_middleware: ActiveLearningBatchRegistrar,
     model_type: str,
     disable_preproc_auto_orient: bool = False,
 ) -> None:
