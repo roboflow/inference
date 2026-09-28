@@ -6,6 +6,11 @@ from packaging import version as packaging_version
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 
+# Must be installed before any import of inference.core.interfaces.stream.environment.
+from inference.core.interfaces.streams_configuration import (
+    install_streams_configuration,
+)
+
 # Hand the Workflows module its configuration before anything can READ it.
 # The invariant: `install_workflows_configuration()` runs before any import
 # of `inference.core.workflows.environment` (the constants facade) or any
@@ -37,6 +42,7 @@ def _resolve_workflows_image_codec():
 
 
 install_workflows_configuration()
+install_streams_configuration()
 # Direct WorkflowImageData callers need the same guarded loader as the server.
 # Resolve it on first use so startup does not import the server image utilities
 # and callers can still bind an explicit codec before loading an image.

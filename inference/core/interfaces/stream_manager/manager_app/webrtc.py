@@ -19,32 +19,31 @@ from aiortc.contrib.media import MediaRelay, MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack, RTCRtpReceiver
 from av import VideoFrame
 from av import logging as av_logging
+from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
-from inference.core import logger
-from inference.core.env import (
-    DEBUG_AIORTC_QUEUES,
-    DEBUG_WEBRTC_PROCESSING_LATENCY,
-    OFFLINE_MODE,
-)
-from inference.core.exceptions import WebRTCConfigurationError
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     StatusUpdate,
     UpdateSeverity,
     VideoFrameProducer,
 )
-from inference.core.interfaces.stream.inference_pipeline import (
-    INFERENCE_THREAD_FINISHED_EVENT,
+from inference.core.interfaces.stream.environment import (
+    DEBUG_AIORTC_QUEUES,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
+    OFFLINE_MODE,
 )
+from inference.core.interfaces.stream.exceptions import WebRTCConfigurationError
+from inference.core.interfaces.stream.pipeline import INFERENCE_THREAD_FINISHED_EVENT
+from inference.core.interfaces.stream.support.async_queue import Queue as SyncAsyncQueue
+from inference.core.interfaces.stream.support.decorators import experimental
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
 )
-from inference.core.utils.async_utils import Queue as SyncAsyncQueue
-from inference.core.utils.function import experimental
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logger = logging.getLogger(__name__)
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 

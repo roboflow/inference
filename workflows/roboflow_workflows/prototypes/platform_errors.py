@@ -29,6 +29,24 @@ class RoboflowAPIForbiddenError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
+# A 401 response - deliberately NOT a RoboflowAPIForbiddenError (403).
+class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+# A 404 response. The doubled "Not" is the historical, client-visible name.
+class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPIConnectionError(RoboflowAPIRequestError):
+    pass
+
+
+class RoboflowAPITimeoutError(RoboflowAPIRequestError):
+    pass
+
+
 class FeatureDeprecatedError(Exception):
     """Raised when a removed/deprecated feature is invoked.
 

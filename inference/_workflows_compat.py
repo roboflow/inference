@@ -5,7 +5,7 @@ The Workflows source moved out of ``inference.core.workflows`` and
 ``roboflow_workflows`` distribution. This module keeps every OLD dotted import
 resolving to the SAME module object as the canonical name.
 
-Rules (see MOVE_WORKFLOWS_PLAN.MD Phase D):
+Rules:
 
 - One meta-path finder, registered exactly once. Detection uses a stable
   marker attribute on the finder instance so ``importlib.reload`` of this
@@ -22,19 +22,24 @@ Rules (see MOVE_WORKFLOWS_PLAN.MD Phase D):
   ``from inference.core.workflows import <child>`` succeeds when
   ``roboflow_workflows.<child>`` is already loaded. This shared-attribute
   exposure is an accepted consequence of preserving module identity and
-  monkeypatch behavior (see MOVE_WORKFLOWS_PLAN.MD Phase D). Do not add
-  proxy packages, global import hooks, attribute deletion, or caller-frame
-  tricks to hide it.
+  monkeypatch behavior. Do not add proxy packages, global import hooks,
+  attribute deletion, or caller-frame tricks to hide it.
 - ``sys.modules[legacy] is sys.modules[canonical]`` after the alias so
   module-level state, caches, monkeypatches and configuration singletons stay
   singular. The loader replaces its temporary legacy module in ``sys.modules``
   after importing the canonical module, leaving canonical metadata untouched.
 - Aliasing an inventoried ENTERPRISE module triggers ``import inference.core``
   first so the server env / configuration installation runs before any
-  enterprise sink freezes standalone security defaults (P0 bootstrap gate).
+  enterprise sink freezes standalone security defaults.
 - The empty legacy ``inference.enterprise.workflows`` root is intentionally
   absent from the map: aliasing it to the canonical root would expose new
   core APIs under an enterprise dotted path.
+- ``_HOST_EXPORTS`` restores a historical export that a host-neutral stream
+  module no longer imports itself (it must not import the ``inference``
+  server): the same finder wraps that exact module's normal loader and binds
+  the ORIGINAL host object onto it right after it executes. Keyed by exact
+  dotted name, never by prefix; the module's own source and metadata are
+  untouched.
 """
 
 from __future__ import annotations
@@ -44,7 +49,7 @@ import importlib.abc
 import importlib.machinery
 import sys
 import threading
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from inference._workflows_compat_inventory import (
     _ENTERPRISE_MODULES,
@@ -60,6 +65,13 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
     ),
     ("inference.core.workflows", "roboflow_workflows"),
 )
+
+# Historical `ActiveLearningMiddleware` import must still yield the concrete class.
+_HOST_EXPORTS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "inference.core.interfaces.stream.sinks": (
+        ("ActiveLearningMiddleware", "inference.core.active_learning.middlewares"),
+    ),
+}
 
 _FINDER_MARKER = "_roboflow_workflows_compat_finder"
 _INSTALL_LOCK = threading.RLock()
@@ -82,15 +94,10 @@ def _canonical_name(fullname: str) -> Optional[str]:
 
 
 def _bootstrap_for_enterprise(legacy_name: str) -> None:
-    # Import inference.core FIRST for any enterprise module: it wires
-    # `install_workflows_configuration()` (see inference/core/__init__.py).
-    # Without it, a direct `import inference.enterprise.workflows.enterprise_blocks.*`
-    # loads sinks that would freeze standalone defaults (permissive PostgreSQL
-    # policy, LAMBDA=False, etc.) despite restrictive server env.
+    # Import inference.core FIRST so enterprise sinks see the restrictive server env.
     if legacy_name not in _ENTERPRISE_MODULES:
         return
-    # Let importlib wait for another thread's in-progress core initialization.
-    # Presence in sys.modules alone does not mean configuration is installed.
+    # sys.modules presence isn't enough; import_module waits on any live init.
     importlib.import_module("inference.core")
 
 
@@ -109,20 +116,58 @@ class _WorkflowsCompatLoader(importlib.abc.Loader):
         sys.modules[self._legacy_name] = importlib.import_module(self._canonical_name)
 
 
+class _HostExportsLoader(importlib.abc.Loader):
+    """Run the module's own loader, then bind its historical host exports."""
+
+    def __init__(
+        self, loader: importlib.abc.Loader, exports: Tuple[Tuple[str, str], ...]
+    ) -> None:
+        self._loader = loader
+        self._exports = exports
+
+    def create_module(self, spec):  # type: ignore[override]
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module) -> None:  # type: ignore[override]
+        self._loader.exec_module(module)
+        for name, host_module in self._exports:
+            setattr(module, name, getattr(importlib.import_module(host_module), name))
+
+    def __getattr__(self, name: str):
+        # Keeps get_source/get_filename/etc answering for the real file.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._loader, name)
+
+
+def _find_spec_with_host_exports(fullname: str, path, target):
+    # Delegates to the finder that would otherwise load the module (PathFinder etc).
+    for finder in sys.meta_path:
+        if getattr(finder, _FINDER_MARKER, False):
+            continue
+        find_spec = getattr(finder, "find_spec", None)
+        if find_spec is None:
+            continue
+        spec = find_spec(fullname, path, target)
+        if spec is None:
+            continue
+        if spec.loader is not None:
+            spec.loader = _HostExportsLoader(spec.loader, _HOST_EXPORTS[fullname])
+        return spec
+    return None
+
+
 class _WorkflowsCompatFinder(importlib.abc.MetaPathFinder):
-    # Stable duck-typed marker: survives reload of this module (which would
-    # otherwise mint a new class object and make `isinstance` checks fail).
+    # Duck-typed marker: survives reload, unlike an `isinstance` check on this class.
     _roboflow_workflows_compat_finder = True
 
     def find_spec(self, fullname, path=None, target=None):  # type: ignore[override]
+        if fullname in _HOST_EXPORTS:
+            return _find_spec_with_host_exports(fullname, path, target)
         if not _under_legacy_prefix(fullname):
             return None
         if fullname not in _INVENTORY_LEGACY:
-            # Baseline gate. Raising (rather than returning None) is deliberate:
-            # `sys.modules[legacy_parent]` is the aliased canonical module, so
-            # PathFinder would happily discover a canonical subpackage under
-            # the aliased parent's `__path__` and load it under the historic
-            # dotted name we want to leave dead.
+            # Raising (not None) stops PathFinder resolving it under the aliased parent.
             raise ModuleNotFoundError(
                 f"No module named {fullname!r}",
                 name=fullname,

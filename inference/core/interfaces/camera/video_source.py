@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import time
@@ -12,17 +13,9 @@ import cv2
 import supervision as sv
 from numpy import ndarray
 
-from inference.core import logger
-from inference.core.env import (
-    DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
-    DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
-    DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
-    DEFAULT_BUFFER_SIZE,
-    DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
-    DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
-    DISABLE_GSTREAMER_VIDEO_SOURCES,
-    ENABLE_TENSOR_DATA_REPRESENTATION,
-    RUNS_ON_JETSON,
+from inference.core.interfaces.camera.buffer_strategies import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
 )
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
@@ -46,6 +39,19 @@ from inference.core.interfaces.camera.stream_error_classifier import (
     extract_stream_open_error,
     wrap_source_connection_error,
 )
+from inference.core.interfaces.stream.environment import (
+    DEFAULT_ADAPTIVE_MODE_BACKPRESSURE,
+    DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
+    DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
+    DEFAULT_BUFFER_SIZE,
+    DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
+    DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+    DISABLE_GSTREAMER_VIDEO_SOURCES,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    RUNS_ON_JETSON,
+)
+
+logger = logging.getLogger(__name__)
 
 VIDEO_SOURCE_CONTEXT = "video_source"
 VIDEO_CONSUMER_CONTEXT = "video_consumer"
@@ -97,14 +103,6 @@ RESTART_ELIGIBLE_STATES = {
 }
 
 
-class BufferFillingStrategy(str, Enum):
-    WAIT = "WAIT"
-    DROP_OLDEST = "DROP_OLDEST"
-    ADAPTIVE_DROP_OLDEST = "ADAPTIVE_DROP_OLDEST"
-    DROP_LATEST = "DROP_LATEST"
-    ADAPTIVE_DROP_LATEST = "ADAPTIVE_DROP_LATEST"
-
-
 ADAPTIVE_STRATEGIES = {
     BufferFillingStrategy.ADAPTIVE_DROP_LATEST,
     BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
@@ -113,11 +111,6 @@ DROP_OLDEST_STRATEGIES = {
     BufferFillingStrategy.DROP_OLDEST,
     BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
 }
-
-
-class BufferConsumptionStrategy(str, Enum):
-    LAZY = "LAZY"
-    EAGER = "EAGER"
 
 
 @dataclass(frozen=True)

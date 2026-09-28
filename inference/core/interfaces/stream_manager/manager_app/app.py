@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import socket
@@ -11,20 +12,24 @@ from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler, BaseServer
 from threading import Lock, Thread
 from types import FrameType
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional
 from uuid import uuid4
 
 import psutil
 
-from inference.core import logger
-from inference.core.env import (
+from inference.core.interfaces.camera.video_source import StreamState
+from inference.core.interfaces.stream.configuration import get_configuration
+from inference.core.interfaces.stream.environment import (
+    STREAM_MANAGER_HOST,
     STREAM_MANAGER_MAX_ACTIVE_PIPELINES,
     STREAM_MANAGER_MAX_RAM_MB,
+    STREAM_MANAGER_PORT,
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
+    STREAM_MANAGER_SOCKET_TIMEOUT,
 )
-from inference.core.interfaces.camera.video_source import StreamState
-from inference.core.interfaces.stream.inference_pipeline import (
-    INFERENCE_THREAD_FINISHED_EVENT,
+from inference.core.interfaces.stream.pipeline import INFERENCE_THREAD_FINISHED_EVENT
+from inference.core.interfaces.stream_manager.manager_app.bootstrap import (
+    PipelineManagerProcess,
 )
 from inference.core.interfaces.stream_manager.manager_app.communication import (
     receive_socket_data,
@@ -45,6 +50,11 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedPayloadError,
 )
+from inference.core.interfaces.stream_manager.manager_app.host import (
+    PipelineHostDescriptor,
+    import_attribute,
+    resolve_host_descriptor,
+)
 from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
     InferencePipelineManager,
 )
@@ -57,11 +67,13 @@ from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ManagedInferencePipeline:
     pipeline_id: str
-    pipeline_manager: InferencePipelineManager
+    pipeline_manager: Process
     command_queue: Queue
     responses_queue: Queue
     operation_lock: Lock
@@ -78,9 +90,22 @@ PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
 PROCESSES_TABLE_LOCK = Lock()
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
-HOST = os.getenv("STREAM_MANAGER_HOST", "127.0.0.1")
-PORT = int(os.getenv("STREAM_MANAGER_PORT", "7070"))
-SOCKET_TIMEOUT = float(os.getenv("STREAM_MANAGER_SOCKET_TIMEOUT", "5.0"))
+# STREAM_MANAGER_HOST/PORT/SOCKET_TIMEOUT have no `env.py` counterpart; resolved here.
+HOST = (
+    STREAM_MANAGER_HOST
+    if STREAM_MANAGER_HOST is not None
+    else os.getenv("STREAM_MANAGER_HOST", "127.0.0.1")
+)
+PORT = (
+    STREAM_MANAGER_PORT
+    if STREAM_MANAGER_PORT is not None
+    else int(os.getenv("STREAM_MANAGER_PORT", "7070"))
+)
+SOCKET_TIMEOUT = (
+    STREAM_MANAGER_SOCKET_TIMEOUT
+    if STREAM_MANAGER_SOCKET_TIMEOUT is not None
+    else float(os.getenv("STREAM_MANAGER_SOCKET_TIMEOUT", "5.0"))
+)
 
 
 class InferencePipelinesManagerHandler(BaseRequestHandler):
@@ -90,8 +115,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         client_address: Any,
         server: BaseServer,
         processes_table: Dict[str, ManagedInferencePipeline],
+        host_descriptor: PipelineHostDescriptor,
     ):
         self._processes_table = processes_table  # in this case it's required to set the state of class before superclass init - as it invokes ()
+        self._host_descriptor = host_descriptor
         super().__init__(request, client_address, server)
 
     def handle(self) -> None:
@@ -188,6 +215,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _initialise_pipeline(self, request_id: str, command: dict) -> None:
         managed_pipeline = get_or_spawn_pipeline_process(
             processes_table=self._processes_table,
+            host_descriptor=self._host_descriptor,
         )
         managed_pipeline.command_queue.put((request_id, command))
         response = get_response_ignoring_thrash(
@@ -210,6 +238,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _start_webrtc(self, request_id: str, command: dict):
         managed_pipeline = get_or_spawn_pipeline_process(
             processes_table=self._processes_table,
+            host_descriptor=self._host_descriptor,
         )
         managed_pipeline.command_queue.put((request_id, command))
         response = get_response_ignoring_thrash(
@@ -309,17 +338,21 @@ def get_response_ignoring_thrash(
 def execute_termination(
     signal_number: int,
     frame: FrameType,
-    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
+    processes_table: Dict[str, ManagedInferencePipeline],
 ) -> None:
     with PROCESSES_TABLE_LOCK:
         pipeline_ids = list(processes_table.keys())
         for pipeline_id in pipeline_ids:
+            managed_pipeline = processes_table[pipeline_id]
+            # SIGTERM lets the pipeline process drain its pipeline and close its host.
             logger.info(f"Terminating pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].terminate()
+            managed_pipeline.pipeline_manager.terminate()
             logger.info(f"Pipeline: {pipeline_id} terminated.")
             logger.info(f"Joining pipeline: {pipeline_id}")
-            processes_table[pipeline_id][0].join()
+            managed_pipeline.pipeline_manager.join()
             logger.info(f"Pipeline: {pipeline_id} joined.")
+            managed_pipeline.command_queue.close()
+            managed_pipeline.responses_queue.close()
         logger.info(f"Termination handler completed.")
         sys.exit(0)
 
@@ -443,6 +476,8 @@ def _get_current_process_ram_usage_mb() -> int:
 
 def get_or_spawn_pipeline_process(
     processes_table: Dict[str, ManagedInferencePipeline],
+    *,
+    host_descriptor: PipelineHostDescriptor,
 ) -> ManagedInferencePipeline:
     with PROCESSES_TABLE_LOCK:
         idle_pipelines = get_idle_pipelines_id(processes_table=processes_table)
@@ -469,8 +504,7 @@ def get_or_spawn_pipeline_process(
             )
             + _get_current_process_ram_usage_mb()
         )
-        # pipelines spawned since the last check_process_health sweep have no RAM
-        # samples yet, hence the defaults
+        # Pipelines spawned since the last health sweep have no RAM samples yet.
         highest_pipeline_ram_usage = max(
             (
                 max(managed_pipeline.ram_usage_queue, default=0)
@@ -493,21 +527,28 @@ def get_or_spawn_pipeline_process(
         new_pipeline_id = spawn_managed_pipeline_process(
             processes_table=processes_table,
             mark_as_idle=False,
+            host_descriptor=host_descriptor,
         )
         return processes_table[new_pipeline_id]
 
 
-def ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines: int) -> None:
+def ensure_idle_pipelines_warmed_up(
+    expected_warmed_up_pipelines: int,
+    *,
+    host_descriptor: PipelineHostDescriptor,
+) -> None:
     while True:
         with PROCESSES_TABLE_LOCK:
             idle_pipelines = len(get_idle_pipelines_id(processes_table=PROCESSES_TABLE))
-            # the warm pool must not push the manager past the limit that
-            # get_or_spawn_pipeline_process enforces - busy pipelines count against it too
+            # The warm pool must not push past the same limit get_or_spawn enforces.
             if (
                 idle_pipelines < expected_warmed_up_pipelines
                 and len(PROCESSES_TABLE) < STREAM_MANAGER_MAX_ACTIVE_PIPELINES
             ):
-                _ = spawn_managed_pipeline_process(processes_table=PROCESSES_TABLE)
+                _ = spawn_managed_pipeline_process(
+                    processes_table=PROCESSES_TABLE,
+                    host_descriptor=host_descriptor,
+                )
         time.sleep(5)
 
 
@@ -524,6 +565,8 @@ def get_idle_pipelines_id(
 def spawn_managed_pipeline_process(
     processes_table: Dict[str, ManagedInferencePipeline],
     mark_as_idle: bool = True,
+    *,
+    host_descriptor: PipelineHostDescriptor,
 ) -> str:
     logger.info(
         f"Spawning new managed InferencePipeline process. Idle flag: {mark_as_idle}"
@@ -531,10 +574,17 @@ def spawn_managed_pipeline_process(
     pipeline_id = str(uuid4())
     command_queue = Queue()
     responses_queue = Queue()
-    inference_pipeline_manager = InferencePipelineManager.init(
+    # Imports the pipeline runtime only after installing config; safe under any start.
+    inference_pipeline_manager = PipelineManagerProcess(
         pipeline_id=pipeline_id,
         command_queue=command_queue,
         responses_queue=responses_queue,
+        configuration=get_configuration(),
+        host_descriptor=host_descriptor,
+        manager_class=(
+            f"{InferencePipelineManager.__module__}:"
+            f"{InferencePipelineManager.__qualname__}"
+        ),
     )
     inference_pipeline_manager.start()
     processes_table[pipeline_id] = ManagedInferencePipeline(
@@ -559,7 +609,24 @@ def _get_process_memory_usage_mb(process: Process) -> int:
         return 0
 
 
-def start(expected_warmed_up_pipelines: int = 0) -> None:
+def start(
+    expected_warmed_up_pipelines: int = 0,
+    host_descriptor: Optional[PipelineHostDescriptor] = None,
+) -> None:
+    """Run the stream manager in this process until it is terminated.
+
+    Args:
+        expected_warmed_up_pipelines: Number of idle pipeline processes kept ready.
+        host_descriptor: Descriptor of the pipeline host; the default installed
+            for this process is used when `None`.
+
+    Raises:
+        PipelineHostNotConfiguredError: No descriptor was passed or installed.
+    """
+    host_descriptor = resolve_host_descriptor(host_descriptor)
+    # Fails fast on a bad descriptor; forked pipelines inherit this import.
+    import_attribute(host_descriptor.factory)
+
     signal.signal(
         signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
@@ -575,6 +642,7 @@ def start(expected_warmed_up_pipelines: int = 0) -> None:
         target=partial(
             ensure_idle_pipelines_warmed_up,
             expected_warmed_up_pipelines=expected_warmed_up_pipelines,
+            host_descriptor=host_descriptor,
         ),
         daemon=True,
     ).start()
@@ -582,7 +650,9 @@ def start(expected_warmed_up_pipelines: int = 0) -> None:
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
         handler_class=partial(
-            InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
+            InferencePipelinesManagerHandler,
+            processes_table=PROCESSES_TABLE,
+            host_descriptor=host_descriptor,
         ),
         socket_operations_timeout=SOCKET_TIMEOUT,
     ) as tcp_server:
