@@ -1,0 +1,87 @@
+name: Fast-track CI status sync
+# Companion of fast_track_ci.yml (the fast-track orchestrator).
+#
+# The orchestrator dispatches the PR test workflows on a fast-track branch and
+# writes one `fast-track-ci / <workflow>` commit status per run, from the
+# attempt it waited for. When a maintainer later re-runs one of those runs
+# (a flaky suite, a lost runner), the new attempt completes outside the
+# orchestrator and the status on the umbrella PR keeps the stale result.
+#
+# This workflow listens for completed runs of the same test workflows and,
+# for a re-run attempt of a fast-track dispatch, rewrites the status from
+# that attempt. It never runs branch code: no checkout, statuses only.
+#
+# `workflow_run` triggers only from the main-branch definition and matches
+# the listed workflow names; keep the list in sync with TEST_WORKFLOWS in
+# fast_track_ci.yml.
+
+permissions:
+  statuses: write
+
+on:
+  workflow_run:
+    workflows:
+      - Static code analysis
+      - Validate Model License Listings
+      - UNIT TESTS - inference
+      - UNIT TESTS - inference CLI
+      - UNIT TESTS - inference SDK
+      - UNIT TESTS - workflows
+      - UNIT TESTS - workflows (tensor-native)
+      - UNIT TESTS - inference-models
+      - UNIT TESTS - inference-model-manager & inference-server
+      - INTEGRATION TESTS - inference_models (CPU)
+      - INTEGRATION TESTS - workflows
+      - INTEGRATION TESTS - workflows (tensor-native)
+      - INTEGRATION & E2E TESTS - inference SDK
+    types: [completed]
+
+concurrency:
+  # One sync per completed run; attempts of the same run arrive in order.
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Refresh the fast-track-ci status from a re-run
+    # Only a re-run (attempt > 1) of a workflow_dispatch run on a fast-track
+    # branch. The first attempt is reported by the orchestrator itself.
+    if: >-
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.run_attempt > 1 &&
+      startsWith(github.event.workflow_run.head_branch, 'fast-track/post-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
+    steps:
+      - name: Rewrite the commit status from this attempt
+        run: |
+          set -euo pipefail
+          name=$(basename "$WORKFLOW_PATH" .yml)
+          context="fast-track-ci / $name"
+          # Refresh only a status the orchestrator created. A test workflow
+          # dispatched by hand on a fast-track branch, outside fast-track CI,
+          # has no status to refresh and gets none.
+          existing=$(gh api "repos/$REPO/commits/$HEAD_SHA/status" \
+            | jq --arg c "$context" '[.statuses[] | select(.context == $c)] | length')
+          if [ "$existing" = "0" ]; then
+            echo "no '$context' status on $HEAD_SHA ($HEAD_BRANCH); nothing to refresh"
+            exit 0
+          fi
+          case "$CONCLUSION" in
+            success)            state=success ;;
+            cancelled|skipped)  state=error ;;
+            *)                  state=failure ;;
+          esac
+          gh api "repos/$REPO/statuses/$HEAD_SHA" --silent \
+            -f context="$context" -f state="$state" \
+            -f description="$CONCLUSION (re-run, attempt $RUN_ATTEMPT)" -f target_url="$RUN_URL"
+          echo "$context on $HEAD_SHA -> $state ($CONCLUSION, attempt $RUN_ATTEMPT): $RUN_URL"
