@@ -169,6 +169,7 @@ class SourceFrameAccounting:
                 "dropped_by_cause": dict(self._drops),
             }
 
+
 ADAPTIVE_STRATEGIES = {
     BufferFillingStrategy.ADAPTIVE_DROP_LATEST,
     BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
