@@ -3,6 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.tensor_native import KeyPointPrediction
@@ -280,6 +285,16 @@ class BlockManifest(WorkflowBlockManifest):
             # project is ever accessed.
             return []
         return [roboflow_platform_project(project_url=self.target_project)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.IMAGE_ENCODING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class RoboflowDatasetUploadBlockV2(WorkflowBlock):

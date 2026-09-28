@@ -60,9 +60,6 @@ RUN python -m pip install \
     "torch==2.4.1" \
     "torchvision==0.19.1"
 
-# force-downgrade transformers to make the build work
-RUN python -m pip install "transformers==5.7.0"
-
 # Build Triton from source. Torch 2.4.1 on JP5.1 pairs with Triton ${TRITON_VERSION}.
 # Single-stage image: clone + wheel build share one RUN (cache-mounted src is not
 # persisted across RUN instructions). LLVM lives in a cache mount (not in the
@@ -120,6 +117,10 @@ RUN python -m pip install uv \
     && uv build --out-dir /wheels \
     && cd - \
     && python -m pip install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]"
+# Force-downgrade transformers: torch 2.4.1 cannot run transformers >= 5.10.
+# Must stay AFTER the roboflow-workflows install above - that step depends on
+# inference-models (transformers>=5.10) and re-resolves transformers upward.
+RUN python -m pip install "transformers==5.7.0"
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk

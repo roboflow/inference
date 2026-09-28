@@ -6,6 +6,9 @@ from io import TextIOWrapper
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
+from roboflow_workflows.core_steps.common.workload_presets import (
+    LOCAL_FILE_SINK_RESTRICTIONS,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.environment import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
@@ -14,13 +17,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -171,8 +180,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="writes_to_deployment_volume_not_retrievable",
                 severity=Severity.SOFT,
                 note=(
                     "Files are persisted on the deployment's volume but are "
@@ -185,6 +201,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE:
             restrictions.append(
                 RuntimeRestriction(
+                    code="local_storage_access_disabled",
                     severity=Severity.HARD,
                     note=(
                         "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
@@ -199,6 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
         else:
             restrictions.append(
                 RuntimeRestriction(
+                    code="ephemeral_container_disk_loses_writes",
                     severity=Severity.SOFT,
                     note=(
                         "Container disk is ephemeral, so files are lost when "
@@ -210,6 +228,21 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.STORAGE_WRITE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=list(LOCAL_FILE_SINK_RESTRICTIONS),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):

@@ -1,7 +1,17 @@
+from inference.core.interfaces.stream.exceptions import (
+    CannotInitialiseModelError,
+    InvalidEnvironmentVariableError,
+    MissingApiKeyError,
+    WebRTCConfigurationError,
+)
 from inference.core.workflows.prototypes.platform_errors import (
     FeatureDeprecatedError,
+    RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
     RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
 )
 
@@ -54,24 +64,8 @@ class ModelPackageNotFoundError(Exception):
     """
 
 
-class InvalidEnvironmentVariableError(Exception):
-    """Raised when an environment variable is invalid.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class InvalidMaskDecodeArgument(Exception):
     """Raised when an invalid argument is provided for mask decoding.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class MissingApiKeyError(Exception):
-    """Raised when the API key is missing.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -186,27 +180,11 @@ class ModelManagerLockAcquisitionError(RoboflowAPIRequestError):
     pass
 
 
-class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
 class PaymentRequiredError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
 class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPIConnectionError(RoboflowAPIRequestError):
-    pass
-
-
-class RoboflowAPITimeoutError(RoboflowAPIRequestError):
     pass
 
 
@@ -250,10 +228,6 @@ class ActiveLearningConfigurationError(ActiveLearningError):
     pass
 
 
-class CannotInitialiseModelError(Exception):
-    pass
-
-
 class CannotInitialiseModelDueToInputSizeError(CannotInitialiseModelError):
     pass
 
@@ -267,10 +241,6 @@ class RetryRequestError(Exception):
     @property
     def inner_error(self) -> Exception:
         return self._inner_error
-
-
-class WebRTCConfigurationError(Exception):
-    pass
 
 
 class CreditsExceededError(Exception):

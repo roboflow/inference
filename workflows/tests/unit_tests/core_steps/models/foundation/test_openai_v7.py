@@ -93,6 +93,7 @@ def _run_block(
     image: WorkflowImageData,
     model_version: str = "gpt-5.1",
     classes: Optional[List[str]] = None,
+    output_classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
 ) -> dict:
     block = OpenAIBlockV7(api_key="rf-key")
@@ -104,6 +105,7 @@ def _run_block(
             prompt=prompt,
             output_structure=None,
             classes=classes,
+            output_classes=output_classes,
             model_version=model_version,
             reasoning_effort=None,
             image_detail="auto",
@@ -123,7 +125,8 @@ def test_manifest_parsing_for_new_block_type() -> None:
         "name": "open_ai",
         "images": "$inputs.image",
         "task_type": "object-detection",
-        "classes": ["cat", "dog"],
+        "classes": ["small household feline", "domestic canine"],
+        "output_classes": ["cat", "dog"],
         "api_key": "$inputs.api_key",
     }
 
@@ -133,7 +136,36 @@ def test_manifest_parsing_for_new_block_type() -> None:
     # then
     assert result.type == "roboflow_core/open_ai@v7"
     assert result.task_type == "object-detection"
-    assert result.classes == ["cat", "dog"]
+    assert result.classes == ["small household feline", "domestic canine"]
+    assert result.output_classes == ["cat", "dog"]
+
+
+def test_manifest_rejects_misaligned_output_classes() -> None:
+    with pytest.raises(ValueError, match="same length"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["small household feline", "domestic canine"],
+                "output_classes": ["cat"],
+            }
+        )
+
+
+def test_manifest_rejects_output_classes_for_unsupported_task() -> None:
+    with pytest.raises(ValueError, match="only supported"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "classification",
+                "classes": ["cat"],
+                "output_classes": ["animal"],
+            }
+        )
 
 
 def test_describe_outputs_declares_prediction_outputs() -> None:
@@ -271,6 +303,47 @@ def test_structured_absolute_prompt_keeps_json_schema_wrapper() -> None:
     assert 'Output JSON with the key "detections"' in prompt_text
     assert "of the 2048x1024 pixel image" in prompt_text
     assert prompt["text"]["format"]["name"] == "detections"
+    label_schema = prompt["text"]["format"]["schema"]["properties"]["detections"][
+        "items"
+    ]["properties"]["label"]
+    assert label_schema == {"type": "string"}
+
+
+def test_structured_absolute_prompt_separates_descriptions_from_output_labels() -> None:
+    prompt = prepare_object_detection_prompt(
+        base64_image="base64-image",
+        classes=[
+            "Players wearing orange and players wearing black with yellow stripe",
+            "Umpire wearing bright blue",
+        ],
+        output_classes=["Player", "Umpire"],
+        image_width=2048,
+        image_height=1024,
+        model_version="gpt-6-astra",
+    )
+
+    prompt_text = prompt["input"][0]["content"][1]["text"]
+    assert "Only use these labels: Player, Umpire" in prompt_text
+    assert (
+        '"label": "Player", "description": "Players wearing orange and players '
+        'wearing black with yellow stripe"' in prompt_text
+    )
+    label_schema = prompt["text"]["format"]["schema"]["properties"]["detections"][
+        "items"
+    ]["properties"]["label"]
+    assert label_schema == {"type": "string", "enum": ["Player", "Umpire"]}
+
+    legacy_prompt = prepare_object_detection_prompt(
+        base64_image="base64-image",
+        classes=["cat", "dog"],
+        image_width=2048,
+        image_height=1024,
+        model_version="gpt-6-astra",
+    )
+    legacy_label_schema = legacy_prompt["text"]["format"]["schema"]["properties"][
+        "detections"
+    ]["items"]["properties"]["label"]
+    assert legacy_label_schema == {"type": "string"}
 
 
 def test_detection_upload_dimensions_only_apply_to_absolute_formats() -> None:
@@ -326,6 +399,40 @@ def test_run_decodes_object_detection_into_original_image_pixels(
     assert detection_class_ids(predictions) == [0]
     assert detection_class_names(predictions) == ["cat"]
     assert detection_inference_ids(predictions) == [result["inference_id"]]
+
+
+def test_run_decodes_with_stable_output_classes() -> None:
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+    raw_output = json.dumps(
+        {"detections": [{"box_2d": [512, 256, 1024, 768], "label": "Player"}]}
+    )
+
+    result = _run_block(
+        task_type="object-detection",
+        raw_output=raw_output,
+        image=image,
+        model_version="gpt-6-astra",
+        classes=["Players wearing orange and players wearing black with yellow stripe"],
+        output_classes=["Player"],
+    )
+
+    assert result["classes"] == ["Player"]
+    assert detection_class_ids(result["predictions"]) == [0]
+    assert detection_class_names(result["predictions"]) == ["Player"]
+
+
+def test_run_rejects_misaligned_dynamic_output_classes_before_inference() -> None:
+    image = _build_image(width=128, height=64)
+
+    with pytest.raises(ValueError, match="same length"):
+        _run_block(
+            task_type="object-detection",
+            raw_output=STRUCTURED_ABSOLUTE_OUTPUT,
+            image=image,
+            model_version="gpt-6-astra",
+            classes=["cat", "dog"],
+            output_classes=["animal"],
+        )
 
 
 def test_run_decodes_classification_output() -> None:
@@ -467,6 +574,27 @@ def test_instance_segmentation_prompt_enforces_polygon_schema() -> None:
         "items": {"type": "integer"},
     }
     assert "instructions" not in prompt
+
+
+def test_instance_segmentation_prompt_separates_descriptions_from_output_labels() -> (
+    None
+):
+    prompt = prepare_instance_segmentation_prompt(
+        base64_image="abc",
+        classes=["black piano keys and white piano keys"],
+        output_classes=["Piano Key"],
+        image_width=640,
+        image_height=480,
+        image_detail="high",
+    )
+
+    prompt_text = prompt["input"][0]["content"][1]["text"]
+    assert "Only use these labels: Piano Key" in prompt_text
+    assert '"description": "black piano keys and white piano keys"' in prompt_text
+    label_schema = prompt["text"]["format"]["schema"]["properties"]["segmentations"][
+        "items"
+    ]["properties"]["label"]
+    assert label_schema == {"type": "string", "enum": ["Piano Key"]}
 
 
 def test_encode_image_for_task_keeps_original_resolution_for_segmentation() -> None:

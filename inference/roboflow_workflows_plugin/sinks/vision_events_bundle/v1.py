@@ -20,6 +20,19 @@ from pydantic import (
     NonNegativeInt,
     field_validator,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+    LOCAL_FILE_SINK_RESTRICTIONS,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
+    actual_restrictions_of,
+)
 
 from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
@@ -46,10 +59,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from inference.core.workflows.prototypes.block import (
-    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -484,9 +496,16 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         restrictions = [
             COOLDOWN_HTTP_SOFT_RESTRICTION,
             RuntimeRestriction(
+                code="writes_to_deployment_volume_not_retrievable",
                 severity=Severity.SOFT,
                 note=(
                     "Bundles are persisted on the deployment's volume but are "
@@ -500,6 +519,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE:
             restrictions.append(
                 RuntimeRestriction(
+                    code="local_storage_access_disabled",
                     severity=Severity.HARD,
                     note=(
                         "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
@@ -514,6 +534,7 @@ class BlockManifest(WorkflowBlockManifest):
         else:
             restrictions.append(
                 RuntimeRestriction(
+                    code="ephemeral_container_disk_loses_writes",
                     severity=Severity.SOFT,
                     note=(
                         "Container disk is ephemeral, so bundles are lost when "
@@ -525,6 +546,39 @@ class BlockManifest(WorkflowBlockManifest):
                 )
             )
         return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.IMAGE_ENCODING, WorkOperation.STORAGE_WRITE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the cooldown state-loss caveat and the local-storage caveats.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[
+                COOLDOWN_ACTUAL_RESTRICTION,
+                *LOCAL_FILE_SINK_RESTRICTIONS,
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Writes the event bundle to the local volume; `solution` is a Vision
+        # Events use case identifier, not a project - no Roboflow model, no
+        # Roboflow project, no third-party model.
+        return []
 
 
 class VisionEventBundleSinkBlockV1(WorkflowBlock):

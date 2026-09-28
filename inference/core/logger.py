@@ -108,6 +108,19 @@ def structlog_exception_formatter(
     return event_dict
 
 
+# Workflows logs through `logging.getLogger(__name__)` under this package name.
+EXTRACTED_PACKAGE_LOGGERS = ("roboflow_workflows",)
+
+
+def _attach_to_extracted_packages(handler: logging.Handler) -> None:
+    """Mirror the "inference" logger's handler and level onto extracted packages."""
+    for name in EXTRACTED_PACKAGE_LOGGERS:
+        extracted_logger = logging.getLogger(name)
+        extracted_logger.addHandler(handler)
+        extracted_logger.setLevel(LOG_LEVEL)
+        extracted_logger.propagate = False
+
+
 if API_LOGGING_ENABLED:
 
     is_gcp_environment = GCP_SERVERLESS or DEDICATED_DEPLOYMENT_ID is not None
@@ -174,8 +187,11 @@ if API_LOGGING_ENABLED:
     )
     bounded_logger._logger.addHandler(handler)
     bounded_logger._logger.propagate = False
+    _attach_to_extracted_packages(handler)
 else:
     logger = logging.getLogger("inference")
     logger.setLevel(LOG_LEVEL)
-    logger.addHandler(RichHandler())
+    rich_handler = RichHandler()
+    logger.addHandler(rich_handler)
     logger.propagate = False
+    _attach_to_extracted_packages(rich_handler)

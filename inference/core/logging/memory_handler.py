@@ -13,6 +13,7 @@ from threading import Lock
 from typing import Any, Dict, List
 
 from inference.core.env import ENABLE_IN_MEMORY_LOGS
+from inference.core.logger import EXTRACTED_PACKAGE_LOGGERS
 
 # Global log storage
 _log_entries = deque(maxlen=1000)  # Keep last 1000 log entries
@@ -91,6 +92,16 @@ def setup_memory_logging() -> None:
     root_logger = logging.getLogger()
     if memory_handler not in root_logger.handlers:
         root_logger.addHandler(memory_handler)
+
+    # "inference" and extracted-package loggers set propagate=False, bypassing root.
+    inference_logger = logging.getLogger("inference")
+    if memory_handler not in inference_logger.handlers:
+        inference_logger.addHandler(memory_handler)
+
+    for name in EXTRACTED_PACKAGE_LOGGERS:
+        extracted_logger = logging.getLogger(name)
+        if memory_handler not in extracted_logger.handlers:
+            extracted_logger.addHandler(memory_handler)
 
     # Specifically add to uvicorn.access logger to ensure access logs are captured now
     access_logger = logging.getLogger("uvicorn.access")

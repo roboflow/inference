@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_stream_benchmark_checks:
+        description: "Run stream pipeline benchmark harness tests (manual dispatch only)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -30,10 +36,13 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+      - name: 🕰️ Fetch streams baseline commit
+        # depth-1 checkout; keep in sync with BASELINE_SHA in the streams tests.
+        run: git fetch --depth 1 origin 65ad2beaaca0825bffc2fbbe99199d3a40994324
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -56,10 +65,16 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows wheel
         run: |
           make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}/dist/roboflow_workflows-0.1.1-py3-none-any.whl[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
+        env:
+          STREAMS_REQUIRE_BASELINE_HISTORY: "1"
         run: python -m pytest tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling
+      - name: 🧪 Stream Pipeline Benchmark Harness Tests
+        if: github.event_name == 'workflow_dispatch' && inputs.run_stream_benchmark_checks
+        timeout-minutes: 10
+        run: python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py

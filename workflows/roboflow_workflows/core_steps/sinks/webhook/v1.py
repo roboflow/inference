@@ -15,6 +15,9 @@ from roboflow_workflows.core_steps.common.query_language.entities.operations imp
 from roboflow_workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
 from roboflow_workflows.environment import (
     ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
@@ -33,14 +36,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     TOP_CLASS_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from roboflow_workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
-    RuntimeRestriction,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from roboflow_workflows.utils.url_input import SSRFProtectedHTTPAdapter
 
@@ -64,15 +73,21 @@ for data exchange, notifications, or other integrations.
 
 ### Supported destinations
 
+By default (`ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=true`) requests
+are sent with plain `requests` semantics: environment proxies are honoured,
+redirects are followed, and any destination is allowed. This preserves existing
+self-hosted private-network webhooks.
+
+Set `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=false` to enable the
+hardened transport:
+
 * Only `http://` and `https://` URLs are accepted.
-* Set `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=false` to require
-  destinations to resolve exclusively to public, globally routable unicast addresses.
-  This rejects loopback, private (RFC1918), link-local (including cloud metadata
-  endpoints), CGNAT, reserved, and multicast targets.
+* Destinations must resolve exclusively to public, globally routable unicast
+  addresses. This rejects loopback, private (RFC1918), link-local (including
+  cloud metadata endpoints), CGNAT, reserved, and multicast targets.
 * HTTP redirects are rejected and reported as a failed notification; the
   `Location` header is not followed.
-* Non-global destinations are allowed by default to preserve existing self-hosted
-  private-network webhooks.
+* Environment HTTP(S) proxies are refused.
 
 ### Setting Query Parameters
 You can easily set query parameters for your request:
@@ -381,6 +396,33 @@ class BlockManifest(WorkflowBlockManifest):
     def get_restrictions(cls) -> List[RuntimeRestriction]:
         return [COOLDOWN_HTTP_SOFT_RESTRICTION]
 
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare the cooldown-timer state-loss caveat for the target deployment.
+
+        Args:
+            ignore_environment_restrictions: If True, return every declaration
+                with its condition intact (the portable view). If False,
+                evaluate configuration predicates against this host and drop
+                entries that definitively do not apply here.
+
+        Returns:
+            The step's restrictions. In the host view the discovery is
+            incomplete when a configuration predicate cannot be evaluated.
+        """
+        return actual_restrictions_of(
+            declared=[COOLDOWN_ACTUAL_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
+
 
 class WebhookSinkBlockV1(WorkflowBlock):
 
@@ -532,6 +574,7 @@ def execute_request(
 
 
 ALLOWED_METHODS = ("GET", "POST", "PUT")
+METHOD_TO_HANDLER = {"GET": requests.get, "POST": requests.post, "PUT": requests.put}
 
 
 def _execute_request(
@@ -546,6 +589,17 @@ def _execute_request(
 ) -> None:
     if method not in ALLOWED_METHODS:
         raise ValueError(f"Handler for HTTP method `{method}` not registered")
+    if ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES:
+        return _execute_request_legacy(
+            url=url,
+            method=method,
+            query_parameters=query_parameters,
+            headers=headers,
+            json_payload=json_payload,
+            form_data=form_data,
+            multi_part_encoded_files=multi_part_encoded_files,
+            timeout=timeout,
+        )
     # Reject a backslash in the raw authority before Requests normalises it.
     # `urlsplit` accepts \ in the netloc, but urllib3 later interprets it as a
     # path separator, which can smuggle a target past a scheme/host review.
@@ -569,9 +623,7 @@ def _execute_request(
     # the body (the block does not consume it), and `allow_redirects` is not
     # honoured by an adapter's `send()` so a 3xx surfaces here.
     with contextlib.closing(
-        SSRFProtectedHTTPAdapter(
-            allow_non_global_addresses=ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
-        )
+        SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
     ) as adapter:
         with contextlib.closing(
             adapter.send(
@@ -584,3 +636,27 @@ def _execute_request(
             if 300 <= response.status_code < 400:
                 raise requests.HTTPError("Webhook redirects are not allowed")
             response.raise_for_status()
+
+
+def _execute_request_legacy(
+    url: str,
+    method: Literal["GET", "POST", "PUT"],
+    query_parameters: Dict[str, Any],
+    headers: Dict[str, Any],
+    json_payload: Dict[str, Any],
+    form_data: Dict[str, Any],
+    multi_part_encoded_files: Dict[str, Any],
+    timeout: int,
+) -> None:
+    # Pre-SSRF-hardening transport, kept verbatim: plain `requests`, env proxies
+    # honoured, redirects followed, no destination validation.
+    response = METHOD_TO_HANDLER[method](
+        url,
+        params=query_parameters,
+        headers=headers,
+        json=json_payload,
+        files=multi_part_encoded_files,
+        data=form_data,
+        timeout=timeout,
+    )
+    response.raise_for_status()

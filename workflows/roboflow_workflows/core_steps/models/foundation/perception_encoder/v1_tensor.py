@@ -4,6 +4,10 @@ from typing import List, Literal, Optional, Type, Union
 import torch
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
 from roboflow_workflows.environment import (
     CORE_MODEL_PE_ENABLED,
     HOSTED_CORE_MODEL_URL,
@@ -24,14 +28,19 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     is_workflow_selector,
     roboflow_platform_model,
 )
@@ -97,8 +106,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
         restrictions = [
             RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
@@ -108,6 +123,7 @@ class BlockManifest(WorkflowBlockManifest):
         if not CORE_MODEL_PE_ENABLED:
             restrictions.append(
                 RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
                     severity=Severity.HARD,
                     note=(
                         "CORE_MODEL_PE_ENABLED=False on Roboflow Hosted Serverless: "
@@ -148,6 +164,21 @@ class BlockManifest(WorkflowBlockManifest):
                 model_registration_kwargs={"endpoint_type": CORE_MODEL_ENDPOINT_TYPE},
             )
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("CORE_MODEL_PE_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
 
 text_cache = LRUCache()

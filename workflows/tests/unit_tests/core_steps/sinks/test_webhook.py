@@ -70,6 +70,10 @@ def _install_capturing_adapter(monkeypatch, response: _FakeResponse):
             holder["adapter_closed"] = True
 
     monkeypatch.setattr(v1, "SSRFProtectedHTTPAdapter", _FakeAdapter)
+    # Adapter path only exists in hardened mode.
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
     return holder
 
 
@@ -117,9 +121,6 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
 def test_execute_request_forwards_payload_to_adapter(monkeypatch) -> None:
     response = _FakeResponse(status_code=200)
     holder = _install_capturing_adapter(monkeypatch, response)
-    monkeypatch.setattr(
-        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
-    )
 
     result = execute_request(
         url="https://public.example/webhook",
@@ -143,7 +144,7 @@ def test_execute_request_forwards_payload_to_adapter(monkeypatch) -> None:
     # steer resolution outside the validating adapter.
     assert holder["kwargs"]["proxies"] == {}
     assert holder["kwargs"]["stream"] is True
-    assert holder["allow_non_global_addresses"] is True
+    assert holder["allow_non_global_addresses"] is False
     assert response.closed is True
     assert holder["adapter_closed"] is True
 
@@ -248,6 +249,9 @@ def test_execute_request_rejects_public_hostname_that_resolves_privately(
 
 
 def test_execute_request_pins_first_dns_result_against_rebinding(monkeypatch) -> None:
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
     calls = {"n": 0}
     responses = [
         [
@@ -381,6 +385,9 @@ def test_execute_request_ignores_environment_proxies(monkeypatch) -> None:
     ],
 )
 def test_execute_request_rejects_malformed_or_non_http_urls(url, monkeypatch) -> None:
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False
+    )
     # None of these may reach a socket; if getaddrinfo or urlopen runs, fail loudly.
     monkeypatch.setattr(
         url_input.socket,
@@ -694,6 +701,49 @@ def test_sending_webhook_notification_asynchronously_in_thread_pool_executor() -
         "message": "Notification sent in the background task",
     }
     thread_pool_executor.submit.assert_called_once()
+
+
+def test_execute_request_uses_plain_requests_when_non_global_allowed(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        v1, "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", True
+    )
+    monkeypatch.setattr(
+        v1,
+        "SSRFProtectedHTTPAdapter",
+        lambda **_: (_ for _ in ()).throw(AssertionError("adapter must not run")),
+    )
+    calls = {}
+
+    def _fake_post(url, **kwargs):
+        calls["url"] = url
+        calls["kwargs"] = kwargs
+        return _FakeResponse(status_code=200)
+
+    monkeypatch.setitem(v1.METHOD_TO_HANDLER, "POST", _fake_post)
+
+    result = execute_request(
+        url="http://127.0.0.1/webhook",
+        method="POST",
+        query_parameters={"a": "b"},
+        headers={"c": "d"},
+        json_payload={"e": "f"},
+        form_data={"field": "value"},
+        multi_part_encoded_files={"file": b"data"},
+        timeout=3,
+    )
+
+    assert result == (False, "Notification sent successfully")
+    assert calls["url"] == "http://127.0.0.1/webhook"
+    assert calls["kwargs"] == {
+        "params": {"a": "b"},
+        "headers": {"c": "d"},
+        "json": {"e": "f"},
+        "files": {"file": b"data"},
+        "data": {"field": "value"},
+        "timeout": 3,
+    }
 
 
 def test_execute_request_forwards_deny_non_global_when_flag_disabled(

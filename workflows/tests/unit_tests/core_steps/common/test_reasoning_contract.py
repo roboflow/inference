@@ -13,6 +13,7 @@ from roboflow_workflows.core_steps.models.foundation.meta_vlm import v2 as meta_
 from roboflow_workflows.core_steps.models.foundation.openai import v6 as openai_v6
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v3 as qwen_vlm_v3
 from roboflow_workflows.core_steps.models.foundation.spacexai import v2 as spacexai_v2
+from roboflow_workflows.core_steps.models.foundation.spacexai import v3 as spacexai_v3
 from roboflow_workflows.core_steps.models.foundation.zai_vlm import v1 as zai_vlm_v1
 
 _LEVELS = {"model-a": ["low", "high"], "model-b": []}
@@ -69,6 +70,12 @@ BLOCK_CONTRACTS = {
         spacexai_v2.MODEL_REASONING_LEVELS,
         spacexai_v2.REASONING_EFFORT_VALUES,
         spacexai_v2.MODEL_VERSION_METADATA,
+        None,
+    ),
+    "spacexai@v3": (
+        spacexai_v3.MODEL_REASONING_LEVELS,
+        spacexai_v3.REASONING_EFFORT_VALUES,
+        spacexai_v3.MODEL_VERSION_METADATA,
         None,
     ),
     "meta_vlm@v2": (
@@ -141,6 +148,7 @@ _MANIFESTS = {
     "open_ai@v6": openai_v6.BlockManifest,
     "google_gemini@v5": gemini_v5.BlockManifest,
     "spacexai@v2": spacexai_v2.BlockManifest,
+    "spacexai@v3": spacexai_v3.BlockManifest,
     "meta_vlm@v2": meta_vlm_v2.BlockManifest,
     "qwen_vlm@v3": qwen_vlm_v3.BlockManifest,
 }
@@ -154,7 +162,7 @@ def _manifest(block_type: str, **overrides):
         "task_type": "unconstrained",
         "prompt": "describe",
     }
-    if block_type == "spacexai@v2":
+    if block_type in {"spacexai@v2", "spacexai@v3"}:
         spec["api_key"] = "$inputs.xai_api_key"
     spec.update(overrides)
     return _MANIFESTS[block_type].model_validate(spec)
@@ -166,6 +174,7 @@ def _manifest(block_type: str, **overrides):
         ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
         ("open_ai@v6", {"model_version": "gpt-4o"}),
         ("qwen_vlm@v3", {"backend": "native"}),
+        ("spacexai@v3", {"model_version": "grok-4.7", "reasoning_effort": "xhigh"}),
     ],
 )
 def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
@@ -194,6 +203,7 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
             {"model_version": "gemini-2.5-pro", "thinking_level": "low"},
         ),
         ("spacexai@v2", {"model_version": "grok-4.5", "reasoning_effort": "xhigh"}),
+        ("spacexai@v3", {"model_version": "grok-4.5", "reasoning_effort": "xhigh"}),
         (
             "meta_vlm@v2",
             {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
