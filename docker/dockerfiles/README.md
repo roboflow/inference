@@ -90,14 +90,11 @@ stages with `INFERENCE_MODELS_RFDETR_PREPROCESSOR=triton-universal-v1` and
 separate: confirm that the loaded model is native TensorRT, and verify the
 resolved plan and CUDA frame representation in the running pipeline.
 
-For opt-in qualification, `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true` exposes
-`RFDetrForObjectDetectionTRT.last_inference_diagnostics`: the most recently
-completed call's timestamp, tensor devices for each stage, and actual stage
-selections captured in the inference thread. It contains no image pixels and
-performs no tensor copies. Concurrent calls publish complete snapshots; it is a
-latest-call diagnostic, not per-stream attribution or a performance counter.
-It is disabled by default. It allocates a small metadata snapshot per completed call;
-no tensor copies does not mean zero CPU overhead.
+Stage selections and fallbacks are reported by the package's own
+`optimization_runtime_metadata`, which covers requested, effective and
+last-executed stage implementations. Note that it reports which implementation ran,
+not where each intermediate tensor lived, so it does not by itself prove that a
+call stayed on CUDA end to end.
 
 `ENABLE_RUNTIME_DIAGNOSTICS=true` (or `INFERENCE_MODELS_RUNTIME_DIAGNOSTICS=true`)
 also enables per-source frame accounting (captured, enqueued, returned and dropped
