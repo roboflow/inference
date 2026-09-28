@@ -2,6 +2,7 @@
 
 import ctypes
 import ctypes.util
+import logging
 import json
 import os
 import subprocess
@@ -11,13 +12,14 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
 from urllib.parse import unquote, urlparse
 
-from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     FrameImage,
     SourceProperties,
     VideoFrameProducer,
 )
 
+
+logger = logging.getLogger(__name__)
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
 # A live/RTSP source that yields no frame within this window is treated as

@@ -14,7 +14,6 @@ import cv2
 import supervision as sv
 from numpy import ndarray
 
-from inference.core.env import VIDEO_SOURCE_ALLOW_CPU_FALLBACK
 from inference.core.interfaces.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -51,6 +50,7 @@ from inference.core.interfaces.stream.environment import (
     DISABLE_GSTREAMER_VIDEO_SOURCES,
     ENABLE_TENSOR_DATA_REPRESENTATION,
     RUNS_ON_JETSON,
+    VIDEO_SOURCE_ALLOW_CPU_FALLBACK,
 )
 
 logger = logging.getLogger(__name__)

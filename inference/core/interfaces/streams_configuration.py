@@ -56,6 +56,7 @@ def build_configuration_from_env() -> StreamsConfiguration:
         disable_native_stderr_capture=env.DISABLE_NATIVE_STDERR_CAPTURE,
         restart_attempt_delay=env.RESTART_ATTEMPT_DELAY,
         runs_on_jetson=env.RUNS_ON_JETSON,
+        video_source_allow_cpu_fallback=env.VIDEO_SOURCE_ALLOW_CPU_FALLBACK,
         enable_frame_drop_on_video_file_rate_limiting=env.ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING,
         enable_tensor_data_representation=env.ENABLE_TENSOR_DATA_REPRESENTATION,
         enable_workflows_profiling=env.ENABLE_WORKFLOWS_PROFILING,
