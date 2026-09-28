@@ -22,6 +22,7 @@ below set specific keys to prove the same signatures track real configuration
 changes.
 """
 
+import importlib
 import inspect
 import json
 import os
@@ -74,6 +75,22 @@ _ISOLATED_ENV_KEYS = (
     "STREAM_ID",
     "ENABLE_BYTE_TRACK",
 )
+
+# Baseline public names, frozen at the SHA test_streams_decontamination.py pins.
+_INVENTORY_PATH = (
+    _PROJECT_ROOT
+    / "tests"
+    / "inference"
+    / "unit_tests"
+    / "streams_compat_inventory.json"
+)
+_INVENTORY = json.loads(_INVENTORY_PATH.read_text())
+
+# Dropped by decontamination; restoring them would re-import host modules.
+_APPROVED_REMOVALS = {
+    "inference.core.interfaces.camera.collection_policy": {"core_env"},
+    "inference.core.interfaces.stream_manager.manager_app.app": {"Tuple"},
+}
 
 
 def _redact_api_key(text: str, secret: str) -> str:
@@ -463,3 +480,66 @@ def test_stable_signature_catches_callback_changes() -> None:
     def after(cb=callback_b) -> None: ...
 
     assert _stable_signature(before) != _stable_signature(after)
+
+
+@pytest.mark.parametrize("entry", _INVENTORY["modules"], ids=lambda e: e["module"])
+def test_every_baseline_public_name_resolves_at_its_historical_path(
+    entry: dict, stub_ultralytics_if_missing
+) -> None:
+    # The decontamination lint checks imports, not that historical names still resolve.
+    module = importlib.import_module(entry["module"])
+
+    expected = set(entry["public_top_level_names"]) - _APPROVED_REMOVALS.get(
+        entry["module"], set()
+    )
+    missing = sorted(name for name in expected if not hasattr(module, name))
+
+    assert not missing, f"{entry['module']} lost {missing}"
+
+
+def test_stream_session_names_resolve_at_their_historical_path() -> None:
+    # Not in the inventory (outside the three trees); its incidental names were dropped.
+    import inference.core.interfaces.stream.session as session_module
+    import inference.usage_tracking.stream_session as stream_session_module
+
+    assert hasattr(stream_session_module, "mint_stream_session_id")
+    assert hasattr(stream_session_module, "stream_session_id")
+    assert stream_session_module.stream_session_id is session_module.stream_session_id
+
+
+def test_invalid_environment_variable_error_identity_is_the_historical_object() -> None:
+    # Re-export, not a facade: both paths must yield one class.
+    from inference.core.exceptions import (
+        InvalidEnvironmentVariableError as from_exceptions,
+    )
+    from inference.core.utils.environment import (
+        InvalidEnvironmentVariableError as from_environment,
+    )
+
+    assert from_environment is from_exceptions
+
+
+def test_stream_entities_str2bool_and_safe_env_to_type_are_intentional_copies() -> None:
+    # Intentional copies: a host-neutral module must not import core.utils.
+    from inference.core.interfaces.stream.entities import (
+        safe_env_to_type as entities_safe_env_to_type,
+    )
+    from inference.core.interfaces.stream.entities import str2bool as entities_str2bool
+    from inference.core.utils.environment import (
+        safe_env_to_type as environment_safe_env_to_type,
+    )
+    from inference.core.utils.environment import str2bool as environment_str2bool
+
+    assert entities_str2bool is not environment_str2bool
+    assert entities_safe_env_to_type is not environment_safe_env_to_type
+
+
+def test_stream_sinks_create_tiles_and_letterbox_image_are_intentional_copies() -> None:
+    # Intentional copies, same reason as above.
+    from inference.core.utils.drawing import create_tiles as drawing_create_tiles
+    from inference.core.utils.preprocess import (
+        letterbox_image as preprocess_letterbox_image,
+    )
+
+    assert sinks.create_tiles is not drawing_create_tiles
+    assert sinks.letterbox_image is not preprocess_letterbox_image

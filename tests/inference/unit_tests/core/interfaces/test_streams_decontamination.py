@@ -331,18 +331,75 @@ def test_facade_source_paths_are_exactly_the_four_facade_files() -> None:
         assert (PROJECT_ROOT / path).is_file(), path
 
 
+def _is_type_checking_guard(node: ast.If) -> bool:
+    test = node.test
+    return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+
+
+def _wildcard_import_nodes(tree: ast.AST) -> List[ast.ImportFrom]:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and any(alias.name == "*" for alias in node.names)
+    ]
+
+
+def _wildcard_imports_guarded_by_type_checking(tree: ast.AST) -> Set[ast.ImportFrom]:
+    guarded: Set[ast.ImportFrom] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and _is_type_checking_guard(node):
+            # node.body only: walking the If would also accept an else/elif branch.
+            guarded_body = ast.Module(body=node.body, type_ignores=[])
+            guarded.update(_wildcard_import_nodes(guarded_body))
+    return guarded
+
+
+def test_wildcard_import_in_type_checking_else_branch_is_not_guarded() -> None:
+    source = (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    pass\n"
+        "else:\n"
+        "    from os import *\n"
+    )
+    tree = ast.parse(source)
+
+    all_wildcard_imports = _wildcard_import_nodes(tree)
+    guarded_wildcard_imports = _wildcard_imports_guarded_by_type_checking(tree)
+
+    assert all_wildcard_imports
+    assert not guarded_wildcard_imports
+
+
+def test_wildcard_import_inside_type_checking_body_is_guarded() -> None:
+    source = (
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from os import *\n"
+    )
+    tree = ast.parse(source)
+
+    all_wildcard_imports = _wildcard_import_nodes(tree)
+    guarded_wildcard_imports = _wildcard_imports_guarded_by_type_checking(tree)
+
+    assert set(all_wildcard_imports) == guarded_wildcard_imports
+
+
 @pytest.mark.parametrize("facade_module", sorted(FACADE_MODULES))
 def test_facade_files_only_alias_their_exact_legacy_target(facade_module: str) -> None:
-    # A facade excluded from the scan must not smuggle anything else in: it
-    # may import only `sys` and its own legacy target, which it installs as
-    # its sys.modules entry.
+    # Only sys, typing (guarded wildcard) and the legacy target may be imported.
     path = PROJECT_ROOT / _source_path(facade_module)
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     target = FACADE_TARGETS[facade_module]
     target_package = target.rsplit(".", 1)[0]
 
-    assert _imported_modules(tree, path) == {"sys", target_package, target}
+    assert _imported_modules(tree, path) == {"sys", "typing", target_package, target}
     assert "sys.modules[__name__] = _implementation" in ast.unparse(tree)
+
+    # The wildcard import must exist and only ever sit under TYPE_CHECKING.
+    all_wildcard_imports = _wildcard_import_nodes(tree)
+    guarded_wildcard_imports = _wildcard_imports_guarded_by_type_checking(tree)
+    assert all_wildcard_imports, "expected a TYPE_CHECKING-guarded wildcard import"
+    assert set(all_wildcard_imports) == guarded_wildcard_imports
 
 
 @pytest.mark.parametrize("facade_module", sorted(FACADE_MODULES))
