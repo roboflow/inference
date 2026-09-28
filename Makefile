@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts create_workflows_wheel create_models_wheel create_isolation_wheels
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_frame_flow_wheel create_models_wheel create_isolation_wheels
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -46,6 +46,11 @@ create_workflows_wheel: download_fonts
 	which uv || pip install uv
 	cd workflows && uv lock --check
 	cd workflows && uv build --out-dir ../dist
+
+create_frame_flow_wheel:
+	which uv || pip install uv
+	cd frame_flow && uv lock --check
+	cd frame_flow && uv build --out-dir ../dist
 
 create_models_wheel:
 	which uv || pip install uv
@@ -98,4 +103,4 @@ create_inference_cli_whl:
 
 
 upload_wheels:
-	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl),$(wildcard dist/*.whl))
+	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/frame_flow-*.whl),$(wildcard dist/*.whl))

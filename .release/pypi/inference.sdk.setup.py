@@ -60,6 +60,8 @@ setuptools.setup(
             "development.*",
             "inference_models",
             "inference_models.*",
+            "frame_flow",
+            "frame_flow.*",
             "roboflow_workflows",
             "roboflow_workflows.*",
             "workflows",

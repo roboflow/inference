@@ -33,6 +33,8 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "frame_flow",
+            "frame_flow.*",
             "roboflow_workflows",
             "roboflow_workflows.*",
             "workflows",
