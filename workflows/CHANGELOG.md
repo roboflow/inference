@@ -19,6 +19,7 @@ for contributor and maintainer responsibilities.
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+- OpenAI block (`open_ai@v7`): `gpt-6.1-sol` model option (`low`-`max` reasoning effort; object detection and instance segmentation reuse the GPT-6 prompts).
 
 ## `0.2.3`
 
