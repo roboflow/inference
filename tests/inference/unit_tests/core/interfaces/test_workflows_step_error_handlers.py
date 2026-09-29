@@ -22,6 +22,7 @@ from inference.core.workflows.errors import (
     RuntimeLimitsCausedStepExecutionError,
 )
 from inference_models.errors import (
+    ModelInputError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
     ModelRetrievalError,
@@ -69,6 +70,17 @@ def test_extended_roboflow_errors_handler_when_invalid_model_id_defined() -> Non
     # when
     with pytest.raises(ClientCausedStepExecutionError) as error:
         extended_roboflow_errors_handler("some", InvalidModelIDError())
+
+    # then
+    assert error.value.status_code == 400
+
+
+def test_extended_roboflow_errors_handler_when_model_input_error_occurs() -> None:
+    # when
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler(
+            "some", ModelInputError(message="text too long for context length 77")
+        )
 
     # then
     assert error.value.status_code == 400

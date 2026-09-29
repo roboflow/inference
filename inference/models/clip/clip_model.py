@@ -33,6 +33,7 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
 from inference.usage_tracking.collector import usage_collector
+from inference_models.errors import ModelInputError
 
 
 class Clip(OnnxRoboflowCoreModel):
@@ -271,7 +272,14 @@ class Clip(OnnxRoboflowCoreModel):
         for texts_batch in create_batches(
             sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
         ):
-            tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
+            try:
+                tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
+            except RuntimeError as error:
+                # raised when a text exceeds the context length - client input problem
+                raise ModelInputError(
+                    message="Text input is too long for the model context length. "
+                    "Shorten the text and retry."
+                ) from error
             onnx_input_text = {
                 self.textual_onnx_session.get_inputs()[0].name: tokenized_batch
             }
