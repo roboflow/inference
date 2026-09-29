@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 import numpy as np
 import requests
-from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.environment import (
@@ -43,6 +42,7 @@ from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
 from roboflow_workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowRunNotSupportedError,
 )
+from roboflow_workflows.prototypes.background_tasks import BackgroundTaskScheduler
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -238,7 +238,7 @@ class InnerWorkflowBlockV1(WorkflowBlock):
     def __init__(
         self,
         api_key: Optional[str],
-        background_tasks: Optional[BackgroundTasks],
+        background_tasks: Optional[BackgroundTaskScheduler],
         thread_pool_executor: Optional[ThreadPoolExecutor],
         inner_workflow_remote_target: str,
         disable_sinks: bool = False,

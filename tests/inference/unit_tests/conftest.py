@@ -141,6 +141,7 @@ _ULTRALYTICS_DEPENDENT_MODULES = (
     "inference.models.yolo_world",
     "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
     "inference.core.interfaces.stream.model_handlers.yolo_world",
+    "streamvision.stream.model_handlers.yolo_world",
 )
 
 

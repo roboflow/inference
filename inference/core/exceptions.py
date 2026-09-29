@@ -1,10 +1,4 @@
-from inference.core.interfaces.stream.exceptions import (
-    CannotInitialiseModelError,
-    InvalidEnvironmentVariableError,
-    MissingApiKeyError,
-    WebRTCConfigurationError,
-)
-from inference.core.workflows.prototypes.platform_errors import (
+from roboflow_workflows.prototypes.platform_errors import (
     FeatureDeprecatedError,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
@@ -13,6 +7,12 @@ from inference.core.workflows.prototypes.platform_errors import (
     RoboflowAPIRequestError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+)
+from streamvision.stream.exceptions import (
+    CannotInitialiseModelError,
+    InvalidEnvironmentVariableError,
+    MissingApiKeyError,
+    WebRTCConfigurationError,
 )
 
 

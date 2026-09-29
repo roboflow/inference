@@ -391,7 +391,7 @@ def test_serialisers_import_no_http_modules() -> None:
 
     assert imported == {
         "typing",
-        "inference.core.interfaces.stream",
+        "streamvision.stream",
         "roboflow_workflows.core_steps.common.serializers",
         "roboflow_workflows.core_steps.common.serializers_tensor",
     }

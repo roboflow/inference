@@ -92,11 +92,60 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
 from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
     InferencePipelineManager,
 )
-from tests.inference.unit_tests.core.interfaces.stream_manager.api.test_stream_manager_client import (
-    DummyStreamWriter,
-    assembly_socket_reader,
-    assert_correct_command_sent,
-)
+
+
+# Copied from stream_vision's test_stream_manager_client.py; no cross-tree test import.
+class DummyStreamReader:
+    def __init__(self, read_buffer_content: bytes):
+        self._read_buffer_content = read_buffer_content
+
+    async def read(self, n: int = -1) -> bytes:
+        if n == -1:
+            n = len(self._read_buffer_content)
+        to_return = self._read_buffer_content[:n]
+        self._read_buffer_content = self._read_buffer_content[n:]
+        return to_return
+
+
+class DummyStreamWriter:
+    def __init__(self, operation_delay: float = 0.0):
+        self._write_buffer_content = b""
+        self._operation_delay = operation_delay
+
+    def get_content(self) -> bytes:
+        return self._write_buffer_content
+
+    def write(self, payload: bytes) -> None:
+        self._write_buffer_content += payload
+
+    async def drain(self) -> None:
+        await asyncio.sleep(self._operation_delay)
+
+    def close(self) -> None:
+        pass
+
+    async def wait_closed(self) -> None:
+        await asyncio.sleep(self._operation_delay)
+
+
+def assembly_socket_reader(message: dict, header_size: int) -> DummyStreamReader:
+    serialised = json.dumps(message).encode("utf-8")
+    response_payload = (
+        len(serialised).to_bytes(length=header_size, byteorder="big") + serialised
+    )
+    return DummyStreamReader(read_buffer_content=response_payload)
+
+
+def assert_correct_command_sent(
+    writer: DummyStreamWriter, command: dict, header_size: int, message: str
+) -> None:
+    serialised_command = json.dumps(command).encode("utf-8")
+    payload = (
+        len(serialised_command).to_bytes(length=header_size, byteorder="big")
+        + serialised_command
+    )
+    assert writer.get_content() == payload, message
+
 
 # Enum wire vocabulary
 

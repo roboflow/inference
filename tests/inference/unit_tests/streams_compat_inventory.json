@@ -12,7 +12,7 @@
       "module": "inference.core.interfaces.camera",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera",
+      "expected_canonical_name": "streamvision.camera",
       "public_top_level_names": []
     },
     {
@@ -20,7 +20,7 @@
       "module": "inference.core.interfaces.camera.camera",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.camera",
+      "expected_canonical_name": "streamvision.camera.camera",
       "public_top_level_names": [
         "Image",
         "Thread",
@@ -36,7 +36,7 @@
       "module": "inference.core.interfaces.camera.collection_policy",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.collection_policy",
+      "expected_canonical_name": "streamvision.camera.collection_policy",
       "public_top_level_names": [
         "ARRIVAL_PERIOD_SAMPLE_WINDOW",
         "AdaptiveWindowController",
@@ -76,7 +76,7 @@
       "module": "inference.core.interfaces.camera.dgpu_producer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.dgpu_producer",
+      "expected_canonical_name": "streamvision.camera.dgpu_producer",
       "public_top_level_names": [
         "Dict",
         "FrameImage",
@@ -93,7 +93,7 @@
       "module": "inference.core.interfaces.camera.discoverability",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.discoverability",
+      "expected_canonical_name": "streamvision.camera.discoverability",
       "public_top_level_names": [
         "DGPU",
         "Dict",
@@ -121,7 +121,7 @@
       "module": "inference.core.interfaces.camera.entities",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.entities",
+      "expected_canonical_name": "streamvision.camera.entities",
       "public_top_level_names": [
         "Callable",
         "Dict",
@@ -150,7 +150,7 @@
       "module": "inference.core.interfaces.camera.exceptions",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.exceptions",
+      "expected_canonical_name": "streamvision.camera.exceptions",
       "public_top_level_names": [
         "EndOfStreamError",
         "SourceConnectionError",
@@ -163,7 +163,7 @@
       "module": "inference.core.interfaces.camera.gstreamer_cuda_producer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.gstreamer_cuda_producer",
+      "expected_canonical_name": "streamvision.camera.gstreamer_cuda_producer",
       "public_top_level_names": [
         "Dict",
         "FrameImage",
@@ -193,7 +193,7 @@
       "module": "inference.core.interfaces.camera.gstreamer_cuda_tensor_bridge",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.gstreamer_cuda_tensor_bridge",
+      "expected_canonical_name": "streamvision.camera.gstreamer_cuda_tensor_bridge",
       "public_top_level_names": [
         "Dict",
         "GstreamerCudaFrameInfo",
@@ -213,7 +213,7 @@
       "module": "inference.core.interfaces.camera.gstreamer_rtsp_pipeline",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.gstreamer_rtsp_pipeline",
+      "expected_canonical_name": "streamvision.camera.gstreamer_rtsp_pipeline",
       "public_top_level_names": [
         "Iterable",
         "RTSP_LATENCY_ENV_VAR",
@@ -238,7 +238,7 @@
       "module": "inference.core.interfaces.camera.gstreamer_rtsp_producer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.gstreamer_rtsp_producer",
+      "expected_canonical_name": "streamvision.camera.gstreamer_rtsp_producer",
       "public_top_level_names": [
         "GStreamerRtspVideoFrameProducer",
         "gstreamer_rtsp_capture_available",
@@ -250,7 +250,7 @@
       "module": "inference.core.interfaces.camera.jetson_producer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.jetson_producer",
+      "expected_canonical_name": "streamvision.camera.jetson_producer",
       "public_top_level_names": [
         "Dict",
         "FrameImage",
@@ -281,7 +281,7 @@
       "module": "inference.core.interfaces.camera.jetson_tensor_bridge",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.jetson_tensor_bridge",
+      "expected_canonical_name": "streamvision.camera.jetson_tensor_bridge",
       "public_top_level_names": [
         "Dict",
         "JetsonFrameInfo",
@@ -301,7 +301,7 @@
       "module": "inference.core.interfaces.camera.rtsp_opencv_tls",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.rtsp_opencv_tls",
+      "expected_canonical_name": "streamvision.camera.rtsp_opencv_tls",
       "public_top_level_names": [
         "Dict",
         "GST_SSL_CA_CERTIFICATE_ENV_VAR",
@@ -325,7 +325,7 @@
       "module": "inference.core.interfaces.camera.rtsp_tls",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.rtsp_tls",
+      "expected_canonical_name": "streamvision.camera.rtsp_tls",
       "public_top_level_names": [
         "GST_SSL_CA_CERTIFICATE_ENV_VAR",
         "RTSP_TLS_VALIDATION_FLAGS_ENV_VAR",
@@ -341,7 +341,7 @@
       "module": "inference.core.interfaces.camera.source_reference_sanitizer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.source_reference_sanitizer",
+      "expected_canonical_name": "streamvision.camera.source_reference_sanitizer",
       "public_top_level_names": [
         "Optional",
         "UNPARSEABLE_SOURCE",
@@ -356,7 +356,7 @@
       "module": "inference.core.interfaces.camera.source_reference_validation",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.source_reference_validation",
+      "expected_canonical_name": "streamvision.camera.source_reference_validation",
       "public_top_level_names": [
         "List",
         "SUPPORTED_VIDEO_URL_SCHEMES",
@@ -372,7 +372,7 @@
       "module": "inference.core.interfaces.camera.stream_error_classifier",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.stream_error_classifier",
+      "expected_canonical_name": "streamvision.camera.stream_error_classifier",
       "public_top_level_names": [
         "DISABLE_NATIVE_STDERR_CAPTURE",
         "Iterator",
@@ -405,7 +405,7 @@
       "module": "inference.core.interfaces.camera.stream_error_codes",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.stream_error_codes",
+      "expected_canonical_name": "streamvision.camera.stream_error_codes",
       "public_top_level_names": [
         "Enum",
         "StreamErrorCode"
@@ -416,7 +416,7 @@
       "module": "inference.core.interfaces.camera.test_pattern_producer",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.test_pattern_producer",
+      "expected_canonical_name": "streamvision.camera.test_pattern_producer",
       "public_top_level_names": [
         "BORDER_PX",
         "COLOR_SHUFFLE_INTERVAL",
@@ -444,7 +444,7 @@
       "module": "inference.core.interfaces.camera.utils",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.utils",
+      "expected_canonical_name": "streamvision.camera.utils",
       "public_top_level_names": [
         "Callable",
         "CollectionPolicy",
@@ -492,7 +492,7 @@
       "module": "inference.core.interfaces.camera.video_source",
       "tree": "camera",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.camera.video_source",
+      "expected_canonical_name": "streamvision.camera.video_source",
       "public_top_level_names": [
         "ADAPTIVE_STRATEGIES",
         "Any",
@@ -582,7 +582,7 @@
       "module": "inference.core.interfaces.stream",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream",
+      "expected_canonical_name": "streamvision.stream",
       "public_top_level_names": []
     },
     {
@@ -590,7 +590,7 @@
       "module": "inference.core.interfaces.stream.entities",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.entities",
+      "expected_canonical_name": "streamvision.stream.entities",
       "public_top_level_names": [
         "Any",
         "AnyPrediction",
@@ -727,7 +727,7 @@
       "module": "inference.core.interfaces.stream.model_handlers",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.model_handlers",
+      "expected_canonical_name": "streamvision.stream.model_handlers",
       "public_top_level_names": []
     },
     {
@@ -751,7 +751,7 @@
       "module": "inference.core.interfaces.stream.model_handlers.workflows",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.model_handlers.workflows",
+      "expected_canonical_name": "streamvision.stream.model_handlers.workflows",
       "public_top_level_names": [
         "Any",
         "Dict",
@@ -798,7 +798,7 @@
       "module": "inference.core.interfaces.stream.sinks",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.sinks",
+      "expected_canonical_name": "streamvision.stream.sinks",
       "public_top_level_names": [
         "ActiveLearningMiddleware",
         "BaseAnnotator",
@@ -886,7 +886,7 @@
       "module": "inference.core.interfaces.stream.utils",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.utils",
+      "expected_canonical_name": "streamvision.stream.utils",
       "public_top_level_names": [
         "BufferConsumptionStrategy",
         "BufferFillingStrategy",
@@ -926,7 +926,7 @@
       "module": "inference.core.interfaces.stream.watchdog",
       "tree": "stream",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream.watchdog",
+      "expected_canonical_name": "streamvision.stream.watchdog",
       "public_top_level_names": [
         "ABC",
         "Any",
@@ -972,7 +972,7 @@
       "module": "inference.core.interfaces.stream_manager",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager",
+      "expected_canonical_name": "streamvision.stream_manager",
       "public_top_level_names": []
     },
     {
@@ -980,7 +980,7 @@
       "module": "inference.core.interfaces.stream_manager.api",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.api",
+      "expected_canonical_name": "streamvision.stream_manager.api",
       "public_top_level_names": []
     },
     {
@@ -988,7 +988,7 @@
       "module": "inference.core.interfaces.stream_manager.api.entities",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.api.entities",
+      "expected_canonical_name": "streamvision.stream_manager.api.entities",
       "public_top_level_names": [
         "BaseModel",
         "CommandContext",
@@ -1011,7 +1011,7 @@
       "module": "inference.core.interfaces.stream_manager.api.errors",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.api.errors",
+      "expected_canonical_name": "streamvision.stream_manager.api.errors",
       "public_top_level_names": [
         "ConnectivityError",
         "Optional",
@@ -1028,7 +1028,7 @@
       "module": "inference.core.interfaces.stream_manager.api.stream_manager_client",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.api.stream_manager_client",
+      "expected_canonical_name": "streamvision.stream_manager.api.stream_manager_client",
       "public_top_level_names": [
         "BUFFER_SIZE",
         "CommandContext",
@@ -1089,7 +1089,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app",
       "public_top_level_names": []
     },
     {
@@ -1097,7 +1097,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.app",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.app",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.app",
       "public_top_level_names": [
         "Any",
         "BaseRequestHandler",
@@ -1174,7 +1174,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.communication",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.communication",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.communication",
       "public_top_level_names": [
         "ErrorType",
         "MalformedHeaderError",
@@ -1194,7 +1194,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.entities",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.entities",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.entities",
       "public_top_level_names": [
         "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
         "Any",
@@ -1244,7 +1244,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.errors",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.errors",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.errors",
       "public_top_level_names": [
         "CommunicationProtocolError",
         "MalformedHeaderError",
@@ -1259,7 +1259,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.inference_pipeline_manager",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.inference_pipeline_manager",
       "public_top_level_names": [
         "BasePipelineWatchDog",
         "CommandType",
@@ -1322,7 +1322,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.serialisation",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.serialisation",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.serialisation",
       "public_top_level_names": [
         "Any",
         "ENCODING",
@@ -1349,7 +1349,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.tcp_server",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.tcp_server",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.tcp_server",
       "public_top_level_names": [
         "Any",
         "BaseRequestHandler",
@@ -1366,7 +1366,7 @@
       "module": "inference.core.interfaces.stream_manager.manager_app.webrtc",
       "tree": "stream_manager",
       "retained_host_exception": false,
-      "expected_canonical_name": "roboflow_streams.stream_manager.manager_app.webrtc",
+      "expected_canonical_name": "streamvision.stream_manager.manager_app.webrtc",
       "public_top_level_names": [
         "Any",
         "BasePipelineWatchDog",

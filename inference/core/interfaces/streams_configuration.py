@@ -7,7 +7,7 @@ The three stream-manager address settings have no `env.py` counterpart and are
 left unset (`None`) here on purpose: parsing `STREAM_MANAGER_PORT` /
 `STREAM_MANAGER_SOCKET_TIMEOUT` this early would run on every import of
 `inference.core` (including through `inference.core.exceptions`, ahead of
-`env.py`'s own bootstrap), and `inference.core.interfaces.stream.environment`
+`env.py`'s own bootstrap), and `streamvision.stream.environment`
 is imported far too early too - by the camera and pipeline modules, for
 settings that have nothing to do with the manager - to parse them either.
 They keep the historical timing instead: `manager_app/app.py` resolves them
@@ -16,7 +16,7 @@ import - the only place that actually needs them.
 
 `install_streams_configuration()` is called from `inference/core/__init__.py`
 after `env.py` has completed and before anything imports the constants facade
-(`inference.core.interfaces.stream.environment`). It also installs
+(`streamvision.stream.environment`). It also installs
 `LEGACY_PIPELINE_HOST_DESCRIPTOR` as the process default of the stream
 manager's pipeline host, so `manager_app.app.start()` called without a
 descriptor keeps running pipelines with the `inference` host.
@@ -25,16 +25,17 @@ descriptor keeps running pipelines with the `inference` host.
 import os
 from typing import Optional
 
-from inference.core import env
-from inference.core.interfaces.stream.configuration import (
+from streamvision.stream.configuration import (
     ModelConfigDefaults,
     StreamsConfiguration,
     configure_process,
 )
-from inference.core.interfaces.stream_manager.manager_app.host import (
+from streamvision.stream_manager.manager_app.host import (
     PipelineHostDescriptor,
     install_default_host_descriptor,
 )
+
+from inference.core import env
 
 # Referenced by path: importing the host module here would pull in the models stack.
 LEGACY_PIPELINE_HOST_DESCRIPTOR = PipelineHostDescriptor(

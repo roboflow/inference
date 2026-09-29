@@ -1,6 +1,7 @@
 import multiprocessing
 from functools import partial
 
+from streamvision.stream_manager.manager_app.bootstrap import run_stream_manager
 from inference.core.cache import cache
 from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
@@ -10,9 +11,6 @@ from inference.core.env import (
     STREAM_API_PRELOADED_PROCESSES,
 )
 from inference.core.interfaces.http.http_api import HttpInterface
-from inference.core.interfaces.stream_manager.manager_app.bootstrap import (
-    run_stream_manager,
-)
 from inference.core.interfaces.streams_configuration import (
     LEGACY_PIPELINE_HOST_DESCRIPTOR,
     server_streams_configuration,

@@ -32,8 +32,8 @@ import pytest
 
 from inference._workflows_compat_inventory import (
     _ENTERPRISE_MODULES,
-    _INVENTORY_LEGACY,
-    _INVENTORY_PACKAGES,
+    _WORKFLOWS_INVENTORY_LEGACY,
+    _WORKFLOWS_INVENTORY_PACKAGES,
 )
 
 _INVENTORY_PATH = Path(__file__).with_name("workflows_compat_inventory.json")
@@ -51,8 +51,10 @@ def test_inventory_baseline_matches_runtime_module() -> None:
     # historic prefix; regenerating from the JSON only in isolation would
     # split the source of truth.
     from_json = {e["legacy"] for e in _INVENTORY["packages"] + _INVENTORY["modules"]}
-    assert from_json == set(_INVENTORY_LEGACY)
-    assert _INVENTORY_PACKAGES == {entry["legacy"] for entry in _INVENTORY["packages"]}
+    assert from_json == set(_WORKFLOWS_INVENTORY_LEGACY)
+    assert _WORKFLOWS_INVENTORY_PACKAGES == {
+        entry["legacy"] for entry in _INVENTORY["packages"]
+    }
     assert _ENTERPRISE_MODULES == {
         entry["legacy"]
         for entry in _INVENTORY["modules"]
@@ -143,7 +145,7 @@ def test_inventory_matches_historical_git_tree() -> None:
             f"{entry['legacy']!r}: expected canonical {expected!r}, "
             f"got {entry['canonical']!r}"
         )
-    assert historical_packages | historical_modules == set(_INVENTORY_LEGACY)
+    assert historical_packages | historical_modules == set(_WORKFLOWS_INVENTORY_LEGACY)
 
 
 def test_legacy_font_helper_exports_and_monkeypatches_work(monkeypatch, tmp_path):
