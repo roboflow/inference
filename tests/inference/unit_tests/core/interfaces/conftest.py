@@ -2,17 +2,10 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Generator, Optional
 
 import pytest
-
-
-@pytest.fixture(scope="function")
-def empty_directory() -> Generator[str, None, None]:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        yield tmp_dir
 
 
 @pytest.fixture

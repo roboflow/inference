@@ -372,7 +372,11 @@ def test_importing_inference_core_installs_before_any_workflows_module_loads() -
         env={
             **os.environ,
             "PYTHONPATH": os.pathsep.join(
-                [str(REPO_ROOT / "workflows"), str(REPO_ROOT / "inference_models")]
+                [
+                    str(REPO_ROOT / "workflows"),
+                    str(REPO_ROOT / "inference_models"),
+                    str(REPO_ROOT / "stream_vision"),
+                ]
             ),
             "ENABLE_TENSOR_DATA_REPRESENTATION": "True",
             "USE_INFERENCE_MODELS": "True",

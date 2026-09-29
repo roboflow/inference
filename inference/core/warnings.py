@@ -1,6 +1,4 @@
-from inference.core.interfaces.stream.warnings import (
-    InferenceExperimentalFeatureWarning,
-)
+from streamvision.stream.warnings import InferenceExperimentalFeatureWarning
 
 
 class InferenceDeprecationWarning(Warning):

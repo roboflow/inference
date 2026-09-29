@@ -42,12 +42,17 @@ RUN pip3 install \
 # / torchvision are already at the CUDA-pinned +cu124 wheels, satisfy
 # workflows' constraints, and pip's resolver keeps them in place.
 COPY workflows workflows
+COPY stream_vision stream_vision
 RUN pip3 install uv \
     && python3 workflows/build_scripts/download_fonts.py \
     && cd workflows \
     && uv build --out-dir /wheels \
     && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
     && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
     && rm -rf ~/.cache/pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime

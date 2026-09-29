@@ -82,7 +82,7 @@ def test_legacy_name_is_the_stream_owned_class(name: str) -> None:
     cls = getattr(stream_exceptions, name)
 
     assert getattr(core_exceptions, name) is cls
-    assert cls.__module__ == "inference.core.interfaces.stream.exceptions"
+    assert cls.__module__ == "streamvision.stream.exceptions"
 
 
 @pytest.mark.parametrize("name", PLATFORM_EXCEPTIONS)

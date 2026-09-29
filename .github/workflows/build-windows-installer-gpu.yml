@@ -265,7 +265,7 @@ jobs:
           pip install -U --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
           WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
           echo "Found GPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
+          pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/streamvision-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
           echo "--- Installed inference_gpu details ---"
           pip show inference-gpu
           

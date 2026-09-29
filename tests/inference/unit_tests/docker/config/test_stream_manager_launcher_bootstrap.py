@@ -20,7 +20,7 @@ from tests.inference.unit_tests.core.interfaces.stream_manager.manager_app.test_
     run_spawn_driver,
 )
 
-MANAGER_APP_MODULE = "inference.core.interfaces.stream_manager.manager_app.app"
+MANAGER_APP_MODULE = "streamvision.stream_manager.manager_app.app"
 
 _LAUNCHER_DRIVER = """
 import json

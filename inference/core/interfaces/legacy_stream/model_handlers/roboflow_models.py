@@ -1,8 +1,9 @@
 from typing import List
 
-from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.entities import ModelConfig
-from inference.core.interfaces.stream.utils import wrap_in_list
+from streamvision.camera.entities import VideoFrame
+from streamvision.stream.entities import ModelConfig
+from streamvision.stream.utils import wrap_in_list
+
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 
 
