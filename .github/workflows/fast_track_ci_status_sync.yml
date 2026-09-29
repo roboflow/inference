@@ -29,7 +29,6 @@ on:
       - UNIT TESTS - workflows
       - UNIT TESTS - workflows (tensor-native)
       - UNIT TESTS - inference-models
-      - UNIT TESTS - inference-model-manager & inference-server
       - INTEGRATION TESTS - inference_models (CPU)
       - INTEGRATION TESTS - workflows
       - INTEGRATION TESTS - workflows (tensor-native)
