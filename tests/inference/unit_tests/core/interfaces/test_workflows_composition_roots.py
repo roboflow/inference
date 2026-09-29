@@ -18,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SEARCH_ROOTS = (
     "inference",
-    "stream_vision",
+    "stream_vision/streamvision",
     "inference_cli",
     "development",
     "examples",
