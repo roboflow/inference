@@ -157,6 +157,11 @@ class DispatchModelManager(ModelManager):
             return responses
         return responses[0]
 
+    def supports_package_selection(
+        self, model_id: str, api_key: Optional[str], **kwargs
+    ) -> bool:
+        return False
+
     def add_model(
         self,
         model_id: str,

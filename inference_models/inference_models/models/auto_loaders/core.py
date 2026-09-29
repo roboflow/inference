@@ -1490,6 +1490,124 @@ class AutoModel:
         )
 
     @classmethod
+    def resolve_model_packages(
+        cls,
+        model_id: str,
+        *,
+        weights_provider: str = "roboflow",
+        api_key: Optional[str] = None,
+        model_package_id: Optional[str] = None,
+        backend: Optional[
+            Union[str, BackendType, List[Union[str, BackendType]]]
+        ] = None,
+        batch_size: Optional[Union[int, Tuple[int, int]]] = None,
+        quantization: Optional[
+            Union[str, Quantization, List[Union[str, Quantization]]]
+        ] = None,
+        device: Union[torch.device, str] = DEFAULT_DEVICE,
+        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+        allow_untrusted_packages: bool = False,
+        trt_engine_host_code_allowed: bool = True,
+        nms_fusion_preferences: Optional[Union[bool, dict]] = None,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        verbose: bool = False,
+    ) -> List[ResolvedModelMetadata]:
+        """Resolve eligible remote packages without loading model weights.
+
+        Each call retrieves metadata with the supplied credentials. Resolution
+        uses the same package ranking as ``from_pretrained``. Callers can try
+        candidates in order if initialization fails. Exact package IDs return
+        one candidate and must satisfy backend and runtime policy.
+
+        Args:
+            model_id: Model identifier or alias exposed by the weights provider.
+            weights_provider: Registered metadata provider.
+            api_key: Credentials for this metadata request.
+            model_package_id: Exact package identifier to resolve.
+            backend: Allowed backends.
+            batch_size: Required batch size or supported range.
+            quantization: Allowed weight precisions.
+            device: Target device used for runtime compatibility checks.
+            onnx_execution_providers: Allowed ONNX execution providers.
+            allow_untrusted_packages: Whether untrusted packages are eligible.
+            trt_engine_host_code_allowed: Whether TRT engines may execute host code.
+            nms_fusion_preferences: Constraints on fused non-maximum suppression.
+            weights_provider_extra_query_params: Extra provider query parameters.
+            weights_provider_extra_headers: Extra provider request headers.
+            verbose: Whether to print package negotiation details.
+
+        Returns:
+            Eligible package metadata in descending preference order.
+
+        Raises:
+            UnauthorizedModelAccessError: The provider rejects the credentials.
+            ForbiddenModelAccessError: The provider denies model access.
+            NoModelPackagesAvailableError: No package satisfies the constraints.
+            ModelPackagePolicyError: The pinned package violates runtime policy.
+            InvalidParameterError: The device cannot be parsed.
+        """
+        _validate_remote_model_id(model_id=model_id)
+        if OFFLINE_MODE and OFFLINE_MODE_WARM_UP:
+            raise ModelRetrievalError(
+                message="OFFLINE_MODE and OFFLINE_MODE_WARM_UP are mutually exclusive.",
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+            )
+        if OFFLINE_MODE and weights_provider == "roboflow":
+            weights_provider = ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER
+
+        api_key = _resolve_effective_api_key(api_key=api_key, provider=weights_provider)
+        if isinstance(device, str):
+            try:
+                device = torch.device(device)
+            except RuntimeError as error:
+                raise InvalidParameterError(
+                    message="Could not parse `device`; use a valid torch device such as 'cpu' or 'cuda:0'.",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
+                ) from error
+
+        metadata = get_model_from_provider(
+            provider=weights_provider,
+            model_id=model_id,
+            api_key=api_key,
+            weights_provider_extra_query_params=weights_provider_extra_query_params,
+            weights_provider_extra_headers=weights_provider_extra_headers,
+        )
+        if not isinstance(metadata.model_id, str) or not metadata.model_id.strip():
+            raise CorruptedModelPackageError(
+                message=f"Weights provider {weights_provider} returned an empty or invalid canonical model ID.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+
+        packages = negotiate_model_packages(
+            model_architecture=metadata.model_architecture,
+            task_type=metadata.task_type,
+            model_packages=metadata.model_packages,
+            requested_model_package_id=model_package_id,
+            validate_model_package=True,
+            requested_backends=backend,
+            requested_batch_size=batch_size,
+            requested_quantization=quantization,
+            device=device,
+            onnx_execution_providers=onnx_execution_providers,
+            allow_untrusted_packages=allow_untrusted_packages,
+            trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+            nms_fusion_preferences=nms_fusion_preferences,
+            verbose=verbose,
+        )
+        resolved_packages = [
+            ResolvedModelMetadata(
+                model_id=metadata.model_id,
+                model_package_id=package.package_id,
+                backend=package.backend.value,
+                quantization=(package.quantization or Quantization.UNKNOWN).value,
+            )
+            for package in packages
+        ]
+
+        return resolved_packages
+
+    @classmethod
     def from_pretrained(
         cls,
         model_id_or_path: str,

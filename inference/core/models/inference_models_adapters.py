@@ -237,6 +237,39 @@ def _get_requested_inference_models_backends(kwargs: dict) -> Union[str, List[st
     return requested_backend
 
 
+def resolve_model_packages(
+    model_id: str, api_key: Optional[str], selectors: dict, **kwargs
+):
+    """Resolve packages under this server's backend and trust policy.
+
+    Args:
+        model_id: Public model identifier or alias.
+        api_key: Credentials for the current request.
+        selectors: Optional package ID, backend, or quantization constraints.
+        **kwargs: Provider context for credit checks and internal requests.
+
+    Returns:
+        Ranked package descriptors, or None with an older library.
+    """
+    if not callable(getattr(AutoModel, "resolve_model_packages", None)):
+        return None
+    selection = dict(selectors)
+    backend = _get_requested_inference_models_backends(
+        {"backend": selection.pop("backend", None)}
+    )
+    return AutoModel.resolve_model_packages(
+        model_id=resolve_roboflow_model_alias(model_id),
+        api_key=api_key or API_KEY,
+        backend=backend,
+        allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+        weights_provider_extra_headers=get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        ),
+        **selection,
+    )
+
+
 def _supports_independent_stage_execution(pre_process) -> bool:
     """Return whether preprocessing declares the composed-execution control."""
     try:

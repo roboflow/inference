@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -34,6 +35,15 @@ def failing_package_client(monkeypatch):
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        base.ModelManager,
+        "resolve_model_packages",
+        lambda self, model_id, api_key, selectors, **kwargs: [
+            SimpleNamespace(
+                model_package_id=selectors.get("model_package_id", "package-1")
+            )
+        ],
+    )
     constructor = MagicMock()
     constructor.supports_model_package_selection = True
     registry = MagicMock()
@@ -87,9 +97,12 @@ def test_missing_package_and_cache_handle_return_same_public_error(
     ],
 )
 def test_selector_errors_do_not_mask_server_failures(
-    failing_package_client, path, selectors, error, status
+    failing_package_client, path, selectors, error, status, monkeypatch
 ):
     client, constructor = failing_package_client
+    monkeypatch.setattr(
+        base.ModelManager, "resolve_model_packages", MagicMock(side_effect=error)
+    )
     constructor.side_effect = error
     response = client.post(
         path,

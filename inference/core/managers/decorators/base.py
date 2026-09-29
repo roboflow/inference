@@ -9,6 +9,7 @@ from inference.core.env import API_KEY
 from inference.core.managers.base import (
     Model,
     ModelManager,
+    _should_resolve_model_package,
     model_load_options,
     validate_public_model_id,
 )
@@ -61,6 +62,28 @@ class ModelManagerDecorator(ModelManager):
     def content_addressed_artifact_cache(self):
         return self.model_manager.content_addressed_artifact_cache
 
+    def model_selection_lock(self, model_id):
+        return self.model_manager.model_selection_lock(model_id)
+
+    def get_model_cache_key(self, model_id):
+        return self.model_manager.get_model_cache_key(model_id)
+
+    def get_model_registry_key(self, cache_key):
+        return self.model_manager.get_model_registry_key(cache_key)
+
+    def set_automatic_model_key(self, model_id, cache_key):
+        return self.model_manager.set_automatic_model_key(model_id, cache_key)
+
+    def resolve_model_packages(self, model_id, api_key, selectors, **kwargs):
+        return self.model_manager.resolve_model_packages(
+            model_id, api_key, selectors, **kwargs
+        )
+
+    def supports_package_selection(self, model_id, api_key, **kwargs):
+        return self.model_manager.supports_package_selection(
+            model_id, api_key, **kwargs
+        )
+
     def add_model(
         self,
         model_id: str,
@@ -83,7 +106,9 @@ class ModelManagerDecorator(ModelManager):
         """
         validate_public_model_id(model_id, model_id_alias)
         cache_key = model_cache_key or model_id
-        if cache_key in self:
+        if cache_key in self and not _should_resolve_model_package(
+            model_cache_key, endpoint_type
+        ):
             self.validate_model_selection(
                 cache_key,
                 model_package_id=model_package_id,

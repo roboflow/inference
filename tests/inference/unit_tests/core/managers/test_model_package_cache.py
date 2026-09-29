@@ -68,6 +68,9 @@ def test_clip_selection_rejects_before_loading_packages(monkeypatch):
 @pytest.fixture(autouse=True)
 def enable_model_metadata(monkeypatch):
     monkeypatch.setattr(model_module, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(
+        ModelManager, "resolve_model_packages", lambda *args, **kwargs: None
+    )
 
 
 def test_package_variants_coexist_without_changing_automatic_model():

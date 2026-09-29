@@ -114,6 +114,42 @@ def package_client(monkeypatch, request):
     class PackageResponse(BaseModel):
         served_package: str
 
+    from inference_models import AutoModel
+
+    def resolve_package(
+        model_id,
+        api_key=None,
+        model_package_id=None,
+        backend=None,
+        quantization=None,
+        **kwargs
+    ):
+        if api_key == "other-workspace" and model_package_id == "engine-1":
+            from inference_models.errors import UnauthorizedModelAccessError
+
+            raise UnauthorizedModelAccessError(
+                "Package is not accessible to this workspace."
+            )
+        selected_backend = (
+            "trt"
+            if model_package_id == "engine-1"
+            or backend == "trt"
+            or quantization == "fp16"
+            else "onnx"
+        )
+        return [
+            SimpleNamespace(
+                model_id=model_id,
+                model_package_id="engine-1" if selected_backend == "trt" else "onnx-1",
+                backend=selected_backend,
+                quantization="fp16" if selected_backend == "trt" else "fp32",
+            )
+        ]
+
+    monkeypatch.setattr(
+        AutoModel, "resolve_model_packages", resolve_package, raising=False
+    )
+
     class PackageModel:
         supports_model_package_selection = True
         task_type = getattr(request, "param", "object-detection")
@@ -275,23 +311,6 @@ def test_aliased_legacy_selection_shares_v1_entry_and_can_be_removed(
     assert removed.json()["models"] == []
 
 
-def test_selected_model_handle_depends_on_server_secret(package_client, monkeypatch):
-    from inference.core.managers import model_selection
-
-    payload = {"model_id": "project/1", "backend": "trt", "api_key": "owner"}
-    first = package_client.post("/model/add", json=payload)
-    assert first.status_code == 200
-    handle = first.json()["selected_model_id"]
-    assert (
-        package_client.post("/model/add", json=payload).json()["selected_model_id"]
-        == handle
-    )
-    monkeypatch.setattr(model_selection, "_MODEL_SELECTION_SECRET", b"different-server")
-    second = package_client.post("/model/add", json=payload)
-    assert second.status_code == 200
-    assert second.json()["selected_model_id"] != handle
-
-
 def test_browser_can_read_package_selection_acknowledgment(package_client):
     response = package_client.post(
         "/model/add",
@@ -419,3 +438,177 @@ def test_selected_package_telemetry_uses_public_model_id(
     )
     assert ":package:" in selected.json()["selected_model_id"]
     assert selected.headers["X-Model-Id"] == "project/1"
+
+
+def test_equivalent_selectors_and_credentials_share_one_package(package_client):
+    handles = []
+    for selectors, key in [
+        ({"backend": "trt"}, "owner"),
+        ({"quantization": "fp16"}, "second-authorized-key"),
+        ({"model_package_id": "engine-1"}, "owner"),
+    ]:
+        response = package_client.post(
+            "/model/add", json={"model_id": "project/1", "api_key": key, **selectors}
+        )
+        assert response.status_code == 200, response.text
+        handles.append(response.json()["selected_model_id"])
+    assert len(set(handles)) == 1
+    assert len(package_client.get("/model/registry").json()["models"]) == 1
+
+
+@pytest.mark.parametrize("selected_first", [False, True])
+def test_default_and_explicit_requests_share_the_same_package(
+    package_client, selected_first
+):
+    payload = {"model_id": "project/1", "api_key": "owner"}
+    requests = [{}, {"backend": "onnx"}]
+    if selected_first:
+        requests.reverse()
+    for selection in requests:
+        response = package_client.post("/model/add", json={**payload, **selection})
+        assert response.status_code == 200, response.text
+    models = package_client.get("/model/registry").json()["models"]
+    assert len(models) == 1
+    assert models[0]["model_id"] == "project/1"
+    response = package_client.post("/model/remove", json=payload)
+    assert response.status_code == 200
+    assert response.json()["models"] == []
+
+
+def test_concurrent_equivalent_requests_load_one_package(package_client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    selections = [
+        {"backend": "trt"},
+        {"quantization": "fp16"},
+        {"model_package_id": "engine-1"},
+    ]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        responses = list(
+            executor.map(
+                lambda selection: package_client.post(
+                    "/model/add", json={"model_id": "project/1", **selection}
+                ),
+                selections,
+            )
+        )
+    assert all(response.status_code == 200 for response in responses)
+    assert len({response.json()["selected_model_id"] for response in responses}) == 1
+    assert len(package_client.get("/model/registry").json()["models"]) == 1
+
+
+@pytest.mark.parametrize("reuse_cached_fallback", [False, True])
+def test_selection_tries_next_eligible_package_after_load_failure(
+    package_client, monkeypatch, reuse_cached_fallback
+):
+    from types import SimpleNamespace
+
+    from inference.core.managers.base import ModelManager
+    from inference_models import AutoModel
+    from inference_models.errors import ModelPackageAlternativesExhaustedError
+
+    monkeypatch.setattr(
+        AutoModel,
+        "resolve_model_packages",
+        lambda **kwargs: [
+            SimpleNamespace(model_package_id="broken-onnx"),
+            SimpleNamespace(model_package_id="onnx-1"),
+        ],
+    )
+    if reuse_cached_fallback:
+        monkeypatch.setattr(
+            AutoModel,
+            "resolve_model_packages",
+            lambda **kwargs: [SimpleNamespace(model_package_id="onnx-1")],
+        )
+        assert (
+            package_client.post(
+                "/model/add", json={"model_id": "project/1", "backend": "onnx"}
+            ).status_code
+            == 200
+        )
+        monkeypatch.setattr(
+            AutoModel,
+            "resolve_model_packages",
+            lambda **kwargs: [
+                SimpleNamespace(model_package_id="broken-onnx"),
+                SimpleNamespace(model_package_id="onnx-1"),
+            ],
+        )
+    original_add = ModelManager.add_model
+    attempted_packages = []
+
+    def add_model(self, *args, **kwargs):
+        package_id = kwargs.get("model_package_id")
+        attempted_packages.append(package_id)
+        if package_id == "broken-onnx":
+            raise ModelPackageAlternativesExhaustedError("Invalid weights")
+        return original_add(self, *args, **kwargs)
+
+    monkeypatch.setattr(ModelManager, "add_model", add_model)
+    selection = {} if reuse_cached_fallback else {"backend": "onnx"}
+    response = package_client.post(
+        "/model/add", json={"model_id": "project/1", **selection}
+    )
+    assert response.status_code == 200, response.text
+    assert attempted_packages == (
+        ["broken-onnx"] if reuse_cached_fallback else ["broken-onnx", "onnx-1"]
+    )
+    assert len(response.json()["models"]) == 1
+    inferred = package_client.post(
+        "/infer/object_detection",
+        json={
+            "model_id": "project/1",
+            **selection,
+            "image": {"type": "url", "value": "https://example.com/image.jpg"},
+        },
+    )
+    assert inferred.status_code == 200, inferred.text
+    assert inferred.json()["served_package"] == "onnx-1"
+
+
+def test_eviction_removes_default_alias_and_allows_reload(package_client):
+    payload = {"model_id": "project/1"}
+    selected = package_client.post("/model/add", json={**payload, "backend": "onnx"})
+    assert selected.status_code == 200
+    assert package_client.post("/model/add", json=payload).status_code == 200
+    for model_id in ["other/1", "third/1", "fourth/1"]:
+        assert (
+            package_client.post("/model/add", json={"model_id": model_id}).status_code
+            == 200
+        )
+    assert all(
+        model["model_id"] != "project/1"
+        for model in package_client.get("/model/registry").json()["models"]
+    )
+    reloaded = package_client.post("/model/add", json=payload)
+    assert reloaded.status_code == 200, reloaded.text
+    matching = [
+        model for model in reloaded.json()["models"] if model["model_id"] == "project/1"
+    ]
+    assert len(matching) == 1
+    inferred = package_client.post(
+        "/infer/object_detection",
+        json={
+            **payload,
+            "image": {"type": "url", "value": "https://example.com/image.jpg"},
+        },
+    )
+    assert inferred.status_code == 200, inferred.text
+    assert inferred.json()["served_package"] == "onnx-1"
+
+
+def test_older_library_keeps_default_loading_but_rejects_selection(
+    package_client, monkeypatch
+):
+    from inference_models import AutoModel
+
+    monkeypatch.delattr(AutoModel, "resolve_model_packages", raising=False)
+    automatic = package_client.post("/model/add", json={"model_id": "project/1"})
+    selected = package_client.post(
+        "/model/add", json={"model_id": "project/1", "backend": "onnx"}
+    )
+    assert automatic.status_code == 200
+    assert selected.status_code == 400
+    assert "cannot resolve package selection" in selected.json()["message"]
+    assert len(package_client.get("/model/registry").json()["models"]) == 1

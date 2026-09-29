@@ -21,6 +21,7 @@ from inference.core.exceptions import (
 from inference.core.managers.base import (
     Model,
     ModelManager,
+    _should_resolve_model_package,
     acquire_with_timeout,
     model_load_options,
     validate_public_model_id,
@@ -78,6 +79,17 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        if _should_resolve_model_package(model_cache_key, endpoint_type):
+            self.load_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                countinference=countinference,
+                service_secret=service_secret,
+                **model_load_options(model_package_id, backend, quantization, None),
+            )
+            return None
+
         validate_public_model_id(model_id, model_id_alias)
         if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
@@ -91,8 +103,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     f"API key {api_key} does not have access to model {model_id}"
                 )
 
-        queue_id = model_cache_key or self._resolve_queue_id(
-            model_id=model_id, model_id_alias=model_id_alias
+        queue_id = model_cache_key or self.get_model_cache_key(
+            self._resolve_queue_id(model_id=model_id, model_id_alias=model_id_alias)
         )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
@@ -141,7 +153,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 skipped_pinned = []
                 while evicted_count < 3 and self._key_queue:
                     to_remove_model_id = self._key_queue.popleft()
-                    if to_remove_model_id in self._pinned_models:
+                    if any(
+                        self.get_model_cache_key(pinned_id) == to_remove_model_id
+                        for pinned_id in self._pinned_models
+                    ):
                         skipped_pinned.append(to_remove_model_id)
                         continue
                     super().remove(
@@ -207,6 +222,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self.remove(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
+        model_id = self.get_model_cache_key(model_id)
         with acquire_with_timeout(
             lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
         ) as acquired:
@@ -286,6 +302,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         return model_id if model_id_alias is None else model_id_alias
 
     def _refresh_model_position_in_a_queue(self, model_id: str) -> None:
+        model_id = self.get_model_cache_key(model_id)
         with acquire_with_timeout(
             lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
         ) as acquired:

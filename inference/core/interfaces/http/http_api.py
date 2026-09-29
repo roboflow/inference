@@ -335,7 +335,6 @@ from inference.core.managers.model_load_collector import (
     request_model_ids,
     request_workflow_id,
 )
-from inference.core.managers.model_selection import model_selection_cache_key
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     assume_identity_authorised_workspace_db_id,
@@ -1613,27 +1612,16 @@ class HttpInterface(BaseInterface):
                     status_code=422,
                     detail="Model package selection is not supported for LMM requests.",
                 )
-            cache_key = model_selection_cache_key(
-                de_aliased_model_id, selectors, inference_request.api_key
-            )
-            selection_args = (
-                {**selectors, "model_cache_key": cache_key} if selectors else {}
-            )
-            self.model_manager.add_model(
+            cache_key = self.model_manager.load_model(
                 de_aliased_model_id,
                 inference_request.api_key,
                 model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
-                **selection_args,
-            )
-            inference_model_id = (
-                requested_model_id
-                if model_id_alias is not None
-                else de_aliased_model_id
+                **selectors,
             )
             resp = self.model_manager.infer_from_request_sync(
-                cache_key if selectors else inference_model_id,
+                cache_key,
                 inference_request,
                 **kwargs,
             )
@@ -1982,11 +1970,11 @@ class HttpInterface(BaseInterface):
                 summary="Load a model",
                 description=(
                     "Load the model with the given model ID. Optional package selectors "
-                    "require USE_INFERENCE_MODELS=true. Each model ID, selector combination, "
-                    "and credential identifies a separate entry in the existing LRU cache. "
+                    "require USE_INFERENCE_MODELS=true. Requests resolving to the same model "
+                    "package share one entry in the existing LRU cache after authorization. "
                     "Explicit selections return selected_model_id, an opaque registry handle. "
                     "Use the public model ID and selectors for inference and model loading. "
-                    "Requests without selectors keep their automatic selection and cache entry. "
+                    "Requests without selectors retain their loaded automatic selection. "
                     "Registering a preferred package does not replace a loaded model."
                 ),
                 responses=MODEL_SELECTION_RESPONSES,
@@ -2015,23 +2003,12 @@ class HttpInterface(BaseInterface):
                 )
                 logger.info(f"Loading model: {de_aliased_model_id}")
                 selectors = model_selection_kwargs(request)
-                cache_key = model_selection_cache_key(
-                    de_aliased_model_id, selectors, request.api_key
-                )
-                selection_args = (
-                    {
-                        **selectors,
-                        "model_cache_key": cache_key,
-                    }
-                    if selectors
-                    else {}
-                )
-                self.model_manager.add_model(
+                cache_key = self.model_manager.load_model(
                     de_aliased_model_id,
                     request.api_key,
                     countinference=countinference,
                     service_secret=service_secret,
-                    **selection_args,
+                    **selectors,
                 )
                 if selectors:
                     response.headers[MODEL_SELECTION_HEADER] = "applied"
@@ -2040,7 +2017,11 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
-                descriptions.selected_model_id = cache_key if selectors else None
+                descriptions.selected_model_id = (
+                    self.model_manager.get_model_registry_key(cache_key)
+                    if selectors
+                    else None
+                )
                 return descriptions
 
             @app.post(
@@ -2049,8 +2030,8 @@ class HttpInterface(BaseInterface):
                 summary="Remove a model",
                 description=(
                     "Remove the model with the given model ID. To remove a selected entry, "
-                    "supply its public model ID with the same selectors and credential used "
-                    "to load it, or supply its registry handle without selectors. "
+                    "supply its public model ID with selectors resolving to that package, "
+                    "or supply its registry handle without selectors. "
                     "Other entries remain loaded. Active inference requests retain their "
                     "model reference until completion."
                 ),
@@ -2070,10 +2051,10 @@ class HttpInterface(BaseInterface):
                     model_id=request.model_id
                 )
                 self.model_manager.remove(
-                    model_selection_cache_key(
+                    self.model_manager.resolve_selection_cache_key(
                         de_aliased_model_id,
-                        model_selection_kwargs(request),
                         api_key_override(request.api_key),
+                        model_selection_kwargs(request),
                     )
                 )
                 models_descriptions = self.model_manager.describe_models()
@@ -4996,15 +4977,11 @@ class HttpInterface(BaseInterface):
                 except ValidationError as error:
                     raise HTTPException(status_code=422, detail=str(error)) from error
                 selectors = model_selection_kwargs(selection)
-                cache_key = model_selection_cache_key(model_id, selectors, api_key)
-                selection_args = (
-                    {**selectors, "model_cache_key": cache_key} if selectors else {}
-                )
-                self.model_manager.add_model(
+                cache_key = self.model_manager.load_model(
                     request_model_id,
                     api_key,
                     model_id_alias=model_id,
-                    **selection_args,
+                    **selectors,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -5017,10 +4994,6 @@ class HttpInterface(BaseInterface):
                     # base64 body grows the clip by a third and is held whole
                     # in memory.
                     inference_response = self.model_manager.infer_from_request_sync(
-                        # add_model above registers under the alias, which is
-                        # model_id, so the lookup asks for that. Under Lambda
-                        # request_model_id is the authorizer's endpoint and
-                        # names nothing the manager holds.
                         cache_key,
                         ActionRecognitionInferenceRequest(
                             api_key=api_key,

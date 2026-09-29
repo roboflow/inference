@@ -4,12 +4,15 @@ from typing import TYPE_CHECKING, Dict, Optional
 from fastapi import BackgroundTasks
 
 from inference.core import logger
+from inference.core.active_learning.configuration import (
+    construct_cache_key_for_active_learning_config,
+)
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.requests.model_selection import model_selection_kwargs
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
+from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT, USE_INFERENCE_MODELS
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
@@ -85,7 +88,7 @@ class ActiveLearningManager(ModelManager):
         try:
             public_model_id = (
                 (request.model_id or model_id)
-                if model_selection_kwargs(request)
+                if USE_INFERENCE_MODELS or model_selection_kwargs(request)
                 else model_id
             )
             resolved_model_id = resolve_roboflow_model_alias(model_id=public_model_id)
@@ -96,6 +99,12 @@ class ActiveLearningManager(ModelManager):
                 or resolved_model_id.split("/")[0]
             )
             middleware_key = f"{model_id}->{target_dataset}"
+            if USE_INFERENCE_MODELS:
+                middleware_key = construct_cache_key_for_active_learning_config(
+                    api_key=request.api_key or "",
+                    target_dataset=target_dataset,
+                    model_id=resolved_model_id,
+                )
             self.ensure_middleware_initialised(
                 model_id=resolved_model_id,
                 request=request,
@@ -105,7 +114,9 @@ class ActiveLearningManager(ModelManager):
             self.register_datapoint(
                 prediction=prediction,
                 model_id=(
-                    model_id if model_selection_kwargs(request) else resolved_model_id
+                    model_id
+                    if USE_INFERENCE_MODELS or model_selection_kwargs(request)
+                    else resolved_model_id
                 ),
                 request=request,
                 middleware_key=middleware_key,

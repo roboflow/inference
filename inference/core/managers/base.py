@@ -1,7 +1,8 @@
 import time
 from contextlib import contextmanager
-from threading import Lock
+from threading import Lock, RLock
 from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
+from weakref import WeakValueDictionary
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -38,7 +39,10 @@ from inference.core.managers.model_load_collector import (
     model_load_info,
     request_model_ids,
 )
-from inference.core.managers.model_selection import public_model_id
+from inference.core.managers.model_selection import (
+    model_selection_cache_key,
+    public_model_id,
+)
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
@@ -54,6 +58,7 @@ from inference.core.telemetry import (
     set_span_attribute,
     start_span,
 )
+from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
 from inference_models.errors import (
     NoModelPackagesAvailableError,
@@ -80,6 +85,8 @@ class ModelManager:
     ):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
+        self._automatic_model_keys: Dict[str, str] = {}
+        self._selection_locks: WeakValueDictionary[str, Any] = WeakValueDictionary()
         self._model_request_aliases: Dict[str, set] = {}
         self._model_request_paths: Dict[str, set] = {}
         self.pingback = None
@@ -130,10 +137,267 @@ class ModelManager:
             step_error_handler=step_error_handler,
         )
 
+    def model_selection_lock(self, model_id: str):
+        """Serialize package loads for one public model ID.
+
+        Args:
+            model_id: Public model identifier.
+
+        Returns:
+            Lock shared by concurrent selections.
+        """
+        with self._state_lock:
+            return self._selection_locks.setdefault(model_id, RLock())
+
+    def get_model_cache_key(self, model_id: str) -> str:
+        """Resolve the automatic selection to its physical cache key.
+
+        Args:
+            model_id: Public model identifier.
+
+        Returns:
+            Identifier used for the cache or registry lookup.
+        """
+        if model_id in self._models:
+            return model_id
+
+        canonical_id = resolve_roboflow_model_alias(model_id)
+        default_key = canonical_id if canonical_id in self._models else model_id
+        return self._automatic_model_keys.get(
+            model_id, self._automatic_model_keys.get(canonical_id, default_key)
+        )
+
+    def get_model_registry_key(self, cache_key: str) -> str:
+        """Return the public default ID or selected registry handle.
+
+        Args:
+            cache_key: Physical key of the loaded package.
+
+        Returns:
+            Identifier used for the cache or registry lookup.
+        """
+        return next(
+            (
+                alias
+                for alias, key in list(self._automatic_model_keys.items())
+                if key == cache_key
+            ),
+            cache_key,
+        )
+
+    def set_automatic_model_key(self, model_id: str, cache_key: str) -> None:
+        """Bind automatic requests to the selected cache entry.
+
+        Args:
+            model_id: Public model identifier.
+            cache_key: Physical key of the loaded package.
+        """
+        self._automatic_model_keys[model_id] = cache_key
+
+    def resolve_model_packages(
+        self, model_id: str, api_key: Optional[str], selectors: dict, **kwargs
+    ):
+        """Authorize and resolve eligible packages without loading weights.
+
+        Args:
+            model_id: Public model identifier.
+            api_key: Credentials for this resolution.
+            selectors: Explicit package constraints.
+            **kwargs: Provider request context.
+
+        Returns:
+            Ranked package descriptors, or None with an older library.
+        """
+        from inference.core.models.inference_models_adapters import (
+            resolve_model_packages,
+        )
+
+        return resolve_model_packages(model_id, api_key, selectors, **kwargs)
+
+    def supports_package_selection(
+        self, model_id: str, api_key: Optional[str], **kwargs
+    ) -> bool:
+        """Check whether the model adapter supports package selection.
+
+        Args:
+            model_id: Public model identifier.
+            api_key: Credentials for registry lookup.
+            **kwargs: Provider request context.
+
+        Returns:
+            Whether the adapter supports package selection.
+        """
+        cached = self._models.get(self.get_model_cache_key(model_id))
+        registry: Any = self.model_registry
+        model_class = (
+            type(cached)
+            if cached is not None
+            else registry.get_model(model_id, api_key, **kwargs)
+        )
+        return getattr(model_class, "supports_model_package_selection", False) is True
+
+    def load_model(
+        self,
+        model_id: str,
+        api_key: Optional[str],
+        model_id_alias: Optional[str] = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **selectors,
+    ) -> str:
+        """Authorize and load one instance per resolved model package.
+
+        Args:
+            model_id: Model identifier used to initialize the adapter.
+            api_key: Credentials for resolution and authorization.
+            model_id_alias: Public identifier recorded for this request.
+            countinference: Whether the provider must enforce credits.
+            service_secret: Internal service credential for provider requests.
+            **selectors: Optional package ID, backend, or quantization constraints.
+
+        Returns:
+            Cache key for the loaded package.
+
+        Raises:
+            ModelPackageSelectionError: The server cannot satisfy the selection.
+        """
+        validate_public_model_id(model_id, model_id_alias)
+        public_id = model_id_alias or model_id
+        context: Dict[str, Any] = dict(
+            countinference=countinference, service_secret=service_secret
+        )
+        existing_key = self.get_model_cache_key(model_id)
+        lookup_id = model_id if existing_key in self.models() else public_id
+        if not USE_INFERENCE_MODELS or not self.supports_package_selection(
+            lookup_id, api_key, **context
+        ):
+            cache_key = existing_key if existing_key in self.models() else public_id
+            self.add_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                model_cache_key=cache_key,
+                **context,
+                **selectors,
+            )
+            return cache_key
+        public_id = resolve_roboflow_model_alias(public_id)
+        with self.model_selection_lock(public_id):
+            existing_key = self.get_model_cache_key(public_id)
+            existing = self.models().get(existing_key)
+            requested = dict(selectors)
+            if not selectors and existing is not None:
+                metadata = getattr(existing, "resolved_model", None)
+                if metadata is not None:
+                    requested = {"model_package_id": metadata.model_package_id}
+            try:
+                resolved = self.resolve_model_packages(
+                    public_id, api_key, requested, **context
+                )
+            except Exception as error:
+                _raise_model_selection_error(error, requested)
+                raise
+            if resolved is None:
+                if selectors:
+                    raise ModelPackageSelectionError(
+                        "This inference-models version cannot resolve package selection."
+                    )
+                self.add_model(
+                    model_id,
+                    api_key,
+                    model_id_alias=model_id_alias,
+                    model_cache_key=public_id,
+                    **context,
+                )
+                return public_id
+            candidates = resolved
+            for candidate in candidates:
+                matching_key = self.find_model_package_key(
+                    public_id, candidate.model_package_id
+                )
+                cache_key = matching_key or model_selection_cache_key(
+                    public_id, candidate.model_package_id
+                )
+                try:
+                    self.add_model(
+                        model_id,
+                        api_key,
+                        model_id_alias=model_id_alias,
+                        **context,
+                        model_package_id=candidate.model_package_id,
+                        model_cache_key=cache_key,
+                    )
+                except inference_models_errors.ModelLoadingError:
+                    if candidate is candidates[-1]:
+                        raise
+                    continue
+                if not selectors:
+                    self.set_automatic_model_key(public_id, cache_key)
+                return cache_key
+            raise ModelPackageSelectionError(
+                "No model package satisfies the requested selection on this server."
+            )
+
+    def find_model_package_key(
+        self, model_id: str, model_package_id: str
+    ) -> Optional[str]:
+        """Find an existing instance of a resolved package.
+
+        Args:
+            model_id: Public model identifier.
+            model_package_id: Resolved package identifier.
+
+        Returns:
+            Existing cache key, or None if the package is absent.
+        """
+        return next(
+            (
+                key
+                for key, model in list(self.models().items())
+                if public_model_id(key) == model_id
+                and getattr(
+                    getattr(model, "resolved_model", None), "model_package_id", None
+                )
+                == model_package_id
+            ),
+            None,
+        )
+
+    def resolve_selection_cache_key(
+        self, model_id: str, api_key: Optional[str], selectors: dict
+    ) -> str:
+        """Resolve selectors to the cache entry used for removal.
+
+        Args:
+            model_id: Public model identifier or registry handle.
+            api_key: Credentials for package resolution.
+            selectors: Optional package constraints.
+
+        Returns:
+            Cache key for the matching package or automatic selection.
+        """
+        if not selectors:
+            return self.get_model_cache_key(model_id)
+        validate_public_model_id(model_id)
+        try:
+            resolved = self.resolve_model_packages(model_id, api_key, selectors)
+        except Exception as error:
+            _raise_model_selection_error(error, selectors)
+            raise
+        if not resolved:
+            raise ModelPackageSelectionError(
+                "This inference-models version cannot resolve package selection."
+            )
+        for candidate in resolved:
+            key = self.find_model_package_key(model_id, candidate.model_package_id)
+            if key is not None:
+                return key
+        return model_selection_cache_key(model_id, resolved[0].model_package_id)
+
     def add_model(
         self,
         model_id: str,
-        api_key: str,
+        api_key: Optional[str],
         model_id_alias: Optional[str] = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
@@ -150,6 +414,17 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        if _should_resolve_model_package(model_cache_key, endpoint_type):
+            self.load_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                countinference=countinference,
+                service_secret=service_secret,
+                **model_load_options(model_package_id, backend, quantization, None),
+            )
+            return None
+
         validate_public_model_id(model_id, model_id_alias)
         selectors = {
             name: value
@@ -194,7 +469,7 @@ class ModelManager:
         )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
-            ids_collector.add(lookup_identifier)
+            ids_collector.add(public_model_id(resolved_identifier))
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
@@ -291,25 +566,7 @@ class ModelManager:
             except Exception as error:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
-                if selectors and isinstance(
-                    error,
-                    getattr(inference_models_errors, "ModelPackagePolicyError", ()),
-                ):
-                    raise ModelPackageSelectionError(
-                        "The requested model package is incompatible with this server's backend policy or runtime."
-                    ) from error
-                if selectors and isinstance(error, NoModelPackagesAvailableError):
-                    if model_package_id is not None:
-                        raise ModelPackageNotFoundError() from error
-                    raise ModelPackageSelectionError(
-                        "No model package satisfies the requested selection on this server."
-                    ) from error
-                if backend is not None and isinstance(error, UnknownBackendTypeError):
-                    raise ModelPackageSelectionError("Unknown backend.") from error
-                if quantization is not None and isinstance(
-                    error, UnknownQuantizationError
-                ):
-                    raise ModelPackageSelectionError("Unknown quantization.") from error
+                _raise_model_selection_error(error, selectors)
                 raise error
 
     def validate_model_selection(
@@ -820,6 +1077,7 @@ class ModelManager:
             model_id (str): The identifier of the model.
         """
         try:
+            model_id = self.get_model_cache_key(model_id)
             logger.debug(f"Removing model {model_id} from base model manager")
             model_lock = self._get_lock_for_a_model(model_id=model_id)
             with acquire_with_timeout(lock=model_lock) as acquired:
@@ -834,6 +1092,11 @@ class ModelManager:
                 task_type = getattr(model, "task_type", "unknown")
                 model.clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
+                self._automatic_model_keys = {
+                    alias: key
+                    for alias, key in list(self._automatic_model_keys.items())
+                    if key != model_id
+                }
                 logger.info(
                     "Model unloaded: model_id=%s, task_type=%s, vram_bytes=%s, remaining_models=%d",
                     model_id,
@@ -859,7 +1122,7 @@ class ModelManager:
 
     def _get_model_reference(self, model_id: str) -> Model:
         try:
-            return self._models[model_id]
+            return self._models[self.get_model_cache_key(model_id)]
         except KeyError as error:
             raise InferenceModelNotFound(
                 f"Model with id {model_id} not loaded."
@@ -874,7 +1137,7 @@ class ModelManager:
         Returns:
             bool: Whether the model is in the manager.
         """
-        return model_id in self._models
+        return self.get_model_cache_key(model_id) in self._models
 
     def __getitem__(self, key: str) -> Model:
         """Retrieve a model from the manager by key.
@@ -914,7 +1177,7 @@ class ModelManager:
     def describe_models(self) -> List[ModelDescription]:
         return [
             ModelDescription(
-                model_id=model_id,
+                model_id=self.get_model_registry_key(model_id),
                 task_type=model.task_type,
                 batch_size=getattr(model, "batch_size", None),
                 input_width=getattr(model, "img_size_w", None),
@@ -1019,3 +1282,37 @@ def try_releasing_cuda_memory() -> None:
         pass
     except Exception as error:
         logger.warning(f"Attempted to purge CUDA memory but failed with error: {error}")
+
+
+def _raise_model_selection_error(error: Exception, selectors: dict) -> None:
+    if selectors and isinstance(
+        error,
+        getattr(inference_models_errors, "ModelPackagePolicyError", ()),
+    ):
+        raise ModelPackageSelectionError(
+            "The requested model package is incompatible with this server's backend policy or runtime."
+        ) from error
+    if selectors and isinstance(error, NoModelPackagesAvailableError):
+        if selectors.get("model_package_id") is not None:
+            raise ModelPackageNotFoundError() from error
+        raise ModelPackageSelectionError(
+            "No model package satisfies the requested selection on this server."
+        ) from error
+    if selectors.get("backend") is not None and isinstance(
+        error, UnknownBackendTypeError
+    ):
+        raise ModelPackageSelectionError("Unknown backend.") from error
+    if selectors.get("quantization") is not None and isinstance(
+        error, UnknownQuantizationError
+    ):
+        raise ModelPackageSelectionError("Unknown quantization.") from error
+
+
+def _should_resolve_model_package(
+    model_cache_key: Optional[str], endpoint_type: ModelEndpointType
+) -> bool:
+    return (
+        USE_INFERENCE_MODELS
+        and model_cache_key is None
+        and endpoint_type == ModelEndpointType.ORT
+    )
