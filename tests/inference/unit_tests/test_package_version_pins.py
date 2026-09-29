@@ -17,7 +17,7 @@ _PIN_CASES = [
     pytest.param(
         _REPO_ROOT / "stream_vision" / "pyproject.toml",
         _REPO_ROOT / "requirements" / "requirements.streamvision.txt",
-        "streamvision[webrtc]==",
+        "streamvision[webrtc,workflows]==",
         id="streamvision",
     ),
     pytest.param(
