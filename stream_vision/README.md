@@ -48,9 +48,9 @@ warning that names the reason.
 
 ## Standalone stream manager
 
-The stream manager (`python -m streamvision`) needs `streamvision[webrtc]`; the
+The stream manager (`python -m streamvision`) needs `streamvision[webrtc,workflows]`; the
 library parts (`streamvision.camera`, `streamvision.stream`, the TCP client and
-entities) work without it.
+entities) work without both extras; workflow pipelines need `workflows`.
 
 ```bash
 STREAM_MANAGER_PORT=7070 python -m streamvision \
@@ -61,3 +61,20 @@ STREAM_MANAGER_PORT=7070 python -m streamvision \
 `--host-factory` names a trusted callable returning a pipeline host; its module
 is imported before the runtime. `scripts/streamvision_isolation_probe.py`
 verifies an installed wheel runs without `inference`.
+
+## Installation extras
+
+| Extra | Needed for |
+|---|---|
+| `workflows` | `InferencePipeline.init_with_workflow`, `build_workflows_profiler`, the stream manager server |
+| `webrtc` | the stream manager server (`python -m streamvision`) |
+| `nvdec` | `PyNvVideoCodecFrameProducer` (Linux x86_64 and Windows x64) |
+| `test` | running the package tests |
+
+Without `workflows`, cameras, `InferencePipeline.init_with_custom_logic`, sinks, the
+watchdog and the stream manager client work. The two workflow functions raise
+`CannotInitialiseModelError` with an install hint, and `python -m streamvision` exits
+with a message naming the missing extra.
+
+Without `workflows`, `concurrent.futures.Future` objects returned by custom logic reach
+the sinks unresolved; with it they are resolved as before.

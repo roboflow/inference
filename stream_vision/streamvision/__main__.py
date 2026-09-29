@@ -77,6 +77,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         parser.error(
             "the stream manager needs the webrtc extra: pip install 'streamvision[webrtc]'"
         )
+    if importlib.util.find_spec("roboflow_workflows") is None:
+        parser.error(
+            "the stream manager needs the workflows extra: "
+            "pip install 'streamvision[webrtc,workflows]'"
+        )
     host_descriptor = PipelineHostDescriptor(
         factory=args.host_factory,
         settings=dict(args.host_setting),

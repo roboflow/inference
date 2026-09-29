@@ -7,7 +7,14 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
-from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
+
+try:
+    from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
+except ModuleNotFoundError as error:
+    if error.name != "roboflow_workflows":
+        raise
+    WorkflowsProfiler = None
+
 from streamvision.camera.entities import StatusUpdate, VideoFrame, VideoSourceIdentifier
 from streamvision.camera.video_source import (
     BufferConsumptionStrategy,

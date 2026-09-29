@@ -4464,7 +4464,7 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.0rc3"
+version = "0.1.0rc4"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4472,7 +4472,6 @@ dependencies = [
     { name = "opencv-python" },
     { name = "psutil" },
     { name = "pydantic" },
-    { name = "roboflow-workflows" },
     { name = "supervision" },
 ]
 
@@ -4491,6 +4490,9 @@ webrtc = [
     { name = "aiortc" },
     { name = "av" },
 ]
+workflows = [
+    { name = "roboflow-workflows" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -4505,11 +4507,11 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "<=0.21.1" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", specifier = ">=0.2.4rc2" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.4rc2" },
     { name = "supervision", specifier = ">=0.29.0,<0.30.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
 ]
-provides-extras = ["webrtc", "nvdec", "test"]
+provides-extras = ["webrtc", "workflows", "nvdec", "test"]
 
 [[package]]
 name = "supervision"

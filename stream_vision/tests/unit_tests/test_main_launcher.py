@@ -33,6 +33,8 @@ def create_host(**settings):
 
 BLOCK_AIORTC = 'import sys\nsys.modules["aiortc"] = None\n'
 
+BLOCK_ROBOFLOW_WORKFLOWS = 'import sys\nsys.modules["roboflow_workflows"] = None\n'
+
 FAKE_HOST_WITH_CONFIG = """
 import os
 
@@ -237,3 +239,33 @@ def test_launcher_exits_when_the_webrtc_extra_is_missing(tmp_path: Path) -> None
     # then
     assert result.returncode != 0
     assert "streamvision[webrtc]" in result.stderr
+
+
+def test_launcher_exits_when_the_workflows_extra_is_missing(tmp_path: Path) -> None:
+    # given
+    block_directory = tmp_path / "block"
+    block_directory.mkdir()
+    (block_directory / "sitecustomize.py").write_text(BLOCK_ROBOFLOW_WORKFLOWS)
+    environment = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            [
+                str(block_directory),
+                str(PACKAGE_ROOT),
+                *filter(None, [os.environ.get("PYTHONPATH")]),
+            ]
+        ),
+    }
+
+    # when
+    result = subprocess.run(
+        [sys.executable, "-m", "streamvision", "--host-factory", "x.y:z"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    # then
+    assert result.returncode != 0
+    assert "streamvision[webrtc,workflows]" in result.stderr

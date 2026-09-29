@@ -24,12 +24,19 @@ from queue import Queue
 from threading import Event, Thread, current_thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
-from roboflow_workflows.execution_engine.profiling.core import (
-    BaseWorkflowsProfiler,
-    NullWorkflowsProfiler,
-    WorkflowsProfiler,
-)
-from roboflow_workflows.execution_engine.v1.executor.utils import resolve_futures
+try:
+    from roboflow_workflows.execution_engine.profiling.core import (
+        BaseWorkflowsProfiler,
+        NullWorkflowsProfiler,
+        WorkflowsProfiler,
+    )
+    from roboflow_workflows.execution_engine.v1.executor.utils import resolve_futures
+except ModuleNotFoundError as error:
+    if error.name != "roboflow_workflows":
+        raise
+    BaseWorkflowsProfiler = NullWorkflowsProfiler = WorkflowsProfiler = None
+    resolve_futures = None
+
 from streamvision.camera.collection_policy import (
     FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT,
     STALENESS_DROP_CAUSE,
@@ -80,6 +87,7 @@ INFERENCE_THREAD_STARTED_EVENT = "INFERENCE_THREAD_STARTED"
 INFERENCE_THREAD_FINISHED_EVENT = "INFERENCE_THREAD_FINISHED"
 INFERENCE_COMPLETED_EVENT = "INFERENCE_COMPLETED"
 INFERENCE_ERROR_EVENT = "INFERENCE_ERROR"
+WORKFLOWS_INSTALL_HINT = 'Install it with: pip install "streamvision[workflows]"'
 
 
 def build_workflows_profiler(
@@ -100,7 +108,15 @@ def build_workflows_profiler(
 
     Returns:
         A `BaseWorkflowsProfiler` when enabled, a `NullWorkflowsProfiler` otherwise.
+
+    Raises:
+        CannotInitialiseModelError: `roboflow-workflows` is not installed.
     """
+    if BaseWorkflowsProfiler is None:
+        raise CannotInitialiseModelError(
+            f"roboflow-workflows is not installed. {WORKFLOWS_INSTALL_HINT}"
+        )
+
     if enabled:
         return BaseWorkflowsProfiler.init(max_runs_in_buffer=max_runs_in_buffer)
     return NullWorkflowsProfiler.init()
@@ -209,7 +225,8 @@ class InferencePipeline:
 
         Raises:
             CannotInitialiseModelError: A dependency of workflow processing
-                cannot be imported.
+                cannot be imported; when `roboflow-workflows` itself is not
+                installed, the message says how to install it.
         """
         if profiler is None:
             profiler = build_workflows_profiler(
@@ -256,6 +273,14 @@ class InferencePipeline:
                 execution_engine=execution_engine,
             )
         except ImportError as error:
+            if (
+                isinstance(error, ModuleNotFoundError)
+                and error.name == "roboflow_workflows"
+            ):
+                raise CannotInitialiseModelError(
+                    f"roboflow-workflows is not installed. {WORKFLOWS_INSTALL_HINT}"
+                ) from error
+
             raise CannotInitialiseModelError(
                 f"Could not initialise workflow processing due to lack of dependencies required. "
                 f"Please provide an issue report under https://github.com/roboflow/inference/issues"
@@ -911,6 +936,9 @@ def send_inference_pipeline_status_update(
 
 
 def _resolve_prediction_futures(value: Any) -> Any:
+    if resolve_futures is None:
+        return value
+
     return resolve_futures(
         value=value,
         context="inference_pipeline | prediction_dispatch",

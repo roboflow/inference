@@ -289,9 +289,9 @@ when `--webrtc` is passed.
 
 ### Standalone stream manager
 
-The stream manager (`python -m streamvision`) needs `streamvision[webrtc]`; the
+The stream manager (`python -m streamvision`) needs `streamvision[webrtc,workflows]`; the
 library parts (`streamvision.camera`, `streamvision.stream`, the TCP client and
-entities) work without it.
+entities) work without both extras; workflow pipelines need `workflows`.
 
 ```bash
 STREAM_MANAGER_PORT=7070 python -m streamvision \

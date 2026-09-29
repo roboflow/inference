@@ -382,7 +382,8 @@ def build_venv(
         env=env,
     )
 
-    requirement = f"{wheel.resolve()}[webrtc]" if webrtc else str(wheel.resolve())
+    extras = "workflows,webrtc" if webrtc else "workflows"
+    requirement = f"{wheel.resolve()}[{extras}]"
     install = [str(venv_python), "-m", "pip", "install", requirement]
     for link in find_links:
         install += ["--find-links", str(link)]

@@ -1,6 +1,6 @@
 [project]
 name = "streamvision"
-version = "0.1.0rc3"
+version = "0.1.0rc4"
 description = "Video sources, InferencePipeline and the stream manager for Roboflow Inference"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -11,13 +11,15 @@ dependencies = [
   "supervision>=0.29.0,<0.30.0",
   "pydantic>=2.8.0,<2.12.0",
   "psutil>=7.0.0",
-  "roboflow-workflows>=0.2.4rc2",
 ]
 
 [project.optional-dependencies]
 webrtc = [
   "aiortc>=1.9.0",
   "av==14.2.0",
+]
+workflows = [
+  "roboflow-workflows>=0.2.4rc2",
 ]
 nvdec = [
   "pynvvideocodec>=2.1.0,<3.0.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'win32' and platform_machine == 'AMD64')",
