@@ -34,7 +34,7 @@ def _load_pyproject() -> dict:
 def test_project_metadata() -> None:
     project = _load_pyproject()["project"]
     assert project["name"] == "streamvision"
-    assert project["version"] == "0.1.0rc4"
+    assert project["version"] == "0.1.0rc5"
     assert project["requires-python"] == ">=3.10,<3.14"
 
 
@@ -57,7 +57,7 @@ def test_optional_dependency_extras() -> None:
     extras = _load_pyproject()["project"]["optional-dependencies"]
     assert set(extras) == {"webrtc", "nvdec", "test", "workflows"}
     assert extras["webrtc"] == ["aiortc>=1.9.0", "av==14.2.0"]
-    assert extras["workflows"] == ["roboflow-workflows>=0.2.4rc2"]
+    assert extras["workflows"] == ["roboflow-workflows>=0.2.4rc3"]
     assert extras["nvdec"] == [
         "pynvvideocodec>=2.1.0,<3.0.0; (sys_platform == 'linux' and "
         "platform_machine == 'x86_64') or (sys_platform == 'win32' and "
