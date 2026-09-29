@@ -9,6 +9,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Process, Queue
+from queue import Empty
 from socketserver import BaseRequestHandler, BaseServer
 from threading import Lock, Thread
 from types import FrameType
@@ -83,6 +84,7 @@ PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
 PROCESSES_TABLE_LOCK = Lock()
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
+RESPONSES_QUEUE_POLL_INTERVAL = 1.0
 # STREAM_MANAGER_HOST/PORT/SOCKET_TIMEOUT have no `env.py` counterpart; resolved here.
 HOST = (
     STREAM_MANAGER_HOST
@@ -210,11 +212,14 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             processes_table=self._processes_table,
             host_descriptor=self._host_descriptor,
         )
-        managed_pipeline.command_queue.put((request_id, command))
-        response = get_response_ignoring_thrash(
-            responses_queue=managed_pipeline.responses_queue,
-            matching_request_id=request_id,
-        )
+        with managed_pipeline.operation_lock:
+            managed_pipeline.command_queue.put((request_id, command))
+            response = get_response_ignoring_thrash(
+                responses_queue=managed_pipeline.responses_queue,
+                matching_request_id=request_id,
+                pipeline_process=managed_pipeline.pipeline_manager,
+                pipeline_id=managed_pipeline.pipeline_id,
+            )
         serialised_response = prepare_response(
             request_id=request_id,
             response=response,
@@ -233,11 +238,14 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             processes_table=self._processes_table,
             host_descriptor=self._host_descriptor,
         )
-        managed_pipeline.command_queue.put((request_id, command))
-        response = get_response_ignoring_thrash(
-            responses_queue=managed_pipeline.responses_queue,
-            matching_request_id=request_id,
-        )
+        with managed_pipeline.operation_lock:
+            managed_pipeline.command_queue.put((request_id, command))
+            response = get_response_ignoring_thrash(
+                responses_queue=managed_pipeline.responses_queue,
+                matching_request_id=request_id,
+                pipeline_process=managed_pipeline.pipeline_manager,
+                pipeline_id=managed_pipeline.pipeline_id,
+            )
         serialised_response = prepare_response(
             request_id=request_id,
             response=response,
@@ -258,31 +266,37 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             # signal termination to avoid deadlock with health check
             pipeline = self._processes_table[pipeline_id]
             pipeline.is_terminating = True
-        response = handle_command(
-            processes_table=self._processes_table,
-            request_id=request_id,
-            pipeline_id=pipeline_id,
-            command=command,
-        )
-        if response[STATUS_KEY] is OperationStatus.SUCCESS:
-            logger.info(
-                f"Joining inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
+        try:
+            response = handle_command(
+                processes_table=self._processes_table,
+                request_id=request_id,
+                pipeline_id=pipeline_id,
+                command=command,
             )
-            join_inference_pipeline(
-                processes_table=self._processes_table, pipeline_id=pipeline_id
-            )
-            logger.info(
-                f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
-            )
+            if response[STATUS_KEY] is OperationStatus.SUCCESS:
+                logger.info(
+                    f"Joining inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
+                )
+                join_inference_pipeline(
+                    processes_table=self._processes_table, pipeline_id=pipeline_id
+                )
+                logger.info(
+                    f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
+                )
+                with PROCESSES_TABLE_LOCK:
+                    # termination ended
+                    if pipeline_id not in self._processes_table:
+                        logger.warning(
+                            f"Pipeline {pipeline_id} already removed from processes table."
+                        )
+                    else:
+                        pipeline = self._processes_table[pipeline_id]
+                        pipeline.is_terminating = False
+        finally:
             with PROCESSES_TABLE_LOCK:
-                # termination ended
-                if pipeline_id not in self._processes_table:
-                    logger.warning(
-                        f"Pipeline {pipeline_id} already removed from processes table."
-                    )
-                else:
-                    pipeline = self._processes_table[pipeline_id]
-                    pipeline.is_terminating = False
+                # health check never reaps pipelines marked as terminating
+                if pipeline_id in self._processes_table:
+                    self._processes_table[pipeline_id].is_terminating = False
         serialised_response = prepare_response(
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
@@ -313,14 +327,51 @@ def handle_command(
         return get_response_ignoring_thrash(
             responses_queue=managed_pipeline.responses_queue,
             matching_request_id=request_id,
+            pipeline_process=managed_pipeline.pipeline_manager,
+            pipeline_id=pipeline_id,
         )
 
 
 def get_response_ignoring_thrash(
-    responses_queue: Queue, matching_request_id: str
+    responses_queue: Queue,
+    matching_request_id: str,
+    *,
+    pipeline_process: Optional[Process] = None,
+    pipeline_id: Optional[str] = None,
 ) -> dict:
+    """Wait for the response to a request, dropping responses to other requests.
+
+    Args:
+        responses_queue: Queue of ``(request_id, response)`` tuples.
+        matching_request_id: Id of the request whose response is awaited.
+        pipeline_process: Process expected to answer; the wait ends once it is dead.
+            Without it the wait never ends.
+        pipeline_id: Id of the pipeline, used in the error message.
+
+    Returns:
+        The matching response, or a ``NOT_FOUND`` error description when
+        ``pipeline_process`` died without answering.
+    """
     while True:
-        response = responses_queue.get()
+        try:
+            response = responses_queue.get(timeout=RESPONSES_QUEUE_POLL_INTERVAL)
+        except Empty:
+            if pipeline_process is None or pipeline_process.is_alive():
+                continue
+
+            try:
+                # A response written right before the process died is still delivered.
+                response = responses_queue.get_nowait()
+            except Empty:
+                not_running_error = describe_error(
+                    exception=None,
+                    error_type=ErrorType.NOT_FOUND,
+                    public_error_message=(
+                        f"InferencePipeline with id={pipeline_id} is not running."
+                    ),
+                )
+                return not_running_error
+
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
