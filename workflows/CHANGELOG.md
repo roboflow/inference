@@ -20,6 +20,10 @@ for contributor and maintainer responsibilities.
 
 - Detections Stitch (`roboflow_core/detections_stitch@v1`): segmentation masks are stitched as crop-scoped compact masks (`supervision.CompactMask`) and only the detections that survive overlap filtering are materialised at reference resolution. Previously every crop mask was first re-allocated as a full-size dense array, merged, then filtered, which needed about `N x H x W` bytes before any filtering: a 1080p frame sliced 12 ways with ~25 masks per slice took ~3 GiB inside this block and OOM-killed an 8 GiB video worker. Outputs are unchanged (same boxes, order and masks, still dense arrays); a mix of crops with and without masks now raises a clear `ValueError` instead of failing inside `Detections.merge`.
 
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
+
 ### Changed
 
 - Carries forward the `0.2.2` model catalog: Anthropic Claude v5 lists `claude-opus-5-5` (Claude Opus 5.5, 128000 max output tokens) and the temperature warning names Opus 5.x; OpenAI v7 lists `gpt-6-sol` and `gpt-6-luna` (reasoning effort `none` through `max`, structured absolute detection prompts).
