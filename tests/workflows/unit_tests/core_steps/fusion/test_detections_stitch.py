@@ -524,3 +524,177 @@ def test_detections_stitch_shifts_oriented_bounding_box_corners(
     expected_corners = tile_corners + np.array([dx, dy], dtype=np.float32)
     assert np.allclose(merged.xyxy, expected_xyxy)
     assert np.allclose(merged.data[ORIENTED_BOX_COORDINATES], expected_corners)
+
+
+def _dense_reference_stitch(
+    predictions: list,
+    reference_wh: tuple,
+    strategy: str,
+    iou_threshold: float,
+) -> sv.Detections:
+    """The pre-lazy algorithm, kept as the semantic oracle: move every mask to
+    a full-size dense array, merge, then filter."""
+    from copy import deepcopy
+
+    moved = []
+    for detections in predictions:
+        detections = deepcopy(detections)
+        offset = detections.data[PARENT_COORDINATES_KEY][0][:2].copy()
+        detections.xyxy = sv.move_boxes(xyxy=detections.xyxy, offset=offset)
+        detections.mask = sv.move_masks(
+            masks=detections.mask, offset=offset, resolution_wh=reference_wh
+        )
+        moved.append(detections)
+    merged = sv.Detections.merge(moved)
+    if strategy == "none":
+        return merged
+    if strategy == "nms":
+        return merged.with_nms(threshold=iou_threshold)
+    return merged.with_nmm(threshold=iou_threshold)
+
+
+def _random_slice_detections(
+    rng: np.random.Generator,
+    *,
+    count: int,
+    slice_shape: tuple,
+    parent_offset: tuple,
+    parent_dims: tuple,
+) -> sv.Detections:
+    slice_h, slice_w = slice_shape
+    masks = np.zeros((count, slice_h, slice_w), dtype=bool)
+    boxes = np.zeros((count, 4), dtype=np.float32)
+    for i in range(count):
+        w, h = rng.integers(20, slice_w // 3), rng.integers(20, slice_h // 3)
+        x1, y1 = rng.integers(0, slice_w - w), rng.integers(0, slice_h - h)
+        # non-rectangular, so a box-only shortcut could not pass as mask parity
+        masks[i, y1 : y1 + h, x1 : x1 + w] = True
+        masks[i, y1 : y1 + h // 2, x1 : x1 + w // 3] = False
+        boxes[i] = [x1, y1, x1 + w, y1 + h]
+    return sv.Detections(
+        xyxy=boxes,
+        mask=masks,
+        confidence=rng.uniform(0.3, 1.0, size=count).astype(np.float32),
+        class_id=rng.integers(0, 2, size=count),
+        data={
+            "class_name": np.array(["a"] * count),
+            PARENT_COORDINATES_KEY: np.array([parent_offset] * count),
+            PARENT_DIMENSIONS_KEY: np.array([parent_dims] * count),
+        },
+    )
+
+
+@pytest.mark.parametrize("strategy", ["none", "nms", "nmm"])
+def test_detections_stitch_mask_stitching_matches_dense_reference(
+    strategy: str,
+) -> None:
+    # given - four overlapping slices, the last one hanging past the reference
+    # edge so clipping is exercised too
+    rng = np.random.default_rng(7)
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    offsets = [(0, 0), (80, 0), (0, 80), (220, 130)]
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=6,
+            slice_shape=(100, 100),
+            parent_offset=offset,
+            parent_dims=(200, 300),
+        )
+        for offset in offsets
+    ]
+    expected = _dense_reference_stitch(
+        predictions, reference_wh=(300, 200), strategy=strategy, iou_threshold=0.3
+    )
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=predictions,
+        overlap_filtering_strategy=strategy,
+        iou_threshold=0.3,
+    )["predictions"]
+
+    # then - identical geometry, order and masks; inputs untouched
+    assert len(result) == len(expected)
+    assert np.array_equal(result.xyxy, expected.xyxy)
+    assert np.array_equal(result.confidence, expected.confidence)
+    assert isinstance(result.mask, np.ndarray)
+    assert result.mask.dtype == np.bool_
+    assert result.mask.shape == (len(expected), 200, 300)
+    assert np.array_equal(result.mask, expected.mask)
+    assert predictions[0].mask.shape == (6, 100, 100)
+    assert predictions[0].xyxy.max() < 100
+
+
+def test_detections_stitch_rejects_crops_with_and_without_masks() -> None:
+    # given
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=300, height=200)
+    predictions = [
+        make_test_detections(
+            boxes=np.array([[10, 10, 50, 50]]),
+            parent_offset=(0, 0),
+            parent_dims=(200, 300),
+            with_mask=True,
+            mask_shape=(100, 100),
+        ),
+        make_test_detections(
+            boxes=np.array([[10, 10, 50, 50]]),
+            parent_offset=(100, 0),
+            parent_dims=(200, 300),
+        ),
+    ]
+
+    # when / then
+    with pytest.raises(ValueError):
+        block.run(
+            reference_image=reference_image,
+            predictions=predictions,
+            overlap_filtering_strategy="none",
+            iou_threshold=0.3,
+        )
+
+
+def test_detections_stitch_peak_memory_is_bounded_for_sliced_segmentation() -> None:
+    """2026-09-28: image_slicer -> sam3 -> detections_stitch on a 1080p shelf
+    clip OOM-killed an 8Gi video worker inside this block: 12 slices x ~25
+    masks were each re-allocated at full frame size, merged, then mask-NMS'd,
+    about 3 GiB per frame. Masks must stay crop-scoped until the survivors of
+    overlap filtering are known."""
+    import tracemalloc
+
+    rng = np.random.default_rng(3)
+    block = DetectionsStitchBlockV1()
+    width, height = 1920, 1012
+    reference_image = make_test_image(width=width, height=height)
+    offsets = [(x, y) for y in (0, 372, 372) for x in (0, 427, 854, 1280)]
+    predictions = [
+        _random_slice_detections(
+            rng,
+            count=25,
+            slice_shape=(640, 640),
+            parent_offset=offset,
+            parent_dims=(height, width),
+        )
+        for offset in offsets
+    ]
+
+    tracemalloc.start()
+    try:
+        result = block.run(
+            reference_image=reference_image,
+            predictions=predictions,
+            overlap_filtering_strategy="nms",
+            iou_threshold=0.3,
+        )["predictions"]
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert len(result) > 0
+    assert result.mask.shape[1:] == (height, width)
+    # the dense path measured ~3 GiB here; survivors alone are ~2 MB each
+    survivors_bytes = len(result) * height * width
+    assert peak < survivors_bytes + 512 * 1024 * 1024, f"peak={peak / 2**30:.2f} GiB"
