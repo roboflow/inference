@@ -5,6 +5,7 @@ import pytest
 import torch
 from streamvision.camera.gstreamer_cuda_producer import (
     GstreamerCudaVideoFrameProducer,
+    _quote_gstreamer_value,
     build_gstreamer_cuda_pipeline,
     required_gstreamer_cuda_elements,
 )
@@ -261,10 +262,10 @@ def test_rtsp_transport_env_overrides_protocols_and_latency(monkeypatch) -> None
     assert "protocols=tcp+udp latency=1000 ! " in pipeline
 
 
-def test_file_source_keeps_uridecodebin_pipeline() -> None:
+def test_file_source_uses_explicit_demux_pipeline() -> None:
     pipeline = build_gstreamer_cuda_pipeline("sample.mp4", device_id=0)
 
-    assert pipeline.startswith("uridecodebin uri=")
+    assert pipeline.startswith('filesrc location="')
     assert 'caps="video/x-raw(memory:CUDAMemory)"' in pipeline
     assert "rtspsrc" not in pipeline
 
@@ -273,6 +274,70 @@ def test_local_mp4_contract_includes_demuxer() -> None:
     elements = set(required_gstreamer_cuda_elements("sample.mp4"))
 
     assert "qtdemux" in elements
+
+
+def test_local_mp4_uses_explicit_qtdemux_pipeline() -> None:
+    pipeline = build_gstreamer_cuda_pipeline("/videos/a.mp4", device_id=0)
+
+    assert pipeline.startswith('filesrc location="')
+    assert (
+        "qtdemux name=rf_demux rf_demux.video_0 ! queue ! "
+        'decodebin caps="video/x-raw(memory:CUDAMemory)"'
+    ) in pipeline
+    assert "uridecodebin" not in pipeline
+    assert "appsink name=rf_tensor_sink max-buffers=4 drop=false sync=false" in pipeline
+
+
+def test_file_uri_mkv_uses_matroskademux_with_decoded_location(tmp_path) -> None:
+    video_path = tmp_path / "clip.mkv"
+    uri = video_path.as_uri()
+
+    pipeline = build_gstreamer_cuda_pipeline(uri, device_id=0)
+
+    assert f'filesrc location="{video_path}"' in pipeline
+    assert "matroskademux name=rf_demux rf_demux.video_0 ! queue ! " in pipeline
+    assert uri not in pipeline
+
+
+def test_uppercase_mp4_suffix_is_treated_like_lowercase() -> None:
+    pipeline = build_gstreamer_cuda_pipeline("sample.MP4", device_id=0)
+
+    assert pipeline.startswith('filesrc location="')
+    assert "qtdemux name=rf_demux rf_demux.video_0 ! queue ! " in pipeline
+
+
+def test_paths_with_special_characters_are_escaped(tmp_path) -> None:
+    video_path = tmp_path / 'wei"rd\\file.mp4'
+
+    pipeline = build_gstreamer_cuda_pipeline(str(video_path), device_id=0)
+
+    escaped_location = _quote_gstreamer_value(str(video_path.resolve()))
+    assert escaped_location in pipeline
+
+
+def test_raw_h264_file_still_uses_uridecodebin() -> None:
+    pipeline = build_gstreamer_cuda_pipeline("clip.h264", device_id=0)
+
+    assert pipeline.startswith('uridecodebin uri="file://')
+
+
+def test_rtsp_source_pipeline_is_unaffected_by_demux_change() -> None:
+    pipeline = build_gstreamer_cuda_pipeline("rtsp://camera.example.test/live")
+
+    assert pipeline.startswith('rtspsrc location="rtsp://camera.example.test/live"')
+
+
+def test_local_mp4_elements_use_filesrc_demux_not_uridecodebin() -> None:
+    elements = set(required_gstreamer_cuda_elements("sample.mp4"))
+
+    assert {"filesrc", "decodebin", "qtdemux"}.issubset(elements)
+    assert "uridecodebin" not in elements
+
+
+def test_raw_h264_elements_are_unchanged() -> None:
+    elements = set(required_gstreamer_cuda_elements("clip.h264"))
+
+    assert "uridecodebin" in elements
 
 
 def test_v4l2_device_is_not_treated_as_a_regular_file() -> None:

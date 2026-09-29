@@ -177,11 +177,10 @@ def required_gstreamer_cuda_elements(
         return tuple(
             ["appsink", "cudaconvertscale", "queue", "decodebin"] + list(_RTSP_ELEMENTS)
         )
-    local_file_path = _local_file_path(video)
-    if local_file_path is not None:
-        demuxer = _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
-        if demuxer is not None:
-            elements.append(demuxer)
+    demuxer = _file_demuxer(video)
+    if demuxer is not None:
+        # Container files use an explicit filesrc+demux chain, not uridecodebin.
+        return ("appsink", "cudaconvertscale", "queue", "filesrc", "decodebin", demuxer)
     return tuple(elements)
 
 
@@ -230,6 +229,16 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
             "application/x-rtp,media=video ! "
             "queue ! "
             f"rtp{codec}depay ! {codec}parse ! "
+            'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
+            f"{tail}"
+        )
+    demuxer = _file_demuxer(video)
+    if demuxer is not None:
+        local_path = _local_file_path(video)
+        location = _quote_gstreamer_value(str(Path(local_path).resolve()))
+        return (
+            f'filesrc location="{location}" ! '
+            f"{demuxer} name=rf_demux rf_demux.video_0 ! queue ! "
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
@@ -516,6 +525,13 @@ def _local_file_path(video: str) -> Optional[str]:
     if "://" in video:
         return None
     return video
+
+
+def _file_demuxer(video: str) -> Optional[str]:
+    local_file_path = _local_file_path(video)
+    if local_file_path is None:
+        return None
+    return _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
 
 
 def _is_rtsp_source(video: str) -> bool:
