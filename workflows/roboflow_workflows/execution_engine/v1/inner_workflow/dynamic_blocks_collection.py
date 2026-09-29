@@ -9,7 +9,7 @@ Dispatched workflow definitions remain opaque because their target server compil
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
@@ -45,8 +45,11 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
 
     When the same ``manifest.block_type`` appears more than once, the first occurrence
     is kept (parent definitions win over nested children) and, when ``warn_on_duplicates``
-    is ``True``, a warning is logged for each skipped duplicate. Definitions without a
-    ``block_type`` are still included and are not deduplicated.
+    is ``True``, a warning is logged for each skipped duplicate. The warning names the
+    skipped and the retained definition only by structural position, for example
+    ``steps[2].workflow_definition.dynamic_blocks_definitions[1]``; indexes refer to the
+    original arrays. It never includes block types or other request-provided strings.
+    Definitions without a ``block_type`` are still included and are not deduplicated.
 
     Malformed entries (non-list ``dynamic_blocks_definitions``, non-dict list items)
     are passed through as-is so :func:`compile_dynamic_blocks` can validate them.
@@ -62,42 +65,48 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
         Merged list of dynamic block definition dicts in discovery order.
     """
     collected: List[Any] = []
-    seen_block_types: Set[str] = set()
+    # Locations are built only from fixed field labels and integer indexes, so they
+    # are safe to log; block types are request-provided and must never be logged.
+    first_location_by_block_type: Dict[str, str] = {}
 
-    def append_definition(definition: Any) -> None:
+    def append_definition(definition: Any, *, location: str) -> None:
         block_type = None
         if isinstance(definition, dict):
             block_type = _dynamic_block_type(definition)
 
         if block_type is not None:
-            if block_type in seen_block_types:
+            first_location = first_location_by_block_type.get(block_type)
+            if first_location is not None:
                 if warn_on_duplicates:
                     logger.warning(
-                        "Skipping duplicate dynamic block definition for block_type=%r; "
-                        "using the first definition collected while compiling the workflow.",
-                        block_type,
+                        "Skipping duplicate dynamic block definition at %s; keeping %s.",
+                        location,
+                        first_location,
                     )
                 return
 
-            seen_block_types.add(block_type)
+            first_location_by_block_type[block_type] = location
 
         collected.append(definition)
 
-    def append_level(definitions: Any) -> None:
+    def append_level(definitions: Any, *, location: str) -> None:
         if not definitions:
             return
 
         if not isinstance(definitions, list):
-            append_definition(definitions)
+            append_definition(definitions, location=location)
             return
 
-        for definition in definitions:
-            append_definition(definition)
+        for index, definition in enumerate(definitions):
+            append_definition(definition, location=f"{location}[{index}]")
 
-    def visit(workflow: Dict[str, Any]) -> None:
-        append_level(workflow.get("dynamic_blocks_definitions"))
+    def visit(workflow: Dict[str, Any], *, location_prefix: str) -> None:
+        append_level(
+            workflow.get("dynamic_blocks_definitions"),
+            location=f"{location_prefix}dynamic_blocks_definitions",
+        )
 
-        for step in workflow.get("steps") or []:
+        for step_index, step in enumerate(workflow.get("steps") or []):
             if not isinstance(step, dict):
                 continue
 
@@ -111,9 +120,14 @@ def collect_dynamic_blocks_definitions_from_workflow_definition(
 
             child = step.get("workflow_definition")
             if isinstance(child, dict):
-                visit(child)
+                visit(
+                    child,
+                    location_prefix=(
+                        f"{location_prefix}steps[{step_index}].workflow_definition."
+                    ),
+                )
 
-    visit(workflow_definition)
+    visit(workflow_definition, location_prefix="")
 
     return collected
 

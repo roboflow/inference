@@ -257,9 +257,10 @@ Comment):
 
 - Tell the contributor to add the user-facing entry under `## Unreleased` in
   `inference_models/docs/changelog.md`, `workflows/CHANGELOG.md` (any change
-  under `workflows/roboflow_workflows/`) and/or the EE changelog in the
-  roboflow/docs repo (`workflows/developer-guide/execution-engine-changelog.md`)
-  when it is missing. Per the INDEX carve-out, never ask them to select or
+  under `workflows/roboflow_workflows/`) when it is missing. Engine behavior
+  changes go under `### Execution engine` in the package changelog; one entry
+  satisfies both requirements. Do not request a parallel changelog PR in
+  `roboflow/docs`. Per the INDEX carve-out, never ask them to select or
   bump a version.
 - Tell maintainers exactly which system requires a release-time version
   change: **inference-models**, **roboflow-workflows**, **Execution Engine**,

@@ -3,6 +3,7 @@
 import torch
 
 from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
     ImagePreProcessing,
     NetworkInputDefinition,
 )
@@ -21,7 +22,7 @@ from inference_models.models.rfdetr.optimization.contracts import (
     PreprocessResult,
 )
 from inference_models.models.rfdetr.optimization.ids import (
-    RFDETR_PREPROCESSOR_BASE,
+    RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
     RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
 )
 from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
@@ -30,13 +31,13 @@ from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
 
 
 class TritonUniversalPreprocessor:
-    """Run the explicit universal CUDA/Triton preprocessing path."""
+    """Run the universal CUDA/Triton preprocessing path selected by the plan."""
 
     metadata = OptimizationMetadata(
         implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
         stage=OptimizationStage.PREPROCESS,
         version="1",
-        target=DeviceCompatibility(device_kind="gpu"),
+        target=DeviceCompatibility(device_kind="gpu", device_types=("cuda",)),
         inputs=InputCompatibility(
             scenarios=("*",),
             axis_constraints=immutable_mapping(
@@ -51,7 +52,7 @@ class TritonUniversalPreprocessor:
             layouts=("HWC", "NHWC", "CHW", "NCHW"),
         ),
         dependencies=("torch", "torchvision", "triton"),
-        fallback_id=RFDETR_PREPROCESSOR_BASE,
+        fallback_id=RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
         changes_numerics=False,
         supports_concurrency=True,
         supports_cuda_graphs=False,
@@ -79,12 +80,16 @@ class TritonUniversalPreprocessor:
         """Return whether the Triton path supports the runtime context.
 
         Args:
-            context: Runtime target and request context.
+            context (ExecutionContext): Runtime target and request context.
 
         Returns:
             Whether the target is compatible.
         """
-        return metadata_supports_context(self.metadata, context)
+        compatible = torch.device(
+            context.device
+        ).type == "cuda" and metadata_supports_context(self.metadata, context)
+
+        return compatible
 
     def check_model_compatibility(
         self,
@@ -117,13 +122,28 @@ class TritonUniversalPreprocessor:
         """Check request-specific constraints supported by Triton preprocessing.
 
         Args:
-            request: Typed preprocessing request.
-            context: Runtime target and request context.
+            request (PreprocessRequest): Typed preprocessing request.
+            context (ExecutionContext): Runtime target and request context.
 
         Returns:
             Compatibility result with actionable reasons.
         """
         del context
+        if request.image_size_wh is not None:
+            result = CompatibilityResult.incompatible("custom image_size override")
+
+            return result
+
+        if (
+            request.input_color_format is None
+            and request.network_input.color_mode == ColorMode.BGR
+        ):
+            result = CompatibilityResult.incompatible(
+                "implicit color order for a BGR network requires the legacy base semantics"
+            )
+
+            return result
+
         result = self._runtime.check_request_compatibility(
             images=request.images,
             pre_processing_overrides=request.pre_processing_overrides,
@@ -156,7 +176,7 @@ class TritonUniversalPreprocessor:
         request: PreprocessRequest,
         context: ExecutionContext,
     ) -> PreprocessResult:
-        """Run universal Triton preprocessing.
+        """Run universal Triton preprocessing after execution-plan validation.
 
         Args:
             request: Typed preprocessing request.
@@ -176,12 +196,10 @@ class TritonUniversalPreprocessor:
                     "#modelruntimeerror"
                 ),
             )
-        runtime_result = self._runtime.preprocess(
+        runtime_result = self._runtime._preprocess_validated(
             images=request.images,
             input_color_format=request.input_color_format,
-            image_pre_processing=request.image_pre_processing,
             network_input=request.network_input,
-            pre_processing_overrides=request.pre_processing_overrides,
             stream=stream,
         )
         result = PreprocessResult(

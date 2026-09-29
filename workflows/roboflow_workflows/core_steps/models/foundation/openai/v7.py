@@ -70,6 +70,11 @@ from roboflow_workflows.execution_engine.entities.types import (
     ImageInputField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
@@ -104,6 +109,18 @@ OPENAI_MODELS = [
         "id": "gpt-6-astra",
         "name": "GPT-6 Astra",
         "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
+        "id": "gpt-6-sol",
+        "name": "GPT-6 Sol",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
         "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
     },
     {
@@ -641,7 +658,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="gpt-5.1",
         description="Model to be used",
-        examples=["gpt-5.1", "$inputs.openai_model"],
+        examples=["gpt-6-sol", "gpt-5.1", "$inputs.openai_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
@@ -775,6 +792,20 @@ class BlockManifest(WorkflowBlockManifest):
 
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         return [third_party_model(provider="openai", model_id=self.model_version)]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [
+            WorkOperation.MODEL_INFERENCE,
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
 
 
 class OpenAIBlockV7(WorkflowBlock):

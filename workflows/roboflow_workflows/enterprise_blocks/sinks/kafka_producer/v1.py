@@ -7,6 +7,9 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Un
 
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from roboflow_workflows.core_steps.common.workload_presets import (
+    FIRE_AND_FORGET_RESTRICTION,
+)
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.enterprise_blocks.sinks.kafka_common import (
     LIBRDKAFKA_LOG_LEVEL,
@@ -34,13 +37,21 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+    incomplete_discovery,
+    unresolved_selector_problem,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
-    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 from typing_extensions import Annotated
 
@@ -124,6 +135,23 @@ Failures are logged and returned in the outputs; the workflow keeps running and 
 run retries the connection. This block is not available on the Roboflow hosted platform.
 Self-hosted servers enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 """
+
+
+# The unconditional hard restriction this block declares through
+# `get_actual_restrictions()`.
+#
+# `run()` short-circuits on the Roboflow hosted platform, so the condition names
+# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+KAFKA_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
+    code="unavailable_on_hosted_platform",
+    severity=Severity.HARD,
+    note=(
+        "On the Roboflow hosted platform every run returns "
+        "`error_status=true` and publishes nothing; no Kafka connection is "
+        "opened from the hosted platform."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -295,8 +323,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Restrictions for the workflow editor. Each shares its code with
+            the same caveat in ``get_actual_restrictions()``.
+        """
         return [
             RuntimeRestriction(
+                code="unavailable_on_hosted_platform",
                 severity=Severity.HARD,
                 note=(
                     "On the Roboflow hosted platform every run returns "
@@ -306,6 +341,7 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
             RuntimeRestriction(
+                code="fire_and_forget_hides_persistence_failures",
                 severity=Severity.SOFT,
                 note=(
                     "Use fire_and_forget=false to observe delivery failures and avoid "
@@ -314,6 +350,49 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # Broker I/O: metadata on the first run, then queuing, retrying and
+        # (in confirmed mode) awaiting the acknowledgement.
+        return [WorkOperation.EXTERNAL_REQUEST]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        # The hosted-platform restriction is unconditional; the delivery caveat
+        # exists only when the run does not wait for the acknowledgement.
+        declared: Union[List[RuntimeRestriction], Discovery[RuntimeRestriction]]
+        if is_selector(self.fire_and_forget):
+            # A runtime value decides whether delivery is awaited, so the
+            # caveat MAY apply. Claiming it applies would be as wrong as
+            # claiming it does not: keep the restriction that IS known and
+            # declare nothing complete.
+            declared = incomplete_discovery(
+                items=[KAFKA_HOSTED_PLATFORM_RESTRICTION],
+                reasons=[
+                    unresolved_selector_problem(
+                        node_id=f"$steps.{getattr(self, 'name', '')}",
+                        declaration="restrictions",
+                        field="fire_and_forget",
+                        selector=self.fire_and_forget,
+                    )
+                ],
+            )
+        elif self.fire_and_forget:
+            declared = [
+                KAFKA_HOSTED_PLATFORM_RESTRICTION,
+                FIRE_AND_FORGET_RESTRICTION,
+            ]
+        else:
+            declared = [KAFKA_HOSTED_PLATFORM_RESTRICTION]
+        return actual_restrictions_of(
+            declared=declared,
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 def _failure(message: str) -> BlockResult:

@@ -79,6 +79,14 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
                 if env.KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS is None
                 else tuple(env.KAFKA_WORKFLOWS_SINKS_WHITELISTED_BOOTSTRAP_SERVERS)
             ),
+            allow_mqtt_blocks_user_provided_host=env.MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST,
+            # NOT sorted: the first entry is the operator's broker when
+            # user-provided hosts are not allowed.
+            mqtt_blocks_whitelisted_hosts=(
+                None
+                if env.MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS is None
+                else tuple(env.MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS)
+            ),
         ),
         tensor=TensorConfiguration(
             representation_enabled=env.ENABLE_TENSOR_DATA_REPRESENTATION,

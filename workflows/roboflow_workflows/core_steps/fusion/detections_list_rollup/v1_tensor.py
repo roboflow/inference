@@ -39,8 +39,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -198,6 +204,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        return [WorkOperation.DETECTION_PROCESSING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        return []
 
 
 class DetectionsListRollUpBlockV1(WorkflowBlock):
@@ -957,6 +976,12 @@ def merge_crop_predictions(
             ],
             object_class_ids=merged_class_ids,
             image_metadata=image_metadata,
+            per_instance_keypoint_class_ids=all_keypoints_data[
+                KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS
+            ],
+            per_instance_keypoint_class_names=all_keypoints_data[
+                KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS
+            ],
         )
         return (key_points, result), crop_zones
 

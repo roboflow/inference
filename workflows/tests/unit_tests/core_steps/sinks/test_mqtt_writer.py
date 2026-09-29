@@ -1,13 +1,17 @@
 import threading
+import time
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+from roboflow_workflows.enterprise_blocks.sinks import mqtt_common
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer import v1
 from roboflow_workflows.enterprise_blocks.sinks.mqtt_writer.v1 import (
+    NOT_CONNECTED_WITHIN_TIMEOUT,
     BlockManifest,
     MQTTWriterSinkBlockV1,
+    MQTTWriterState,
     mqtt_on_connect,
     mqtt_on_connect_fail,
     mqtt_on_disconnect,
@@ -127,45 +131,252 @@ class TestManifest:
 
 class TestCallbacks:
     def test_on_connect_sets_event_only_for_accepted_connack(self):
-        event = threading.Event()
+        state = MQTTWriterState()
 
-        mqtt_on_connect(MagicMock(), event, {}, 0)
+        mqtt_on_connect(MagicMock(), state, {}, 0)
 
-        assert event.is_set()
+        assert state.connected.is_set()
+        assert state.connack.is_set()
+        assert state.refused_code is None
 
     @pytest.mark.parametrize("reason_code", [1, 2, 3, 4, 5])
     def test_on_connect_clears_event_for_rejected_connack(self, reason_code):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_connect(MagicMock(), event, {}, reason_code)
+        mqtt_on_connect(MagicMock(), state, {}, reason_code)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+        assert state.connack.is_set()
+        assert state.refused_code == reason_code
+
+    @pytest.mark.parametrize("reason_code", [1, 2, 4, 5])
+    def test_on_connect_stops_the_loop_for_a_permanent_refusal(self, reason_code):
+        client = MagicMock()
+
+        mqtt_on_connect(client, MQTTWriterState(), {}, reason_code)
+
+        client.disconnect.assert_called_once_with()
+
+    def test_on_connect_keeps_the_loop_for_broker_unavailable(self):
+        client = MagicMock()
+        state = MQTTWriterState()
+
+        mqtt_on_connect(client, state, {}, 3)
+
+        client.disconnect.assert_not_called()
+        assert state.refused_code == 3
+
+    @pytest.mark.parametrize("reason_code", [0, 3, 5])
+    def test_on_connect_completes_the_state_before_waking_a_waiter(self, reason_code):
+        # a run wakes on `connack`; what it then reads must already be final
+        state = MQTTWriterState()
+        seen = {}
+
+        class RecordingEvent(threading.Event):
+            def set(self):
+                seen["refused_code"] = state.refused_code
+                seen["connected"] = state.connected.is_set()
+                super().set()
+
+        state.connack = RecordingEvent()
+
+        mqtt_on_connect(MagicMock(), state, {}, reason_code)
+
+        assert seen == {
+            "refused_code": reason_code or None,
+            "connected": reason_code == 0,
+        }
+
+    def test_on_connect_logs_the_refusal_reason(self, caplog):
+        with caplog.at_level("ERROR", logger="inference"):
+            mqtt_on_connect(MagicMock(), MQTTWriterState(), {}, 4)
+
+        assert "bad user name or password" in caplog.text
+        assert "code 4" in caplog.text
+
+    def test_accepted_connack_after_broker_unavailable_resets_refusal(self):
+        state = MQTTWriterState()
+
+        mqtt_on_connect(MagicMock(), state, {}, 3)
+        mqtt_on_connect(MagicMock(), state, {}, 0)
+
+        assert state.refused_code is None
+        assert state.connected.is_set()
 
     def test_on_connect_fail_matches_paho_two_argument_signature(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
         # paho 1.6.1 invokes on_connect_fail with exactly (client, userdata)
-        mqtt_on_connect_fail(MagicMock(), event)
+        mqtt_on_connect_fail(MagicMock(), state)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
 
     def test_on_disconnect_clears_event(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_disconnect(MagicMock(), event, 1)
+        mqtt_on_disconnect(MagicMock(), state, 1)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+
+    def test_on_disconnect_after_transport_drop_clears_connack(self):
+        state = MQTTWriterState()
+        state.connack.set()
+
+        mqtt_on_disconnect(MagicMock(), state, 1)
+
+        assert not state.connack.is_set()
+
+    def test_on_disconnect_after_refusal_keeps_connack(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 5)
+
+        mqtt_on_disconnect(MagicMock(), state, 0)
+
+        assert state.connack.is_set()
+        assert state.refused_code == 5
 
     def test_on_disconnect_accepts_mqtt5_properties_argument(self):
-        event = threading.Event()
-        event.set()
+        state = MQTTWriterState()
+        state.connected.set()
 
-        mqtt_on_disconnect(MagicMock(), event, 1, properties=None)
+        mqtt_on_disconnect(MagicMock(), state, 1, properties=None)
 
-        assert not event.is_set()
+        assert not state.connected.is_set()
+
+    def test_reset_clears_everything(self):
+        state = MQTTWriterState()
+        mqtt_on_connect(MagicMock(), state, {}, 5)
+
+        state.reset()
+
+        assert not state.connected.is_set()
+        assert not state.connack.is_set()
+        assert state.refused_code is None
+
+
+def _answer_connect_with(mock_client_cls, reason_code: int) -> None:
+    """Make the mocked client's loop_start deliver a CONNACK with `reason_code`
+    to the state the block handed paho as userdata."""
+    mock_client = mock_client_cls.return_value
+
+    def fire_connack():
+        state = mock_client_cls.call_args.kwargs["userdata"]
+        mqtt_on_connect(mock_client, state, {}, reason_code)
+
+    mock_client.loop_start.side_effect = fire_connack
+
+
+class TestRefusedConnection:
+    def test_refusal_reported_with_reason_and_inputs(self, mock_client_cls, block):
+        _answer_connect_with(mock_client_cls, 5)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "not authorised" in result["message"]
+        assert "code 5" in result["message"]
+        assert "Check username and password" in result["message"]
+        assert "Raise 'timeout'" not in result["message"]
+        mock_client_cls.return_value.disconnect.assert_called_once_with()
+        mock_client_cls.return_value.publish.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "reason_code, reason",
+        [
+            (1, "unacceptable protocol version"),
+            (2, "identifier rejected"),
+            (4, "bad user name or password"),
+        ],
+    )
+    def test_other_permanent_refusals_name_their_reason(
+        self, mock_client_cls, block, reason_code, reason
+    ):
+        _answer_connect_with(mock_client_cls, reason_code)
+
+        result = block.run(**run_kwargs())
+
+        assert reason in result["message"]
+        mock_client_cls.return_value.disconnect.assert_called_once_with()
+
+    def test_refusal_is_reported_without_waiting_for_timeout(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+
+        started = time.monotonic()
+        result = block.run(**run_kwargs(timeout=2.0))
+
+        assert result["error_status"] is True
+        assert time.monotonic() - started < 0.5
+
+    def test_next_run_after_refusal_repeats_it_without_a_new_connection(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+        first = block.run(**run_kwargs(timeout=2.0))
+
+        started = time.monotonic()
+        second = block.run(**run_kwargs(timeout=2.0))
+
+        assert second == first
+        assert time.monotonic() - started < 0.5
+        assert mock_client_cls.call_count == 1
+        mock_client_cls.return_value.connect.assert_called_once()
+
+    def test_refusal_with_fail_fast_raises_with_the_reason(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+
+        with pytest.raises(Exception, match="not authorised"):
+            block.run(**run_kwargs(fail_fast=True))
+
+    def test_broker_unavailable_keeps_retrying_and_names_the_reason(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 3)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "broker unavailable" in result["message"]
+        assert "retrying in the background" in result["message"]
+        mock_client_cls.return_value.disconnect.assert_not_called()
+
+    def test_run_succeeds_once_an_unavailable_broker_accepts(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 3)
+        block.run(**run_kwargs())
+        state = mock_client_cls.call_args.kwargs["userdata"]
+        mqtt_on_connect(mock_client_cls.return_value, state, {}, 0)
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        assert state.refused_code is None
+
+    def test_no_connack_at_all_reports_not_connected(self, mock_client_cls, block):
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert result["message"] == NOT_CONNECTED_WITHIN_TIMEOUT
+
+    def test_close_after_refusal_completes_and_resets_state(
+        self, mock_client_cls, block
+    ):
+        _answer_connect_with(mock_client_cls, 5)
+        block.run(**run_kwargs())
+
+        block.close()
+
+        assert block.mqtt_client is None
+        assert block._connection.refused_code is None
+        assert not block._connection.connack.is_set()
+        mock_client_cls.return_value.loop_stop.assert_called_once()
 
 
 class TestRunValidation:
@@ -270,7 +481,7 @@ class TestClientSetup:
         result = block.run(**run_kwargs())
 
         assert result["error_status"] is False
-        mock_client_cls.assert_called_once_with(userdata=block._connected)
+        mock_client_cls.assert_called_once_with(userdata=block._connection)
         mock_client.connect.assert_called_once_with("localhost", 1883)
         mock_client.connect_async.assert_not_called()
         called_methods = [call[0] for call in mock_client.method_calls]
@@ -627,3 +838,238 @@ class TestCleanup:
 
         assert event_state_at_loop_stop == [True]
         assert not block._connected.is_set()
+
+
+class TestBrokerPolicy:
+    def test_allowlisted_broker_is_used(self, mock_client_cls, block, monkeypatch):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["localhost:1883"]
+        )
+        block._connected.set()
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.connect.assert_called_once_with("localhost", 1883)
+
+    def test_unlisted_broker_rejected_before_client_construction(
+        self, mock_client_cls, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker.internal"]
+        )
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "not permitted" in result["message"]
+        assert "broker.internal" not in result["message"]
+        mock_client_cls.assert_not_called()
+
+    def test_unlisted_broker_with_fail_fast_raises(
+        self, mock_client_cls, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker.internal"]
+        )
+
+        with pytest.raises(RuntimeError, match="not permitted"):
+            block.run(**run_kwargs(fail_fast=True))
+
+        mock_client_cls.assert_not_called()
+
+    def test_operator_broker_replaces_workflow_host_when_user_host_not_allowed(
+        self, mock_client_cls, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", False
+        )
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["operator:8883"]
+        )
+        block._connected.set()
+
+        first = block.run(**run_kwargs(host="workflow-a"))
+        second = block.run(**run_kwargs(host="workflow-b"))
+
+        assert first["error_status"] is False
+        assert second["error_status"] is False
+        mock_client_cls.return_value.connect.assert_called_once_with("operator", 8883)
+
+    def test_user_host_not_allowed_without_operator_broker_disables_block(
+        self, mock_client_cls, block, monkeypatch
+    ):
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_ALLOW_USER_PROVIDED_HOST", False
+        )
+        monkeypatch.setattr(
+            mqtt_common, "MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", None
+        )
+
+        result = block.run(**run_kwargs())
+
+        assert result["error_status"] is True
+        assert "disabled" in result["message"]
+        mock_client_cls.assert_not_called()
+
+
+def _call_names(mock_client) -> list:
+    return [call[0] for call in mock_client.method_calls]
+
+
+@pytest.fixture
+def ca_file(tmp_path):
+    # a real regular file: configure_tls() refuses anything else before paho
+    # (faked in these tests) would read it
+    path = tmp_path / "ca.pem"
+    path.write_text("content is irrelevant: paho is faked in these tests")
+    return path
+
+
+class TestTLS:
+    def test_manifest_defaults_and_relevant_for(self):
+        manifest = BlockManifest.model_validate(
+            {
+                "type": "roboflow_enterprise/mqtt_writer_sink@v1",
+                "name": "mqtt",
+                "host": "localhost",
+                "port": 1883,
+                "topic": "test/topic",
+                "message": "Hello, MQTT!",
+            }
+        )
+        schema = BlockManifest.model_json_schema()["properties"]
+
+        assert manifest.encryption == "none"
+        assert manifest.ca_certificate_path is None
+        assert schema["ca_certificate_path"]["relevant_for"] == {
+            "encryption": {"values": ["tls"], "required": True}
+        }
+
+    @pytest.mark.parametrize("encryption", ["ssl", "TLS", True, None, ""])
+    def test_manifest_rejects_other_encryption_values(self, encryption):
+        with pytest.raises(ValidationError):
+            BlockManifest.model_validate(
+                {
+                    "type": "roboflow_enterprise/mqtt_writer_sink@v1",
+                    "name": "mqtt",
+                    "host": "localhost",
+                    "port": 1883,
+                    "topic": "test/topic",
+                    "message": "Hello, MQTT!",
+                    "encryption": encryption,
+                }
+            )
+
+    def test_init_parameters_include_file_system_access(self):
+        assert MQTTWriterSinkBlockV1.get_init_parameters() == [
+            "disable_sinks",
+            "allow_access_to_file_system",
+        ]
+
+    @pytest.mark.parametrize("ca_certificate_path", [None, "", "/ca.pem"])
+    def test_default_encryption_never_configures_tls(
+        self, mock_client_cls, block, ca_certificate_path
+    ):
+        block._connected.set()
+
+        result = block.run(**run_kwargs(ca_certificate_path=ca_certificate_path))
+
+        assert result["error_status"] is False
+        mock_client_cls.return_value.tls_set.assert_not_called()
+        mock_client_cls.return_value.tls_insecure_set.assert_not_called()
+
+    def test_tls_without_ca_path_uses_system_store_before_connect(
+        self, mock_client_cls, block
+    ):
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(**run_kwargs(encryption="tls"))
+
+        assert result["error_status"] is False
+        mock_client.tls_set.assert_called_once_with()
+        names = _call_names(mock_client)
+        assert names.index("tls_set") < names.index("connect")
+        mock_client.tls_insecure_set.assert_not_called()
+
+    def test_tls_with_ca_path_and_file_system_access(self, mock_client_cls, ca_file):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        block._connected.set()
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
+        )
+
+        assert result["error_status"] is False
+        mock_client.tls_set.assert_called_once_with(ca_certs=str(ca_file))
+        names = _call_names(mock_client)
+        assert names.index("tls_set") < names.index("connect")
+
+    def test_tls_with_ca_path_refused_without_file_system_access(
+        self, mock_client_cls, block
+    ):
+        mock_client = mock_client_cls.return_value
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path="/etc/passwd")
+        )
+
+        assert result["error_status"] is True
+        assert "ca_certificate_path" in result["message"]
+        assert "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE" in result["message"]
+        assert block.mqtt_client is None
+        mock_client.tls_set.assert_not_called()
+        mock_client.connect.assert_not_called()
+        mock_client.loop_start.assert_not_called()
+
+    def test_tls_refused_with_fail_fast_raises(self, mock_client_cls, block):
+        with pytest.raises(RuntimeError, match="ca_certificate_path"):
+            block.run(
+                **run_kwargs(
+                    encryption="tls", ca_certificate_path="/etc/passwd", fail_fast=True
+                )
+            )
+
+        assert block.mqtt_client is None
+
+    def test_unloadable_ca_bundle_reported_and_nothing_kept(
+        self, mock_client_cls, ca_file
+    ):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        mock_client = mock_client_cls.return_value
+        mock_client.tls_set.side_effect = FileNotFoundError("no such file")
+
+        result = block.run(
+            **run_kwargs(encryption="tls", ca_certificate_path=str(ca_file))
+        )
+
+        assert result["error_status"] is True
+        assert "could not load CA bundle" in result["message"]
+        assert str(ca_file) in result["message"]
+        assert block.mqtt_client is None
+        mock_client.connect.assert_not_called()
+        mock_client.loop_start.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "change",
+        [{"encryption": "tls"}, {"ca_certificate_path": "other.pem"}],
+    )
+    def test_changed_tls_parameters_rejected(self, mock_client_cls, change):
+        block = MQTTWriterSinkBlockV1(allow_access_to_file_system=True)
+        block._connected.set()
+        block.run(**run_kwargs())
+
+        result = block.run(**run_kwargs(**change))
+
+        assert result["error_status"] is True
+        assert "changed between runs" in result["message"]
+        mock_client_cls.assert_called_once()
+
+    def test_invalid_encryption_at_run_time_rejected(self, mock_client_cls, block):
+        result = block.run(**run_kwargs(encryption="ssl"))
+
+        assert result["error_status"] is True
+        assert "encryption" in result["message"]
+        mock_client_cls.assert_not_called()
