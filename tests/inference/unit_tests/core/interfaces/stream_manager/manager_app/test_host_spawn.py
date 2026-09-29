@@ -38,6 +38,7 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.camera.video_source import StreamState
 from inference.core.interfaces.stream import pipeline as pipeline_module
+from inference.core.interfaces.stream.configuration import StreamsConfiguration
 from inference.core.interfaces.stream_manager.manager_app import (
     inference_pipeline_manager,
 )
@@ -1522,3 +1523,142 @@ def test_real_manager_runs_and_cleans_up_a_tiny_workflow_pipeline(monkeypatch) -
 
     assert manager.exitcode == 0
     assert not any(psutil.pid_exists(pid) for pid in pipeline_pids)
+
+
+# The passed configuration is installed before the host module is imported
+
+# Freezes the configuration installed at its import, like a runtime-importing host.
+_RUNTIME_IMPORTING_HOST = """
+import streamvision.stream.environment
+
+
+def create_host():
+    raise NotImplementedError
+"""
+
+_DIFFERENTLY_CONFIGURED_HOST = """
+from streamvision.stream.configuration import StreamsConfiguration, configure_process
+
+configure_process(StreamsConfiguration(default_buffer_size=3))
+
+
+def create_host():
+    raise NotImplementedError
+"""
+
+_CONFIGURED_PIPELINE_PROCESS_DRIVER = '''
+import json
+import os
+
+from streamvision.stream_manager.manager_app.bootstrap import PipelineManagerProcess
+
+
+class ErrorReportingPipelineManagerProcess(PipelineManagerProcess):
+    def run(self):
+        try:
+            super().run()
+        except Exception as error:
+            self._responses_queue.put({"error": type(error).__name__})
+
+
+class BufferSizeReportingManager:
+    """Reports the buffer size frozen in its pipeline process, then exits."""
+
+    def __init__(self, responses_queue):
+        self._responses_queue = responses_queue
+
+    @classmethod
+    def init(cls, *, responses_queue, **kwargs):
+        return cls(responses_queue)
+
+    def run(self):
+        from streamvision.stream import environment
+
+        self._responses_queue.put(
+            {"default_buffer_size": environment.DEFAULT_BUFFER_SIZE}
+        )
+
+
+def main():
+    import multiprocessing
+
+    from streamvision.stream.configuration import StreamsConfiguration
+    from streamvision.stream_manager.manager_app.host import PipelineHostDescriptor
+
+    multiprocessing.set_start_method("spawn", force=True)
+    responses_queue = multiprocessing.Queue()
+    process = ErrorReportingPipelineManagerProcess(
+        pipeline_id="p",
+        command_queue=multiprocessing.Queue(),
+        responses_queue=responses_queue,
+        configuration=StreamsConfiguration(default_buffer_size=17),
+        host_descriptor=PipelineHostDescriptor(factory="configured_host:create_host"),
+        manager_class="__main__:BufferSizeReportingManager",
+    )
+    process.start()
+    report = responses_queue.get(timeout=240)
+    process.join(timeout=60)
+
+    with open(os.environ["SPAWN_DRIVER_RESULT"], "w") as result_file:
+        json.dump(report, result_file)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize(
+    "host_source, expected_report",
+    [
+        (_RUNTIME_IMPORTING_HOST, {"default_buffer_size": 17}),
+        (_DIFFERENTLY_CONFIGURED_HOST, {"error": "StreamsConfigurationError"}),
+    ],
+    ids=["host-imports-the-runtime", "host-installs-a-different-configuration"],
+)
+def test_pipeline_process_installs_its_configuration_before_importing_the_host(
+    host_source: str,
+    expected_report: dict,
+    tmp_path: Path,
+) -> None:
+    # The driver's directory is on the `sys.path` of its spawned children.
+    (tmp_path / "configured_host.py").write_text(host_source)
+
+    report, _ = run_spawn_driver(
+        _CONFIGURED_PIPELINE_PROCESS_DRIVER,
+        tmp_path=tmp_path,
+        watched_modules=(),
+    )
+
+    assert report == expected_report
+
+
+@pytest.mark.timeout(600)
+def test_manager_installs_its_configuration_before_importing_the_host(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "configured_host.py").write_text(_RUNTIME_IMPORTING_HOST)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    port = _free_port()
+    manager = get_context("spawn").Process(
+        target=partial(
+            run_stream_manager,
+            configuration=StreamsConfiguration(
+                stream_manager_host="127.0.0.1", stream_manager_port=port
+            ),
+            host_descriptor=PipelineHostDescriptor(
+                factory="configured_host:create_host"
+            ),
+        )
+    )
+    manager.start()
+    try:
+        # Listens on `port` only if the host import did not freeze the defaults.
+        _wait_for_manager(manager, port)
+    finally:
+        manager.terminate()
+        manager.join(timeout=60)
+
+    assert manager.exitcode == 0

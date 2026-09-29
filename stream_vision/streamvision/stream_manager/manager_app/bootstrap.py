@@ -7,11 +7,11 @@ before anything the parent passed could be installed. The two entry points
 here - `run_stream_manager` for the manager process a server launches, and
 `PipelineManagerProcess` for each pipeline process the manager starts -
 therefore live in a module that imports only the configuration and the host
-contract. Each imports the host factory module first, then installs the
-configuration and host descriptor it was given, and imports the manager
-runtime only afterwards. A host module may install process defaults on import;
-the explicit settings passed by the launcher are installed after it and must
-agree with them.
+contract. Each installs the configuration it was given first, then imports
+the host factory module and installs the host descriptor, and imports the
+manager runtime only afterwards. A host module that installs a configuration of
+its own on import must install an equal one; otherwise its import fails with
+`StreamsConfigurationError`.
 """
 
 import signal
@@ -48,11 +48,12 @@ def run_stream_manager(
     host_descriptor: PipelineHostDescriptor,
     expected_warmed_up_pipelines: int = 0,
 ) -> None:
-    """Import the host, configure this process, then run the stream manager.
+    """Configure this process, import the host, then run the stream manager.
 
-    Use as the `Process` target that launches the manager. The host module may
-    install process defaults on import; `configuration` and `host_descriptor`
-    are installed after it and must agree with them.
+    Use as the `Process` target that launches the manager. `configuration` is
+    installed before the host module is imported, so a host module importing
+    the stream runtime reads it. A host module that installs a configuration of
+    its own on import must install an equal one.
 
     Args:
         configuration: Stream configuration of the manager and its pipelines.
@@ -60,9 +61,10 @@ def run_stream_manager(
         expected_warmed_up_pipelines: Number of idle pipeline processes kept ready.
 
     Raises:
-        StreamsConfigurationError: `configuration` differs from the one the host
-            module installed.
+        StreamsConfigurationError: A configuration differing from `configuration`
+            is already in use, or the host module installs one on import.
     """
+    configure_process(configuration)
     import_attribute(host_descriptor.factory)
     install_process_settings(
         configuration=configuration,
@@ -78,13 +80,14 @@ def run_stream_manager(
 
 
 class PipelineManagerProcess(Process):
-    """A pipeline process: imports its host, configures itself, then runs.
+    """A pipeline process: configures itself, imports its host, then runs.
 
     Attributes are plain values and queues only, so the object pickles under
     any start method. `manager_class` names the pipeline manager class by
-    import path for the same reason. The host module may install process
-    defaults on import; the explicit configuration and host descriptor are
-    installed after it and must agree with them.
+    import path for the same reason. The explicit configuration is installed
+    before the host module is imported; a host module that installs a
+    configuration of its own on import must install an equal one, otherwise its
+    import fails with `StreamsConfigurationError`.
     """
 
     def __init__(
@@ -108,6 +111,7 @@ class PipelineManagerProcess(Process):
     def run(self) -> None:
         # Ignore SIGINT before importing the runtime; the manager sends SIGTERM instead.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+        configure_process(self._configuration)
         # Imports while idle; a forked pipeline inherits it, skipping the first request.
         import_attribute(self._host_descriptor.factory)
         install_process_settings(
