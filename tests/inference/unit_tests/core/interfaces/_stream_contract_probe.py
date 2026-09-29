@@ -136,12 +136,10 @@ def _resolve_contract(dotted_path: str) -> Callable:
 def _capture_contract(dotted_path: str) -> Dict[str, str]:
     fn = _resolve_contract(dotted_path)
     signature = _stable_signature(fn)
-    docstring = inspect.getdoc(fn) or ""
 
     return {
         "signature": signature,
         "sig_hash": _hash(signature),
-        "doc_hash": _hash(docstring),
     }
 
 
