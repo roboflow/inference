@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from roboflow_workflows.environment import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -21,6 +21,14 @@ from roboflow_workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    Severity,
+    WorkOperation,
+    custom_python_internals_unknown_problem,
+    incomplete_discovery,
 )
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     load_all_defined_kinds,
@@ -47,7 +55,10 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
     TensorCompatibility,
     ValueType,
 )
-from roboflow_workflows.prototypes.block import WorkflowBlockManifest
+from roboflow_workflows.prototypes.block import (
+    WorkflowBlockManifest,
+    actual_restrictions_of,
+)
 from roboflow_workflows.prototypes.workspace_resolver import (
     NULL_WORKSPACE_RESOLVER,
     WorkspaceResolver,
@@ -64,15 +75,48 @@ def compile_dynamic_blocks(
     api_key: Optional[str] = None,
     workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
+    structural: bool = False,
 ) -> List[BlockSpecification]:
+    """Compile dynamic block definitions into block specifications.
+
+    `structural=True` is the INSPECTION mode: the manifest is built and
+    validated exactly as in executable mode, but this host's custom-Python
+    allowance and tensor gates are not consulted, the user code is never
+    evaluated (locally or in Modal), no workspace is resolved, and the returned
+    block class is a placeholder that refuses to initialise or run.
+    `skip_class_eval` alone does not give that - the gates run before it.
+
+    Args:
+        dynamic_blocks_definitions: Raw dynamic block definitions from the
+            workflow definition.
+        profiler: Optional profiler recording the compilation phase.
+        api_key: Api key used to resolve the workspace in executable mode.
+        workspace_resolver: Resolves the workspace in executable mode.
+        skip_class_eval: If True, the block class is not evaluated.
+        structural: If True, compile for inspection only, as described above.
+
+    Returns:
+        One block specification per dynamic block definition.
+
+    Raises:
+        WorkflowEnvironmentConfigurationError: If custom Python is not allowed
+            in this installation and `structural` is False.
+        DynamicBlockError: If a definition does not match the
+            `DynamicBlockDefinition` schema, with the Pydantic
+            `ValidationError` as inner error, or if a valid definition cannot
+            be assembled into a block.
+    """
     if not dynamic_blocks_definitions:
         return []
-    ensure_dynamic_blocks_allowed(dynamic_blocks_definitions=dynamic_blocks_definitions)
+    if not structural:
+        ensure_dynamic_blocks_allowed(
+            dynamic_blocks_definitions=dynamic_blocks_definitions
+        )
     all_defined_kinds = load_all_defined_kinds()
     kinds_lookup = {kind.name: kind for kind in all_defined_kinds}
     dynamic_blocks = [
-        DynamicBlockDefinition.model_validate(dynamic_block)
-        for dynamic_block in dynamic_blocks_definitions
+        _parse_dynamic_block_definition(dynamic_block, index=index)
+        for index, dynamic_block in enumerate(dynamic_blocks_definitions)
     ]
     compiled_blocks = []
     for dynamic_block in dynamic_blocks:
@@ -82,9 +126,35 @@ def compile_dynamic_blocks(
             api_key=api_key,
             workspace_resolver=workspace_resolver,
             skip_class_eval=skip_class_eval,
+            structural=structural,
         )
         compiled_blocks.append(block_specification)
     return compiled_blocks
+
+
+def _parse_dynamic_block_definition(
+    dynamic_block: Any,
+    *,
+    index: int,
+) -> DynamicBlockDefinition:
+    # Only schema validation of the request is a client error here; failures of
+    # later assembly steps keep their own error types.
+    try:
+        dynamic_block_definition = DynamicBlockDefinition.model_validate(dynamic_block)
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in problem['loc']) or '<root>'}: "
+            f"{problem['msg']}"
+            for problem in error.errors(include_url=False)
+        )
+        raise DynamicBlockError(
+            public_message=f"Dynamic block definition at index {index} is malformed: "
+            f"{problems}. Details available in inner error object.",
+            context="workflow_compilation | dynamic_blocks_compilation",
+            inner_error=error,
+        ) from error
+
+    return dynamic_block_definition
 
 
 def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> None:
@@ -119,10 +189,15 @@ def create_dynamic_block_specification(
     api_key: Optional[str] = None,
     workspace_resolver: WorkspaceResolver = NULL_WORKSPACE_RESOLVER,
     skip_class_eval: Optional[bool] = False,
+    structural: bool = False,
 ) -> BlockSpecification:
-    ensure_tensor_compatibility_supported(
-        manifest_description=dynamic_block_definition.manifest,
-    )
+    if not structural:
+        # Inspection reports the tensor contract as a portable restriction
+        # (see `assembly_manifest_class_methods`) instead of enforcing this
+        # host's flags.
+        ensure_tensor_compatibility_supported(
+            manifest_description=dynamic_block_definition.manifest,
+        )
     unique_identifier = str(uuid4())
     block_manifest = assembly_dynamic_block_manifest(
         unique_identifier=unique_identifier,
@@ -138,6 +213,7 @@ def create_dynamic_block_specification(
         workspace_resolver=workspace_resolver,
         skip_class_eval=skip_class_eval,
         manifest_description=dynamic_block_definition.manifest,
+        structural=structural,
     )
     return BlockSpecification(
         block_source=BLOCK_SOURCE,
@@ -528,7 +604,101 @@ def assembly_manifest_class_methods(
         "discover_dependent_resources",
         discover_dependent_resources,
     )
+    # Workload declarations (same for executable and structural compilation):
+    # the block IS custom Python, whatever else it does inside is unknown, and
+    # its restrictions are the gates the executable path enforces - expressed
+    # as conditions on the TARGET configuration, never evaluated against this
+    # host's flags by the declaration itself.
+    tensor_native = (
+        manifest_description.tensor_compatibility is TensorCompatibility.TENSOR_NATIVE
+    )
+
+    def discover_work_operations(self):
+        return _dynamic_block_work_operations(step_name=self.name)
+
+    # A dynamic manifest does not subclass `WorkflowBlockManifest`, so the
+    # public restriction API has to be patched on; it builds the same
+    # declaration and applies the flag the same way a built-in manifest does.
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=_dynamic_block_restrictions(
+                step_name=self.name, tensor_native=tensor_native
+            ),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+    setattr(manifest_class, "discover_work_operations", discover_work_operations)
+    setattr(manifest_class, "get_actual_restrictions", get_actual_restrictions)
     return manifest_class
+
+
+def _dynamic_block_work_operations(step_name: str) -> Discovery[WorkOperation]:
+    return incomplete_discovery(
+        [WorkOperation.CUSTOM_PYTHON],
+        [
+            custom_python_internals_unknown_problem(
+                node_id=f"$steps.{step_name}", declaration="operations"
+            )
+        ],
+    )
+
+
+def _dynamic_block_restrictions(
+    step_name: str, tensor_native: bool
+) -> Discovery[RuntimeRestriction]:
+    items = [
+        RuntimeRestriction(
+            code="custom_python_execution_disabled",
+            severity=Severity.HARD,
+            note=(
+                "Local custom Python execution is refused when "
+                "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS is False: the "
+                "block cannot be compiled or run."
+            ),
+            applies_to_configuration={
+                "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": False,
+                "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local",
+            },
+        )
+    ]
+    if tensor_native:
+        items.append(
+            RuntimeRestriction(
+                code="tensor_native_requires_tensor_representation",
+                severity=Severity.HARD,
+                note=(
+                    "The block declares itself tensor-native, so it cannot run "
+                    "on a server using the numpy image representation "
+                    "(ENABLE_TENSOR_DATA_REPRESENTATION=False)."
+                ),
+                applies_to_configuration={"ENABLE_TENSOR_DATA_REPRESENTATION": False},
+            )
+        )
+        items.append(
+            RuntimeRestriction(
+                code="tensor_native_unsupported_in_modal",
+                severity=Severity.HARD,
+                note=(
+                    "A tensor-native custom Python block cannot be dispatched "
+                    "to the Modal executor "
+                    "(WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal)."
+                ),
+                applies_to_configuration={
+                    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"
+                },
+            )
+        )
+    return incomplete_discovery(
+        items,
+        [
+            custom_python_internals_unknown_problem(
+                node_id=f"$steps.{step_name}", declaration="restrictions"
+            )
+        ],
+    )
 
 
 def pick_dimensionality_reference_property(

@@ -35,14 +35,20 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
     BlockResult,
+    DependentResource,
     Runtime,
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
 )
 
 LONG_DESCRIPTION = """
@@ -441,8 +447,15 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the legacy editor restrictions of this block.
+
+        Returns:
+            Fresh restrictions for the workflow editor on every call. The same
+            entries back ``get_actual_restrictions()``, so the codes match.
+        """
         return [
             RuntimeRestriction(
+                code="unavailable_on_hosted_platform",
                 severity=Severity.HARD,
                 note=(
                     "On the Roboflow hosted platform every run returns "
@@ -452,6 +465,7 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
             RuntimeRestriction(
+                code="connection_and_state_rebuilt_per_request",
                 severity=Severity.SOFT,
                 note=(
                     "The subscription and message buffer live in this block "
@@ -470,6 +484,47 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_input_modes=[RuntimeInputMode.IMAGE],
             ),
         ]
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Return the kinds of work a run of this step performs.
+
+        Returns:
+            Broker I/O, plus the messages buffered in process memory between
+            runs; the last message is returned again (with ``is_new=False``)
+            when nothing new arrived.
+        """
+        return [WorkOperation.EXTERNAL_REQUEST, WorkOperation.TEMPORAL_BUFFERING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Return the restrictions of this step on a target deployment.
+
+        Args:
+            ignore_environment_restrictions: If True, return the portable view
+                without evaluating configuration predicates against this host.
+
+        Returns:
+            Complete discovery of the ``get_restrictions()`` entries. Both
+            apply unconditionally: no manifest field switches either on, and
+            the hosted-platform condition is the runtime axis, never this
+            host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags.
+        """
+        restrictions = actual_restrictions_of(
+            declared=self.get_restrictions(),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+        return restrictions
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        """Return the models and projects this step pulls.
+
+        Returns:
+            An empty list: the block talks to an MQTT broker only.
+        """
+        return []
 
 
 class MQTTReaderBlockV1(WorkflowBlock):

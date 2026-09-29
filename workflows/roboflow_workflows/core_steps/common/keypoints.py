@@ -16,7 +16,7 @@ map). Padding is always appended after a detection's real keypoints, so the real
 keypoints are exactly the leading ``real_keypoints_count(...)`` slots.
 """
 
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 # Class name written into padding slots by
 # ``add_inference_keypoints_to_sv_detections``. Real keypoints never carry it.
@@ -25,6 +25,13 @@ KEYPOINT_PADDING_CLASS_NAME = ""
 # Bounds the dense keypoint arrays to about 28 MB on 64-bit NumPy (12 MB for
 # torch). A limit on real keypoints alone would not bound ragged padding.
 MAX_KEYPOINTS_PADDING_CELLS = 1_000_000
+
+# Bounds the slot count of one skeleton when keypoints are placed by class id.
+# Class ids arrive unchecked from runtime input and remote responses, and the
+# cell limit above bounds memory only: a single keypoint with class id 999,999
+# stays under it and would still send supervision's annotators through a
+# million-slot Python loop per frame. No real skeleton comes close to this.
+MAX_KEYPOINT_SLOTS = 1_024
 
 
 def validate_keypoints_padding(detections_count: int, max_keypoints: int) -> None:
@@ -58,3 +65,52 @@ def real_keypoints_count(keypoint_class_names: Optional[Sequence], total: int) -
         for class_name in keypoint_class_names
         if str(class_name) != KEYPOINT_PADDING_CLASS_NAME
     )
+
+
+# Keypoint names of the COCO person skeleton, in skeleton order. A keypoint whose
+# ``class_id`` is the index of its name in this tuple sits in its COCO slot.
+COCO_KEYPOINT_NAMES = (
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+)
+
+
+def is_coco_skeleton(
+    keypoint_class_ids: Iterable[int], keypoint_class_names: Iterable[str]
+) -> bool:
+    """Return whether every keypoint sits at its COCO skeleton slot.
+
+    True only when there is at least one keypoint and each ``(class_id, name)``
+    pair satisfies ``COCO_KEYPOINT_NAMES[class_id] == name``. Matching on names
+    alone is not enough: a custom skeleton that reuses COCO names in its own
+    order would then be drawn with COCO bones between the wrong joints. Padding
+    slots must be excluded by the caller.
+    """
+    pairs = list(zip(keypoint_class_ids, keypoint_class_names))
+    if not pairs:
+        return False
+    for class_id, class_name in pairs:
+        try:
+            index = int(class_id)
+        except (TypeError, ValueError):
+            return False
+        if index < 0 or index >= len(COCO_KEYPOINT_NAMES):
+            return False
+        if COCO_KEYPOINT_NAMES[index] != str(class_name):
+            return False
+    return True

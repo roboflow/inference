@@ -16,6 +16,8 @@ images. Supported Python versions are 3.10–3.13.
 - `docker/` – Dockerfiles used to build CPU and GPU images.
 - `tests/` – unit and integration tests for all packages.
 - `docs/` – mkdocs documentation source.
+- `stream_vision/` – standalone `streamvision` package: cameras, InferencePipeline
+  and the stream manager.
 
 ## Setup / Environment
 Create a Python environment and install the repo in editable mode:
@@ -23,9 +25,9 @@ Create a Python environment and install the repo in editable mode:
 ```bash
 conda create -n inference-development python=3.10
 conda activate inference-development
-pip install -e ./inference_models -e ./workflows -e .
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e .
 # optional models
-pip install -e ./inference_models -e ./workflows -e ".[sam]"
+pip install -e ./inference_models -e ./workflows -e ./stream_vision -e ".[sam]"
 ```
 
 Run development commands from the repository root so the checkout's SDK source
@@ -229,6 +231,77 @@ python -m pytest tests/workflows/integration_tests
 ```bash
 cd workflows && uv lock
 ```
+
+## Streamvision Package (streamvision)
+
+Camera acquisition, the host-neutral `InferencePipeline` and the stream manager
+live in `stream_vision/` as a standalone Python project (import `streamvision`).
+
+### Project layout
+```
+stream_vision/
+  streamvision/          # importable package (distribution: streamvision)
+    __main__.py          # `python -m streamvision` standalone stream manager
+  tests/
+    unit_tests/          # package unit tests
+    isolation/           # isolation probe tests (STREAMVISION_ISOLATION_WHEEL must be set)
+  scripts/
+    streamvision_isolation_probe.py  # CLI tool, see below
+  pyproject.toml
+  uv.lock
+  pytest.ini
+  CHANGELOG.md
+```
+
+### Versioning
+
+`streamvision` is published to PyPI separately from `inference` and pinned by
+`requirements/requirements.streamvision.txt`. Maintainers: at release, bump
+`version` in `stream_vision/pyproject.toml` and the pin, then run
+`cd stream_vision && uv lock`. Publishing uses `skip-existing`, so an unbumped
+version is silently not re-published.
+
+### Building the wheel
+
+```bash
+make create_streamvision_wheel    # wheel lands in dist/streamvision-*.whl
+```
+
+### Running package tests
+
+```bash
+cd stream_vision && python -m pytest tests/unit_tests tests/isolation
+```
+
+### Running the isolation probe
+
+Build `make create_isolation_wheels` first; `--webrtc` adds the `[webrtc]` extra.
+
+```bash
+python stream_vision/scripts/streamvision_isolation_probe.py \
+    --wheel dist/streamvision-*.whl \
+    --find-links dist/ [--webrtc]
+```
+
+The probe installs the wheel into a throwaway venv outside the checkout, blocks
+all `inference.*` imports, and round-trips a standalone stream manager only
+when `--webrtc` is passed.
+
+### Standalone stream manager
+
+The stream manager (`python -m streamvision`) needs `streamvision[webrtc,workflows]`; the
+library parts (`streamvision.camera`, `streamvision.stream`, the TCP client and
+entities) work without both extras; workflow pipelines need `workflows`.
+
+```bash
+STREAM_MANAGER_PORT=7070 python -m streamvision \
+    --host-factory my_package.host:create_host \
+    [--host-setting KEY=VALUE ...] [--warm-pipelines N]
+```
+
+The address comes from `STREAM_MANAGER_HOST`, `STREAM_MANAGER_PORT` and
+`STREAM_MANAGER_SOCKET_TIMEOUT`. The host factory module is imported before the
+runtime and may install its own `StreamsConfiguration`.
 
 ## Canonical repository rules
 

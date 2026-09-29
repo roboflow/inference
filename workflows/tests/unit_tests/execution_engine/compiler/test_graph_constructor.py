@@ -115,6 +115,7 @@ def test_execution_graph_construction_for_trivial_workflow() -> None:
         },
         batch_oriented_parameters={"images"},
         step_execution_dimensionality=1,
+        reference_dimensionality=1,
     ), "Model node must be created correctly"
     output_node = result.nodes["$outputs.predictions"]["node_compilation_output"]
     assert output_node == OutputNode(

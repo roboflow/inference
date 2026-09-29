@@ -101,10 +101,10 @@ jobs:
         with:
           path: workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets
           key: workflows-fonts-${{ hashFiles('workflows/roboflow_workflows/core_steps/visualizations/common/fonts/registry.py') }}
-      - name: 🏗️ Build and install roboflow-workflows wheel (with enterprise extra)
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
-          make create_workflows_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          make create_workflows_wheel create_streamvision_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"

@@ -33,9 +33,21 @@ from typing import Any, List, Optional, Tuple
 
 from roboflow_workflows.errors import WorkflowEnvironmentConfigurationError
 
+# The values `inference/core/env.py` accepts for
+# `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE`, after its `.strip().lower()`.
+CUSTOM_PYTHON_EXECUTION_MODES = ("local", "modal")
+
 
 @dataclass(frozen=True)
 class EngineConfiguration:
+    """Engine-level values, copied from the host's resolved settings.
+
+    Raises:
+        WorkflowEnvironmentConfigurationError: If `custom_python_execution_mode`
+            is not exactly one of `CUSTOM_PYTHON_EXECUTION_MODES`. The value is
+            not normalised here: a host passes the value it already resolved.
+    """
+
     step_execution_mode: str = "local"
     async_future_result_timeout: float = 60.0
     max_inner_workflow_depth: int = 4
@@ -64,6 +76,19 @@ class EngineConfiguration:
     # broker when user-provided hosts are not allowed.
     allow_mqtt_blocks_user_provided_host: bool = True
     mqtt_blocks_whitelisted_hosts: Optional[Tuple[str, ...]] = None
+
+    def __post_init__(self) -> None:
+        # Consumers compare against "modal" only, so any other value would
+        # silently run custom Python locally.
+        if self.custom_python_execution_mode not in CUSTOM_PYTHON_EXECUTION_MODES:
+            raise WorkflowEnvironmentConfigurationError(
+                public_message=(
+                    "`engine.custom_python_execution_mode` must be one of "
+                    f"{list(CUSTOM_PYTHON_EXECUTION_MODES)}, got "
+                    f"{self.custom_python_execution_mode!r}."
+                ),
+                context="workflow_configuration | engine_configuration",
+            )
 
 
 @dataclass(frozen=True)

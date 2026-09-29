@@ -2,8 +2,47 @@
 
 Read the shared
 [Inference-Path Optimization Architecture](../inference-path-optimization-architecture.md)
-first. This document maps that reusable architecture to the current RF-DETR TensorRT
-object-detection implementation.
+first. This document maps that reusable architecture to RF-DETR object detection
+on TensorRT, Torch and ONNX. The diagrams below show the TensorRT implementation;
+Torch/ONNX use the same selection and readiness contracts through `backend_path.py`
+and `backend_stages.py`, preserving their own forward and postprocessing callbacks.
+Instance segmentation is not migrated yet.
+
+All three backend loaders accept the canonical `execution_plan` argument as a
+typed `RFDetrExecutionPlan` or its serialized mapping. Torch checkpoint loading
+uses the same contract. The deprecated `rfdetr_execution_plan` alias warns and
+cannot accompany a non-`None` canonical argument; explicit plans override the
+environment and retain their fallback policies.
+
+All backends share preprocessing choices. `auto` prefers `triton-universal-v1`,
+then `pillow-simd-v1`, then `base`; explicit choices remain supported. The same
+order forms Triton's declared fallback chain. Every candidate reached is checked
+for static/dependency, model, request and runtime compatibility before execution.
+Pillow-SIMD remains optional and declares numerical differences; incompatible
+architectures or missing native installations skip it without preventing `base`.
+Its installation smoke check is documented in `docker/scripts/verify_pillow_simd.py`.
+
+Each model owns a `PreprocessorSelector`. It caches static/dependency and model
+eligibility (including rejection), constructing fallback stages lazily. Metadata
+is checked before native construction. The cache assumes the registry, dependency
+snapshot, target and model configuration stay fixed; changing them requires a new
+selector. Request inputs, overrides, streams and runtime-failure state are never
+cached. Warm dispatch checks only request compatibility and current failure state,
+without repeating the selected stage's request check during runtime resolution.
+
+Request fallback is not sticky: each request starts from the model-selected
+primary. Recorded runtime failures are checked afresh, allowing an implementation
+to skip a failed input path while retaining other supported paths. Traversal
+validates every fallback, detects cycles and respects the execution plan's separate
+compatibility and runtime-failure fallback flags. Reasons remain visible in
+runtime selection metadata. Postprocessor resolution is unchanged.
+
+Torch/ONNX register only `base` for the four non-preprocessing stages. In composed
+CUDA execution, preprocessing records readiness for the exact returned tensor;
+the backend consumer stream waits on it and records allocator ownership. Public
+standalone preprocessing synchronizes before returning. CPU paths require no CUDA
+stream. Per-request image-size overrides unsupported by Triton use a compatible
+fallback and remain visible in runtime selection metadata.
 
 The TensorRT semantic forward pass remains protected and is not a selectable
 implementation.
@@ -19,11 +58,11 @@ flowchart TD
     use_plan --> requested["Requested RFDetrExecutionPlan"]
     precedence --> requested
 
-    requested --> build["Register metadata + lazy factories<br/>(device, max_workers)"]
+    requested --> build["Register metadata + lazy factories<br/>(device)"]
 
     subgraph preprocessors["Preprocessor implementations"]
         pre_base["base"]
-        pre_threaded["threaded-exact-v1"]
+        pre_simd["pillow-simd-v1"]
         pre_triton["triton-universal-v1"]
     end
 
@@ -39,7 +78,7 @@ flowchart TD
     end
 
     pre_base --> build
-    pre_threaded --> build
+    pre_simd --> build
     pre_triton --> build
     post_base --> build
     post_triton --> build
@@ -59,7 +98,6 @@ arguments:
 | Variable | Stage | Example value |
 |---|---|---|
 | `INFERENCE_MODELS_RFDETR_PREPROCESSOR` | preprocessing | `triton-universal-v1` |
-| `INFERENCE_MODELS_RFDETR_PREPROCESSOR_MAX_WORKERS` | threaded preprocessing | `4` |
 | `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS` | Triton preprocessing | `35389440` |
 | `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION` | Triton preprocessing | `8192` |
 | `INFERENCE_MODELS_RFDETR_POSTPROCESSOR` | postprocessing | `triton-fused-v1` |
@@ -93,7 +131,7 @@ flowchart TD
     invocation{"Invocation"}
     pre_request["PreprocessRequest + ExecutionContext"]
     pre_selected{"Selected Preprocessor<br/>compatible with request?"}
-    pre_base["base / threaded exact<br/>synchronize before return"]
+    pre_base["base / pillow-simd-v1<br/>synchronize before return"]
     pre_triton["Triton universal<br/>record CUDA ready event"]
     buffer["Selected BufferStrategy<br/>preserve or prepare storage"]
     boundary{"independent_stage_execution?<br/>default: true"}
@@ -208,7 +246,7 @@ TensorRT forward does not need to know which preprocessor produced its input.
   reuse across engine outputs and postprocessing requires a contract extension.
 - `auto` resolves those base-only categories to `base`; an unknown explicit ID raises a
   registry error listing the available implementations.
-- Preprocessing `auto` prefers `triton-universal-v1`, then `threaded-exact-v1`;
+- Preprocessing `auto` prefers `triton-universal-v1`, then `pillow-simd-v1`;
   postprocessing `auto` prefers `triton-fused-v1`. Each stage uses `base` when no listed
   candidate is compatible.
 - Validation records remain informational provenance and do not participate in
@@ -220,3 +258,19 @@ TensorRT forward does not need to know which preprocessor produced its input.
   execution failures still propagate.
 - Target-device profiling and output-snapshot parity checks remain required before an
   optimized choice is promoted for automatic selection.
+
+## Runtime selection observability
+
+`optimization_runtime_metadata` is the production-facing source of truth for the
+resolved execution path. It exposes the canonical `InferenceExecutionPlan`, model-time
+selection resolutions, the latest request-time resolution for each stage, and bounded
+implementation metadata. Selection snapshots are retained as immutable objects and
+serialized only when the property is read; repeated requests do not append history or
+re-store an unchanged thread-local selection.
+
+Profiling uses the same `InferenceExecutionPlan` as production. Its boundary validator
+requires explicit IDs for all five stages, rejects `auto`, and requires both fallback
+flags to be false. An incompatible implementation or recoverable stage failure therefore
+fails the profiling workload instead of silently measuring a fallback. A future
+production log exporter should read this property after initialization and when a plan
+or fallback changes, rather than logging every request.

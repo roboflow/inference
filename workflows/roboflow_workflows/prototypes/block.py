@@ -1,12 +1,44 @@
+import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 from roboflow_workflows.errors import BlockInterfaceError
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
+from roboflow_workflows.execution_engine.entities.workload import (
+    DeclarationDomain,
+    Discovery,
+    DiscoveryProblem,
+)
+from roboflow_workflows.execution_engine.entities.workload import (  # noqa: F401 - compatibility re-export
+    RestrictionCondition as RestrictionCondition,
+)
+from roboflow_workflows.execution_engine.entities.workload import (  # noqa: F401 - compatibility re-export
+    RestrictionMetadata as RestrictionMetadata,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Runtime,
+    RuntimeInputMode,
+    RuntimeRestriction,
+    Severity,
+    StepExecutionMode,
+    WorkOperation,
+    declaration_failed_problem,
+    declaration_unavailable_problem,
+    environment_filtered_declaration_problem,
+    incomplete_discovery,
+    normalize_declaration,
+    restriction_metadata_of,
+    unknown_configuration_problem,
+)
+from roboflow_workflows.execution_engine.introspection.restriction_environment import (
+    ConfigurationMatch,
+    evaluate_configuration_condition,
+)
 from roboflow_workflows.execution_engine.introspection.utils import get_full_type_name
 from roboflow_workflows.execution_engine.v1.entities import FlowControl
 
@@ -30,99 +62,10 @@ class AirGappedAvailability:
     reason: Optional[str] = None
 
 
-class Severity(str, Enum):
-    """Severity of a runtime restriction for a workflow block in a given runtime.
-
-    SOFT: the block runs to completion and returns the right output shape,
-    but the values are degraded or meaningless (e.g. tracker IDs reset across
-    requests, cooldown does not throttle, file is written to ephemeral disk).
-
-    HARD: the block does not run / raises / cannot produce a usable output
-    in this runtime. The engine should refuse to compile or fail-fast.
-    """
-
-    SOFT = "soft"
-    HARD = "hard"
-
-
-class Runtime(str, Enum):
-    """Canonical runtimes a workflow block can be executed in.
-
-    Runtimes not covered by ``get_restrictions()`` are considered OK.
-    """
-
-    HOSTED_SERVERLESS = "hosted_serverless"
-    DEDICATED_DEPLOYMENT = "dedicated_deployment"
-    SELF_HOSTED_CPU = "self_hosted_cpu"
-    SELF_HOSTED_GPU = "self_hosted_gpu"
-    INFERENCE_PIPELINE = "inference_pipeline"
-
-
-class RuntimeInputMode(str, Enum):
-    """Workflow input modes for a restriction."""
-
-    IMAGE = "image"
-    VIDEO = "video"
-
-
-class StepExecutionMode(Enum):
-    """How a workflow step is dispatched at runtime.
-
-    LOCAL: the step executes in-process inside the current Python interpreter.
-    REMOTE: the step delegates execution to a remote inference service / HTTP
-    runtime.
-
-    Kept in ``prototypes/block.py`` so the framework layer owns this enum and
-    higher-level packages (``core_steps``, executor, compiler) depend on
-    ``prototypes`` rather than the other way around.
-    """
-
-    LOCAL = "local"
-    REMOTE = "remote"
-
-
-@dataclass(frozen=True)
-class RuntimeRestriction:
-    """A single caveat for a workflow block.
-
-    ``note`` is a one-line, human-readable explanation of the failure mode or
-    degraded behavior. It should describe what happens (e.g. "track_ids reset
-    between requests", "raises RuntimeError", "writes to ephemeral /tmp"),
-    not abstract preconditions.
-
-    ``applies_to_runtimes`` narrows the restriction to specific workflow
-    runtimes. When unset, the restriction applies to all runtimes.
-
-    ``applies_to_step_execution_modes`` narrows the restriction to specific
-    workflow step execution modes. When unset, the restriction applies to all
-    step execution modes.
-
-    ``applies_to_input_modes`` narrows the restriction to specific workflow
-    input modes, such as video workflows that depend on cross-frame state.
-    When unset, the restriction applies to all input modes.
-    """
-
-    severity: Severity
-    note: str
-    applies_to_runtimes: Optional[List[Runtime]] = None
-    applies_to_step_execution_modes: Optional[List[StepExecutionMode]] = None
-    applies_to_input_modes: Optional[List[RuntimeInputMode]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
-        if self.applies_to_runtimes is not None:
-            result["applies_to_runtimes"] = [
-                runtime.value for runtime in self.applies_to_runtimes
-            ]
-        if self.applies_to_step_execution_modes is not None:
-            result["applies_to_step_execution_modes"] = [
-                mode.value for mode in self.applies_to_step_execution_modes
-            ]
-        if self.applies_to_input_modes is not None:
-            result["applies_to_input_modes"] = [
-                mode.value for mode in self.applies_to_input_modes
-            ]
-        return result
+# ``RuntimeRestriction`` is defined in
+# ``roboflow_workflows.execution_engine.entities.workload`` and re-exported
+# above - the class object is the same one, so importing it from here is
+# unchanged.
 
 
 # ----------------------------------------------------------------------------
@@ -136,6 +79,7 @@ class RuntimeRestriction:
 
 
 STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="stateful_video_state_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
         "Block keeps per-video state in process memory (keyed by "
@@ -153,6 +97,7 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
 
 
 COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
+    code="cooldown_timer_resets_on_stateless_http",
     severity=Severity.SOFT,
     note=(
         "Cooldown / rate-limit timer is stored in process memory. With "
@@ -167,6 +112,7 @@ COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
 
 
 STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
+    code="temporal_block_no_benefit_on_still_image",
     severity=Severity.SOFT,
     note=(
         "Block depends on temporal context from video or repeated-frame "
@@ -175,6 +121,26 @@ STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
         "little or no benefit."
     ),
     applies_to_input_modes=[RuntimeInputMode.IMAGE],
+)
+
+
+# Portable (wire-shaped) twins of the three presets above. They are DERIVED,
+# never separately authored, so the code and the axes cannot drift from the
+# restriction they describe. Kept as compatibility exports for callers that
+# already consume the `RestrictionMetadata` form; new code should declare the
+# `RuntimeRestriction` preset and let the projection do this.
+STATEFUL_VIDEO_HTTP_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION
+)
+
+
+COOLDOWN_HTTP_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    COOLDOWN_HTTP_SOFT_RESTRICTION
+)
+
+
+STILL_IMAGE_INPUT_SOFT_PORTABLE_RESTRICTION = restriction_metadata_of(
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION
 )
 
 
@@ -235,6 +201,7 @@ class ModelExecutionLocation(str, Enum):
 class RoboflowPlatformModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
+    type: Literal["roboflow_platform_model_v1"] = "roboflow_platform_model_v1"
     model_id: str
     required_action: ModelRequiredAction = ModelRequiredAction.EXECUTION
     execution_location: Optional[ModelExecutionLocation] = None
@@ -255,6 +222,18 @@ class RoboflowPlatformModelMetadata(BaseModel):
     # In-process aid — excluded from serialization, JSON schema and equality.
     model_registration_kwargs: SkipJsonSchema[Optional[Dict[str, Any]]] = Field(
         default=None, exclude=True, repr=False
+    )
+    # In-process loader-policy aid — excluded from serialization, JSON schema
+    # and equality, like the two aids above.
+    preloadable: SkipJsonSchema[bool] = Field(
+        default=True,
+        exclude=True,
+        repr=False,
+        description="Whether the generic Execution Engine model-manager "
+        "preloader may register this model before the workflow runs. False for "
+        "blocks that load and own their model in-process (e.g. streaming video "
+        "trackers). It does not say whether the block loads weights or runs "
+        "remotely.",
     )
 
     @model_validator(mode="before")
@@ -315,6 +294,7 @@ class RoboflowPlatformModelMetadata(BaseModel):
 class RoboflowPlatformProjectMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    type: Literal["roboflow_platform_project_v1"] = "roboflow_platform_project_v1"
     project_url: str
 
     def requires_runtime_resolution(self) -> bool:
@@ -324,6 +304,7 @@ class RoboflowPlatformProjectMetadata(BaseModel):
 class ThirdPartyModelMetadata(BaseModel):
     model_config = ConfigDict(frozen=True, protected_namespaces=())
 
+    type: Literal["third_party_model_v1"] = "third_party_model_v1"
     provider: str
     model_id: str
     # See RoboflowPlatformModelMetadata.model_id_resolver — same contract.
@@ -355,6 +336,7 @@ REGISTERED_RESOURCE_METADATA_TYPES: Dict[DependentResourceType, Type[BaseModel]]
 class DependentResource(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    type: Literal["dependent_resource_v1"] = "dependent_resource_v1"
     resource_type: DependentResourceType
     metadata: Union[
         RoboflowPlatformModelMetadata,
@@ -379,6 +361,17 @@ class DependentResource(BaseModel):
         expected_type = REGISTERED_RESOURCE_METADATA_TYPES.get(resource_type)
         if expected_type is None:
             return values
+        # Old envelopes carry no `type`; an explicit one must agree with
+        # `resource_type`, otherwise the declaration contradicts itself.
+        declared_type = metadata.get("type")
+        expected_discriminator = expected_type.model_fields["type"].default
+        if declared_type is not None and declared_type != expected_discriminator:
+            raise BlockInterfaceError(
+                public_message=f"DependentResource of type {resource_type.value} "
+                f"requires metadata of type `{expected_discriminator}`, got "
+                f"`{declared_type}`.",
+                context="declaring_block_dependent_resources",
+            )
         return {**values, "metadata": expected_type.model_validate(metadata)}
 
     @model_validator(mode="after")
@@ -395,7 +388,13 @@ class DependentResource(BaseModel):
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)
+        # Legacy envelope shape: no `type` discriminators at any level. Use
+        # `model_dump(mode="json")` for the discriminated (introspection) form.
+        return self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude={"type": True, "metadata": {"type": True}},
+        )
 
 
 def roboflow_platform_model(
@@ -404,12 +403,31 @@ def roboflow_platform_model(
     execution_location: Optional[ModelExecutionLocation] = None,
     model_id_resolver: Optional[Callable[[str], Optional[str]]] = None,
     model_registration_kwargs: Optional[Dict[str, Any]] = None,
+    *,
+    preloadable: bool = True,
 ) -> DependentResource:
+    """Declare a Roboflow platform model the step depends on.
+
+    Args:
+        model_id: Literal model id, or the workflow selector that feeds it.
+        required_action: What the step needs from the model.
+        execution_location: Where an EXECUTION model runs; defaults to
+            ENVIRONMENT_DEFINED for EXECUTION when omitted.
+        model_id_resolver: In-process aid turning a substituted `$inputs`
+            value into the final model id.
+        model_registration_kwargs: Extra model-manager registration kwargs.
+        preloadable: In-process aid; False keeps the generic Execution Engine
+            model-manager preloader away from this model. Never serialized.
+
+    Returns:
+        The dependent resource declaration.
+    """
     metadata_kwargs: Dict[str, Any] = {
         "model_id": model_id,
         "required_action": required_action,
         "model_id_resolver": model_id_resolver,
         "model_registration_kwargs": model_registration_kwargs,
+        "preloadable": preloadable,
     }
     if execution_location is not None:
         metadata_kwargs["execution_location"] = execution_location
@@ -513,12 +531,27 @@ class WorkflowBlockManifest(BaseModel, ABC):
         """
         return None
 
-    def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
+    def discover_dependent_resources(
+        self,
+    ) -> Optional[Union[List[DependentResource], Discovery[DependentResource]]]:
         """Declare external resources this step will pull at run time.
 
-        Returns ``None`` (the default) when the block does not declare its
-        dependencies — callers must treat that as *unknown*, which is distinct
-        from ``[]`` (the block declares it needs no external resources).
+        Return-value convention:
+
+        * ``None`` (the default) - unknown: the block does not declare its
+          dependencies. Callers must treat it as an incomplete discovery,
+          which is distinct from
+        * ``[]`` / a plain ``list`` - a complete declaration; an empty list
+          truthfully says the block needs no external resources.
+        * a ``Discovery[DependentResource]`` - explicit completeness with
+          reasons. An incomplete discovery may still list the resources that
+          ARE known; the runtime pre-loader uses those known items.
+
+        Callers normalise every return value through
+        ``roboflow_workflows.execution_engine.entities.workload.normalize_declaration``.
+        The ``DependentResource`` objects are kept as authored, so in-process
+        aids such as ``model_id_resolver`` and ``model_registration_kwargs``
+        reach the pre-loader.
 
         Field values that are workflow selectors (``$inputs.<name>`` /
         ``$steps.<name>.<property>``) are returned verbatim inside the
@@ -527,6 +560,94 @@ class WorkflowBlockManifest(BaseModel, ABC):
         references are not statically resolvable.
         """
         return None
+
+    def discover_work_operations(
+        self,
+    ) -> Optional[Union[List[WorkOperation], Discovery[WorkOperation]]]:
+        """Declare the meaningful work this step performs.
+
+        Return-value convention:
+
+        * ``None`` (the default) - unknown: the block does not declare its
+          operations (e.g. an unannotated plugin). Callers must treat it as an
+          incomplete discovery, which is distinct from
+        * ``[]`` / a plain ``list`` - a complete declaration; an empty list
+          truthfully says the block performs no meaningful operation (noop).
+        * a ``Discovery[WorkOperation]`` - explicit completeness with reasons,
+          e.g. custom Python declares
+          ``incomplete_discovery([WorkOperation.CUSTOM_PYTHON],
+          [custom_python_internals_unknown_problem(
+          node_id=f"$steps.{self.name}", declaration="operations")])``.
+
+        Reasons are ``DiscoveryProblem`` objects (a closed ``code``, a
+        human-readable ``description`` and open ``details``); build them with
+        the factories in
+        ``roboflow_workflows.execution_engine.entities.workload`` rather than
+        writing free text, and never put an exception message, a traceback or
+        a secret into them.
+
+        Callers normalise every return value through
+        ``roboflow_workflows.execution_engine.entities.workload.normalize_declaration``.
+        Annotate meaningful block behaviour (what the step does), not every
+        helper invoked internally; literal manifest settings may select the
+        operations (e.g. resize vs rotate). Environment-dependent dispatch
+        must not add ``EXTERNAL_REQUEST`` merely because this server is
+        configured for remote execution.
+        """
+        return None
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """This step's restrictions, as a ``Discovery[RuntimeRestriction]``.
+
+        The single hook a block overrides to declare restrictions. It never
+        executes the block, never resolves a selector and never invents a
+        value. An override declares what applies CONDITIONALLY on the target
+        deployment - runtimes, step execution modes, input modes and
+        ``applies_to_configuration`` - refined by the instance's own literal
+        settings; a field fed by a selector returns an ``incomplete_discovery``
+        with an ``unresolved_selector_problem`` instead of a guess. Build the
+        result with ``actual_restrictions_of()``, or return an empty complete
+        discovery when the block declares nothing.
+
+        ``ignore_environment_restrictions``:
+
+        * ``False`` (default) - the HOST view: the ``applies_to_configuration``
+          predicates are evaluated against the configuration installed in THIS
+          process and entries that definitively do not apply here are removed.
+          A predicate this process cannot evaluate keeps its entry and makes the
+          result incomplete, unless another predicate of the same restriction
+          already rules the ANDed condition out.
+        * ``True`` - the PORTABLE view: no host evaluation, every declaration
+          returned with its conditions intact.
+
+        The runtime, input-mode and step-execution-mode axes are never
+        evaluated in either mode.
+
+        The default body serves a block that never adopted this API: it calls
+        the legacy ``get_restrictions()`` classmethod - a block's own override
+        through ordinary dispatch, otherwise the inherited ``[]`` - and wraps
+        whatever comes back as INCOMPLETE. A legacy getter may already have
+        filtered its list against the flags of the host that answered, and the
+        inherited default declares nothing at all; neither a short list nor an
+        empty one proves absence. ``ignore_environment_restrictions=True``
+        cannot undo filtering that happened inside the classmethod, so the
+        fallback stays incomplete in both views.
+        """
+        node_id = f"$steps.{getattr(self, 'name', '<undefined>')}"
+        return actual_restrictions_of(
+            declared=incomplete_discovery(
+                items=list(self.get_restrictions()),
+                reasons=[
+                    environment_filtered_declaration_problem(
+                        node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+                    )
+                ],
+            ),
+            node_id=node_id,
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
 
     @classmethod
     def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
@@ -568,6 +689,191 @@ class WorkflowBlockManifest(BaseModel, ABC):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return None
+
+
+RESTRICTIONS_DECLARATION: DeclarationDomain = "restrictions"
+
+
+def actual_restrictions_of(
+    declared: Union[None, Iterable[RuntimeRestriction], Discovery[RuntimeRestriction]],
+    *,
+    node_id: str,
+    ignore_environment_restrictions: bool,
+) -> Discovery[RuntimeRestriction]:
+    """Normalise restriction DATA a manifest has already computed.
+
+    ``declared``: ``None`` is unknown, a list is a complete declaration (``[]``
+    = declares none), a ``Discovery`` states its own completeness.
+
+    ``ignore_environment_restrictions``: ``True`` returns the declaration
+    with every condition intact (the portable view), ``False`` evaluates its
+    ``applies_to_configuration`` predicates against this process.
+
+    ``RuntimeRestriction`` is a permissive dataclass, so each item is projected
+    onto the portable DTO here, and the returned entry is REBUILT from that
+    validated projection: axis values become enum members in lists, and the
+    configuration becomes a plain ``dict``. The authored ``note``, the authored
+    order within each axis, and ``None`` versus a configuration map are kept.
+    The declaration's own completeness and reasons are kept too. A shared preset
+    is never mutated; the result holds new containers.
+
+    A declaration that projection rejects - a blank or non-identifier ``code``,
+    an empty or duplicated axis, an unknown axis value, a blank configuration
+    key, a value that is not JSON, a note that is not a string - becomes a
+    sanitised ``declaration_failed`` problem instead of a complete declaration
+    the wire cannot carry. A failure while evaluating the host view gets the
+    same treatment. The exception, the invalid values and this process's
+    configuration are never reported.
+
+    Args:
+        declared: The restriction data the manifest computed.
+        node_id: The ``$steps.<name>`` selector named by reported problems.
+        ignore_environment_restrictions: ``True`` for the portable view,
+            ``False`` for the host view.
+
+    Returns:
+        The normalised restrictions, or an empty incomplete discovery with a
+        ``declaration_failed`` problem.
+    """
+    try:
+        normalised = normalize_declaration(
+            declared,
+            declaration_unavailable_problem(
+                node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+            ),
+        )
+        discovery = Discovery[RuntimeRestriction](
+            items=[
+                _rebuilt_from_projection(restriction=restriction)
+                for restriction in normalised.items
+            ],
+            complete=normalised.complete,
+            unknown_reasons=list(normalised.unknown_reasons),
+        )
+        if not ignore_environment_restrictions:
+            discovery = _evaluate_against_this_host(declared=discovery, node_id=node_id)
+    except Exception:
+        # The exception is never reported: a block may have put anything in
+        # it, and host evaluation must not leak this process's configuration.
+        failed_discovery = Discovery[RuntimeRestriction](
+            items=[],
+            complete=False,
+            unknown_reasons=[
+                declaration_failed_problem(
+                    node_id=node_id, declaration=RESTRICTIONS_DECLARATION
+                )
+            ],
+        )
+
+        return failed_discovery
+
+    return discovery
+
+
+def _rebuilt_from_projection(restriction: RuntimeRestriction) -> RuntimeRestriction:
+    """A new ``RuntimeRestriction`` holding the projection's validated values.
+
+    Raises on anything the projection rejects. The caller turns that into a
+    sanitised problem. The note is not part of the projection, so it is
+    checked here and kept as authored.
+    """
+    if not isinstance(restriction, RuntimeRestriction):
+        raise TypeError("A restriction declaration must be a RuntimeRestriction.")
+    if not isinstance(restriction.note, str):
+        raise TypeError("A restriction note must be a string.")
+
+    # A one-shot iterator would be empty on a second read, so it is read ONCE
+    # and the projection and the rebuild both use that list. Every other value
+    # reaches the projection as authored and keeps its validation.
+    materialised = replace(
+        restriction,
+        applies_to_runtimes=_read_once(restriction.applies_to_runtimes),
+        applies_to_step_execution_modes=_read_once(
+            restriction.applies_to_step_execution_modes
+        ),
+        applies_to_input_modes=_read_once(restriction.applies_to_input_modes),
+    )
+    metadata = restriction_metadata_of(materialised)
+    condition = metadata.when
+
+    configuration = None
+    if restriction.applies_to_configuration is not None:
+        configuration = copy.deepcopy(dict(condition.configuration_equals))
+    rebuilt = RuntimeRestriction(
+        severity=metadata.severity,
+        note=restriction.note,
+        applies_to_runtimes=_enum_axis(Runtime, materialised.applies_to_runtimes),
+        applies_to_step_execution_modes=_enum_axis(
+            StepExecutionMode, materialised.applies_to_step_execution_modes
+        ),
+        applies_to_input_modes=_enum_axis(
+            RuntimeInputMode, materialised.applies_to_input_modes
+        ),
+        code=metadata.code,
+        applies_to_configuration=configuration,
+    )
+
+    return rebuilt
+
+
+def _read_once(values: Any) -> Any:
+    """Turn a one-shot iterator into a list; return anything else unchanged."""
+    if not isinstance(values, Iterator):
+        return values
+
+    listed = list(values)
+
+    return listed
+
+
+def _enum_axis(
+    enum_type: Type[Enum], authored: Optional[Iterable[Any]]
+) -> Optional[List[Enum]]:
+    """An axis the projection already validated, as enum members in a new list.
+
+    The authored order is kept (the projection sorts; order carries no meaning,
+    but keeping it keeps a rebuilt preset equal to the preset itself).
+    """
+    if authored is None:
+        return None
+
+    members = [enum_type(value) for value in authored]
+
+    return members
+
+
+def _evaluate_against_this_host(
+    declared: Discovery[RuntimeRestriction], node_id: str
+) -> Discovery[RuntimeRestriction]:
+    """Drop what definitively does not apply here; keep what is uncertain.
+
+    Only ``applies_to_configuration`` is evaluated. The runtime, input-mode and
+    step-execution-mode axes are left alone - this process is not the target
+    and does not know them. Nothing is mutated and no condition is stripped:
+    the surviving entries are the rebuilt declarations, conditions intact.
+    """
+    kept: List[RuntimeRestriction] = []
+    unknown_keys: List[str] = []
+    for restriction in declared.items:
+        verdict, keys = evaluate_configuration_condition(restriction=restriction)
+        if verdict is ConfigurationMatch.INACTIVE:
+            continue
+        kept.append(restriction)
+        unknown_keys.extend(keys)
+    reasons: List[DiscoveryProblem] = list(declared.unknown_reasons)
+    if unknown_keys:
+        reasons.append(
+            unknown_configuration_problem(
+                node_id=node_id,
+                declaration=RESTRICTIONS_DECLARATION,
+                configuration_keys=unknown_keys,
+            )
+        )
+    return Discovery[RuntimeRestriction](
+        items=kept,
+        complete=declared.complete and not unknown_keys,
+        unknown_reasons=reasons,
+    )
 
 
 class WorkflowBlock(ABC):
