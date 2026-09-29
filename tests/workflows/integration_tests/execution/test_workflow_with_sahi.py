@@ -667,7 +667,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = raw_model_manager.models()["yolov8n-640"]
+    model = raw_model_manager["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}
@@ -761,7 +761,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = raw_model_manager.models()["yolov8n-640"]
+    model = raw_model_manager["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}
@@ -873,7 +873,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_te
         model_id="yolov8n-640",
         api_key=None,
     )
-    model = raw_model_manager.models()["yolov8n-640"]
+    model = raw_model_manager["yolov8n-640"]
 
     def slicer_callback(image_slice: np.ndarray):
         inference_image = {"type": "numpy_object", "value": image_slice}
