@@ -103,9 +103,35 @@ def attach_prediction_type_info(
 
 
 def filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
-    return [
-        d for d in predictions if "points" not in d or len(d.get("points", [])) >= 3
-    ]
+    if not isinstance(predictions, list):
+        return predictions
+
+    valid_predictions = [p for p in predictions if not _is_short_polygon(p)]
+
+    return valid_predictions
+
+
+def _is_short_polygon(prediction: dict) -> bool:
+    # Mirrors supervision: a `points` sequence with < 3 entries is kept as a box-only
+    # detection (which then drops masks of the whole response) unless RLE is valid.
+    if not isinstance(prediction, dict) or _has_valid_rle_payload(prediction):
+        return False
+
+    points = prediction.get("points")
+    is_short_polygon = isinstance(points, (list, tuple)) and len(points) < 3
+
+    return is_short_polygon
+
+
+def _has_valid_rle_payload(prediction: dict) -> bool:
+    # supervision prefers a valid RLE payload over `points`.
+    return any(
+        isinstance(rle_data, dict) and {"size", "counts"}.issubset(rle_data)
+        for rle_data in (
+            prediction.get("rle"),
+            prediction.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE),
+        )
+    )
 
 
 def _get_or_create_detection_id(prediction: dict) -> object:
@@ -132,10 +158,8 @@ def convert_inference_detections_batch_to_sv_detections(
     batch_of_detections: List[sv.Detections] = []
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
-        detections = sv.Detections.from_inference(p)
-        raw_predictions = p[predictions_key]
-        if len(detections) != len(raw_predictions):
-            raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+        raw_predictions = filter_out_invalid_polygons(predictions=p[predictions_key])
+        detections = sv.Detections.from_inference({**p, "predictions": raw_predictions})
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
         detection_ids = [_get_or_create_detection_id(d) for d in raw_predictions]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
@@ -629,10 +653,12 @@ def post_process_ocr_result(
     expected_output_keys: Set[str],
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        raw_predictions = prediction.get("predictions", [])
-        prediction["predictions"] = sv.Detections.from_inference(prediction)
-        if len(prediction["predictions"]) != len(raw_predictions):
-            raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+        raw_predictions = filter_out_invalid_polygons(
+            predictions=prediction.get("predictions", [])
+        )
+        prediction["predictions"] = sv.Detections.from_inference(
+            {**prediction, "predictions": raw_predictions}
+        )
         detection_ids = [_get_or_create_detection_id(p) for p in raw_predictions]
         prediction["predictions"]["detection_id"] = detection_ids
         prediction[PREDICTION_TYPE_KEY] = "ocr"
