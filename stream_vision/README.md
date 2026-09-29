@@ -9,8 +9,19 @@ embedded in the full Inference server.
 
 The historical `inference.core.interfaces.{camera,stream,stream_manager}`
 import paths resolve to the same modules here when `inference` is installed.
-No `gpu`/`jetson` extra is declared: GStreamer/NVDEC support is provisioned by
-the Docker images, not pinned as a PyPI dependency in `requirements/`.
+
+## Hardware decoding
+
+Hardware decoders are optional. Without them `VideoSource` decodes on the CPU with
+OpenCV. They are tried only when `enable_tensor_data_representation` is set in the
+installed `StreamsConfiguration`. A decoder that cannot be used is skipped with a
+warning that names the reason.
+
+| Decoder | Sources | Needs |
+|---|---|---|
+| `PyNvVideoCodecFrameProducer` | video files, NVIDIA GPU | `pip install "streamvision[nvdec]"` (Linux x86_64 and Windows x64) and a CUDA build of `torch` |
+| `GstreamerCudaVideoFrameProducer` | streams and files, NVIDIA GPU | GStreamer with the `nvcodec` plugin and the Roboflow CUDA tensor bridge library; both ship in the Roboflow GPU Docker images |
+| `JetsonVideoFrameProducer` | every source, NVIDIA Jetson | GStreamer with the Jetson elements and the Roboflow Jetson tensor bridge library; both ship in the Roboflow Jetson Docker images |
 
 ## Standalone stream manager
 

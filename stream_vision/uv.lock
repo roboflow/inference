@@ -3312,6 +3312,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pynvvideocodec"
+version = "2.2.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/b0/3cb1ea72d9f2d3678190d5365bde1ee4f32e59a290adfc1f8ade94e06efe/pynvvideocodec-2.2.3-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:6d401816b515e19fd5b3fe39adcaf63e1462fd8d13c0443ed0c52fb40ecacbb0", size = 26862494, upload-time = "2026-09-15T09:52:22.826Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/13/083e92f5d460e3b4f26092090b83688b4f7838b4c963ec35c2f4efbcb22b/pynvvideocodec-2.2.3-cp310-cp310-win_amd64.whl", hash = "sha256:5e862f2f56294fee116cee438899bdd490d932f575761c6b1632fd5e4f562405", size = 20589814, upload-time = "2026-09-15T09:52:44.211Z" },
+    { url = "https://files.pythonhosted.org/packages/11/bf/1c144a2ccd0dc5607a0d4e9bae0f49dda0dd11d5ca5c7289b48fed991e21/pynvvideocodec-2.2.3-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:eef8954b28f7d43b3c6e65eceac488c28ba3ca511366ad8d260885303cf126d2", size = 26862921, upload-time = "2026-09-15T09:53:26.188Z" },
+    { url = "https://files.pythonhosted.org/packages/74/79/267bd233b93812b34afb10d322652faa3fcbaefa6c420d09178c8a4a4d24/pynvvideocodec-2.2.3-cp311-cp311-win_amd64.whl", hash = "sha256:cc1a1eaaed591f98a1e96bb5d28caeb5f47157682c3c8981316dc44450529015", size = 20589486, upload-time = "2026-09-15T09:53:50.189Z" },
+    { url = "https://files.pythonhosted.org/packages/60/a9/e4b692f63f7e4085838e7d444b7e5d4a01c6e43843abeff0e31e27ebaf81/pynvvideocodec-2.2.3-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:126224753a41655c72c1576cb23a835cb853a1a3c3568d78360ff07d24627b42", size = 26860478, upload-time = "2026-09-15T09:55:22.472Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/9a/bdbc41120281a4bd6728a348e088eeca661dd4bb30d9fa0555374ec426e9/pynvvideocodec-2.2.3-cp312-cp312-win_amd64.whl", hash = "sha256:a535d5acededa18602cfc5898be7e906099e34419e91448e348f18bdf6f11329", size = 20595121, upload-time = "2026-09-15T09:55:42.974Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/20/34bb7453672e6cb72c125d98c50c764981eb0813c825588aec9d9639f823/pynvvideocodec-2.2.3-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:84baf32244ee9e3b047cd19671536587c3e54abab9dddfc7e3ec4d413c1704b1", size = 26860458, upload-time = "2026-09-15T09:56:26.501Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/5a/cf5795e73dc21874fea3c9be59cc69a7384bcb526f48268055ae814a0e9a/pynvvideocodec-2.2.3-cp313-cp313-win_amd64.whl", hash = "sha256:48c5dd9f4cd23098079c629c0446702c8b3a148dff6f8f851d66844743a8128b", size = 20595168, upload-time = "2026-09-15T09:57:11.747Z" },
+]
+
+[[package]]
 name = "pyopenssl"
 version = "26.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4438,6 +4453,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+nvdec = [
+    { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+]
 test = [
     { name = "pytest" },
     { name = "requests-mock" },
@@ -4456,13 +4474,14 @@ requires-dist = [
     { name = "opencv-python", specifier = ">=4.8.1.78,<4.13.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
+    { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
     { name = "roboflow-workflows", specifier = ">=0.2.4rc1" },
     { name = "supervision", specifier = ">=0.29.0,<0.30.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
 ]
-provides-extras = ["webrtc", "test"]
+provides-extras = ["webrtc", "nvdec", "test"]
 
 [[package]]
 name = "supervision"

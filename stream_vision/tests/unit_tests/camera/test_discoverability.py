@@ -1,3 +1,5 @@
+import builtins
+import sys
 from unittest.mock import patch
 
 from streamvision.camera.discoverability import (
@@ -10,6 +12,7 @@ from streamvision.camera.discoverability import (
     build_hw_producer,
     check_gstreamer_cuda,
     check_jetson_gstreamer,
+    check_pynvvideocodec,
 )
 
 
@@ -157,3 +160,52 @@ def test_factory_requests_numpy_from_the_native_generic_cuda_producer(
     available_producers_mock.assert_called_once_with(
         video="sample.mp4", require_cuda_tensor=False
     )
+
+
+def test_check_pynvvideocodec_reports_missing_package_with_install_hint(
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "PyNvVideoCodec", None)
+
+    availability = check_pynvvideocodec()
+
+    assert availability.available is False
+    assert "streamvision[nvdec]" in availability.reason
+
+
+def test_check_pynvvideocodec_keeps_old_reason_for_non_missing_import_failures(
+    monkeypatch,
+) -> None:
+    real_import = builtins.__import__
+
+    def _raise_for_pynvvideocodec(name, *args, **kwargs):
+        if name == "PyNvVideoCodec":
+            raise OSError("libnvidia-encode.so.1: cannot open shared object file")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _raise_for_pynvvideocodec)
+
+    availability = check_pynvvideocodec()
+
+    assert availability.reason.startswith("PyNvVideoCodec import failed:")
+    assert "streamvision[nvdec]" not in availability.reason
+
+
+def test_build_hw_producer_returns_none_without_raising_when_pynvvideocodec_is_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "PyNvVideoCodec", None)
+    monkeypatch.setattr(
+        "streamvision.camera.discoverability.check_gstreamer_cuda",
+        lambda video=None: ProducerAvailability(GSTREAMER_CUDA, False, "unavailable"),
+    )
+    monkeypatch.setattr(
+        "streamvision.camera.discoverability.check_jetson_gstreamer",
+        lambda video=None, require_cuda_tensor=True: ProducerAvailability(
+            JETSON, False, "unavailable"
+        ),
+    )
+
+    producer = build_hw_producer("video.mp4", prefer="dgpu", output_tensor=True)
+
+    assert producer is None

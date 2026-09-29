@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     import torch
 
 _DEFAULT_OUTPUT_COLOR_TYPE = "RGBP"
+NVDEC_INSTALL_HINT = 'Install it with: pip install "streamvision[nvdec]"'
 
 
 class PyNvVideoCodecFrameProducer(VideoFrameProducer):
@@ -34,12 +35,18 @@ class PyNvVideoCodecFrameProducer(VideoFrameProducer):
             import PyNvVideoCodec as nvc
             import torch  # noqa: F401 - needed at retrieve() time; imported here to fail fast
         except Exception as error:  # noqa: BLE001
-            raise ImportError(
+            message = (
                 "PyNvVideoCodecFrameProducer requires `PyNvVideoCodec` + `torch` with a "
                 "working CUDA/NVDEC stack (note: PyNvVideoCodec hard-links libnvidia-encode "
                 "even for decode). Probe via "
                 "streamvision.camera.discoverability.check_pynvvideocodec()."
-            ) from error
+            )
+            if (
+                isinstance(error, ModuleNotFoundError)
+                and error.name == "PyNvVideoCodec"
+            ):
+                message = f"{message} {NVDEC_INSTALL_HINT}"
+            raise ImportError(message) from error
 
         self._source_ref = video
         self._gpu_id = gpu_id

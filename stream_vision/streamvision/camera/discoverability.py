@@ -89,6 +89,12 @@ def check_pynvvideocodec() -> ProducerAvailability:
     try:
         import PyNvVideoCodec  # noqa: F401
     except Exception as error:  # noqa: BLE001
+        if isinstance(error, ModuleNotFoundError) and error.name == "PyNvVideoCodec":
+            from streamvision.camera.dgpu_producer import NVDEC_INSTALL_HINT
+
+            return ProducerAvailability(
+                DGPU, False, f"PyNvVideoCodec is not installed. {NVDEC_INSTALL_HINT}"
+            )
         # Common failure: `libnvidia-encode.so.1: cannot open shared object file` — the
         # NVENC lib that PyNvVideoCodec hard-links even for decode. Treated as unavailable.
         return ProducerAvailability(

@@ -55,8 +55,13 @@ def test_dependency_names() -> None:
 
 def test_optional_dependency_extras() -> None:
     extras = _load_pyproject()["project"]["optional-dependencies"]
-    assert set(extras) == {"webrtc", "test"}
+    assert set(extras) == {"webrtc", "nvdec", "test"}
     assert extras["webrtc"] == ["aiortc>=1.9.0", "av==14.2.0"]
+    assert extras["nvdec"] == [
+        "pynvvideocodec>=2.1.0,<3.0.0; (sys_platform == 'linux' and "
+        "platform_machine == 'x86_64') or (sys_platform == 'win32' and "
+        "platform_machine == 'AMD64')"
+    ]
 
 
 def test_find_packages_discovers_only_streamvision() -> None:
