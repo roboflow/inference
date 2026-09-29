@@ -24,6 +24,15 @@ from streamvision.stream.entities import (
 if TYPE_CHECKING:
     from aiortc import RTCPeerConnection
 
+
+def __getattr__(name: str) -> Any:
+    if name == "RTCPeerConnection":
+        import aiortc
+
+        return aiortc.RTCPeerConnection
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 T = TypeVar("T")
 
 MAX_LATENCY_CONTEXT = 64

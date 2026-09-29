@@ -9,6 +9,7 @@ from typing import Optional
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from streamvision.camera.entities import VideoFrame
 from streamvision.stream.entities import LatencyMonitorReport, ModelActivityEvent
 from streamvision.stream.watchdog import (
@@ -365,6 +366,39 @@ def test_watchdog_imports_without_aiortc_installed() -> None:
         env=child_env,
         capture_output=True,
         text=True,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip() == "ok"
+
+
+def test_rtc_peer_connection_lazy_attribute_resolves_to_aiortc_class() -> None:
+    aiortc = pytest.importorskip("aiortc")
+    import streamvision.stream.watchdog as watchdog
+
+    assert watchdog.RTCPeerConnection is aiortc.RTCPeerConnection
+
+
+def test_unknown_attribute_raises_attribute_error() -> None:
+    import streamvision.stream.watchdog as watchdog
+
+    with pytest.raises(AttributeError):
+        watchdog.does_not_exist
+
+
+def test_importing_watchdog_does_not_import_aiortc_in_a_fresh_interpreter() -> None:
+    probe = (
+        "import sys\n"
+        "import streamvision.stream.watchdog\n"
+        "assert 'aiortc' not in sys.modules\n"
+        "print('ok')\n"
+    )
+    child_env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
     assert result.stdout.strip() == "ok"

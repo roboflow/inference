@@ -254,3 +254,11 @@ def test_package_import_closure_loads_no_host_module() -> None:
 
     assert result["failed"] == {}
     assert result["loaded"] == {}
+
+
+def test_import_with_blocked_host_root_blocks_inference_itself() -> None:
+    # Positive control: proves the blocker actually intercepts an inference import.
+    result = _import_with_blocked_host_root(["inference"])
+
+    assert "inference" in result["failed"]
+    assert "inference" in result["loaded"]

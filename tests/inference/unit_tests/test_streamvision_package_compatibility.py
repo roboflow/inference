@@ -195,7 +195,9 @@ def test_top_level_inference_pipeline_is_the_host_subclass() -> None:
     assert InferencePipeline.__mro__[1] is NeutralPipeline
 
 
-def test_stream_fromlist_import_resolves_the_four_retained_modules() -> None:
+def test_stream_fromlist_import_resolves_the_four_retained_modules(
+    stub_ultralytics_if_missing,
+) -> None:
     # regression: fromlist used canonical __name__, not the legacy prefix.
     import streamvision.stream
 
@@ -304,7 +306,15 @@ def test_subprocess_every_inventoried_name_shares_identity(order: str) -> None:
     pairs = _MOVED_PAIRS + _RETAINED_PAIRS
     result = _run_subprocess(
         """
-        import importlib, json, os, sys
+        import importlib, json, os, sys, types
+        from unittest.mock import MagicMock
+        try:
+            import ultralytics  # noqa: F401
+        except ModuleNotFoundError:
+            stub = types.ModuleType("ultralytics")
+            stub.YOLO = MagicMock(name="ultralytics.YOLO")
+            stub.settings = MagicMock(name="ultralytics.settings")
+            sys.modules["ultralytics"] = stub
         pairs = json.loads(os.environ["FRAME_FLOW_COMPAT_PAIRS"])
         if os.environ["FRAME_FLOW_COMPAT_ORDER"] == "canonical":
             import inference.core

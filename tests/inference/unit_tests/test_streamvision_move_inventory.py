@@ -40,6 +40,26 @@ def test_retained_legacy_names_are_exactly_the_four_expected() -> None:
     assert not (retained & module_legacy_names)
 
 
+def test_legacy_stream_directory_matches_retained_inventory_plus_host() -> None:
+    # Guards against a retained module going missing or an extra one appearing.
+    repo_root = Path(__file__).resolve().parents[3]
+    legacy_stream_root = (
+        repo_root / "inference" / "core" / "interfaces" / "legacy_stream"
+    )
+
+    actual_modules = {
+        ".".join(path.relative_to(repo_root).with_suffix("").parts)
+        for path in legacy_stream_root.rglob("*.py")
+        if path.name != "__init__.py"
+    }
+
+    expected_modules = {
+        entry["retained"] for entry in _INVENTORY["retained_legacy"]
+    } | {"inference.core.interfaces.legacy_stream.host"}
+
+    assert actual_modules == expected_modules
+
+
 def test_inventory_matches_historical_git_tree() -> None:
     # Verifies the inventory against the pinned revision's tree, not the current tree.
     if shutil.which("git") is None:
