@@ -24,6 +24,7 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -100,6 +101,7 @@ class RFDetrForInstanceSegmentationOnnx(
             model_package_path=model_name_or_path,
             device=device,
             default_onnx_trt_options=default_onnx_trt_options,
+            default_onnx_coreml_options=True,
         )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -133,8 +135,8 @@ class RFDetrForInstanceSegmentationOnnx(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
+        session = create_onnx_inference_session(
+            model_path=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)

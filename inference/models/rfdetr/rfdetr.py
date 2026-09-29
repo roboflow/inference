@@ -52,6 +52,10 @@ from inference.core.utils.onnx import (
 )
 from inference.core.utils.postprocess import mask2poly
 from inference.core.utils.preprocess import letterbox_image
+from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
+    get_default_coreml_provider_options,
+)
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -505,13 +509,19 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                             "TensorrtExecutionProvider",
                             provider_options,
                         )
+                    elif ep == "CoreMLExecutionProvider":
+                        coreml_options = get_default_coreml_provider_options(
+                            model_package_path=self.cache_dir
+                        )
+                        if coreml_options is not None:
+                            ep = ("CoreMLExecutionProvider", coreml_options)
                     expanded_execution_providers.append(ep)
 
                 if "OpenVINOExecutionProvider" in expanded_execution_providers:
                     expanded_execution_providers.remove("OpenVINOExecutionProvider")
 
-                self.onnx_session = onnxruntime.InferenceSession(
-                    self.cache_file(self.weights_file),
+                self.onnx_session = create_onnx_inference_session(
+                    model_path=self.cache_file(self.weights_file),
                     providers=expanded_execution_providers,
                     sess_options=session_options,
                 )
