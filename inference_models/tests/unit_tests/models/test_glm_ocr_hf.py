@@ -6,7 +6,12 @@ import torch
 from inference_models.configuration import (
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
 )
-from inference_models.models.glm_ocr.glm_ocr_hf import GlmOcrHF
+from inference_models.models.glm_ocr.glm_ocr_hf import (
+    FORMULA_RECOGNITION_PROMPT,
+    TABLE_RECOGNITION_PROMPT,
+    TEXT_RECOGNITION_PROMPT,
+    GlmOcrHF,
+)
 
 
 def test_generate_uses_default_max_new_tokens_when_none_is_given() -> None:
@@ -43,3 +48,51 @@ def test_pre_process_generation_casts_floating_point_inputs_to_model_dtype() -> 
 
     assert inputs["input_ids"].dtype == torch.int64
     assert inputs["pixel_values"].dtype == torch.bfloat16
+
+
+def test_recognize_table_uses_table_prompt(monkeypatch) -> None:
+    captured = {}
+
+    def fake_prompt(self, images, prompt=None, **kwargs):
+        captured["prompt"] = prompt
+        return ["ok"]
+
+    monkeypatch.setattr(GlmOcrHF, "prompt", fake_prompt)
+    glm_ocr = GlmOcrHF.__new__(GlmOcrHF)
+
+    result = glm_ocr.recognize_table(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert result == ["ok"]
+    assert captured["prompt"] == TABLE_RECOGNITION_PROMPT
+
+
+def test_recognize_formula_uses_formula_prompt(monkeypatch) -> None:
+    captured = {}
+
+    def fake_prompt(self, images, prompt=None, **kwargs):
+        captured["prompt"] = prompt
+        return ["ok"]
+
+    monkeypatch.setattr(GlmOcrHF, "prompt", fake_prompt)
+    glm_ocr = GlmOcrHF.__new__(GlmOcrHF)
+
+    result = glm_ocr.recognize_formula(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert result == ["ok"]
+    assert captured["prompt"] == FORMULA_RECOGNITION_PROMPT
+
+
+def test_recognize_text_uses_text_prompt(monkeypatch) -> None:
+    captured = {}
+
+    def fake_prompt(self, images, prompt=None, **kwargs):
+        captured["prompt"] = prompt
+        return ["ok"]
+
+    monkeypatch.setattr(GlmOcrHF, "prompt", fake_prompt)
+    glm_ocr = GlmOcrHF.__new__(GlmOcrHF)
+
+    result = glm_ocr.recognize_text(images=np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert result == ["ok"]
+    assert captured["prompt"] == TEXT_RECOGNITION_PROMPT

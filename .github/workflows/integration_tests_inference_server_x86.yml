@@ -18,6 +18,21 @@ on:
         description: "Prebuilt roboflow/roboflow-inference-server-cpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
         default: ""
+      mmp-configuration:
+        description: "Legacy MMP adapter configuration"
+        type: choice
+        default: mmp
+        options:
+          - mmp
+          - bundled-subprocess
+          - bundled-direct
+      server-image:
+        description: "Server under test: legacy inference image or the new inference_server image"
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - new
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 15-minute in-job image build is skipped.
@@ -44,9 +59,15 @@ jobs:
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core
+    env:
+      LEGACY_MMP_ADAPTER_MODE: ${{ startsWith(github.event.inputs.mmp-configuration || 'mmp', 'bundled-') && 'bundled' || 'mmp' }}
+      LEGACY_MMP_ADAPTER_BUNDLED_BACKEND: ${{ github.event.inputs.mmp-configuration == 'bundled-direct' && 'direct' || 'subprocess' }}
+      SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
+      INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-cpu' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
     strategy:
       matrix:
-        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
     timeout-minutes: 60
 
     steps:
@@ -69,7 +90,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
       - name: 🔨 Build and Push Test Docker
-        if: ${{ inputs.image_tag == '' }}
+        if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' }}
         run: |
           docker pull roboflow/roboflow-inference-server-cpu:test
           docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
@@ -82,10 +103,19 @@ jobs:
           docker pull "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}"
           docker tag "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" roboflow/roboflow-inference-server-cpu:test
           echo "Image under test: roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
+      - name: 🔨 Build Test Docker - inference_server
+        if: ${{ env.SERVER_IMAGE == 'new' }}
+        run: |
+          docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
       - name: 🔋 Start Test Docker
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=${{ env.INFERENCE_SERVER_REPO }} make start_test_docker_cpu
       - name: 🧪 Integration Tests of inference server [x86 CPU]
         run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests ${{ env.PYTEST_EXTRA_ARGS }}
           make stop_test_docker
+      - name: 📜 Dump server logs on failure
+        if: failure()
+        run: |
+          docker logs inference-test --tail 1000 || true
+          make stop_test_docker || true

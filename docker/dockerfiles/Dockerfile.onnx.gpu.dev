@@ -117,6 +117,10 @@ RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
       python3 docker/scripts/verify_pillow_simd.py; \
     fi
 
+RUN pip3 install --no-cache-dir --no-deps './inference_models[torch-cu124,onnx-cu12]' && \
+    pip3 install --no-cache-dir ./inference_model_manager ./inference_server
+
+
 WORKDIR /notebooks
 COPY examples/notebooks .
 

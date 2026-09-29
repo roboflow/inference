@@ -9,6 +9,7 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    RFDETR_MAX_INPUT_RESOLUTION,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -88,7 +89,10 @@ from inference_models.models.rfdetr.optimization.selection import (
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running RFDETR model with TRT backend on GPU requires pycuda installation, which is brought with "
@@ -188,6 +192,8 @@ class RFDetrForObjectDetectionTRT(
             ModelRuntimeError: If the target or implementation selection is invalid.
             CorruptedModelPackageError: If required package contents are inconsistent.
         """
+        if rf_detr_max_input_resolution is None:
+            rf_detr_max_input_resolution = RFDETR_MAX_INPUT_RESOLUTION
         execution_plan = _normalize_execution_plan_argument(
             execution_plan=execution_plan, kwargs=kwargs
         )

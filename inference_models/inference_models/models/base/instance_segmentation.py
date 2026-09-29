@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
     Any,
+    Dict,
     Generic,
     Iterator,
     List,
@@ -275,6 +276,11 @@ class InstanceSegmentationModel(
         by overriding this property.
         """
         return False
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,
