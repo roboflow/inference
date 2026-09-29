@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from inference.core.interfaces.camera import jetson_producer
 from inference.core.interfaces.camera.jetson_producer import (
     JetsonVideoFrameProducer,
     build_gstreamer_pipeline,
@@ -299,3 +300,119 @@ def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources() -> None:
         "nvv4l2decoder",
         "v4l2src",
     } <= elements
+
+
+def _patch_camera_formats(
+    monkeypatch, device_formats, supported_formats, supports_dmabuf=True
+) -> None:
+    monkeypatch.setattr(
+        jetson_producer, "_v4l2_pixel_formats", lambda device: set(device_formats)
+    )
+    monkeypatch.setattr(
+        jetson_producer,
+        "_nvv4l2camerasrc_formats",
+        lambda: frozenset(supported_formats),
+    )
+    monkeypatch.setattr(
+        jetson_producer,
+        "_v4l2_supports_dmabuf_import",
+        lambda device: supports_dmabuf,
+    )
+
+
+def test_raw_yuyv_v4l2_source_uses_nvv4l2camerasrc(monkeypatch) -> None:
+    _patch_camera_formats(monkeypatch, {"YUYV"}, {"UYVY", "YUY2"})
+
+    pipeline = build_gstreamer_pipeline(0, output_tensor=True)
+    elements = set(required_gstreamer_elements(0, output_tensor=True))
+
+    assert pipeline.startswith(
+        'nvv4l2camerasrc device="/dev/video0" ! '
+        "video/x-raw(memory:NVMM),format=YUY2 ! queue"
+    )
+    assert "nvv4l2camerasrc" in elements
+    assert not {"v4l2src", "decodebin"} & elements
+
+
+def test_nvv4l2camerasrc_prefers_uyvy(monkeypatch) -> None:
+    _patch_camera_formats(monkeypatch, {"UYVY", "YUYV"}, {"UYVY", "YUY2"})
+
+    pipeline = build_gstreamer_pipeline("/dev/video1")
+
+    assert "video/x-raw(memory:NVMM),format=UYVY" in pipeline
+
+
+@pytest.mark.parametrize(
+    "device_formats, supported_formats, supports_dmabuf",
+    [
+        ({"YUYV", "MJPG"}, {"UYVY", "YUY2"}, True),
+        ({"YUYV"}, {"UYVY"}, True),
+        ({"YUYV"}, set(), True),
+        (set(), {"UYVY", "YUY2"}, True),
+        ({"YUYV"}, {"UYVY", "YUY2"}, False),
+    ],
+)
+def test_v4l2_source_falls_back_to_v4l2src(
+    monkeypatch, device_formats, supported_formats, supports_dmabuf
+) -> None:
+    _patch_camera_formats(
+        monkeypatch, device_formats, supported_formats, supports_dmabuf
+    )
+
+    pipeline = build_gstreamer_pipeline("/dev/video2")
+    elements = set(required_gstreamer_elements("/dev/video2"))
+
+    assert pipeline.startswith('v4l2src device="/dev/video2" ! decodebin !')
+    assert "nvv4l2camerasrc" not in elements
+    assert "v4l2src" in elements
+
+
+def test_v4l2_pixel_formats_enumerates_until_ioctl_fails(monkeypatch) -> None:
+    fcntl = pytest.importorskip("fcntl")
+    fourccs = [b"YUYV", b"MJPG"]
+    closed = []
+
+    def fake_ioctl(fd, request, buffer):
+        assert request == 0xC0405602
+        index = int.from_bytes(buffer[0:4], "little")
+        if index >= len(fourccs):
+            raise OSError("EINVAL")
+        buffer[44:48] = fourccs[index]
+
+    monkeypatch.setattr(jetson_producer.os, "open", lambda path, flags: 7)
+    monkeypatch.setattr(jetson_producer.os, "close", closed.append)
+    monkeypatch.setattr(fcntl, "ioctl", fake_ioctl)
+
+    assert jetson_producer._v4l2_pixel_formats("/dev/video0") == {"YUYV", "MJPG"}
+    assert closed == [7]
+
+
+def test_v4l2_pixel_formats_returns_empty_when_device_cannot_open(
+    monkeypatch,
+) -> None:
+    def fail_open(path, flags):
+        raise OSError("ENOENT")
+
+    monkeypatch.setattr(jetson_producer.os, "open", fail_open)
+
+    assert jetson_producer._v4l2_pixel_formats("/dev/video9") == set()
+
+
+@pytest.mark.parametrize("ioctl_succeeds", [True, False])
+def test_v4l2_dmabuf_import_probe(monkeypatch, ioctl_succeeds) -> None:
+    fcntl = pytest.importorskip("fcntl")
+    closed = []
+
+    def fake_ioctl(fd, request, buffer):
+        assert fd == 7
+        assert request == 0xC0145608
+        assert jetson_producer._V4L2_REQUESTBUFFERS.unpack(buffer) == (0, 1, 4, 0, 0)
+        if not ioctl_succeeds:
+            raise OSError("EINVAL")
+
+    monkeypatch.setattr(jetson_producer.os, "open", lambda path, flags: 7)
+    monkeypatch.setattr(jetson_producer.os, "close", closed.append)
+    monkeypatch.setattr(fcntl, "ioctl", fake_ioctl)
+
+    assert jetson_producer._v4l2_supports_dmabuf_import("/dev/video0") is ioctl_succeeds
+    assert closed == [7]
