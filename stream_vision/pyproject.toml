@@ -1,6 +1,6 @@
 [project]
 name = "streamvision"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Video sources, InferencePipeline and the stream manager for Roboflow Inference"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -11,7 +11,7 @@ dependencies = [
   "supervision>=0.29.0,<0.30.0",
   "pydantic>=2.8.0,<2.12.0",
   "psutil>=7.0.0",
-  "roboflow-workflows>=0.2.4rc1",
+  "roboflow-workflows>=0.2.4rc2",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +26,8 @@ test = [
   "pytest>=9.0.3,<10.0.0",
   "requests-mock~=1.12.1",
   "tomli>=2.0.0; python_version < '3.11'",
+  "pytest-asyncio<=0.21.1",
+  "pytest-timeout>=2.2.0",
 ]
 
 [build-system]

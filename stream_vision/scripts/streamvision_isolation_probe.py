@@ -391,8 +391,7 @@ def build_venv(
             candidates = sorted(Path(link).glob(f"{package}-*.whl"))
             if len(candidates) > 1:
                 raise ValueError(f"Multiple {package} wheels in {link}: {candidates}")
-            suffix = "[enterprise]" if package == "roboflow_workflows" else ""
-            install.extend(f"{candidate.resolve()}{suffix}" for candidate in candidates)
+            install.extend(str(candidate.resolve()) for candidate in candidates)
     subprocess.run(install, check=True, cwd=venv_dir.parent, env=env)
 
     return venv_python

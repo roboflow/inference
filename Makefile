@@ -50,7 +50,7 @@ create_workflows_wheel: download_fonts
 create_streamvision_wheel:
 	which uv || pip install uv
 	cd stream_vision && uv lock --check
-	cd stream_vision && uv build --out-dir ../dist
+	cd stream_vision && uv build --wheel --out-dir ../dist
 
 create_models_wheel:
 	which uv || pip install uv

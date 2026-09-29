@@ -34,7 +34,7 @@ def _load_pyproject() -> dict:
 def test_project_metadata() -> None:
     project = _load_pyproject()["project"]
     assert project["name"] == "streamvision"
-    assert project["version"] == "0.1.0rc2"
+    assert project["version"] == "0.1.0rc3"
     assert project["requires-python"] == ">=3.10,<3.14"
 
 
@@ -61,6 +61,13 @@ def test_optional_dependency_extras() -> None:
         "pynvvideocodec>=2.1.0,<3.0.0; (sys_platform == 'linux' and "
         "platform_machine == 'x86_64') or (sys_platform == 'win32' and "
         "platform_machine == 'AMD64')"
+    ]
+    assert extras["test"] == [
+        "pytest>=9.0.3,<10.0.0",
+        "requests-mock~=1.12.1",
+        "tomli>=2.0.0; python_version < '3.11'",
+        "pytest-asyncio<=0.21.1",
+        "pytest-timeout>=2.2.0",
     ]
 
 
