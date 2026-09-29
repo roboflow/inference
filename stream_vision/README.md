@@ -10,6 +10,29 @@ embedded in the full Inference server.
 The historical `inference.core.interfaces.{camera,stream,stream_manager}`
 import paths resolve to the same modules here when `inference` is installed.
 
+## Configuration
+
+Settings live in one `StreamsConfiguration` per process. Install it with
+`streamvision.stream.configuration.configure_process` before importing any runtime
+module: the values are frozen into module constants at the first import. Without an
+installed configuration the defaults apply. Installing a different configuration
+afterwards raises `StreamsConfigurationError`, which names the differing fields.
+
+In a process that also uses `inference`, import it first:
+
+```python
+import inference.core  # or: from inference import InferencePipeline
+import streamvision.stream.pipeline
+```
+
+`inference.core` installs the configuration built from the environment variables of
+`inference`. A plain `import inference` is lazy and installs nothing. With the opposite
+order and an environment that differs from the defaults, `import inference.core` raises
+`StreamsConfigurationError` or `WorkflowEnvironmentConfigurationError`.
+
+Processes started by the stream manager install the configuration passed by the launcher
+before they import the host factory module.
+
 ## Hardware decoding
 
 Hardware decoders are optional. Without them `VideoSource` decodes on the CPU with
