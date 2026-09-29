@@ -275,7 +275,10 @@ class Clip(OnnxRoboflowCoreModel):
             try:
                 tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
             except RuntimeError as error:
-                # raised when a text exceeds the context length - client input problem
+                # Brittle but necessary: clip.tokenize() signals a text exceeding the
+                # context length only via a bare RuntimeError, so we match its message.
+                if "is too long for context length" not in str(error):
+                    raise
                 raise ModelInputError(
                     message="Text input is too long for the model context length. "
                     "Shorten the text and retry."

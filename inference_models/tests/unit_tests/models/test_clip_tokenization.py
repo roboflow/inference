@@ -21,3 +21,17 @@ def test_tokenize_texts_when_text_exceeds_context_length() -> None:
     # then
     assert "too long for the model context length" in str(error.value)
     assert "cat cat" not in str(error.value)
+
+
+def test_tokenize_texts_when_tokenizer_fails_for_other_reason() -> None:
+    # given
+    def failing_tokenizer(texts):
+        raise RuntimeError("CUDA error: out of memory")
+
+    # when
+    with pytest.raises(RuntimeError) as error:
+        tokenize_texts(["a photo of a cat"], failing_tokenizer)
+
+    # then
+    assert not isinstance(error.value, ModelInputError)
+    assert "out of memory" in str(error.value)
