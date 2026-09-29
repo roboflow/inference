@@ -1420,16 +1420,16 @@ wheels = [
 
 [[package]]
 name = "imageio"
-version = "2.37.4"
+version = "2.38.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pillow" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/62/aa770a9307508d2a2a2c62d536a49347bffe9e55322db27838d3c93d0b07/imageio-2.37.4.tar.gz", hash = "sha256:e45cbc5e83502047fb138f7f585f7f105a136a57eea5f4b3cfc6ce1b52720bd3", size = 390173, upload-time = "2026-07-20T05:26:11.369Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/c8/2b56274457e4fadcfa86bf7c0fb93f19e124ab8f38f4bfa4372423052046/imageio-2.38.0.tar.gz", hash = "sha256:fe1d406862f6bc2930e8ec662d7bc40d4370cb76e3390dcd33819560d2708531", size = 403333, upload-time = "2026-09-28T07:44:08.101Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/2d/ca050652104bab2cf55e569db2a178b1b61cb041fef28307f2db383f6d9f/imageio-2.37.4-py3-none-any.whl", hash = "sha256:1ab2e22c8debf700f24c3ac43e8f95f3b3a8110c83b93411e97b4b0b2cd1c7e6", size = 318000, upload-time = "2026-07-20T05:26:09.874Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/4b/87a794e51d150f62a55715c453c9afbf6103fe24afef6db26a929a8480b7/imageio-2.38.0-py3-none-any.whl", hash = "sha256:474ea3a39e36e0e8e02d81d7f10412aaecec7a2825e5fbc4f44cbcd7bb7cebfc", size = 328055, upload-time = "2026-09-28T07:44:06.169Z" },
 ]
 
 [[package]]
@@ -1446,7 +1446,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.38.0"
+version = "0.39.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1499,14 +1499,14 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/07/d8/47abfe8dd31e22edba3a2558f940c782a719ef3b0524fbe21398428ec0e8/inference_models-0.38.0.tar.gz", hash = "sha256:87234204db7976b4da16c17069013960002ff280f8e4520f2374f4a270068fb4", size = 1891454, upload-time = "2026-09-22T13:33:44.896Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/aa/ca168100bede268177f09e296f16a8b2ef2e5b6815c095b64794c7c6c54a/inference_models-0.39.0.tar.gz", hash = "sha256:c817665f0b4b17bc99bcd5440c136e3c049ec609a6820ab911dc608d2e41ecef", size = 1914373, upload-time = "2026-09-25T17:50:32.529Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/bf/1b860a867864c1a76592a5e1c492a021839a4efabbd14aaf49313760a26c/inference_models-0.38.0-py3-none-any.whl", hash = "sha256:8772f71de6545897428283b1a7e7be09a51fb3ba8e43d744dd7214fd0990041d", size = 2124110, upload-time = "2026-09-22T13:33:43.211Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/52/50d7386c1b8932d22f5177f46a67363fe0d61d4a0bb4cfe014e8fcf129b2/inference_models-0.39.0-py3-none-any.whl", hash = "sha256:b992c6488e2121862891b03d4db7f08f3a87ab7c857587921c1c1a2667a7f767", size = 2153355, upload-time = "2026-09-25T17:50:30.554Z" },
 ]
 
 [[package]]
 name = "inference-sdk"
-version = "1.7.1"
+version = "1.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1523,7 +1523,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/93/1b13f2ef69b2c4db50e1c2558ad804ec15ad332316240b000ff979453d85/inference_sdk-1.7.1-py3-none-any.whl", hash = "sha256:c2fec9cda32f56e01196be22552d3969f367cf051fd76ed546864d5a22c37c36", size = 102222, upload-time = "2026-09-22T14:56:25.959Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/7b/726fc47d541b633c41d7ded6dbad206aee1ec67d4a1df0e6875816d6fcc3/inference_sdk-1.7.2-py3-none-any.whl", hash = "sha256:94711e6e756e26a7c5e62eb58e2110926721df7691ce926d0e219b8352370cb3", size = 105201, upload-time = "2026-09-25T19:24:47.147Z" },
 ]
 
 [[package]]
@@ -2885,11 +2885,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.11.13"
+version = "4.12.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/0e/7be2983c52622d6c0899300f760e31ba143355cedf1afcb3e65689d5ca85/platformdirs-4.11.13.tar.gz", hash = "sha256:6985eefdc2298693e4ce1fe124645524cb967428eb6384e0ce5b49767e7ea8ba", size = 40415, upload-time = "2026-09-25T04:44:25.484Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/8a/84ef03c1c83eacd7cc4540b05428a93b5cd4e42f62fb0b98ac2cb6ed3a6d/platformdirs-4.12.1.tar.gz", hash = "sha256:38da801a4af303033cbffccb39030db22bf0473e6414309b02acebeee7ca8bf1", size = 59427, upload-time = "2026-09-28T05:05:16.264Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/a6/76a492f6a937e196641b3abd1588c504c71438e243daf1bebde4d3bb8ee9/platformdirs-4.11.13-py3-none-any.whl", hash = "sha256:228b2283af5c1f32673cdf55271216a52bbd8258cb31374e302ad7bd26cd7513", size = 25054, upload-time = "2026-09-25T04:44:23.975Z" },
+    { url = "https://files.pythonhosted.org/packages/40/31/1521c38d175108ac395941adbcb9f11e085340bed81ad166e8ad8c21c17b/platformdirs-4.12.1-py3-none-any.whl", hash = "sha256:7f251621befae78b2cb74616f9fc99d3fa3db0afba5035987731f8dcd430337d", size = 33011, upload-time = "2026-09-28T05:05:15.06Z" },
 ]
 
 [[package]]
@@ -4002,7 +4002,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.3.post1"
+version = "0.2.4rc1"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

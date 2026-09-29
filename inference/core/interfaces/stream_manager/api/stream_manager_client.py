@@ -1,11 +1,11 @@
 import asyncio
 import json
+import logging
 from asyncio import StreamReader, StreamWriter
 from enum import Enum
 from json import JSONDecodeError
 from typing import List, Optional, Tuple, Union
 
-from inference.core import logger
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
     CommandResponse,
@@ -44,6 +44,8 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MessageToBigError,
     TransmissionChannelClosed,
 )
+
+logger = logging.getLogger(__name__)
 
 BUFFER_SIZE = 16384
 HEADER_SIZE = 4

@@ -1,8 +1,8 @@
 import json
+import logging
 import socket
 from typing import Optional
 
-from inference.core import logger
 from inference.core.interfaces.stream_manager.manager_app.entities import ErrorType
 from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedHeaderError,
@@ -12,6 +12,8 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
 from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     prepare_error_response,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def receive_socket_data(
