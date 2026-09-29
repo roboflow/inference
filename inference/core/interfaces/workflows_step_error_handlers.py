@@ -19,7 +19,6 @@ from inference.core.workflows.errors import (
     RuntimeLimitsCausedStepExecutionError,
 )
 from inference_models.errors import (
-    ModelInputError,
     ModelNotFoundError,
     ModelPackageAlternativesExhaustedError,
     ModelPackageRestrictedError,
@@ -98,14 +97,6 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             public_message="Model loading failed due to restrictions of server configuration - "
             "usually due to excessive runtime memory requirement of the model (for instance "
             "caused by large input size).",
-            context="workflow_execution | step_execution",
-            inner_error=error,
-        ) from error
-    if isinstance(error, ModelInputError):
-        raise ClientCausedStepExecutionError(
-            block_id=step_name,
-            status_code=400,
-            public_message=f"Invalid input provided to step {step_name} - {error}",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.utils import (
+    raise_runtime_input_error_on_clip_text_too_long,
     remove_unexpected_keys_from_dictionary,
     run_in_parallel,
 )
@@ -176,6 +177,7 @@ class ClipComparisonBlockV1(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
+    @raise_runtime_input_error_on_clip_text_too_long
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
