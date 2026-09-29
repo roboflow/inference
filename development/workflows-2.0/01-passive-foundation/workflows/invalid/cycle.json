@@ -1,0 +1,44 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values",
+      "kind": "number",
+      "axes": [
+        {
+          "id": "samples",
+          "kind": "sample",
+          "stationary": true
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "name": "a",
+      "type": "demo/scale",
+      "inputs": {
+        "value": "$steps.b.scaled"
+      },
+      "config": {
+        "factor": 1
+      }
+    },
+    {
+      "name": "b",
+      "type": "demo/scale",
+      "inputs": {
+        "value": "$steps.a.scaled"
+      },
+      "config": {
+        "factor": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "selector": "$steps.a.scaled"
+    }
+  ]
+}

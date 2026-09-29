@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Opt-in Workflows V2 passive foundation** — Add the separate `roboflow_workflows.execution_engine.v2` compiler and serial runner, an explicit native block registry, indexed nested batches, per-output layouts and context, and conditional path completion. CPU development examples cover ragged crops, mosaics, custom block authoring and contract errors. V1 selection, registration and block behavior are unchanged; temporal execution and host-wide V2 integration remain outside this initial slice.
+
 ### Added
 
 - Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.

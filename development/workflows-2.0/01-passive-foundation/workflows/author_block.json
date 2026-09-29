@@ -1,0 +1,79 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values",
+      "kind": "number",
+      "axes": [{"id": "samples", "kind": "sample", "stationary": true}]
+    }
+  ],
+  "steps": [
+    {
+      "name": "scale_root",
+      "type": "demo/scale",
+      "inputs": {"value": "$inputs.values"},
+      "config": {"factor": 2}
+    },
+    {
+      "name": "expand",
+      "type": "demo/expand",
+      "inputs": {"value": "$inputs.values"},
+      "config": {"offsets": [1, 2], "limit": 31}
+    },
+    {
+      "name": "scale",
+      "type": "demo/scale",
+      "inputs": {"value": "$steps.expand.children"},
+      "config": {"factor": 2}
+    },
+    {
+      "name": "reduce",
+      "type": "demo/sum_with_parent",
+      "inputs": {"parent": "$inputs.values", "children": "$steps.expand.children"},
+      "config": {"parent_weight": 0}
+    },
+    {
+      "name": "reduce_with_parent",
+      "type": "demo/sum_with_parent",
+      "inputs": {"parent": "$inputs.values", "children": "$steps.scale.scaled"},
+      "config": {"parent_weight": 1}
+    },
+    {
+      "name": "expand_deep",
+      "type": "demo/expand",
+      "inputs": {"value": "$steps.scale.scaled"},
+      "config": {"offsets": [1], "limit": 60}
+    },
+    {
+      "name": "scale_deep",
+      "type": "demo/scale",
+      "inputs": {"value": "$steps.expand_deep.children"},
+      "config": {"factor": 3}
+    },
+    {
+      "name": "reduce_deep",
+      "type": "demo/sum_with_parent",
+      "inputs": {"parent": "$steps.scale.scaled", "children": "$steps.scale_deep.scaled"},
+      "config": {"parent_weight": 1}
+    },
+    {
+      "name": "reduce_twice",
+      "type": "demo/sum_with_parent",
+      "inputs": {"parent": "$inputs.values", "children": "$steps.reduce_deep.total"},
+      "config": {"parent_weight": 0}
+    }
+  ],
+  "outputs": [
+    {"name": "scaled_root", "selector": "$steps.scale_root.scaled"},
+    {"name": "children", "selector": "$steps.expand.children"},
+    {"name": "scaled", "selector": "$steps.scale.scaled"},
+    {"name": "sums", "selector": "$steps.reduce.total"},
+    {"name": "counts", "selector": "$steps.reduce.count"},
+    {"name": "with_parent", "selector": "$steps.reduce_with_parent.total"},
+    {"name": "deep_children", "selector": "$steps.expand_deep.children"},
+    {"name": "deep_scaled", "selector": "$steps.scale_deep.scaled"},
+    {"name": "deep_totals", "selector": "$steps.reduce_deep.total"},
+    {"name": "deep_counts", "selector": "$steps.reduce_deep.count"},
+    {"name": "twice_reduced", "selector": "$steps.reduce_twice.total"}
+  ]
+}

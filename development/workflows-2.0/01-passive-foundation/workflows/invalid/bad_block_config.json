@@ -1,0 +1,40 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "images",
+      "kind": "image",
+      "axes": [
+        {
+          "id": "samples",
+          "kind": "sample",
+          "stationary": true
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "name": "crop",
+      "type": "v2/crop",
+      "inputs": {
+        "image": "$inputs.images"
+      },
+      "config": {
+        "regions": [
+          [
+            0,
+            0,
+            10
+          ]
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "selector": "$steps.crop.crops"
+    }
+  ]
+}

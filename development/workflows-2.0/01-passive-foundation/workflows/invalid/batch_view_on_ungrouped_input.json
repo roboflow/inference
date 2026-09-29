@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "images",
+      "kind": "image",
+      "axes": []
+    }
+  ],
+  "steps": [
+    {
+      "name": "mosaic",
+      "type": "v2/mosaic",
+      "inputs": {
+        "images": "$inputs.images"
+      },
+      "config": {}
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "selector": "$steps.mosaic.image"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values",
+      "kind": "number",
+      "axes": [
+        {
+          "id": "samples",
+          "kind": "sample",
+          "stationary": true
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "name": "broken",
+      "type": "demo/broken",
+      "inputs": {
+        "value": "$inputs.values"
+      },
+      "config": {
+        "mode": "empty_mapping"
+      }
+    },
+    {
+      "name": "scale",
+      "type": "demo/scale",
+      "inputs": {
+        "value": "$inputs.values"
+      },
+      "config": {
+        "factor": 2
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "selector": "$steps.broken.value"
+    },
+    {
+      "name": "sibling",
+      "selector": "$steps.scale.scaled"
+    }
+  ]
+}

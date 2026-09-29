@@ -1,0 +1,60 @@
+{
+  "version": "2.0",
+  "inputs": [
+    {
+      "name": "values_a",
+      "kind": "number",
+      "axes": [
+        {
+          "id": "samples_a",
+          "kind": "sample",
+          "stationary": true
+        }
+      ]
+    },
+    {
+      "name": "values_b",
+      "kind": "number",
+      "axes": [
+        {
+          "id": "samples_b",
+          "kind": "sample",
+          "stationary": true
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "name": "expand_b",
+      "type": "demo/expand",
+      "inputs": {
+        "value": "$inputs.values_b"
+      },
+      "config": {
+        "offsets": [
+          1,
+          2
+        ],
+        "limit": 31
+      }
+    },
+    {
+      "name": "reduce",
+      "type": "demo/sum_with_parent",
+      "inputs": {
+        "parent": "$inputs.values_a",
+        "children": "$steps.expand_b.children"
+      },
+      "config": {
+        "parent_weight": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "out",
+      "selector": "$steps.reduce.total"
+    }
+  ]
+}
