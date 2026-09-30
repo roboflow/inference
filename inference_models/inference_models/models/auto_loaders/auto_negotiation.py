@@ -1203,12 +1203,13 @@ def coreml_package_matches_runtime_environment(
     if runtime_x_ray.coremltools_version is None:
         verbose_info(
             message=f"Model package with id '{model_package.package_id}' filtered out as Core ML is not available "
-            f"in this environment (it requires macOS 13+ and the `coreml` extra of `inference-models`).",
+            f"in this environment (it requires macOS 13+ on Apple Silicon and the `coreml` extra of "
+            f"`inference-models`).",
             verbose_requested=verbose,
         )
         return (
             False,
-            "Core ML runtime is not available (requires macOS 13+ and coremltools)",
+            "Core ML runtime is not available (requires macOS 13+ on Apple Silicon and coremltools)",
         )
     return True, None
 
