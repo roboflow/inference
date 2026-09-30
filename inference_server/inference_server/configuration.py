@@ -89,6 +89,12 @@ ENABLE_CONTROL_PLANE_ROUTES = get_boolean_from_env(
 # API key used for INFERENCE_PRELOAD_MODELS startup loads (weight fetch).
 PRELOAD_API_KEY = os.environ.get("PRELOAD_API_KEY", "")
 
+# ── Prometheus (prometheus.py) ────────────────────────────────────────────
+# GET /metrics in Prometheus text format, unauthenticated, like the legacy
+# server (which served it regardless of this flag; its images set it True).
+# Set to false to turn the route and the HTTP instrumentation off.
+ENABLE_PROMETHEUS = get_boolean_from_env("ENABLE_PROMETHEUS", default=True)
+
 # ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
 MODEL_STAT_CACHE_SIZE = get_integer_from_env(
     "INFERENCE_MODEL_STAT_CACHE_SIZE", default=1024
