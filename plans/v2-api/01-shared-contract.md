@@ -2,7 +2,7 @@
 
 **Author:** Damian Kosowski, with an agent-prepared draft for review.
 
-**Status:** Proposed plan. The recommendations and examples below are not agreed contracts. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
+**Status:** Proposed plan. D2 records Damian's confirmed route and compatibility direction; its migration mechanism and the other decisions remain proposals. This draft PR contains the plan only; it does not implement the API, schema catalogue or fixture suite.
 
 **Scope update:** PR 01 covers model and server contracts only. The new Workflows functionality is not yet included, as clarified by Damian. All V2 Workflows routes and their contracts, schemas, fixtures and direct-inference parity are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. They do not block this plan or active model/server implementation. Resume that work only once the new functionality is included and the team explicitly agrees to resume.
 
@@ -20,7 +20,7 @@ PR 01 should establish the shared conventions, valid examples and a small offlin
 
 The integration branch was fetched while preparing this plan and still points to `3d45b8712cc428eb01b714f3609346be7c92acc4`. Design PR 2277 still points to `de634b98bac204c96caa98a15dd7559dded361d5`. This plan rechecks the model/server routers, dispatch, authentication middleware, error helper, detection response serializer and SDK version selection against that public revision.
 
-The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `74756313e3e425829fd3915d5840e7734d83ce57`, including the Workflows hold and the guidance to write plans in plain language with concrete examples. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
+The [report][report] and [review follow-up][followup] retain their evidence snapshot at report-branch commit `6dcada6ace296522d4be9451f8764b81eb5c8411`. The [roadmap][roadmap] is pinned to `b80a23311dfc5567d8c3b13859978e767737a37a`, including the Workflows hold, plain-language planning guidance and D2 route/state-listing direction. Discussion guidance remains the snapshot recorded in the follow-up: loading controls, score/decision separation, rich/compact distinction and V1 safeguard parity have support; naming, defaults, optional metadata and several policies remain open. This plan does not claim newer team agreement.
 
 The earlier private-runtime audit is contextual evidence only. No new private backend or deployed-client audit was performed for this shared-contract plan. The local SDK exposes V0/V1 selection, while server tests call experimental V2 paths. That search does not establish that external or private clients have no V2 dependencies. [SDK][sdk], [server integration tests][integration-tests]
 
@@ -145,7 +145,7 @@ Classification field names/threshold algorithms, exact loader options/cache iden
 
 ## 3. Decisions to make before writing the contract
 
-All six decisions are **Open**. The examples show the recommendation, not agreed or implemented behavior. Start with D1–D3, then review D4–D6. Record each answer and its discussion link before turning the examples into required behavior.
+**D2 is partly decided by Damian:** use the proposed paths, preserve existing clients during migration, and assess loading/error-state listing in PR 02 planning with the option to defer it further. Its migration mechanism remains a recommendation. D1 and D3–D6 remain **Open**; their examples are not agreed or implemented behavior. Start with D1–D3, then review D4–D6. Record each answer and its discussion link before turning the examples into required behavior.
 
 ### D1 Where should the contract live and how should we check it
 
@@ -172,34 +172,49 @@ For example, this small schema checks only the two response options:
 
 ### D2 Which URLs should clients call and what happens to old clients
 
-**What we found:** The server and design use different paths. DELETE unload has tentative support; loaded-model naming/filtering is still open. Local SDK code selects V0/V1, but that does not prove private or deployed V2 clients do not exist. [Routes][routes], [follow-up][followup], [SDK][sdk]
+**Confirmed by Damian in this planning discussion:** Use the proposed paths below. Avoid breaking existing clients; allow time to migrate. Loading/error-state listing can be considered while planning PR 02 and may be postponed again at that stage. These are the user's directions, not a claim of wider maintainer agreement on every migration detail.
 
-**Recommendation:** Use these paths for the agreed contract:
+**What we found:** The current server uses different paths from the draft design. Local SDK code selects V0/V1, but that does not prove private or deployed V2 clients do not exist. [Routes][routes], [SDK][sdk]
 
-| Operation | Current path | Proposed path |
+| Operation | Current path to preserve during migration | Chosen path for the new contract |
 |---|---|---|
 | Run a model | `POST /v2/models/infer` | `POST /v2/models/run` |
 | List loaded models | `GET /v2/models` | `GET /v2/models/loaded` |
 | Unload one | `POST /v2/models/unload?model_id=example%2F1` | `DELETE /v2/models/unload?model_id=example%2F1` |
 | Unload all | `DELETE /v2/models` | `DELETE /v2/models/unload` |
 
-`/loaded` should contain only loaded entries. For example, a model still loading would not appear there. If clients need loading/error states, PR 02 should specify that separately, along with cancellation and partial unload failures.
+`/loaded` describes loaded entries. Additional listing/filtering for loading or error states is a PR 02 planning question, not a required PR 02 deliverable. Deferring that feature does not defer correct load-operation errors, cancellation/partial-failure decisions or internal lifecycle handling.
 
-Keep old experimental paths **and their current response shape** through an announced migration release. Changing an old path to return the new body can still break its clients:
+**Recommended migration approach:** Keep temporary compatibility adapters at the old paths. They translate old requests to the shared execution code and format results for old clients. Preserve defaults, status/error behavior and authentication expectations as well as response fields; a redirect or route alias alone would not do that.
 
 ```mermaid
 flowchart LR
     Old[Existing client] --> Infer[POST /v2/models/infer]
-    Infer --> Adapter[Compatibility handling]
-    Adapter --> Predictions[Current predictions response]
+    Infer --> OldInput[Read old request and defaults]
     New[Updated client] --> Run[POST /v2/models/run]
-    Run --> Contract[Agreed request handling]
-    Contract --> Outputs[New outputs response]
+    Run --> NewInput[Read agreed request and defaults]
+    OldInput --> Core[Shared model execution]
+    NewInput --> Core
+    Core --> OldOutput[Old response adapter for infer]
+    Core --> NewOutput[New response adapter for run]
+    OldOutput --> Predictions[Current predictions response]
+    NewOutput --> Outputs[New outputs response]
 ```
 
-This is a behavior sketch for later implementation PRs, not a requirement for separate model execution code. Keep V1 unchanged. Remove experimental compatibility after identifying and migrating its consumers; no sunset date is assumed here. For routes whose URL stays the same, such as `/interface`, coordinate the response change with consumers before switching it. Do not add a permanent second API or a new version-selection mechanism in this plan.
+The route selects the adapter; no `api_version` query parameter, custom version header or other new client switch is introduced. The response `type` discussed in D6 describes the returned structure; it is not a request-time version selector. This sketch does not decide D3's final response shape.
 
-**Decision needed:** Do these paths and the loaded-only list match what we want? Which clients need the old responses, and what migration release can they use? If there are no compatibility commitments, a coordinated breaking experimental release is simpler than adapters; until that is established, preserving existing clients is the recommendation.
+To keep the compatibility layer from becoming a permanent second product:
+
+- Add new features to the chosen paths. Keep old adapters limited to existing behavior plus necessary bug/security fixes, backed by compatibility tests.
+- Document the old routes as deprecated with a migration example. Do not set a removal date before affected consumers and deployment constraints are understood.
+- Give each adapter an explicit cleanup item and responsible owner during implementation planning. Record which consumers need migration and use route-usage evidence where available; zero observed traffic alone is not proof that an occasional/offline client has migrated.
+- Remove an adapter in a planned release only after its supported consumers have migrated and removal has been communicated. A target date can be set once that migration plan exists; it must not override the requirement to avoid breaking supported clients.
+
+There is an important limit: for a route whose URL stays the same, such as `/v2/models/interface`, the server cannot distinguish old and new clients without some selection mechanism. Keep the existing contract there until consumers can move together, using additive changes only when they are verified compatible. If old and new clients must coexist on that exact URL with incompatible bodies, defer the breaking response change and revisit the migration design explicitly. Do not hide a new version switch inside this plan.
+
+Keep V1 unchanged. Temporary overlap has a maintenance cost; the shared execution code, limited adapter scope and concrete removal work make that cost manageable. We cannot honestly promise both indefinite support for unmigrated clients and a guaranteed removal date.
+
+**Still to settle:** Confirm this adapter approach; identify the V2 consumers, migration owners and release window. For same-path changes, establish whether a coordinated consumer migration is possible. These details stay open without reopening the chosen paths or the requirement to preserve existing clients.
 
 ### D3 What should one result or a batch look like
 
@@ -413,7 +428,7 @@ Record the actual validation command when the tooling is implemented. Later feat
 
 Verification for this plan covers source/reference inspection, Markdown whitespace/link checks, parsing the illustrative JSON and Python, and checking diagrams against the described behavior. The diagrams have not been rendered in this check. No product code or runtime test was changed or executed. The plan is ready for decision review; the shared-contract deliverable itself is still pending.
 
-[roadmap]: https://github.com/roboflow/inference/blob/74756313e3e425829fd3915d5840e7734d83ce57/reports/v2-api-gap-2026-09-30/ROADMAP.md
+[roadmap]: https://github.com/roboflow/inference/blob/b80a23311dfc5567d8c3b13859978e767737a37a/reports/v2-api-gap-2026-09-30/ROADMAP.md
 [report]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REPORT.md
 [followup]: https://github.com/roboflow/inference/blob/6dcada6ace296522d4be9451f8764b81eb5c8411/reports/v2-api-gap-2026-09-30/REVIEW_COMMENT_FOLLOWUP.md
 [design-structure]: https://github.com/roboflow/inference/blob/de634b98bac204c96caa98a15dd7559dded361d5/design/00_inference_api_v2/01-general-api-structure.md
