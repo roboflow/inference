@@ -28,9 +28,11 @@
   or GridSample and split the graph into ~100 CoreML/CPU partitions. On an M4 Max,
   RF-DETR Nano goes from 72 ms to 16 ms per image end to end (CPU-only: 61 ms), with
   COCO mAP unchanged. The compiled model is cached in the package's `coreml_cache/`
-  directory: the first load compiles for about 20 s, later loads take 0.2 s instead
-  of 5 s. Configure with `INFERENCE_MODELS_COREML_MODEL_FORMAT`,
-  `INFERENCE_MODELS_COREML_COMPUTE_UNITS` and
+  directory, keyed by the model file so replaced weights compile again: the first load
+  compiles for about 20 s, later loads take 0.2 s instead of 5 s. If CoreML cannot
+  compile the model with these options, the session falls back to onnxruntime's default
+  CoreML configuration, as before. Configure with `INFERENCE_MODELS_COREML_MODEL_FORMAT`,
+  `INFERENCE_MODELS_COREML_COMPUTE_UNITS` (both validated) and
   `INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED`.
 - Reference RF-DETR NumPy preprocessing swaps BGR/RGB channels after resizing,
   preserving pixel values while avoiding a full-resolution channel copy.
