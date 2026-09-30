@@ -21,6 +21,11 @@ from inference_models.errors import (
     MissingDependencyError,
 )
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+from inference_models.models.base.image_embeddings import (
+    OnnxClassifierEmbeddings,
+    configure_onnx_embeddings,
+    load_classifier_session,
+)
 from inference_models.models.base.types import PreprocessedInputs
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
@@ -58,7 +63,9 @@ except ImportError as import_error:
     ) from import_error
 
 
-class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class DinoV3ForClassificationOnnx(
+    OnnxClassifierEmbeddings, ClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -126,9 +133,11 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[weights_file],
+        session, embedding_info, embedding_path = load_classifier_session(
+            source_path=model_package_content[weights_file],
             providers=onnx_execution_providers,
+            required_capabilities=kwargs.get("required_capabilities"),
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
@@ -136,13 +145,22 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
             input_batch_size = None
         input_name = session.get_inputs()[0].name
 
-        return cls(
+        model = cls(
             session=session,
             input_name=input_name,
             inference_config=inference_config,
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
+        )
+
+        return configure_onnx_embeddings(
+            model,
+            model_package_content[weights_file],
+            onnx_execution_providers,
+            embedding_info,
+            embedding_path,
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
 
     def __init__(
@@ -214,7 +232,7 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
 
 
 class DinoV3ForMultiLabelClassificationOnnx(
-    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+    OnnxClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
     @classmethod
@@ -284,9 +302,11 @@ class DinoV3ForMultiLabelClassificationOnnx(
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[weights_file],
+        session, embedding_info, embedding_path = load_classifier_session(
+            source_path=model_package_content[weights_file],
             providers=onnx_execution_providers,
+            required_capabilities=kwargs.get("required_capabilities"),
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
@@ -294,7 +314,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
             input_batch_size = None
         input_name = session.get_inputs()[0].name
 
-        return cls(
+        model = cls(
             session=session,
             input_name=input_name,
             inference_config=inference_config,
@@ -302,6 +322,15 @@ class DinoV3ForMultiLabelClassificationOnnx(
             device=device,
             input_batch_size=input_batch_size,
             recommended_parameters=recommended_parameters,
+        )
+
+        return configure_onnx_embeddings(
+            model,
+            model_package_content[weights_file],
+            onnx_execution_providers,
+            embedding_info,
+            embedding_path,
+            output_type=kwargs.get("output_type", "feature_vector"),
         )
 
     def __init__(

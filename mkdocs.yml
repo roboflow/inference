@@ -117,6 +117,7 @@ nav:
         - Ecosystem: workflows/understanding.md
         - Create And Run: workflows/create_and_run.md
         - Blocks Overview: workflows/blocks_connections.md
+        - Classifier Embeddings: workflows/classifier_embeddings.md
         - Running Workflows: workflows/modes_of_running.md
         - Inner workflows: workflows/inner_workflow_design.md
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md

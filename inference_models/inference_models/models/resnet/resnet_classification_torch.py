@@ -19,6 +19,7 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.base.image_embeddings import TorchClassifierEmbeddings
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -40,6 +41,13 @@ class ResNetClassifier(nn.Module):
         self._backbone = backbone
         self._softmax_fused = softmax_fused
 
+    def forward_embedding(self, x: torch.Tensor) -> torch.Tensor:
+        features = self._backbone.forward_features(x)
+        return self._backbone.forward_head(features, pre_logits=True)
+
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
+        return self._backbone(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         results = self._backbone(x)
         if not self._softmax_fused:
@@ -47,7 +55,9 @@ class ResNetClassifier(nn.Module):
         return results
 
 
-class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
+class ResNetForClassificationTorch(
+    TorchClassifierEmbeddings, ClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -188,6 +198,13 @@ class ResNetMultiLabelClassifier(nn.Module):
         self._backbone = backbone
         self._sigmoid_fused = sigmoid_fused
 
+    def forward_embedding(self, x: torch.Tensor) -> torch.Tensor:
+        features = self._backbone.forward_features(x)
+        return self._backbone.forward_head(features, pre_logits=True)
+
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
+        return self._backbone(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         results = self._backbone(x)
         if not self._sigmoid_fused:
@@ -196,7 +213,7 @@ class ResNetMultiLabelClassifier(nn.Module):
 
 
 class ResNetForMultiLabelClassificationTorch(
-    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+    TorchClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
     @classmethod
@@ -296,6 +313,7 @@ class ResNetForMultiLabelClassificationTorch(
         self._class_names = class_names
         self._device = device
         self.recommended_parameters = recommended_parameters
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -320,7 +338,7 @@ class ResNetForMultiLabelClassificationTorch(
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(

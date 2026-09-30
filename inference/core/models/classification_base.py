@@ -12,12 +12,15 @@ if USE_PYTORCH_FOR_PREPROCESSING:
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
     MultiLabelClassificationInferenceResponse,
 )
+from inference.core.exceptions import ModelDeploymentNotSupportedError
+from inference.core.models.embeddings import make_embedding_info
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
@@ -46,6 +49,84 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         """Initialize the model, setting whether it is multiclass or not."""
         super().__init__(*args, **kwargs)
         self.multiclass = self.environment.get("MULTICLASS", False)
+        if "image_embeddings" in kwargs.get("required_capabilities", []):
+            self.prepare_image_embeddings(kwargs.get("output_type", "feature_vector"))
+
+    def prepare_image_embeddings(self, output_type="feature_vector"):
+        import onnxruntime
+
+        from inference_models.utils.onnx_embeddings import prepare_classifier_embedding
+
+        with self._session_lock:
+            if not hasattr(self, "_embedding_sessions"):
+                self._embedding_sessions = {}
+            if output_type in self._embedding_sessions:
+                return self._embedding_sessions[output_type]
+            try:
+                path, info = prepare_classifier_embedding(
+                    self.cache_file(self.weights_file), output_type=output_type
+                )
+            except ValueError as error:
+                raise ModelDeploymentNotSupportedError(str(error)) from error
+            providers = [
+                (name, options)
+                for name, options in self.onnx_session.get_provider_options().items()
+            ]
+            for name, options in providers:
+                if name == "TensorrtExecutionProvider":
+                    from pathlib import Path
+
+                    options["trt_engine_cache_path"] = str(Path(path).parent)
+            session = onnxruntime.InferenceSession(
+                path,
+                providers=providers,
+                sess_options=self.onnx_session.get_session_options(),
+            )
+            self._embedding_sessions[output_type] = (session, info)
+            return session, info
+
+    def infer_embeddings_from_request(self, request):
+        started = perf_counter()
+        session, feature_info = self.prepare_image_embeddings(request.output_type)
+        inputs, _ = self.preprocess(**request.model_dump())
+        if hasattr(inputs, "detach"):
+            inputs = inputs.detach().cpu().numpy()
+        batch_size = session.get_inputs()[0].shape[0]
+        batch_size = batch_size if isinstance(batch_size, int) else len(inputs)
+        features = []
+        with self._session_lock:
+            for offset in range(0, len(inputs), batch_size):
+                chunk = inputs[offset : offset + batch_size]
+                size = len(chunk)
+                if size < batch_size:
+                    chunk = np.concatenate(
+                        [chunk, np.repeat(chunk[-1:], batch_size - size, axis=0)]
+                    )
+                features.append(session.run(None, {self.input_name: chunk})[0][:size])
+        features = np.concatenate(features)
+        info = make_embedding_info(
+            model_id=self.endpoint,
+            feature_info=feature_info,
+            preprocessing={
+                "image_pre_processing": self.preproc,
+                "means": self.preprocess_means,
+                "stds": self.preprocess_stds,
+                "overrides": {
+                    key: value
+                    for key, value in request.model_dump().items()
+                    if key.startswith("disable_preproc_")
+                },
+            },
+            backend="onnx",
+            precision=str(features.dtype),
+            dimension=features.shape[1],
+        )
+        return ImageEmbeddingResponse(
+            embeddings=features.tolist(),
+            embedding_info=info,
+            time=perf_counter() - started,
+            inference_id=request.id,
+        )
 
     def draw_predictions(self, inference_request, inference_response):
         """Draw prediction visuals on an image.

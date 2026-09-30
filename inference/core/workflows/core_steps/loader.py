@@ -335,6 +335,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
 )
+from inference.core.workflows.core_steps.models.roboflow.embedding.v1 import (
+    EmbeddingModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
@@ -829,6 +832,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
         ClipModelBlockV1,
+        EmbeddingModelBlockV1,
         PerceptionEncoderModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,

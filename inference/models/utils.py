@@ -71,6 +71,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("classification", "vit"): VitClassification,
     ("classification", "dinov3"): DinoV3Classification,
     ("classification", "dinov3_probe"): DinoV3Classification,
+    ("classification", "resnet"): ResNetClassification,
     ("classification", "resnet18"): ResNetClassification,
     ("classification", "resnet34"): ResNetClassification,
     ("classification", "resnet50"): ResNetClassification,

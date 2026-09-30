@@ -13,6 +13,7 @@ from inference.core.entities.requests import (
     ClassificationInferenceRequest,
     InferenceRequest,
 )
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
@@ -40,6 +41,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
+from inference.core.models.embeddings import make_embedding_info
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import mask2poly, masks2poly
@@ -668,6 +670,7 @@ class InferenceModelsClassificationAdapter(Model):
 
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
+        self._embedding_model_id = model_id
 
         self.task_type = "classification"
         extra_weights_provider_headers = get_extra_weights_provider_headers(
@@ -691,6 +694,38 @@ class InferenceModelsClassificationAdapter(Model):
             )
         )
         self.class_names = list(self._model.class_names)
+
+    def infer_embeddings_from_request(self, request):
+        started = perf_counter()
+        kwargs = request.model_dump()
+        inputs, _ = self.preprocess(**kwargs)
+        features = self._model.forward_embedding(
+            inputs, output_type=request.output_type
+        )
+        config = self._model._inference_config
+        preprocessing = {
+            "image_pre_processing": config.image_pre_processing.model_dump(mode="json"),
+            "network_input": config.network_input.model_dump(mode="json"),
+            "overrides": {
+                key: value
+                for key, value in kwargs.items()
+                if key.startswith("disable_preproc_")
+            },
+        }
+        info = make_embedding_info(
+            model_id=self._embedding_model_id,
+            feature_info=self._model.get_embedding_info(request.output_type),
+            preprocessing=preprocessing,
+            backend=type(self._model).__name__,
+            precision=str(features.dtype),
+            dimension=features.shape[1],
+        )
+        return ImageEmbeddingResponse(
+            embeddings=features.detach().cpu().float().tolist(),
+            embedding_info=info,
+            time=perf_counter() - started,
+            inference_id=request.id,
+        )
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"

@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     ModelDeploymentNotSupportedError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
@@ -24,6 +25,7 @@ from inference.core.registries.roboflow import (
     save_model_metadata_in_cache,
 )
 from inference.core.roboflow_api import ModelEndpointType
+from inference.models.aliases import CLASSIFICATION_ALIASES
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +33,80 @@ def clear_in_process_metadata_cache():
     _in_process_metadata_cache.cache.clear()
     yield
     _in_process_metadata_cache.cache.clear()
+
+
+@pytest.mark.parametrize(
+    "model_id", list(CLASSIFICATION_ALIASES) + list(CLASSIFICATION_ALIASES.values())
+)
+@pytest.mark.parametrize("use_inference_models", [False, True])
+def test_pretrained_classifier_metadata_uses_configured_registry(
+    monkeypatch, model_id, use_inference_models
+):
+    resolved_id = CLASSIFICATION_ALIASES.get(model_id, model_id)
+    monkeypatch.setattr(roboflow, "USE_INFERENCE_MODELS", use_inference_models)
+    monkeypatch.setattr(roboflow, "MODELS_CACHE_AUTH_ENABLED", False)
+    monkeypatch.setattr(
+        roboflow, "get_model_metadata_from_cache", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(roboflow, "save_model_metadata_in_cache", MagicMock())
+    legacy = MagicMock(
+        return_value={"ort": {"type": "classification", "modelType": "resnet101"}}
+    )
+    packages = MagicMock(
+        return_value={"taskType": "classification", "modelType": "resnet"}
+    )
+    monkeypatch.setattr(roboflow, "get_roboflow_model_data", legacy)
+    monkeypatch.setattr(
+        roboflow, "get_model_metadata_from_inference_models_registry", packages
+    )
+
+    assert get_model_type(
+        model_id, "key", countinference=False, service_secret="secret"
+    ) == ("classification", "resnet" if use_inference_models else "resnet101")
+    selected, unused = (
+        (packages, legacy) if use_inference_models else (legacy, packages)
+    )
+    assert selected.call_args.kwargs["model_id"] == resolved_id
+    assert selected.call_args.kwargs["countinference"] is False
+    assert selected.call_args.kwargs["service_secret"] == "secret"
+    unused.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "model_id", list(CLASSIFICATION_ALIASES) + list(CLASSIFICATION_ALIASES.values())
+)
+@pytest.mark.parametrize("use_inference_models", [False, True])
+def test_pretrained_classifier_auth_uses_configured_registry(
+    monkeypatch, model_id, use_inference_models
+):
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
+    monkeypatch.setattr(roboflow, "USE_INFERENCE_MODELS", use_inference_models)
+    legacy, packages = MagicMock(), MagicMock()
+    monkeypatch.setattr(roboflow, "get_roboflow_model_data", legacy)
+    monkeypatch.setattr(
+        roboflow, "get_model_metadata_from_inference_models_registry", packages
+    )
+    assert roboflow._check_if_api_key_has_access_to_model("key", model_id)
+    selected, unused = (
+        (packages, legacy) if use_inference_models else (legacy, packages)
+    )
+    assert selected.call_args.kwargs["model_id"] == CLASSIFICATION_ALIASES.get(
+        model_id, model_id
+    )
+    unused.assert_not_called()
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
+
+
+def test_pretrained_classifier_registry_auth_failure_is_preserved(monkeypatch):
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
+    monkeypatch.setattr(roboflow, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(
+        roboflow,
+        "get_model_metadata_from_inference_models_registry",
+        MagicMock(side_effect=RoboflowAPINotAuthorizedError("invalid key")),
+    )
+    assert not roboflow._check_if_api_key_has_access_to_model("key", "resnet101")
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])

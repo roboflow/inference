@@ -121,12 +121,14 @@ def enrich_with_air_gapped_info(
     for block in result.blocks:
         manifest_cls = block.manifest_class
         air_gapped_info = _get_air_gapped_info_for_block(manifest_cls)
+        model_requirements = air_gapped_info.to_dict()
+        for key in ("required_model_capabilities", "compatible_model_architectures"):
+            if key in block.block_schema:
+                model_requirements[key] = copy.deepcopy(block.block_schema[key])
         enriched_schema = copy.deepcopy(block.block_schema)
         if "json_schema_extra" not in enriched_schema:
             enriched_schema["json_schema_extra"] = {}
-        enriched_schema["json_schema_extra"][
-            "air_gapped_info"
-        ] = air_gapped_info.to_dict()
+        enriched_schema["json_schema_extra"]["air_gapped_info"] = model_requirements
         enriched_blocks.append(
             block.model_copy(update={"block_schema": enriched_schema})
         )

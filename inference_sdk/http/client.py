@@ -70,6 +70,7 @@ from inference_sdk.http.utils.post_processing import (
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
+    split_image_embeddings,
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
@@ -1284,6 +1285,49 @@ class InferenceHTTPClient:
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
+
+    @wrap_errors
+    def get_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits with embedding-space metadata, one result per image.
+
+        Requires a server exposing POST /infer/embeddings. Model IDs may be workspace
+        versions or pretrained aliases such as resnet101. output_type selects
+        feature_vector (default) or logits before Softmax/Sigmoid.
+        """
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload={
+                "source": self.__inference_configuration.source,
+                "output_type": output_type,
+            },
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    @wrap_errors_async
+    async def get_image_embeddings_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Asynchronous version of get_image_embeddings."""
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload={
+                "source": self.__inference_configuration.source,
+                "output_type": output_type,
+            },
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
 
     @wrap_errors_async
     async def get_clip_image_embeddings_async(

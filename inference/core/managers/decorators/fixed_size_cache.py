@@ -21,6 +21,7 @@ from inference.core.managers.base import Model, ModelManager, acquire_with_timeo
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.models.embeddings import model_cache_key
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -58,6 +59,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -81,6 +84,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        queue_id = model_cache_key(queue_id, required_capabilities, output_type)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(queue_id)
@@ -164,6 +168,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                **(
+                    {
+                        "required_capabilities": required_capabilities,
+                        "output_type": output_type,
+                    }
+                    if required_capabilities
+                    else {}
+                ),
             )
         except Exception as error:
             logger.debug(

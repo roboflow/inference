@@ -1,0 +1,154 @@
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
+from pydantic import ValidationError
+
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
+from inference.core.models.embeddings import make_embedding_info
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.models.roboflow.embedding.v1 import (
+    BlockManifest,
+    EmbeddingModelBlockV1,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+
+
+def image():
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((16, 16, 3), dtype=np.uint8),
+    )
+
+
+def response():
+    return ImageEmbeddingResponse(
+        embeddings=[[2.0, 3.0], [4.0, 5.0]],
+        embedding_info=make_embedding_info(
+            "my-project/1",
+            {
+                "feature_definition": "classifier-linear-input@v1",
+                "normalization": "none",
+            },
+            {},
+            "onnx",
+            "float32",
+            2,
+        ),
+    )
+
+
+def test_manifest_matches_clip_image_ports():
+    manifest = BlockManifest(
+        type="roboflow_core/embedding_model@v1",
+        name="embedding",
+        data="$steps.crop.crops",
+        model_id="resnet101",
+    )
+    assert manifest.data == "$steps.crop.crops"
+    assert manifest.output_type == "feature_vector"
+    assert manifest.get_parameters_accepting_batches() == ["data"]
+    assert [output.name for output in manifest.describe_outputs()] == [
+        "embedding",
+        "embedding_info",
+    ]
+    schema = manifest.model_json_schema()
+    assert "include_diagnostics" not in schema["properties"]
+    assert schema["required_model_capabilities"] == ["image_embeddings"]
+    assert schema["compatible_model_architectures"] == ["resnet", "vit", "dinov3_probe"]
+    assert schema["properties"]["output_type"]["enum"] == ["feature_vector", "logits"]
+    with pytest.raises(ValidationError):
+        BlockManifest(**{**manifest.model_dump(), "output_type": "probabilities"})
+    with pytest.raises(ValidationError):
+        BlockManifest(
+            type="roboflow_core/embedding_model@v1",
+            name="embedding",
+            data="some text",
+            model_id="resnet101",
+        )
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_local_batch_uses_embedding_capability_and_preserves_order(output_type):
+    manager = MagicMock()
+    manager.infer_from_request_sync.return_value = response()
+    block = EmbeddingModelBlockV1(manager, "key", StepExecutionMode.LOCAL)
+    result = block.run(
+        Batch(indices=None, content=[image(), image()]),
+        "my-project/1",
+        output_type,
+    )
+    assert [item["embedding"] for item in result] == [[2.0, 3.0], [4.0, 5.0]]
+    assert result[0]["embedding_info"]["normalization"] == "none"
+    info = result[0]["embedding_info"]
+    assert info["space_id"] == response().embedding_info.space_id
+    assert set(info) == {
+        "model_id",
+        "feature_definition",
+        "output_type",
+        "dimension",
+        "normalization",
+        "space_id",
+    }
+    manager.add_model.assert_called_once_with(
+        "my-project/1",
+        "key",
+        required_capabilities=["image_embeddings"],
+        output_type=output_type,
+    )
+    model_id, request = manager.infer_from_request_sync.call_args.args
+    assert model_id == "my-project/1:capabilities=image_embeddings" + (
+        ":output_type=logits" if output_type == "logits" else ""
+    )
+    assert request.output_type == output_type
+    assert len(request.image) == 2
+
+
+def test_remote_forwards_output_type_and_returns_compact_metadata(monkeypatch):
+    from inference.core.workflows.core_steps.models.roboflow.embedding import v1
+
+    client = MagicMock()
+    client.get_image_embeddings.return_value = {
+        "embeddings": [[2.0, 3.0]],
+        "embedding_info": {
+            "output_type": "logits",
+            "space_id": "same-space",
+            "preprocessing": {"resize": "stretch"},
+            "backend": "onnx",
+            "precision": "float32",
+            "feature_tensor": "classifier/output",
+            "source_artifact_sha256": "artifact-hash",
+            "transform_version": 1,
+        },
+    }
+    monkeypatch.setattr(v1, "InferenceHTTPClient", MagicMock(return_value=client))
+    block = EmbeddingModelBlockV1(MagicMock(), "key", StepExecutionMode.REMOTE)
+    result = block.run(
+        Batch(indices=None, content=[image()]),
+        "my-project/1",
+        "logits",
+    )
+    assert client.get_image_embeddings.call_args.kwargs["output_type"] == "logits"
+    assert result[0]["embedding"] == [2.0, 3.0]
+    info = result[0]["embedding_info"]
+    assert info["space_id"] == "same-space"
+    assert info == {"output_type": "logits", "space_id": "same-space"}
+
+
+def test_empty_batch_does_not_load_model():
+    manager = MagicMock()
+    block = EmbeddingModelBlockV1(manager, "key", StepExecutionMode.LOCAL)
+    assert block.run(Batch(indices=None, content=[]), "my-project/1") == []
+    manager.add_model.assert_not_called()
+
+
+def test_incorrect_response_count_fails():
+    manager = MagicMock()
+    manager.infer_from_request_sync.return_value = response()
+    block = EmbeddingModelBlockV1(manager, "key", StepExecutionMode.LOCAL)
+    with pytest.raises(ValueError, match="count"):
+        block.run(Batch(indices=None, content=[image()]), "my-project/1")

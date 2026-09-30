@@ -1,0 +1,88 @@
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
+
+from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
+from inference.core.models.embeddings import make_embedding_info
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_sliced_images_embed_and_connect_to_existing_cosine_similarity(output_type):
+    manager = MagicMock()
+    info = make_embedding_info(
+        "my-project/1",
+        {"feature_definition": "classifier-linear-input@v1", "normalization": "none"},
+        {},
+        "onnx",
+        "float32",
+        2,
+    )
+
+    def infer(model_id, request, **kwargs):
+        assert request.output_type == output_type
+        return ImageEmbeddingResponse(
+            embeddings=[[2.0, 3.0] for image in request.image], embedding_info=info
+        )
+
+    manager.infer_from_request_sync.side_effect = infer
+    workflow = {
+        "version": "1.0",
+        "inputs": [{"type": "InferenceImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "roboflow_core/image_slicer@v1",
+                "name": "slice",
+                "image": "$inputs.image",
+                "slice_width": 16,
+                "slice_height": 16,
+                "overlap_ratio_width": 0,
+                "overlap_ratio_height": 0,
+            },
+            {
+                "type": "roboflow_core/embedding_model@v1",
+                "name": "embedding",
+                "data": "$steps.slice.slices",
+                "model_id": "my-project/1",
+                "output_type": output_type,
+            },
+            {
+                "type": "roboflow_core/cosine_similarity@v1",
+                "name": "compare",
+                "embedding_1": "$steps.embedding.embedding",
+                "embedding_2": "$steps.embedding.embedding",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "embeddings",
+                "selector": "$steps.embedding.embedding",
+            },
+            {
+                "type": "JsonField",
+                "name": "similarities",
+                "selector": "$steps.compare.similarity",
+            },
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow,
+        init_parameters={
+            "workflows_core.model_manager": manager,
+            "workflows_core.api_key": "key",
+        },
+    )
+    results = engine.run(
+        runtime_parameters={
+            "image": [
+                np.zeros((32, 32, 3), dtype=np.uint8),
+                np.zeros((32, 32, 3), dtype=np.uint8),
+            ]
+        }
+    )
+    assert len(results) == 2
+    for result in results:
+        assert result["embeddings"] == [[2.0, 3.0]] * 4
+        np.testing.assert_allclose(result["similarities"], [1.0] * 4)

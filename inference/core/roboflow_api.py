@@ -580,7 +580,7 @@ def get_roboflow_instant_model_data(
 
 @wrap_roboflow_api_errors()
 def get_model_metadata_from_inference_models_registry(
-    api_key: str,
+    api_key: Optional[str],
     model_id: ModelID,
     cache_prefix: str = "roboflow_api_data:inference_models_registry",
     countinference: Optional[bool] = None,
@@ -598,7 +598,7 @@ def get_model_metadata_from_inference_models_registry(
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
     query = [("modelId", model_id)]
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:

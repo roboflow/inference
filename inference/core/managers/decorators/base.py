@@ -8,6 +8,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.models.embeddings import model_cache_key
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -59,6 +60,8 @@ class ModelManagerDecorator(ModelManager):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ):
         """Adds a model to the manager.
 
@@ -67,15 +70,22 @@ class ModelManagerDecorator(ModelManager):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if model_id in self:
+        cache_id = (
+            model_cache_key(
+                model_id_alias or model_id, required_capabilities, output_type
+            )
+            if required_capabilities
+            else model_id
+        )
+        if cache_id in self:
             self.model_manager.record_request_metadata(
-                model_id=model_id,
+                model_id=cache_id,
                 original_model_id=model_id,
                 model_id_alias=model_id_alias,
             )
             ids_collector = request_model_ids.get(None)
             if ids_collector is not None:
-                ids_collector.add(model_id)
+                ids_collector.add(cache_id)
             return
         self.model_manager.add_model(
             model_id,
@@ -84,6 +94,14 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+            **(
+                {
+                    "required_capabilities": required_capabilities,
+                    "output_type": output_type,
+                }
+                if required_capabilities
+                else {}
+            ),
         )
 
     def record_request_metadata(

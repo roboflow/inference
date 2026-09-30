@@ -46,7 +46,10 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
-from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.aliases import (
+    CLASSIFICATION_ALIASES,
+    resolve_roboflow_model_alias,
+)
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -133,8 +136,11 @@ def _check_if_api_key_has_access_to_model(
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     _, version_id = get_model_id_chunks(model_id=model_id)
+    use_pretrained_classifier_registry = (
+        USE_INFERENCE_MODELS and model_id in CLASSIFICATION_ALIASES.values()
+    )
     try:
-        if version_id is not None:
+        if version_id is not None and not use_pretrained_classifier_registry:
             get_roboflow_model_data(
                 api_key=api_key,
                 model_id=model_id,
@@ -236,7 +242,17 @@ def get_model_type(
         )
         return project_task_type, model_type
 
-    if version_id is not None:
+    # Pretrained classifiers have packages in the new registry without a legacy
+    # ORT endpoint. Their versioned IDs still require the registry's metadata/auth.
+    if USE_INFERENCE_MODELS and model_id in CLASSIFICATION_ALIASES.values():
+        api_data = get_model_metadata_from_inference_models_registry(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "classification")
+    elif version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,
             model_id=model_id,
