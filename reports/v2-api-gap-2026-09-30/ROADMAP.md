@@ -1,8 +1,10 @@
 # V2 API completion roadmap
 
-This roadmap proposes a sequence of focused PRs for completing the V2 API on `feat/new-model-manager`. It is for Damian and the inference team to review before preparing individual implementation plans. Start with the shared contract, then work through one PR at a time: investigate its open questions, agree its contract and plan, implement, validate, and review before starting the next.
+This roadmap proposes a sequence of focused PRs for completing the model and server portions of the V2 API on `feat/new-model-manager`. It is for Damian and the inference team to review before preparing individual implementation plans. Start with the shared contract, then work through one PR at a time: investigate its open questions, agree its contract and plan, implement, validate, and review before starting the next.
 
-The recommended order puts model-loading controls and input correctness early, gives classification decisions their own PR, and separates compatibility discovery from the larger interface schema work. Binary output, workflow execution, and management/prediction separation are distinct follow-ups rather than additions to earlier PRs.
+The recommended order puts model-loading controls and input correctness early, gives classification decisions their own PR, and separates compatibility discovery from the larger interface schema work. Binary output and management/prediction separation are distinct follow-ups rather than additions to earlier PRs.
+
+**Workflows on hold:** The new Workflows functionality is not yet included, as clarified by Damian. All six V2 Workflows routes, their contract decisions, schemas, fixtures, execution semantics and direct-inference parity are offloaded to separate roadmap PRs 12 and 13 and are **on hold**. They are not prerequisites or acceptance criteria for PR 01 or the active model/server sequence. Resume their planning only after the new functionality is included and the team explicitly agrees to resume; recheck its contract before implementing adapters. Existing workflow consumers still need protection from regressions in shared code.
 
 ## Sources and decision status
 
@@ -24,11 +26,11 @@ All implementation PRs should target `feat/new-model-manager` in the public repo
 
 ## Recommended sequence
 
-The identifiers below are roadmap identifiers, not GitHub PR numbers. All items are currently proposed. Dependencies describe technical prerequisites; they are not instructions to start parallel work.
+The identifiers below are roadmap identifiers, not GitHub PR numbers. PRs 01–11 and 14 are proposed active-scope items; PRs 12 and 13 are on hold. Dependencies describe technical prerequisites; they are not instructions to start parallel work.
 
 | PR | Scope | Depends on | Reason for this boundary |
 |---|---|---|---|
-| 01 | Shared V2 contract and executable examples | None | Resolve conventions before behavior changes; leave family details to their plans. |
+| 01 | Shared model/server contract and executable examples | None | Resolve model/server conventions before behavior changes; Workflows contracts are on hold. |
 | 02 | Public model loading and lifecycle controls | 01 | Platform migration needs explicit loading controls early. |
 | 03 | Private MMP loading and package selection | 02 | Separate repository and release coordination; required to complete the loading feature. |
 | 04 | Input validation, transports and V1 safeguard parity | 01 | Fix reproduced parser defects and make all input paths obey one policy. |
@@ -39,17 +41,17 @@ The identifiers below are roadmap identifiers, not GitHub PR numbers. All items 
 | 09 | Text and structured OCR representations | 05 | Text and OCR have distinct structure and batching questions. |
 | 10 | Model interface schemas and discovery consistency | 03, 05, 06, 08, 09 | Publish accurate schemas for the established representations and loading behavior. |
 | 11 | Binary multipart output | 08, 09, 10 | Add transport efficiency after output semantics are settled. |
-| 12 | Workflow metadata, interface and validation endpoints | 10 | Deliver introspection independently of workflow execution. |
-| 13 | Workflow execution and direct inference parity | 04, 11, 12 | Reuse the established codecs and schemas for execution. |
+| 12 | **On hold —** Workflow metadata, interface and validation endpoints | New Workflows functionality included, explicit resumption, then 10 | Own the workflow discovery/validation contracts and implementation in a separate PR. |
+| 13 | **On hold —** Workflow execution and direct inference parity | New Workflows functionality included, explicit resumption, then 04, 11, 12 | Own workflow execution contracts and parity in a separate PR. |
 | 14 | Server metadata and Prometheus metrics | 01 | Complete operations endpoints independently of model representations. |
 
-This is the default serial order, not a deadline or effort estimate. PR 14 can move earlier if deployment requires it; it does not technically depend on workflows. The management/prediction separation follow-up below is intentionally outside the initial completion sequence pending agreement on release scope.
+The active serial order is 01–11, then 14; skip held PRs 12 and 13. This is not a deadline or effort estimate. PR 14 can move earlier if deployment requires it and does not wait for Workflows. The management/prediction separation follow-up below is intentionally outside the initial completion sequence pending agreement on release scope.
 
 ## PR scope and acceptance
 
 ### PR 01 Shared V2 contract
 
-Establish the route/method inventory, compatibility policy for existing experimental routes, common error and response conventions, output names and batch placement, request control parameters, rich/compact defaults, inference-ID semantics, and schema/type version policy. Define the discovery schema structure and extension points now; populate concrete family definitions with later PRs. Correct invalid JSON and inconsistent mask examples before using them as fixtures.
+Establish the model/server route/method inventory (six model and four server routes), compatibility policy for existing experimental routes, common error and response conventions, output names and batch placement, request control parameters, rich/compact defaults, inference-ID semantics, and schema/type version policy. Define the discovery schema structure and extension points now; populate concrete family definitions with later PRs. Correct invalid JSON and inconsistent mask examples before using them as fixtures. Workflow identifiers, workflow discovery/validation, skipped-output semantics, workflow execution IDs and direct/workflow parity are excluded from PR 01 and will be resolved in the held PRs.
 
 Resolve `/run` versus `/infer`, listing naming/filter policy, DELETE unload single/all behavior, public health/readiness, control-plane defaults, and model-metadata authorization policy. Decide the common placement of effective parameters and the treatment of absent optional metadata. Classification field naming and mask encoding remain decisions for PRs 06 and 08; PR 01 should identify any shared naming constraints they must respect.
 
@@ -129,13 +131,15 @@ Resolve concrete-model versus task-level action discovery without fabricating mo
 
 ### PR 11 Binary multipart output
 
-Implement HTTP multipart responses using the agreed JSON response part and named binary data parts, shared by dense model outputs and later workflows. Extend discovery and documentation at the same time.
+Implement HTTP multipart responses using the agreed JSON response part and named binary data parts, for dense model outputs. Future workflow reuse will be assessed in the held workflow PRs; it is not an acceptance requirement here. Extend discovery and documentation at the same time.
 
 Resolve part references, MIME types, binary dtype/shape/byte-order encoding, content negotiation, errors and resource limits. Keep nested part traversal and alternative dense encodings out unless the core format requires them.
 
 **Done when:** a representative client decodes responses and round-trips JSON/multipart equivalents for masks, depth and embeddings; output selection works in both formats; malformed and oversized payload handling is covered. Record payload/memory behavior on representative sizes without claiming a performance improvement from encoding alone.
 
-### PR 12 Workflow discovery and validation
+### PR 12 Workflow discovery and validation on hold
+
+**Status: On hold.** Start a separate contract/implementation plan after the new Workflows functionality is included and resumption is explicitly agreed. The scope below is provisional and must be rechecked then; it does not block the model/server work.
 
 Add the five non-execution V2 workflow endpoints: interface, validation, blocks, definition schema and engine versions. Reuse the type catalogue, authentication and response/error conventions while retaining the existing execution engine semantics.
 
@@ -143,7 +147,9 @@ Resolve inline/predefined definition handling, workflow input/output discovery a
 
 **Done when:** fixtures verify all five endpoints with the workflows extra installed, including invalid definitions and authorization failures. Interface responses accurately describe workflow I/O even while V2 execution is pending. Changes to shared engine behavior, if discovered to be necessary, require explicit replanning and package compatibility/version review.
 
-### PR 13 Workflow execution
+### PR 13 Workflow execution on hold
+
+**Status: On hold.** Plan this separately after the new Workflows functionality is included, resumption is explicitly agreed and PR 12 establishes its interface. The scope below is provisional; workflow batching, null positions, IDs, usage and parity are not settled by the model contract.
 
 Add V2 workflow execution using shared request/response codecs and the established workflow interface. Cover inline and predefined workflows, named outputs, batch ordering, null positions and short-circuit behavior.
 
@@ -163,6 +169,7 @@ Resolve safe build/configuration fields, metric names/types/labels and cardinali
 
 | Work | Recommendation and condition for returning to it |
 |---|---|
+| Workflows routes and parity | **On hold in separate PRs 12 and 13.** Resume only when the new functionality is included and the team explicitly agrees; revisit contracts and acceptance criteria first. |
 | Management/prediction separation | Keep as a separate follow-up PR after loading behavior is stable. Before initial release, explicitly confirm whether separation can wait. Its plan must settle ports/process boundaries, credentials, automatic-loading policy and prediction behavior when a model is absent. The control-plane gate is not equivalent to manual-loading-only operation. |
 | Per-item batch parameters with shared defaults | Omit from the initial contract provisionally, reflecting the tentative guidance. Revisit with a concrete use case or comparative evidence and an explicit workflow scalar/batch design. |
 | Full C×H×W semantic scores | No implicit expansion from the H×W baseline. Require an opt-in use case, size/resource assessment and a separate contract decision. |
@@ -178,17 +185,17 @@ Resolve safe build/configuration fields, metric names/types/labels and cardinali
 | JSON URL/named-part inputs G2 and both parser defects | 04 |
 | Binary output G3 and reserved parameter forwarding | Reserved controls 05; multipart 11 |
 | Package selection G4 and full loading controls | Public 02 and required private 03 |
-| Output selection G5 | 05, exercised again in 11 and 13 |
+| Output selection G5 | Model behavior 05 and 11; workflow behavior in 13 is on hold |
 | Interface discovery G6 | Structure 01; family schemas 05/06/08/09; discovery 10 |
 | Compatibility stub and loaded/compatible distinction | Lifecycle 02; compatibility 07 |
 | Prediction representation gaps | Detection 05; classification 06; segmentation/dense 08; text/OCR 09; remaining-family inventory 10 |
-| Workflow endpoints and parity G7 | Five non-execution routes 12; execution/parity 13 |
+| Workflow endpoints and parity G7 | **On hold:** five non-execution routes and contracts in 12; execution contract/parity in 13 |
 | Server info/metrics, public probes and control-plane policy | Policy 01; observability 14 |
 | Safeguard parity and effective parameters from review | Safeguards 04; detection metadata 05; classification thresholds 06 |
 | Open naming, optional IDs, tensor shape and separation | Naming 01/06/08; IDs 05; shape 08; explicitly deferred separation above |
 
 ## Completion and next step
 
-Each PR carries its own tests; validation does not wait until the final PR. Before declaring the agreed V2 scope complete, run the contract suite against both supported backends using a coherent public/private package pair, exercise representative real model families and workflows, verify SDK/client decoding, and cover required CPU/GPU and deployment configurations. Record any untested configurations and explicitly deferred capabilities in the release scope. The earlier 318 passing tests and 51 observations are audit evidence, not acceptance of the future contract.
+Each PR carries its own tests; validation does not wait until the final PR. Before declaring the active model/server scope complete, run its contract suite against both supported backends using a coherent public/private package pair, exercise representative real model families, verify SDK/client decoding, and cover required CPU/GPU and deployment configurations. Workflow execution and direct/workflow parity are acceptance gates only for the held PRs after resumption. Completing the active scope does not mean the full proposed V2 Workflows surface is complete. Record any untested configurations and explicitly deferred capabilities in the release scope. The earlier 318 passing tests and 51 observations are audit evidence, not acceptance of the future contract.
 
 The next deliverable is **the plan for PR 01 only**. It should recommend shared choices with concrete examples, identify the decisions requiring input, and establish where the authoritative contract will live. This roadmap does not start that plan or implement any API change.
