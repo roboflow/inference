@@ -26,6 +26,10 @@ from inference_server.auth import extract_bearer, validate_api_key
 from inference_server.cors import PathAwareCORSMiddleware
 from inference_server.errors import AuthBackendUnavailable
 from inference_server.legacy.bridge import LegacyModelBridge, LoopBridge
+from inference_server.response_headers import (
+    EXPOSED_MODEL_HEADERS,
+    ResponseHeadersMiddleware,
+)
 from inference_server.routers import v2_models, v2_server
 
 logger = logging.getLogger(__name__)
@@ -249,6 +253,8 @@ if _LEGACY_ERROR_HANDLING_ENABLED:
     install_legacy_exception_handlers(app)
 
 app.add_middleware(_AuthMiddleware)
+# Outside auth so rejected requests carry the request id and engine headers too.
+app.add_middleware(ResponseHeadersMiddleware)
 
 if _cfg.ALLOW_ORIGINS:
     app.add_middleware(
@@ -258,6 +264,7 @@ if _cfg.ALLOW_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=EXPOSED_MODEL_HEADERS,
     )
 
 if _cfg.ENABLE_BUILDER:

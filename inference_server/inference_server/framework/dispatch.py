@@ -28,6 +28,7 @@ from inference_server.framework.registry import (
     has_handler_for_model_type,
     supported_actions_for,
 )
+from inference_server.response_headers import record_model_used
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,7 @@ async def handle_model_inference_request(
         return err
     _apply_param_defaults(params_spec, input_data["params"])
 
+    record_model_used(common.model_id)
     status = await proxy.ensure_loaded(
         common.model_id, common.instance, common.api_key, common.device
     )

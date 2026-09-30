@@ -27,6 +27,7 @@ from inference_server.legacy.errors import (
     MODEL_PACKAGE_BROKEN_MESSAGE,
     LegacyHTTPError,
 )
+from inference_server.response_headers import record_model_used
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,7 @@ class LegacyModelBridge:
         return canonical
 
     async def ensure_loaded(self, route: Route, api_key: Optional[str]) -> None:
+        record_model_used(route.registry_id)
         deadline = time.monotonic() + LEGACY_LOAD_TIMEOUT_S
         while True:
             result = await self.gateway.ensure_loaded(
