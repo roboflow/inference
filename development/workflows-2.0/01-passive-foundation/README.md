@@ -1,18 +1,18 @@
 # Passive V2 examples
 
 Run these examples from the repository root using the `roboflow-inference-new`
-conda environment (NumPy, Pillow and click). Fixtures are generated locally;
+conda environment (PyTorch, inference_models, NumPy, Pillow and click). Fixtures are generated locally;
 the examples need no models, credentials, network, camera or GPU.
 
 ```bash
 conda activate roboflow-inference-new
-PYTHONPATH=workflows python development/workflows-2.0/01-passive-foundation/run_demo.py \
+PYTHONPATH=workflows:inference_models:stream_vision python development/workflows-2.0/01-passive-foundation/run_demo.py \
     --scenario all --output-dir /tmp/workflows-2.0-demo
 ```
 
 Expect 45 `[PASS]` lines, no `[FAIL]`, and exit code 0. Run one example with
 `--scenario <name>`. The examples import the V2 engine explicitly through
-`PYTHONPATH=workflows`.
+`PYTHONPATH=workflows:inference_models:stream_vision`.
 
 | Scenario | What it exercises | Outputs to inspect |
 | --- | --- | --- |
@@ -42,3 +42,7 @@ To change the examples, edit the [workflow definitions](workflows/) or inspect
 `Params`, and the shared call counter is a constructor resource.
 [run_demo.py](run_demo.py) provides the CLI; [scenarios.py](scenarios.py)
 assembles the cases and [fixtures.py](fixtures.py) creates their inputs.
+
+Image block payloads are `ImageData` with CHW uint8 tensors. The fixtures
+convert generated RGB arrays once; `inspection.save_png` explicitly exports
+pixels for PNG encoding. Pixel comparisons and transforms stay on tensors.

@@ -59,17 +59,7 @@ import uuid
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Mapping,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.context import (

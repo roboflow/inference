@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
-import numpy as np
+import torch
 from author_blocks import (
     CallCounter,
     ExpandBlock,
@@ -273,11 +273,12 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
         ]:
             pixel_equal = False
         for engine_crop, expected_crop in zip(engine_group, expected["crops"]):
-            if not np.array_equal(engine_crop, expected_crop):
+            if not torch.equal(engine_crop.tensor_image, expected_crop.tensor_image):
                 pixel_equal = False
         for engine_inv, expected_crop in zip(engine_inverted, expected["crops"]):
-            if not np.array_equal(
-                engine_inv, direct_invert.run(image=expected_crop)["image"]
+            if not torch.equal(
+                engine_inv.tensor_image,
+                direct_invert.run(image=expected_crop)["image"].tensor_image,
             ):
                 pixel_equal = False
     report.check(
@@ -291,10 +292,10 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     blank = mosaic[1]
     report.check(
         "empty group (beta) produced the documented blank 48x48 canvas with background 128",
-        blank.shape == (48, 48, 3)
-        and int(blank.min()) == 128
-        and int(blank.max()) == 128,
-        list(blank.shape),
+        blank.size_hw == (48, 48)
+        and int(blank.tensor_image.min()) == 128
+        and int(blank.tensor_image.max()) == 128,
+        list(blank.tensor_image.shape),
     )
     report.check(
         "mosaic_all over the sample axis counted all 3 inputs",
@@ -331,8 +332,11 @@ def _run_nested(scenario_dir: Path) -> ScenarioReport:
     single_canvas = output_data(single, "mosaic")
     report.check(
         "a single ungrouped image bound to the mosaic group is cast into a one-image group",
-        output_data(single, "count") == 1 and single_canvas.shape == (32, 32, 3),
-        {"count": output_data(single, "count"), "shape": list(single_canvas.shape)},
+        output_data(single, "count") == 1 and single_canvas.size_hw == (32, 32),
+        {
+            "count": output_data(single, "count"),
+            "shape": list(single_canvas.tensor_image.shape),
+        },
     )
     report.notes.append(
         "The [2,0,1] grouping, per-output layouts and blank canvas come from the compiled graph;"

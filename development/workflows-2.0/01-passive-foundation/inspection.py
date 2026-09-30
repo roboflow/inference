@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import numpy as np
 from PIL import Image
+from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
 from roboflow_workflows.execution_engine.v2.data import (
     Batch,
     EntryLayout,
@@ -23,15 +24,16 @@ from roboflow_workflows.execution_engine.v2.data import (
 PayloadDescriber = Callable[[Any, str], Any]
 
 
-def save_png(image: np.ndarray, path: Path) -> None:
-    """Write an RGB ``uint8`` array as a PNG file.
+def save_png(image: ImageData, path: Path) -> None:
+    """Export an RGB tensor image to a PNG file.
 
     Args:
-        image: Array of shape ``(height, width, 3)``.
+        image: Tensor-backed RGB image, explicitly exported here for PNG encoding.
         path: Destination file; parent directories are created.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.ascontiguousarray(image), mode="RGB").save(path)
+    pixels = image.tensor_image.detach().cpu().permute(1, 2, 0).numpy()
+    Image.fromarray(np.ascontiguousarray(pixels), mode="RGB").save(path)
 
 
 def describe_layout(layout: EntryLayout) -> List[Dict[str, Any]]:
@@ -205,13 +207,17 @@ def image_describer(artifact_dir: Path) -> PayloadDescriber:
     """
 
     def describe(payload: Any, label: str) -> Any:
-        if isinstance(payload, np.ndarray):
+        if isinstance(payload, ImageData):
             path = artifact_dir / f"{label}.png"
             save_png(payload, path)
             description = {
                 "kind": "image",
-                "shape": list(payload.shape),
-                "mean": round(float(payload.mean()), 2),
+                "shape_chw": list(payload.tensor_image.shape),
+                "dtype": str(payload.tensor_image.dtype),
+                "device": str(payload.device),
+                "image_id": payload.image_id,
+                "root": payload.root.to_dict(),
+                "mean": round(float(payload.tensor_image.float().mean()), 2),
                 "png": str(path),
             }
             return description

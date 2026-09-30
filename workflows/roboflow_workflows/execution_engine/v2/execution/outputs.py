@@ -18,21 +18,12 @@ Rows follow V1's output construction::
 
 Values pass through ``Kind.to_output`` (with the declaration's options) and,
 when serializing, ``Kind.to_serialized``. For a union of kinds, the first kind
-whose hook succeeds wins, as in V1.
+whose hook succeeds wins, as in V1. After all hooks fail, a hook-free kind
+only permits pass-through when its validator accepts the payload.
 """
 
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-)
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from roboflow_workflows.execution_engine.v2.data import (
     Batch,
@@ -40,7 +31,10 @@ from roboflow_workflows.execution_engine.v2.data import (
     Index,
     WorkflowsBuffer,
 )
-from roboflow_workflows.execution_engine.v2.errors import WorkflowExecutionError
+from roboflow_workflows.execution_engine.v2.errors import (
+    ContractError,
+    WorkflowExecutionError,
+)
 from roboflow_workflows.execution_engine.v2.execution.inputs import kinds_named
 from roboflow_workflows.execution_engine.v2.execution.steps import RunState
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND_NAME, Kind
@@ -480,11 +474,14 @@ def _apply_kind_hook(
     call: Callable[[Kind, Any], Any],
     location: str,
 ) -> Any:
-    """V1 union rule: first successful hook wins; hook-free kinds pass through."""
+    """First successful hook wins; a hook-free fallback must accept the payload."""
     if payload is None:
         return None
 
     hooked = [kind for kind in kinds if getattr(kind, hook) is not None]
+    if not hooked:
+        return payload
+
     failures = []
     for kind in hooked:
         try:
@@ -494,14 +491,22 @@ def _apply_kind_hook(
             continue
         return converted
 
-    if len(hooked) < len(kinds) or not kinds:
+    for kind in kinds:
+        if getattr(kind, hook) is not None:
+            continue
+
+        try:
+            kind.check(payload)
+        except ContractError as error:
+            failures.append((kind.name, error))
+            continue
         return payload
 
     details = "; ".join(
         f"{name}: {type(error).__name__}: {error}" for name, error in failures
     )
     error = WorkflowExecutionError(
-        f"Output {location} ({type(payload).__name__}) failed the {hook} hook of "
+        f"Output {location} ({type(payload).__name__}) failed the {hook} boundary for "
         f"every declared kind: {details}"
     )
     raise error from failures[-1][1]

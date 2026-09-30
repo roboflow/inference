@@ -36,11 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel
 from roboflow_workflows.execution_engine.v2.data import Batch, Index
 from roboflow_workflows.execution_engine.v2.execution.entries import Entry
-from roboflow_workflows.execution_engine.v2.plan import (
-    Binding,
-    PlannedStep,
-    SkipReason,
-)
+from roboflow_workflows.execution_engine.v2.plan import Binding, PlannedStep, SkipReason
 
 GROUP_MODES = ("group", "constant_group")
 

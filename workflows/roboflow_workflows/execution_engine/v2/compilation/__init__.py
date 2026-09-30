@@ -41,10 +41,7 @@ from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     WorkflowCompileError,
 )
-from roboflow_workflows.execution_engine.v2.plan import (
-    CompiledWorkflow,
-    CompileOptions,
-)
+from roboflow_workflows.execution_engine.v2.plan import CompiledWorkflow, CompileOptions
 
 DYNAMIC_BLOCKS_MODULE = "roboflow_workflows.execution_engine.v2.dynamic_blocks"
 

@@ -16,7 +16,9 @@ callable returning one). The V1 loader, its ``load_blocks()`` convention and the
 
 Kinds referenced by registered blocks are collected automatically. Two
 different kind objects with one name, two blocks claiming one identity, and a
-block whose ``engine_compatibility`` excludes this engine are rejected.
+block whose ``engine_compatibility`` excludes this engine are rejected. The
+built-in wildcard is a neutral placeholder: an explicit wildcard policy replaces
+it and survives later registration of the placeholder.
 """
 
 import importlib
@@ -27,10 +29,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from roboflow_workflows.execution_engine.v2.declaration import BlockSpec, spec_of
-from roboflow_workflows.execution_engine.v2.errors import (
-    CatalogueError,
-    ContractError,
-)
+from roboflow_workflows.execution_engine.v2.errors import CatalogueError, ContractError
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND, Kind
 
 V2_ENGINE_VERSION = "2.0.0"
@@ -322,6 +321,13 @@ class Catalogue:
     def _add_kind(self, kind: Kind) -> None:
         if not isinstance(kind, Kind):
             raise CatalogueError(f"Catalogue kinds must be Kind objects, got {kind!r}")
+
+        known = self._kinds.get(kind.name)
+        if known is WILDCARD_KIND:
+            self._kinds[kind.name] = kind
+            return
+        if kind is WILDCARD_KIND and known is not None:
+            return
 
         known = self._kinds.setdefault(kind.name, kind)
         if known != kind:

@@ -18,10 +18,7 @@ from roboflow_workflows.execution_engine.v2.data import (
     SampleContext,
 )
 from roboflow_workflows.execution_engine.v2.errors import WorkflowInputError
-from roboflow_workflows.execution_engine.v2.kinds import (
-    DICTIONARY_KIND,
-    INTEGER_KIND,
-)
+from roboflow_workflows.execution_engine.v2.kinds import DICTIONARY_KIND, INTEGER_KIND
 
 from . import blocks
 from .blocks import DECODED, counting_kind

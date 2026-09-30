@@ -13,9 +13,7 @@ from roboflow_workflows.execution_engine.v2.introspection import (
     discover_workload,
 )
 
-from tests.unit_tests.execution_engine.v2.introspection.fixtures import (
-    compile_fixture,
-)
+from tests.unit_tests.execution_engine.v2.introspection.fixtures import compile_fixture
 
 
 @pytest.fixture

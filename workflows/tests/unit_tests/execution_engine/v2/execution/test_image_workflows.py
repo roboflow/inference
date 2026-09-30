@@ -2,7 +2,8 @@
 
 Re-homes the former compiled-workflow checks of ``test_blocks.py``
 (image-blocks request R2): crop → invert → mosaic, a brightness gate and a
-rejected ``regions`` literal.
+rejected ``regions`` literal. Inputs are RGB NumPy arrays, which the image
+kind converts to ``ImageData`` at the workflow boundary.
 """
 
 import numpy as np
@@ -92,8 +93,8 @@ def test_crop_invert_mosaic_keeps_ragged_indices_and_empty_groups() -> None:
     rows = result.rows()
     assert [row["summary"]["crop_count"] for row in rows] == [2, 0, 1]
     assert [row["count"] for row in rows] == [2, 0, 1]
-    blank = rows[1]["mosaic"]
-    assert blank.shape == (16, 16, 3) and (blank == 9).all()
+    blank = rows[1]["mosaic"].tensor_image
+    assert tuple(blank.shape) == (3, 16, 16) and bool((blank == 9).all())
 
 
 def test_brightness_gate_filters_a_crop_without_renumbering() -> None:

@@ -21,6 +21,7 @@ from fractions import Fraction
 from typing import List, Tuple
 
 import numpy as np
+from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
 from roboflow_workflows.execution_engine.v2.data import (
     EntryMetadata,
     SampleContext,
@@ -39,7 +40,7 @@ class Fixture:
     """One generated demo image with its declared source identity."""
 
     name: str
-    image: np.ndarray
+    image: ImageData
     expected_crops: int
 
 
@@ -50,9 +51,21 @@ def make_fixtures() -> List[Fixture]:
         Fixtures ``alpha``, ``beta`` and ``gamma`` in input order.
     """
     fixtures = [
-        Fixture(name="alpha", image=_make_alpha(), expected_crops=2),
-        Fixture(name="beta", image=_make_beta(), expected_crops=0),
-        Fixture(name="gamma", image=_make_gamma(), expected_crops=1),
+        Fixture(
+            name="alpha",
+            image=ImageData.from_numpy_rgb(_make_alpha(), image_id="fixture:alpha"),
+            expected_crops=2,
+        ),
+        Fixture(
+            name="beta",
+            image=ImageData.from_numpy_rgb(_make_beta(), image_id="fixture:beta"),
+            expected_crops=0,
+        ),
+        Fixture(
+            name="gamma",
+            image=ImageData.from_numpy_rgb(_make_gamma(), image_id="fixture:gamma"),
+            expected_crops=1,
+        ),
     ]
 
     return fixtures
@@ -75,7 +88,7 @@ def make_input_metadata(fixtures: List[Fixture]) -> EntryMetadata:
     sample = {}
     temporal = {}
     for position, fixture in enumerate(fixtures):
-        height, width = fixture.image.shape[:2]
+        height, width = fixture.image.size_hw
         sample[(position,)] = SampleContext(
             source_id=f"fixture:{fixture.name}",
             source_type="static",

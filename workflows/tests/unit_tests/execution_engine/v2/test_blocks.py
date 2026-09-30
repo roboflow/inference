@@ -3,7 +3,9 @@
 Blocks are exercised the way an author tests them: step parameters are
 validated by the class's own declaration, exactly as the compiler does, and
 ``run`` is then called with the validated values. Groups are passed as the
-``Batch`` objects the engine builds, including sparse and empty ones.
+``Batch`` objects the engine builds, including sparse and empty ones. Image
+payloads are ``ImageData``; the carrier itself is covered in
+``test_tensor_image_data.py``.
 """
 
 import base64
@@ -14,6 +16,7 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
+import torch
 from roboflow_workflows.execution_engine.v2.blocks import (
     CROP_SUMMARY_KIND,
     IMAGE_KIND,
@@ -24,6 +27,8 @@ from roboflow_workflows.execution_engine.v2.blocks import (
     MosaicBlock,
     create_catalogue,
 )
+from roboflow_workflows.execution_engine.v2.blocks.image import ResizeBlock
+from roboflow_workflows.execution_engine.v2.blocks.image_data import ImageData
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.data import Batch
 from roboflow_workflows.execution_engine.v2.declaration import Select, Stop, spec_of
@@ -41,14 +46,23 @@ from roboflow_workflows.execution_engine.v2.kinds import (
 )
 
 REGIONS = [[40, 40, 100, 100], [120, 10, 180, 70]]
-BLOCK_CLASSES = (CropBlock, InvertBlock, MosaicBlock, HasBrightnessBlock)
+BLOCK_CLASSES = (CropBlock, ResizeBlock, InvertBlock, MosaicBlock, HasBrightnessBlock)
 
 
-def _image(height: int, width: int, *, seed: int = 0) -> np.ndarray:
-    generator = np.random.default_rng(seed)
-    image = generator.integers(0, 256, size=(height, width, 3), dtype=np.uint8)
+def _image(height: int, width: int, *, seed: int = 0) -> ImageData:
+    generator = torch.Generator().manual_seed(seed)
+    pixels = torch.randint(
+        0, 256, (3, height, width), dtype=torch.uint8, generator=generator
+    )
 
-    return image
+    return ImageData.from_tensor(pixels)
+
+
+def _uniform(height: int, width: int, value, *, channels: int = 3) -> ImageData:
+    color = torch.tensor(value, dtype=torch.uint8).reshape(-1, 1, 1)
+    pixels = color.expand(channels, height, width).contiguous()
+
+    return ImageData.from_tensor(pixels)
 
 
 def _three_images() -> list:
@@ -77,21 +91,19 @@ def _run(block_class: type, *, data: Dict[str, Any], **parameters: Any) -> Any:
 
 
 class TestImageKind:
-    def test_accepts_rgb_uint8(self) -> None:
+    def test_accepts_image_data_only(self) -> None:
         IMAGE_KIND.check(_image(4, 5))
 
     @pytest.mark.parametrize(
         "payload",
         [
-            np.zeros((4, 5, 3), dtype=np.float32),
-            np.zeros((4, 5), dtype=np.uint8),
-            np.zeros((4, 5, 4), dtype=np.uint8),
-            np.zeros((0, 5, 3), dtype=np.uint8),
+            torch.zeros((3, 4, 5), dtype=torch.uint8),
+            np.zeros((4, 5, 3), dtype=np.uint8),
             [[0, 0, 0]],
             None,
         ],
     )
-    def test_rejects_other_payloads(self, payload) -> None:
+    def test_rejects_raw_pixels_and_other_payloads(self, payload) -> None:
         with pytest.raises(ContractError, match="not a valid 'image'"):
             IMAGE_KIND.check(payload)
 
@@ -103,19 +115,29 @@ class TestImageKind:
 
         assert serialized["type"] == "base64"
         assert isinstance(serialized["value"], str)
-        np.testing.assert_array_equal(restored, image)
+        assert torch.equal(restored.tensor_image, image.tensor_image)
+        assert restored.image_id == image.image_id
         IMAGE_KIND.check(restored)
 
-    def test_array_input_passes_through_unchanged(self) -> None:
+    def test_image_input_passes_through_unchanged(self) -> None:
         image = _image(3, 3)
 
         assert IMAGE_KIND.to_payload(image) is image
 
+    def test_prior_rgb_array_input_is_converted_once(self) -> None:
+        array = np.zeros((2, 3, 3), dtype=np.uint8)
+        array[..., 0] = 200
+
+        image = IMAGE_KIND.to_payload(array)
+
+        assert image.size_hw == (2, 3)
+        assert image.tensor_image[:, 0, 0].tolist() == [200, 0, 0]
+
     @pytest.mark.parametrize(
         "value, fragment",
         [
-            ("image.jpg", "must be an RGB uint8 numpy array"),
-            ({"type": "url", "value": "x"}, "must be an RGB uint8 numpy array"),
+            ("image.jpg", "must be ImageData, a"),
+            ({"type": "url", "value": "x"}, "must be ImageData, a"),
             ({"type": "base64", "value": "%%%"}, "invalid base64"),
             (
                 {"type": "base64", "value": base64.b64encode(b"text").decode()},
@@ -160,6 +182,18 @@ class TestDeclarations:
         assert summary.transform == "same"
         assert summary.kinds == (CROP_SUMMARY_KIND,)
         assert {crops.source, summary.source} == {"image"}
+
+    def test_resize_outputs_one_image_per_image(self) -> None:
+        spec = spec_of(ResizeBlock)
+
+        assert spec.type == "v2/resize"
+        assert spec.outputs["image"].transform == "same"
+        assert spec.outputs["image"].kinds == (IMAGE_KIND,)
+        assert spec.fields["width"].whole.kinds == (INTEGER_KIND,)
+        params = spec.validate_params(
+            {"image": "$inputs.i", "width": 4, "height": "$inputs.h"}
+        )
+        assert params.interpolation == "bilinear"
 
     def test_mosaic_consumes_a_group_and_outputs_one_value_per_parent(self) -> None:
         spec = spec_of(MosaicBlock)
@@ -256,6 +290,22 @@ class TestDeclarations:
                 {"image": "$inputs.i", "regions": [], "padding": 2},
                 "padding: Extra inputs are not permitted",
             ),
+            (ResizeBlock, {"image": "$inputs.i", "width": 4}, "height: Field required"),
+            (
+                ResizeBlock,
+                {"image": "$inputs.i", "width": 0, "height": 4},
+                "greater than",
+            ),
+            (
+                ResizeBlock,
+                {
+                    "image": "$inputs.i",
+                    "width": 4,
+                    "height": 4,
+                    "interpolation": "cubic",
+                },
+                "interpolation",
+            ),
             (InvertBlock, {"image": "$inputs.i", "strength": 2}, "strength"),
             (MosaicBlock, {"images": "$inputs.i", "tile_size": 0}, "greater than"),
             (MosaicBlock, {"images": "$inputs.i", "tile_size": True}, "integer"),
@@ -285,6 +335,7 @@ class TestDeclarations:
         [
             (CropBlock, "regions", [[5, 0, 0, 5]]),
             (CropBlock, "regions", [[0, 0, 5]]),
+            (ResizeBlock, "width", 0),
             (MosaicBlock, "tile_size", 0),
             (MosaicBlock, "background", -1),
             (HasBrightnessBlock, "minimum", 256.0),
@@ -331,7 +382,7 @@ class TestCropBlock:
         assert result["crops"].indices == ((0,), (2,))
         assert result["summary"]["kept_regions"] == [0, 2]
 
-    def test_clipping_and_pixel_equality(self) -> None:
+    def test_clipping_pixel_equality_and_provenance(self) -> None:
         image = _image(50, 60)
 
         result = _run(
@@ -340,10 +391,17 @@ class TestCropBlock:
             regions=[[-10, -10, 20, 30], [50, 40, 100, 100]],
         )
 
-        assert len(result["crops"]) == 2
-        np.testing.assert_array_equal(result["crops"][0], image[0:30, 0:20])
-        np.testing.assert_array_equal(result["crops"][1], image[40:50, 50:60])
+        first, second = result["crops"]
+        assert torch.equal(first.tensor_image, image.tensor_image[:, 0:30, 0:20])
+        assert torch.equal(second.tensor_image, image.tensor_image[:, 40:50, 50:60])
         assert result["summary"]["crop_dimensions"] == [[30, 20], [10, 10]]
+        assert first.parent.offset_xy == (0.0, 0.0)
+        assert second.parent.offset_xy == (50.0, 40.0)
+        for crop in (first, second):
+            assert crop.parent.frame_id == image.image_id
+            assert crop.root.frame_id == image.image_id
+            assert crop.image_id not in (image.image_id, "")
+        assert first.image_id != second.image_id
 
     def test_zero_area_rectangle_and_no_rectangles_give_empty_batches(self) -> None:
         for regions in ([[5, 5, 5, 20]], []):
@@ -354,69 +412,132 @@ class TestCropBlock:
             assert result["summary"]["crop_count"] == 0
 
     def test_crops_are_independent_contiguous_copies(self) -> None:
-        image = np.arange(3 * 5 * 3, dtype=np.uint8).reshape(3, 5, 3)
-        original = image.copy()
+        pixels = torch.arange(3 * 3 * 5, dtype=torch.uint8).reshape(3, 3, 5)
+        image = ImageData.from_tensor(pixels)
+        original = pixels.clone()
         regions = [[0, 0, 5, 3], [20, 20, 21, 21], [0, 1, 5, 3], [0, 0, 3, 2]]
 
         crops = _run(CropBlock, data={"image": image}, regions=regions)["crops"]
 
         assert crops.indices == ((0,), (2,), (3,))
-        expected = [original, original[1:], original[:2, :3]]
+        expected = [original, original[:, 1:], original[:, :2, :3]]
+        storages = {pixels.untyped_storage().data_ptr()}
         for position, crop in enumerate(crops):
-            np.testing.assert_array_equal(crop, expected[position])
-            assert crop.flags.c_contiguous
-            assert not np.shares_memory(crop, image)
-            for other in crops.content[position + 1 :]:
-                assert not np.shares_memory(crop, other)
+            assert torch.equal(crop.tensor_image, expected[position])
+            assert crop.tensor_image.is_contiguous()
+            storages.add(crop.tensor_image.untyped_storage().data_ptr())
+        assert len(storages) == 4
 
-        crops[0][...] = 99
-        np.testing.assert_array_equal(image, original)
-        np.testing.assert_array_equal(crops[1], original[1:])
+        crops[0].tensor_image[...] = 99
+        assert torch.equal(pixels, original)
+        assert torch.equal(crops[1].tensor_image, original[:, 1:])
+
+
+class TestResizeBlock:
+    def test_resize_keeps_device_and_records_the_actual_ratio(self) -> None:
+        image = _image(10, 7)
+
+        resized = _run(ResizeBlock, data={"image": image}, width=3, height=4)["image"]
+
+        assert resized.size_hw == (4, 3)
+        assert resized.device == image.device
+        assert resized.parent.frame_id == image.image_id
+        assert resized.parent.scale_xy == (7 / 3, 10 / 4)
+        assert resized.root.scale_xy == (7 / 3, 10 / 4)
+
+    def test_nearest_keeps_the_former_sampling_rule(self) -> None:
+        image = _image(9, 13, seed=4)
+
+        resized = _run(
+            ResizeBlock,
+            data={"image": image},
+            width=5,
+            height=4,
+            interpolation="nearest",
+        )["image"]
+
+        rows = (np.arange(4) * 9) // 4
+        columns = (np.arange(5) * 13) // 5
+        expected = image.tensor_image.numpy()[:, rows[:, None], columns[None, :]]
+        assert np.array_equal(resized.tensor_image.numpy(), expected)
 
 
 class TestInvertBlock:
-    def test_pixel_inversion_leaves_input_untouched(self) -> None:
+    def test_pixel_inversion_keeps_provenance_and_leaves_input_untouched(self) -> None:
         image = _image(8, 9)
-        original = image.copy()
+        original = image.tensor_image.clone()
 
         result = _run(InvertBlock, data={"image": image})
 
-        np.testing.assert_array_equal(result["image"], 255 - original)
-        np.testing.assert_array_equal(image, original)
-        IMAGE_KIND.check(result["image"])
+        inverted = result["image"]
+        assert torch.equal(inverted.tensor_image, 255 - original)
+        assert torch.equal(image.tensor_image, original)
+        assert (inverted.image_id, inverted.parent, inverted.root) == (
+            image.image_id,
+            image.parent,
+            image.root,
+        )
+        IMAGE_KIND.check(inverted)
 
 
 class TestMosaicBlock:
-    def test_empty_group_yields_blank_canvas_and_zero(self) -> None:
+    def test_empty_group_yields_blank_composite_canvas_and_zero(self) -> None:
         empty_group = Batch.empty(parent_index=(1,))
 
         result = _run(
             MosaicBlock, data={"images": empty_group}, tile_size=16, background=7
         )
 
+        canvas = result["image"]
         assert result["count"] == 0
-        assert result["image"].shape == (16, 16, 3)
-        assert int(result["image"].min()) == 7 and int(result["image"].max()) == 7
+        assert tuple(canvas.tensor_image.shape) == (3, 16, 16)
+        assert int(canvas.tensor_image.min()) == int(canvas.tensor_image.max()) == 7
+        assert canvas.is_composite
+        assert canvas.composite_sources == ()
+        assert canvas.prediction_metadata()["composite_sources"] == []
 
     def test_two_constant_images_fill_two_tiles(self) -> None:
-        red = np.full((10, 20, 3), (200, 0, 0), dtype=np.uint8)
-        blue = np.full((30, 5, 3), (0, 0, 200), dtype=np.uint8)
+        red = _uniform(10, 20, (200, 0, 0))
+        blue = _uniform(30, 5, (0, 0, 200))
 
         result = _run(MosaicBlock, data={"images": Batch.of([red, blue])}, tile_size=8)
 
+        pixels = result["image"].tensor_image
         assert result["count"] == 2
-        assert result["image"].shape == (8, 16, 3)
-        np.testing.assert_array_equal(
-            result["image"][:, :8], np.broadcast_to(red[0, 0], (8, 8, 3))
+        assert tuple(pixels.shape) == (3, 8, 16)
+        assert torch.equal(pixels[:, :, :8], red.tensor_image[:, :8, :8])
+        assert torch.equal(
+            pixels[:, :, 8:], blue.tensor_image[:, :8, :1].expand(3, 8, 8)
         )
-        np.testing.assert_array_equal(
-            result["image"][:, 8:], np.broadcast_to(blue[0, 0], (8, 8, 3))
+
+    def test_canvas_is_a_new_root_with_per_tile_provenance(self) -> None:
+        red = _uniform(10, 20, (200, 0, 0))
+        blue = _uniform(30, 5, (0, 0, 200))
+
+        canvas = _run(MosaicBlock, data={"images": Batch.of([red, blue])}, tile_size=8)[
+            "image"
+        ]
+
+        assert canvas.parent.frame_id == canvas.root.frame_id == canvas.image_id
+        assert canvas.image_id not in (red.image_id, blue.image_id)
+        first, second = canvas.composite_sources
+        assert (first.index, first.image_id, first.canvas_xyxy) == (
+            (0,),
+            red.image_id,
+            (0, 0, 8, 8),
         )
+        assert (second.index, second.image_id, second.canvas_xyxy) == (
+            (1,),
+            blue.image_id,
+            (8, 0, 16, 8),
+        )
+        assert second.parent.map_xy(8, 0) == (0.0, 0.0)
+        assert second.parent.map_xy(16, 8) == (5.0, 30.0)
 
     def test_sparse_group_is_tiled_in_order_without_gaps(self) -> None:
         values = (10, 30)
         survivors = Batch(
-            [np.full((4, 4, 3), value, dtype=np.uint8) for value in values],
+            [_uniform(4, 4, value) for value in values],
             indices=((2, 0), (2, 2)),
             parent_index=(2,),
         )
@@ -425,35 +546,67 @@ class TestMosaicBlock:
             MosaicBlock, data={"images": survivors}, tile_size=4, background=255
         )
 
+        pixels = result["image"].tensor_image
         assert result["count"] == 2
-        assert result["image"].shape == (4, 8, 3)
-        assert [int(result["image"][0, column, 0]) for column in (0, 4)] == [10, 30]
+        assert tuple(pixels.shape) == (3, 4, 8)
+        assert [int(pixels[0, 0, column]) for column in (0, 4)] == [10, 30]
+        assert [source.index for source in result["image"].composite_sources] == [
+            (2, 0),
+            (2, 2),
+        ]
 
     def test_columns_parameter_controls_grid(self) -> None:
-        images = [np.full((4, 4, 3), value, dtype=np.uint8) for value in (10, 20, 30)]
+        images = [_uniform(4, 4, value) for value in (10, 20, 30)]
 
         result = _run(
             MosaicBlock, data={"images": Batch.of(images)}, tile_size=4, columns=1
         )
 
-        assert result["image"].shape == (12, 4, 3)
-        assert [int(result["image"][row * 4, 0, 0]) for row in range(3)] == [10, 20, 30]
+        pixels = result["image"].tensor_image
+        assert tuple(pixels.shape) == (3, 12, 4)
+        assert [int(pixels[0, row * 4, 0]) for row in range(3)] == [10, 20, 30]
 
     def test_partial_last_row_keeps_background(self) -> None:
-        images = [np.full((2, 2, 3), 50, dtype=np.uint8)] * 3
+        images = [_uniform(2, 2, 50)] * 3
 
         result = _run(
             MosaicBlock, data={"images": Batch.of(images)}, tile_size=2, background=9
         )
 
-        assert result["image"].shape == (4, 4, 3)
-        assert int(result["image"][3, 3, 0]) == 9
+        pixels = result["image"].tensor_image
+        assert tuple(pixels.shape) == (3, 4, 4)
+        assert int(pixels[0, 3, 3]) == 9
+
+    def test_grayscale_tiles_repeat_on_an_rgb_canvas(self) -> None:
+        gray = _uniform(3, 3, 80, channels=1)
+        color = _uniform(3, 3, (1, 2, 3))
+
+        mixed = _run(
+            MosaicBlock, data={"images": Batch.of([gray, color])}, tile_size=2
+        )["image"]
+        only_gray = _run(MosaicBlock, data={"images": Batch.of([gray])}, tile_size=2)[
+            "image"
+        ]
+
+        assert mixed.channels == 3
+        assert mixed.tensor_image[:, 0, 0].tolist() == [80, 80, 80]
+        assert mixed.tensor_image[:, 0, 2].tolist() == [1, 2, 3]
+        assert only_gray.channels == 1
+
+    def test_images_on_different_devices_are_rejected(self) -> None:
+        on_cpu = _uniform(2, 2, 1)
+        elsewhere = ImageData.from_tensor(
+            torch.empty((3, 2, 2), dtype=torch.uint8, device="meta")
+        )
+
+        with pytest.raises(ValueError, match="one device.*cpu.*meta"):
+            _run(MosaicBlock, data={"images": Batch.of([on_cpu, elsewhere])})
 
 
 class TestHasBrightnessBlock:
     def test_threshold_is_inclusive_and_returns_bool(self) -> None:
-        exact = np.full((3, 3, 3), 100, dtype=np.uint8)
-        dark = np.full((3, 3, 3), 99, dtype=np.uint8)
+        exact = _uniform(3, 3, 100)
+        dark = _uniform(3, 3, 99)
 
         assert (
             _run(HasBrightnessBlock, data={"image": exact}, minimum=100)["keep"] is True
@@ -480,6 +633,7 @@ class TestCatalogue:
 
         assert catalogue.block_types == (
             "v2/crop",
+            "v2/resize",
             "v2/invert",
             "v2/mosaic",
             "v2/has_brightness",

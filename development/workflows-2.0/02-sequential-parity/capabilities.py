@@ -139,8 +139,8 @@ def selector_crop_mosaic(report: ExampleReport) -> None:
     report.check("default tile 24: crop counts", [r["count"] for r in first], [1, 2])
     report.check(
         "default tile 24: canvas shapes",
-        [list(r["mosaic"].shape) for r in first],
-        [[24, 24, 3], [24, 48, 3]],
+        [list(r["mosaic"].size_hw) for r in first],
+        [[24, 24], [24, 48]],
     )
     second = session.run(
         {"images": images, "regions": [two, one], "tile_size": 10}
@@ -148,8 +148,8 @@ def selector_crop_mosaic(report: ExampleReport) -> None:
     report.check("swapped regions: crop counts", [r["count"] for r in second], [2, 1])
     report.check(
         "tile_size input 10: canvas shapes",
-        [list(r["mosaic"].shape) for r in second],
-        [[10, 20, 3], [10, 10, 3]],
+        [list(r["mosaic"].size_hw) for r in second],
+        [[10, 20], [10, 10]],
     )
 
 

@@ -1,8 +1,10 @@
 """Tests of the explicit V2 block catalogue."""
 
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from roboflow_workflows.execution_engine.v2.catalogue import (
@@ -17,7 +19,7 @@ from roboflow_workflows.execution_engine.v2.declaration import (
     Ref,
 )
 from roboflow_workflows.execution_engine.v2.errors import CatalogueError
-from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND, Kind
+from roboflow_workflows.execution_engine.v2.kinds import FLOAT_KIND, WILDCARD_KIND, Kind
 from roboflow_workflows.execution_engine.v2.resources import Factory
 
 CONSTRUCTED = []
@@ -218,3 +220,122 @@ def test_from_modules_imports_requested_plugins_only(
         Catalogue.from_modules(["v2_test_missing_module"])
     for name in ("v2_test_plugin_module", "v2_test_empty_module"):
         sys.modules.pop(name, None)
+
+
+class WildcardEcho(Block):
+    """A block using the neutral wildcard in its annotations."""
+
+    type = "demo/wildcard_echo@v1"
+    outputs = {"value": Output(WILDCARD_KIND)}
+
+    class Params(BlockParams):
+        value: Ref(WILDCARD_KIND)
+
+    def run(self, *, value) -> dict:
+        return {"value": value}
+
+
+@pytest.mark.parametrize("explicit_first", [False, True])
+def test_explicit_wildcard_survives_catalogue_merge_order(explicit_first) -> None:
+    policy = Kind(name="*", serialize=str)
+    neutral = Catalogue([WildcardEcho])
+    explicit = Catalogue(kinds=[policy])
+    catalogues = (explicit, neutral) if explicit_first else (neutral, explicit)
+
+    merged = Catalogue.merge(*catalogues)
+
+    assert merged.kind("*") is policy
+    assert merged.entry(WildcardEcho.type).spec.block_class is WildcardEcho
+    assert neutral.kind("*") is WILDCARD_KIND
+    assert explicit.kind("*") is policy
+
+
+def test_neutral_wildcard_annotations_do_not_override_explicit_policy() -> None:
+    policy = Kind(name="*", serialize=str)
+
+    catalogue = Catalogue([WildcardEcho], kinds=[policy, WILDCARD_KIND])
+
+    assert catalogue.kind("*") is policy
+    assert catalogue.entry(WildcardEcho.type).spec.kinds == (WILDCARD_KIND,)
+    assert Catalogue().kind("*") is WILDCARD_KIND
+
+
+def test_with_blocks_keeps_explicit_wildcard_policy() -> None:
+    policy = Kind(name="*", serialize=str)
+    catalogue = Catalogue(kinds=[policy])
+
+    extended = catalogue.with_blocks([WildcardEcho])
+
+    assert extended.kind("*") is policy
+    assert extended.block_types == (WildcardEcho.type,)
+    assert catalogue.block_types == ()
+
+
+@pytest.mark.parametrize("explicit_first", [False, True])
+def test_from_modules_keeps_explicit_wildcard_policy(
+    monkeypatch, explicit_first
+) -> None:
+    policy = Kind(name="*", serialize=str)
+    neutral = ModuleType("v2_neutral_wildcard_plugin")
+    explicit = ModuleType("v2_explicit_wildcard_plugin")
+    setattr(neutral, CATALOGUE_ATTRIBUTE, Catalogue([WildcardEcho]))
+    setattr(explicit, CATALOGUE_ATTRIBUTE, lambda: Catalogue(kinds=[policy]))
+    for module in (neutral, explicit):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    modules = (explicit, neutral) if explicit_first else (neutral, explicit)
+
+    catalogue = Catalogue.from_modules([module.__name__ for module in modules])
+
+    assert catalogue.kind("*") is policy
+    assert catalogue.block_types == (WildcardEcho.type,)
+
+
+def test_conflicting_explicit_wildcard_policies_are_rejected() -> None:
+    first = Kind(name="*", serialize=str)
+    second = Kind(name="*", serialize=repr)
+
+    with pytest.raises(CatalogueError, match="Two different kinds"):
+        Catalogue(kinds=[first, second])
+    with pytest.raises(CatalogueError, match="Two different kinds"):
+        Catalogue.merge(Catalogue(kinds=[first]), Catalogue(kinds=[second]))
+
+
+def test_ordinary_kind_conflicts_remain_strict_when_merging() -> None:
+    with pytest.raises(CatalogueError, match="Two different kinds"):
+        Catalogue.merge(Catalogue([Blur]), Catalogue(kinds=[Kind(name="image")]))
+
+
+def test_generic_catalogue_never_imports_media_modules() -> None:
+    script = textwrap.dedent("""
+        import importlib.abc
+        import sys
+
+        blocked = (
+            "torch", "numpy", "cv2", "supervision", "inference_models",
+            "inference", "roboflow_workflows.execution_engine.v2.blocks",
+        )
+
+        class NoMediaImports(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path, target=None):
+                if any(fullname == name or fullname.startswith(name + ".") for name in blocked):
+                    raise AssertionError("Unexpected media import: " + fullname)
+                return None
+
+        sys.meta_path.insert(0, NoMediaImports())
+        from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
+        from roboflow_workflows.execution_engine.v2.kinds import Kind, WILDCARD_KIND
+        policy = Kind(name="*", serialize=str)
+        catalogue = Catalogue.merge(Catalogue(), Catalogue(kinds=[policy]))
+        assert catalogue.kind("*") is policy
+        assert Catalogue().kind("*") is WILDCARD_KIND
+        assert not any(
+            name == prefix or name.startswith(prefix + ".")
+            for name in sys.modules for prefix in blocked
+        )
+        """)
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+
+    assert completed.returncode == 0, completed.stderr

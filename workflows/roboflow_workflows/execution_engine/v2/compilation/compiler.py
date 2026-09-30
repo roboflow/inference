@@ -79,6 +79,7 @@ from roboflow_workflows.execution_engine.v2.errors import (
     format_step_path,
 )
 from roboflow_workflows.execution_engine.v2.kinds import (
+    WILDCARD_KIND,
     WILDCARD_KIND_NAME,
     Kind,
     kinds_compatible,
@@ -235,6 +236,7 @@ def _with_output_kinds(
     The executor looks kinds up by name in the plan's catalogue, so without
     them their validators, converters and serializers would be lost. A kind
     whose name another kind already uses is rejected, as when registering.
+    The built-in wildcard is neutral; an explicit wildcard policy replaces it.
 
     Returns:
         ``catalogue`` itself when every output kind is known, else a new
@@ -247,16 +249,17 @@ def _with_output_kinds(
     for site in sites.values():
         for output in site.outputs.values():
             for kind in output.kinds:
-                known = catalogue.kinds.get(kind.name)
-                if known is not None:
-                    if known == kind:
-                        continue
-                    other = "the catalogue"
-                else:
-                    first_kind, first_site = added.setdefault(kind.name, (kind, site))
-                    if first_kind == kind:
-                        continue
-                    other = first_site.location
+                previous = added.get(kind.name)
+                known = previous[0] if previous else catalogue.kinds.get(kind.name)
+                if kind is WILDCARD_KIND:
+                    continue
+                if known is None or known is WILDCARD_KIND:
+                    added[kind.name] = (kind, site)
+                    continue
+                if known == kind:
+                    continue
+
+                other = previous[1].location if previous else "the catalogue"
                 raise KindMismatchError(
                     f"{site.location} configures an output of kind {kind.name!r}, but "
                     f"{other} already uses a different Kind with that name; blocks "
