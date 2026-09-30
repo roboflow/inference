@@ -24,6 +24,8 @@ Rules:
   spellings (e.g. ``streamvision.stream.inference_pipeline``) are mapped too,
   since ``from <legacy pkg> import <retained module>`` resolves the submodule
   import against the aliased module's ``__name__``, which is canonical.
+- ``inference.core.interfaces.webrtc_worker`` stays a real package. Only its
+  moved submodules are mapped, one entry each, to ``streamvision.webrtc_worker``.
 - The inventory gate applies to *dotted module resolution* only. Because an
   aliased legacy package IS its canonical module, an already-imported
   canonical child is visible as an attribute on the aliased parent — i.e.
@@ -83,12 +85,24 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
         "inference.core.interfaces.legacy_stream.inference_pipeline",
     ),
     (
+        "inference.core.interfaces.webrtc_worker.serializers",
+        "streamvision.webrtc_worker.serializers",
+    ),
+    (
         "streamvision.stream.model_handlers.roboflow_models",
         "inference.core.interfaces.legacy_stream.model_handlers.roboflow_models",
     ),
     (
         "inference.enterprise.workflows.enterprise_blocks",
         "roboflow_workflows.enterprise_blocks",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.entities",
+        "streamvision.webrtc_worker.entities",
+    ),
+    (
+        "inference.core.interfaces.webrtc_worker.sources",
+        "streamvision.webrtc_worker.sources",
     ),
     (
         "streamvision.stream.model_handlers.yolo_world",
