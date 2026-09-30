@@ -20,7 +20,11 @@ from inference_models.errors import (
     InvalidEnvVariable,
     MissingDependencyError,
 )
-from inference_models.models.common.model_packages import COREML_CACHE_DIR_NAME
+from inference_models.models.common.model_packages import (
+    COREML_CACHE_DIR_NAME,
+    COREML_CACHE_LOCK_NAME,
+    get_file_identity,
+)
 
 MLPACKAGE_NAME = "weights.mlpackage"
 MLPACKAGE_ARCHIVE_NAME = f"{MLPACKAGE_NAME}.zip"
@@ -111,17 +115,23 @@ def read_signature(spec: Any) -> CoreMLModelSignature:
     )
 
 
-def resolve_mlpackage(model_package_dir: str) -> str:
-    """Return the path of the package's ``.mlpackage`` bundle, extracting the zipped form once if needed.
+def load_coreml_package(
+    model_package_dir: str,
+    compute_units: str = INFERENCE_MODELS_COREML_COMPUTE_UNITS,
+) -> CoreMLModel:
+    """Load the package's ``.mlpackage`` bundle, extracting the zipped form once if needed.
 
     Registry packages ship the bundle as ``weights.mlpackage.zip`` (a directory bundle does not fit a flat
-    artefact list). It is extracted into the package's ``coreml_cache`` directory, which the inference cache
-    watchdog purges as a whole, so a partially deleted bundle can never be loaded. Offline or read-only
-    packages are extracted into a temporary directory instead of being written to.
+    artefact list). It is extracted into ``coreml_cache/native/<archive key>/``, keyed by the archive's size
+    and modification time so a replaced archive is extracted again; extractions of earlier archives are
+    removed. Extracting and loading (coremltools compiles the bundle while loading it) run under the package's
+    ``coreml_cache`` lock, which the inference cache watchdog takes before purging that directory, so it can
+    never delete a bundle that is being extracted or read. Offline or read-only packages are extracted into a
+    temporary directory instead of being written to.
     """
     bundle = os.path.join(model_package_dir, MLPACKAGE_NAME)
     if os.path.isfile(os.path.join(bundle, MLPACKAGE_MANIFEST)):
-        return bundle
+        return load_coreml_model(mlpackage_path=bundle, compute_units=compute_units)
     archive = os.path.join(model_package_dir, MLPACKAGE_ARCHIVE_NAME)
     if not os.path.isfile(archive):
         raise CorruptedModelPackageError(
@@ -129,21 +139,30 @@ def resolve_mlpackage(model_package_dir: str) -> str:
             f"{MLPACKAGE_ARCHIVE_NAME}.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    target = os.path.join(
-        _extraction_root(model_package_dir), NATIVE_MLPACKAGE_CACHE_DIR, MLPACKAGE_NAME
-    )
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    with FileLock(f"{target}.lock"):
+    root = _writable_package_root(model_package_dir)
+    native_root = os.path.join(root, COREML_CACHE_DIR_NAME, NATIVE_MLPACKAGE_CACHE_DIR)
+    extraction_dir = os.path.join(native_root, get_file_identity(archive))
+    target = os.path.join(extraction_dir, MLPACKAGE_NAME)
+    os.makedirs(extraction_dir, exist_ok=True)
+    with FileLock(os.path.join(root, COREML_CACHE_LOCK_NAME)):
+        _remove_stale_extractions(native_root=native_root, keep=extraction_dir)
         if not os.path.isfile(os.path.join(target, MLPACKAGE_MANIFEST)):
             _extract_bundle(archive=archive, target=target)
-    return target
+        return load_coreml_model(mlpackage_path=target, compute_units=compute_units)
 
 
-def _extraction_root(model_package_dir: str) -> str:
+def _writable_package_root(model_package_dir: str) -> str:
     if not OFFLINE_MODE and os.access(model_package_dir, os.W_OK):
-        return os.path.join(model_package_dir, COREML_CACHE_DIR_NAME)
+        return model_package_dir
     key = hashlib.sha256(os.path.abspath(model_package_dir).encode()).hexdigest()[:16]
     return os.path.join(tempfile.gettempdir(), "inference-models-coreml", key)
+
+
+def _remove_stale_extractions(native_root: str, keep: str) -> None:
+    for entry in os.listdir(native_root):
+        path = os.path.join(native_root, entry)
+        if path != keep and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def _extract_bundle(archive: str, target: str) -> None:

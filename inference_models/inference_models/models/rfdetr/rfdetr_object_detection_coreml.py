@@ -8,11 +8,7 @@ import torch
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE
 from inference_models.entities import ColorFormat, Confidence
-from inference_models.models.common.coreml import (
-    CoreMLModel,
-    load_coreml_model,
-    resolve_mlpackage,
-)
+from inference_models.models.common.coreml import CoreMLModel, load_coreml_package
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -106,9 +102,7 @@ class RFDetrForObjectDetectionCoreML(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
-        coreml_model = load_coreml_model(
-            mlpackage_path=resolve_mlpackage(model_name_or_path)
-        )
+        coreml_model = load_coreml_package(model_package_dir=model_name_or_path)
         num_logit_classes = len(class_names) + 1
         classes_re_mapping = None
         if inference_config.class_names_operations:

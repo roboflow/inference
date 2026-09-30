@@ -2,8 +2,10 @@ import json
 import os
 import zipfile
 from types import SimpleNamespace
+from typing import List
 
 import pytest
+from filelock import FileLock, Timeout
 
 from inference_models.errors import CorruptedModelPackageError, InvalidEnvVariable
 from inference_models.models.common import coreml
@@ -36,18 +38,20 @@ def _read_weights(bundle_path: str) -> bytes:
         return f.read()
 
 
-def test_resolve_mlpackage_prefers_directory_bundle(tmp_path) -> None:
-    bundle = tmp_path / "weights.mlpackage"
-    _write_bundle(str(bundle))
+@pytest.fixture
+def loaded_paths(monkeypatch) -> List[str]:
+    """Record the bundle each load reads (instead of loading it with coremltools)."""
+    paths = []
 
-    assert coreml.resolve_mlpackage(str(tmp_path)) == str(bundle)
-    assert not (tmp_path / COREML_CACHE_DIR_NAME).exists()
+    def fake_load(mlpackage_path: str, compute_units: str) -> str:
+        paths.append(mlpackage_path)
+        return mlpackage_path
+
+    monkeypatch.setattr(coreml, "load_coreml_model", fake_load)
+    return paths
 
 
-@pytest.mark.parametrize("top_level_folder", ["", "weights.mlpackage"])
-def test_resolve_mlpackage_extracts_zipped_bundle_into_coreml_cache(
-    tmp_path, top_level_folder: str
-) -> None:
+def _zipped_package(tmp_path, top_level_folder: str = "") -> str:
     source = tmp_path / "source.mlpackage"
     _write_bundle(str(source))
     package_dir = tmp_path / "package"
@@ -55,66 +59,117 @@ def test_resolve_mlpackage_extracts_zipped_bundle_into_coreml_cache(
     _zip_bundle(
         str(source), str(package_dir / "weights.mlpackage.zip"), top_level_folder
     )
+    return str(package_dir)
 
-    result = coreml.resolve_mlpackage(str(package_dir))
 
-    assert result == str(
-        package_dir / COREML_CACHE_DIR_NAME / "native" / "weights.mlpackage"
-    )
-    assert os.path.isfile(os.path.join(result, "Manifest.json"))
+def test_load_coreml_package_prefers_directory_bundle(tmp_path, loaded_paths) -> None:
+    bundle = tmp_path / "weights.mlpackage"
+    _write_bundle(str(bundle))
+
+    assert coreml.load_coreml_package(str(tmp_path)) == str(bundle)
+    assert not (tmp_path / COREML_CACHE_DIR_NAME).exists()
+
+
+@pytest.mark.parametrize("top_level_folder", ["", "weights.mlpackage"])
+def test_load_coreml_package_extracts_zipped_bundle_into_coreml_cache(
+    tmp_path, loaded_paths, top_level_folder: str
+) -> None:
+    package_dir = _zipped_package(tmp_path, top_level_folder)
+
+    result = coreml.load_coreml_package(package_dir)
+
+    native_root = os.path.join(package_dir, COREML_CACHE_DIR_NAME, "native")
+    assert os.path.dirname(os.path.dirname(result)) == native_root
+    assert os.path.basename(result) == "weights.mlpackage"
     assert _read_weights(result) == b"weights"
 
 
-def test_resolve_mlpackage_reuses_extracted_bundle(tmp_path, monkeypatch) -> None:
-    source = tmp_path / "source.mlpackage"
-    _write_bundle(str(source))
-    package_dir = tmp_path / "package"
-    package_dir.mkdir()
-    _zip_bundle(str(source), str(package_dir / "weights.mlpackage.zip"))
-    first = coreml.resolve_mlpackage(str(package_dir))
+def test_load_coreml_package_reuses_extracted_bundle(
+    tmp_path, loaded_paths, monkeypatch
+) -> None:
+    package_dir = _zipped_package(tmp_path)
+    first = coreml.load_coreml_package(package_dir)
 
     def fail_extraction(**kwargs) -> None:
         raise AssertionError("bundle should not be extracted twice")
 
     monkeypatch.setattr(coreml, "_extract_bundle", fail_extraction)
 
-    assert coreml.resolve_mlpackage(str(package_dir)) == first
+    assert coreml.load_coreml_package(package_dir) == first
 
 
-def test_resolve_mlpackage_re_extracts_partially_deleted_bundle(tmp_path) -> None:
-    source = tmp_path / "source.mlpackage"
-    _write_bundle(str(source))
-    package_dir = tmp_path / "package"
-    package_dir.mkdir()
-    _zip_bundle(str(source), str(package_dir / "weights.mlpackage.zip"))
-    extracted = coreml.resolve_mlpackage(str(package_dir))
+def test_load_coreml_package_re_extracts_replaced_archive(
+    tmp_path, loaded_paths
+) -> None:
+    package_dir = _zipped_package(tmp_path)
+    first = coreml.load_coreml_package(package_dir)
+    replacement = tmp_path / "replacement.mlpackage"
+    _write_bundle(str(replacement), weights=b"retrained")
+    archive = os.path.join(package_dir, "weights.mlpackage.zip")
+    _zip_bundle(str(replacement), archive)
+    os.utime(archive, ns=(1, 1))
+
+    second = coreml.load_coreml_package(package_dir)
+
+    assert second != first
+    assert _read_weights(second) == b"retrained"
+    assert not os.path.exists(first)
+
+
+def test_load_coreml_package_re_extracts_partially_deleted_bundle(
+    tmp_path, loaded_paths
+) -> None:
+    package_dir = _zipped_package(tmp_path)
+    extracted = coreml.load_coreml_package(package_dir)
     os.remove(os.path.join(extracted, "Manifest.json"))
 
-    result = coreml.resolve_mlpackage(str(package_dir))
+    result = coreml.load_coreml_package(package_dir)
 
     assert os.path.isfile(os.path.join(result, "Manifest.json"))
     assert _read_weights(result) == b"weights"
 
 
-def test_resolve_mlpackage_extracts_outside_package_in_offline_mode(
+def test_load_coreml_package_extracts_and_loads_under_the_package_coreml_cache_lock(
     tmp_path, monkeypatch
 ) -> None:
-    source = tmp_path / "source.mlpackage"
-    _write_bundle(str(source))
-    package_dir = tmp_path / "package"
-    package_dir.mkdir()
-    _zip_bundle(str(source), str(package_dir / "weights.mlpackage.zip"))
+    package_dir = _zipped_package(tmp_path)
+    lock_path = os.path.join(package_dir, ".coreml_cache.lock")
+    held_during_load = []
+
+    def fake_load(mlpackage_path: str, compute_units: str) -> str:
+        probe = FileLock(lock_path, timeout=0)
+        try:
+            probe.acquire()
+            probe.release()
+            held_during_load.append(False)
+        except Timeout:
+            held_during_load.append(True)
+        return mlpackage_path
+
+    monkeypatch.setattr(coreml, "load_coreml_model", fake_load)
+
+    coreml.load_coreml_package(package_dir)
+
+    assert held_during_load == [True]
+
+
+def test_load_coreml_package_extracts_outside_package_in_offline_mode(
+    tmp_path, loaded_paths, monkeypatch
+) -> None:
+    package_dir = _zipped_package(tmp_path)
     monkeypatch.setattr(coreml, "OFFLINE_MODE", True)
     monkeypatch.setattr(coreml.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
 
-    result = coreml.resolve_mlpackage(str(package_dir))
+    result = coreml.load_coreml_package(package_dir)
 
     assert result.startswith(str(tmp_path / "tmp" / "inference-models-coreml"))
     assert _read_weights(result) == b"weights"
-    assert not (package_dir / COREML_CACHE_DIR_NAME).exists()
+    assert not os.path.exists(os.path.join(package_dir, COREML_CACHE_DIR_NAME))
 
 
-def test_resolve_mlpackage_rejects_archive_entries_outside_bundle(tmp_path) -> None:
+def test_load_coreml_package_rejects_archive_entries_outside_bundle(
+    tmp_path, loaded_paths
+) -> None:
     package_dir = tmp_path / "package"
     package_dir.mkdir()
     with zipfile.ZipFile(package_dir / "weights.mlpackage.zip", "w") as archive:
@@ -122,24 +177,27 @@ def test_resolve_mlpackage_rejects_archive_entries_outside_bundle(tmp_path) -> N
         archive.writestr("../escaped.txt", "oops")
 
     with pytest.raises(CorruptedModelPackageError):
-        coreml.resolve_mlpackage(str(package_dir))
+        coreml.load_coreml_package(str(package_dir))
 
     assert not (tmp_path / "escaped.txt").exists()
+    assert loaded_paths == []
 
 
-def test_resolve_mlpackage_rejects_archive_without_bundle(tmp_path) -> None:
+def test_load_coreml_package_rejects_archive_without_bundle(
+    tmp_path, loaded_paths
+) -> None:
     package_dir = tmp_path / "package"
     package_dir.mkdir()
     with zipfile.ZipFile(package_dir / "weights.mlpackage.zip", "w") as archive:
         archive.writestr("readme.txt", "not a bundle")
 
     with pytest.raises(CorruptedModelPackageError):
-        coreml.resolve_mlpackage(str(package_dir))
+        coreml.load_coreml_package(str(package_dir))
 
 
-def test_resolve_mlpackage_requires_bundle_or_archive(tmp_path) -> None:
+def test_load_coreml_package_requires_bundle_or_archive(tmp_path, loaded_paths) -> None:
     with pytest.raises(CorruptedModelPackageError):
-        coreml.resolve_mlpackage(str(tmp_path))
+        coreml.load_coreml_package(str(tmp_path))
 
 
 def _spec(input_type: str, outputs=("boxes", "scores", "labels")) -> SimpleNamespace:

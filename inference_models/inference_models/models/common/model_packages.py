@@ -1,3 +1,4 @@
+import hashlib
 import os.path
 from typing import Dict, List
 
@@ -9,6 +10,14 @@ COREML_CACHE_DIR_NAME = "coreml_cache"
 # The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling,
 # extracting and loading under the same lock keeps it from deleting a cache that is being written or read.
 COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
+
+
+def get_file_identity(path: str) -> str:
+    """Short key of a file's size and modification time, for caches derived from it."""
+    stat = os.stat(path)
+    return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
+        :12
+    ]
 
 
 def get_model_package_contents(
