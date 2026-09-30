@@ -441,6 +441,7 @@ if modal is not None:
                 heartbeat_url=WEBRTC_SESSION_HEARTBEAT_URL,
             )
 
+            session_error = None
             try:
                 asyncio.run(
                     run_rtc_peer_connection_with_watchdog(
@@ -454,9 +455,9 @@ if modal is not None:
                 logger.warning("Modal function was cancelled")
             except asyncio.CancelledError as exc:
                 logger.warning("WebRTC connection task was cancelled (%s)", exc)
-            except Exception:
+            except Exception as error:
                 logger.exception("WebRTC session failed")
-                raise
+                session_error = error
             finally:
                 # This synchronous owner runs after asyncio.run has closed its loop.
                 watchdog.stop()
@@ -499,6 +500,11 @@ if modal is not None:
             )
 
             logger.info("Function completed")
+
+            if session_error is not None:
+                # Re-raised only after the session's usage has been recorded.
+                usage_collector.push_usage_payloads()
+                raise session_error
 
             if no_frames_processed:
                 if watchdog.connection_established:

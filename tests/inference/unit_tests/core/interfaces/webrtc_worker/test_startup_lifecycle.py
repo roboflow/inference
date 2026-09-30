@@ -158,6 +158,8 @@ def test_modal_awaits_queue_and_stops_once_outside_event_loop(monkeypatch, fails
     queue.put.aio.assert_awaited_once_with(answer)
     watchdog.start.assert_called_once()
     watchdog.stop.assert_called_once()
+    namespace["usage_collector"].record_usage.assert_called_once()
+    namespace["usage_collector"].push_usage_payloads.assert_called_once()
 
 
 @pytest.mark.parametrize("invalid", ["timeout", "offer"])
