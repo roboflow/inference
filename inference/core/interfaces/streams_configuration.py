@@ -88,6 +88,12 @@ def build_configuration_from_env() -> StreamsConfiguration:
         webrtc_modal_rtsp_placeholder_url=env.WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
         webrtc_modal_shutdown_reserve=env.WEBRTC_MODAL_SHUTDOWN_RESERVE,
         webrtc_preview_frame_jpeg_quality=env.WEBRTC_PREVIEW_FRAME_JPEG_QUALITY,
+        webrtc_modal_min_cpu_cores=env.WEBRTC_MODAL_MIN_CPU_CORES,
+        webrtc_modal_min_ram_mb=env.WEBRTC_MODAL_MIN_RAM_MB,
+        webrtc_modal_usage_quota_enabled=env.WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+        webrtc_modal_watchdog_timemout=env.WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+        webrtc_session_heartbeat_interval_seconds=env.WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
+        webrtc_session_heartbeat_url=env.WEBRTC_SESSION_HEARTBEAT_URL,
         model_config_defaults=ModelConfigDefaults(
             class_agnostic_nms_env=env.CLASS_AGNOSTIC_NMS_ENV,
             confidence_env=env.CONFIDENCE_ENV,
