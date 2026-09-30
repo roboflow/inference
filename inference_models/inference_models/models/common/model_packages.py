@@ -13,7 +13,12 @@ COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
 
 
 def get_file_identity(path: str) -> str:
-    """Short key of a file's size and modification time, for caches derived from it."""
+    """Short key of a file's size and modification time, for caches derived from it.
+
+    A heuristic, not content validation: model package files are downloaded once and never rewritten in
+    place, so a new file arrives with a new mtime. An in-place replacement that keeps both size and mtime,
+    or a change to an ONNX model's external-data files, reuses the stale derived cache.
+    """
     stat = os.stat(path)
     return hashlib.sha256(f"{stat.st_size}-{stat.st_mtime_ns}".encode()).hexdigest()[
         :12
