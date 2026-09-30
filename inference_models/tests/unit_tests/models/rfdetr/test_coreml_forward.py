@@ -1,12 +1,14 @@
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
 import numpy as np
+import pytest
 import torch
 
 from inference_models.entities import ImageDimensions
 from inference_models.models.common.coreml import CoreMLModel, CoreMLModelSignature
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
+    ImagePreProcessing,
     InferenceConfig,
     NetworkInputDefinition,
     PreProcessingMetadata,
@@ -20,6 +22,7 @@ from inference_models.models.rfdetr.coreml_forward import (
     to_package_image,
 )
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -35,7 +38,11 @@ class FakeModel:
         return self.outputs
 
 
-def _network_input(color_mode: ColorMode = ColorMode.RGB) -> NetworkInputDefinition:
+def _network_input(
+    color_mode: ColorMode = ColorMode.RGB,
+    scaling_factor: Optional[int] = 255,
+    normalization: Optional[list] = (MEAN, STD),
+) -> NetworkInputDefinition:
     return NetworkInputDefinition.model_validate(
         {
             "training_input_size": {"height": 4, "width": 6},
@@ -43,8 +50,8 @@ def _network_input(color_mode: ColorMode = ColorMode.RGB) -> NetworkInputDefinit
             "color_mode": color_mode.value,
             "resize_mode": "stretch",
             "input_channels": 3,
-            "scaling_factor": 255,
-            "normalization": [MEAN, STD],
+            "scaling_factor": scaling_factor,
+            "normalization": list(normalization) if normalization else None,
         }
     )
 
@@ -159,6 +166,37 @@ def test_to_package_image_converts_bgr_network_input_to_rgb() -> None:
     assert np.array_equal(np.asarray(recovered), image)
 
 
+@pytest.mark.parametrize(
+    "scaling_factor, normalization",
+    [
+        pytest.param(255, (MEAN, STD), id="default"),
+        pytest.param(128, (MEAN, STD), id="normalization-ignores-scaling-factor"),
+        pytest.param(None, (MEAN, STD), id="normalization-without-scaling-factor"),
+        pytest.param(255, None, id="scaling-factor-255"),
+        pytest.param(128, None, id="non-default-scaling-factor"),
+        pytest.param(None, None, id="neither"),
+    ],
+)
+def test_to_package_image_inverts_the_shared_pre_processing(
+    scaling_factor: Optional[int], normalization: Optional[tuple]
+) -> None:
+    image = np.random.default_rng(2).integers(0, 256, (4, 6, 3), dtype=np.uint8)
+    network_input = _network_input(
+        scaling_factor=scaling_factor, normalization=normalization
+    )
+    pre_processed, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    recovered = to_package_image(image=pre_processed[0], network_input=network_input)
+
+    assert np.array_equal(np.asarray(recovered), image)
+
+
 def test_run_rfdetr_coreml_feeds_tensor_contract_and_returns_outputs_by_position() -> (
     None
 ):
@@ -234,12 +272,19 @@ def test_run_rfdetr_coreml_expands_image_contract_selections() -> None:
     assert masks.shape == (1, 2, 8, 8)
 
 
-def _inference_config(height: int, width: int) -> InferenceConfig:
+def _inference_config(
+    height: int, width: int, dynamic_spatial_size_supported: bool = False
+) -> InferenceConfig:
     return InferenceConfig.model_validate(
         {
             "network_input": {
                 "training_input_size": {"height": height, "width": width},
-                "dynamic_spatial_size_supported": False,
+                "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+                "dynamic_spatial_size_mode": (
+                    {"type": "pad-to-be-divisible", "value": 32}
+                    if dynamic_spatial_size_supported
+                    else None
+                ),
                 "color_mode": "rgb",
                 "resize_mode": "stretch",
                 "input_channels": 3,
@@ -282,3 +327,19 @@ def test_align_network_input_with_model_keeps_a_matching_config() -> None:
         )
         is config
     )
+
+
+def test_align_network_input_with_model_disables_spatial_overrides_for_a_fixed_input() -> (
+    None
+):
+    config = _inference_config(
+        height=384, width=384, dynamic_spatial_size_supported=True
+    )
+
+    aligned = align_network_input_with_model(
+        inference_config=config, signature=_signature(height=384, width=384)
+    )
+
+    assert aligned.network_input.dynamic_spatial_size_supported is False
+    assert aligned.network_input.dynamic_spatial_size_mode is None
+    assert config.network_input.dynamic_spatial_size_supported is True

@@ -22,6 +22,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     InferenceConfig,
     NetworkInputDefinition,
+    TrainingInputSize,
 )
 
 # Logit for classes a selected query was not selected for: sigmoid(-1e4) is exactly 0 in float32, so the
@@ -39,40 +40,41 @@ def align_network_input_with_model(
     Some registered packages carry an inference config whose training input size does not match the exported
     weights. The model's spec is authoritative: RF-DETR's outputs are relative to the input, so pre-processing
     to the size the model takes gives correct results, where feeding the configured size fails every call.
+    The model's input is fixed, so spatial size overrides are disabled as well.
 
     Args:
         inference_config (InferenceConfig): The package's parsed inference config.
         signature (CoreMLModelSignature): The loaded model's signature.
 
     Returns:
-        InferenceConfig: ``inference_config`` itself when the sizes agree, otherwise a copy with the model's
-        input size.
+        InferenceConfig: ``inference_config`` itself when it already declares the model's fixed input size,
+        otherwise a copy that does.
     """
-    size = inference_config.network_input.training_input_size
-    if size is None or (size.height, size.width) == (
-        signature.input_height,
-        signature.input_width,
-    ):
+    network_input = inference_config.network_input
+    size = network_input.training_input_size
+    model_size = (signature.input_height, signature.input_width)
+    size_matches = size is not None and (size.height, size.width) == model_size
+    if size_matches and not network_input.dynamic_spatial_size_supported:
         return inference_config
-    LOGGER.warning(
-        "Core ML model takes %sx%s input, but the package's inference_config.json declares %sx%s; using the "
-        "model's input size.",
-        signature.input_width,
-        signature.input_height,
-        size.width,
-        size.height,
-    )
-    network_input = inference_config.network_input.model_copy(
+    if size is not None and not size_matches:
+        LOGGER.warning(
+            "Core ML model takes %sx%s input, but the package's inference_config.json declares %sx%s; using "
+            "the model's input size.",
+            signature.input_width,
+            signature.input_height,
+            size.width,
+            size.height,
+        )
+    aligned_network_input = network_input.model_copy(
         update={
-            "training_input_size": size.model_copy(
-                update={
-                    "height": signature.input_height,
-                    "width": signature.input_width,
-                }
-            )
+            "training_input_size": TrainingInputSize(
+                height=signature.input_height, width=signature.input_width
+            ),
+            "dynamic_spatial_size_supported": False,
+            "dynamic_spatial_size_mode": None,
         }
     )
-    return inference_config.model_copy(update={"network_input": network_input})
+    return inference_config.model_copy(update={"network_input": aligned_network_input})
 
 
 def run_rfdetr_coreml(
@@ -174,6 +176,9 @@ def to_package_image(
 ) -> Image.Image:
     """Undo the network-input scaling and normalization to recover the 8-bit RGB image the package expects.
 
+    Mirrors the shared pre-processing, which divides pixels by 255 and then either normalizes (ignoring
+    ``scaling_factor``) or rescales to ``pixel / scaling_factor``.
+
     Args:
         image (torch.Tensor): One normalized CHW image from the shared pre-processing.
         network_input (NetworkInputDefinition): Normalization, scaling factor and color mode it was built with.
@@ -182,16 +187,18 @@ def to_package_image(
         PIL.Image.Image: The RGB image, rounded to 8 bits.
     """
     pixels = image.float()
-    if network_input.normalization is not None:
+    if network_input.normalization:
         mean = torch.tensor(network_input.normalization[0], dtype=torch.float32)[
             :, None, None
         ]
         std = torch.tensor(network_input.normalization[1], dtype=torch.float32)[
             :, None, None
         ]
-        pixels = pixels * std + mean
-    if network_input.scaling_factor is not None:
+        pixels = (pixels * std + mean) * 255
+    elif network_input.scaling_factor is not None:
         pixels = pixels * network_input.scaling_factor
+    else:
+        pixels = pixels * 255
     if network_input.color_mode is ColorMode.BGR:
         pixels = pixels.flip(0)
     array = pixels.round().clamp(0, 255).to(torch.uint8).permute(1, 2, 0).numpy()
