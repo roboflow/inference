@@ -14,6 +14,7 @@ from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
+    ensure_input_size_within_limit,
     parse_class_names_file,
     parse_inference_config,
 )
@@ -64,7 +65,8 @@ class RFDetrForObjectDetectionCoreML(
 
         Args:
             model_name_or_path (str): Local model package directory.
-            rf_detr_max_input_resolution (int | tuple, optional): Input size limit.
+            rf_detr_max_input_resolution (int | tuple, optional): Input size limit, checked
+                against the model's own input size.
             recommended_parameters (RecommendedParameters, optional): Model defaults.
             execution_plan (RFDetrExecutionPlan | Mapping, optional): Stage choices
                 and fallback policies; None resolves environment/default choices.
@@ -72,6 +74,9 @@ class RFDetrForObjectDetectionCoreML(
 
         Returns:
             RFDetrForObjectDetectionCoreML: Initialized model with resolved stages.
+
+        Raises:
+            ModelPackageRestrictedError: If the model's input size exceeds ``rf_detr_max_input_resolution``.
         """
         execution_plan = _normalize_execution_plan_argument(
             execution_plan=execution_plan, kwargs=kwargs
@@ -103,11 +108,15 @@ class RFDetrForObjectDetectionCoreML(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
-            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         coreml_model = load_coreml_package(model_package_dir=model_name_or_path)
         inference_config = align_network_input_with_model(
             inference_config=inference_config, signature=coreml_model.signature
+        )
+        # Checked after alignment: the model's input size, not the package config's, is what runs.
+        ensure_input_size_within_limit(
+            inference_config=inference_config,
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         num_logit_classes = len(class_names) + 1
         classes_re_mapping = None

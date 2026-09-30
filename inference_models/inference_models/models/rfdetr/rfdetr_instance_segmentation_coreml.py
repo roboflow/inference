@@ -23,6 +23,7 @@ from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
+    ensure_input_size_within_limit,
     parse_class_names_file,
     parse_inference_config,
 )
@@ -53,6 +54,7 @@ class RFDetrForInstanceSegmentationCoreML(
         Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     ]
 ):
+    """Load and run RF-DETR segmentation Core ML packages with the ONNX path's pre- and post-processing."""
 
     @classmethod
     def from_pretrained(
@@ -62,6 +64,21 @@ class RFDetrForInstanceSegmentationCoreML(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationCoreML":
+        """Load a Core ML segmentation package.
+
+        Args:
+            model_name_or_path (str): Local model package directory.
+            rf_detr_max_input_resolution (int | tuple, optional): Input size limit, checked against the
+                model's own input size.
+            recommended_parameters (RecommendedParameters, optional): Model defaults.
+            **kwargs: Extra loader options accepted for shared API compatibility.
+
+        Returns:
+            RFDetrForInstanceSegmentationCoreML: Initialized model.
+
+        Raises:
+            ModelPackageRestrictedError: If the model's input size exceeds ``rf_detr_max_input_resolution``.
+        """
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["class_names.txt", "inference_config.json"],
@@ -88,11 +105,15 @@ class RFDetrForInstanceSegmentationCoreML(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
-            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         coreml_model = load_coreml_package(model_package_dir=model_name_or_path)
         inference_config = align_network_input_with_model(
             inference_config=inference_config, signature=coreml_model.signature
+        )
+        # Checked after alignment: the model's input size, not the package config's, is what runs.
+        ensure_input_size_within_limit(
+            inference_config=inference_config,
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         num_logit_classes = len(class_names) + 1
         classes_re_mapping = None
@@ -144,6 +165,19 @@ class RFDetrForInstanceSegmentationCoreML(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        """Prepare images exactly as the ONNX backend does.
+
+        Args:
+            images (np.ndarray | torch.Tensor | list): Input image or batch.
+            input_color_format (ColorFormat, optional): Source channel order.
+            image_size (tuple[int, int], optional): Override of the network input size (width, height).
+            pre_processing_overrides (PreProcessingOverrides, optional): Per-call overrides of package
+                preprocessing settings.
+            **kwargs: Other shared inference options, ignored by this stage.
+
+        Returns:
+            tuple: Normalized NCHW tensor and per-image preprocessing metadata.
+        """
         return pre_process_network_input(
             images=images,
             image_pre_processing=self._inference_config.image_pre_processing,
@@ -157,6 +191,15 @@ class RFDetrForInstanceSegmentationCoreML(
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Run the Core ML package and return raw boxes, class logits and mask logits.
+
+        Args:
+            pre_processed_images (torch.Tensor): Normalized NCHW image batch.
+            **kwargs: Shared inference options, ignored by this backend.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Raw boxes, class logits and mask logits.
+        """
         return run_rfdetr_coreml(
             model=self._coreml_model,
             pre_processed_images=pre_processed_images,
@@ -174,6 +217,22 @@ class RFDetrForInstanceSegmentationCoreML(
         max_detections: Optional[int] = INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[InstanceDetections]:
+        """Convert raw predictions with the shared RF-DETR post-processing.
+
+        Args:
+            model_results (tuple): Raw boxes, class logits and mask logits.
+            pre_processing_meta (list[PreProcessingMetadata]): Per-image transforms.
+            confidence (Confidence): Detection threshold or model-default selector.
+            mask_format (InstanceSegmentationMaskFormat): ``dense`` masks or ``rle`` encoded masks.
+            max_detections (int, optional): Cap on detections per image, applied before masks are aligned.
+            **kwargs: Other shared inference options, ignored here.
+
+        Returns:
+            list[InstanceDetections]: Filtered detections and masks in original-image coordinates.
+
+        Raises:
+            ModelInputError: If ``mask_format`` is not supported.
+        """
         if mask_format not in self.supported_mask_formats:
             raise ModelInputError(
                 message=f"RFDetr Instance Segmentation models support the following mask "
