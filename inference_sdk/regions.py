@@ -49,6 +49,12 @@ ROBOFLOW_SERVICE_URLS = {
 }
 
 SUPPORTED_REGIONS = sorted({region for region, _ in ROBOFLOW_SERVICE_URLS})
+SUPPORTED_ENVIRONMENTS = sorted(
+    {environment for _, environment in ROBOFLOW_SERVICE_URLS}
+)
+# Accepted spellings of a supported environment; EU production deployments set
+# ``production``.
+ENVIRONMENT_ALIASES = {"production": PROD_ENVIRONMENT_NAME}
 
 
 def get_roboflow_region() -> str:
@@ -70,16 +76,23 @@ def get_roboflow_region() -> str:
 def get_roboflow_environment(project: Optional[str] = None) -> str:
     """Return the selected Roboflow environment (``prod`` or ``staging``).
 
-    ``ROBOFLOW_ENVIRONMENT`` wins when set (any value other than ``prod``
-    selects staging, matching historical behaviour). Otherwise the legacy
-    ``project`` signal decides (``roboflow-platform`` means prod), and with
-    neither present the environment defaults to prod.
+    ``ROBOFLOW_ENVIRONMENT`` wins when set: ``prod`` (or ``production``) and
+    ``staging`` are accepted, and any other value warns and falls back to prod,
+    so a misspelt production value never sends traffic to staging. Otherwise
+    the legacy ``project`` signal decides (``roboflow-platform`` means prod),
+    and with neither present the environment defaults to prod.
     """
-    environment = os.getenv("ROBOFLOW_ENVIRONMENT")
-    if environment is not None:
-        if environment.strip().lower() == PROD_ENVIRONMENT_NAME:
+    environment = os.getenv("ROBOFLOW_ENVIRONMENT", "").strip().lower()
+    if environment:
+        environment = ENVIRONMENT_ALIASES.get(environment, environment)
+        if environment not in SUPPORTED_ENVIRONMENTS:
+            warnings.warn(
+                f"Unknown ROBOFLOW_ENVIRONMENT {environment!r} - falling back to "
+                f"{PROD_ENVIRONMENT_NAME!r}. Supported environments: "
+                f"{', '.join(SUPPORTED_ENVIRONMENTS)}.",
+            )
             return PROD_ENVIRONMENT_NAME
-        return STAGING_ENVIRONMENT_NAME
+        return environment
     if project is not None and project != US_PROD_PROJECT_NAME:
         return STAGING_ENVIRONMENT_NAME
     return DEFAULT_ENVIRONMENT

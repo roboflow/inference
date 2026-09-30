@@ -109,6 +109,23 @@ def test_roboflow_api_host_follows_region_and_environment_matrix(
     assert configuration.ROBOFLOW_API_HOST == expected_api_host
 
 
+def test_production_environment_is_treated_as_prod(
+    reload_configuration,
+) -> None:
+    configuration = reload_configuration(
+        ROBOFLOW_REGION="eu", ROBOFLOW_ENVIRONMENT="production"
+    )
+    assert configuration.ROBOFLOW_API_HOST == "https://api.roboflow.eu"
+
+
+def test_unknown_roboflow_environment_warns_and_falls_back_to_prod(
+    reload_configuration,
+) -> None:
+    with pytest.warns(UserWarning, match="Unknown ROBOFLOW_ENVIRONMENT"):
+        configuration = reload_configuration(ROBOFLOW_ENVIRONMENT="dev")
+    assert configuration.ROBOFLOW_API_HOST == "https://api.roboflow.com"
+
+
 def test_explicit_roboflow_api_host_beats_region_selection(
     reload_configuration,
 ) -> None:

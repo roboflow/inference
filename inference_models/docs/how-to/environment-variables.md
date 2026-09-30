@@ -36,7 +36,7 @@ export ROBOFLOW_API_KEY="your_api_key_here"
 Get your API key from: https://docs.roboflow.com/api-reference/authentication
 
 **`ROBOFLOW_ENVIRONMENT`**  
-Environment to use: `prod` (default) or `staging`.
+Environment to use: `prod` (default; `production` is also accepted) or `staging`. Any other value warns and falls back to `prod`.
 
 ```bash
 export ROBOFLOW_ENVIRONMENT="prod"

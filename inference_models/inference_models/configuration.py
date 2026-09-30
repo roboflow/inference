@@ -55,14 +55,20 @@ if ROBOFLOW_REGION not in {region for region, _ in _ROBOFLOW_API_HOSTS}:
         "Supported regions: eu, us.",
     )
     ROBOFLOW_REGION = "us"
+# ``production`` is accepted for prod; any other unknown value warns and falls
+# back to prod, so a misspelt production value never sends traffic to staging.
+_ROBOFLOW_ENVIRONMENT_NORMALIZED = {"production": "prod"}.get(
+    ROBOFLOW_ENVIRONMENT.strip().lower(), ROBOFLOW_ENVIRONMENT.strip().lower()
+)
+if _ROBOFLOW_ENVIRONMENT_NORMALIZED not in {env for _, env in _ROBOFLOW_API_HOSTS}:
+    warnings.warn(
+        f"Unknown ROBOFLOW_ENVIRONMENT {ROBOFLOW_ENVIRONMENT!r} - falling back to "
+        "'prod'. Supported environments: prod, staging.",
+    )
+    _ROBOFLOW_ENVIRONMENT_NORMALIZED = "prod"
 ROBOFLOW_API_HOST = os.getenv(
     "ROBOFLOW_API_HOST",
-    _ROBOFLOW_API_HOSTS[
-        (
-            ROBOFLOW_REGION,
-            "prod" if ROBOFLOW_ENVIRONMENT.lower() == "prod" else "staging",
-        )
-    ],
+    _ROBOFLOW_API_HOSTS[(ROBOFLOW_REGION, _ROBOFLOW_ENVIRONMENT_NORMALIZED)],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 # Bare hosts use HTTPS with a migration warning; explicit HTTP is loopback-only.

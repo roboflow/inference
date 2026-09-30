@@ -69,12 +69,35 @@ def test_environment_honors_roboflow_environment_variable(monkeypatch) -> None:
     assert result == "staging"
 
 
-def test_environment_treats_any_non_prod_value_as_staging(monkeypatch) -> None:
+def test_environment_accepts_production_as_prod(monkeypatch) -> None:
+    # given
+    monkeypatch.setenv("ROBOFLOW_ENVIRONMENT", "Production")
+
+    # when
+    result = get_roboflow_environment(project="roboflow-eu-platform")
+
+    # then
+    assert result == "prod"
+
+
+def test_unknown_environment_warns_and_falls_back_to_prod(monkeypatch) -> None:
     # given
     monkeypatch.setenv("ROBOFLOW_ENVIRONMENT", "dev")
 
     # when
-    result = get_roboflow_environment()
+    with pytest.warns(UserWarning, match="Unknown ROBOFLOW_ENVIRONMENT 'dev'"):
+        result = get_roboflow_environment()
+
+    # then
+    assert result == "prod"
+
+
+def test_empty_environment_falls_back_to_legacy_project_signal(monkeypatch) -> None:
+    # given
+    monkeypatch.setenv("ROBOFLOW_ENVIRONMENT", "")
+
+    # when
+    result = get_roboflow_environment(project="roboflow-staging")
 
     # then
     assert result == "staging"
