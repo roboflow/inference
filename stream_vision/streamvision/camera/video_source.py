@@ -16,6 +16,7 @@ from streamvision.camera.buffer_strategies import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
+from streamvision.camera.capture_properties import apply_capture_properties
 from streamvision.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -163,9 +164,7 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         return self.stream.retrieve()
 
     def initialize_source_properties(self, properties: Dict[str, float]) -> None:
-        for property_id, value in properties.items():
-            cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-            self.stream.set(cv2_id, value)
+        apply_capture_properties(self.stream, properties=properties)
 
     def discover_source_properties(self) -> SourceProperties:
         width = int(self.stream.get(cv2.CAP_PROP_FRAME_WIDTH))

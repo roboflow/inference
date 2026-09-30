@@ -70,8 +70,34 @@ class VideoConfiguration(BaseModel):
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = (
         BufferConsumptionStrategy.EAGER
     )
-    video_source_properties: Optional[Dict[str, float]] = None
+    video_source_properties: Optional[Dict[str, Union[float, str]]] = None
     batch_collection_timeout: Optional[float] = None
+
+    @field_validator("video_source_properties", mode="before")
+    @classmethod
+    def validate_video_source_properties(cls, value):
+        # Every property is numeric except ``fourcc``, which may also be given
+        # as a four-character code such as "MJPG".
+        if not isinstance(value, dict):
+            return value
+
+        validated = {}
+        for property_id, property_value in value.items():
+            try:
+                validated[property_id] = float(property_value)
+            except (TypeError, ValueError):
+                if not (
+                    isinstance(property_id, str)
+                    and property_id.lower() == "fourcc"
+                    and isinstance(property_value, str)
+                ):
+                    raise ValueError(
+                        f"Video source property {property_id!r} must be a "
+                        f"number, got {property_value!r}."
+                    )
+                validated[property_id] = property_value
+
+        return validated
 
 
 class MemorySinkConfiguration(BaseModel):

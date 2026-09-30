@@ -25,6 +25,7 @@ This is the canonical changelog for the `streamvision` package.
 
 - Declare Pillow directly for camera imports and Torch in the `workflows` and supported-platform `nvdec` extras; GPU decoding still requires a compatible CUDA-enabled Torch build.
 
+- Video source properties are applied in a camera-safe order: `fourcc` first, `fps` last, others in the given order. USB/V4L2 cameras (e.g. Logitech C920) no longer stay at the frame rate clamped for their startup pixel format when `fps` arrived before `fourcc`. `fourcc` also accepts a four-character code such as `"MJPG"`, and invalid values are logged and skipped.
 - The stream manager no longer blocks forever on a command sent to a pipeline process that has exited; the caller gets a `not_found` error.
 - `GstreamerCudaVideoFrameProducer` decodes container files such as MP4 and MKV; the previous pipeline never produced a frame for them.
 - Declared dependencies are enough to import the workflows runtime, and the `test` extra installs `pytest-asyncio` and `pytest-timeout`.
