@@ -1,4 +1,5 @@
 import os
+import shutil
 from typing import Optional, Tuple
 
 import pytest
@@ -292,6 +293,31 @@ def test_session_compiles_under_the_package_coreml_cache_lock(
     )
 
     assert lock_paths == [str(tmp_path / ".coreml_cache.lock")]
+
+
+def test_session_survives_a_cache_purge_right_before_the_lock(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_path, base_directory = _package(tmp_path)
+    factory = _SessionFactory()
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+    real_file_lock = onnx.FileLock
+
+    def purge_then_lock(path, *args, **kwargs):
+        # The watchdog purges coreml_cache after the loader decided to use it, before it holds the lock.
+        shutil.rmtree(tmp_path / "coreml_cache", ignore_errors=True)
+        return real_file_lock(path, *args, **kwargs)
+
+    (tmp_path / "coreml_cache").mkdir()
+    monkeypatch.setattr(onnx, "FileLock", purge_then_lock)
+
+    session = onnx.create_onnx_inference_session(
+        model_path=model_path, providers=_coreml_providers(base_directory)
+    )
+
+    assert session == "session"
+    assert len(factory.calls) == 1
+    assert _used_cache_directory(factory.calls[0]).startswith(f"{base_directory}-")
 
 
 def test_session_discards_broken_coreml_cache_and_recompiles(

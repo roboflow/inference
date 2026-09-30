@@ -286,9 +286,10 @@ def _create_session_with_coreml_cache(
             {**coreml_options, "ModelCacheDirectory": cache_directory},
         ),
     )
-    os.makedirs(cache_root, exist_ok=True)
     lock_path = os.path.join(os.path.dirname(cache_root), COREML_CACHE_LOCK_NAME)
     with FileLock(lock_path):
+        # Created under the lock: the watchdog may have purged the cache just before it was taken.
+        os.makedirs(cache_root, exist_ok=True)
         _remove_stale_cache_variants(
             base_directory=base_directory, keep=cache_directory
         )
