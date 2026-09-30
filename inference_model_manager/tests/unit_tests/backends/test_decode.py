@@ -12,6 +12,7 @@ import pytest
 from inference_model_manager.backends.decode import (
     _decode_ic,
     _select_codec,
+    apply_exif_orientation,
     decoded_dims,
     exif_orientation,
     make_decoder,
@@ -404,6 +405,88 @@ class TestExifOrientationMatchesOpenCV:
         # Same result whether the caller passes the stored or the swapped size.
         assert decoded_dims(data, w, h) == (h, w)
         assert decoded_dims(data, h, w) == (h, w)
+
+
+# ---------------------------------------------------------------------------
+# TIFFs that libtiff converts to RGB itself (CMYK, YCbCr) arrive already
+# flipped by libtiff: the decoder must add only what is still missing.
+# ---------------------------------------------------------------------------
+
+
+def _tiff_variant(variant: str, orientation: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    upright = _upright_blocks()
+    if variant.startswith("ycbcr"):
+        tifffile = pytest.importorskip("tifffile")
+        buffer = io.BytesIO()
+        tifffile.imwrite(
+            buffer,
+            upright,
+            photometric="ycbcr",
+            subsampling=(1, 1),
+            compression="zlib" if variant == "ycbcr_deflate" else None,
+            extratags=[(0x0112, 3, 1, orientation, True)],
+        )
+        return buffer.getvalue()
+    options = {
+        "cmyk": {},
+        "cmyk_lzw": {"compression": "tiff_lzw"},
+        "cmyk_jpeg": {"compression": "jpeg"},
+    }[variant]
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buffer = io.BytesIO()
+    Image.fromarray(upright).convert("CMYK").save(
+        buffer, "TIFF", exif=exif.tobytes(), **options
+    )
+    return buffer.getvalue()
+
+
+# CMYK+JPEG is decoded by libjpeg, not by libtiff's RGBA reader: nothing is
+# pre-flipped there, and imagecodecs' colours differ from OpenCV's.
+_LIBTIFF_RGB_VARIANTS = ["cmyk", "cmyk_lzw", "ycbcr", "ycbcr_deflate"]
+_TIFF_VARIANTS = _LIBTIFF_RGB_VARIANTS + ["cmyk_jpeg"]
+
+
+class TestTiffPreOrientedByLibtiff:
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _LIBTIFF_RGB_VARIANTS)
+    def test_pixel_exact_vs_cv2_imdecode(self, variant, orientation):
+        pytest.importorskip("imagecodecs")
+        cv2 = pytest.importorskip("cv2")
+        data = _tiff_variant(variant, orientation)
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        np.testing.assert_array_equal(make_decoder("imagecodecs")(data), expected)
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _TIFF_VARIANTS)
+    def test_output_is_stored_image_oriented_once(self, variant, orientation):
+        pytest.importorskip("imagecodecs")
+        decode = make_decoder("imagecodecs")
+        stored = decode(_tiff_variant(variant, 1))
+        expected = apply_exif_orientation(stored, orientation)
+        result = decode(_tiff_variant(variant, orientation))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("orientation", range(1, 9))
+    @pytest.mark.parametrize("variant", _TIFF_VARIANTS)
+    def test_decoded_dims_match_decoded_pixels(self, variant, orientation):
+        import io
+
+        from PIL import Image
+
+        pytest.importorskip("imagecodecs")
+        data = _tiff_variant(variant, orientation)
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+        result = make_decoder("imagecodecs")(data)
+        assert decoded_dims(data, width, height) == (
+            result.shape[1],
+            result.shape[0],
+        )
 
 
 # ---------------------------------------------------------------------------

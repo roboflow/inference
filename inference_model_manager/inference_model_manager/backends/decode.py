@@ -102,7 +102,10 @@ def decoded_dims(data: bytes | memoryview, width: int, height: int) -> tuple[int
     ``width`` and ``height`` are the size a header reader (e.g. Pillow)
     reported. TIFF re-reads its stored size from IFD0 instead, because Pillow
     already swaps the reported TIFF size for orientations 5-8. The swap below
-    then uses the same rule as the decoder, so size and pixels always agree.
+    then uses the same rule as the decoder, so size and pixels always agree:
+    whatever part of the orientation libtiff applies itself (see
+    ``_pending_orientation``), the decoder's output always ends up transposed
+    exactly for orientations 5-8 of the stored image.
     """
     if bytes(data[:4]) in (b"II*\x00", b"MM\x00*"):
         stored = _tiff_ifd0(data, (_TIFF_WIDTH_TAG, _TIFF_HEIGHT_TAG))
@@ -170,6 +173,12 @@ def _png_orientation(data: bytes | memoryview) -> int:
 
 _TIFF_WIDTH_TAG = 0x0100
 _TIFF_HEIGHT_TAG = 0x0101
+_TIFF_COMPRESSION_TAG = 0x0103
+_TIFF_PHOTOMETRIC_TAG = 0x0106
+_TIFF_COMPRESSION_OJPEG = 6
+_TIFF_COMPRESSION_JPEG = 7
+_TIFF_PHOTOMETRIC_SEPARATED = 5  # CMYK
+_TIFF_PHOTOMETRIC_YCBCR = 6
 
 
 def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int]:
@@ -208,6 +217,40 @@ def _tiff_orientation(tiff: bytes | memoryview) -> int | None:
     """Orientation tag from IFD0 of a TIFF block, None when absent or invalid."""
     value = _tiff_ifd0(tiff, (_EXIF_ORIENTATION_TAG,)).get(_EXIF_ORIENTATION_TAG)
     return value if value is not None and 1 <= value <= 8 else None
+
+
+def _tiff_read_by_libtiff_rgba(tiff: bytes | memoryview) -> bool:
+    """True when imagecodecs decodes this TIFF with TIFFReadRGBAImageOriented.
+
+    Mirrors imagecodecs' own dispatch: new-style JPEG is decoded as is; old-style
+    JPEG, YCbCr and CMYK (Separated) are handed to libtiff's RGBA reader, which
+    already applies part of the Orientation tag.
+    """
+    tags = _tiff_ifd0(tiff, (_TIFF_COMPRESSION_TAG, _TIFF_PHOTOMETRIC_TAG))
+    compression = tags.get(_TIFF_COMPRESSION_TAG, 1)
+    if compression == _TIFF_COMPRESSION_JPEG:
+        return False
+    return compression == _TIFF_COMPRESSION_OJPEG or tags.get(
+        _TIFF_PHOTOMETRIC_TAG
+    ) in (_TIFF_PHOTOMETRIC_SEPARATED, _TIFF_PHOTOMETRIC_YCBCR)
+
+
+# libtiff's RGBA reader performs only the flips of the Orientation tag: 2-4 are
+# fully applied, 5-8 are flipped like 1-4 but never transposed. This is what is
+# still needed on top of that flip to reach the upright image.
+_ORIENTATION_AFTER_LIBTIFF_FLIP = {5: 5, 6: 7, 7: 5, 8: 7}
+
+
+def _pending_orientation(data: bytes | memoryview) -> int:
+    """Orientation the decoder must still apply to what imagecodecs returned."""
+    orientation = exif_orientation(data)
+    if (
+        orientation != 1
+        and bytes(data[:4]) in (b"II*\x00", b"MM\x00*")
+        and _tiff_read_by_libtiff_rgba(data)
+    ):
+        return _ORIENTATION_AFTER_LIBTIFF_FLIP.get(orientation, 1)
+    return orientation
 
 
 def apply_exif_orientation(image: np.ndarray, orientation: int) -> np.ndarray:
@@ -342,10 +385,11 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     if codec is None:
         return _to_rgb_hwc(imagecodecs.imread(raw))
     image = _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
-    # imagecodecs ignores EXIF; cv2.imdecode (the previous server) honours it
-    # for JPEG, PNG and TIFF, so a rotated phone photo must reach the model
-    # upright. exif_orientation returns 1 for the formats OpenCV leaves as is.
-    return apply_exif_orientation(image, exif_orientation(raw))
+    # imagecodecs ignores EXIF, except for the TIFFs libtiff converts to RGB;
+    # cv2.imdecode (the previous server) honours it for JPEG, PNG and TIFF, so a
+    # rotated phone photo must reach the model upright. exif_orientation
+    # returns 1 for the formats OpenCV leaves as is.
+    return apply_exif_orientation(image, _pending_orientation(raw))
 
 
 DECODER_FACTORIES: dict[str, Callable[[str], Callable[[bytes], Any]]] = {}
