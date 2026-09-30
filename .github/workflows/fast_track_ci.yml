@@ -20,6 +20,10 @@ name: Fast-track CI
 # what keeps main's Actions cache out of reach of the branch code. Each
 # dispatched run is reported back as a commit status on the PR head.
 #
+# A maintainer's re-run of one of the dispatched runs does not pass through
+# this workflow; fast_track_ci_status_sync.yml refreshes the commit status
+# from the re-run attempt.
+#
 # Runs with `pull_request_target` (main-branch definition, secrets). The gate
 # only admits same-repository PRs, and the label needs triage rights.
 
@@ -53,6 +57,10 @@ env:
   # trigger on main. A workflow that cannot be dispatched on the branch (file
   # missing, or no workflow_dispatch on that release) gets an `error` commit
   # status and fails this run, unless listed in OPTIONAL_WORKFLOWS.
+  # workflow_dispatch ignores a workflow's `paths:` filter, so a workflow that
+  # is path-filtered to directories absent from the release branches must not
+  # be listed: unit_tests_inference_model_manager_and_server.yml is kept out
+  # until inference_model_manager/ and inference_server/ land on main (#2251).
   TEST_WORKFLOWS: >-
     static_code_analysis.yml
     check_model_licenses.yml
@@ -62,7 +70,6 @@ env:
     unit_tests_workflows_x86.yml
     unit_tests_workflows_tensor_native_x86.yml
     unit_tests_inference_experimental.yml
-    unit_tests_inference_model_manager_and_server.yml
     integration_tests_inference_experimental_cpu.yml
     integration_tests_workflows_x86.yml
     integration_tests_workflows_tensor_native_x86.yml

@@ -1,6 +1,6 @@
 [project]
 name = "roboflow-workflows"
-version = "0.2.3"
+version = "0.2.4rc3"
 description = "Roboflow Workflows execution engine and block library"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -11,7 +11,7 @@ dependencies = [
   "networkx>=3.0.0,<4.0.0",
   "packaging~=24.0",
   "numpy>=1.26,<2.4",
-  "supervision>=0.29.0,<0.30.0",
+  "supervision>=0.30.6,<0.31.0",
   "opencv-python>=4.8.1.78,<4.13.0",
   "pillow>=12.3.0,<13.0.0",
   "shapely>=2.0.4,<2.1.0",

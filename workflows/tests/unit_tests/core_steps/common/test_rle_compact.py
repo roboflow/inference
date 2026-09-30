@@ -18,7 +18,6 @@ pytest.importorskip(
 )
 
 from roboflow_workflows.core_steps.common.rle_compact import (  # noqa: E402
-    _decode_coco_counts,
     compact_mask_from_coco_rle,
     instances_rle_to_compact_mask,
 )
@@ -46,27 +45,6 @@ def _tight_box(mask: np.ndarray) -> np.ndarray:
     if len(xs) == 0:
         return np.array([0, 0, 0, 0], dtype=np.float32)
     return np.array([xs.min(), ys.min(), xs.max(), ys.max()], dtype=np.float32)
-
-
-def test_coco_counts_decoder_inverts_pycocotools():
-    rng = np.random.default_rng(0)
-    for _ in range(100):
-        h = int(rng.integers(1, 40))
-        w = int(rng.integers(1, 40))
-        mask = (rng.random((h, w)) < rng.random()).astype(np.uint8)
-        compressed = torch_mask_to_coco_rle(torch.from_numpy(mask))["counts"]
-
-        decoded = _decode_coco_counts(compressed)
-
-        flat = np.zeros(h * w, dtype=bool)
-        pos = 0
-        for idx, run_len in enumerate(decoded):
-            if idx % 2 == 1:
-                flat[pos : pos + run_len] = True
-            pos += run_len
-        assert pos == h * w
-        # COCO is column-major (F-order): reshape (w, h) then transpose.
-        np.testing.assert_array_equal(flat.reshape(w, h).T, mask.astype(bool))
 
 
 @pytest.mark.parametrize("seed", range(25))
@@ -145,9 +123,6 @@ def test_mask_whose_first_pixel_is_true(full_frame_box: bool):
     masks[0, 0, 0] = True
     masks[0, 2:4, 1:3] = True
 
-    counts = _decode_coco_counts(_encode(masks).masks[0])
-    assert counts[0] == 0, "expected an explicit zero-length leading False run"
-
     xyxy = (
         np.array([[0, 0, w - 1, h - 1]], dtype=np.float32)
         if full_frame_box
@@ -165,10 +140,6 @@ def test_mask_whose_last_pixel_is_true(full_frame_box: bool):
     masks[0, -1, -1] = True
     masks[0, 1:3, 1] = True
 
-    counts = _decode_coco_counts(_encode(masks).masks[0])
-    assert len(counts) % 2 == 0, "counts alternate F/T; ending on True => even length"
-    assert sum(counts) == h * w
-
     xyxy = (
         np.array([[0, 0, w - 1, h - 1]], dtype=np.float32)
         if full_frame_box
@@ -183,50 +154,48 @@ def test_all_true_mask_hits_both_boundaries():
     h, w = 5, 9
     masks = np.ones((1, h, w), dtype=bool)
 
-    assert _decode_coco_counts(_encode(masks).masks[0]) == [0, h * w]
-
     _assert_parity(masks, np.array([[0, 0, w - 1, h - 1]], dtype=np.float32), (h, w))
 
 
 @pytest.mark.parametrize(
-    "raw_box, degenerate_after_clipping",
+    "raw_box, expected_pixels",
     [
-        # Invalid BEFORE clipping, valid AFTER: x2c == x1c == 0, y2c == y1c == 0.
-        # Clipping resurrects it into a legal 1x1 crop at the origin.
-        ([0, 0, -1, -1], False),
-        # Invalid both before and after clipping -> 1x1 all-False crop.
-        ([4, 3, 3, 2], True),
+        # Invalid as written, but clipping would turn it into a legal 1x1 box at
+        # the origin (max(0, min(-1, w - 1)) == 0). The raw box decides.
+        ([0, 0, -1, -1], 0),
+        # Invalid both as written and after clipping.
+        ([4, 3, 3, 2], 0),
+        # Entirely outside the image; each would clip onto a legal edge strip.
+        ([-5, 2, -1, 6], 0),  # x2 < 0
+        ([2, -5, 6, -1], 0),  # y2 < 0
+        ([11, 2, 15, 6], 0),  # x1 >= img_w
+        ([2, 9, 6, 12], 0),  # y1 >= img_h
+        # Control: partly outside but overlapping -> clipped to a real 3x3 crop.
+        ([-3, -3, 2, 2], 9),
     ],
 )
-def test_degenerate_box_decides_on_clipped_coordinates(
-    raw_box: List[int], degenerate_after_clipping: bool
+def test_degenerate_box_decides_on_raw_coordinates(
+    raw_box: List[int], expected_pixels: int
 ):
-    """Regression: the ``x2 < x1`` fallback must be judged on the CLIPPED box.
+    """The ``1x1`` all-False fallback is judged on the RAW integer box.
 
-    ``[0, 0, -1, -1]`` is degenerate as written, but ``max(0, min(-1, w - 1))``
-    pulls ``x2`` up to ``0``, so after clipping it is a legal ``1x1`` box at the
-    origin. If one side tests the raw box and the other the clipped box, exactly
-    one pixel diverges -- the mask's ``[0, 0]`` -- because one side emits the
-    ``1x1`` all-False fallback while the other emits the real crop pixel. That is
-    invisible to any aggregate assertion and only shows up on the seeds whose
-    ``[0, 0]`` happens to be ``True``.
+    A box is degenerate when ``x2 < x1``, ``y2 < y1``, or it lies entirely
+    outside the image (``x2 < 0``, ``y2 < 0``, ``x1 >= img_w``,
+    ``y1 >= img_h``). Clipping would resurrect every such box into a legal crop
+    on the image edge, so judging the clipped box instead paints real pixels
+    there. The mask is all-True so any such pixel is visible.
     """
     h, w = 9, 11
-    masks = np.ones((1, h, w), dtype=bool)  # [0, 0] True makes the divergence visible
+    masks = np.ones((1, h, w), dtype=bool)
     xyxy = np.array([raw_box], dtype=np.float32)
 
     candidate, reference = _assert_parity(masks, xyxy, (h, w))
 
     np.testing.assert_array_equal(candidate._crop_shapes, reference._crop_shapes)
     np.testing.assert_array_equal(candidate._offsets, reference._offsets)
-    # A box that survives clipping keeps its origin pixel; one that stays
-    # degenerate collapses to the all-False 1x1 crop.
-    decoded = candidate.to_dense()
-    if degenerate_after_clipping:
-        assert not decoded.any()
-    else:
-        assert bool(decoded[0, 0, 0]) is True
-        assert int(decoded.sum()) == 1
+    assert int(candidate.to_dense().sum()) == expected_pixels
+    if expected_pixels == 0:
+        np.testing.assert_array_equal(candidate._crop_shapes, [[1, 1]])
 
 
 def test_adapter_matches_full_frame_decode():

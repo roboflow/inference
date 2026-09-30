@@ -42,7 +42,9 @@ def test_gateway_configuration_validates_at_import(module, gateway, expected, wa
         SECURE_GATEWAY=gateway,
         DISABLE_VERSION_CHECK="True",
         USE_INFERENCE_MODELS="False",
-        PYTHONPATH=os.pathsep.join([str(ROOT), str(ROOT / "inference_models")]),
+        PYTHONPATH=os.pathsep.join(
+            [str(ROOT), str(ROOT / "inference_models"), str(ROOT / "stream_vision")]
+        ),
     )
     code = (
         f"import importlib; print(importlib.import_module({module!r}).SECURE_GATEWAY)"
