@@ -317,9 +317,9 @@ async def test_pipeline_result_is_not_cached_under_the_synthetic_id():
         await stat_model_while_checking_auth(
             CommonRequestParams(model_id="pp_ocr/small-medium", api_key="k")
         )
-        assert model_stat._cache.get(("pp_ocr/small-medium", "k")) is None
-        model_stat._cache._data.pop((_DET_SMALL, "k"))
-        model_stat._cache._data.pop((_REC_MEDIUM, "k"))
+        assert model_stat._cache.get(("pp_ocr/small-medium", "k", ())) is None
+        model_stat._cache._data.pop((_DET_SMALL, "k", ()))
+        model_stat._cache._data.pop((_REC_MEDIUM, "k", ()))
         table[_REC_MEDIUM] = UnauthorizedModelAccessError(
             message=_REC_MEDIUM, help_url=""
         )

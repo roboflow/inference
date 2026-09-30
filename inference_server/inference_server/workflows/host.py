@@ -403,10 +403,8 @@ from inference_models.errors import (  # noqa: E402
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.weights_providers.roboflow import (  # noqa: E402
-    roboflow_secure_gateway_proxy_url_builder,
-)
 from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
+from inference_server import platform_http  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
 )
@@ -416,10 +414,12 @@ from inference_server.legacy.errors import (  # noqa: E402
     REGISTRY_UNREACHABLE_MESSAGE,
     LegacyHTTPError,
 )
-
-API_REQUEST_TIMEOUT_S = get_float_from_env(
-    "ROBOFLOW_API_REQUEST_TIMEOUT", default=120.0
+from inference_server.platform_http import (  # noqa: E402
+    API_REQUEST_TIMEOUT_S,
+    _add_params_to_url,
+    _platform_request,
 )
+
 _URL_FETCH_BRIDGE_TIMEOUT_S = URL_FETCH_TIMEOUT_S + 5
 _IMAGE_LOADING_CONTEXT = "workflow_execution | image_loading"
 _STEP_EXECUTION_CONTEXT = "workflow_execution | step_execution"
@@ -442,32 +442,8 @@ def _redact_api_key(value: str) -> str:
     return _API_KEY_PATTERN.sub(_replace, value)
 
 
-def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
-    if not params:
-        return url
-    import urllib.parse
-
-    query = "&".join(
-        f"{name}={urllib.parse.quote_plus(value)}" for name, value in params
-    )
-    return f"{url}?{query}"
-
-
 def _is_successful(response: requests.Response) -> bool:
     return 200 <= response.status_code < 300
-
-
-def _platform_request(method: str, url: str, **kwargs: Any) -> requests.Response:
-    try:
-        return getattr(requests, method)(url=url, **kwargs)
-    except requests.exceptions.Timeout as error:
-        raise LegacyHTTPError(
-            504, "Timeout when attempting to connect to Roboflow API."
-        ) from error
-    except requests.exceptions.RequestException as error:
-        raise LegacyHTTPError(
-            503, "Internal error. Could not connect to Roboflow API."
-        ) from error
 
 
 def _api_error_message(response: requests.Response, api_key: Optional[str]) -> str:
@@ -522,17 +498,7 @@ class ServerRoboflowPlatformClient:
     def build_api_headers(
         self, explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None
     ) -> Dict[str, Union[str, List[str]]]:
-        headers: Dict[str, Union[str, List[str]]] = {
-            "x-roboflow-inference-version": configuration.SERVER_VERSION,
-            "x-allow-chunked-response": "true",
-        }
-        if configuration.ROBOFLOW_API_EXTRA_HEADERS:
-            try:
-                headers.update(json.loads(configuration.ROBOFLOW_API_EXTRA_HEADERS))
-            except ValueError:
-                logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
-        headers.update(explicit_headers or {})
-        return headers
+        return platform_http.build_api_headers(explicit_headers=explicit_headers)
 
     def build_weights_provider_headers(
         self,
@@ -548,7 +514,7 @@ class ServerRoboflowPlatformClient:
         return self.build_api_headers()
 
     def wrap_url(self, url: str) -> str:
-        return roboflow_secure_gateway_proxy_url_builder(url, None)
+        return platform_http.wrap_url(url)
 
 
 class ServerWorkspaceResolver:

@@ -29,6 +29,7 @@ from inference_server import hf_preload  # noqa: E402
 from inference_server.auth import extract_bearer, validate_api_key  # noqa: E402
 from inference_server.cors import PathAwareCORSMiddleware  # noqa: E402
 from inference_server.errors import AuthBackendUnavailable  # noqa: E402
+from inference_server.hosted.common import BillingIntentMiddleware  # noqa: E402
 from inference_server.legacy.bridge import (  # noqa: E402
     LegacyModelBridge,
     LoopBridge,
@@ -298,6 +299,7 @@ if _LEGACY_ERROR_HANDLING_ENABLED:
     install_legacy_exception_handlers(app)
 
 app.add_middleware(_AuthMiddleware)
+app.add_middleware(BillingIntentMiddleware)
 
 if _cfg.ALLOW_ORIGINS:
     app.add_middleware(
@@ -319,6 +321,19 @@ if _cfg.ENABLE_BUILDER:
         allow_credentials=True,
         allow_private_network=True,
     )
+
+if _cfg.GCP_SERVERLESS:
+    from inference_server.hosted.serverless_auth import ServerlessAuthMiddleware
+
+    app.add_middleware(ServerlessAuthMiddleware)
+
+if (
+    _cfg.DEDICATED_DEPLOYMENT_WORKSPACE_URL
+    or _cfg.WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+):
+    from inference_server.hosted.dedicated_auth import DedicatedAuthMiddleware
+
+    app.add_middleware(DedicatedAuthMiddleware)
 
 
 def mount_landing_assets(app: FastAPI) -> bool:

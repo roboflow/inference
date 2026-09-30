@@ -106,6 +106,7 @@ from inference_server.legacy.visualization import render_visualization
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["legacy"])
+infer_router = APIRouter(tags=["legacy"])
 control_plane_router = APIRouter(tags=["legacy"])
 registry_router = APIRouter(tags=["legacy"])
 catch_all_router = APIRouter(tags=["legacy"])
@@ -194,14 +195,20 @@ def get_bridge(request: Request) -> LegacyModelBridge:
 
 
 def include_legacy_routers(app: FastAPI) -> None:
+    hosted = configuration.LAMBDA or configuration.GCP_SERVERLESS
     app.include_router(router)
+    if not hosted:
+        app.include_router(infer_router)
     if configuration.CORE_MODELS_ENABLED:
         for flag_names, group_router in _CORE_MODEL_ROUTER_GROUPS:
+            if group_router is lmm_router and configuration.LAMBDA:
+                continue
             if any(getattr(configuration, name) for name in flag_names):
                 app.include_router(group_router)
     if configuration.LEGACY_CONTROL_PLANE_ROUTES_ENABLED:
-        app.include_router(control_plane_router)
-        if configuration.GET_MODEL_REGISTRY_ENABLED:
+        if not hosted:
+            app.include_router(control_plane_router)
+        if not configuration.LAMBDA and configuration.GET_MODEL_REGISTRY_ENABLED:
             app.include_router(registry_router)
 
 
@@ -418,7 +425,7 @@ async def _infer_and_repack(
     return orjson_response(responses if is_batch else responses[0])
 
 
-@router.post(
+@infer_router.post(
     "/infer/object_detection",
     response_model=Union[
         ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
@@ -441,7 +448,7 @@ async def infer_object_detection(
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/instance_segmentation",
     response_model=Union[
         InstanceSegmentationInferenceResponse,
@@ -465,7 +472,7 @@ async def infer_instance_segmentation(
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/semantic_segmentation",
     response_model=Union[
         SemanticSegmentationInferenceResponse,
@@ -489,7 +496,7 @@ async def infer_semantic_segmentation(
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/classification",
     response_model=Union[
         ClassificationInferenceResponse,
@@ -515,7 +522,7 @@ async def infer_classification(
     )
 
 
-@router.post(
+@infer_router.post(
     "/infer/keypoints_detection",
     response_model=Union[
         KeypointsDetectionInferenceResponse, List[KeypointsDetectionInferenceResponse]

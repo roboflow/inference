@@ -323,3 +323,39 @@ try:
 except importlib.metadata.PackageNotFoundError:
     SERVER_VERSION = "0.0.0"
 SERVER_ID = uuid.uuid4().hex
+
+# ── Hosted deployments (hosted/, app.py, legacy/router.py) ────────────────
+LAMBDA = get_boolean_from_env("LAMBDA", default=False)
+GCP_SERVERLESS = get_boolean_from_env("GCP_SERVERLESS", default=False)
+ENFORCE_CREDITS_VERIFICATION = get_boolean_from_env(
+    "ENFORCE_CREDITS_VERIFICATION", default=False
+)
+DEDICATED_DEPLOYMENT_ID = os.environ.get("DEDICATED_DEPLOYMENT_ID")
+DEDICATED_DEPLOYMENT_WORKSPACE_ID = os.environ.get("DEDICATED_DEPLOYMENT_WORKSPACE_ID")
+DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
+    "DEDICATED_DEPLOYMENT_WORKSPACE_URL"
+)
+_WORKSPACES_WHITELISTED_RAW = os.environ.get(
+    "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT"
+)
+WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = (
+    None
+    if _WORKSPACES_WHITELISTED_RAW is None
+    else [entry.strip() for entry in _WORKSPACES_WHITELISTED_RAW.split(",")]
+)
+ROBOFLOW_SERVICE_SECRET = os.environ.get("ROBOFLOW_SERVICE_SECRET")
+TRANSIENT_ROBOFLOW_API_ERRORS = {
+    int(entry) for entry in _env_list("TRANSIENT_ROBOFLOW_API_ERRORS")
+}
+TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES = get_integer_from_env(
+    "TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES", default=3
+)
+TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = get_integer_from_env(
+    "TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL", default=1
+)
+RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API = get_boolean_from_env(
+    "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", default=False
+)
+ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.environ.get(
+    "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
+) or os.environ.get("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
