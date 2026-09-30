@@ -30,6 +30,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- SAM3 v3 tensor previews keep model masks in RLE through thresholding, NMS and packing. Stitch placement translates compressed runs, and polygon v2 visualization decodes only detection crops. This removes repeated mask encoding and full-frame contour scans while preserving masks, labels, box coordinates and rendered pixels.
+
 - Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
 ## `0.2.3`

@@ -6,6 +6,9 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
 )
+from roboflow_workflows.core_steps.visualizations.common.annotators.compact_polygon import (
+    CompactPolygonAnnotator as PolygonAnnotator,
+)
 from roboflow_workflows.core_steps.visualizations.common.base_colorable_tensor import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
@@ -30,7 +33,6 @@ from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlockManifest,
 )
-from supervision import PolygonAnnotator
 
 TYPE: str = "roboflow_core/polygon_visualization@v2"
 SHORT_DESCRIPTION = "Draw a polygon around detected objects in an image."
