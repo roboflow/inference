@@ -365,21 +365,40 @@ def _first_successful_decode(value: Any, *, decoders: List[Kind], location: str)
 
 
 def _check_shared_axes(plan: CompiledWorkflow, *, entries: Mapping[str, Entry]) -> None:
-    """Inputs sharing a prefix of axes must share its group structure."""
+    try:
+        check_shared_axes(entries, what="Workflow inputs")
+    except ContractError as error:
+        raise WorkflowInputError(str(error)) from error
+
+
+def check_shared_axes(entries: Mapping[str, Entry], *, what: str) -> None:
+    """Entries sharing a prefix of axes must share its group structure.
+
+    Two axes with equal ids describe corresponding positions, so every
+    group node the entries know along a shared prefix must be the same.
+    Ungrouped entries take no part.
+
+    Args:
+        entries: Entries by name; each carries its layout.
+        what: Noun for error messages, e.g. ``"Workflow inputs"``.
+
+    Raises:
+        ContractError: Naming the two entries, the shared axes and the depth
+            at which their groups differ.
+    """
     names = [name for name, entry in entries.items() if entry.depth]
     for position, first in enumerate(names):
         for second in names[position + 1 :]:
-            shared = _shared_prefix(
-                plan.inputs[first].layout.axis_ids, plan.inputs[second].layout.axis_ids
-            )
+            left_ids = entries[first].layout.axis_ids
+            shared = _shared_prefix(left_ids, entries[second].layout.axis_ids)
             for depth in range(shared):
                 left = _groups_at(entries[first], depth=depth)
                 right = _groups_at(entries[second], depth=depth)
                 if left != right:
-                    raise WorkflowInputError(
-                        f"Workflow inputs {first!r} and {second!r} share axes "
-                        f"{list(plan.inputs[first].layout.axis_ids[: depth + 1])} "
-                        f"but their groups at depth {depth} differ"
+                    raise ContractError(
+                        f"{what} {first!r} and {second!r} share axes "
+                        f"{list(left_ids[: depth + 1])} but their groups at depth "
+                        f"{depth} differ"
                     )
 
 

@@ -53,12 +53,13 @@ BATCH_MODES: Tuple[str, ...] = ("never", "always", "if_varying")
 SELECTOR_SEGMENT = r"[A-Za-z0-9_\-]+"
 DATA_SELECTOR = (
     rf"\$(?:inputs\.{SELECTOR_SEGMENT}"
-    rf"|steps\.{SELECTOR_SEGMENT}\.(?:{SELECTOR_SEGMENT}|\*))"
+    rf"|steps\.{SELECTOR_SEGMENT}\.(?:{SELECTOR_SEGMENT}|\*)"
+    rf"|sources\.{SELECTOR_SEGMENT}\.{SELECTOR_SEGMENT})"
 )
 STEP_SELECTOR = rf"\$steps\.{SELECTOR_SEGMENT}"
 DATA_SELECTOR_PATTERN = f"^{DATA_SELECTOR}$"
 STEP_SELECTOR_PATTERN = f"^{STEP_SELECTOR}$"
-SELECTOR_PREFIXES: Tuple[str, ...] = ("$inputs.", "$steps.")
+SELECTOR_PREFIXES: Tuple[str, ...] = ("$inputs.", "$steps.", "$sources.")
 
 _SEGMENT = re.compile(SELECTOR_SEGMENT)
 _DATA = re.compile(DATA_SELECTOR)
@@ -84,12 +85,14 @@ class ParsedSelector:
     """Structure of one selector string.
 
     Args:
-        target: ``"input"``, ``"step_output"`` or ``"step"``.
-        name: Workflow input name or step name.
-        output: Step output name (``"*"`` for all outputs); ``None`` otherwise.
+        target: ``"input"``, ``"step_output"``, ``"source_output"`` or
+            ``"step"``.
+        name: Workflow input name, step name or source name.
+        output: Step or source output name (``"*"`` for all outputs of a
+            step); ``None`` otherwise.
     """
 
-    target: Literal["input", "step_output", "step"]
+    target: Literal["input", "step_output", "source_output", "step"]
     name: str
     output: Optional[str] = None
 
@@ -99,7 +102,8 @@ def parse_selector(text: Any) -> ParsedSelector:
 
     Args:
         text: ``$inputs.<name>``, ``$steps.<step>.<output>``,
-            ``$steps.<step>.*`` or ``$steps.<step>``.
+            ``$steps.<step>.*``, ``$sources.<source>.<output>`` or
+            ``$steps.<step>``.
 
     Returns:
         The parsed selector.
@@ -112,6 +116,11 @@ def parse_selector(text: Any) -> ParsedSelector:
         if parts[0] == "inputs":
             parsed = ParsedSelector(target="input", name=parts[1])
             return parsed
+        if parts[0] == "sources":
+            parsed = ParsedSelector(
+                target="source_output", name=parts[1], output=parts[2]
+            )
+            return parsed
 
         parsed = ParsedSelector(target="step_output", name=parts[1], output=parts[2])
         return parsed
@@ -122,7 +131,8 @@ def parse_selector(text: Any) -> ParsedSelector:
 
     raise SelectorError(
         f"Malformed selector {text!r}. Use $inputs.<name>, $steps.<step>.<output>, "
-        "$steps.<step>.* or, for control targets, $steps.<step>."
+        "$steps.<step>.*, $sources.<source>.<output> or, for control targets, "
+        "$steps.<step>."
     )
 
 

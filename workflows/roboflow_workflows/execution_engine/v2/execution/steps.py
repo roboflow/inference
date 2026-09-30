@@ -79,7 +79,9 @@ from roboflow_workflows.execution_engine.v2.plan import (
     InputPort,
     PlannedOutput,
     PlannedStep,
+    PulseKey,
     Source,
+    SourcePort,
     resolve_futures,
 )
 
@@ -88,15 +90,23 @@ from roboflow_workflows.execution_engine.v2.plan import (
 class RunState:
     """Mutable state of one run: entries by source, decisions and trace.
 
+    A passive run holds the workflow inputs; a pulse of an active run holds
+    the static inputs and the emitted source ports of that pulse.
+
     Args:
         session: Session whose block instances run.
-        run_id: Identity of the run.
+        run_id: Identity of the run; for a pulse, ``PulseKey.run_id``.
         inputs: Workflow input entries by name.
+        pulse: Identity of the pulse; ``None`` for a passive run.
+        ports: Entries of every declared port of the pulse's source, the
+            omitted ones terminally absent; empty for a passive run.
     """
 
     session: ExecutionSession
     run_id: str
     inputs: Dict[str, Entry]
+    pulse: Optional[PulseKey] = None
+    ports: Dict[SourcePort, Entry] = field(default_factory=dict)
     outputs: Dict[Tuple[StepPath, str], Entry] = field(default_factory=dict)
     decisions: Dict[StepPath, Entry] = field(default_factory=dict)
     constants: Dict[int, Tuple[Constant, Entry]] = field(default_factory=dict)
@@ -120,15 +130,24 @@ class RunState:
         ``_child_output_entry``.
 
         Args:
-            source: Input port, step port, constant or child input port.
+            source: Input port, source port, step port, constant or child
+                boundary port.
 
         Returns:
             The entry holding the source's value.
 
         Raises:
-            ContractError: For a wildcard port, which has no single entry.
+            ContractError: For a wildcard port, which has no single entry,
+                or a source port read outside a pulse of its source.
             WorkflowInputError: When a nested workflow input rejects its value.
         """
+        if isinstance(source, SourcePort):
+            if source not in self.ports:
+                raise ContractError(
+                    f"{source.describe()} is read outside a pulse of "
+                    f"$sources.{source.source}; active plans run with start()"
+                )
+            return self.ports[source]
         if isinstance(source, Constant):
             if id(source) not in self.constants:
                 value = copy.deepcopy(source.value)

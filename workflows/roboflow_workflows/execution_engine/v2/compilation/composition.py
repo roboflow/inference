@@ -68,6 +68,7 @@ from roboflow_workflows.execution_engine.v2.plan import (
     Constant,
     InputPort,
     Source,
+    SourcePort,
     StepPort,
 )
 
@@ -221,6 +222,16 @@ class Scope:
                 visiting=visiting,
             )
             return resolution
+        if parsed.target == "source_output":
+            port = self._resolve_source(
+                parsed.name,
+                output=parsed.output,
+                selector=selector,
+                location=location,
+                step_path=step_path,
+                field_path=field_path,
+            )
+            return Resolution(origin=port)
 
         step = self._find_step(
             parsed.name,
@@ -370,6 +381,37 @@ class Scope:
         resolution = outer.then(hop)
 
         return resolution
+
+    def _resolve_source(
+        self,
+        name: str,
+        *,
+        output: str,
+        selector: str,
+        location: str,
+        step_path: StepPath,
+        field_path: FieldPath,
+    ) -> SourcePort:
+        # Sources belong to the root workflow; a child reads their values
+        # through its parameter_bindings like any other parent value.
+        if self.parent is not None:
+            raise SelectorError(
+                f"{location} references {selector!r} inside nested workflow "
+                f"{format_step_path(self.path)}; sources are addressed from the root "
+                "workflow, so bind the value through parameter_bindings",
+                step_path=step_path,
+                field_path=field_path,
+            )
+        declared = [source.name for source in self.workflow.sources]
+        if name not in declared:
+            raise SelectorError(
+                f"{location} references unknown source {name!r} via {selector!r}; "
+                f"sources here: {declared}",
+                step_path=step_path,
+                field_path=field_path,
+            )
+
+        return SourcePort(source=name, output=output)
 
     def _constant(self, name: str, value: Any) -> Constant:
         # One Constant per child input: every resolution through this input
@@ -543,6 +585,19 @@ class _Composer:
         if not declaration.steps:
             raise NestedWorkflowError(
                 f"{where}: nested workflow has no steps", step_path=path
+            )
+        if declaration.sources:
+            raise NestedWorkflowError(
+                f"{where}: nested workflow declares sources "
+                f"{[source.name for source in declaration.sources]}; only the root "
+                "workflow declares sources",
+                step_path=path,
+            )
+        if declaration.output_groups:
+            raise NestedWorkflowError(
+                f"{where}: nested workflow declares output groups; a nested "
+                "workflow exposes flat JsonField outputs to its parent",
+                step_path=path,
             )
         _check_bindings(step, declaration=declaration, path=path)
 

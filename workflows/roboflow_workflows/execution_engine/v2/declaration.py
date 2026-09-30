@@ -589,55 +589,13 @@ class BlockSpec:
             SelectorError: When a selector-capable position holds a string
                 that starts like a selector but is malformed.
         """
-        values = {
-            key: value for key, value in raw.items() if key not in RESERVED_PARAM_NAMES
-        }
-        try:
-            params = self._validator.validate_definition(values)
-        except ValidationError as error:
-            located = clean_errors(error, values)
-            details = "; ".join(
-                f"{'.'.join(str(part) for part in path)}: {message}"
-                for path, message in located
-            )
-            raise ParamsValidationError(
-                f"{format_step_path(step_path)} ({self.type}) has invalid "
-                f"parameters: {details}",
-                step_path=step_path,
-                field_path=located[0][0] if located else (),
-            ) from error
-        except TypeError as error:
-            raise ParamsValidationError(
-                f"{format_step_path(step_path)} ({self.type}) declares a constraint "
-                f"that cannot apply to the given literal: {error}",
-                step_path=step_path,
-            ) from error
-        except Exception as error:
-            raise ParamsValidationError(
-                f"{format_step_path(step_path)} ({self.type}) parameter validation "
-                f"raised {type(error).__name__}: {error}",
-                step_path=step_path,
-            ) from error
-
-        for position_path, candidate, marker in self._selector_candidates(params):
-            if not isinstance(candidate, str) or not candidate.startswith(
-                SELECTOR_PREFIXES
-            ):
-                continue
-            if marker.matches(candidate):
-                continue
-            expected = (
-                "$steps.<step>"
-                if marker.role == "step"
-                else "$inputs.<name> or $steps.<step>.<output>"
-            )
-            raise SelectorError(
-                f"{format_step_path(step_path)} ({self.type}) parameter "
-                f"{'.'.join(str(part) for part in position_path)} holds malformed "
-                f"selector {candidate!r}; expected {expected}",
-                step_path=step_path,
-                field_path=position_path,
-            )
+        params = _validate_declared_params(
+            self._validator,
+            self.fields,
+            raw,
+            owner=f"{format_step_path(step_path)} ({self.type})",
+            step_path=step_path,
+        )
 
         return params
 
@@ -651,16 +609,7 @@ class BlockSpec:
             Selector uses in field order, then list order or dict key order.
             Each keeps the leaf's role, kinds and batch mode.
         """
-        uses = tuple(
-            SelectorUse(
-                field=position_path[0],
-                position=position_path[1:],
-                selector=candidate,
-                marker=marker,
-            )
-            for position_path, candidate, marker in self._selector_candidates(params)
-            if marker.matches(candidate)
-        )
+        uses = _find_selector_uses(self.fields, params)
 
         return uses
 
@@ -834,27 +783,6 @@ class BlockSpec:
 
         return description
 
-    def _selector_candidates(
-        self, params: BlockParams
-    ) -> List[Tuple[FieldPath, Any, SelectorMarker]]:
-        """Values at declared selector positions, with their field paths."""
-        candidates: List[Tuple[FieldPath, Any, SelectorMarker]] = []
-        for name, field_spec in self.fields.items():
-            value = getattr(params, name)
-            if field_spec.whole is not None and isinstance(value, str):
-                candidates.append(((name,), value, field_spec.whole))
-                continue
-            if field_spec.leaves is None:
-                continue
-            candidates.extend(
-                ((name, position), leaf, field_spec.leaves)
-                for position, leaf in _container_items(
-                    value, container=field_spec.container
-                )
-            )
-
-        return candidates
-
     def _discover(
         self, hook_name: str, params: BlockParams, *, node_id: str, domain: str
     ) -> Discovery:
@@ -885,6 +813,111 @@ def _container_items(value: Any, *, container: Optional[str]) -> List[Tuple[Any,
         return items
 
     return []
+
+
+def _validate_declared_params(
+    validator: ParamsValidator,
+    fields: Mapping[str, FieldSpec],
+    raw: Mapping[str, Any],
+    *,
+    owner: str,
+    step_path: StepPath,
+) -> BlockParams:
+    """Validate a step's or source's parameters as written (shared by both specs).
+
+    ``owner`` is the location text of the error messages, e.g.
+    ``"$steps.scale (demo/scale@v1)"``; ``step_path`` is the structured
+    location the errors carry.
+    """
+    values = {
+        key: value for key, value in raw.items() if key not in RESERVED_PARAM_NAMES
+    }
+    try:
+        params = validator.validate_definition(values)
+    except ValidationError as error:
+        located = clean_errors(error, values)
+        details = "; ".join(
+            f"{'.'.join(str(part) for part in path)}: {message}"
+            for path, message in located
+        )
+        raise ParamsValidationError(
+            f"{owner} has invalid parameters: {details}",
+            step_path=step_path,
+            field_path=located[0][0] if located else (),
+        ) from error
+    except TypeError as error:
+        raise ParamsValidationError(
+            f"{owner} declares a constraint that cannot apply to the given "
+            f"literal: {error}",
+            step_path=step_path,
+        ) from error
+    except Exception as error:
+        raise ParamsValidationError(
+            f"{owner} parameter validation raised {type(error).__name__}: {error}",
+            step_path=step_path,
+        ) from error
+
+    for position_path, candidate, marker in _selector_candidates(fields, params):
+        if not isinstance(candidate, str) or not candidate.startswith(
+            SELECTOR_PREFIXES
+        ):
+            continue
+        if marker.matches(candidate):
+            continue
+        expected = (
+            "$steps.<step>"
+            if marker.role == "step"
+            else "$inputs.<name>, $steps.<step>.<output> or "
+            "$sources.<source>.<output>"
+        )
+        raise SelectorError(
+            f"{owner} parameter {'.'.join(str(part) for part in position_path)} "
+            f"holds malformed selector {candidate!r}; expected {expected}",
+            step_path=step_path,
+            field_path=position_path,
+        )
+
+    return params
+
+
+def _find_selector_uses(
+    fields: Mapping[str, FieldSpec], params: BlockParams
+) -> Tuple[SelectorUse, ...]:
+    """Every selector at a declared position of validated params, in field order."""
+    uses = tuple(
+        SelectorUse(
+            field=position_path[0],
+            position=position_path[1:],
+            selector=candidate,
+            marker=marker,
+        )
+        for position_path, candidate, marker in _selector_candidates(fields, params)
+        if marker.matches(candidate)
+    )
+
+    return uses
+
+
+def _selector_candidates(
+    fields: Mapping[str, FieldSpec], params: BlockParams
+) -> List[Tuple[FieldPath, Any, SelectorMarker]]:
+    """Values at declared selector positions, with their field paths."""
+    candidates: List[Tuple[FieldPath, Any, SelectorMarker]] = []
+    for name, field_spec in fields.items():
+        value = getattr(params, name)
+        if field_spec.whole is not None and isinstance(value, str):
+            candidates.append(((name,), value, field_spec.whole))
+            continue
+        if field_spec.leaves is None:
+            continue
+        candidates.extend(
+            ((name, position), leaf, field_spec.leaves)
+            for position, leaf in _container_items(
+                value, container=field_spec.container
+            )
+        )
+
+    return candidates
 
 
 class Block:
@@ -1365,7 +1398,14 @@ def _validate_run_signature(
     if run is Block.run:
         raise fail("does not implement run()")
 
-    parameters = list(inspect.signature(run).parameters.values())[1:]
+    _validate_keyword_signature(run, name="run", fields=fields, fail=fail)
+
+
+def _validate_keyword_signature(
+    method: Any, *, name: str, fields: Mapping[str, FieldSpec], fail
+) -> None:
+    """Check that ``method`` takes every ``Params`` field as a keyword argument."""
+    parameters = list(inspect.signature(method).parameters.values())[1:]
     accepts_any_keyword = False
     accepted_names = set()
     for parameter in parameters:
@@ -1377,7 +1417,7 @@ def _validate_run_signature(
             inspect.Parameter.POSITIONAL_ONLY,
         ):
             raise fail(
-                f"run() parameter {parameter.name!r} must be passable by keyword"
+                f"{name}() parameter {parameter.name!r} must be passable by keyword"
             )
         accepted_names.add(parameter.name)
         if (
@@ -1385,12 +1425,12 @@ def _validate_run_signature(
             and parameter.default is inspect.Parameter.empty
         ):
             raise fail(
-                f"run() requires {parameter.name!r}, which is not a Params field"
+                f"{name}() requires {parameter.name!r}, which is not a Params field"
             )
 
-    missing = [name for name in fields if name not in accepted_names]
+    missing = [field_name for field_name in fields if field_name not in accepted_names]
     if missing and not accepts_any_keyword:
-        raise fail(f"run() does not accept Params field(s) {missing}")
+        raise fail(f"{name}() does not accept Params field(s) {missing}")
 
 
 def _collect_kinds(

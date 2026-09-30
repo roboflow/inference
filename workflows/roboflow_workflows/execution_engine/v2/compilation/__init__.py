@@ -1,14 +1,18 @@
 """Compiler of the V2 execution engine.
 
 ``compile_workflow`` turns a ``version: "2.0"`` definition into a validated,
-inspectable ``CompiledWorkflow``. It never constructs blocks, calls resource
-providers or executes submitted Python::
+inspectable ``CompiledWorkflow``. It never constructs blocks or sources, calls
+resource providers or executes submitted Python::
 
-    definition ──▶ definition.parse_workflow     structure, inputs → layouts
+    definition ──▶ definition.parse_workflow     structure, inputs → layouts,
+                                                 sources, output groups
                ──▶ composition.compose_workflow  nested scopes, saved references,
                                                  limits, dynamic definitions
                ──▶ dynamic_blocks.build_dynamic_catalogue   (only when defined)
+               ──▶ sources.plan_sources          source params, static bindings,
+                                                 scoped port layouts
                ──▶ compiler.compile_composition  bindings, order, layouts, gates,
+                                                 causal domains, groups,
                                                  mutation analysis
                ──▶ CompiledWorkflow
 

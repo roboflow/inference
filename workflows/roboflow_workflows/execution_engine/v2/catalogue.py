@@ -1,9 +1,13 @@
-"""Explicit, immutable collection of V2 block classes and kinds.
+"""Explicit, immutable collection of V2 block classes, source classes and kinds.
 
 A catalogue only collects classes; every contract detail comes from the class
-itself (see ``declaration``)::
+itself (see ``declaration`` and ``sources``)::
 
-    catalogue = Catalogue([Scale, Crop], namespace="demo")
+    catalogue = Catalogue([Scale, Crop], sources=[CsvTemperature], namespace="demo")
+
+Blocks and sources are separate registries: a ``steps`` entry names a block
+type, a ``sources`` entry names a source type, and the two may spell the same
+identity without conflict.
 
 Catalogues are immutable. ``Catalogue.merge`` and ``with_blocks`` return new
 catalogues, so a compiled plan can keep the catalogue it was compiled with.
@@ -24,13 +28,14 @@ it and survives later registration of the placeholder.
 import importlib
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from roboflow_workflows.execution_engine.v2.declaration import BlockSpec, spec_of
 from roboflow_workflows.execution_engine.v2.errors import CatalogueError, ContractError
 from roboflow_workflows.execution_engine.v2.kinds import WILDCARD_KIND, Kind
+from roboflow_workflows.execution_engine.v2.sources import SourceSpec, spec_of_source
 
 V2_ENGINE_VERSION = "2.0.0"
 CATALOGUE_ATTRIBUTE = "WORKFLOWS_V2_CATALOGUE"
@@ -55,32 +60,57 @@ class CatalogueEntry:
         return description
 
 
+@dataclass(frozen=True)
+class SourceEntry:
+    """A registered source class and the namespace that registered it.
+
+    Args:
+        spec: The class's validated declaration.
+        namespace: Catalogue namespace; scopes resource providers and keys.
+    """
+
+    spec: SourceSpec
+    namespace: str
+
+    def describe(self) -> Dict[str, Any]:
+        """Return the source description including its namespace."""
+        description = {"namespace": self.namespace, **self.spec.describe()}
+
+        return description
+
+
 class Catalogue:
-    """Immutable set of block classes, kinds and resource providers.
+    """Immutable set of block classes, source classes, kinds and providers.
 
     Args:
         blocks: Concrete ``Block`` subclasses.
+        sources: Concrete ``Source`` subclasses.
         kinds: Additional kinds, e.g. for workflow inputs no block references.
-        namespace: Namespace of these blocks, used for resource keys.
-        providers: Resource providers for blocks of this namespace, by
-            constructor parameter name. Wrap lazily created values in
-            ``Factory``.
+        namespace: Namespace of these blocks and sources, used for resource
+            keys.
+        providers: Resource providers for blocks and sources of this
+            namespace, by constructor parameter name. Wrap lazily created
+            values in ``Factory``.
 
     Raises:
-        CatalogueError: On a non-block class, duplicate identities, conflicting
-            kinds or an incompatible block.
+        CatalogueError: On a class that is neither a concrete block nor a
+            concrete source, duplicate identities, conflicting kinds or an
+            incompatible declaration.
     """
 
     def __init__(
         self,
         blocks: Iterable[type] = (),
         *,
+        sources: Iterable[type] = (),
         kinds: Iterable[Kind] = (),
         namespace: str = "",
         providers: Optional[Mapping[str, Any]] = None,
     ):
         self._entries: Dict[str, CatalogueEntry] = {}
         self._identities: Dict[str, str] = {}
+        self._source_entries: Dict[str, SourceEntry] = {}
+        self._source_identities: Dict[str, str] = {}
         self._kinds: Dict[str, Kind] = {}
         self._providers: Dict[str, Dict[str, Any]] = {}
 
@@ -100,6 +130,14 @@ class Catalogue:
                     f"Cannot register {block_class!r}: {error}"
                 ) from error
             self._add_entry(CatalogueEntry(spec=spec, namespace=namespace))
+        for source_class in sources:
+            try:
+                source_spec = spec_of_source(source_class)
+            except ContractError as error:
+                raise CatalogueError(
+                    f"Cannot register {source_class!r}: {error}"
+                ) from error
+            self._add_source(SourceEntry(spec=source_spec, namespace=namespace))
         for name, value in (providers or {}).items():
             self._add_provider(namespace, name=name, value=value)
 
@@ -114,7 +152,7 @@ class Catalogue:
             *catalogues: Catalogues to combine.
 
         Returns:
-            A new catalogue containing every entry, kind and provider.
+            A new catalogue containing every block, source, kind and provider.
 
         Raises:
             CatalogueError: On conflicting identities, kinds or providers.
@@ -129,6 +167,8 @@ class Catalogue:
                 merged._add_kind(kind)
             for entry in catalogue._entries.values():
                 merged._add_entry(entry)
+            for source_entry in catalogue._source_entries.values():
+                merged._add_source(source_entry)
             for namespace, values in catalogue._providers.items():
                 for name, value in values.items():
                     merged._add_provider(namespace, name=name, value=value)
@@ -201,6 +241,11 @@ class Catalogue:
         return tuple(self._entries)
 
     @property
+    def source_types(self) -> Tuple[str, ...]:
+        """Canonical source types in registration order."""
+        return tuple(self._source_entries)
+
+    @property
     def kinds(self) -> Mapping[str, Kind]:
         """Kinds by name, including the wildcard."""
         return MappingProxyType(self._kinds)
@@ -250,6 +295,42 @@ class Catalogue:
 
         return found
 
+    def find_source(self, identity: str) -> Optional[SourceEntry]:
+        """Look up a source by canonical type or alias.
+
+        Args:
+            identity: Type or alias used by a ``sources`` declaration.
+
+        Returns:
+            The entry, or ``None`` when unknown.
+        """
+        canonical = self._source_identities.get(identity)
+        if canonical is None:
+            return None
+
+        return self._source_entries[canonical]
+
+    def source_entry(self, identity: str) -> SourceEntry:
+        """Look up a source by canonical type or alias.
+
+        Args:
+            identity: Type or alias used by a ``sources`` declaration.
+
+        Returns:
+            The entry.
+
+        Raises:
+            CatalogueError: When the identity is unknown.
+        """
+        found = self.find_source(identity)
+        if found is None:
+            raise CatalogueError(
+                f"Unknown source type {identity!r}; known source types: "
+                f"{sorted(self._source_identities)}"
+            )
+
+        return found
+
     def kind(self, name: str) -> Kind:
         """Look up a kind by name.
 
@@ -278,6 +359,7 @@ class Catalogue:
         description = {
             "engine_version": V2_ENGINE_VERSION,
             "blocks": [entry.describe() for entry in self._entries.values()],
+            "sources": [entry.describe() for entry in self._source_entries.values()],
             "kinds": [_describe_kind(kind) for kind in self._kinds.values()],
         }
 
@@ -290,7 +372,10 @@ class Catalogue:
         return len(self._entries)
 
     def __repr__(self) -> str:
-        return f"Catalogue(blocks={list(self._entries)})"
+        return (
+            f"Catalogue(blocks={list(self._entries)}, "
+            f"sources={list(self._source_entries)})"
+        )
 
     def _add_entry(self, entry: CatalogueEntry) -> None:
         spec = entry.spec
@@ -317,6 +402,32 @@ class Catalogue:
         self._entries[spec.type] = entry
         for identity in spec.identities:
             self._identities[identity] = spec.type
+
+    def _add_source(self, entry: SourceEntry) -> None:
+        spec = entry.spec
+        existing = self._source_entries.get(spec.type)
+        if (
+            existing is not None
+            and existing.spec.source_class is spec.source_class
+            and existing.namespace == entry.namespace
+        ):
+            return
+
+        _require_compatible(spec)
+        for identity in spec.identities:
+            owner = self._source_identities.get(identity)
+            if owner is not None:
+                other_class = self._source_entries[owner].spec.source_class
+                raise CatalogueError(
+                    f"Source identity {identity!r} of {spec.source_class.__qualname__} "
+                    f"is already registered by {other_class.__qualname__}"
+                )
+        for kind in spec.kinds:
+            self._add_kind(kind)
+
+        self._source_entries[spec.type] = entry
+        for identity in spec.identities:
+            self._source_identities[identity] = spec.type
 
     def _add_kind(self, kind: Kind) -> None:
         if not isinstance(kind, Kind):
@@ -346,7 +457,7 @@ class Catalogue:
         values[name] = value
 
 
-def _require_compatible(spec: BlockSpec) -> None:
+def _require_compatible(spec: Union[BlockSpec, SourceSpec]) -> None:
     if spec.engine_compatibility is None:
         return
 

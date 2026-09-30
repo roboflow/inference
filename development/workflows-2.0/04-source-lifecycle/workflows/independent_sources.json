@@ -1,0 +1,53 @@
+{
+  "version": "2.0",
+  "inputs": [{"type": "WorkflowParameter", "name": "csv_path", "kind": ["string"]}],
+  "sources": [
+    {"type": "source_demo/tensor_frames", "name": "camera"},
+    {"type": "source_demo/csv_temperature", "name": "temperature", "path": "$inputs.csv_path"}
+  ],
+  "steps": [
+    {"type": "source_demo/celsius_to_fahrenheit", "name": "convert", "celsius": "$sources.temperature.celsius"},
+    {"type": "source_demo/record_temperature", "name": "audit", "fahrenheit": "$steps.convert.fahrenheit"},
+    {"type": "source_demo/is_bright", "name": "bright", "image": "$sources.camera.image"},
+    {"type": "v2/continue_if", "name": "condition", "condition": "$steps.bright.keep", "next_steps": ["$steps.child"]},
+    {
+      "type": "roboflow_core/inner_workflow@v1", "name": "child",
+      "parameter_bindings": {"image": "$sources.camera.image"},
+      "workflow_definition": {
+        "version": "2.0",
+        "inputs": [{"name": "image", "kind": ["image"], "axes": []}],
+        "steps": [
+          {"type": "v2/resize", "name": "resize", "image": "$inputs.image", "height": 6, "width": 8, "interpolation": "nearest"}
+        ],
+        "outputs": [
+          {"type": "JsonField", "name": "resized", "selector": "$steps.resize.image"},
+          {"type": "JsonField", "name": "forwarded", "selector": "$inputs.image"}
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "type": "OutputGroup", "name": "frames", "anchor": "$sources.camera.image",
+      "outputs": [
+        {"type": "JsonField", "name": "original", "selector": "$sources.camera.image"},
+        {"type": "JsonField", "name": "resized", "selector": "$steps.child.resized"},
+        {"type": "JsonField", "name": "forwarded", "selector": "$steps.child.forwarded"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "temperatures", "anchor": "$sources.temperature.celsius",
+      "outputs": [
+        {"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.fahrenheit"},
+        {"type": "JsonField", "name": "count", "selector": "$steps.convert.count"}
+      ]
+    },
+    {
+      "type": "OutputGroup", "name": "temperature_audit", "anchor": "$sources.temperature.celsius",
+      "outputs": [
+        {"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.fahrenheit"},
+        {"type": "JsonField", "name": "count", "selector": "$steps.convert.count"}
+      ]
+    }
+  ]
+}

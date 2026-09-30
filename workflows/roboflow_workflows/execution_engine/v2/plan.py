@@ -50,6 +50,15 @@ additionally lets callers defer output future resolution
 (``resolve_output_futures=False``). That option is deliberately not offered
 here; it is a disclosed boundary difference pending human review.
 
+Active plans: a definition with ``sources`` compiles to the same one plan with
+``PlannedSource`` records, ``PlannedOutputGroup`` records and a causal
+``domain`` on every step: the source whose pulses trigger it, or ``None`` for a
+static step. ``route(source)`` lists the steps one pulse of that source runs
+(its own domain plus every static step, in plan order); ``groups_of(source)``
+lists the groups anchored on it. No step or group joins two sources until an
+alignment operator exists. ``ExecutionSession.start`` drives such a plan; it
+delegates to ``roboflow_workflows.execution_engine.v2.active.runtime``.
+
 The executor, not this module, implements execution and row construction.
 ``run`` and ``rows`` delegate to ``roboflow_workflows.execution_engine.v2.execution``.
 """
@@ -59,7 +68,18 @@ import uuid
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from roboflow_workflows.execution_engine.v2.catalogue import Catalogue
 from roboflow_workflows.execution_engine.v2.context import (
@@ -67,6 +87,7 @@ from roboflow_workflows.execution_engine.v2.context import (
     use_execution_context,
 )
 from roboflow_workflows.execution_engine.v2.data import (
+    Axis,
     Batch,
     EntryLayout,
     Index,
@@ -79,20 +100,29 @@ from roboflow_workflows.execution_engine.v2.declaration import (
     ContextPolicy,
     OutputTransform,
     is_selector_segment,
+    parse_selector,
 )
 from roboflow_workflows.execution_engine.v2.errors import (
     ContractError,
     ResourceError,
     StepExecutionError,
     StepPath,
+    WorkflowInputError,
     format_step_path,
 )
+from roboflow_workflows.execution_engine.v2.kinds import kinds_compatible
 from roboflow_workflows.execution_engine.v2.resources import (
     ResolvedResource,
     ResourceResolver,
 )
+from roboflow_workflows.execution_engine.v2.sources import (
+    SourceParams,
+    SourceSpec,
+    source_step_path,
+)
 
 EXECUTION_MODULE = "roboflow_workflows.execution_engine.v2.execution"
+ACTIVE_RUNTIME_MODULE = "roboflow_workflows.execution_engine.v2.active.runtime"
 
 BindingMode = Literal["element", "ancestor", "constant", "group", "constant_group"]
 BINDING_MODES: Tuple[str, ...] = (
@@ -203,7 +233,26 @@ class ChildOutputPort:
         return f"{format_step_path(self.scope)}.{self.name}"
 
 
-Source = Union[InputPort, StepPort, Constant, ChildInputPort, ChildOutputPort]
+@dataclass(frozen=True)
+class SourcePort:
+    """One port of a declared source, as consumers and groups address it.
+
+    Args:
+        source: Declared source name.
+        output: Port name declared by the source class.
+    """
+
+    source: str
+    output: str
+
+    def describe(self) -> str:
+        """Return the selector text of this port, e.g. ``$sources.camera.image``."""
+        return f"$sources.{self.source}.{self.output}"
+
+
+Source = Union[
+    InputPort, StepPort, Constant, ChildInputPort, ChildOutputPort, SourcePort
+]
 BoundaryPort = Union[ChildInputPort, ChildOutputPort]
 
 
@@ -268,14 +317,16 @@ class AxisOrigin:
     """Where an axis identity comes from.
 
     Args:
-        kind: ``input`` (a workflow input's axis), ``expand`` (created by an
-            expanding step output) or ``cast`` (created by a scalar cast into
-            a one-element group).
-        name: Input name, output name or parameter name, respectively.
-        step: Producing step for ``expand`` and ``cast``; ``None`` for inputs.
+        kind: ``input`` (a workflow input's axis), ``source`` (a declared
+            source's local axis), ``expand`` (created by an expanding step
+            output) or ``cast`` (created by a scalar cast into a one-element
+            group).
+        name: Input name, source name, output name or parameter name,
+            respectively.
+        step: Producing step for ``expand`` and ``cast``; ``None`` otherwise.
     """
 
-    kind: Literal["input", "expand", "cast"]
+    kind: Literal["input", "source", "expand", "cast"]
     name: str
     step: Optional[StepPath] = None
 
@@ -283,6 +334,8 @@ class AxisOrigin:
         """Return a readable description."""
         if self.kind == "input":
             return f"$inputs.{self.name}"
+        if self.kind == "source":
+            return f"$sources.{self.name}"
         if self.kind == "expand":
             return f"{format_step_path(self.step)}.{self.name}"
 
@@ -527,6 +580,10 @@ class PlannedStep:
             sees it) to every step it governs; a nested workflow target maps
             to all of that workflow's steps.
         dependencies: Paths of steps this step depends on (data and control).
+        domain: Name of the source whose pulses trigger this step, reached
+            through its data, gates or nested boundaries; ``None`` for a
+            static step, which runs once per admitted pulse of every source.
+            Always ``None`` in a plan without sources.
 
     Raises:
         ContractError: When names, bindings, outputs or control data
@@ -545,6 +602,7 @@ class PlannedStep:
         default_factory=lambda: MappingProxyType({})
     )
     dependencies: Tuple[StepPath, ...] = ()
+    domain: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.path or not all(is_selector_segment(part) for part in self.path):
@@ -638,6 +696,7 @@ class PlannedStep:
                 name: output.describe() for name, output in self.outputs.items()
             },
             "dependencies": [format_step_path(path) for path in self.dependencies],
+            "domain": self.domain,
             "accepts_empty": self.spec.accepts_empty,
             "mutates": list(self.spec.mutates),
         }
@@ -815,6 +874,218 @@ class PlannedWorkflowOutput:
 
 
 @dataclass(frozen=True)
+class PlannedSourceOutput:
+    """Compiled declaration of one source port.
+
+    Args:
+        name: Port name.
+        kinds: Declared kind names.
+        layout: Layout of one emission of the port, with the source's local
+            axis ids scoped as ``sources.<source>:<local id>``; empty for one
+            payload per pulse.
+    """
+
+    name: str
+    kinds: Tuple[str, ...]
+    layout: EntryLayout = field(default_factory=EntryLayout)
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {"kinds": list(self.kinds), "axes": list(self.layout.axis_ids)}
+
+        return description
+
+
+@dataclass(frozen=True)
+class PlannedSource:
+    """One declared source of an active plan.
+
+    Args:
+        name: Source name, unique among the plan's sources.
+        spec: Declaration of the source class.
+        namespace: Catalogue namespace of the source, for resource keys.
+        params: Validated parameters; selector positions still hold selectors.
+        bindings: One ``constant`` binding per ``$inputs.<name>`` leaf, read
+            from an ungrouped input before the source opens.
+        outputs: Compiled ports by name.
+
+    Raises:
+        ContractError: When the name is not a selector segment or a binding
+            is not a constant read of a workflow input.
+    """
+
+    name: str
+    spec: SourceSpec
+    namespace: str
+    params: SourceParams
+    bindings: Tuple[Binding, ...]
+    outputs: Mapping[str, PlannedSourceOutput]
+
+    def __post_init__(self) -> None:
+        if not is_selector_segment(self.name):
+            raise ContractError(
+                f"Source name must use letters, digits, _ or -, got {self.name!r}"
+            )
+        object.__setattr__(self, "bindings", tuple(self.bindings))
+        object.__setattr__(self, "outputs", MappingProxyType(dict(self.outputs)))
+        for binding in self.bindings:
+            if binding.mode != "constant" or not isinstance(binding.source, InputPort):
+                raise ContractError(
+                    f"$sources.{self.name}: binding {binding.field_path!r} must read "
+                    f"an ungrouped workflow input, got {binding.mode!r} of "
+                    f"{_describe_source(binding.source)}"
+                )
+
+    @property
+    def step_path(self) -> StepPath:
+        """Structured location ``("$sources", name)`` used by errors and contexts."""
+        return source_step_path(self.name)
+
+    def port(self, output: str) -> SourcePort:
+        """Return the port consumers use to address one output.
+
+        Args:
+            output: Port name.
+
+        Returns:
+            The port.
+
+        Raises:
+            ContractError: When the source declares no such port.
+        """
+        if output not in self.outputs:
+            raise ContractError(
+                f"$sources.{self.name} has no output {output!r}; its outputs are "
+                f"{list(self.outputs)}"
+            )
+
+        return SourcePort(source=self.name, output=output)
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {
+            "type": self.spec.type,
+            "namespace": self.namespace,
+            "bindings": [binding.describe() for binding in self.bindings],
+            "outputs": {
+                name: output.describe() for name, output in self.outputs.items()
+            },
+        }
+
+        return description
+
+
+@dataclass(frozen=True)
+class PlannedOutputGroup:
+    """A named output group delivered once per pulse of its anchor's source.
+
+    Args:
+        name: Group name; the host registers a handler under it.
+        anchor: Source port whose emission defines the group's pulse. The
+            group is delivered when that port is present in the emission, or
+            as a fully filtered outcome for an explicitly filtered emission.
+        outputs: The selected fields, each in the anchor source's domain or
+            static.
+        dependencies: Steps that must have run before every field is
+            terminal, in plan order: each field's producing step and the
+            controllers gating a forwarded child output. Fields read from
+            source ports, inputs or constants need no step. The runtime
+            delivers the group as soon as these steps completed; earlier
+            steps a producer itself depends on precede it in plan order.
+    """
+
+    name: str
+    anchor: SourcePort
+    outputs: Tuple[PlannedWorkflowOutput, ...]
+    dependencies: Tuple[StepPath, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not is_selector_segment(self.name):
+            raise ContractError(
+                f"Output group name must use letters, digits, _ or -, got {self.name!r}"
+            )
+        if not isinstance(self.anchor, SourcePort):
+            raise ContractError(
+                f"Output group {self.name!r} must be anchored on a source port, got "
+                f"{_describe_source(self.anchor)}"
+            )
+        object.__setattr__(self, "outputs", tuple(self.outputs))
+        names = [output.name for output in self.outputs]
+        if len(names) != len(set(names)):
+            raise ContractError(
+                f"Output group {self.name!r} repeats field names {names}"
+            )
+        object.__setattr__(
+            self, "dependencies", tuple(tuple(path) for path in self.dependencies)
+        )
+
+    @property
+    def source(self) -> str:
+        """Name of the anchor's source."""
+        return self.anchor.source
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {
+            "anchor": self.anchor.describe(),
+            "outputs": {output.name: output.describe() for output in self.outputs},
+            "dependencies": [format_step_path(path) for path in self.dependencies],
+        }
+
+        return description
+
+
+@dataclass(frozen=True)
+class PulseKey:
+    """Identity of one emission of one source within one active run.
+
+    Args:
+        active_run_id: Identity of the active run (one ``start`` call).
+        source: Declared source name.
+        sequence: Emission number of that source in that run, from 0.
+
+    Raises:
+        ContractError: On an empty run id or source name, or a negative
+            sequence.
+    """
+
+    active_run_id: str
+    source: str
+    sequence: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("active_run_id", self.active_run_id),
+            ("source", self.source),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ContractError(f"PulseKey {label} must be a non-empty string")
+        if (
+            isinstance(self.sequence, bool)
+            or not isinstance(self.sequence, int)
+            or self.sequence < 0
+        ):
+            raise ContractError(
+                f"PulseKey sequence must be a non-negative int, got {self.sequence!r}"
+            )
+
+    @property
+    def lineage_id(self) -> str:
+        """Lineage carried by the pulse's buffers: ``run:<run>/source:<name>``."""
+        return f"run:{self.active_run_id}/source:{self.source}"
+
+    @property
+    def pulse_id(self) -> int:
+        """Pulse number within the lineage (the sequence)."""
+        return self.sequence
+
+    @property
+    def run_id(self) -> str:
+        """Unique per-pulse invocation identity, ``<run>:<source>:<sequence>``."""
+        return f"{self.active_run_id}:{self.source}:{self.sequence}"
+
+
+@dataclass(frozen=True)
 class CompileOptions:
     """Caller choices that affect compilation.
 
@@ -861,14 +1132,22 @@ class CompiledWorkflow:
         child_inputs: Nested workflow inputs used by the plan.
         child_outputs: Gated nested workflow outputs that do not come from a
             child step (decision 026).
+        sources: Declared sources by name, in declaration order. A plan with
+            sources is active: it has ``output_groups`` instead of flat
+            ``outputs``, every input is ungrouped, and it runs through
+            ``ExecutionSession.start``.
+        output_groups: Output groups of an active plan, in declaration order.
 
     Raises:
         ContractError: On duplicate step paths or child inputs, references to
-            steps, outputs, inputs, child inputs or controllers that do not
-            exist earlier in the plan, a binding or child input whose declared
-            layout differs from its source's layout, cyclic child boundaries,
-            child output gates that do not govern the child, or an expanded
-            axis identity claimed by two producers.
+            steps, outputs, inputs, child inputs, source ports or controllers
+            that do not exist earlier in the plan, a binding or child input
+            whose declared layout differs from its source's layout, cyclic
+            child boundaries, child output gates that do not govern the
+            child, an expanded axis identity claimed by two producers, flat
+            outputs or grouped inputs beside sources, a step whose recorded
+            domain differs from its derived one, or a step, gate or group
+            joining two sources.
     """
 
     inputs: Mapping[str, PlannedInput]
@@ -879,6 +1158,10 @@ class CompiledWorkflow:
     warnings: Tuple[str, ...] = ()
     child_inputs: Tuple[PlannedChildInput, ...] = ()
     child_outputs: Tuple[PlannedChildOutput, ...] = ()
+    sources: Mapping[str, PlannedSource] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    output_groups: Tuple[PlannedOutputGroup, ...] = ()
     _axis_origins: Mapping[str, AxisOrigin] = field(
         init=False, repr=False, compare=False
     )
@@ -890,8 +1173,96 @@ class CompiledWorkflow:
         object.__setattr__(self, "warnings", tuple(self.warnings))
         object.__setattr__(self, "child_inputs", tuple(self.child_inputs))
         object.__setattr__(self, "child_outputs", tuple(self.child_outputs))
+        object.__setattr__(self, "sources", MappingProxyType(dict(self.sources)))
+        object.__setattr__(self, "output_groups", tuple(self.output_groups))
         _check_plan_references(self)
+        _check_active_shape(self)
         object.__setattr__(self, "_axis_origins", _collect_axis_origins(self))
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the plan declares sources and runs through ``start``."""
+        return bool(self.sources)
+
+    def source(self, name: str) -> PlannedSource:
+        """Return the declared source named ``name``.
+
+        Args:
+            name: Source name.
+
+        Returns:
+            The planned source.
+
+        Raises:
+            ContractError: When the plan declares no such source.
+        """
+        if name not in self.sources:
+            raise ContractError(
+                f"Plan has no source {name!r}; declared sources: {list(self.sources)}"
+            )
+
+        return self.sources[name]
+
+    def source_port(self, port: SourcePort) -> PlannedSourceOutput:
+        """Return the compiled port addressed by ``port``.
+
+        Args:
+            port: Source port used by a binding, group or anchor.
+
+        Returns:
+            The planned port.
+
+        Raises:
+            ContractError: When the plan has no such source or port.
+        """
+        planned = self.source(port.source)
+        if port.output not in planned.outputs:
+            raise ContractError(
+                f"{port.describe()}: $sources.{port.source} has no output "
+                f"{port.output!r}; its outputs are {list(planned.outputs)}"
+            )
+
+        return planned.outputs[port.output]
+
+    def route(self, source_name: str) -> Tuple[PlannedStep, ...]:
+        """Return the steps one pulse of ``source_name`` executes, in plan order.
+
+        These are the steps whose domain is the source plus every static
+        step (domain ``None``), which runs once per admitted pulse of every
+        source. Nothing is pruned for output groups.
+
+        Args:
+            source_name: Declared source name.
+
+        Returns:
+            The steps to execute for one pulse.
+
+        Raises:
+            ContractError: When the plan declares no such source.
+        """
+        self.source(source_name)
+        steps = tuple(step for step in self.steps if step.domain in (source_name, None))
+
+        return steps
+
+    def groups_of(self, source_name: str) -> Tuple[PlannedOutputGroup, ...]:
+        """Return the output groups anchored on ``source_name``, in order.
+
+        Args:
+            source_name: Declared source name.
+
+        Returns:
+            The groups delivered from that source's pulses.
+
+        Raises:
+            ContractError: When the plan declares no such source.
+        """
+        self.source(source_name)
+        groups = tuple(
+            group for group in self.output_groups if group.source == source_name
+        )
+
+        return groups
 
     def step(self, path: StepPath) -> PlannedStep:
         """Return the step with the given path.
@@ -1003,8 +1374,12 @@ class CompiledWorkflow:
         """
         description = {
             "inputs": {name: item.describe() for name, item in self.inputs.items()},
+            "sources": {name: item.describe() for name, item in self.sources.items()},
             "steps": [step.describe() for step in self.steps],
             "outputs": {output.name: output.describe() for output in self.outputs},
+            "output_groups": {
+                group.name: group.describe() for group in self.output_groups
+            },
             "child_inputs": [item.describe() for item in self.child_inputs],
             "child_outputs": [item.describe() for item in self.child_outputs],
             "axis_origins": {
@@ -1086,6 +1461,305 @@ def _check_plan_references(plan: CompiledWorkflow) -> None:
             boundaries=boundaries,
             location=f"output {output.name!r}",
         )
+    for group in plan.output_groups:
+        _check_source(
+            group.anchor,
+            layout=None,
+            plan=plan,
+            steps=earlier,
+            boundaries=boundaries,
+            location=f"output group {group.name!r} anchor",
+        )
+        for output in group.outputs:
+            _check_source(
+                output.source,
+                layout=None,
+                plan=plan,
+                steps=earlier,
+                boundaries=boundaries,
+                location=f"output group {group.name!r} field {output.name!r}",
+            )
+
+
+def _check_active_shape(plan: CompiledWorkflow) -> None:
+    """Check the rules of an active plan and every step's recorded domain."""
+    names = [group.name for group in plan.output_groups]
+    if len(names) != len(set(names)):
+        raise ContractError(f"Plan repeats output group names {names}")
+    if not plan.is_active:
+        if plan.output_groups:
+            raise ContractError("Output groups need declared sources")
+        for step in plan.steps:
+            if step.domain is not None:
+                raise ContractError(
+                    f"{format_step_path(step.path)} records domain {step.domain!r}, "
+                    "but the plan declares no sources"
+                )
+        return
+
+    if plan.outputs:
+        raise ContractError(
+            "A plan with sources uses output groups; flat outputs "
+            f"{[output.name for output in plan.outputs]} cannot be delivered per pulse"
+        )
+    grouped = [name for name, item in plan.inputs.items() if item.layout.depth]
+    if grouped:
+        raise ContractError(
+            f"A plan with sources accepts only ungrouped inputs, got {grouped}"
+        )
+    for name, planned_source in plan.sources.items():
+        _check_source_record(name, planned_source, inputs=plan.inputs)
+
+    steps = {step.path: step for step in plan.steps}
+    boundaries = {item.port: item for item in plan.child_inputs + plan.child_outputs}
+    for step in plan.steps:
+        location = format_step_path(step.path)
+        try:
+            derived = derive_domain(
+                [binding.source for binding in step.bindings],
+                controllers=[gate.controller for gate in step.gates],
+                steps=steps,
+                boundaries=boundaries,
+            )
+        except ContractError as error:
+            raise ContractError(f"{location}: {error}") from error
+        if derived != step.domain:
+            raise ContractError(
+                f"{location} records domain {step.domain!r}, but its data, gates "
+                f"and boundaries derive {derived!r}"
+            )
+    for group in plan.output_groups:
+        for output in group.outputs:
+            try:
+                derived = derive_domain(
+                    [output.source], controllers=(), steps=steps, boundaries=boundaries
+                )
+            except ContractError as error:
+                raise ContractError(
+                    f"output group {group.name!r} field {output.name!r}: {error}"
+                ) from error
+            if derived not in (None, group.source):
+                raise ContractError(
+                    f"output group {group.name!r} is anchored on "
+                    f"{group.anchor.describe()}, but field {output.name!r} "
+                    f"({output.selector}) comes from source {derived!r}"
+                )
+        expected = derive_dependencies(
+            [output.source for output in group.outputs],
+            steps=steps,
+            boundaries=boundaries,
+        )
+        if group.dependencies != expected:
+            raise ContractError(
+                f"output group {group.name!r} records dependencies "
+                f"{[format_step_path(path) for path in group.dependencies]}, but its "
+                f"fields need {[format_step_path(path) for path in expected]}"
+            )
+
+
+def _check_source_record(
+    name: str, planned: PlannedSource, *, inputs: Mapping[str, PlannedInput]
+) -> None:
+    """Check a planned source against its declaration and the plan's inputs."""
+    location = f"$sources.{name}"
+    if planned.name != name:
+        raise ContractError(
+            f"{location} is recorded under key {name!r} but names itself "
+            f"{planned.name!r}"
+        )
+
+    expected_bindings = {
+        (use.field, use.position): use
+        for use in planned.spec.find_selectors(planned.params)
+    }
+    recorded = [(binding.field, binding.position) for binding in planned.bindings]
+    if sorted(recorded) != sorted(expected_bindings):
+        raise ContractError(
+            f"{location} records bindings at {sorted(recorded)}, but its parameters "
+            f"select exactly once at {sorted(expected_bindings)}"
+        )
+    for binding in planned.bindings:
+        use = expected_bindings[(binding.field, binding.position)]
+        where = f"{location} parameter {'.'.join(map(str, binding.field_path))}"
+        if binding.selector != use.selector or binding.batch != use.marker.batch:
+            raise ContractError(
+                f"{where} records selector {binding.selector!r}, but the parameters "
+                f"hold {use.selector!r}"
+            )
+        parsed = parse_selector(use.selector)
+        if parsed.target != "input":
+            raise ContractError(
+                f"{where} must select a static workflow input, got {use.selector!r}"
+            )
+        selected = InputPort(name=parsed.name)
+        if binding.source != selected:
+            raise ContractError(
+                f"{where} selects {use.selector!r} but reads "
+                f"{_describe_source(binding.source)}"
+            )
+        planned_input = inputs.get(binding.source.name)
+        if planned_input is None:
+            raise ContractError(
+                f"{where} reads unknown workflow input {binding.source.name!r}"
+            )
+        if planned_input.layout.depth or binding.source_layout.depth:
+            raise ContractError(
+                f"{where} must read an ungrouped input, but $inputs."
+                f"{binding.source.name} has axes {list(planned_input.layout.axis_ids)}"
+            )
+        if not kinds_compatible(planned_input.kinds, use.marker.kind_names):
+            raise ContractError(
+                f"{where} accepts kinds {list(use.marker.kind_names)}, but "
+                f"$inputs.{binding.source.name} provides {list(planned_input.kinds)}"
+            )
+
+    declared = planned.spec.outputs
+    if list(planned.outputs) != list(declared):
+        raise ContractError(
+            f"{location} records outputs {list(planned.outputs)}, but "
+            f"{planned.spec.type} declares {list(declared)}"
+        )
+    for port_name, port in planned.outputs.items():
+        expected = PlannedSourceOutput(
+            name=port_name,
+            kinds=declared[port_name].kind_names,
+            layout=scoped_layout(name, declared[port_name].layout),
+        )
+        if port != expected:
+            raise ContractError(
+                f"{location} output {port_name!r} records {port.describe()}, but the "
+                f"declaration scoped to this source is {expected.describe()}"
+            )
+
+
+def scoped_layout(source_name: str, layout: EntryLayout) -> EntryLayout:
+    """Scope a source-local layout to the plan: ``sources.<name>:<local id>``.
+
+    Args:
+        source_name: Declared source name.
+        layout: Layout as declared by the source class.
+
+    Returns:
+        The same axes with plan-unique ids.
+    """
+    axes = tuple(
+        Axis(
+            id=f"sources.{source_name}:{axis.id}",
+            kind=axis.kind,
+            stationary=axis.stationary,
+        )
+        for axis in layout.axes
+    )
+    scoped = EntryLayout(axes=axes)
+
+    return scoped
+
+
+def derive_dependencies(
+    sources: Iterable[Source],
+    *,
+    steps: Mapping[StepPath, PlannedStep],
+    boundaries: Mapping[BoundaryPort, "Boundary"],
+) -> Tuple[StepPath, ...]:
+    """Derive the steps that must complete before every ``sources`` value is terminal.
+
+    A step output (a wildcard included) needs its producing step; a child
+    input needs whatever its source needs; a gated child output additionally
+    needs every controller of its gates. Inputs, source ports and constants
+    need no step. Steps a producer depends on itself precede it in plan
+    order, so they are not repeated.
+
+    Args:
+        sources: Value sources of the selected fields.
+        steps: Planned steps in plan order, by path.
+        boundaries: Planned child inputs and outputs, by port.
+
+    Returns:
+        The required step paths in plan order, without repetition.
+    """
+    required = set()
+
+    def visit(source: Source) -> None:
+        if isinstance(source, StepPort):
+            required.add(source.step)
+        elif isinstance(source, (ChildInputPort, ChildOutputPort)):
+            boundary = boundaries[source]
+            visit(boundary.source)
+            if isinstance(boundary, PlannedChildOutput):
+                required.update(gate.controller for gate in boundary.gates)
+
+    for source in sources:
+        visit(source)
+    ordered = tuple(path for path in steps if path in required)
+
+    return ordered
+
+
+def derive_domain(
+    sources: Iterable[Source],
+    *,
+    controllers: Iterable[StepPath],
+    steps: Mapping[StepPath, PlannedStep],
+    boundaries: Mapping[BoundaryPort, "Boundary"],
+) -> Optional[str]:
+    """Derive the one source a consumer depends on, or ``None`` for static.
+
+    A source port contributes its source; a workflow input or constant
+    contributes nothing; a step output contributes the producing step's
+    domain; a child input contributes its source's domain; a gated child
+    output contributes its source's domain and its controllers' domains; a
+    controller contributes its own domain.
+
+    Args:
+        sources: Value sources the consumer reads (bindings, an output).
+        controllers: Control steps whose gates govern the consumer.
+        steps: Planned steps that may be referenced, by path.
+        boundaries: Planned child inputs and outputs, by port.
+
+    Returns:
+        The source name, or ``None`` when nothing source-derived is read.
+
+    Raises:
+        ContractError: When two different sources are reached; no alignment
+            between independent sources exists in this engine.
+    """
+    reached: Dict[str, str] = {}
+
+    def visit_step(path: StepPath, *, via: str) -> None:
+        domain = steps[path].domain
+        if domain is not None:
+            reached.setdefault(domain, via)
+
+    def visit(source: Source, *, via: str) -> None:
+        if isinstance(source, SourcePort):
+            reached.setdefault(source.source, via)
+        elif isinstance(source, StepPort):
+            visit_step(source.step, via=via)
+        elif isinstance(source, (ChildInputPort, ChildOutputPort)):
+            boundary = boundaries[source]
+            visit(boundary.source, via=via)
+            if isinstance(boundary, PlannedChildOutput):
+                for gate in boundary.gates:
+                    visit_step(gate.controller, via=via)
+
+    for source in sources:
+        visit(source, via=_describe_source(source))
+    for controller in controllers:
+        visit_step(controller, via=f"gate of {format_step_path(controller)}")
+
+    if len(reached) > 1:
+        described = "; ".join(
+            f"{name!r} via {via}" for name, via in sorted(reached.items())
+        )
+        raise ContractError(
+            f"joins independent sources {sorted(reached)} ({described}); sources "
+            "correspond only through an explicit alignment, never by pulse "
+            "order, timestamps or shape"
+        )
+
+    domain = next(iter(reached), None)
+
+    return domain
 
 
 Boundary = Union[PlannedChildInput, PlannedChildOutput]
@@ -1241,6 +1915,8 @@ def _source_layout(
         if source.name not in plan.inputs:
             raise ContractError(f"unknown workflow input {source.name!r}")
         return plan.inputs[source.name].layout
+    if isinstance(source, SourcePort):
+        return plan.source_port(source).layout
     if isinstance(source, (ChildInputPort, ChildOutputPort)):
         if source not in boundaries:
             raise ContractError(f"unknown {source.describe()}")
@@ -1270,6 +1946,12 @@ def _collect_axis_origins(plan: CompiledWorkflow) -> Mapping[str, AxisOrigin]:
     for item in plan.inputs.values():
         for axis_id in item.layout.axis_ids:
             origins.setdefault(axis_id, AxisOrigin(kind="input", name=item.name))
+    for planned_source in plan.sources.values():
+        for output in planned_source.outputs.values():
+            for axis_id in output.layout.axis_ids:
+                origins.setdefault(
+                    axis_id, AxisOrigin(kind="source", name=planned_source.name)
+                )
 
     for step in plan.steps:
         created = [
@@ -1344,6 +2026,30 @@ class ExecutionObserver:
     ) -> None:
         """A run ended with a result or an error."""
 
+    def on_source_opened(self, *, source: str) -> None:
+        """A source of an active run finished ``open``."""
+
+    def on_source_closed(self, *, source: str, error: Optional[BaseException]) -> None:
+        """A source of an active run was closed; ``error`` is what ``close`` raised."""
+
+    def on_pulse_started(self, *, run_id: str, source: str, pulse: PulseKey) -> None:
+        """One admitted emission starts executing; ``run_id`` is ``pulse.run_id``."""
+
+    def on_pulse_finished(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        pulse: PulseKey,
+        error: Optional[BaseException],
+    ) -> None:
+        """One pulse finished its steps and deliveries, or failed with ``error``."""
+
+    def on_group_delivered(
+        self, *, run_id: str, group: str, source: str, pulse: PulseKey
+    ) -> None:
+        """A registered handler returned for one group of one pulse."""
+
 
 ErrorHandler = Callable[[StepExecutionError], None]
 
@@ -1363,6 +2069,9 @@ class ExecutionSession:
         error_handler: Optional callback for step errors.
         session_id: Identity used while the instances were constructed; a new
             one is generated when omitted.
+        source_resources: Constructor resources chosen per declared source.
+            Source instances are not held here: every ``start`` constructs
+            fresh ones from these values.
     """
 
     def __init__(
@@ -1374,6 +2083,7 @@ class ExecutionSession:
         observer: ExecutionObserver = NULL_OBSERVER,
         error_handler: Optional[ErrorHandler] = None,
         session_id: Optional[str] = None,
+        source_resources: Optional[Mapping[str, Mapping[str, ResolvedResource]]] = None,
     ):
         self.plan = plan
         self.instances = MappingProxyType(dict(instances))
@@ -1381,6 +2091,7 @@ class ExecutionSession:
         self.observer = observer
         self.error_handler = error_handler
         self.session_id = session_id if session_id is not None else uuid.uuid4().hex
+        self.source_resources = MappingProxyType(dict(source_resources or {}))
 
     def run(self, inputs: Mapping[str, Any]) -> "RunResult":
         """Execute the plan once with this session's block instances.
@@ -1390,11 +2101,91 @@ class ExecutionSession:
 
         Returns:
             The run result.
+
+        Raises:
+            WorkflowInputError: When the plan declares sources; such a plan is
+                driven by ``start``.
         """
+        if self.plan.is_active:
+            raise WorkflowInputError(
+                f"The plan declares sources {list(self.plan.sources)}; run it with "
+                "session.start(...) instead of session.run(...)"
+            )
+
         execution = importlib.import_module(EXECUTION_MODULE)
         result = execution.run_session(self, inputs=inputs)
 
         return result
+
+    def start(
+        self,
+        inputs: Optional[Mapping[str, Any]] = None,
+        *,
+        handlers: Optional[Mapping[str, Callable[[Any], None]]] = None,
+        admission_bound: int = 2,
+    ) -> Any:
+        """Open the declared sources and process their pulses until they end.
+
+        Static inputs and handlers are validated before any source opens.
+        The returned run is driven by the active runtime module; see its
+        ``ActiveRun`` for ``stop``, ``wait`` and failure attribution. A fast
+        source may deliver a group before this call returns, so a handler
+        that wants to stop the run calls ``session.stop()`` rather than a
+        run handle it may not hold yet.
+
+        Args:
+            inputs: Values of the plan's ungrouped inputs (static
+                configuration); omitted optional inputs take their defaults.
+            handlers: Output group name to a synchronous callable receiving
+                that group's ``GroupResult`` once per delivered pulse. Groups
+                without a handler are not built.
+            admission_bound: Emissions of one source admitted for processing
+                at a time; a reader waits beyond it (bounded backpressure).
+
+        Returns:
+            The active run.
+
+        Raises:
+            WorkflowInputError: When the plan declares no sources, an input or
+                handler is invalid, or a run of this session is still active.
+        """
+        if not self.plan.is_active:
+            raise WorkflowInputError(
+                "The plan declares no sources; run it with session.run(inputs) "
+                "instead of session.start(...)"
+            )
+
+        runtime = importlib.import_module(ACTIVE_RUNTIME_MODULE)
+        run = runtime.start_session(
+            self,
+            inputs=inputs if inputs is not None else {},
+            handlers=handlers if handlers is not None else {},
+            admission_bound=admission_bound,
+        )
+
+        return run
+
+    def stop(self) -> None:
+        """Request a graceful stop of this session's current active run.
+
+        Targets the run registered at the time of the call: admission closes,
+        admitted pulses and their handlers drain, sources close. The call
+        never waits and is safe inside a group handler, also one that runs
+        before ``start`` has returned. Without an unfinished run it is a
+        no-op; it never cancels a later ``start``. A caller holding a
+        particular ``ActiveRun`` uses that run's ``stop`` instead.
+
+        Raises:
+            WorkflowInputError: When the plan declares no sources.
+        """
+        if not self.plan.is_active:
+            raise WorkflowInputError(
+                "The plan declares no sources, so the session has no active run "
+                "to stop"
+            )
+
+        runtime = importlib.import_module(ACTIVE_RUNTIME_MODULE)
+        runtime.stop_session(self)
 
 
 def create_session(
@@ -1417,6 +2208,10 @@ def create_session(
     ``self.execution_context`` in ``__init__`` sees the same session as its
     later runs.
 
+    The resources of every declared source are resolved here too, so a
+    missing source resource fails before any run, but no source is
+    constructed: ``start`` builds fresh source instances for every active run.
+
     Returns:
         The execution session.
 
@@ -1426,6 +2221,16 @@ def create_session(
     """
     session_id = uuid.uuid4().hex
     resolver = ResourceResolver(provided=resources, providers=plan.catalogue.providers)
+    source_resources: Dict[str, Mapping[str, ResolvedResource]] = {}
+    for planned_source in plan.sources.values():
+        resolved_for_source = resolver.resolve(
+            planned_source.spec.resources,
+            namespace=planned_source.namespace,
+            step_path=planned_source.step_path,
+            block_type=planned_source.spec.type,
+        )
+        source_resources[planned_source.name] = MappingProxyType(resolved_for_source)
+
     instances: Dict[StepPath, Block] = {}
     chosen: Dict[StepPath, Mapping[str, ResolvedResource]] = {}
     for step in plan.steps:
@@ -1459,6 +2264,7 @@ def create_session(
         observer=observer if observer is not None else NULL_OBSERVER,
         error_handler=error_handler,
         session_id=session_id,
+        source_resources=source_resources,
     )
 
     return session

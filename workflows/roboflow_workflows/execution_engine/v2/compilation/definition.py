@@ -37,6 +37,22 @@ their own, so two inputs never correspond merely because their sizes match.
 The explicit ``axes`` form keeps the advanced independent-axis declaration; a
 shared axis id there asserts correspondence.
 
+An active definition adds ``sources`` and delivers its outputs in groups::
+
+    {
+      "version": "2.0",
+      "inputs": [{"type": "WorkflowParameter", "name": "path"}],
+      "sources": [{"type": "demo/csv_temperature@v1", "name": "temp", "path": "$inputs.path"}],
+      "steps": [{"type": "demo/to_fahrenheit@v1", "name": "convert",
+                 "celsius": "$sources.temp.temperature"}],
+      "outputs": [
+        {"type": "OutputGroup", "name": "temperatures", "anchor": "$sources.temp.temperature",
+         "outputs": [{"type": "JsonField", "name": "fahrenheit", "selector": "$steps.convert.value"}]}
+      ]
+    }
+
+Flat ``JsonField`` outputs and ``OutputGroup`` outputs do not mix in one list.
+
 This module only checks structure. Composition and compilation resolve
 selectors.
 """
@@ -72,6 +88,7 @@ NESTED_WORKFLOW_TYPES: Tuple[str, ...] = (
     "inner_workflow",
 )
 JSON_FIELD_TYPE = "JsonField"
+OUTPUT_GROUP_TYPE = "OutputGroup"
 
 ROOT_AXIS = Axis(id="inputs", kind=AXIS_KIND_SAMPLE)
 """Sample axis shared by every batch-oriented workflow input."""
@@ -94,7 +111,7 @@ _INPUT_AXIS_KINDS = (
     AXIS_KIND_DYNAMIC_NESTING,
 )
 _DEFINITION_KEYS = frozenset(
-    {"version", "inputs", "steps", "outputs", "dynamic_blocks_definitions"}
+    {"version", "inputs", "sources", "steps", "outputs", "dynamic_blocks_definitions"}
 )
 _NESTED_STEP_KEYS = frozenset(
     {
@@ -109,6 +126,7 @@ _NESTED_STEP_KEYS = frozenset(
     }
 )
 _OUTPUT_KEYS = frozenset({"type", "name", "selector", "coordinates_system"})
+_OUTPUT_GROUP_KEYS = frozenset({"type", "name", "anchor", "outputs"})
 _OUTPUT_OPTION_KEYS = ("coordinates_system",)
 
 
@@ -219,15 +237,54 @@ class WorkflowOutputDeclaration:
 
 
 @dataclass(frozen=True)
+class OutputGroupDeclaration:
+    """A declared output group.
+
+    Args:
+        name: Group name.
+        anchor: ``$sources.<source>.<output>`` selector of the emission whose
+            pulse the group follows.
+        outputs: The group's fields, in declaration order.
+        location: Definition path for messages.
+    """
+
+    name: str
+    anchor: str
+    outputs: Tuple[WorkflowOutputDeclaration, ...]
+    location: str
+
+
+@dataclass(frozen=True)
+class SourceDeclaration:
+    """A declared source instance.
+
+    Args:
+        name: Source name, unique among the workflow's sources.
+        type: Source type or alias.
+        params: Source parameters without ``type`` and ``name``.
+        location: Definition path for messages.
+    """
+
+    name: str
+    type: str
+    params: Mapping[str, Any]
+    location: str
+
+
+@dataclass(frozen=True)
 class WorkflowDeclaration:
     """One parsed workflow definition, root or child.
 
     Args:
         inputs: Inputs by name, in declaration order.
         steps: Steps in declaration order.
-        outputs: Outputs in declaration order.
+        outputs: Flat outputs in declaration order; empty when the outputs
+            are groups.
         dynamic_blocks: Raw ``dynamic_blocks_definitions`` entries.
         location: Definition path prefix; ``""`` for the root.
+        sources: Sources in declaration order.
+        output_groups: Output groups in declaration order; empty when the
+            outputs are flat.
     """
 
     inputs: Mapping[str, WorkflowInputDeclaration]
@@ -235,6 +292,8 @@ class WorkflowDeclaration:
     outputs: Tuple[WorkflowOutputDeclaration, ...]
     dynamic_blocks: Tuple[Any, ...]
     location: str
+    sources: Tuple[SourceDeclaration, ...] = ()
+    output_groups: Tuple[OutputGroupDeclaration, ...] = ()
 
     def step(self, name: str) -> Optional[StepDeclaration]:
         """Return the step named ``name``.
@@ -285,7 +344,13 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
         )
 
     sections: Dict[str, List[Any]] = {}
-    for section in ("inputs", "steps", "outputs", "dynamic_blocks_definitions"):
+    for section in (
+        "inputs",
+        "sources",
+        "steps",
+        "outputs",
+        "dynamic_blocks_definitions",
+    ):
         value = definition.get(section)
         value = [] if value is None else value
         if not isinstance(value, list):
@@ -294,12 +359,15 @@ def parse_workflow(definition: Any, *, location: str = "") -> WorkflowDeclaratio
             )
         sections[section] = value
 
+    outputs, output_groups = _parse_outputs(sections["outputs"], location=location)
     declaration = WorkflowDeclaration(
         inputs=MappingProxyType(_parse_inputs(sections["inputs"], location=location)),
         steps=_parse_steps(sections["steps"], location=location),
-        outputs=_parse_outputs(sections["outputs"], location=location),
+        outputs=outputs,
         dynamic_blocks=tuple(sections["dynamic_blocks_definitions"]),
         location=location,
+        sources=_parse_sources(sections["sources"], location=location),
+        output_groups=output_groups,
     )
 
     return declaration
@@ -338,7 +406,8 @@ def require_data_selector(
 
     Raises:
         SelectorError: When ``value`` is not ``$inputs.<name>``,
-            ``$steps.<step>.<output>`` or ``$steps.<step>.*``.
+            ``$steps.<step>.<output>``, ``$steps.<step>.*`` or
+            ``$sources.<source>.<output>``.
     """
     try:
         is_data_selector = parse_selector(value).target != "step"
@@ -347,9 +416,35 @@ def require_data_selector(
     if not is_data_selector:
         raise SelectorError(
             f"{location} holds malformed selector {value!r}; use $inputs.<name>, "
-            "$steps.<step>.<output> or $steps.<step>.*",
+            "$steps.<step>.<output>, $steps.<step>.* or $sources.<source>.<output>",
             step_path=step_path,
             field_path=field_path,
+        )
+
+    return value
+
+
+def require_source_selector(value: Any, *, location: str) -> str:
+    """Return ``value`` when it is a ``$sources.<source>.<output>`` selector.
+
+    Args:
+        value: Candidate selector.
+        location: Definition path for the error message.
+
+    Returns:
+        The selector.
+
+    Raises:
+        SelectorError: When ``value`` selects anything but a source port.
+    """
+    try:
+        is_source_selector = parse_selector(value).target == "source_output"
+    except SelectorError:
+        is_source_selector = False
+    if not is_source_selector:
+        raise SelectorError(
+            f"{location} must select a source port as $sources.<source>.<output>, "
+            f"got {value!r}"
         )
 
     return value
@@ -616,13 +711,110 @@ def _parse_nested_step(
     return declaration
 
 
+def _parse_sources(
+    raw_sources: List[Any], *, location: str
+) -> Tuple[SourceDeclaration, ...]:
+    sources: List[SourceDeclaration] = []
+    names = set()
+    for position, raw in enumerate(raw_sources):
+        where = f"{location}sources[{position}]"
+        if not isinstance(raw, Mapping):
+            raise WorkflowCompileError(f"{where} must be a mapping")
+
+        name = _require_name(raw.get("name"), location=f"{where}.name")
+        if name in names:
+            raise WorkflowCompileError(f"{where}: duplicate source name {name!r}")
+        names.add(name)
+        source_type = raw.get("type")
+        if not isinstance(source_type, str) or not source_type:
+            raise WorkflowCompileError(f"{where} ($sources.{name}) must declare a type")
+
+        params = {
+            key: value for key, value in raw.items() if key not in ("type", "name")
+        }
+        sources.append(
+            SourceDeclaration(
+                name=name,
+                type=source_type,
+                params=MappingProxyType(params),
+                location=where,
+            )
+        )
+
+    return tuple(sources)
+
+
 def _parse_outputs(
+    raw_outputs: List[Any], *, location: str
+) -> Tuple[Tuple[WorkflowOutputDeclaration, ...], Tuple[OutputGroupDeclaration, ...]]:
+    """Parse flat ``JsonField`` outputs or ``OutputGroup`` outputs, never both."""
+    types = {
+        raw.get("type", JSON_FIELD_TYPE) if isinstance(raw, Mapping) else None
+        for raw in raw_outputs
+    }
+    if types == {OUTPUT_GROUP_TYPE}:
+        groups = tuple(
+            _parse_output_group(raw, location=f"{location}outputs[{position}]")
+            for position, raw in enumerate(raw_outputs)
+        )
+        names = [group.name for group in groups]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise WorkflowCompileError(
+                f"{location}outputs: duplicate output group names {duplicates}"
+            )
+        return (), groups
+    if OUTPUT_GROUP_TYPE in types:
+        raise WorkflowCompileError(
+            f"{location}outputs mixes {OUTPUT_GROUP_TYPE} and {JSON_FIELD_TYPE} "
+            "entries; declare either flat outputs or output groups"
+        )
+
+    outputs = _parse_json_fields(raw_outputs, location=f"{location}outputs")
+
+    return outputs, ()
+
+
+def _parse_output_group(raw: Any, *, location: str) -> OutputGroupDeclaration:
+    if not isinstance(raw, Mapping):
+        raise WorkflowCompileError(f"{location} must be a mapping")
+
+    _reject_unknown_keys(raw, allowed=_OUTPUT_GROUP_KEYS, location=location)
+    name = _require_name(raw.get("name"), location=f"{location}.name")
+    fields = raw.get("outputs")
+    if not isinstance(fields, list):
+        raise WorkflowCompileError(
+            f"{location}.outputs must be a list of {JSON_FIELD_TYPE} selections"
+        )
+    for position, field in enumerate(fields):
+        field_type = (
+            field.get("type", JSON_FIELD_TYPE) if isinstance(field, Mapping) else None
+        )
+        if field_type != JSON_FIELD_TYPE:
+            raise WorkflowCompileError(
+                f"{location}.outputs[{position}] must be a {JSON_FIELD_TYPE}; groups "
+                "do not nest"
+            )
+
+    group = OutputGroupDeclaration(
+        name=name,
+        anchor=require_source_selector(
+            raw.get("anchor"), location=f"{location}.anchor"
+        ),
+        outputs=_parse_json_fields(fields, location=f"{location}.outputs"),
+        location=location,
+    )
+
+    return group
+
+
+def _parse_json_fields(
     raw_outputs: List[Any], *, location: str
 ) -> Tuple[WorkflowOutputDeclaration, ...]:
     outputs: List[WorkflowOutputDeclaration] = []
     names = set()
     for position, raw in enumerate(raw_outputs):
-        where = f"{location}outputs[{position}]"
+        where = f"{location}[{position}]"
         if not isinstance(raw, Mapping):
             raise WorkflowCompileError(f"{where} must be a mapping")
 

@@ -16,5 +16,5 @@
     }
   ],
   "outputs": [{"type": "JsonField", "name": "out", "selector": "$steps.crop.crops"}],
-  "sources": []
+  "unknown_section": []
 }

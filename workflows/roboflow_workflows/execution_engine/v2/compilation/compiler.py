@@ -36,7 +36,14 @@ input over a constant, or an output declaring ``source=`` a field bound to it.
 Other child inputs pass their source's payload on. The policy
 comes from ``CompileOptions.mutation_conflicts``.
 
-Nothing here constructs a block or executes submitted code.
+Active definitions: declared sources are planned first (``compilation.sources``)
+and their ports are ordinary value sources with the port's scoped layout. Each
+step then records its causal ``domain``: the one source reached through its
+bindings, gates and nested boundaries (``plan.derive_domain``), or ``None``
+for a static step. Reaching two sources is a ``LineageError``; so is an
+output group whose field comes from a source other than its anchor's.
+
+Nothing here constructs a block, a source, or executes submitted code.
 """
 
 from dataclasses import dataclass, field
@@ -50,8 +57,13 @@ from roboflow_workflows.execution_engine.v2.compilation.composition import (
     Scope,
 )
 from roboflow_workflows.execution_engine.v2.compilation.definition import (
+    OutputGroupDeclaration,
     WorkflowInputDeclaration,
     WorkflowOutputDeclaration,
+)
+from roboflow_workflows.execution_engine.v2.compilation.sources import (
+    check_active_definition,
+    plan_sources,
 )
 from roboflow_workflows.execution_engine.v2.data import (
     AXIS_KIND_DYNAMIC_NESTING,
@@ -98,10 +110,15 @@ from roboflow_workflows.execution_engine.v2.plan import (
     PlannedChildOutput,
     PlannedInput,
     PlannedOutput,
+    PlannedOutputGroup,
+    PlannedSource,
     PlannedStep,
     PlannedWorkflowOutput,
     Source,
+    SourcePort,
     StepPort,
+    derive_dependencies,
+    derive_domain,
 )
 
 
@@ -168,6 +185,7 @@ def compile_composition(
     Raises:
         WorkflowCompileError: A subclass naming the step, field and reason.
     """
+    check_active_definition(composition.root)
     sites = _prepare_sites(composition.root, catalogue=catalogue)
     catalogue = _with_output_kinds(catalogue, sites=sites)
     _check_input_kinds(composition.root, catalogue=catalogue)
@@ -182,17 +200,19 @@ def compile_composition(
         )
         for name, declaration in composition.root.workflow.inputs.items()
     }
+    sources = plan_sources(composition.root, catalogue=catalogue, inputs=inputs)
     gate_edges = _add_control_edges(sites)
     child_gates = _child_gates(sites)
     _add_child_output_dependencies(sites, child_gates=child_gates)
     order = _order(sites)
 
     planned: Dict[StepPath, PlannedStep] = {}
-    boundaries = _Boundaries(inputs=inputs, planned=planned, child_gates=child_gates)
+    boundaries = _Boundaries(
+        inputs=inputs, sources=sources, planned=planned, child_gates=child_gates
+    )
     for path in order:
         planned[path] = _plan_step(
             sites[path],
-            inputs=inputs,
             planned=planned,
             boundaries=boundaries,
             gate_edges=gate_edges.get(path, []),
@@ -200,11 +220,12 @@ def compile_composition(
             catalogue=catalogue,
         )
     steps = tuple(planned[path] for path in order)
-    _check_child_inputs(
-        composition.root, inputs=inputs, planned=planned, catalogue=catalogue
-    )
+    _check_child_inputs(composition.root, boundaries=boundaries, catalogue=catalogue)
     outputs = _plan_workflow_outputs(
         composition.root, planned=planned, boundaries=boundaries
+    )
+    output_groups = _plan_output_groups(
+        composition.root, planned=planned, boundaries=boundaries, sources=sources
     )
     mutation_warnings = _check_mutations(
         steps, boundaries=boundaries.records, options=options
@@ -220,6 +241,8 @@ def compile_composition(
             catalogue=catalogue,
             options=options,
             warnings=composition.warnings + mutation_warnings,
+            sources=sources,
+            output_groups=output_groups,
         )
     except ContractError as error:
         raise WorkflowCompileError(f"Compiled plan is inconsistent: {error}") from error
@@ -403,7 +426,6 @@ def _order(sites: Mapping[StepPath, _Site]) -> Tuple[StepPath, ...]:
 def _plan_step(
     site: _Site,
     *,
-    inputs: Mapping[str, PlannedInput],
     planned: Mapping[StepPath, PlannedStep],
     boundaries: "_Boundaries",
     gate_edges: List[Tuple[StepPath, str]],
@@ -415,8 +437,6 @@ def _plan_step(
             site,
             use=use,
             resolution=resolution,
-            inputs=inputs,
-            planned=planned,
             boundaries=boundaries,
             catalogue=catalogue,
         )
@@ -436,6 +456,7 @@ def _plan_step(
         [_binding(site, item=item, invocation=invocation) for item in bound]
         + _literal_bindings(site, invocation=invocation),
     )
+    domain = _step_domain(site, bindings=bindings, gates=gates, boundaries=boundaries)
 
     try:
         step = PlannedStep(
@@ -449,6 +470,7 @@ def _plan_step(
             gates=gates,
             control_targets=site.targets,
             dependencies=tuple(path for path in order if path in site.dependencies),
+            domain=domain,
         )
     except ContractError as error:
         raise LineageError(str(error), step_path=site.path) from error
@@ -456,13 +478,36 @@ def _plan_step(
     return step
 
 
+def _step_domain(
+    site: _Site,
+    *,
+    bindings: Tuple[Binding, ...],
+    gates: Tuple[Gate, ...],
+    boundaries: "_Boundaries",
+) -> Optional[str]:
+    """The one source this step's data, gates and boundaries reach, if any."""
+    try:
+        domain = derive_domain(
+            [binding.source for binding in bindings],
+            controllers=[gate.controller for gate in gates],
+            steps=boundaries.planned,
+            boundaries=boundaries.records,
+        )
+    except ContractError as error:
+        raise LineageError(
+            f"{site.location} {error}; give each source its own steps and output "
+            "groups",
+            step_path=site.path,
+        ) from error
+
+    return domain
+
+
 def _bind(
     site: _Site,
     *,
     use: SelectorUse,
     resolution: Resolution,
-    inputs: Mapping[str, PlannedInput],
-    planned: Mapping[StepPath, PlannedStep],
     boundaries: "_Boundaries",
     catalogue: Catalogue,
 ) -> _Bound:
@@ -472,12 +517,12 @@ def _bind(
         layout = boundaries.layout_of(resolution)
         return _Bound(use=use, source=resolution.port, layout=layout)
 
-    kinds = _port_kinds(origin, inputs=inputs, planned=planned)
+    kinds = boundaries.kinds_of(origin)
     if kinds is None:
         raise SelectorError(
-            f"{site.where(use)} binds {use.selector!r}, but "
-            f"{format_step_path(origin.step)} has no output {origin.output!r}; "
-            f"its outputs are {list(planned[origin.step].outputs)}",
+            f"{site.where(use)} binds {use.selector!r}, but {_producer_text(origin)} "
+            f"has no output {origin.output!r}; its outputs are "
+            f"{boundaries.output_names(origin)}",
             step_path=site.path,
             field_path=use.field_path,
         )
@@ -528,11 +573,7 @@ def _check_constant(
 
 
 def _check_child_inputs(
-    scope: Scope,
-    *,
-    inputs: Mapping[str, PlannedInput],
-    planned: Mapping[StepPath, PlannedStep],
-    catalogue: Catalogue,
+    scope: Scope, *, boundaries: "_Boundaries", catalogue: Catalogue
 ) -> None:
     # Every child input is checked against its own declaration, used or not.
     # Resolving it yields the source and every outer alias on the way, and
@@ -554,8 +595,7 @@ def _check_child_inputs(
             problem = _child_input_problem(
                 declaration,
                 resolution=resolution,
-                inputs=inputs,
-                planned=planned,
+                boundaries=boundaries,
                 catalogue=catalogue,
             )
             if problem is not None:
@@ -564,15 +604,14 @@ def _check_child_inputs(
                     step_path=child.path,
                     field_path=field_path,
                 )
-        _check_child_inputs(child, inputs=inputs, planned=planned, catalogue=catalogue)
+        _check_child_inputs(child, boundaries=boundaries, catalogue=catalogue)
 
 
 def _child_input_problem(
     declaration: WorkflowInputDeclaration,
     *,
     resolution: Resolution,
-    inputs: Mapping[str, PlannedInput],
-    planned: Mapping[StepPath, PlannedStep],
+    boundaries: "_Boundaries",
     catalogue: Catalogue,
 ) -> Optional[str]:
     source = resolution.origin
@@ -583,13 +622,20 @@ def _child_input_problem(
             return None
         return f"it receives the constant {source.value!r}"
 
-    kinds = _port_kinds(source, inputs=inputs, planned=planned)
+    kinds = boundaries.kinds_of(source)
     if kinds is None:
-        return f"its binding {source.describe()} is not an output of that step"
+        return f"its binding {source.describe()} is not an output of {_producer_text(source)}"
     if kinds_compatible(kinds, declaration.kinds):
         return None
 
     return f"its binding {source.describe()} provides {list(kinds)}"
+
+
+def _producer_text(source: Source) -> str:
+    if isinstance(source, SourcePort):
+        return f"$sources.{source.source}"
+
+    return format_step_path(source.step)
 
 
 def _decoded_at_run_time(resolution: Resolution, *, catalogue: Catalogue) -> bool:
@@ -616,23 +662,6 @@ def _kinds_accept(
         return True
 
     return False
-
-
-def _port_kinds(
-    source: Source,
-    *,
-    inputs: Mapping[str, PlannedInput],
-    planned: Mapping[StepPath, PlannedStep],
-) -> Optional[Tuple[str, ...]]:
-    if isinstance(source, InputPort):
-        return inputs[source.name].kinds
-    if source.output == "*":
-        return (WILDCARD_KIND_NAME,)
-
-    output = planned[source.step].outputs.get(source.output)
-    kinds = output.kinds if output is not None else None
-
-    return kinds
 
 
 def _invocation_layout(
@@ -898,10 +927,103 @@ def _plan_workflow_outputs(
     planned: Mapping[StepPath, PlannedStep],
     boundaries: "_Boundaries",
 ) -> Tuple[PlannedWorkflowOutput, ...]:
-    _check_child_outputs(root, planned=planned)
+    _check_child_outputs(root, boundaries=boundaries)
+    outputs = _plan_selections(
+        root, root.workflow.outputs, planned=planned, boundaries=boundaries
+    )
+
+    return outputs
+
+
+def _plan_output_groups(
+    root: Scope,
+    *,
+    planned: Mapping[StepPath, PlannedStep],
+    boundaries: "_Boundaries",
+    sources: Mapping[str, PlannedSource],
+) -> Tuple[PlannedOutputGroup, ...]:
+    groups: List[PlannedOutputGroup] = []
+    for declaration in root.workflow.output_groups:
+        anchor = _resolve_anchor(root, declaration=declaration, sources=sources)
+        outputs = _plan_selections(
+            root, declaration.outputs, planned=planned, boundaries=boundaries
+        )
+        for output in outputs:
+            try:
+                domain = derive_domain(
+                    [output.source],
+                    controllers=(),
+                    steps=planned,
+                    boundaries=boundaries.records,
+                )
+            except ContractError as error:
+                raise LineageError(
+                    f"{declaration.location} ({declaration.name}) field "
+                    f"{output.name!r} ({output.selector}) {error}",
+                    field_path=("outputs", output.name),
+                ) from error
+            if domain not in (None, anchor.source):
+                raise LineageError(
+                    f"{declaration.location} ({declaration.name}) is anchored on "
+                    f"{anchor.describe()}, but its field {output.name!r} "
+                    f"({output.selector}) comes from source {domain!r}; a group "
+                    "follows one source's pulses until an alignment operator "
+                    "relates independent sources",
+                    field_path=("outputs", output.name),
+                )
+        groups.append(
+            PlannedOutputGroup(
+                name=declaration.name,
+                anchor=anchor,
+                outputs=outputs,
+                dependencies=derive_dependencies(
+                    [output.source for output in outputs],
+                    steps=planned,
+                    boundaries=boundaries.records,
+                ),
+            )
+        )
+
+    return tuple(groups)
+
+
+def _resolve_anchor(
+    root: Scope,
+    *,
+    declaration: OutputGroupDeclaration,
+    sources: Mapping[str, PlannedSource],
+) -> SourcePort:
+    resolution = root.resolve_data(
+        declaration.anchor,
+        location=f"{declaration.location}.anchor",
+        step_path=(),
+        field_path=("anchor",),
+    )
+    anchor = resolution.origin
+    if anchor.output not in sources[anchor.source].outputs:
+        raise SelectorError(
+            f"{declaration.location}.anchor: $sources.{anchor.source} has no output "
+            f"{anchor.output!r}; its outputs are "
+            f"{list(sources[anchor.source].outputs)}",
+            field_path=("anchor",),
+        )
+
+    return anchor
+
+
+def _plan_selections(
+    scope: Scope,
+    declarations: Tuple[WorkflowOutputDeclaration, ...],
+    *,
+    planned: Mapping[StepPath, PlannedStep],
+    boundaries: "_Boundaries",
+) -> Tuple[PlannedWorkflowOutput, ...]:
+    """Plan flat output selections, of the workflow or of one output group."""
     outputs: List[PlannedWorkflowOutput] = []
-    for declaration in root.workflow.outputs:
-        resolution = _resolve_output(root, declaration=declaration, planned=planned)
+    for declaration in declarations:
+        resolution = _resolve_output(
+            scope, declaration=declaration, boundaries=boundaries
+        )
         boundaries.layout_of(resolution, location=declaration.location)
         outputs.append(
             PlannedWorkflowOutput(
@@ -955,15 +1077,39 @@ class _Boundaries:
         self,
         *,
         inputs: Mapping[str, PlannedInput],
+        sources: Mapping[str, PlannedSource],
         planned: Mapping[StepPath, PlannedStep],
         child_gates: Mapping[StepPath, List[Tuple[StepPath, str]]],
     ):
         self._inputs = inputs
-        self._planned = planned
+        self._sources = sources
+        self.planned = planned
         self._child_gates = child_gates
         self.records: Dict[
             BoundaryPort, Union[PlannedChildInput, PlannedChildOutput]
         ] = {}
+
+    def kinds_of(self, origin: Source) -> Optional[Tuple[str, ...]]:
+        """Kinds of an input, source port or step output; ``None`` for a missing port."""
+        if isinstance(origin, InputPort):
+            return self._inputs[origin.name].kinds
+        if isinstance(origin, SourcePort):
+            output = self._sources[origin.source].outputs.get(origin.output)
+            return output.kinds if output is not None else None
+        if origin.output == "*":
+            return (WILDCARD_KIND_NAME,)
+
+        output = self.planned[origin.step].outputs.get(origin.output)
+        kinds = output.kinds if output is not None else None
+
+        return kinds
+
+    def output_names(self, origin: Union[SourcePort, StepPort]) -> List[str]:
+        """Declared output names of a source or step, for error messages."""
+        if isinstance(origin, SourcePort):
+            return list(self._sources[origin.source].outputs)
+
+        return list(self.planned[origin.step].outputs)
 
     def child_inputs(self) -> Tuple[PlannedChildInput, ...]:
         """Child input records, outer before inner."""
@@ -989,9 +1135,7 @@ class _Boundaries:
             LineageError: When a child's gates and a forwarded value's axes
                 are unrelated.
         """
-        layout = _origin_layout(
-            resolution.origin, inputs=self._inputs, planned=self._planned
-        )
+        layout = self._origin_layout(resolution.origin)
         if resolution.hops and layout is None:
             raise SelectorError(
                 f"{location}: forwards a child input bound to "
@@ -1023,7 +1167,7 @@ class _Boundaries:
             Gate(
                 controller=controller,
                 target=target,
-                controller_layout=self._planned[controller].invocation_layout,
+                controller_layout=self.planned[controller].invocation_layout,
             )
             for controller, target in self._child_gates.get(port.scope, ())
         )
@@ -1052,23 +1196,42 @@ class _Boundaries:
 
         return record
 
+    def _origin_layout(self, origin: Source) -> Optional[EntryLayout]:
+        """Layout of an origin; ``None`` for a wildcard over every step output."""
+        if isinstance(origin, Constant):
+            return EntryLayout()
+        if isinstance(origin, InputPort):
+            return self._inputs[origin.name].layout
+        if isinstance(origin, SourcePort):
+            port = self._sources[origin.source].outputs.get(origin.output)
+            if port is None:
+                raise SelectorError(
+                    f"$sources.{origin.source} has no output {origin.output!r}; its "
+                    f"outputs are {self.output_names(origin)}"
+                )
+            return port.layout
+        if origin.output == "*":
+            return None
 
-def _check_child_outputs(
-    scope: Scope, *, planned: Mapping[StepPath, PlannedStep]
-) -> None:
+        layout = self.planned[origin.step].outputs[origin.output].layout
+
+        return layout
+
+
+def _check_child_outputs(scope: Scope, *, boundaries: "_Boundaries") -> None:
     # Child outputs are resolved lazily when the parent uses them; checking all
     # of them here reports a broken child definition even when it is unused.
     for child in scope.children.values():
         for declaration in child.workflow.outputs:
-            _resolve_output(child, declaration=declaration, planned=planned)
-        _check_child_outputs(child, planned=planned)
+            _resolve_output(child, declaration=declaration, boundaries=boundaries)
+        _check_child_outputs(child, boundaries=boundaries)
 
 
 def _resolve_output(
     scope: Scope,
     *,
     declaration: WorkflowOutputDeclaration,
-    planned: Mapping[StepPath, PlannedStep],
+    boundaries: "_Boundaries",
 ) -> Resolution:
     field_path = ("outputs", declaration.name)
     resolution = scope.resolve_data(
@@ -1078,36 +1241,16 @@ def _resolve_output(
         field_path=field_path,
     )
     origin = resolution.origin
-    if isinstance(origin, StepPort) and origin.output != "*":
-        producer = planned[origin.step]
-        if origin.output not in producer.outputs:
+    if isinstance(origin, (StepPort, SourcePort)) and origin.output != "*":
+        if boundaries.kinds_of(origin) is None:
             raise SelectorError(
-                f"{declaration.location}: {format_step_path(origin.step)} has no "
-                f"output {origin.output!r}; its outputs are {list(producer.outputs)}",
+                f"{declaration.location}: {_producer_text(origin)} has no output "
+                f"{origin.output!r}; its outputs are {boundaries.output_names(origin)}",
                 step_path=scope.path,
                 field_path=field_path,
             )
 
     return resolution
-
-
-def _origin_layout(
-    origin: Source,
-    *,
-    inputs: Mapping[str, PlannedInput],
-    planned: Mapping[StepPath, PlannedStep],
-) -> Optional[EntryLayout]:
-    """Layout of an origin; ``None`` for a wildcard over every step output."""
-    if isinstance(origin, Constant):
-        return EntryLayout()
-    if isinstance(origin, InputPort):
-        return inputs[origin.name].layout
-    if origin.output == "*":
-        return None
-
-    layout = planned[origin.step].outputs[origin.output].layout
-
-    return layout
 
 
 def _check_mutations(

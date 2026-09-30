@@ -1,12 +1,13 @@
 """Naming and resolving plan sources, shared by the introspection modules.
 
-A source is a workflow input, a step output, a compile-time constant, a
-nested workflow's input port (decision 021) or a gated child output port
-(decision 026). A port forwards another source, possibly another port for
-deeper nesting::
+A source is a workflow input, a step output, a declared source's port, a
+compile-time constant, a nested workflow's input port (decision 021) or a
+gated child output port (decision 026). A port forwards another source,
+possibly another port for deeper nesting::
 
     $steps.outer/inner: $inputs.x --source--> $steps.outer: $inputs.x --source--> $inputs.x
     $steps.outer.out --source--> $steps.outer: $inputs.x
+    $steps.detect.image --source--> $sources.camera (output "image")
 """
 
 from typing import Any, Optional
@@ -18,8 +19,21 @@ from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     Constant,
     InputPort,
+    SourcePort,
     StepPort,
 )
+
+
+def source_node(name: str) -> str:
+    """Node id of a declared source, ``$sources.<name>``.
+
+    Args:
+        name: Declared source name.
+
+    Returns:
+        The node id.
+    """
+    return f"$sources.{name}"
 
 
 def origin_of(plan: CompiledWorkflow, source: Any) -> Any:
@@ -44,13 +58,16 @@ def node_of(source: Any) -> Optional[str]:
         source: Any plan source.
 
     Returns:
-        ``$inputs.<name>``, the producing step's node id, or a child input
-        port such as ``$steps.child: $inputs.image``.
+        ``$inputs.<name>``, the producing step's node id, the declared
+        source's node id (``$sources.<name>``) or a child input port such as
+        ``$steps.child: $inputs.image``.
     """
     if isinstance(source, Constant):
         return None
     if isinstance(source, StepPort):
         return format_step_path(source.step)
+    if isinstance(source, SourcePort):
+        return source_node(source.source)
 
     node = source.describe()
 
@@ -58,8 +75,8 @@ def node_of(source: Any) -> Optional[str]:
 
 
 def output_of(source: Any) -> Optional[str]:
-    """Step output name for step sources, else ``None``."""
-    if isinstance(source, StepPort):
+    """Step output or source port name for step and source sources, else ``None``."""
+    if isinstance(source, (StepPort, SourcePort)):
         return source.output
 
     return None
@@ -67,7 +84,7 @@ def output_of(source: Any) -> Optional[str]:
 
 def selector_of(source: Any) -> Optional[str]:
     """Selector text a parent definition uses to bind ``source``; ``None`` for constants."""
-    if isinstance(source, (InputPort, StepPort)):
+    if isinstance(source, (InputPort, StepPort, SourcePort)):
         return source.describe()
     if isinstance(source, ChildInputPort):
         return f"$inputs.{source.name}"

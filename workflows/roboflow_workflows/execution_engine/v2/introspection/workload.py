@@ -24,6 +24,10 @@ substituted: a nested workflow input bound to a literal, or defaulted, reaches
 the hook as that literal. Root workflow inputs stay selectors even when they
 have defaults, because the caller may override them. Hooks do not know their
 step, so problems they report get the step's ``node_id`` added here.
+
+Declared sources have no workload hooks; the report lists each source's
+constructor resources (what a session must provide before ``start``) read
+from its class signature, without constructing anything.
 """
 
 from dataclasses import dataclass
@@ -48,11 +52,13 @@ from roboflow_workflows.execution_engine.v2.declaration import (
     DependentResource,
 )
 from roboflow_workflows.execution_engine.v2.errors import format_step_path
+from roboflow_workflows.execution_engine.v2.introspection._sources import source_node
 from roboflow_workflows.execution_engine.v2.plan import (
     CompiledWorkflow,
     Constant,
     PlannedStep,
 )
+from roboflow_workflows.execution_engine.v2.resources import ResourceSpec
 
 _DECLARATION_PROBLEMS = (
     DiscoveryProblemCode.DECLARATION_UNAVAILABLE,
@@ -110,6 +116,33 @@ class StepWorkload:
 
 
 @dataclass(frozen=True)
+class SourceWorkload:
+    """Constructor resources of one declared source.
+
+    Args:
+        node_id: Source node id, e.g. ``$sources.camera``.
+        source_type: Canonical source type.
+        constructor_resources: Keyword resources of the source class's
+            ``__init__``, resolved by ``create_session`` before any run.
+    """
+
+    node_id: str
+    source_type: str
+    constructor_resources: Tuple[ResourceSpec, ...]
+
+    def describe(self) -> Dict[str, Any]:
+        """Return a JSON-friendly description."""
+        description = {
+            "source_type": self.source_type,
+            "constructor_resources": [
+                resource.describe() for resource in self.constructor_resources
+            ],
+        }
+
+        return description
+
+
+@dataclass(frozen=True)
 class WorkloadReport:
     """Workload of a whole plan.
 
@@ -119,12 +152,15 @@ class WorkloadReport:
             across steps; incomplete when any step's resources are.
         operations: Union of the steps' operations.
         restrictions: Union of the steps' restrictions.
+        sources: Declared sources with their constructor resources, in
+            declaration order; empty for a passive plan.
     """
 
     steps: Tuple[StepWorkload, ...]
     resources: Discovery
     operations: Discovery
     restrictions: Discovery
+    sources: Tuple[SourceWorkload, ...] = ()
 
     def step(self, node_id: str) -> StepWorkload:
         """Return the workload of one step.
@@ -151,6 +187,7 @@ class WorkloadReport:
             "resources": self.resources.model_dump(mode="json"),
             "operations": self.operations.model_dump(mode="json"),
             "restrictions": self.restrictions.model_dump(mode="json"),
+            "sources": {source.node_id: source.describe() for source in self.sources},
         }
 
         return description
@@ -163,8 +200,9 @@ def discover_workload(plan: CompiledWorkflow) -> WorkloadReport:
         plan: Compiled plan.
 
     Returns:
-        Per-step discoveries and their unions. Unknowns are reported as
-        incomplete discoveries with reasons, never as absence.
+        Per-step discoveries and their unions, plus the constructor resources
+        of every declared source. Unknowns are reported as incomplete
+        discoveries with reasons, never as absence.
     """
     steps = tuple(_step_workload(step, plan=plan) for step in plan.steps)
     report = WorkloadReport(
@@ -173,6 +211,14 @@ def discover_workload(plan: CompiledWorkflow) -> WorkloadReport:
         operations=_union(Discovery[WorkOperation], [s.operations for s in steps]),
         restrictions=_union(
             Discovery[RestrictionMetadata], [s.restrictions for s in steps]
+        ),
+        sources=tuple(
+            SourceWorkload(
+                node_id=source_node(item.name),
+                source_type=item.spec.type,
+                constructor_resources=item.spec.resources,
+            )
+            for item in plan.sources.values()
         ),
     )
 

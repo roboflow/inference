@@ -7,7 +7,8 @@ The V2 runtime distinguishes three failure families:
   by block declarations, by the catalogue and when an execution session
   cannot provide or construct a block.
 * ``WorkflowCompileError``: a workflow definition cannot be compiled.
-* ``WorkflowExecutionError``: a compiled workflow failed while running.
+* ``WorkflowExecutionError``: a compiled workflow failed while running. An
+  active run reports its one terminal failure as ``ActiveRunError``.
 
 Subclasses carry structured location data (step path, field path, index) in
 addition to their message. The engine preserves an underlying exception as
@@ -15,7 +16,7 @@ addition to their message. The engine preserves an underlying exception as
 callers that raise them with one string keep working.
 """
 
-from typing import Any, Optional, Tuple
+from typing import Any, Literal, Optional, Tuple
 
 StepPath = Tuple[str, ...]
 """Scope path of a step, e.g. ``("child", "scale")`` for a nested step."""
@@ -31,10 +32,14 @@ def format_step_path(step_path: StepPath) -> str:
         step_path: Scope path of a step.
 
     Returns:
-        ``"$steps.child/scale"`` style text; ``"<workflow>"`` for an empty path.
+        ``"$steps.child/scale"`` style text; ``"<workflow>"`` for an empty
+        path; ``"$sources.camera"`` for a source's reserved path
+        ``("$sources", "camera")``.
     """
     if not step_path:
         return "<workflow>"
+    if len(step_path) == 2 and step_path[0] == "$sources":
+        return f"$sources.{step_path[1]}"
 
     rendered = "$steps." + "/".join(step_path)
 
@@ -193,3 +198,57 @@ class StepExecutionError(WorkflowExecutionError):
 
 class WorkflowInputError(WorkflowExecutionError):
     """Workflow inputs failed preparation, validation or deserialization."""
+
+
+ActiveRunStage = Literal[
+    "start", "open", "read", "emission", "step", "handler", "observer", "close"
+]
+
+
+class ActiveRunError(WorkflowExecutionError):
+    """An active run failed; the one terminal error of that run.
+
+    The first failure of a run becomes its ``ActiveRunError`` and keeps the
+    original exception as ``__cause__``. Errors raised while the run cleans
+    up after that failure (for example a source ``close`` that also raises)
+    are appended to ``suppressed`` so they never disappear.
+
+    Args:
+        message: Human-readable explanation.
+        stage: Where the run failed: ``start`` (validation or construction
+            before acquisition), ``open``, ``read``, ``emission`` (an
+            emission violating the source's declaration), ``step``,
+            ``handler``, ``observer`` (a session observer callback raised)
+            or ``close``.
+        source: Declared name of the source involved, when any.
+        pulse: Sequence number of the pulse involved, when any.
+        group: Output group whose handler failed, when any.
+        step_path: Failing step, when a step failed.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage: ActiveRunStage,
+        source: Optional[str] = None,
+        pulse: Optional[int] = None,
+        group: Optional[str] = None,
+        step_path: Optional[StepPath] = None,
+    ):
+        where = [f"stage {stage}"]
+        if source is not None:
+            where.append(f"source {source!r}")
+        if pulse is not None:
+            where.append(f"pulse {pulse}")
+        if group is not None:
+            where.append(f"group {group!r}")
+        if step_path is not None:
+            where.append(format_step_path(step_path))
+        super().__init__(f"Active run failed ({', '.join(where)}): {message}")
+        self.stage = stage
+        self.source = source
+        self.pulse = pulse
+        self.group = group
+        self.step_path = step_path
+        self.suppressed: Tuple[BaseException, ...] = ()

@@ -486,7 +486,7 @@ INVALID_CASES: Tuple[Tuple[str, str, str], ...] = (
     ),
     (
         "unknown_section",
-        "definition with an unsupported 'sources' section",
+        "definition with an unsupported 'unknown_section' section",
         "WorkflowCompileError",
     ),
     (

@@ -1,9 +1,12 @@
-"""Run results and V1-shaped output rows.
+"""Run results, output-group results and V1-shaped output rows.
 
-A ``RunResult`` holds one buffer entry per *selected port*. A plain workflow
+A ``RunResult`` (passive run) and a ``GroupResult`` (one output group of one
+source pulse) hold one buffer entry per *selected port*. A plain workflow
 output selects one port under its own name; a wildcard ``$steps.x.*`` selects
 every output of ``x`` as ``<name>/<output>``, so ports with different layouts
-keep their own layout and metadata.
+keep their own layout and metadata. Both results are built by the same code
+over a sequence of ``PlannedWorkflowOutput`` declarations: the plan's flat
+outputs for a run, a group's fields for a group.
 
 Rows follow V1's output construction::
 
@@ -23,11 +26,23 @@ only permits pass-through when its validator accepts the payload.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from roboflow_workflows.execution_engine.v2.data import (
     Batch,
     EntryLayout,
+    EntryMetadata,
     Index,
     WorkflowsBuffer,
 )
@@ -43,9 +58,13 @@ from roboflow_workflows.execution_engine.v2.plan import (
     ChildOutputPort,
     CompiledWorkflow,
     InputPort,
+    OutputStatus,
+    PlannedOutputGroup,
     PlannedWorkflowOutput,
+    PulseKey,
     RunResult,
     Source,
+    SourcePort,
     StepPort,
 )
 
@@ -74,18 +93,23 @@ class SelectedPort:
     kind_names: Tuple[str, ...]
 
 
-def selected_ports(plan: CompiledWorkflow) -> List[SelectedPort]:
-    """List the ports selected by the plan's workflow outputs, in order.
+def selected_ports(
+    plan: CompiledWorkflow,
+    outputs: Optional[Sequence[PlannedWorkflowOutput]] = None,
+) -> List[SelectedPort]:
+    """List the ports selected by workflow output declarations, in order.
 
     Args:
         plan: Compiled plan.
+        outputs: Output declarations to expand; the plan's flat outputs when
+            omitted, a group's fields for an output group.
 
     Returns:
         One item per selected port; wildcard outputs expand to every output
         of their step.
     """
     ports: List[SelectedPort] = []
-    for output in plan.outputs:
+    for output in plan.outputs if outputs is None else outputs:
         source = output.source
         if not isinstance(source, StepPort):
             layout, kind_names = _declared(plan, source)
@@ -144,6 +168,9 @@ def _declared(
         child_output = plan.child_output(source)
         kind_names = _source_kinds(plan, child_output.source)
         return child_output.layout, kind_names
+    if isinstance(source, SourcePort):
+        port = plan.source(source.source).outputs[source.output]
+        return port.layout, port.kinds
 
     return EntryLayout(), (WILDCARD_KIND_NAME,)
 
@@ -157,8 +184,167 @@ def _source_kinds(plan: CompiledWorkflow, source: Source) -> Tuple[str, ...]:
     return kind_names
 
 
+@dataclass(frozen=True)
+class GroupResult:
+    """Outcome of one output group for one pulse of its anchor source.
+
+    Has the same result vocabulary as ``RunResult`` (selected port entries,
+    statuses, filtered paths, ``rows()``) plus the identity of the pulse it
+    belongs to. A group is delivered at most once per admitted pulse of its
+    anchor source; an explicitly filtered emission delivers it with every
+    field filtered.
+
+    Args:
+        group: Name of the output group.
+        source: Declared name of the anchor source.
+        pulse: Identity of the pulse; the buffer carries its lineage and
+            sequence.
+        run_id: Per-pulse invocation identity (``pulse.run_id``).
+        session_id: Session whose block instances produced the result.
+        fields: The group's output declarations, in order.
+        outputs: Buffer of selected port entries, keyed by entry key. Entries
+            filtered as a whole are absent.
+        selections: Field name to ``{port selector: entry key}``.
+        statuses: ``complete`` or ``filtered`` per entry key.
+        filtered_paths: Minimal filtered logical index paths per entry key.
+        plan: The plan that produced the result.
+        trace: Ordered JSON-friendly execution events of the pulse so far.
+        input_row_count: Known row count of selected source-axis entries.
+    """
+
+    group: str
+    source: str
+    pulse: PulseKey
+    run_id: str
+    session_id: str
+    fields: Tuple[PlannedWorkflowOutput, ...]
+    outputs: WorkflowsBuffer
+    selections: Mapping[str, Mapping[str, str]]
+    statuses: Mapping[str, OutputStatus]
+    filtered_paths: Mapping[str, Tuple[Index, ...]]
+    plan: CompiledWorkflow
+    trace: Tuple[Mapping[str, Any], ...] = ()
+    input_row_count: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "fields", tuple(self.fields))
+        object.__setattr__(self, "trace", tuple(self.trace))
+
+    @property
+    def is_filtered(self) -> bool:
+        """Whether every selected port is filtered."""
+        filtered = all(status == "filtered" for status in self.statuses.values())
+
+        return filtered
+
+    def rows(self, *, serialize: bool = False) -> List[Dict[str, Any]]:
+        """Build V1-shaped rows from this group result.
+
+        Args:
+            serialize: Pass values through their kinds' serializers.
+
+        Returns:
+            Rows exactly as ``RunResult.rows`` builds them for these fields.
+        """
+        rows = build_rows(self, serialize=serialize)
+
+        return rows
+
+
+@dataclass
+class _Selected:
+    """Selected port entries of one run, ready to become a result."""
+
+    selections: Dict[str, Dict[str, str]]
+    statuses: Dict[str, OutputStatus]
+    filtered_paths: Dict[str, Tuple[Index, ...]]
+    data: Dict[str, Any]
+    layouts: Dict[str, EntryLayout]
+    metadata: Dict[str, EntryMetadata]
+    input_row_count: int
+
+    def buffer(self, *, lineage_id: str, pulse_id: int) -> WorkflowsBuffer:
+        buffer = WorkflowsBuffer(
+            lineage_id=lineage_id,
+            pulse_id=pulse_id,
+            data=self.data,
+            layout=self.layouts,
+            metadata=self.metadata,
+        )
+
+        return buffer
+
+
+def _select(run: RunState, outputs: Sequence[PlannedWorkflowOutput]) -> _Selected:
+    """Read every port selected by ``outputs`` from the run's entries."""
+    plan = run.plan
+    selected = _Selected(
+        selections={output.name: {} for output in outputs},
+        statuses={},
+        filtered_paths={},
+        data={},
+        layouts={},
+        metadata={},
+        input_row_count=0,
+    )
+    for port in selected_ports(plan, outputs):
+        entry = run.entry_for(port.port)
+        if port.layout.depth and _follows_rows(plan, port):
+            known_rows = entry.children.get((), ())
+            selected.input_row_count = max(
+                selected.input_row_count,
+                max((index[0] + 1 for index in known_rows), default=0),
+            )
+
+        selected.selections[port.output.name][port.selector] = port.key
+        selected.filtered_paths[port.key] = entry.minimal_filtered_paths()
+        if entry.is_effectively_filtered():
+            selected.statuses[port.key] = "filtered"
+            continue
+
+        selected.statuses[port.key] = "complete"
+        selected.data[port.key] = entry.to_tree()
+        selected.layouts[port.key] = entry.layout
+        selected.metadata[port.key] = entry.surviving_metadata()
+
+    return selected
+
+
+def _select_filtered(
+    plan: CompiledWorkflow, outputs: Sequence[PlannedWorkflowOutput]
+) -> _Selected:
+    """Every port selected by ``outputs`` filtered as a whole, entries unread."""
+    selected = _Selected(
+        selections={output.name: {} for output in outputs},
+        statuses={},
+        filtered_paths={},
+        data={},
+        layouts={},
+        metadata={},
+        input_row_count=0,
+    )
+    for port in selected_ports(plan, outputs):
+        selected.selections[port.output.name][port.selector] = port.key
+        selected.statuses[port.key] = "filtered"
+        selected.filtered_paths[port.key] = ((),)
+
+    return selected
+
+
+def _follows_rows(plan: CompiledWorkflow, port: SelectedPort) -> bool:
+    """Whether the port's top axis is a workflow input or source sample axis.
+
+    Rows are built per element of such an axis; an axis generated by a step
+    is copied whole into every row, as in V1.
+    """
+    origin = plan.axis_origin(port.layout.axis_ids[0])
+    follows = origin.kind in ("input", "source")
+
+    return follows
+
+
 def build_result(run: RunState) -> RunResult:
-    """Assemble the ``RunResult`` of a finished run.
+    """Assemble the ``RunResult`` of a finished passive run.
 
     Args:
         run: State after the last step.
@@ -166,64 +352,71 @@ def build_result(run: RunState) -> RunResult:
     Returns:
         Selected port entries, statuses, filtered paths and the trace.
     """
-    plan = run.plan
-    selections: Dict[str, Dict[str, str]] = {output.name: {} for output in plan.outputs}
-    statuses: Dict[str, str] = {}
-    filtered_paths: Dict[str, Tuple[Index, ...]] = {}
-    data: Dict[str, Any] = {}
-    layouts: Dict[str, EntryLayout] = {}
-    metadata: Dict[str, Any] = {}
-    input_row_count = 0
-    for port in selected_ports(plan):
-        entry = run.entry_for(port.port)
-        if (
-            port.layout.depth
-            and plan.axis_origin(port.layout.axis_ids[0]).kind == "input"
-        ):
-            known_rows = entry.children.get((), ())
-            input_row_count = max(
-                input_row_count,
-                max((index[0] + 1 for index in known_rows), default=0),
-            )
-
-        selections[port.output.name][port.selector] = port.key
-        filtered_paths[port.key] = entry.minimal_filtered_paths()
-        if entry.is_effectively_filtered():
-            statuses[port.key] = "filtered"
-            continue
-
-        statuses[port.key] = "complete"
-        data[port.key] = entry.to_tree()
-        layouts[port.key] = entry.layout
-        metadata[port.key] = entry.surviving_metadata()
-
-    run.record("run_finished", statuses=dict(statuses))
+    selected = _select(run, run.plan.outputs)
+    run.record("run_finished", statuses=dict(selected.statuses))
     result = RunResult(
-        outputs=WorkflowsBuffer(
-            lineage_id=f"run:{run.run_id}",
-            pulse_id=0,
-            data=data,
-            layout=layouts,
-            metadata=metadata,
-        ),
-        selections=selections,
-        statuses=statuses,
-        filtered_paths=filtered_paths,
-        plan=plan,
+        outputs=selected.buffer(lineage_id=f"run:{run.run_id}", pulse_id=0),
+        selections=selected.selections,
+        statuses=selected.statuses,
+        filtered_paths=selected.filtered_paths,
+        plan=run.plan,
         session_id=run.session.session_id,
         run_id=run.run_id,
         trace=tuple(run.trace),
-        input_row_count=input_row_count,
+        input_row_count=selected.input_row_count,
     )
 
     return result
 
 
-def build_rows(result: RunResult, *, serialize: bool) -> List[Dict[str, Any]]:
-    """Build V1-shaped rows from a run result.
+def build_group_result(
+    run: RunState, *, group: PlannedOutputGroup, filtered: bool = False
+) -> GroupResult:
+    """Assemble the ``GroupResult`` of one output group after a pulse ran.
 
     Args:
-        result: Result of one run.
+        run: State of the pulse after its last step.
+        group: A group anchored on the pulse's source.
+        filtered: Deliver every field as filtered without reading entries;
+            the outcome of an explicitly filtered emission.
+
+    Returns:
+        Selected port entries, statuses, filtered paths and the trace so far.
+    """
+    pulse = run.pulse
+    selected = (
+        _select_filtered(run.plan, group.outputs)
+        if filtered
+        else _select(run, group.outputs)
+    )
+    run.record("group_built", group=group.name, statuses=dict(selected.statuses))
+    result = GroupResult(
+        group=group.name,
+        source=pulse.source,
+        pulse=pulse,
+        run_id=run.run_id,
+        session_id=run.session.session_id,
+        fields=group.outputs,
+        outputs=selected.buffer(lineage_id=pulse.lineage_id, pulse_id=pulse.sequence),
+        selections=selected.selections,
+        statuses=selected.statuses,
+        filtered_paths=selected.filtered_paths,
+        plan=run.plan,
+        trace=tuple(run.trace),
+        input_row_count=selected.input_row_count,
+    )
+
+    return result
+
+
+Result = Union[RunResult, GroupResult]
+
+
+def build_rows(result: Result, *, serialize: bool) -> List[Dict[str, Any]]:
+    """Build V1-shaped rows from a run or group result.
+
+    Args:
+        result: Result of one run, or of one output group of one pulse.
         serialize: Whether to apply the kinds' serializers.
 
     Returns:
@@ -235,15 +428,15 @@ def build_rows(result: RunResult, *, serialize: bool) -> List[Dict[str, Any]]:
             input axes, or a kind hook fails for every declared kind.
     """
     plan = result.plan
-    ports = selected_ports(plan)
+    outputs = result.fields if isinstance(result, GroupResult) else plan.outputs
+    ports = selected_ports(plan, outputs)
     projections = {
         port.key: _project(result, port, serialize=serialize) for port in ports
     }
     row_axes = {
         port.layout.axis_ids[0]
         for port in ports
-        if port.layout.depth
-        and plan.axis_origin(port.layout.axis_ids[0]).kind == "input"
+        if port.layout.depth and _follows_rows(plan, port)
     }
     if len(row_axes) > 1:
         raise WorkflowExecutionError(
@@ -251,9 +444,7 @@ def build_rows(result: RunResult, *, serialize: bool) -> List[Dict[str, Any]]:
             "rows need one top-level axis. Read RunResult.outputs instead"
         )
 
-    by_output: Dict[str, List[SelectedPort]] = {
-        output.name: [] for output in plan.outputs
-    }
+    by_output: Dict[str, List[SelectedPort]] = {output.name: [] for output in outputs}
     for port in ports:
         by_output[port.output.name].append(port)
 
