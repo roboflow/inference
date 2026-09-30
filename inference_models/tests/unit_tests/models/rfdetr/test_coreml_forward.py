@@ -7,12 +7,14 @@ from inference_models.entities import ImageDimensions
 from inference_models.models.common.coreml import CoreMLModel, CoreMLModelSignature
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
+    InferenceConfig,
     NetworkInputDefinition,
     PreProcessingMetadata,
     StaticCropOffset,
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.coreml_forward import (
+    align_network_input_with_model,
     run_rfdetr_coreml,
     selections_to_logits,
     to_package_image,
@@ -230,3 +232,53 @@ def test_run_rfdetr_coreml_expands_image_contract_selections() -> None:
         logits[0].sigmoid().max(dim=1).values, torch.tensor([0.8, 0.4]), atol=1e-3
     )
     assert masks.shape == (1, 2, 8, 8)
+
+
+def _inference_config(height: int, width: int) -> InferenceConfig:
+    return InferenceConfig.model_validate(
+        {
+            "network_input": {
+                "training_input_size": {"height": height, "width": width},
+                "dynamic_spatial_size_supported": False,
+                "color_mode": "rgb",
+                "resize_mode": "stretch",
+                "input_channels": 3,
+                "scaling_factor": 255,
+                "normalization": [MEAN, STD],
+            }
+        }
+    )
+
+
+def _signature(height: int, width: int) -> CoreMLModelSignature:
+    return CoreMLModelSignature(
+        input_name="image_input",
+        image_input=True,
+        input_height=height,
+        input_width=width,
+        output_names=("boxes", "scores", "labels"),
+    )
+
+
+def test_align_network_input_with_model_uses_the_model_input_size() -> None:
+    config = _inference_config(height=640, width=640)
+
+    aligned = align_network_input_with_model(
+        inference_config=config, signature=_signature(height=384, width=384)
+    )
+
+    size = aligned.network_input.training_input_size
+    assert (size.height, size.width) == (384, 384)
+    assert aligned.network_input.normalization == config.network_input.normalization
+    assert config.network_input.training_input_size.height == 640
+
+
+def test_align_network_input_with_model_keeps_a_matching_config() -> None:
+    config = _inference_config(height=384, width=384)
+
+    assert (
+        align_network_input_with_model(
+            inference_config=config, signature=_signature(height=384, width=384)
+        )
+        is config
+    )

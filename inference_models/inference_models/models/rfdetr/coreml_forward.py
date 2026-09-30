@@ -16,9 +16,11 @@ import numpy as np
 import torch
 from PIL import Image
 
-from inference_models.models.common.coreml import CoreMLModel
+from inference_models.logger import LOGGER
+from inference_models.models.common.coreml import CoreMLModel, CoreMLModelSignature
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
+    InferenceConfig,
     NetworkInputDefinition,
 )
 
@@ -27,6 +29,42 @@ from inference_models.models.common.roboflow.model_packages import (
 UNSELECTED_CLASS_LOGIT = -1e4
 # Keeps logit(score) finite for scores that round to exactly 0 or 1 in the package's float16 output.
 SCORE_EPSILON = 1e-7
+
+
+def align_network_input_with_model(
+    inference_config: InferenceConfig, signature: CoreMLModelSignature
+) -> InferenceConfig:
+    """Use the Core ML model's own input size when ``inference_config.json`` declares a different one.
+
+    Some registered packages carry an inference config whose training input size does not match the exported
+    weights. The model's spec is authoritative: RF-DETR's outputs are relative to the input, so pre-processing
+    to the size the model takes gives correct results, where feeding the configured size fails every call.
+    """
+    size = inference_config.network_input.training_input_size
+    if size is None or (size.height, size.width) == (
+        signature.input_height,
+        signature.input_width,
+    ):
+        return inference_config
+    LOGGER.warning(
+        "Core ML model takes %sx%s input, but the package's inference_config.json declares %sx%s; using the "
+        "model's input size.",
+        signature.input_width,
+        signature.input_height,
+        size.width,
+        size.height,
+    )
+    network_input = inference_config.network_input.model_copy(
+        update={
+            "training_input_size": size.model_copy(
+                update={
+                    "height": signature.input_height,
+                    "width": signature.input_width,
+                }
+            )
+        }
+    )
+    return inference_config.model_copy(update={"network_input": network_input})
 
 
 def run_rfdetr_coreml(

@@ -23,7 +23,10 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import post_process_object_detection_results
-from inference_models.models.rfdetr.coreml_forward import run_rfdetr_coreml
+from inference_models.models.rfdetr.coreml_forward import (
+    align_network_input_with_model,
+    run_rfdetr_coreml,
+)
 from inference_models.models.rfdetr.optimization.backend_path import (
     RFDetrBackendPath,
     RFDetrBackendPlanMixin,
@@ -103,6 +106,9 @@ class RFDetrForObjectDetectionCoreML(
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
         coreml_model = load_coreml_package(model_package_dir=model_name_or_path)
+        inference_config = align_network_input_with_model(
+            inference_config=inference_config, signature=coreml_model.signature
+        )
         num_logit_classes = len(class_names) + 1
         classes_re_mapping = None
         if inference_config.class_names_operations:
