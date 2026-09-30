@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -49,11 +49,11 @@ def test_get_workflow_specification_forwards_to_the_platform_api(monkeypatch) ->
     )
 
 
-def test_async_push_usage_payloads_awaits_the_usage_collector(monkeypatch) -> None:
+def test_async_push_usage_payloads_awaits_the_usage_collector() -> None:
     push = AsyncMock()
-    monkeypatch.setattr(collector.usage_collector, "async_push_usage_payloads", push)
 
-    asyncio.run(LegacyPipelineHost().async_push_usage_payloads())
+    with patch.object(collector.usage_collector, "async_push_usage_payloads", push):
+        asyncio.run(LegacyPipelineHost().async_push_usage_payloads())
 
     push.assert_awaited_once_with()
 
@@ -93,25 +93,27 @@ def test_wrap_url_forwards_to_the_gateway_wrapper(monkeypatch) -> None:
 @pytest.mark.parametrize("is_preview", [True, False])
 @pytest.mark.parametrize("established, expected_duration", [(True, 90.0), (False, 0)])
 def test_record_session_usage_builds_the_pinned_usage_record(
-    monkeypatch, established, expected_duration, is_preview
+    established, expected_duration, is_preview
 ) -> None:
     record = MagicMock()
-    monkeypatch.setattr(collector.usage_collector, "record_usage", record)
     push = MagicMock()
-    monkeypatch.setattr(collector.usage_collector, "push_usage_payloads", push)
     request = SimpleNamespace(
         api_key="test-key", requested_plan="webrtc-gpu-small", is_preview=is_preview
     )
     started = datetime.datetime(2026, 1, 1, 12, 0, 0)
 
-    LegacyPipelineHost().record_session_usage(
-        webrtc_request=request,
-        workflow_id="hash-1",
-        video_source="rtsp",
-        session_started=started,
-        session_stopped=started + datetime.timedelta(seconds=90),
-        connection_established=established,
-    )
+    with (
+        patch.object(collector.usage_collector, "record_usage", record),
+        patch.object(collector.usage_collector, "push_usage_payloads", push),
+    ):
+        LegacyPipelineHost().record_session_usage(
+            webrtc_request=request,
+            workflow_id="hash-1",
+            video_source="rtsp",
+            session_started=started,
+            session_stopped=started + datetime.timedelta(seconds=90),
+            connection_established=established,
+        )
 
     record.assert_called_once_with(
         source="hash-1",
@@ -132,10 +134,10 @@ def test_record_session_usage_builds_the_pinned_usage_record(
     push.assert_not_called()
 
 
-def test_push_usage_payloads_forwards_to_the_usage_collector(monkeypatch) -> None:
+def test_push_usage_payloads_forwards_to_the_usage_collector() -> None:
     push = MagicMock()
-    monkeypatch.setattr(collector.usage_collector, "push_usage_payloads", push)
 
-    LegacyPipelineHost().push_usage_payloads()
+    with patch.object(collector.usage_collector, "push_usage_payloads", push):
+        LegacyPipelineHost().push_usage_payloads()
 
     push.assert_called_once_with()
