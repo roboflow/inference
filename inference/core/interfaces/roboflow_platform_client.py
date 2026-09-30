@@ -3,16 +3,19 @@
 Everything forwards to `inference.core.roboflow_api` and
 `inference.core.utils.url_utils`; no security control is reimplemented. Calls
 go through the module objects rather than attributes captured at construction,
-so a test that monkeypatches SECURE_GATEWAY, the transport or the header-policy
-flags observes what production does.
+so a test that monkeypatches SECURE_GATEWAY, the transport, the header-policy
+flags or a `roboflow_api` function observes what production does.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import inference.core.env as env
+import inference.core.managers.metrics as metrics
 import inference.core.roboflow_api as roboflow_api
 import inference.core.utils.url_utils as url_utils
 from inference.core.cache import cache as server_cache
 from inference.core.exceptions import WorkspaceLoadError
+from inference.core.version import __version__
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.prototypes.platform_client import HttpErrorHandlers
 
@@ -52,6 +55,132 @@ class ServerRoboflowPlatformClient:
 
     def wrap_url(self, url: str) -> str:
         return url_utils.wrap_url(url)
+
+    def get_roboflow_workspace(self, api_key: str) -> str:
+        return roboflow_api.get_roboflow_workspace(api_key=api_key)
+
+    def add_custom_metadata(
+        self,
+        api_key: str,
+        workspace_id: str,
+        inference_ids: List[str],
+        field_name: str,
+        field_value: str,
+    ) -> None:
+        return roboflow_api.add_custom_metadata(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            inference_ids=inference_ids,
+            field_name=field_name,
+            field_value=field_value,
+        )
+
+    def register_image_at_roboflow(
+        self,
+        api_key: str,
+        dataset_id: str,
+        local_image_id: str,
+        image_bytes: bytes,
+        batch_name: str,
+        tags: Optional[List[str]] = None,
+        inference_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        return roboflow_api.register_image_at_roboflow(
+            api_key=api_key,
+            dataset_id=dataset_id,
+            local_image_id=local_image_id,
+            image_bytes=image_bytes,
+            batch_name=batch_name,
+            tags=tags,
+            inference_id=inference_id,
+            metadata=metadata,
+        )
+
+    def annotate_image_at_roboflow(
+        self,
+        api_key: str,
+        dataset_id: str,
+        local_image_id: str,
+        roboflow_image_id: str,
+        annotation_content: str,
+        annotation_file_type: str,
+        is_prediction: bool = True,
+    ) -> dict:
+        return roboflow_api.annotate_image_at_roboflow(
+            api_key=api_key,
+            dataset_id=dataset_id,
+            local_image_id=local_image_id,
+            roboflow_image_id=roboflow_image_id,
+            annotation_content=annotation_content,
+            annotation_file_type=annotation_file_type,
+            is_prediction=is_prediction,
+        )
+
+    def update_image_metadata_at_roboflow(
+        self,
+        api_key: str,
+        workspace_id: str,
+        image_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        add_tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        return roboflow_api.update_image_metadata_at_roboflow(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            image_id=image_id,
+            metadata=metadata,
+            add_tags=add_tags,
+        )
+
+    def batch_update_image_metadata_at_roboflow(
+        self,
+        api_key: str,
+        workspace_id: str,
+        updates: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return roboflow_api.batch_update_image_metadata_at_roboflow(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            updates=updates,
+        )
+
+    def search_project_images_at_roboflow(
+        self,
+        api_key: str,
+        workspace: str,
+        project: str,
+        image_base64: str,
+        limit: int,
+        fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        return roboflow_api.search_project_images_at_roboflow(
+            api_key=api_key,
+            workspace=workspace,
+            project=project,
+            image_base64=image_base64,
+            limit=limit,
+            fields=fields,
+        )
+
+    def send_inference_results_to_model_monitoring(
+        self,
+        api_key: str,
+        workspace_id: str,
+        inference_data: dict,
+    ) -> None:
+        return roboflow_api.send_inference_results_to_model_monitoring(
+            api_key, workspace_id, inference_data
+        )
+
+    def get_device_id(self) -> Optional[str]:
+        return env.DEVICE_ID
+
+    def get_server_version(self) -> str:
+        return __version__
+
+    def get_system_info(self) -> dict:
+        return metrics.get_system_info()
 
 
 class ServerWorkspaceResolver:

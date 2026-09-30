@@ -71,6 +71,10 @@ ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = get_boolean_from_env(
 )
 MAX_IMAGE_URL_REDIRECTS = get_integer_from_env("MAX_IMAGE_URL_REDIRECTS", default=3)
 
+# ── Workflows: Roboflow-platform blocks ───────────────────────────────────
+# Reported as `device_id` by the model-monitoring block, as in `inference`.
+DEVICE_ID = os.environ.get("DEVICE_ID")
+
 # ── Auth (auth.py) ────────────────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
 AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)

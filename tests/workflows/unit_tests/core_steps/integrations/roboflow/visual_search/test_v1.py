@@ -2,15 +2,14 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+    BlockManifest,
+    RoboflowVisualSearchBlockV1,
+)
 
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialize_wildcard_kind,
-)
-from inference.roboflow_workflows_plugin.integrations.visual_search import v1
-from inference.roboflow_workflows_plugin.integrations.visual_search.v1 import (
-    BlockManifest,
-    RoboflowVisualSearchBlockV1,
 )
 from inference.core.workflows.execution_engine.entities import base
 from inference.core.workflows.execution_engine.entities.base import (
@@ -61,9 +60,14 @@ def test_run_calls_project_search_and_returns_best_candidate(
     load_image_from_url_mock: mock.MagicMock,
 ) -> None:
     load_image_from_url_mock.return_value = np.zeros((4, 6, 3), dtype=np.uint8)
-    block = RoboflowVisualSearchBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {
             "results": [
                 {
@@ -132,9 +136,14 @@ def test_run_calls_project_search_and_returns_best_candidate(
 
 
 def test_run_returns_unmatched_when_api_returns_no_results() -> None:
-    block = RoboflowVisualSearchBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.return_value = {"results": []}
 
         result = block.run(
@@ -156,9 +165,14 @@ def test_run_returns_unmatched_when_api_returns_no_results() -> None:
 
 
 def test_run_batch_returns_one_result_per_image() -> None:
-    block = RoboflowVisualSearchBlockV1(api_key="api-key")
+    platform_client = mock.MagicMock()
+    block = RoboflowVisualSearchBlockV1(
+        api_key="api-key", platform_client=platform_client
+    )
 
-    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+    with mock.patch.object(
+        platform_client, "search_project_images_at_roboflow"
+    ) as search_mock:
         search_mock.side_effect = [
             {"results": [{"id": "img-1", "user_metadata": {"sku": "A"}}]},
             {"results": [{"id": "img-2", "user_metadata": {"sku": "B"}}]},

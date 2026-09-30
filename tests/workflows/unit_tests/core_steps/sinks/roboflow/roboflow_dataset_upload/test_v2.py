@@ -6,18 +6,18 @@ import numpy as np
 import pytest
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
-
-from inference.core.cache import MemoryCache
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.roboflow_workflows_plugin.sinks.dataset_upload import v2
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2 import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v2
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     BlockManifest,
     RoboflowDatasetUploadBlockV2,
     maybe_register_datapoint_at_roboflow,
 )
-from inference.roboflow_workflows_plugin.sinks.dataset_upload.v2_tensor import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
     RoboflowDatasetUploadBlockV2 as TensorRoboflowDatasetUploadBlockV2,
 )
+
+from inference.core.cache import MemoryCache
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -60,6 +60,7 @@ def test_maybe_register_datapoint_at_roboflow_when_data_sampled_off(
         background_tasks=MagicMock(),
         thread_pool_executor=MagicMock(),
         api_key="XXX",
+        platform_client=MagicMock(),
     )
 
     # then
@@ -98,6 +99,7 @@ def test_maybe_register_datapoint_at_roboflow_when_data_sample_accepted(
         background_tasks=MagicMock(),
         thread_pool_executor=MagicMock(),
         api_key="XXX",
+        platform_client=MagicMock(),
     )
 
     # then
