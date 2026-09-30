@@ -66,12 +66,13 @@ def test_sliced_images_embed_and_connect_to_existing_cosine_similarity(output_ty
         },
     )
     results = engine.run(
+        serialize_results=True,
         runtime_parameters={
             "image": [
                 np.zeros((32, 32, 3), dtype=np.uint8),
                 np.zeros((32, 32, 3), dtype=np.uint8),
             ]
-        }
+        },
     )
     assert len(results) == 2
     for result in results:

@@ -147,3 +147,40 @@ def test_incorrect_response_count_fails():
     block = EmbeddingModelBlockV1(manager, "key", StepExecutionMode.LOCAL)
     with pytest.raises(ValueError, match="count"):
         block.run(Batch(indices=None, content=[image()]), "my-project/1")
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+@pytest.mark.parametrize(
+    "execution_mode", [StepExecutionMode.LOCAL, StepExecutionMode.REMOTE]
+)
+def test_tensor_variant_matches_tensor_embedding_ports(
+    monkeypatch, output_type, execution_mode
+):
+    import torch
+    from roboflow_workflows.core_steps.models.roboflow.embedding import v1
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1_tensor import (
+        EmbeddingModelBlockV1 as TensorEmbeddingBlock,
+    )
+    from roboflow_workflows.execution_engine.entities.tensor_native_types import (
+        TENSOR_NATIVE_EMBEDDING_KIND,
+    )
+
+    manager = MagicMock()
+    manager.run_image_embeddings.return_value = response()
+    client = MagicMock()
+    client.get_image_embeddings.return_value = [
+        {"embeddings": [embedding], "embedding_info": response()["embedding_info"]}
+        for embedding in response()["embeddings"]
+    ]
+    monkeypatch.setattr(v1, "InferenceHTTPClient", MagicMock(return_value=client))
+    block = TensorEmbeddingBlock(manager, "key", execution_mode)
+    result = block.run(
+        Batch(indices=None, content=[image(), image()]), "my-project/1", output_type
+    )
+    assert block.get_manifest().describe_outputs()[0].kind == [
+        TENSOR_NATIVE_EMBEDDING_KIND
+    ]
+    assert [item["embedding"].tolist() for item in result] == [[2.0, 3.0], [4.0, 5.0]]
+    assert all(item["embedding"].dtype == torch.float32 for item in result)
+    assert all(item["embedding"].shape == (2,) for item in result)
+    assert all(item["embedding_info"]["space_id"] == "same-space" for item in result)

@@ -5,9 +5,6 @@ from roboflow_workflows.configuration import get_configuration
 from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
-from roboflow_workflows.core_steps.models.roboflow.embedding.v1 import (
-    EmbeddingModelBlockV1,
-)
 from roboflow_workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
@@ -844,6 +841,14 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
 else:
     from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
         RoboflowKeypointDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1_tensor import (
+        EmbeddingModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1 import (
+        EmbeddingModelBlockV1,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor import (
