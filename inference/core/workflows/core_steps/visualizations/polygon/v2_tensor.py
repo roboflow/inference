@@ -2,11 +2,13 @@ from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
-from supervision import PolygonAnnotator
 
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
+)
+from inference.core.workflows.core_steps.visualizations.common.annotators.compact_polygon import (
+    CompactPolygonAnnotator as PolygonAnnotator,
 )
 from inference.core.workflows.core_steps.visualizations.common.base_colorable_tensor import (
     ColorableVisualizationBlock,

@@ -24,6 +24,7 @@ from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.keypoints import (
     validate_keypoints_padding,
 )
+from inference.core.workflows.core_steps.common.rle_compact import _decode_coco_counts
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
@@ -901,63 +902,95 @@ def native_detections_from_inference_predictions(
     )
 
 
-def _column_to_runs(column: np.ndarray) -> List[Tuple[int, int]]:
-    """Split a single 1-D column into (value, run_length) pairs of consecutive equal values."""
-    if column.shape[0] == 0:
-        return []
-    change_points = np.flatnonzero(column[1:] != column[:-1]) + 1
-    boundaries = np.concatenate(([0], change_points, [column.shape[0]]))
-    return [
-        (int(column[start]), int(end - start))
-        for start, end in zip(boundaries[:-1], boundaries[1:])
-    ]
-
-
-def _embed_single_mask_counts(
-    column_major_slice: np.ndarray,
+def _embed_rle_counts(
+    counts: Union[bytes, str],
+    source_height: int,
     offset_xy: Tuple[int, int],
     target_size_hw: Tuple[int, int],
 ) -> List[int]:
-    """Build the column-major uncompressed COCO counts for one slice placed onto the canvas.
+    """Translate foreground runs in F-order without materialising mask pixels.
 
-    ``column_major_slice`` is the dense (h, w) slice already laid out as a list of its w
-    columns (each of height h). The big (H, W) canvas is never densified: we emit run
-    lengths directly and merge adjacent equal-value runs.
+    Only foreground runs crossing source columns need splitting: padding between
+    columns is background. Adjacent translated runs are coalesced.
     """
-    h, w = column_major_slice.shape
     x0, y0 = offset_xy
     target_h, target_w = target_size_hw
+    runs = _decode_coco_counts(counts)
+    if target_h == source_height:
+        # No vertical padding: the F-order source is one contiguous interval.
+        # Foreground runs crossing columns do not need splitting.
+        source_pixels = sum(runs)
+        runs[0] += x0 * target_h
+        trailing = target_h * target_w - x0 * target_h - source_pixels
+        if trailing:
+            if len(runs) % 2:
+                runs[-1] += trailing
+            else:
+                runs.append(trailing)
+        return runs
+    output = [0]
+    source_position = 0
+    previous_end = 0
+    for index, length in enumerate(runs):
+        end = source_position + length
+        if index % 2:
+            while source_position < end:
+                column, row = divmod(source_position, source_height)
+                take = min(end - source_position, source_height - row)
+                start = (x0 + column) * target_h + y0 + row
+                gap = start - previous_end
+                if len(output) == 1:
+                    output[0] = start
+                    output.append(take)
+                elif gap == 0:
+                    output[-1] += take
+                else:
+                    output.extend((gap, take))
+                previous_end = start + take
+                source_position += take
+        source_position = end
+    trailing = target_h * target_w - previous_end
+    if len(output) == 1:
+        output[0] = trailing
+    elif trailing:
+        output.append(trailing)
+    return output
 
-    bottom_zeros = target_h - h - y0
-    leading_zero_pixels = x0 * target_h
-    trailing_zero_pixels = (target_w - w - x0) * target_h
 
-    # (value, run_length) pairs in column-major order across the whole canvas.
-    runs: List[Tuple[int, int]] = []
-    if leading_zero_pixels > 0:
-        runs.append((0, leading_zero_pixels))
-    for column_index in range(w):
-        column = column_major_slice[:, column_index]
-        if y0 > 0:
-            runs.append((0, y0))
-        runs.extend(_column_to_runs(column))
-        if bottom_zeros > 0:
-            runs.append((0, bottom_zeros))
-    if trailing_zero_pixels > 0:
-        runs.append((0, trailing_zero_pixels))
+def _embed_fragmented_mask_counts(
+    counts: Union[bytes, str],
+    source_size_hw: Tuple[int, int],
+    offset_xy: Tuple[int, int],
+    target_size_hw: Tuple[int, int],
+) -> List[int]:
+    """Vectorised fallback for masks whose compressed representation is large.
 
-    # COCO uncompressed counts are alternating run lengths starting with a zero run.
-    merged_counts: List[int] = [0]
-    current_value = 0
-    for value, length in runs:
-        if length == 0:
-            continue
-        if value == current_value:
-            merged_counts[-1] += length
-        else:
-            merged_counts.append(length)
-            current_value = value
-    return merged_counts
+    Decode one slice at a time, never an instance stack or full-frame canvas.
+    Padding each column with zeros makes foreground run boundaries independent.
+    """
+    dense = mask_utils.decode({"size": list(source_size_hw), "counts": counts})
+    columns = np.pad(dense.T.astype(np.int8), ((0, 0), (1, 1)))
+    changes = np.diff(columns, axis=1)
+    start_cols, start_rows = np.nonzero(changes == 1)
+    end_cols, end_rows = np.nonzero(changes == -1)
+    target_h, target_w = target_size_hw
+    x0, y0 = offset_xy
+    if len(start_cols) == 0:
+        return [target_h * target_w]
+    starts = (start_cols + x0) * target_h + start_rows + y0
+    ends = (end_cols + x0) * target_h + end_rows + y0
+    # Runs touching across columns are one foreground run on the target.
+    separate = starts[1:] != ends[:-1]
+    starts = starts[np.r_[True, separate]]
+    ends = ends[np.r_[separate, True]]
+    output = np.empty(2 * len(starts) + 1, dtype=np.int64)
+    output[0] = starts[0]
+    output[1::2] = ends - starts
+    output[2:-1:2] = starts[1:] - ends[:-1]
+    output[-1] = target_h * target_w - ends[-1]
+    if output[-1] == 0:
+        output = output[:-1]
+    return output.tolist()
 
 
 def embed_rle_masks_in_larger_canvas(
@@ -969,9 +1002,10 @@ def embed_rle_masks_in_larger_canvas(
 
     Each input mask sits at slice resolution ``masks.image_size == (h, w)``. The returned
     masks live on a ``(H, W)`` canvas with the slice's top-left at ``offset_xy == (x0, y0)``;
-    everything outside the slice is zero. COCO RLE here is column-major (fortran), matching
-    ``torch_mask_to_coco_rle``. The big canvas is never densified -- only the small slice is
-    decoded to dense and run lengths are emitted directly onto the canvas.
+    everything outside the slice is zero. COCO RLE here is column-major (fortran).
+    Both the slice and the target canvas remain compressed for compact masks;
+    fragmented masks use a
+    vectorised, one-slice-at-a-time fallback.
     """
     h, w = masks.image_size
     x0, y0 = offset_xy
@@ -991,18 +1025,27 @@ def embed_rle_masks_in_larger_canvas(
 
     if len(masks.masks) == 0:
         return InstancesRLEMasks(image_size=(target_h, target_w), masks=[])
-
-    # Decode only the small (h, w) slices to dense; the big canvas stays in run-list form.
-    dense_slices = coco_rle_masks_to_numpy_mask(masks).astype(np.uint8)
+    if (h, w) == target_size_hw:
+        return InstancesRLEMasks(image_size=target_size_hw, masks=list(masks.masks))
 
     embedded: List[bytes] = []
-    for dense_slice in dense_slices:
-        # Lay the (h, w) slice out as columns (column j of height h) -> shape (h, w).
-        counts = _embed_single_mask_counts(
-            column_major_slice=dense_slice,
-            offset_xy=offset_xy,
-            target_size_hw=target_size_hw,
-        )
+    for mask_counts in masks.masks:
+        # Above one encoded byte per eight pixels, vectorized pixel operations
+        # avoid Python work proportional to the many short foreground runs.
+        if len(mask_counts) > h * w // 8:
+            counts = _embed_fragmented_mask_counts(
+                counts=mask_counts,
+                source_size_hw=(h, w),
+                offset_xy=offset_xy,
+                target_size_hw=target_size_hw,
+            )
+        else:
+            counts = _embed_rle_counts(
+                counts=mask_counts,
+                source_height=h,
+                offset_xy=offset_xy,
+                target_size_hw=target_size_hw,
+            )
         rle = mask_utils.frPyObjects(
             {"counts": counts, "size": [target_h, target_w]}, target_h, target_w
         )

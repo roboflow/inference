@@ -15,53 +15,18 @@ dominant cost when visualising many instances on high-resolution frames.
 crop** instead of a full ``(H, W)`` array, and its annotators paint directly
 into the crop region (``_paint_masks_by_area``) — no full-frame allocation.
 
-The key observation that makes a *direct* transcode possible: supervision's
-per-crop RLE (``_mask_to_rle_counts``) and COCO's uncompressed counts use the
-**same encoding** — column-major run lengths starting with a leading
-``False`` (background) run, alternating False/True. They differ only in *scope*
-(full image vs. bbox crop). So converting one to the other is a matter of:
+Compressed foreground runs are clipped to the requested bounding box and
+translated directly into crop coordinates. Background columns outside the crop
+are skipped without constructing per-column lists or decoding mask pixels.
 
-1. decompressing the COCO counts to plain run lengths (run arithmetic, NOT a
-   pixel decode — see :func:`_decode_coco_counts`);
-2. splitting the full-frame run list into per-column run lists
-   (``_rle_split_cols``);
-3. selecting the bbox's columns and trimming each to the bbox's rows
-   (:func:`_trim_col_runs`);
-4. re-joining the selected/trimmed columns into a flat crop RLE
-   (``_rle_join_cols``).
-
-No ``(H, W)`` or ``(N, H, W)`` array is ever allocated.
-
-Parity contract
----------------
-:func:`compact_mask_from_coco_rle` is defined to produce **exactly** what
-``CompactMask.from_dense(coco_rle_masks_to_numpy_mask(rle), xyxy, image_shape)``
-would produce — same box clipping (clip to ``[0, dim-1]``, inclusive max
-coords), same invalid-box handling (``x2 < x1`` or ``y2 < y1`` -> ``1x1``
-all-False crop) — just without the dense intermediate. The accompanying unit
-test asserts decoded-mask equality against that reference.
-
-Note on layering / upstreaming
--------------------------------
-This reuses supervision's private RLE primitives (``_rle_split_cols`` /
-``_rle_join_cols``) to guarantee identical junction-merge semantics. The natural
-long-term home for :func:`compact_mask_from_coco_rle` is a
-``CompactMask.from_coco_rle`` classmethod in supervision itself, at which point
-those imports become internal. It lives here for now so the tensor pipeline can
-adopt it without waiting on a supervision release.
+The result is pixel-identical to ``CompactMask.from_dense`` with the same boxes,
+including clipping and degenerate-box handling.
 """
 
 from typing import List, Sequence, Tuple, Union
 
 import numpy as np
-
-# Private supervision primitives. Isolated here so a single import site breaks
-# if supervision relocates them (rather than scattering the coupling).
-from supervision.detection.compact_mask import (
-    CompactMask,
-    _rle_join_cols,
-    _rle_split_cols,
-)
+from supervision.detection.compact_mask import CompactMask
 
 from inference_models.models.base.types import InstancesRLEMasks
 
@@ -102,43 +67,51 @@ def _decode_coco_counts(counts: Union[bytes, str]) -> List[int]:
     return cnts
 
 
-def _trim_col_runs(col_runs: Sequence[int], y1: int, y2: int) -> List[int]:
-    """Restrict one full-height column run list to rows ``[y1, y2]`` inclusive.
-
-    ``col_runs`` (as produced by ``_rle_split_cols``) starts with a ``False``
-    count and alternates, summing to the full column height. The returned list
-    covers ``y2 - y1 + 1`` rows and also starts with a ``False`` count (a
-    leading ``0`` is inserted when the window begins on a ``True`` pixel),
-    matching the convention ``_rle_join_cols`` expects.
-    """
-    want = y2 - y1 + 1
-    collected: List[Tuple[bool, int]] = []
-    row = 0
-    for idx, run_len in enumerate(col_runs):
-        is_true = idx % 2 == 1
-        start = row
-        end = row + int(run_len)
-        row = end
-        lo = max(start, y1)
-        hi = min(end, y2 + 1)
-        if hi > lo:
-            collected.append((is_true, hi - lo))
-        if row > y2:
+def _crop_rle_counts(
+    full_counts: Sequence[int],
+    image_height: int,
+    box: Tuple[int, int, int, int],
+) -> np.ndarray:
+    """Clip foreground intervals in F-order; never expand background columns."""
+    x1, y1, x2, y2 = box
+    crop_h = y2 - y1 + 1
+    crop_w = x2 - x1 + 1
+    first = x1 * image_height
+    stop = (x2 + 1) * image_height
+    position = 0
+    previous_end = 0
+    output = [0]
+    for index, length in enumerate(full_counts):
+        end = position + length
+        if index % 2:
+            cursor = max(position, first)
+            limit = min(end, stop)
+            while cursor < limit:
+                col, row = divmod(cursor, image_height)
+                column_end = min(limit, (col + 1) * image_height)
+                lo = max(row, y1)
+                hi = min(column_end - col * image_height, y2 + 1)
+                if hi > lo:
+                    start = (col - x1) * crop_h + lo - y1
+                    size = hi - lo
+                    if len(output) == 1:
+                        output[0] = start
+                        output.append(size)
+                    elif start == previous_end:
+                        output[-1] += size
+                    else:
+                        output.extend((start - previous_end, size))
+                    previous_end = start + size
+                cursor = column_end
+        position = end
+        if position >= stop:
             break
-
-    if not collected:
-        return [want]
-
-    out: List[int] = []
-    if collected[0][0]:  # window starts on True -> leading False count of 0
-        out.append(0)
-    for is_true, length in collected:
-        last_is_true = bool(out) and ((len(out) - 1) % 2 == 1)
-        if out and last_is_true == is_true:
-            out[-1] += length
-        else:
-            out.append(length)
-    return out
+    trailing = crop_h * crop_w - previous_end
+    if len(output) == 1:
+        output[0] = trailing
+    elif trailing:
+        output.append(trailing)
+    return np.asarray(output, dtype=np.int32)
 
 
 def compact_mask_from_coco_rle(
@@ -199,13 +172,7 @@ def compact_mask_from_coco_rle(
         crop_w = x2c - x1c + 1
 
         full_counts = _decode_coco_counts(masks_counts[i])
-        # Split the full-frame F-order RLE into one run list per image column
-        # (each column = img_h pixels). Pure run arithmetic — no pixel buffer.
-        columns = _rle_split_cols(np.asarray(full_counts, dtype=np.int64), img_h, img_w)
-        selected = [
-            _trim_col_runs(columns[col], y1c, y2c) for col in range(x1c, x2c + 1)
-        ]
-        crop_rle = _rle_join_cols(selected, crop_h * crop_w)
+        crop_rle = _crop_rle_counts(full_counts, img_h, (x1c, y1c, x2c, y2c))
 
         rles.append(crop_rle)
         crop_shapes.append((crop_h, crop_w))
