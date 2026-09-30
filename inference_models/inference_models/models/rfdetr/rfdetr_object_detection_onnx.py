@@ -19,6 +19,7 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
+    get_onnx_static_input_spatial_size,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -26,6 +27,8 @@ from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
+    align_training_input_size_with_model,
+    ensure_input_size_within_limit,
     parse_class_names_file,
     parse_inference_config,
 )
@@ -161,11 +164,22 @@ class RFDetrForObjectDetectionONNX(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
-            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
+        )
+        model_input_size = get_onnx_static_input_spatial_size(session=session)
+        if model_input_size is not None:
+            inference_config = align_training_input_size_with_model(
+                inference_config,
+                model_input_height=model_input_size[0],
+                model_input_width=model_input_size[1],
+            )
+        # Checked after alignment: the model's input size, not the package config's, is what runs.
+        ensure_input_size_within_limit(
+            inference_config=inference_config,
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         device = align_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
