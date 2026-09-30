@@ -590,12 +590,19 @@ def test_parse_inference_config_rejects_unbounded_input_when_size_limit_is_set(
         )
 
 
-def _config_with_training_size(height: int, width: int) -> InferenceConfig:
+def _config_with_training_size(
+    height: int, width: int, dynamic_spatial_size_supported: bool = False
+) -> InferenceConfig:
     return InferenceConfig.model_validate(
         {
             "network_input": {
                 "training_input_size": {"height": height, "width": width},
-                "dynamic_spatial_size_supported": False,
+                "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+                "dynamic_spatial_size_mode": (
+                    {"type": "pad-to-be-divisible", "value": 32}
+                    if dynamic_spatial_size_supported
+                    else None
+                ),
                 "color_mode": "rgb",
                 "resize_mode": "stretch",
                 "input_channels": 3,
@@ -626,6 +633,42 @@ def test_align_training_input_size_with_model_keeps_a_matching_config() -> None:
         )
         is config
     )
+
+
+def test_align_training_input_size_with_model_disables_spatial_overrides() -> None:
+    config = _config_with_training_size(
+        height=384, width=384, dynamic_spatial_size_supported=True
+    )
+
+    aligned = align_training_input_size_with_model(
+        config, model_input_height=384, model_input_width=384
+    )
+
+    assert aligned.network_input.dynamic_spatial_size_supported is False
+    assert aligned.network_input.dynamic_spatial_size_mode is None
+    assert config.network_input.dynamic_spatial_size_supported is True
+
+
+def test_align_training_input_size_with_model_sizes_an_any_size_config() -> None:
+    config = InferenceConfig.model_validate(
+        {
+            "network_input": {
+                "dynamic_spatial_size_supported": True,
+                "dynamic_spatial_size_mode": {"type": "any-size"},
+                "color_mode": "rgb",
+                "resize_mode": "stretch",
+                "input_channels": 3,
+            }
+        }
+    )
+
+    aligned = align_training_input_size_with_model(
+        config, model_input_height=384, model_input_width=384
+    )
+
+    size = aligned.network_input.training_input_size
+    assert (size.height, size.width) == (384, 384)
+    assert aligned.network_input.dynamic_spatial_size_supported is False
 
 
 @pytest.mark.parametrize(

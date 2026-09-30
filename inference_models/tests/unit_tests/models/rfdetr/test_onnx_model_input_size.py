@@ -36,7 +36,9 @@ LOADERS = [
 ]
 
 
-def _package(tmp_path, configured_size: int) -> str:
+def _package(
+    tmp_path, configured_size: int, dynamic_spatial_size_supported: bool = False
+) -> str:
     (tmp_path / "class_names.txt").write_text("egg\n")
     (tmp_path / "weights.onnx").write_bytes(b"not used")
     (tmp_path / "keypoints_metadata.json").write_text(
@@ -58,7 +60,12 @@ def _package(tmp_path, configured_size: int) -> str:
                         "height": configured_size,
                         "width": configured_size,
                     },
-                    "dynamic_spatial_size_supported": False,
+                    "dynamic_spatial_size_supported": dynamic_spatial_size_supported,
+                    "dynamic_spatial_size_mode": (
+                        {"type": "pad-to-be-divisible", "value": 32}
+                        if dynamic_spatial_size_supported
+                        else None
+                    ),
                     "color_mode": "rgb",
                     "resize_mode": "stretch",
                     "input_channels": 3,
@@ -71,12 +78,11 @@ def _package(tmp_path, configured_size: int) -> str:
     return str(tmp_path)
 
 
-def _stub_session(monkeypatch, module, input_shape: list) -> None:
+def _stub_session(monkeypatch, module, input_shape: list) -> Mock:
     session = Mock()
     session.get_inputs.return_value = [SimpleNamespace(shape=input_shape, name="input")]
-    monkeypatch.setattr(
-        module.onnxruntime, "InferenceSession", Mock(return_value=session)
-    )
+    session_factory = Mock(return_value=session)
+    monkeypatch.setattr(module.onnxruntime, "InferenceSession", session_factory)
     monkeypatch.setattr(
         module,
         "align_device_with_onnx_session",
@@ -87,6 +93,7 @@ def _stub_session(monkeypatch, module, input_shape: list) -> None:
         "set_onnx_execution_provider_defaults",
         lambda **kwargs: kwargs["providers"],
     )
+    return session_factory
 
 
 def _load(model_class, package_dir: str, **kwargs):
@@ -137,18 +144,33 @@ def test_onnx_loader_keeps_the_config_for_dynamic_inputs(
 
 
 @pytest.mark.parametrize("module, model_class", LOADERS)
-def test_onnx_loader_limits_the_model_input_size_not_the_config(
+def test_onnx_loader_disables_spatial_overrides_for_a_static_input(
     tmp_path, monkeypatch, module, model_class
 ) -> None:
     _stub_session(monkeypatch, module, input_shape=[1, 3, 384, 384])
 
     model = _load(
         model_class,
-        _package(tmp_path, configured_size=640),
-        rf_detr_max_input_resolution=512,
+        _package(tmp_path, configured_size=384, dynamic_spatial_size_supported=True),
     )
 
-    assert _training_input_size(model) == (384, 384)
+    assert model._inference_config.network_input.dynamic_spatial_size_supported is False
+
+
+@pytest.mark.parametrize("module, model_class", LOADERS)
+def test_onnx_loader_rejects_a_declared_size_over_the_limit_before_building_a_session(
+    tmp_path, monkeypatch, module, model_class
+) -> None:
+    session_factory = _stub_session(monkeypatch, module, input_shape=[1, 3, 384, 384])
+
+    with pytest.raises(ModelPackageRestrictedError):
+        _load(
+            model_class,
+            _package(tmp_path, configured_size=640),
+            rf_detr_max_input_resolution=512,
+        )
+
+    session_factory.assert_not_called()
 
 
 @pytest.mark.parametrize("module, model_class", LOADERS)

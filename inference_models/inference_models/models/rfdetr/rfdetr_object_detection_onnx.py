@@ -164,6 +164,7 @@ class RFDetrForObjectDetectionONNX(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -176,11 +177,11 @@ class RFDetrForObjectDetectionONNX(
                 model_input_height=model_input_size[0],
                 model_input_width=model_input_size[1],
             )
-        # Checked after alignment: the model's input size, not the package config's, is what runs.
-        ensure_input_size_within_limit(
-            inference_config=inference_config,
-            max_allowed_input_size=rf_detr_max_input_resolution,
-        )
+            # The declared size was checked before building the session; the model's own size is what runs.
+            ensure_input_size_within_limit(
+                inference_config=inference_config,
+                max_allowed_input_size=rf_detr_max_input_resolution,
+            )
         device = align_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
         if inference_config.class_names_operations:

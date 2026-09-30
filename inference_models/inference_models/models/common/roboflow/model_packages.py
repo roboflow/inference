@@ -491,7 +491,8 @@ def align_training_input_size_with_model(
     Some registered packages carry an ``inference_config.json`` whose training input size does not match
     the exported weights, and pre-processing to the configured size then fails every call. The weights
     are authoritative for models whose outputs are relative to the input (such as RF-DETR), so
-    pre-processing to the size the model takes gives correct results.
+    pre-processing to the size the model takes gives correct results. The model's input is static, so
+    spatial size overrides are disabled as well.
 
     Args:
         inference_config (InferenceConfig): The package's parsed inference config.
@@ -499,33 +500,38 @@ def align_training_input_size_with_model(
         model_input_width (int): Input width the exported model takes.
 
     Returns:
-        InferenceConfig: ``inference_config`` itself when the sizes agree (or the config declares no
-        size), otherwise a copy with the model's input size.
+        InferenceConfig: ``inference_config`` itself when it already declares the model's static input
+        size, otherwise a copy that does.
     """
-    size = inference_config.network_input.training_input_size
-    if size is None or (size.height, size.width) == (
+    network_input = inference_config.network_input
+    size = network_input.training_input_size
+    size_matches = size is not None and (size.height, size.width) == (
         model_input_height,
         model_input_width,
-    ):
+    )
+    if size_matches and not network_input.dynamic_spatial_size_supported:
         return inference_config
 
-    LOGGER.warning(
-        "Model takes %sx%s input, but the package's inference_config.json declares %sx%s; using the "
-        "model's input size.",
-        model_input_width,
-        model_input_height,
-        size.width,
-        size.height,
-    )
-    network_input = inference_config.network_input.model_copy(
+    if size is not None and not size_matches:
+        LOGGER.warning(
+            "Model takes %sx%s input, but the package's inference_config.json declares %sx%s; using the "
+            "model's input size.",
+            model_input_width,
+            model_input_height,
+            size.width,
+            size.height,
+        )
+    aligned_network_input = network_input.model_copy(
         update={
-            "training_input_size": size.model_copy(
-                update={"height": model_input_height, "width": model_input_width}
-            )
+            "training_input_size": TrainingInputSize(
+                height=model_input_height, width=model_input_width
+            ),
+            "dynamic_spatial_size_supported": False,
+            "dynamic_spatial_size_mode": None,
         }
     )
     aligned_config = inference_config.model_copy(
-        update={"network_input": network_input}
+        update={"network_input": aligned_network_input}
     )
 
     return aligned_config
