@@ -163,6 +163,11 @@ LEGACY_CONTROL_PLANE_ROUTES_ENABLED = get_boolean_from_env(
 DISABLE_WORKFLOW_ENDPOINTS = get_boolean_from_env(
     "DISABLE_WORKFLOW_ENDPOINTS", default=False
 )
+# Removes only the experimental `describe_workload` routes; every other Workflow
+# route stays. `DISABLE_WORKFLOW_ENDPOINTS=True` still removes all of them.
+DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS = get_boolean_from_env(
+    "DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS", default=False
+)
 OFFLINE_MODE = get_boolean_from_env("OFFLINE_MODE", default=False)
 ALLOW_URL_INPUT = get_boolean_from_env("ALLOW_URL_INPUT", default=True)
 ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM = get_boolean_from_env(
