@@ -3,9 +3,10 @@ import io
 import json
 import time
 from types import SimpleNamespace
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from inference_server.gateway import ModelManagerGateway
@@ -119,10 +120,12 @@ def test_legacy_project_version_route_carries_model_headers(legacy_client, fake_
     assert float(response.headers["x-model-load-time"]) > 0
 
 
-def test_incoming_request_id_is_echoed(legacy_client, fake_stat):
+@pytest.mark.parametrize(
+    "incoming", ["3f2b8c1e-5d4a-4b6e-9c7d-1a2b3c4d5e6f", "client-trace-42"]
+)
+def test_incoming_request_id_is_echoed(legacy_client, fake_stat, incoming):
     fake_stat["ds/1"] = ("object-detection", "infer")
     client = legacy_client(ModelManagerGateway(_LoadingManager()))
-    incoming = str(uuid4())
 
     response = _infer(client, **{"X-Request-ID": incoming})
 

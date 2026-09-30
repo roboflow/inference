@@ -112,19 +112,23 @@ def test_oversized_load_details_are_dropped_but_totals_kept():
     assert "X-Model-Load-Details" not in headers
 
 
-def test_valid_uuid4_request_id_is_honoured():
-    incoming = str(uuid4())
+@pytest.mark.parametrize(
+    "incoming",
+    ["3f2b8c1e-5d4a-4b6e-9c7d-1a2b3c4d5e6f", "not-a-uuid", "0" * 32, "trace-abc/123"],
+)
+def test_incoming_request_id_is_echoed_unchanged(incoming, caplog):
+    with caplog.at_level("DEBUG"):
+        assert resolve_request_id(incoming) == incoming
 
-    assert resolve_request_id(incoming) == incoming
+    assert caplog.records == []
 
 
-@pytest.mark.parametrize("incoming", [None, "", "not-a-uuid", "0" * 32])
-def test_missing_or_invalid_request_id_is_replaced_with_uuid4_hex(incoming):
+@pytest.mark.parametrize("incoming", [None, ""])
+def test_missing_request_id_is_replaced_with_uuid4_hex(incoming):
     generated = resolve_request_id(incoming)
 
     assert len(generated) == 32
     assert UUID(generated).version == 4
-    assert generated != incoming
 
 
 def _app_with_middleware() -> FastAPI:
@@ -168,7 +172,7 @@ def test_middleware_on_route_without_models_omits_model_id():
     assert response.headers["x-inference-engine"] == "inference-models"
 
 
-def test_middleware_echoes_valid_incoming_request_id_and_exposes_it_to_route():
+def test_middleware_echoes_incoming_request_id_and_exposes_it_to_route(caplog):
     app = FastAPI()
 
     @app.get("/echo")
@@ -179,13 +183,18 @@ def test_middleware_echoes_valid_incoming_request_id_and_exposes_it_to_route():
     client = TestClient(app)
     incoming = str(uuid4())
 
-    echoed = client.get("/echo", headers={"X-Request-ID": incoming})
-    replaced = client.get("/echo", headers={"X-Request-ID": "bogus"})
+    with caplog.at_level("WARNING"):
+        echoed = client.get("/echo", headers={"X-Request-ID": incoming})
+        custom = client.get("/echo", headers={"X-Request-ID": "bogus"})
+    generated = client.get("/echo")
 
     assert echoed.headers["x-request-id"] == incoming
     assert echoed.json()["request_id"] == incoming
-    assert replaced.headers["x-request-id"] != "bogus"
-    assert replaced.json()["request_id"] == replaced.headers["x-request-id"]
+    assert custom.headers["x-request-id"] == "bogus"
+    assert custom.json()["request_id"] == "bogus"
+    assert UUID(generated.headers["x-request-id"]).version == 4
+    assert generated.json()["request_id"] == generated.headers["x-request-id"]
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio

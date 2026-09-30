@@ -13,8 +13,10 @@ every response, so clients reading them keep working against this server:
   - ``X-Model-Load-Details``: JSON list ``[{"m": <model_id>, "t": <seconds>}]``,
     only on a cold start and only while it fits in 4096 bytes.
   - ``x-inference-engine``: always ``inference-models``.
-  - ``X-Request-ID``: the caller's value when it is a valid UUID4, a fresh
-    ``uuid4().hex`` otherwise (same rule as ``asgi_correlation_id``).
+  - ``X-Request-ID``: the caller's value echoed unchanged, or a fresh
+    ``uuid4().hex`` when the header is absent or empty (same as the 1.7.x
+    server images, which run ``asgi_correlation_id`` with an accept-all
+    validator).
 
 The collector travels in a ContextVar holding a mutable, thread-safe object:
 worker threads (Workflows steps) and loop tasks spawned for the request share
@@ -26,16 +28,13 @@ from __future__ import annotations
 
 import contextvars
 import json
-import logging
 import threading
 from contextlib import contextmanager
 from typing import Dict, Iterator, List, Optional, Tuple
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
-
-logger = logging.getLogger(__name__)
 
 MODEL_COLD_START_HEADER = "X-Model-Cold-Start"
 MODEL_COLD_START_COUNT_HEADER = "X-Model-Cold-Start-Count"
@@ -127,24 +126,12 @@ def build_model_response_headers(usage: RequestModelUsage) -> Dict[str, str]:
     return headers
 
 
-def _is_valid_uuid4(value: str) -> bool:
-    try:
-        return UUID(value).version == 4
-    except ValueError:
-        return False
-
-
 def resolve_request_id(incoming: Optional[str]) -> str:
-    if incoming and _is_valid_uuid4(incoming):
-        return incoming
-    generated = uuid4().hex
+    # Any non-empty caller value is kept as-is: clients and upstream proxies
+    # use their own id formats to correlate logs, and 1.7.x echoed them all.
     if incoming:
-        logger.warning(
-            "Generated new request ID (%s), since request header value failed "
-            "validation",
-            generated,
-        )
-    return generated
+        return incoming
+    return uuid4().hex
 
 
 class ResponseHeadersMiddleware:
