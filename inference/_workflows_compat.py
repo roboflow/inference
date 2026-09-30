@@ -105,6 +105,10 @@ _PREFIX_MAP: Tuple[Tuple[str, str], ...] = (
         "streamvision.webrtc_worker.sources",
     ),
     (
+        "inference.core.interfaces.webrtc_worker.webrtc",
+        "streamvision.webrtc_worker.webrtc",
+    ),
+    (
         "streamvision.stream.model_handlers.yolo_world",
         "inference.core.interfaces.legacy_stream.model_handlers.yolo_world",
     ),

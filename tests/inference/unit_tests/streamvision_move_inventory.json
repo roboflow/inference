@@ -257,6 +257,10 @@
     {
       "legacy": "inference.core.interfaces.webrtc_worker.sources.rtsp",
       "canonical": "streamvision.webrtc_worker.sources.rtsp"
+    },
+    {
+      "legacy": "inference.core.interfaces.webrtc_worker.webrtc",
+      "canonical": "streamvision.webrtc_worker.webrtc"
     }
   ],
   "retained_legacy": [
