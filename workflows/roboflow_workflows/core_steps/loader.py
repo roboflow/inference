@@ -1,6 +1,9 @@
 from typing import List, Type
 
-from roboflow_workflows._compat_names import to_legacy_module
+from roboflow_workflows._compat_names import (
+    to_historic_plugin_module,
+    to_legacy_module,
+)
 from roboflow_workflows.configuration import get_configuration
 from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
@@ -1708,22 +1711,28 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
         # 2. The full module path
         # 3. The block name from schema if available
         block_class_name = block_class.__name__.lower()
-        # Match against BOTH the canonical (`roboflow_workflows.*`) and the
-        # historic (`inference.core.workflows.*` / `inference.enterprise.*`)
-        # module paths. Operator-supplied WORKFLOW_DISABLED_BLOCK_PATTERNS
-        # values reference the historic paths; canonical paths appear here
-        # because `class.__module__` is left canonical for pickling.
-        canonical_module = block_class.__module__.lower()
-        legacy_module = to_legacy_module(block_class.__module__).lower()
+        # Match against the canonical (`roboflow_workflows.*`) module path and
+        # every historic one: `inference.core.workflows.*` /
+        # `inference.enterprise.*`, plus - for the Roboflow-platform blocks -
+        # the `inference.roboflow_workflows_plugin.*` path of 1.6.1-1.7.2.
+        # Operator-supplied WORKFLOW_DISABLED_BLOCK_PATTERNS values reference
+        # the historic paths; canonical paths appear here because
+        # `class.__module__` is left canonical for pickling.
+        module_names = [
+            block_class.__module__.lower(),
+            to_legacy_module(block_class.__module__).lower(),
+        ]
+        plugin_module = to_historic_plugin_module(block_class.__module__)
+        if plugin_module is not None:
+            module_names.append(plugin_module.lower())
         block_name = schema.get("name", "").lower()
 
         for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
             pattern_lower = pattern.lower()
             if (
                 pattern_lower in block_class_name
-                or pattern_lower in canonical_module
-                or pattern_lower in legacy_module
                 or pattern_lower in block_name
+                or any(pattern_lower in module for module in module_names)
             ):
                 return True
 
