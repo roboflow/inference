@@ -17,7 +17,10 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
+from inference_models.weights_providers.roboflow import (
+    get_one_page_of_model_metadata,
+    roboflow_secure_gateway_proxy_url_builder,
+)
 from inference_server import configuration
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.fanout import gather_bounded
@@ -132,6 +135,9 @@ async def _fetch_and_map(common_params: CommonRequestParams) -> tuple[str, str]:
             get_one_page_of_model_metadata,
             model_id=common_params.model_id,
             api_key=common_params.api_key or None,
+            # No-op unless SECURE_GATEWAY is set; then the lookup goes through
+            # the gateway like the weights download does.
+            proxy_url_builder=roboflow_secure_gateway_proxy_url_builder,
         )
     except UnauthorizedModelAccessError as exc:
         raise PermissionError(str(exc)) from exc

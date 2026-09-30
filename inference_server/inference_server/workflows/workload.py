@@ -26,7 +26,10 @@ from roboflow_workflows.execution_engine.introspection.workload_entities import 
     WorkflowIntrospection,
 )
 
-from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
+from inference_models.weights_providers.roboflow import (
+    get_one_page_of_model_metadata,
+    roboflow_secure_gateway_proxy_url_builder,
+)
 from inference_server import configuration
 from inference_server.framework.model_stat import _TtlLruCache
 from inference_server.workflows import host
@@ -111,6 +114,9 @@ class RegistryModelMetadataProvider:
             metadata = get_one_page_of_model_metadata(
                 model_id=model_id,
                 api_key=self._api_key or None,
+                # No-op unless SECURE_GATEWAY is set; then the lookup goes
+                # through the gateway like the weights download does.
+                proxy_url_builder=roboflow_secure_gateway_proxy_url_builder,
             )
         except Exception as error:
             # A failed lookup is an expected outcome of introspection (unknown

@@ -5,16 +5,19 @@ mocked; the definitions are compiled for real by `describe_workflow_workload`.
 
 import copy
 import importlib
+import urllib.parse
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import requests_mock as rm
 from roboflow_workflows.errors import NotSupportedExecutionEngineError
 from roboflow_workflows.execution_engine.core import ExecutionEngine
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
     WorkflowIntrospection,
 )
 
+from inference_models.weights_providers import roboflow as roboflow_provider
 from inference_server.workflows import workload
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 
@@ -369,6 +372,56 @@ def test_offline_mode_reports_unavailable_without_a_registry_call(
     model = _models_by_id(response.json())["my-project/3"]
     assert model["metadata_status"] == "unavailable"
     registry_call.assert_not_called()
+
+
+_GATEWAY = "https://gateway.example.com"
+
+
+def _registry_response() -> dict:
+    return {
+        "modelMetadata": {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-project/3",
+            "modelArchitecture": "yolov8n",
+            "taskType": "object-detection",
+            "modelPackages": [],
+        }
+    }
+
+
+def test_registry_lookup_goes_through_secure_gateway_when_configured(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(roboflow_provider, "SECURE_GATEWAY", _GATEWAY)
+    provider = workload.RegistryModelMetadataProvider(api_key=API_KEY)
+    with rm.Mocker() as m:
+        m.get(rm.ANY, json=_registry_response())
+        lookup = provider.resolve_model_metadata("roboflow", "my-project/3")
+
+    assert lookup.status == "available"
+    requested = m.request_history[0].url
+    assert requested.startswith(f"{_GATEWAY}/proxy?url=")
+    proxied = urllib.parse.unquote(requested.split("?url=", 1)[1])
+    assert proxied == (
+        f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
+        "?modelId=my-project%2F3"
+    )
+    assert API_KEY not in requested
+
+
+def test_registry_lookup_hits_the_api_directly_without_secure_gateway(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(roboflow_provider, "SECURE_GATEWAY", None)
+    provider = workload.RegistryModelMetadataProvider(api_key=API_KEY)
+    with rm.Mocker() as m:
+        m.get(rm.ANY, json=_registry_response())
+        provider.resolve_model_metadata("roboflow", "my-project/3")
+
+    assert m.request_history[0].url == (
+        f"{roboflow_provider.ROBOFLOW_API_HOST}/models/v1/external/weights"
+        "?modelId=my-project%2F3"
+    )
 
 
 # --------------------------------------------------------------------------
