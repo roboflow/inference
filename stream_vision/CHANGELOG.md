@@ -19,6 +19,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Fixed
 
+- Declare Pillow directly for camera imports and Torch in the `workflows` and supported-platform `nvdec` extras; GPU decoding still requires a compatible CUDA-enabled Torch build.
+
 - The stream manager no longer blocks forever on a command sent to a pipeline process that has exited; the caller gets a `not_found` error.
 - `GstreamerCudaVideoFrameProducer` decodes container files such as MP4 and MKV; the previous pipeline never produced a frame for them.
 - Declared dependencies are enough to import the workflows runtime, and the `test` extra installs `pytest-asyncio` and `pytest-timeout`.
