@@ -18,7 +18,6 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.torch import torchscript_global_lock
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -35,7 +34,10 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.models.common.torch import (
+    generate_batch_chunks,
+    torchscript_global_lock,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 

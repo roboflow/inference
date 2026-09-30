@@ -1,4 +1,19 @@
-from typing import Optional
+from roboflow_workflows.prototypes.platform_errors import (
+    FeatureDeprecatedError,
+    RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
+from streamvision.stream.exceptions import (
+    CannotInitialiseModelError,
+    InvalidEnvironmentVariableError,
+    MissingApiKeyError,
+    WebRTCConfigurationError,
+)
 
 
 class ContentTypeInvalid(Exception):
@@ -33,24 +48,8 @@ class InferenceModelNotFound(Exception):
     """
 
 
-class InvalidEnvironmentVariableError(Exception):
-    """Raised when an environment variable is invalid.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class InvalidMaskDecodeArgument(Exception):
     """Raised when an invalid argument is provided for mask decoding.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class MissingApiKeyError(Exception):
-    """Raised when the API key is missing.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -79,6 +78,17 @@ class WorkspaceLoadError(Exception):
     Attributes:
         message (str): Optional message describing the error.
     """
+
+
+class PayloadTooLargeError(Exception):
+    """Caller-supplied content exceeded the size this deployment accepts."""
+
+    def __init__(self, message: str, public_message: str):
+        super().__init__(message)
+        self._public_message = public_message
+
+    def get_public_error_details(self) -> str:
+        return self._public_message
 
 
 class InputImageLoadError(Exception):
@@ -119,12 +129,23 @@ class InvalidModelIDError(Exception):
     pass
 
 
+class RequestDataContradiction(Exception):
+    pass
+
+
 class MalformedRoboflowAPIResponseError(Exception):
     pass
 
 
 class ServiceConfigurationError(Exception):
     pass
+
+
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM 3 models are not supported on Serverless. "
+    "Use the base SAM 3 model (sam3/sam3_final), a Dedicated Deployment, "
+    "or self-hosted Inference."
+)
 
 
 class ModelDeploymentNotSupportedError(ServiceConfigurationError):
@@ -139,19 +160,7 @@ class ModelNotRecognisedError(ServiceConfigurationError):
     pass
 
 
-class RoboflowAPIRequestError(Exception):
-    pass
-
-
 class ModelManagerLockAcquisitionError(RoboflowAPIRequestError):
-    pass
-
-
-class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
-    pass
-
-
-class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
@@ -159,23 +168,7 @@ class PaymentRequiredError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
-class RoboflowAPIForbiddenError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
 class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPIConnectionError(RoboflowAPIRequestError):
-    pass
-
-
-class RoboflowAPITimeoutError(RoboflowAPIRequestError):
     pass
 
 
@@ -189,6 +182,10 @@ class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
 
 class MalformedWorkflowResponseError(RoboflowAPIRequestError):
     pass
+
+
+class CacheUnavailableError(Exception):
+    """Raised when the ephemeral cache (e.g. Redis/Dragonfly) cannot be reached."""
 
 
 class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
@@ -215,10 +212,6 @@ class ActiveLearningConfigurationError(ActiveLearningError):
     pass
 
 
-class CannotInitialiseModelError(Exception):
-    pass
-
-
 class CannotInitialiseModelDueToInputSizeError(CannotInitialiseModelError):
     pass
 
@@ -234,10 +227,6 @@ class RetryRequestError(Exception):
         return self._inner_error
 
 
-class WebRTCConfigurationError(Exception):
-    pass
-
-
 class CreditsExceededError(Exception):
     pass
 
@@ -251,48 +240,3 @@ class WorkspaceStreamQuotaError(Exception):
     """
 
     pass
-
-
-class FeatureDeprecatedError(Exception):
-    """Raised when a removed/deprecated feature is invoked.
-
-    Maps to HTTP 410 Gone via the standard error handler; surfaces as
-    error_type="FeatureDeprecatedError" in InferencePipeline StatusUpdate
-    payloads and as the inner_error of
-    ClientCausedStepExecutionError(status_code=410) when raised from a
-    workflow block.
-    """
-
-    def __init__(
-        self,
-        feature: str,
-        *,
-        removal_release: Optional[str] = None,
-        replacement: Optional[str] = None,
-        reason: Optional[str] = None,
-    ):
-        self.feature = feature
-        self.removal_release = removal_release
-        self.replacement = replacement
-        self.reason = reason
-        public = f"Feature '{feature}' has been removed from inference."
-        if reason:
-            public += f" Reason: {reason}."
-        if removal_release:
-            public += f" Removed in {removal_release}."
-        public += (
-            " No drop-in replacement is provided; contact Roboflow if you "
-            "require this capability."
-        )
-        if replacement:
-            public += f" Closest replacement: {replacement}."
-        self._public_message = public
-        super().__init__(public)
-
-    def get_structured_public_error_details(self) -> dict:
-        return {
-            "feature": self.feature,
-            "removal_release": self.removal_release,
-            "replacement": self.replacement,
-            "reason": self.reason,
-        }

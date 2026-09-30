@@ -1,5 +1,4 @@
 ---
-search:
-  exclude: true
+template: redirect.html
+redirect_url: https://docs.roboflow.com/reference/inference/inference-python/inference-pipeline
 ---
-# RTSP from a Ubiquiti UniFi Camera

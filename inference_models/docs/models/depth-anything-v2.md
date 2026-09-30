@@ -8,7 +8,6 @@ Depth Anything V2 uses a vision transformer architecture to estimate relative de
 
 - **Monocular Depth Estimation** - Predict depth from a single image
 - **High Quality** - State-of-the-art performance on depth estimation benchmarks
-- **Multiple Model Sizes** - Choose from small, base, or large variants
 - **Zero-Shot Generalization** - Works on diverse image types without fine-tuning
 
 !!! info "License & Attribution"
@@ -21,8 +20,6 @@ Depth Anything V2 pre-trained models are available and **require a Roboflow API 
 | Model ID | Description |
 |----------|-------------|
 | `depth-anything-v2/small` | Small model - fastest inference |
-| `depth-anything-v2/base` | Base model - balanced performance |
-| `depth-anything-v2/large` | Large model - best accuracy |
 | `depth-anything-v2` | Alias for `depth-anything-v2/small` |
 
 ## Supported Backends
@@ -76,7 +73,7 @@ import cv2
 from inference_models import AutoModel
 
 # Load model
-model = AutoModel.from_pretrained("depth-anything-v2/base", api_key="your_roboflow_api_key")
+model = AutoModel.from_pretrained("depth-anything-v2/small", api_key="your_roboflow_api_key")
 
 # Load multiple images
 images = [cv2.imread(f"image_{i}.jpg") for i in range(5)]
@@ -90,26 +87,6 @@ for i, depth_map in enumerate(depth_maps):
     print(f"Image {i}: depth shape = {depth_np.shape}")
 ```
 
-### Using the Large Model
-
-```python
-import cv2
-from inference_models import AutoModel
-
-# Load larger model for better accuracy
-model = AutoModel.from_pretrained("depth-anything-v2/large", api_key="your_roboflow_api_key")
-
-# Load image
-image = cv2.imread("path/to/image.jpg")
-
-# Predict depth
-depth_maps = model(image)
-depth_map = depth_maps[0]
-
-print(f"Depth map shape: {depth_map.shape}")
-print(f"Depth range: [{depth_map.min():.2f}, {depth_map.max():.2f}]")
-```
-
 ## Workflows Integration
 
 Depth Anything V2 can be used in Roboflow Workflows for complex computer vision pipelines. The Depth Anything block outputs depth maps that can be used for 3D reconstruction, scene understanding, and more.
@@ -119,7 +96,6 @@ Learn more: [Workflows Documentation](https://inference.roboflow.com/workflows/a
 ## Performance Tips
 
 1. **Use GPU** - Depth estimation models require GPU for acceptable performance
-2. **Choose the right model** - Use `small` for speed, `large` for accuracy
 3. **Batch processing** - Process multiple images together when possible
 4. **Normalize outputs** - Depth maps are relative; normalize for visualization or comparison
 

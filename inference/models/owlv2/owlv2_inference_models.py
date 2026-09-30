@@ -18,6 +18,7 @@ from inference.core.env import (
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     MAX_DETECTIONS,
+    OWLV2_CACHE_SEND_TO_CPU,
     OWLV2_COMPILE_MODEL,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
@@ -33,6 +34,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel, Detections
 from inference_models.models.owlv2.cache import (
     InMemoryOwlV2ClassEmbeddingsCache,
@@ -46,6 +48,10 @@ from inference_models.models.owlv2.owlv2_hf import (
     OWLv2HF,
     monkey_patch_vision_encoder_before_compilation,
 )
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+)
+from inference_models.utils.model_blob_cache import get_shared_model_blob_cache
 
 PRELOADED_HF_MODELS = {}
 
@@ -58,18 +64,28 @@ class Owlv2AdapterSingleton:
         huggingface_id: str,
         api_key: Optional[str] = None,
         disable_credits_verification_enforcement: bool = False,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
     ):
         if huggingface_id in PRELOADED_HF_MODELS:
             logger.info("Using preloaded OWLv2 instance for %s", huggingface_id)
             return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
+            # Default to the process-wide blob cache so the module-level
+            # preload (which runs before any ModelManager exists) and every
+            # other cache-less construction path still restore weights from
+            # and seed the S3 cache. Only evaluated on this construction
+            # branch - the per-request short-circuits above never touch it.
+            if content_addressed_artifact_cache is None:
+                content_addressed_artifact_cache = get_shared_model_blob_cache()
             owlv2_class_embeddings_cache = InMemoryOwlV2ClassEmbeddingsCache.init(
                 size_limit=OWLV2_MODEL_CACHE_SIZE,
-                send_to_cpu=True,
+                send_to_cpu=OWLV2_CACHE_SEND_TO_CPU,
             )
             owlv2_images_embeddings_cache = InMemoryOwlV2ImageEmbeddingsCache.init(
                 size_limit=OWLV2_IMAGE_CACHE_SIZE,
-                send_to_cpu=True,
+                send_to_cpu=OWLV2_CACHE_SEND_TO_CPU,
             )
             weights_provider_extra_headers = get_extra_weights_provider_headers()
             if (
@@ -93,6 +109,7 @@ class Owlv2AdapterSingleton:
                 owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
                 weights_provider_extra_headers=weights_provider_extra_headers,
                 backend=backend,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
             )
             logger.info("Creating new OWLv2 instance for %s", huggingface_id)
             if OWLV2_COMPILE_MODEL:
@@ -125,12 +142,14 @@ def dummy_infer(
     hf_id: str,
     api_key: Optional[str] = None,
     disable_credits_verification_enforcement: bool = False,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ):
     # Below code is copied from Owlv2.__init__
     singleton = Owlv2AdapterSingleton(
         hf_id,
         api_key=api_key,
         disable_credits_verification_enforcement=disable_credits_verification_enforcement,
+        content_addressed_artifact_cache=content_addressed_artifact_cache,
     )
     model = singleton.model
     # Below code is copied from Owlv2.embed_image
@@ -152,6 +171,7 @@ def preload_owlv2_model(
     hf_id: str,
     api_key: Optional[str] = None,
     disable_credits_verification_enforcement: bool = False,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ):
     logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
     try:
@@ -166,6 +186,7 @@ def preload_owlv2_model(
             hf_id,
             api_key=api_key,
             disable_credits_verification_enforcement=disable_credits_verification_enforcement,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
         )
         t2 = time.time()
         logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
@@ -195,6 +216,9 @@ class InferenceModelsOwlV2Adapter(Model):
         self,
         model_id: str = "owlv2/owlv2-large-patch14-ensemble",
         api_key: str = None,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
         **kwargs,
     ):
         super().__init__()
@@ -204,7 +228,11 @@ class InferenceModelsOwlV2Adapter(Model):
         self.api_key = api_key if api_key else API_KEY
 
         self.task_type = "object-detection"
-        singleton_instance = Owlv2AdapterSingleton(model_id, api_key=self.api_key)
+        singleton_instance = Owlv2AdapterSingleton(
+            model_id,
+            api_key=self.api_key,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
+        )
         self._model: OWLv2HF = singleton_instance.model
 
     def draw_predictions(
@@ -243,6 +271,7 @@ class InferenceModelsOwlV2Adapter(Model):
         )
         return image_embeddings.image_hash, image_embeds
 
+    @usage_collector("model")
     def infer(
         self,
         image: Any,

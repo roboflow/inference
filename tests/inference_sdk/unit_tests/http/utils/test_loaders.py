@@ -59,37 +59,29 @@ def test_uri_is_http_link_when_https_url_provided() -> None:
     assert result is True
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_unsuccessful_image_download(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 404
-    requests_get_mock.return_value = response
+    url = "https://some.com/file.jpg"
+    requests_mock.get(url, status_code=404)
 
     # when
     with pytest.raises(HTTPError):
-        _ = load_image_from_url(url="http://some/file.jpg")
-
-    # then
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
+        _ = load_image_from_url(url=url)
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_successful_image_download_without_resize(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
-    serialised_image, scaling_factor = load_image_from_url(url="http://some/file.jpg")
+    serialised_image, scaling_factor = load_image_from_url(url=url)
     recovered_image = base64.b64decode(serialised_image)
     bytes_array = np.frombuffer(recovered_image, dtype=np.uint8)
     decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
@@ -98,7 +90,6 @@ def test_load_file_from_url_on_successful_image_download_without_resize(
     assert scaling_factor is None
     assert decoding_result.shape == image.shape
     assert np.allclose(decoding_result, image)
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
 
 
 @pytest.mark.asyncio
@@ -125,21 +116,18 @@ async def test_load_file_from_url_async_on_successful_image_download_without_res
         assert np.allclose(decoding_result, image)
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_successful_image_download_with_resize(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
     serialised_image, scaling_factor = load_image_from_url(
-        url="http://some/file.jpg",
+        url=url,
         max_width=64,
         max_height=128,
     )
@@ -151,7 +139,6 @@ def test_load_file_from_url_on_successful_image_download_with_resize(
     assert abs(scaling_factor - 0.5) < 1e-5
     assert decoding_result.shape == (64, 64, 3)
     assert (decoding_result == 0).all()
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
 
 
 @pytest.mark.asyncio
@@ -180,22 +167,17 @@ async def test_load_file_from_url_async_on_successful_image_download_with_resize
         assert (decoding_result == 0).all()
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_image_from_string_when_file_to_be_downloaded(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
-    serialised_image, scaling_factor = load_image_from_string(
-        reference="https://some/file.jpg"
-    )
+    serialised_image, scaling_factor = load_image_from_string(reference=url)
 
     # then
     recovered_image = base64.b64decode(serialised_image)
@@ -206,7 +188,6 @@ def test_load_image_from_string_when_file_to_be_downloaded(
     assert scaling_factor is None
     assert decoding_result.shape == image.shape
     assert np.allclose(decoding_result, image)
-    requests_get_mock.assert_called_once_with("https://some/file.jpg")
 
 
 @pytest.mark.asyncio

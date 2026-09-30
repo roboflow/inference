@@ -34,7 +34,7 @@ DOCS_ROOT = os.path.abspath(os.path.join(
 WORKFLOWS_DOCS_ROOT_PATH = os.path.join(DOCS_ROOT, "workflows")
 
 GALLERY_DIR = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
-GALLERY_INDEX_TEMPLATE = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery_index_template.md")
+GALLERY_INDEX_TEMPLATE = os.path.join(os.path.dirname(__file__), "templates", "gallery_index_template.md")
 GALLERY_INDEX_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery", "index.md")
 GALLERY_DIR_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
 

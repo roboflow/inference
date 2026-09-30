@@ -19,6 +19,7 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.t
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     GPUServerSpecsV1,
     JetsonMachineSpecsV1,
+    PlatformRegistrationPolicy,
     TRTConfig,
     TRTMachineType,
     TRTModelPackageV1,
@@ -199,7 +200,10 @@ def execute_compilation(
     same_compute_compatibility: bool = False,
     registered_model_features: Optional[dict] = None,
     console: Optional[Console] = None,
-) -> Tuple[str, TRTConfig, ModelPackageRegistrationResponse]:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> Tuple[
+    str, TRTConfig, TRTModelPackageV1, Optional[ModelPackageRegistrationResponse]
+]:
     runtime_xray = x_ray_runtime_environment()
     logger.info(
         "Runtime environment: gpu=%s, cc=%s, cuda=%s, trt=%s, driver=%s, l4t=%s",
@@ -255,6 +259,10 @@ def execute_compilation(
             driver_version=str(runtime_xray.driver_version),
             os_version=runtime_xray.os_version,
         )
+    if runtime_xray.cuda_version is None:
+        raise CompiledPackageRegistrationError(
+            f"Could not establish CUDA version for environment."
+        )
     package_manifest = TRTModelPackageV1(
         type="trt-model-package-v1",
         backend_type="trt",
@@ -274,8 +282,8 @@ def execute_compilation(
         machine_type=machine_type,
         machine_specs=machine_specs,
     )
+    skip_platform_registration = False
     try:
-        # stating the registration, to see if package already sealed
         _ = models_service_client.register_model_package(
             model_id=model_id,
             package_manifest=package_manifest.model_dump(
@@ -287,15 +295,30 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        logger.exception("Could not pre-register model package")
-        raise CompiledPackageRegistrationError(
-            f"Could not register model package: {error}"
-        ) from error
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
+            logger.exception("Could not pre-register model package")
+            raise CompiledPackageRegistrationError(
+                f"Could not register model package: {error}"
+            ) from error
+        logger.warning(
+            "Pre-register failed for %s (status %s); continuing with local compile/install: %s",
+            model_id,
+            error.status_code,
+            error,
+        )
+        skip_platform_registration = True
     except Exception as error:
-        logger.exception("Error while registering model package")
-        raise CompiledPackageRegistrationError(
-            f"Could not register model package: {error}"
-        ) from error
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
+            logger.exception("Error while registering model package")
+            raise CompiledPackageRegistrationError(
+                f"Could not register model package: {error}"
+            ) from error
+        logger.warning(
+            "Pre-register failed for %s; continuing with local compile/install: %s",
+            model_id,
+            error,
+        )
+        skip_platform_registration = True
     compilation_features = {
         "modelArchitecture": model_architecture,
         "taskType": task_type,
@@ -325,8 +348,19 @@ def execute_compilation(
         trt_version_compatible=trt_version_compatible,
         same_compute_compatibility=same_compute_compatibility,
     )
+    logger.info(
+        "TRT engine compiled for %s at %s (platform_registration=%s)",
+        model_id,
+        engine_path,
+        platform_registration.value,
+    )
+    if skip_platform_registration:
+        logger.info(
+            "Skipping platform registration for %s after compile; local install will follow",
+            model_id,
+        )
+        return engine_path, trt_config, package_manifest, None
     try:
-        # performing registration again, so that we have fresh upload URL
         registration_result = models_service_client.register_model_package(
             model_id=model_id,
             package_manifest=package_manifest.model_dump(
@@ -335,15 +369,38 @@ def execute_compilation(
             file_handles=file_handles_to_register,
             model_features=registered_model_features,
         )
-        return engine_path, trt_config, registration_result
+        return engine_path, trt_config, package_manifest, registration_result
     except RequestError as error:
         if error.status_code == 409:
+            # The engine is already built; under OPTIONAL keep it for local
+            # install rather than discarding the compilation work.
+            if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+                logger.warning(
+                    "Post-compile register returned 409 for %s; local install will follow",
+                    model_id,
+                )
+                return engine_path, trt_config, package_manifest, None
             raise AlreadyCompiledError("Model package already compiled.")
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Post-compile register failed for %s (status %s); local install will follow: %s",
+                model_id,
+                error.status_code,
+                error,
+            )
+            return engine_path, trt_config, package_manifest, None
         logger.exception("Could not register model package after compilation")
         raise CompiledPackageRegistrationError(
             f"Could not register model package: {error}"
         ) from error
     except Exception as error:
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Post-compile register failed for %s; local install will follow: %s",
+                model_id,
+                error,
+            )
+            return engine_path, trt_config, package_manifest, None
         logger.exception("Error while registering model package")
         raise CompiledPackageRegistrationError(
             f"Could not register model package: {error}"
@@ -354,7 +411,8 @@ def register_model_package_artefacts(
     registration_response: ModelPackageRegistrationResponse,
     local_files_mapping: Dict[str, Tuple[str, str]],
     models_service_client: ModelsServiceClient,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> bool:
     try:
         confirmations = []
         for file_upload_spec in registration_response.file_upload_specs:
@@ -377,15 +435,24 @@ def register_model_package_artefacts(
             seal_model_package=True,
         )
         logger.info(
-            "Registered package %s for model %s",
+            "Registered and uploaded package %s for model %s registered_platform=true uploaded_sealed=true",
             registration_response.model_package_id,
             registration_response.model_id,
         )
+        return True
     except Exception as error:
         logger.exception(
             "Could not register artefacts for package %s",
             registration_response.model_package_id,
         )
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Platform upload failed for model %s package %s; local install remains usable: %s",
+                registration_response.model_id,
+                registration_response.model_package_id,
+                error,
+            )
+            return False
         raise CompiledPackageRegistrationError(
             f"Could not register artefacts for package {registration_response.model_package_id}"
         ) from error

@@ -1,7 +1,7 @@
 import gc
 from collections import deque
 from threading import Lock
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -11,6 +11,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
@@ -69,7 +70,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
                 model_id=model_id,
@@ -236,6 +237,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """
         self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_from_request_sync(model_id, request, **kwargs)
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        return super().run_tensor_native_inference(model_id, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.

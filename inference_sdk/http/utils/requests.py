@@ -4,6 +4,8 @@ from typing import List, Optional, Tuple, Union
 from requests import Response
 
 API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
+SERVICE_SECRET_PATTERN = re.compile(r"service_secret=[^&]*")
+REDACTED_SERVICE_SECRET = "service_secret=***"
 KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
@@ -22,15 +24,23 @@ def api_key_safe_raise_for_status(response: Response) -> None:
 
 
 def deduct_api_key_from_string(value: str) -> str:
-    """Deduct the API key from the string.
+    """Deduct the credentials from the string.
+
+    Covers the API key and the service secret, both of which travel in the query
+    string and so end up in error texts that quote the request URL.
+
+    The API key keeps a short prefix to stay identifiable in a bug report. The
+    service secret does not: it is shared between services rather than owned by
+    a caller, so revealing any of it buys nothing.
 
     Args:
-        value: The string to deduct the API key from.
+        value: The string to deduct the credentials from.
 
     Returns:
-        The string with the API key deducted.
+        The string with the credentials deducted.
     """
-    return API_KEY_PATTERN.sub(deduct_api_key, value)
+    value = API_KEY_PATTERN.sub(deduct_api_key, value)
+    return SERVICE_SECRET_PATTERN.sub(REDACTED_SERVICE_SECRET, value)
 
 
 def deduct_api_key(match: re.Match) -> str:

@@ -1,16 +1,22 @@
 import time
 from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
+import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
+import inference.core.interfaces.http.http_api as http_api
+from inference.core import roboflow_api
 from inference.core.constants import (
     PROCESSING_TIME_HEADER,
     TRACE_ID_HEADER,
     WORKSPACE_ID_HEADER,
 )
 from inference.core.env import CORRELATION_ID_HEADER
+from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
+from inference.core.utils.depth_encoding import decode_png_normalized_depth
 
 
 class _DummyInstrumentator:
@@ -27,6 +33,20 @@ class _DummyResponse(BaseModel):
     ok: bool = True
 
 
+class _DummyImage:
+    base64_image = "depth-image"
+
+
+_DUMMY_DEPTH_MAP = np.array([[0.0, 0.25], [0.5, 1.0]], dtype=np.float32)
+
+
+class _DummyDepthResponse:
+    response = {
+        "normalized_depth": _DUMMY_DEPTH_MAP,
+        "image": _DummyImage(),
+    }
+
+
 def _make_inference_request() -> dict:
     return {
         "model_id": "florence-2-base",
@@ -36,6 +56,10 @@ def _make_inference_request() -> dict:
         },
         "prompt": "caption",
     }
+
+
+def _route_paths(interface):
+    return {route.path for route in interface.app.routes}
 
 
 def _build_serverless_interface(
@@ -52,6 +76,8 @@ def _build_serverless_interface(
         AsyncMock(),
     )
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", True)
     usage_check_mock = AsyncMock(return_value=usage_check_result)
     monkeypatch.setattr(
@@ -71,6 +97,282 @@ def _build_serverless_interface(
     model_manager.infer_from_request_sync.return_value = _DummyResponse()
     interface = http_api.HttpInterface(model_manager=model_manager)
     return interface, model_manager, usage_check_mock, workspace_lookup_mock
+
+
+def test_offline_interface_never_starts_cache_eviction_watchdog(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    watchdog = MagicMock()
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(http_api, "InferenceModelsCacheWatchdog", watchdog)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(http_api, "MAX_INFERENCE_MODELS_CACHE_SIZE_MB", 1)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        None,
+    )
+
+    interface = http_api.HttpInterface(model_manager=MagicMock())
+
+    assert interface.inference_models_cache_daemon is None
+    watchdog.assert_not_called()
+
+
+@pytest.mark.parametrize("serverless_flag", ["GCP_SERVERLESS", "LAMBDA"])
+def test_http_interface_rejects_offline_serverless_deployment(
+    monkeypatch,
+    serverless_flag,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        None,
+    )
+    monkeypatch.setattr(http_api, serverless_flag, True)
+
+    with pytest.raises(
+        RuntimeError,
+        match="OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS",
+    ):
+        http_api.HttpInterface(model_manager=MagicMock())
+
+
+@pytest.mark.parametrize(
+    ("dedicated_workspace", "workspace_whitelist"),
+    [
+        ("dedicated-workspace", None),
+        (None, ["allowed-workspace"]),
+    ],
+)
+def test_http_interface_rejects_offline_workspace_authentication(
+    monkeypatch,
+    dedicated_workspace,
+    workspace_whitelist,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(
+        http_api,
+        "DEDICATED_DEPLOYMENT_WORKSPACE_URL",
+        dedicated_workspace,
+    )
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        workspace_whitelist,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="OFFLINE_MODE is not supported together with dedicated or "
+        "workspace-whitelist authentication",
+    ):
+        http_api.HttpInterface(model_manager=MagicMock())
+
+
+def _build_dedicated_deployment_interface(
+    monkeypatch,
+    workspace_lookup_result="dedicated-workspace",
+    dedicated_workspace_url="dedicated-workspace",
+    workspace_lookup_side_effect=None,
+    local_whitelist=None,
+):
+    """Build an HttpInterface with the workspace-allowlist middleware enabled.
+
+    `local_whitelist` patches `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT`.
+    Default `None` preserves the historical behaviour for existing callers
+    (env var unset). Pass a list to simulate the env var being set; pass
+    `[]` to assert the empty-list-doesn't-enable-middleware contract.
+    """
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(
+        http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", dedicated_workspace_url
+    )
+    monkeypatch.setattr(
+        http_api,
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        list(local_whitelist) if local_whitelist is not None else None,
+    )
+    if workspace_lookup_side_effect is not None:
+        workspace_lookup_mock = AsyncMock(side_effect=workspace_lookup_side_effect)
+    else:
+        workspace_lookup_mock = AsyncMock(return_value=workspace_lookup_result)
+    monkeypatch.setattr(
+        http_api,
+        "get_roboflow_workspace_async",
+        workspace_lookup_mock,
+    )
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyResponse()
+    interface = http_api.HttpInterface(model_manager=model_manager)
+    return interface, model_manager, workspace_lookup_mock
+
+
+def test_serverless_registers_sam3_routes_when_model_flags_are_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_sam3_3d_route_only_depends_on_sam3_3d_flag(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", False)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" not in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_does_not_register_sam3_3d_route_when_sam3_3d_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", False)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" not in paths
+
+
+def test_serverless_registers_pp_ocr_route_when_model_flag_is_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" in paths
+
+
+def test_serverless_does_not_register_pp_ocr_route_when_model_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", False)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" not in paths
+
+
+def test_serverless_pp_ocr_route_returns_404_without_inference_models(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", False)
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" in paths
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/ocr/pp-ocr",
+            params={"api_key": "test-api-key"},
+            json={
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                }
+            },
+        )
+    assert response.status_code == 404
+    model_manager.add_model.assert_not_called()
 
 
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
@@ -120,6 +422,217 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert inference_request.api_key == "query-api-key"
 
 
+def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["image"] == "depth-image"
+    # default stays wire-compatible with clients that predate depth_map_format
+    assert payload["depth_map_format"] == "json"
+    assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
+    model_manager.add_model.assert_called_once_with(
+        "depth-anything-v3/small",
+        "query-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_manager.infer_from_request_sync.assert_called_once()
+    inference_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.api_key == "query-api-key"
+
+
+def test_depth_estimation_png16_format_returns_decodable_payload(monkeypatch) -> None:
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "depth_map_format": "png16",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["depth_map_format"] == "png16"
+    decoded = decode_png_normalized_depth(payload["normalized_depth"])
+    assert np.allclose(decoded, _DUMMY_DEPTH_MAP, atol=1.0 / 65535)
+
+
+def test_depth_estimation_json_format_returns_legacy_shape(monkeypatch) -> None:
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "depth_map_format": "json",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["depth_map_format"] == "json"
+    assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
+    assert payload["image"] == "depth-image"
+
+
+def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation/depth-anything-v3/small",
+            params={"api_key": "query-api-key"},
+            json={
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["image"] == "depth-image"
+    assert payload["depth_map_format"] == "json"
+    assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
+    model_manager.add_model.assert_called_once_with(
+        "depth-anything-v3/small",
+        "query-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_manager.infer_from_request_sync.assert_called_once()
+    inference_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.api_key == "query-api-key"
+
+
+def test_depth_estimation_with_model_id_path_rejects_body_mismatch(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation/depth-anything-v3/small",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/base",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "Model ID mismatch: path specifies 'depth-anything-v3/small' "
+        "but request body specifies 'depth-anything-v3/base'"
+    )
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_logs_request_received_with_execution_id(
     monkeypatch,
 ) -> None:
@@ -128,7 +641,9 @@ def test_serverless_auth_middleware_logs_request_received_with_execution_id(
     monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
     monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
     log_mock = MagicMock()
-    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    # Request-received logs at DEBUG since #2877 (per-request INFO doubled
+    # serverless log volume); the denial log below stays at INFO.
+    monkeypatch.setattr(http_api.logger, "debug", log_mock)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -166,7 +681,10 @@ def test_serverless_auth_middleware_skips_request_received_log_when_api_logging_
 
     monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", False)
     log_mock = MagicMock()
-    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    # Watch DEBUG (where request-received logs since #2877) so this test
+    # actually guards the API_LOGGING_ENABLED gate instead of passing
+    # vacuously against a level the message never uses.
+    monkeypatch.setattr(http_api.logger, "debug", log_mock)
     interface, _, _, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -261,6 +779,202 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     assert usage_check_mock.await_count == 1
 
 
+@pytest.mark.parametrize(
+    "usage_check_result",
+    [
+        ServerlessUsageCheckResponse(status_code=200),
+        ServerlessUsageCheckResponse(status_code=200, workspace_id=""),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=False,
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="workspace\r\nx",
+            under_cap=True,
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace\r\nx",
+            under_cap=True,
+        ),
+    ],
+)
+def test_serverless_auth_middleware_rejects_and_does_not_cache_incomplete_success(
+    monkeypatch,
+    usage_check_result,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=usage_check_result,
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 500
+    assert second_response.status_code == 500
+    assert first_response.json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because the usage check returned "
+            "incomplete data."
+        ),
+    }
+    assert second_response.json() == first_response.json()
+    assert usage_check_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_serverless_auth_middleware_rejects_unexpected_usage_check_status(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(status_code=503),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 500
+    assert second_response.status_code == 500
+    assert first_response.json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because the usage check returned "
+            "an unexpected status (503)."
+        ),
+    }
+    assert second_response.json() == first_response.json()
+    assert usage_check_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_serverless_auth_middleware_sets_assume_identity_workspace_db_id_context(
+    monkeypatch,
+) -> None:
+    import inference.core.roboflow_api as roboflow_api
+
+    context_values = []
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace-db-id",
+            under_cap=True,
+        ),
+    )
+
+    def _capture_context(*args, **kwargs):
+        context_values.append(
+            roboflow_api.assume_identity_authorised_workspace_db_id.get()
+        )
+        return _DummyResponse()
+
+    model_manager.infer_from_request_sync.side_effect = _capture_context
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    assert context_values == ["workspace-db-id"]
+    assert response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert roboflow_api.assume_identity_authorised_workspace_db_id.get() is None
+
+
+def test_serverless_auth_middleware_refreshes_cached_entry_missing_workspace_db_id(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+    import inference.core.roboflow_api as roboflow_api
+
+    context_values = []
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    monkeypatch.setattr(
+        http_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+    )
+    usage_check_mock.side_effect = [
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace-db-id",
+            under_cap=True,
+        ),
+    ]
+
+    def _capture_context(*args, **kwargs):
+        context_values.append(
+            roboflow_api.assume_identity_authorised_workspace_db_id.get()
+        )
+        return _DummyResponse()
+
+    model_manager.infer_from_request_sync.side_effect = _capture_context
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 500
+    assert second_response.status_code == 200
+    assert WORKSPACE_ID_HEADER not in first_response.headers
+    assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert context_values == ["workspace-db-id"]
+    assert usage_check_mock.await_count == 2
+    assert roboflow_api.assume_identity_authorised_workspace_db_id.get() is None
+
+
 def test_serverless_auth_middleware_caches_unauthorized_response(monkeypatch) -> None:
     interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
         monkeypatch=monkeypatch,
@@ -331,6 +1045,40 @@ def test_serverless_auth_middleware_caches_payment_required_response(
     model_manager.infer_from_request_sync.assert_not_called()
 
 
+def test_serverless_auth_middleware_sanitizes_malformed_payment_required_identity(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=402,
+            workspace_id="workspace\r\nx",
+            workspace_db_id="\x00workspace",
+            under_cap=False,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 402
+    assert second_response.status_code == 402
+    assert WORKSPACE_ID_HEADER not in first_response.headers
+    assert WORKSPACE_ID_HEADER not in second_response.headers
+    assert usage_check_mock.await_count == 1
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denial(
     monkeypatch,
 ) -> None:
@@ -338,6 +1086,7 @@ def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denia
 
     monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
     monkeypatch.setattr(http_api, "get_trace_id", lambda: "trace-123")
+    monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
     denied_log_mock = MagicMock()
     monkeypatch.setattr(http_api.logger, "info", denied_log_mock)
     interface, _, _, _ = _build_serverless_interface(
@@ -388,7 +1137,7 @@ def test_serverless_auth_middleware_uses_auth_only_path_for_internal_non_billabl
 ) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
-    monkeypatch.setattr(http_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
     interface, _, usage_check_mock, workspace_lookup_mock = _build_serverless_interface(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
@@ -427,12 +1176,77 @@ def test_serverless_auth_middleware_uses_auth_only_path_for_internal_non_billabl
     assert workspace_lookup_mock.await_count == 1
 
 
+@pytest.mark.parametrize(
+    "invalid_workspace_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        [],
+        {},
+        " workspace",
+        "workspace ",
+        "work space",
+        "workspace\r\nx",
+        "workspace/x",
+        "workspace?x",
+        "\x00workspace",
+        "\ud800",
+    ],
+)
+def test_serverless_auth_middleware_rejects_and_does_not_cache_invalid_auth_only_workspace(
+    monkeypatch,
+    invalid_workspace_id,
+) -> None:
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    interface, model_manager, usage_check_mock, workspace_lookup_mock = (
+        _build_serverless_interface(
+            monkeypatch=monkeypatch,
+            usage_check_result=ServerlessUsageCheckResponse(
+                status_code=402,
+                workspace_id="rf-inference-benchmark",
+                under_cap=False,
+            ),
+            workspace_lookup_result=invalid_workspace_id,
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        responses = [
+            client.post(
+                "/infer/lmm/florence-2-base",
+                params={
+                    "api_key": "query-api-key",
+                    "countinference": "false",
+                    "service_secret": "shared-secret",
+                },
+                json=_make_inference_request(),
+            )
+            for _ in range(2)
+        ]
+
+    assert [response.status_code for response in responses] == [500, 500]
+    assert responses[0].json() == {
+        "status": 500,
+        "message": (
+            "Serverless authorization failed because workspace lookup returned "
+            "an invalid identity."
+        ),
+    }
+    assert responses[1].json() == responses[0].json()
+    assert usage_check_mock.await_count == 0
+    assert workspace_lookup_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_keeps_non_billable_and_billable_cache_entries_separate(
     monkeypatch,
 ) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
-    monkeypatch.setattr(http_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
     interface, model_manager, usage_check_mock, workspace_lookup_mock = (
         _build_serverless_interface(
             monkeypatch=monkeypatch,
@@ -466,3 +1280,1031 @@ def test_serverless_auth_middleware_keeps_non_billable_and_billable_cache_entrie
     assert usage_check_mock.await_count == 1
     assert workspace_lookup_mock.await_count == 1
     assert model_manager.infer_from_request_sync.call_count == 1
+
+
+def test_serverless_auth_middleware_does_not_accept_empty_service_secret(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "")
+    interface, model_manager, usage_check_mock, workspace_lookup_mock = (
+        _build_serverless_interface(
+            monkeypatch=monkeypatch,
+            usage_check_result=ServerlessUsageCheckResponse(
+                status_code=402,
+                workspace_id="rf-inference-benchmark",
+                under_cap=False,
+                error="Workspace is billing-restricted.",
+            ),
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={
+                "api_key": "query-api-key",
+                "countinference": "false",
+                "service_secret": "",
+            },
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 402
+    assert usage_check_mock.await_count == 1
+    assert workspace_lookup_mock.await_count == 0
+    assert model_manager.infer_from_request_sync.call_count == 0
+
+
+def test_serverless_auth_middleware_rejects_host_header_path_injection(
+    monkeypatch,
+) -> None:
+    # CVE-2026-48710 (BadHost): vulnerable Starlette derived request.url.path
+    # from the Host header. A Host value containing `/`, `?`, or `#` could make
+    # request.url.path appear to be an allowlisted route (e.g. "/docs") while
+    # ASGI routed the request to an authenticated handler. Guard against both
+    # the dependency regressing and the middleware drifting back to
+    # request.url.path by asserting auth is still enforced when malicious Host
+    # headers are sent at a protected endpoint.
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    injection_hosts = [
+        "testserver/docs?",
+        "testserver?/docs",
+        "testserver/healthz?",
+        "testserver/_next/x",
+        "testserver/static/x",
+        "testserver#/docs",
+    ]
+
+    with TestClient(interface.app) as client:
+        for host in injection_hosts:
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                headers={"Host": host},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 401, (
+                f"Host-injection bypass for header {host!r}: expected 401, "
+                f"got {response.status_code}"
+            )
+
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_dedicated_deployment_auth_middleware_rejects_host_header_path_injection(
+    monkeypatch,
+) -> None:
+    # CVE-2026-48710 (BadHost) — sibling coverage for the dedicated-deployment
+    # auth middleware (check_authorization). Same shape as the serverless test
+    # so a future refactor that drops scope_path in one middleware but not the
+    # other still trips a regression.
+    interface, model_manager, workspace_lookup_mock = (
+        _build_dedicated_deployment_interface(monkeypatch=monkeypatch)
+    )
+
+    injection_hosts = [
+        "testserver/docs?",
+        "testserver?/docs",
+        "testserver/healthz?",
+        "testserver/redoc?",
+        "testserver/_next/x",
+        "testserver/static/x",
+        "testserver#/docs",
+    ]
+
+    with TestClient(interface.app) as client:
+        for host in injection_hosts:
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                headers={"Host": host},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 401, (
+                f"Host-injection bypass for header {host!r}: expected 401, "
+                f"got {response.status_code}"
+            )
+
+    model_manager.infer_from_request_sync.assert_not_called()
+    workspace_lookup_mock.assert_not_called()
+
+
+# A representative spread of paths the workspace-allowlist middleware must
+# guard. Mix of: real POST inference handlers, a non-exempt GET, a registered
+# admin POST, and an unregistered route (the middleware runs before FastAPI's
+# 404, so even unregistered paths must produce a 401 instead of leaking 404).
+# Used to parametrise the rejection tests below so a future refactor that
+# skips the middleware on any path family trips a regression.
+_SECURED_GATE_TARGETS = [
+    ("POST", "/infer/lmm/florence-2-base"),
+    ("POST", "/infer/object_detection"),
+    ("POST", "/infer/instance_segmentation"),
+    ("POST", "/infer/classification"),
+    ("POST", "/model/add"),
+    ("GET", "/device/stats"),
+    ("POST", "/some/unregistered/secured/path"),
+]
+
+
+def _send_secured_request(client, method, path, *, api_key=None, location="query"):
+    """Drive a request through the middleware for parametrised tests.
+
+    The body is irrelevant for the middleware (it runs before route
+    validation), so we send a generic JSON payload on POST and nothing on
+    GET. `api_key`, when provided, is placed in the channel selected by
+    `location`: "query" (default - where the middleware looks first),
+    "body" (JSON field, POST only), or "bearer"
+    (`Authorization: Bearer <api_key>` header - checked after query, before body).
+    """
+    kwargs = {}
+    payload = _make_inference_request()
+    if api_key is not None:
+        if location == "query":
+            kwargs["params"] = {"api_key": api_key}
+        elif location == "body":
+            assert method == "POST", "body location requires a POST request"
+            payload["api_key"] = api_key
+        elif location == "bearer":
+            kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
+        else:
+            raise ValueError(f"Unknown api_key location: {location}")
+    if method == "POST":
+        kwargs["json"] = payload
+    return client.request(method, path, **kwargs)
+
+
+def test_local_whitelist_alone_enables_middleware_and_allows_matching_workspace(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "key-for-allowed-ws"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_awaited_once_with(api_key="key-for-allowed-ws")
+
+
+@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
+def test_local_whitelist_alone_rejects_non_matching_workspace(
+    monkeypatch, method, path
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="some-other-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client, method, path, api_key="key-for-other-ws"
+        )
+
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
+    assert response.json() == {"status": 401, "message": "Unauthorized api_key"}
+
+
+def test_dedicated_workspace_remains_accepted_when_local_whitelist_is_also_set(
+    monkeypatch,
+) -> None:
+    """Union semantics — the dedicated path must keep working after the local
+    whitelist is added alongside it."""
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="dedicated-workspace",
+        dedicated_workspace_url="dedicated-workspace",
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "key-for-dedicated"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+
+
+def test_locally_whitelisted_workspace_is_accepted_in_union_with_dedicated(
+    monkeypatch,
+) -> None:
+    """A workspace that is in the local whitelist but does NOT match the
+    dedicated URL must still be accepted when both env vars are set."""
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url="dedicated-workspace",
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "key-for-local"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
+def test_workspace_outside_both_allowlists_is_rejected(
+    monkeypatch, method, path
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="some-other-ws",
+        dedicated_workspace_url="dedicated-workspace",
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(client, method, path, api_key="key-for-other")
+
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
+
+
+def test_local_whitelist_with_multiple_entries_accepts_each_member(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    workspace_for_key = {
+        "key-a": "ws-a",
+        "key-b": "ws-b",
+        "key-c": "ws-c",
+    }
+
+    async def lookup(api_key: str) -> str:
+        return workspace_for_key[api_key]
+
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["ws-a", "ws-b", "ws-c"],
+    )
+    # Override the lookup with a per-key one (the helper installs a single
+    # AsyncMock(return_value=...) which is fine for most tests but not for
+    # this one).
+    monkeypatch.setattr(
+        http_api, "get_roboflow_workspace_async", AsyncMock(side_effect=lookup)
+    )
+
+    with TestClient(interface.app) as client:
+        for api_key in ("key-a", "key-b", "key-c"):
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                params={"api_key": api_key},
+                json=_make_inference_request(),
+            )
+            assert (
+                response.status_code == 200
+            ), f"{api_key} should map to a whitelisted workspace"
+
+
+@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
+def test_local_whitelist_middleware_rejects_request_without_api_key(
+    monkeypatch, method, path
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(client, method, path)
+
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
+    assert response.json() == {"status": 401, "message": "Unauthorized api_key"}
+    workspace_lookup_mock.assert_not_awaited()
+
+
+@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
+def test_local_whitelist_middleware_returns_401_when_roboflow_api_rejects_key(
+    monkeypatch, method, path
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+        workspace_lookup_side_effect=RoboflowAPINotAuthorizedError("key revoked"),
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(client, method, path, api_key="revoked-key")
+
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
+
+
+def test_local_whitelist_middleware_caches_successful_workspace_lookup(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        for _ in range(3):
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                params={"api_key": "same-key"},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 200
+
+    assert workspace_lookup_mock.await_count == 1, (
+        "After the first lookup, the api_key/workspace_id pair is cached "
+        "and the upstream Roboflow API must not be hit again"
+    )
+
+
+@pytest.mark.parametrize(
+    "exempt_path",
+    [
+        "/healthz",
+        "/readiness",
+        "/info",
+        "/openapi.json",
+    ],
+)
+def test_local_whitelist_middleware_skips_check_for_exempt_paths(
+    monkeypatch, exempt_path
+) -> None:
+    """Liveness and metadata endpoints must remain reachable without an
+    api_key even when the local-deployment allowlist is enforcing auth."""
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(exempt_path)
+
+    assert response.status_code == 200, f"{exempt_path} must bypass the auth middleware"
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_middleware_is_not_installed_when_neither_env_var_is_set(monkeypatch) -> None:
+    """Pins the gate at http_api.py:985 — when neither
+    `DEDICATED_DEPLOYMENT_WORKSPACE_URL` nor
+    `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` is set, the middleware is
+    never installed and unauthenticated requests proceed (community default).
+    """
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=None,
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "anything"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_empty_local_whitelist_alone_does_not_enable_middleware(monkeypatch) -> None:
+    """An empty list is falsy, so the gate `if DEDICATED_... or WORKSPACES_...`
+    must NOT install the middleware when only an empty list is provided.
+    Otherwise an operator who clears the env var to `""` (which `safe_split_value`
+    can collapse to an empty list depending on implementation) would silently
+    enable an allowlist that rejects every api_key."""
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=[],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "anything"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_depth_estimation_png8_format_returns_decodable_payload(monkeypatch) -> None:
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "depth_map_format": "png8",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["depth_map_format"] == "png8"
+    decoded = decode_png_normalized_depth(payload["normalized_depth"])
+    assert np.allclose(decoded, _DUMMY_DEPTH_MAP, atol=1.0 / 255)
+
+
+# --- Header-based auth (Authorization: Bearer <api_key>) --------------------
+#
+# Precedence: query param > Authorization header > body field. The middleware
+# tests below cover the auth gates; the route-level tests cover the chokepoint
+# resolution that materialises the effective key onto request models (which is
+# also what usage/billing attribution reads).
+
+
+def _build_plain_interface(monkeypatch):
+    """HttpInterface with NO auth middleware - self-hosted default."""
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyResponse()
+    interface = http_api.HttpInterface(model_manager=model_manager)
+    return interface, model_manager
+
+
+@pytest.mark.parametrize("location", ["query", "body", "bearer"])
+def test_dedicated_middleware_accepts_key_from_each_location(
+    monkeypatch, location
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client,
+            "POST",
+            "/infer/lmm/florence-2-base",
+            api_key="key-for-allowed-ws",
+            location=location,
+        )
+
+    assert response.status_code == 200, f"location={location}"
+    workspace_lookup_mock.assert_awaited_once_with(api_key="key-for-allowed-ws")
+
+
+def test_dedicated_middleware_query_key_wins_over_bearer_header(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-key"},
+            headers={"Authorization": "Bearer header-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_awaited_once_with(api_key="query-key")
+
+
+def test_dedicated_middleware_bearer_header_wins_over_body_key(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        workspace_lookup_result="local-allowed-ws",
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+    payload = _make_inference_request()
+    payload["api_key"] = "body-key"
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            headers={"Authorization": "Bearer header-key"},
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_awaited_once_with(api_key="header-key")
+
+
+def test_dedicated_middleware_ignores_non_bearer_authorization_scheme(
+    monkeypatch,
+) -> None:
+    interface, model_manager, workspace_lookup_mock = (
+        _build_dedicated_deployment_interface(
+            monkeypatch=monkeypatch,
+            dedicated_workspace_url=None,
+            local_whitelist=["local-allowed-ws"],
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            # only the auth scheme matters to the middleware - the value is a
+            # plainly fake placeholder, not real base64 credentials
+            headers={"Authorization": "Basic fake-basic-credentials"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 401
+    workspace_lookup_mock.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_dedicated_middleware_ignores_bearer_header_when_flag_disabled(
+    monkeypatch,
+) -> None:
+    from inference.core.interfaces.http import api_key_resolution
+
+    monkeypatch.setattr(api_key_resolution, "ALLOW_API_KEY_FROM_HEADERS", False)
+    interface, model_manager, workspace_lookup_mock = (
+        _build_dedicated_deployment_interface(
+            monkeypatch=monkeypatch,
+            dedicated_workspace_url=None,
+            local_whitelist=["local-allowed-ws"],
+        )
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client,
+            "POST",
+            "/infer/lmm/florence-2-base",
+            api_key="key-for-allowed-ws",
+            location="bearer",
+        )
+
+    assert response.status_code == 401
+    workspace_lookup_mock.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+@pytest.mark.parametrize("location", ["query", "body", "bearer"])
+def test_serverless_auth_middleware_accepts_key_from_each_location(
+    monkeypatch, location
+) -> None:
+    interface, _, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client,
+            "POST",
+            "/infer/lmm/florence-2-base",
+            api_key="my-api-key",
+            location=location,
+        )
+
+    assert response.status_code == 200, f"location={location}"
+    assert response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    usage_check_mock.assert_awaited_once_with(api_key="my-api-key")
+
+
+def test_serverless_auth_middleware_query_key_wins_over_bearer_header(
+    monkeypatch,
+) -> None:
+    interface, _, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-key"},
+            headers={"Authorization": "Bearer header-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    usage_check_mock.assert_awaited_once_with(api_key="query-key")
+
+
+@pytest.mark.parametrize(
+    "location,expected_api_key",
+    [
+        ("query", "my-api-key"),
+        ("body", "my-api-key"),
+        ("bearer", "my-api-key"),
+        (None, None),
+    ],
+)
+def test_route_level_api_key_reaches_model_manager(
+    monkeypatch, location, expected_api_key
+) -> None:
+    # The api_key handed to model_manager.add_model is the same value the
+    # usage collector attributes billing to - this matrix is the guard for
+    # the chokepoint fallbacks.
+    interface, model_manager = _build_plain_interface(monkeypatch)
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client,
+            "POST",
+            "/infer/lmm/florence-2-base",
+            api_key="my-api-key" if location else None,
+            location=location or "query",
+        )
+
+    assert response.status_code == 200, f"location={location}"
+    assert model_manager.add_model.call_count == 1
+    assert model_manager.add_model.call_args.args[1] == expected_api_key
+
+
+def test_route_level_query_key_wins_over_bearer_header(monkeypatch) -> None:
+    interface, model_manager = _build_plain_interface(monkeypatch)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-key"},
+            headers={"Authorization": "Bearer header-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    assert model_manager.add_model.call_args.args[1] == "query-key"
+
+
+def test_route_level_bearer_header_wins_over_body_key(monkeypatch) -> None:
+    interface, model_manager = _build_plain_interface(monkeypatch)
+    payload = _make_inference_request()
+    payload["api_key"] = "body-key"
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            headers={"Authorization": "Bearer header-key"},
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    assert model_manager.add_model.call_args.args[1] == "header-key"
+
+
+def test_serverless_middleware_bearer_header_wins_over_body_key(
+    monkeypatch,
+) -> None:
+    interface, _, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    payload = _make_inference_request()
+    payload["api_key"] = "body-key"
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            headers={"Authorization": "Bearer header-key"},
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    usage_check_mock.assert_awaited_once_with(api_key="header-key")
+
+
+def test_workflows_run_receives_bearer_header_key(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    interface, _ = _build_plain_interface(monkeypatch)
+    engine = MagicMock()
+    engine.run.return_value = []
+    execution_engine_mock = MagicMock()
+    execution_engine_mock.init.return_value = engine
+    monkeypatch.setattr(http_api, "ExecutionEngine", execution_engine_mock)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/workflows/run",
+            headers={"Authorization": "Bearer header-key"},
+            json={
+                "specification": {"version": "1.0", "inputs": [], "steps": []},
+                "inputs": {},
+            },
+        )
+
+    assert response.status_code == 200
+    init_parameters = execution_engine_mock.init.call_args.kwargs["init_parameters"]
+    assert init_parameters["workflows_core.api_key"] == "header-key"
+
+
+def test_describe_workflow_interface_accepts_bearer_header_key(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+    from inference.core.entities.responses.workflows import DescribeInterfaceResponse
+
+    interface, _ = _build_plain_interface(monkeypatch)
+    handler_mock = MagicMock(
+        return_value=DescribeInterfaceResponse(
+            inputs={}, outputs={}, typing_hints={}, kinds_schemas={}
+        )
+    )
+    monkeypatch.setattr(http_api, "handle_describe_workflows_interface", handler_mock)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/workflows/describe_interface",
+            headers={"Authorization": "Bearer header-key"},
+            json={"specification": {"version": "1.0", "inputs": [], "steps": []}},
+        )
+
+    assert response.status_code == 200
+    handler_mock.assert_called_once()
+
+
+def test_describe_workflow_interface_still_requires_api_key(monkeypatch) -> None:
+    # The api_key body field became Optional (header-based auth), but the
+    # "key required" contract is preserved: no channel -> MissingApiKeyError,
+    # mapped to HTTP 400 (previously a pydantic 422).
+    interface, _ = _build_plain_interface(monkeypatch)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/workflows/describe_interface",
+            json={"specification": {"version": "1.0", "inputs": [], "steps": []}},
+        )
+
+    assert response.status_code == 400
+    assert "API key is missing" in response.json()["message"]
+
+
+# --- GET /secure-gateway/health -------------------------------------------
+# Opt-in route (SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED, default False) that
+# probes the configured proxy. The probe itself is unit-tested in
+# handlers/test_secure_gateway.py; here we pin registration, gating, the
+# relay of (status_code, payload) and the auth exemption.
+
+SECURE_GATEWAY_HEALTH_PATH = "/secure-gateway/health"
+
+
+def _build_interface_for_secure_gateway_health(
+    monkeypatch,
+    *,
+    endpoint_enabled: bool,
+    lambda_flag: bool = False,
+    gcp_serverless: bool = False,
+):
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", gcp_serverless)
+    monkeypatch.setattr(http_api, "LAMBDA", lambda_flag)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
+    monkeypatch.setattr(
+        http_api, "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", endpoint_enabled
+    )
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    return http_api.HttpInterface(model_manager=model_manager)
+
+
+def _secure_gateway_payload(**kwargs):
+    from inference.core.entities.responses.secure_gateway import (
+        SecureGatewayHealthResponse,
+    )
+
+    return SecureGatewayHealthResponse(**kwargs)
+
+
+def test_secure_gateway_health_route_is_absent_when_not_opted_in(monkeypatch) -> None:
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=False
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH not in _route_paths(interface)
+
+
+def test_secure_gateway_health_route_is_registered_when_opted_in(monkeypatch) -> None:
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH in _route_paths(interface)
+
+
+@pytest.mark.parametrize(
+    "serverless_flags", [{"lambda_flag": True}, {"gcp_serverless": True}]
+)
+def test_secure_gateway_health_route_is_absent_on_serverless(
+    monkeypatch, serverless_flags
+) -> None:
+    """Serverless has no SECURE_GATEWAY and the Lambda authorizer cannot carry
+    the route - it must not exist there even when the flag is on."""
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True, **serverless_flags
+    )
+
+    assert SECURE_GATEWAY_HEALTH_PATH not in _route_paths(interface)
+
+
+@pytest.mark.parametrize(
+    "probe_status_code, probe_payload_kwargs",
+    [
+        (200, {"status": "healthy", "gateway_status_code": 200, "latency_ms": 3.2}),
+        (404, {"status": "not_configured"}),
+        (
+            502,
+            {
+                "status": "unhealthy",
+                "reason": "gateway_error",
+                "gateway_status_code": 503,
+            },
+        ),
+        (503, {"status": "unhealthy", "reason": "connection_error"}),
+        (504, {"status": "unhealthy", "reason": "timeout"}),
+    ],
+)
+def test_secure_gateway_health_route_relays_probe_outcome(
+    monkeypatch, probe_status_code, probe_payload_kwargs
+) -> None:
+    probe_mock = MagicMock(
+        return_value=(
+            probe_status_code,
+            _secure_gateway_payload(**probe_payload_kwargs),
+        )
+    )
+    monkeypatch.setattr(http_api, "probe_secure_gateway_health", probe_mock)
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == probe_status_code
+    body = response.json()
+    assert body["status"] == probe_payload_kwargs["status"]
+    assert body["reason"] == probe_payload_kwargs.get("reason")
+    # every key is present so clients can rely on the shape; nothing that
+    # identifies the gateway is part of it
+    assert set(body.keys()) == {"status", "reason", "gateway_status_code", "latency_ms"}
+    probe_mock.assert_called_once()
+
+
+def test_secure_gateway_health_route_passes_configuration_to_probe(monkeypatch) -> None:
+    from inference.core.utils import url_utils
+
+    monkeypatch.setattr(url_utils, "SECURE_GATEWAY", "gateway.local:8080")
+    monkeypatch.setattr(http_api, "SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT", 7.5)
+    monkeypatch.setattr(http_api, "ROBOFLOW_API_VERIFY_SSL", False)
+    probe_mock = MagicMock(
+        return_value=(200, _secure_gateway_payload(status="healthy"))
+    )
+    monkeypatch.setattr(http_api, "probe_secure_gateway_health", probe_mock)
+    interface = _build_interface_for_secure_gateway_health(
+        monkeypatch, endpoint_enabled=True
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == 200
+    probe_mock.assert_called_once_with(
+        gateway_base_url="https://gateway.local:8080",
+        timeout=7.5,
+        verify_ssl=False,
+    )
+
+
+def test_local_whitelist_middleware_skips_check_for_secure_gateway_health(
+    monkeypatch,
+) -> None:
+    """The proxy probe is liveness-class: reachable without an api_key even
+    when the local-deployment allowlist is enforcing auth (decision D2)."""
+    monkeypatch.setattr(http_api, "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED", True)
+    monkeypatch.setattr(
+        http_api,
+        "probe_secure_gateway_health",
+        MagicMock(return_value=(200, _secure_gateway_payload(status="healthy"))),
+    )
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["local-allowed-ws"],
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(SECURE_GATEWAY_HEALTH_PATH)
+
+    assert response.status_code == 200
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_secure_gateway_health_is_a_health_check_log_path() -> None:
+    assert SECURE_GATEWAY_HEALTH_PATH in http_api.HEALTH_CHECK_LOG_PATHS
+
+
+@pytest.mark.parametrize("path", ["/workflows/run", "/workspace/workflows/child"])
+def test_workflow_http_routes_propagate_dispatch_depth(monkeypatch, path) -> None:
+    interface, _ = _build_plain_interface(monkeypatch)
+    specification = {"version": "1.0", "inputs": [], "steps": [], "outputs": []}
+    monkeypatch.setattr(
+        http_api, "get_workflow_specification", MagicMock(return_value=specification)
+    )
+    engine = MagicMock()
+    engine.run.return_value = []
+    execution_engine = MagicMock()
+    execution_engine.init.return_value = engine
+    monkeypatch.setattr(http_api, "ExecutionEngine", execution_engine)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            path,
+            json={
+                "inputs": {},
+                "specification": specification,
+                "inner_workflow_dispatch_depth": 2,
+            },
+        )
+
+    assert response.status_code == 200
+    parameters = execution_engine.init.call_args.kwargs["init_parameters"]
+    assert parameters["workflows_core.inner_workflow_dispatch_depth"] == 2

@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
@@ -27,6 +28,9 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import ValidationError
+from roboflow_workflows.execution_engine.introspection.workload_entities import (
+    WorkflowIntrospection,
+)
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -43,6 +47,10 @@ from inference.core.constants import (
     WORKSPACE_ID_HEADER,
 )
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+    InferenceRequestVideo,
+)
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
     ClipImageEmbeddingRequest,
@@ -62,6 +70,7 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
+    ensure_wire_safe_mask_format,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
@@ -69,6 +78,7 @@ from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
+from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -87,18 +97,24 @@ from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowDescribeWorkloadRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
+    WorkflowSpecificationDescribeWorkloadRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionInferenceResponse,
+)
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     DepthEstimationResponse,
     InferenceResponse,
@@ -128,6 +144,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3EmbeddingResponse,
     Sam3SegmentationResponse,
 )
+from inference.core.entities.responses.secure_gateway import SecureGatewayHealthResponse
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -141,6 +158,8 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ACTION_RECOGNITION_ENABLED,
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
     API_LOGGING_ENABLED,
@@ -153,6 +172,7 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
+    CORE_MODEL_PPOCR_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
@@ -160,11 +180,14 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     CORRELATION_ID_HEADER,
+    CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
+    DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
+    ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG,
     ENABLE_DASHBOARD,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -172,6 +195,7 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -182,37 +206,52 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    OFFLINE_MODE,
     OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
+    ROBOFLOW_API_VERIFY_SSL,
+    ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    ROBOFLOW_SERVICE_SECRET,
+    SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
+    SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED,
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
+    FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
     ContentTypeInvalid,
     ContentTypeMissing,
     FeatureDeprecatedError,
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
+    ModelDeploymentNotSupportedError,
+    RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.api_key_resolution import (
+    api_key_fallback,
+    api_key_override,
+    extract_api_key_from_headers,
+    header_api_key,
+)
 from inference.core.interfaces.http.dependencies import (
     parse_body_content_for_legacy_request_handler,
 )
@@ -220,8 +259,12 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
 )
+from inference.core.interfaces.http.handlers.secure_gateway import (
+    probe_secure_gateway_health,
+)
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
+    handle_describe_workflow_workload,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
@@ -236,6 +279,9 @@ from inference.core.interfaces.http.request_metrics import (
     REMOTE_PROCESSING_TIMES_HEADER,
     GCPServerlessMiddleware,
     build_model_response_headers,
+)
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
@@ -265,7 +311,18 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
 from inference.core.managers.inference_models_cache_watchdog import (
     InferenceModelsCacheWatchdog,
 )
@@ -281,11 +338,15 @@ from inference.core.managers.model_load_collector import (
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.models.embeddings import IMAGE_EMBEDDINGS, model_cache_key
 from inference.core.roboflow_api import (
+    assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
     get_serverless_usage_check_async,
     get_workflow_specification,
+    service_secret_is_valid,
+    workspace_db_id_is_valid,
+    workspace_id_is_valid,
 )
 from inference.core.telemetry import (
     get_trace_id,
@@ -295,8 +356,18 @@ from inference.core.telemetry import (
     start_span,
 )
 from inference.core.utils.container import is_docker_socket_mounted
+from inference.core.utils.depth_encoding import (
+    DEPTH_MAP_FORMAT_JSON,
+    DEPTH_MAP_FORMAT_PNG8,
+    encode_normalized_depth_to_png8,
+    encode_normalized_depth_to_png16,
+)
 from inference.core.utils.notebooks import start_notebook
-from inference.core.utils.url_utils import wrap_url
+from inference.core.utils.requests import (
+    api_key_safe_raise_for_status,
+    deduct_api_key_from_string,
+)
+from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -317,17 +388,28 @@ from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
 )
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
-    get_workflow_schema_description,
+    get_workflow_schema as build_workflow_blocks_schema,
+)
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    non_billable_intent_is_authenticated,
+)
 
-if LAMBDA:
+if LAMBDA and not OFFLINE_MODE:
     from inference.core.usage import trackUsage
 
 import time
 
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 from inference_sdk.http.entities import Confidence
@@ -355,12 +437,47 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+# Probe/health endpoints whose access-log lines are demoted to DEBUG.
+HEALTH_CHECK_LOG_PATHS = frozenset(
+    {
+        "/",
+        "/info",
+        "/healthz",
+        "/ready",
+        "/readiness",
+        "/live",
+        "/liveness",
+        "/secure-gateway/health",
+    }
+)
+
+
+if (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+    and WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "local"
+    and not (
+        WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+    )
+):
+    # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
+    # be able to silence a security notice.
+    logger.warning(
+        "SECURITY: this server accepts requests without authentication and runs Workflows Custom Python "
+        "blocks in its own process (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True), so any client that can "
+        "reach it can execute arbitrary code on this host. This is safe only while the server is reachable "
+        "from trusted clients alone. Set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False if you do not need "
+        "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
+        "in front of the server) if it is reachable from other machines. See "
+        "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
+    )
 
 
 @dataclass(frozen=True)
 class AuthorizationCacheEntry:
     expires_at: float
     workspace_id: Optional[str]
+    workspace_db_id: Optional[str] = None
     status_code: int = 200
     message: Optional[str] = None
 
@@ -376,38 +493,19 @@ def _get_request_param(
     return json_params.get(key, req_params.get(key))
 
 
-def _coerce_optional_bool(value: Optional[Any]) -> Optional[bool]:
-    if isinstance(value, bool):
-        return value
-    if not isinstance(value, str):
-        return None
-    normalized_value = value.strip().lower()
-    if normalized_value in {"true", "1", "yes", "on"}:
-        return True
-    if normalized_value in {"false", "0", "no", "off"}:
-        return False
-    return None
-
-
 def _is_non_billable_internal_request(
     req_params,
     json_params: Dict[str, Any],
 ) -> bool:
-    countinference = _coerce_optional_bool(
-        _get_request_param(
-            req_params=req_params,
-            json_params=json_params,
-            key="countinference",
-        )
+    countinference = _get_request_param(
+        req_params=req_params,
+        json_params=json_params,
+        key="countinference",
     )
     service_secret = _get_request_param(
         req_params=req_params, json_params=json_params, key="service_secret"
     )
-    return (
-        countinference is False
-        and service_secret is not None
-        and service_secret == ROBOFLOW_SERVICE_SECRET
-    )
+    return non_billable_intent_is_authenticated(countinference, service_secret)
 
 
 def _set_request_header(request: Request, header_name: str, header_value: str) -> None:
@@ -459,13 +557,25 @@ def _attach_observability_headers_to_early_response(
 ) -> None:
     response.headers[CORRELATION_ID_HEADER] = request_id
     response.headers[PROCESSING_TIME_HEADER] = str(processing_time)
-    if workspace_id is not None:
+    if workspace_id_is_valid(workspace_id):
         response.headers[WORKSPACE_ID_HEADER] = workspace_id
     if EXECUTION_ID_HEADER is not None and execution_id_value is not None:
         response.headers[EXECUTION_ID_HEADER] = execution_id_value
     trace_id = get_trace_id()
     if trace_id is not None:
         response.headers[TRACE_ID_HEADER] = trace_id
+
+
+async def _call_next_with_assume_identity_authorised_workspace_db_id(
+    request: Request, call_next, workspace_db_id: Optional[str]
+) -> Response:
+    if not workspace_db_id_is_valid(workspace_db_id):
+        return await call_next(request)
+    token = assume_identity_authorised_workspace_db_id.set(workspace_db_id)
+    try:
+        return await call_next(request)
+    finally:
+        assume_identity_authorised_workspace_db_id.reset(token)
 
 
 def _log_serverless_authorization_denial(
@@ -477,6 +587,8 @@ def _log_serverless_authorization_denial(
     workspace_id: Optional[str],
     cache_hit: bool,
 ) -> None:
+    if not API_LOGGING_ENABLED:
+        return
     log_fields = {
         "method": request.method,
         "path": request.url.path,
@@ -506,7 +618,17 @@ def _log_serverless_request_received(
     }
     if execution_id_value is not None:
         log_fields["execution_id"] = execution_id_value
-    logger.info(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+    # Debug: one INFO line per request doubles serverless log volume; the
+    # structured access log already records every request with the same ids.
+    logger.debug(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
+
+
+def _parse_legacy_class_filter(class_filter: Optional[str]) -> Optional[List[str]]:
+    """Read the comma separated class list the legacy route carries."""
+    if not class_filter:
+        return None
+    classes = [entry.strip() for entry in class_filter.split(",") if entry.strip()]
+    return classes or None
 
 
 class HttpInterface(BaseInterface):
@@ -535,6 +657,22 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
+        if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with LAMBDA / "
+                "GCP_SERVERLESS deployments because authentication and usage "
+                "accounting require API connectivity."
+            )
+        if OFFLINE_MODE and (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
+            raise RuntimeError(
+                "OFFLINE_MODE is not supported together with dedicated or "
+                "workspace-whitelist authentication because API keys cannot be "
+                "mapped to workspaces without API connectivity."
+            )
 
         description = "Roboflow inference server"
 
@@ -580,7 +718,11 @@ class HttpInterface(BaseInterface):
 
         @app.middleware("http")
         async def set_request_path_context(request: Request, call_next):
-            token = current_request_path.set(request.url.path)
+            # CVE-2026-48710: prefer the raw ASGI scope path over
+            # request.url.path. This ContextVar feeds downstream registry
+            # metadata (_model_request_paths in ModelManagerBase), so a
+            # Host-poisoned path would surface in model-info responses.
+            token = current_request_path.set(request.scope["path"])
             try:
                 return await call_next(request)
             finally:
@@ -592,6 +734,8 @@ class HttpInterface(BaseInterface):
             await usage_collector.async_push_usage_payloads()
             if OTEL_TRACING_ENABLED:
                 shutdown_telemetry()
+            if self.cuda_memory_reclamation_daemon is not None:
+                self.cuda_memory_reclamation_daemon.stop()
 
         self._instrumentator = InferenceInstrumentator(
             app, model_manager=model_manager, endpoint="/metrics"
@@ -699,6 +843,45 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
+            if SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED:
+
+                @app.get(
+                    "/secure-gateway/health",
+                    response_model=SecureGatewayHealthResponse,
+                    responses={
+                        404: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "SECURE_GATEWAY is not configured on this server.",
+                        },
+                        502: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway answered, but not with 2xx (includes redirects).",
+                        },
+                        503: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway unreachable or TLS handshake failed.",
+                        },
+                        504: {
+                            "model": SecureGatewayHealthResponse,
+                            "description": "Gateway did not answer within SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT.",
+                        },
+                    },
+                    summary="Secure gateway health",
+                    description="Probe the /health route of the configured SECURE_GATEWAY "
+                    "(legacy LICENSE_SERVER) and report whether the proxy is reachable "
+                    "from this server. Opt-in via SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED.",
+                )
+                @with_route_exceptions
+                def secure_gateway_health():
+                    status_code, payload = probe_secure_gateway_health(
+                        gateway_base_url=get_secure_gateway_base_url(),
+                        timeout=SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
+                        verify_ssl=ROBOFLOW_API_VERIFY_SSL,
+                    )
+                    return JSONResponse(
+                        status_code=status_code, content=payload.model_dump()
+                    )
+
         cached_api_keys: Dict[AuthorizationCacheKey, AuthorizationCacheEntry] = {}
 
         if GCP_SERVERLESS:
@@ -716,9 +899,13 @@ class HttpInterface(BaseInterface):
                 t1 = time.time()
 
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -729,12 +916,12 @@ class HttpInterface(BaseInterface):
                         "/openapi.json",  # needed for /docs and /redoc
                         "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
 
                 # for these routes we only want to auth if dynamic python modules are provided
-                if request.url.path in [
+                if scope_path in [
                     "/workflows/blocks/describe",
                     "/workflows/definition/schema",
                 ]:
@@ -791,12 +978,17 @@ class HttpInterface(BaseInterface):
                         "serverless.authorization.check",
                         attributes={
                             "http.method": request.method,
-                            "http.target": request.url.path,
+                            # CVE-2026-48710: log the real ASGI path. The span
+                            # records the auth decision, so it must not be
+                            # forgeable via Host header.
+                            "http.target": scope_path,
                         },
                     ) as auth_span:
                         req_params = request.query_params
                         json_params = dict()
                         api_key = req_params.get("api_key", None)
+                        if api_key is None:
+                            api_key = extract_api_key_from_headers(request.headers)
                         if (
                             api_key is None
                             and get_content_type(request) == "application/json"
@@ -828,12 +1020,25 @@ class HttpInterface(BaseInterface):
                         cache_key = (api_key, enforce_credits_verification)
                         cache_entry = cached_api_keys.get(cache_key)
                         workspace_id = None
+                        workspace_db_id = None
+                        cache_entry_needs_workspace_db_refresh = (
+                            bool(ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN)
+                            and enforce_credits_verification
+                            and cache_entry is not None
+                            and cache_entry.expires_at >= time.time()
+                            and cache_entry.status_code == 200
+                            and cache_entry.workspace_db_id is None
+                        )
                         if auth_span is not None:
                             auth_span.set_attribute(
                                 "auth.enforce_credits_verification",
                                 enforce_credits_verification,
                             )
-                        if cache_entry and cache_entry.expires_at >= time.time():
+                        if (
+                            cache_entry
+                            and cache_entry.expires_at >= time.time()
+                            and not cache_entry_needs_workspace_db_refresh
+                        ):
                             if auth_span is not None:
                                 auth_span.set_attribute("auth.cache_hit", True)
                             if cache_entry.status_code != 200:
@@ -851,6 +1056,7 @@ class HttpInterface(BaseInterface):
                                     cache_hit=True,
                                 )
                             workspace_id = cache_entry.workspace_id
+                            workspace_db_id = cache_entry.workspace_db_id
                         else:
                             if auth_span is not None:
                                 auth_span.set_attribute("auth.cache_hit", False)
@@ -897,11 +1103,48 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    if (
+                                        not workspace_id_is_valid(workspace_id)
+                                        or (
+                                            usage_check_result.workspace_db_id
+                                            is not None
+                                            and not workspace_db_id_is_valid(
+                                                usage_check_result.workspace_db_id
+                                            )
+                                        )
+                                        or (
+                                            bool(
+                                                ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN
+                                            )
+                                            and not workspace_db_id_is_valid(
+                                                usage_check_result.workspace_db_id
+                                            )
+                                        )
+                                        or usage_check_result.under_cap is not True
+                                    ):
+                                        if auth_span is not None:
+                                            auth_span.set_attribute(
+                                                "http.status_code", 500
+                                            )
+                                            auth_span.set_attribute(
+                                                "auth.result",
+                                                "invalid_usage_check_response",
+                                            )
+                                        return _authorization_error_response(
+                                            500,
+                                            (
+                                                "Serverless authorization failed because "
+                                                "the usage check returned incomplete data."
+                                            ),
+                                            cache_hit=False,
+                                        )
+                                    workspace_db_id = usage_check_result.workspace_db_id
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
                                             + AUTH_CACHE_TTL_SECONDS,
                                             workspace_id=workspace_id,
+                                            workspace_db_id=workspace_db_id,
                                         )
                                     )
                                 elif usage_check_result.status_code == 401:
@@ -929,6 +1172,20 @@ class HttpInterface(BaseInterface):
                                         cache_hit=False,
                                     )
                                 elif usage_check_result.status_code == 402:
+                                    denied_workspace_id = (
+                                        usage_check_result.workspace_id
+                                        if workspace_id_is_valid(
+                                            usage_check_result.workspace_id
+                                        )
+                                        else None
+                                    )
+                                    denied_workspace_db_id = (
+                                        usage_check_result.workspace_db_id
+                                        if workspace_db_id_is_valid(
+                                            usage_check_result.workspace_db_id
+                                        )
+                                        else None
+                                    )
                                     message = (
                                         "This workspace cannot currently spend credits for serverless inference. "
                                         "Verify billing or credit cap settings."
@@ -941,7 +1198,8 @@ class HttpInterface(BaseInterface):
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
                                             + SHORT_AUTH_CACHE_TTL_SECONDS,
-                                            workspace_id=usage_check_result.workspace_id,
+                                            workspace_id=denied_workspace_id,
+                                            workspace_db_id=denied_workspace_db_id,
                                             status_code=402,
                                             message=message,
                                         )
@@ -955,9 +1213,65 @@ class HttpInterface(BaseInterface):
                                     return _authorization_error_response(
                                         402,
                                         cached_api_keys[cache_key].message,
-                                        workspace_id=usage_check_result.workspace_id,
+                                        workspace_id=denied_workspace_id,
                                         cache_hit=False,
                                     )
+                                else:
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 500)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "unexpected_usage_check_status",
+                                        )
+                                    return _authorization_error_response(
+                                        500,
+                                        (
+                                            "Serverless authorization failed because "
+                                            "the usage check returned an unexpected "
+                                            f"status ({usage_check_result.status_code})."
+                                        ),
+                                        cache_hit=False,
+                                    )
+
+                        if not workspace_id_is_valid(workspace_id):
+                            # Never preserve an incomplete success returned by
+                            # an auth-only lookup or left in the in-process
+                            # cache by older code. Retrying is preferable to a
+                            # poisoned authorization grant.
+                            cached_api_keys.pop(cache_key, None)
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 500)
+                                auth_span.set_attribute(
+                                    "auth.result",
+                                    "invalid_workspace_response",
+                                )
+                            return _authorization_error_response(
+                                500,
+                                (
+                                    "Serverless authorization failed because "
+                                    "workspace lookup returned an invalid identity."
+                                ),
+                                cache_hit=cache_entry is not None,
+                            )
+                        if (
+                            workspace_db_id is not None
+                            and not workspace_db_id_is_valid(workspace_db_id)
+                        ):
+                            cached_api_keys.pop(cache_key, None)
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 500)
+                                auth_span.set_attribute(
+                                    "auth.result",
+                                    "invalid_workspace_db_response",
+                                )
+                            return _authorization_error_response(
+                                500,
+                                (
+                                    "Serverless authorization failed because "
+                                    "workspace lookup returned an invalid internal identity."
+                                ),
+                                cache_hit=cache_entry is not None,
+                            )
 
                         if auth_span is not None:
                             auth_span.set_attribute("http.status_code", 200)
@@ -968,19 +1282,32 @@ class HttpInterface(BaseInterface):
                     record_error(error)
                     raise
 
-                response = await call_next(request)
-                if workspace_id:
+                response = (
+                    await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=workspace_db_id,
+                    )
+                )
+                if workspace_id_is_valid(workspace_id):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+        if (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -988,11 +1315,12 @@ class HttpInterface(BaseInterface):
                         "/info",
                         "/healthz",  # health check endpoint for liveness probe
                         "/readiness",
+                        "/secure-gateway/health",  # opt-in proxy probe, liveness-class
                         "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
                 if skip_check:
                     return await call_next(request)
@@ -1010,6 +1338,8 @@ class HttpInterface(BaseInterface):
                 req_params = request.query_params
                 json_params = dict()
                 api_key = req_params.get("api_key", None)
+                if api_key is None:
+                    api_key = extract_api_key_from_headers(request.headers)
                 if (
                     api_key is None
                     and get_content_type(request) == "application/json"
@@ -1039,8 +1369,14 @@ class HttpInterface(BaseInterface):
                             workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
-
-                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        allowed_workspaces = set()
+                        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                            allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+                        if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
+                            allowed_workspaces.update(
+                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+                            )
+                        if workspace_id not in allowed_workspaces:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(
@@ -1050,10 +1386,28 @@ class HttpInterface(BaseInterface):
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                response = await call_next(request)
+                response = (
+                    await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=None,
+                    )
+                )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
+
+        @app.middleware("http")
+        async def extract_header_api_key(request: Request, call_next):
+            # Captures the `Authorization: Bearer <api_key>` value into a
+            # request-scoped ContextVar consumed via `api_key_fallback` where
+            # the effective API key is materialized onto request models. The
+            # header is a last-resort channel - explicit query/body values win.
+            token = header_api_key.set(extract_api_key_from_headers(request.headers))
+            try:
+                return await call_next(request)
+            finally:
+                header_api_key.reset(token)
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
@@ -1146,7 +1500,17 @@ class HttpInterface(BaseInterface):
                     if len(parts) >= 3:
                         log_fields["trace_id"] = parts[1]
 
-                logger.info(
+                # Health/probe endpoints log at DEBUG: kube-probe and LB
+                # health traffic otherwise dominates access-log volume.
+                # Real request paths MUST stay at INFO — the dedicated
+                # deployment auto-pause daemon reads these lines as its
+                # activity signal (see GEV-28).
+                access_log = (
+                    logger.debug
+                    if request.url.path in HEALTH_CHECK_LOG_PATHS
+                    else logger.info
+                )
+                access_log(
                     f"{request.method} {request.url.path} {response.status_code}",
                     **log_fields,
                 )
@@ -1163,7 +1527,11 @@ class HttpInterface(BaseInterface):
         self.inference_models_cache_daemon: Optional[InferenceModelsCacheWatchdog] = (
             None
         )
-        if USE_INFERENCE_MODELS and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0:
+        if (
+            USE_INFERENCE_MODELS
+            and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0
+            and not OFFLINE_MODE
+        ):
             from inference_models.configuration import INFERENCE_HOME
 
             self.inference_models_cache_daemon = InferenceModelsCacheWatchdog(
@@ -1172,6 +1540,15 @@ class HttpInterface(BaseInterface):
                 interval_minutes=INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
             )
             self.inference_models_cache_daemon.start()
+
+        self.cuda_memory_reclamation_daemon: Optional[CudaMemoryReclamationWatchdog] = (
+            None
+        )
+        if ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG:
+            self.cuda_memory_reclamation_daemon = CudaMemoryReclamationWatchdog(
+                interval_seconds=CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS,
+            )
+            self.cuda_memory_reclamation_daemon.start()
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
@@ -1201,8 +1578,10 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            api_key = api_key_fallback(api_key)
             if api_key is not None:
                 inference_request.api_key = api_key
+            ensure_wire_safe_mask_format(inference_request)
             requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=requested_model_id
@@ -1253,14 +1632,30 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            workflow_request.api_key = api_key_override(workflow_request.api_key)
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
 
-            workflow_init_parameters = {
-                "workflows_core.model_manager": model_manager,
-                "workflows_core.api_key": workflow_request.api_key,
-                "workflows_core.background_tasks": background_tasks,
-            }
+            workflow_init_parameters = install_workflows_platform_bindings(
+                {
+                    "workflows_core.model_manager": ModelManagerModelsProvider(
+                        model_manager
+                    ),
+                    "workflows_core.api_key": workflow_request.api_key,
+                    "workflows_core.background_tasks": background_tasks,
+                    "workflows_core.disable_sinks": workflow_request.disable_sinks,
+                    "workflows_core.inner_workflow_dispatch_depth": (
+                        workflow_request.inner_workflow_dispatch_depth
+                    ),
+                    "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                    "workflows_core.configuration": server_workflows_configuration(),
+                }
+            )
+            # One codec for both injection paths - the engine deserializes the
+            # input with it, and WorkflowImageData / the block-level loaders
+            # re-load any stored reference with it (see
+            # workflows/prototypes/image_codec.py). Idempotent per request.
+            bind_image_codec(workflow_init_parameters)
             with start_span(
                 "workflow.init",
                 {"workflow.id": workflow_request.workflow_id or ""},
@@ -1273,15 +1668,53 @@ class HttpInterface(BaseInterface):
                     profiler=profiler,
                     executor=self.shared_thread_pool_executor,
                     workflow_id=workflow_request.workflow_id,
+                    step_error_handler=resolve_step_error_handler(),
                 )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
                 is_preview = workflow_request.is_preview
-            workflow_results = execution_engine.run(
-                runtime_parameters=workflow_request.inputs,
-                serialize_results=True,
-                _is_preview=is_preview,
-            )
+            # Capture python-block stdout/stderr only when the caller explicitly
+            # opts in via `debug=True` (clients must set the flag - preview runs
+            # do not enable it implicitly).
+            debug_requested = getattr(workflow_request, "debug", False)
+            if debug_requested:
+                # Session state is published via ContextVars; the execution engine
+                # re-binds them inside every worker thread spawned by its
+                # ThreadPoolExecutor (see `safe_execute_step`).
+                debug_ctx = register_debug_session()
+            else:
+                debug_ctx = nullcontext()
+            with debug_ctx as debug_session:
+                try:
+                    workflow_results = execution_engine.run(
+                        runtime_parameters=workflow_request.inputs,
+                        serialize_results=True,
+                        _is_preview=is_preview,
+                    )
+                except Exception as error:
+                    # The error response is built outside this route (see
+                    # `with_route_exceptions`), after the session ContextVars
+                    # scope is gone - so carry snapshots on the exception to
+                    # surface debug output from steps that ran before the failure.
+                    if debug_session is not None:
+                        logs_snapshot = debug_session.output_streams.snapshot()
+                        if logs_snapshot:
+                            error.python_blocks_output_streams = logs_snapshot
+                        trace_entries = debug_session.debug_traces.snapshot()
+                        if trace_entries:
+                            error.python_blocks_debug_traces = trace_entries
+                    raise
+                # Empty snapshots serialize as null in the response.
+                python_blocks_output_streams = (
+                    debug_session.output_streams.snapshot()
+                    if debug_requested and debug_session is not None
+                    else None
+                ) or None
+                python_blocks_debug_traces = (
+                    debug_session.debug_traces.snapshot()
+                    if debug_requested and debug_session is not None
+                    else None
+                ) or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],
@@ -1294,6 +1727,8 @@ class HttpInterface(BaseInterface):
             response = WorkflowInferenceResponse(
                 outputs=outputs,
                 profiler_trace=profiler_trace,
+                python_blocks_output_streams=python_blocks_output_streams,
+                python_blocks_debug_traces=python_blocks_debug_traces,
             )
             return orjson_response(response=response)
 
@@ -1316,6 +1751,7 @@ class HttpInterface(BaseInterface):
             Returns:
                 str: The core model ID.
             """
+            api_key = api_key_fallback(api_key)
             if api_key:
                 inference_request.api_key = api_key
             version_id_field = f"{core_model}_version_id"
@@ -1423,6 +1859,16 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The TrOCR model ID.
+        """
+
+        load_pp_ocr_model = partial(load_core_model, core_model="pp_ocr")
+        """Loads the PP-OCRv6 model into the model manager.
+
+        Args:
+        Same as `load_core_model`.
+
+        Returns:
+        The PP-OCRv6 model ID.
         """
 
         @app.get(
@@ -1537,6 +1983,7 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/add")
+                request.api_key = api_key_override(request.api_key)
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
@@ -1709,6 +2156,7 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/infer/classification",
                 response_model=Union[
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     StubResponse,
@@ -1907,6 +2355,13 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
+                workflow_request.api_key = api_key_override(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
@@ -1928,9 +2383,87 @@ class HttpInterface(BaseInterface):
             def describe_workflow_interface(
                 workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
+                # The handler does not consume the key, but the field was
+                # required before it became Optional (header-based auth), so
+                # the "key required" contract is preserved explicitly.
+                workflow_request.api_key = api_key_override(workflow_request.api_key)
+                if workflow_request.api_key is None:
+                    raise MissingApiKeyError(
+                        "Required Roboflow API key is missing. Pass it as the "
+                        "`api_key` field of the request payload or as the "
+                        "`Authorization: Bearer <api_key>` header."
+                    )
                 return handle_describe_workflows_interface(
                     definition=workflow_request.specification,
                 )
+
+            if not DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS:
+
+                @app.post(
+                    "/{workspace_name}/workflows/{workflow_id}/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of predefined workflow",
+                    description="[EXPERIMENTAL] Checks Roboflow API for workflow definition, once acquired - inspects it structurally "
+                    "and describes the graph, per-step work operations, restrictions, dependent resources and model "
+                    "inventory. Nothing is executed: no block is initialised, no model is loaded and no custom Python "
+                    "code is evaluated.",
+                )
+                @with_route_exceptions
+                def describe_predefined_workflow_workload(
+                    workspace_name: str,
+                    workflow_id: str,
+                    workflow_request: PredefinedWorkflowDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    workflow_specification = get_workflow_specification(
+                        api_key=workflow_request.api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                        use_cache=workflow_request.use_cache,
+                        workflow_version_id=workflow_request.workflow_version_id,
+                    )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_specification,
+                        api_key=workflow_request.api_key,
+                    )
+
+                @app.post(
+                    "/workflows/describe_workload",
+                    response_model=WorkflowIntrospection,
+                    summary="[EXPERIMENTAL] Endpoint to describe compile-time workload of workflow given in request",
+                    description="[EXPERIMENTAL] Parses and structurally inspects the workflow definition, describing the graph, "
+                    "per-step work operations, restrictions, dependent resources and model inventory. Nothing is "
+                    "executed: no block is initialised, no model is loaded and no custom Python code is evaluated.",
+                )
+                @with_route_exceptions
+                def describe_workflow_workload_route(
+                    workflow_request: WorkflowSpecificationDescribeWorkloadRequest,
+                ) -> WorkflowIntrospection:
+                    # Mirrors `describe_workflow_interface`: the key may arrive in
+                    # the body or the Bearer header, and one of the two channels is
+                    # required. Here the key is also the credential the optional
+                    # model-metadata lookup runs under.
+                    workflow_request.api_key = api_key_override(
+                        workflow_request.api_key
+                    )
+                    if workflow_request.api_key is None:
+                        raise MissingApiKeyError(
+                            "Required Roboflow API key is missing. Pass it as the "
+                            "`api_key` field of the request payload or as the "
+                            "`Authorization: Bearer <api_key>` header."
+                        )
+                    return handle_describe_workflow_workload(
+                        definition=workflow_request.specification,
+                        api_key=workflow_request.api_key,
+                    )
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",
@@ -1952,8 +2485,14 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                workflow_request.api_key = api_key_override(workflow_request.api_key)
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
                         max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -2005,6 +2544,11 @@ class HttpInterface(BaseInterface):
             def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                # Declared so FastAPI binds them and the usage decorator can read
+                # the caller's billing intent - the workflow run itself needs
+                # neither.
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2072,7 +2616,7 @@ class HttpInterface(BaseInterface):
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
-                api_key = None
+                body_api_key = None
                 if request_payload is not None:
                     dynamic_blocks_definitions = (
                         request_payload.dynamic_blocks_definitions
@@ -2080,9 +2624,10 @@ class HttpInterface(BaseInterface):
                     requested_execution_engine_version = (
                         request_payload.execution_engine_version
                     )
-                    api_key = request_payload.api_key or request.query_params.get(
-                        "api_key", None
-                    )
+                    body_api_key = request_payload.api_key
+                api_key = api_key_fallback(request.query_params.get("api_key", None))
+                if api_key is None:
+                    api_key = body_api_key
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
@@ -2102,7 +2647,9 @@ class HttpInterface(BaseInterface):
             def get_workflow_schema(
                 request: Request,
             ) -> WorkflowsBlocksSchemaDescription:
-                result = get_workflow_schema_description()
+                result = WorkflowsBlocksSchemaDescription(
+                    schema=build_workflow_blocks_schema()
+                )
                 return gzip_response_if_requested(request, response=result)
 
             @app.post(
@@ -2148,18 +2695,27 @@ class HttpInterface(BaseInterface):
                 ),
             ) -> WorkflowValidationStatus:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                api_key = api_key_fallback(api_key)
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
-                workflow_init_parameters = {
-                    "workflows_core.model_manager": model_manager,
-                    "workflows_core.api_key": api_key,
-                    "workflows_core.background_tasks": None,
-                    "workflows_core.step_execution_mode": step_execution_mode,
-                }
+                workflow_init_parameters = install_workflows_platform_bindings(
+                    {
+                        "workflows_core.model_manager": ModelManagerModelsProvider(
+                            model_manager
+                        ),
+                        "workflows_core.api_key": api_key,
+                        "workflows_core.background_tasks": None,
+                        "workflows_core.step_execution_mode": step_execution_mode,
+                        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+                        "workflows_core.configuration": server_workflows_configuration(),
+                    }
+                )
+                bind_image_codec(workflow_init_parameters)
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
+                    step_error_handler=resolve_step_error_handler(),
                 )
                 return WorkflowValidationStatus(status="ok")
 
@@ -2176,6 +2732,7 @@ class HttpInterface(BaseInterface):
                 request: WebRTCWorkerRequest,
                 r: Request,
             ) -> InitializeWebRTCResponse:
+                request.api_key = api_key_override(request.api_key)
                 if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
                     if re.search(
                         r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
@@ -2261,6 +2818,12 @@ class HttpInterface(BaseInterface):
 
                 Requires api_key for authentication.
                 """
+                request.api_key = api_key_override(request.api_key)
+                if request.api_key is None:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
                 try:
                     workspace_id = await get_roboflow_workspace_async(
                         api_key=request.api_key
@@ -2302,6 +2865,12 @@ class HttpInterface(BaseInterface):
 
                 Requires api_key for authentication.
                 """
+                request.api_key = api_key_override(request.api_key)
+                if request.api_key is None:
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
                 try:
                     workspace_id = await get_roboflow_workspace_async(
                         api_key=request.api_key
@@ -2358,6 +2927,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions_async
             async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
+                request.api_key = api_key_override(request.api_key)
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
@@ -2372,6 +2942,7 @@ class HttpInterface(BaseInterface):
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
+                request.api_key = api_key_override(request.api_key)
                 logger.debug("Received initialise webrtc inference pipeline request")
                 resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
@@ -2534,6 +3105,20 @@ class HttpInterface(BaseInterface):
                 )
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
+
+        if HTTP_API_THREADPOOL_WORKERS:
+
+            @app.on_event("startup")
+            async def adjust_http_threadpool_size():
+                """Resize the anyio thread pool serving sync HTTP handlers."""
+                import anyio.to_thread
+
+                limiter = anyio.to_thread.current_default_thread_limiter()
+                limiter.total_tokens = HTTP_API_THREADPOOL_WORKERS
+                logger.info(
+                    "HTTP API thread pool resized to %s threads",
+                    HTTP_API_THREADPOOL_WORKERS,
+                )
 
         # Attach health/readiness endpoints
         @app.get("/readiness", status_code=200)
@@ -3245,7 +3830,7 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
-            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+            if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
                     "/sam3/embed_image",
@@ -3266,6 +3851,11 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
+
+                    inference_request.model_id = "sam3/sam3_interactive"
+                    api_key = api_key_fallback(api_key)
+                    if api_key:
+                        inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
                         raise HTTPException(
@@ -3305,12 +3895,34 @@ class HttpInterface(BaseInterface):
                     ),
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
+                    # Distinct param names aliased to the real query keys: declaring these
+                    # as `source` / `source_info` would land them in the usage collector's
+                    # func_kwargs and override roboflow_service_name (e.g.
+                    # async-serverless-gpu) with the feature tag. We only want them
+                    # persisted on the request (and thus in resource_details).
+                    request_source: Optional[str] = Query(
+                        None,
+                        alias="source",
+                        description="The source of the inference request",
+                    ),
+                    request_source_info: Optional[str] = Query(
+                        None,
+                        alias="source_info",
+                        description="The detailed source information of the inference request",
+                    ),
                 ):
+                    if request_source is not None:
+                        inference_request.source = request_source
+                    if request_source_info is not None:
+                        inference_request.source_info = request_source_info
+                    api_key = api_key_fallback(api_key)
+                    if api_key:
+                        inference_request.api_key = api_key
+
                     if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
-                            raise HTTPException(
-                                status_code=501,
-                                detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
+                            raise ModelDeploymentNotSupportedError(
+                                FINE_TUNED_SAM3_DEPLOYMENT_ERROR
                             )
 
                     if SAM3_EXEC_MODE == "remote":
@@ -3365,6 +3977,8 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": http_prompts,
                             "output_prob_thresh": inference_request.output_prob_thresh,
+                            "source": inference_request.source,
+                            "source_info": inference_request.source_info,
                         }
 
                         try:
@@ -3383,22 +3997,30 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                wrap_url(f"{endpoint}?api_key={api_key}"),
+                                wrap_url(
+                                    f"{endpoint}?api_key={inference_request.api_key}"
+                                ),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
                             )
-                            response.raise_for_status()
+                            api_key_safe_raise_for_status(response=response)
                             resp_json = response.json()
 
                             # The remote API returns the same structure as Sam3SegmentationResponse
                             return Sam3SegmentationResponse(**resp_json)
 
                         except Exception as e:
-                            logger.error(f"SAM3 remote request failed: {e}")
+                            # exception texts embed the request URL (and with it
+                            # the resolved api_key) - redact before logging and
+                            # keep the client-facing detail generic
+                            logger.error(
+                                "SAM3 remote request failed: %s",
+                                deduct_api_key_from_string(value=str(e)),
+                            )
                             raise HTTPException(
                                 status_code=500,
-                                detail=f"SAM3 remote request failed: {str(e)}",
+                                detail="SAM3 remote request failed.",
                             )
 
                     if inference_request.model_id.startswith("sam3/"):
@@ -3445,8 +4067,33 @@ class HttpInterface(BaseInterface):
                     ),
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
+                    # Distinct param names aliased to the real query keys: declaring these
+                    # as `source` / `source_info` would land them in the usage collector's
+                    # func_kwargs and override roboflow_service_name (e.g.
+                    # async-serverless-gpu) with the feature tag. We only want them
+                    # persisted on the request (and thus in resource_details).
+                    request_source: Optional[str] = Query(
+                        None,
+                        alias="source",
+                        description="The source of the inference request",
+                    ),
+                    request_source_info: Optional[str] = Query(
+                        None,
+                        alias="source_info",
+                        description="The detailed source information of the inference request",
+                    ),
                 ):
                     logger.debug(f"Reached /sam3/visual_segment")
+
+                    if request_source is not None:
+                        inference_request.source = request_source
+                    if request_source_info is not None:
+                        inference_request.source_info = request_source_info
+
+                    inference_request.model_id = "sam3/sam3_interactive"
+                    api_key = api_key_fallback(api_key)
+                    if api_key:
+                        inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
@@ -3466,6 +4113,8 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": prompts_data,
                             "multimask_output": inference_request.multimask_output,
+                            "source": inference_request.source,
+                            "source_info": inference_request.source_info,
                         }
 
                         try:
@@ -3484,23 +4133,29 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                wrap_url(f"{endpoint}?api_key={api_key}"),
+                                wrap_url(
+                                    f"{endpoint}?api_key={inference_request.api_key}"
+                                ),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
                             )
-                            response.raise_for_status()
+                            api_key_safe_raise_for_status(response=response)
                             resp_json = response.json()
 
                             return Sam2SegmentationResponse(**resp_json)
 
                         except Exception as e:
+                            # exception texts embed the request URL (and with it
+                            # the resolved api_key) - redact before logging and
+                            # keep the client-facing detail generic
                             logger.error(
-                                f"SAM3 visual_segment remote request failed: {e}"
+                                "SAM3 visual_segment remote request failed: %s",
+                                deduct_api_key_from_string(value=str(e)),
                             )
                             raise HTTPException(
                                 status_code=500,
-                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                                detail="SAM3 visual_segment remote request failed.",
                             )
 
                     self.model_manager.add_model(
@@ -3516,7 +4171,7 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
-            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+            if SAM3_3D_OBJECTS_ENABLED:
 
                 @app.post(
                     "/sam3_3d/infer",
@@ -3550,6 +4205,7 @@ class HttpInterface(BaseInterface):
                             - time: Inference time in seconds
                     """
                     logger.debug("Reached /sam3_3d/infer")
+                    api_key = api_key_fallback(api_key)
                     model_id = inference_request.model_id or "sam3-3d-objects"
 
                     self.model_manager.add_model(
@@ -3661,6 +4317,70 @@ class HttpInterface(BaseInterface):
 
             if DEPTH_ESTIMATION_ENABLED:
 
+                def _infer_depth_estimation(
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = None,
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                    model_id: Optional[str] = None,
+                ) -> DepthEstimationResponse:
+                    if model_id is not None:
+                        fields_set = getattr(
+                            inference_request,
+                            "model_fields_set",
+                            getattr(
+                                inference_request, "__pydantic_fields_set__", set()
+                            ),
+                        )
+                        if (
+                            "model_id" in fields_set
+                            and inference_request.model_id is not None
+                            and inference_request.model_id != model_id
+                        ):
+                            raise RequestDataContradiction(
+                                f"Model ID mismatch: path specifies '{model_id}' but request body "
+                                f"specifies '{inference_request.model_id}'",
+                            )
+                        inference_request.model_id = model_id
+                    api_key = api_key_fallback(api_key)
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    depth_model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        depth_model_id,
+                        inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        depth_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(depth_model_id, actor)
+
+                    # Extract data from nested response structure
+                    depth_data = response.response
+                    if inference_request.depth_map_format == DEPTH_MAP_FORMAT_JSON:
+                        serialized_depth = depth_data["normalized_depth"].tolist()
+                    elif inference_request.depth_map_format == DEPTH_MAP_FORMAT_PNG8:
+                        serialized_depth = encode_normalized_depth_to_png8(
+                            depth_data["normalized_depth"]
+                        )
+                    else:
+                        serialized_depth = encode_normalized_depth_to_png16(
+                            depth_data["normalized_depth"]
+                        )
+                    return DepthEstimationResponse(
+                        resolved_model=getattr(response, "resolved_model", None),
+                        normalized_depth=serialized_depth,
+                        depth_map_format=inference_request.depth_map_format,
+                        image=depth_data["image"].base64_image,
+                    )
+
                 @app.post(
                     "/infer/depth-estimation",
                     response_model=DepthEstimationResponse,
@@ -3691,29 +4411,117 @@ class HttpInterface(BaseInterface):
                         DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
                     """
                     logger.debug(f"Reached /infer/depth-estimation")
-                    depth_model_id = inference_request.model_id
+                    return _infer_depth_estimation(
+                        inference_request=inference_request,
+                        request=request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                @app.post(
+                    "/infer/depth-estimation/{model_id:path}",
+                    response_model=DepthEstimationResponse,
+                    summary="Depth Estimation with model ID in path",
+                    description="Run depth estimation. Model ID is specified in the URL path and can contain slashes.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def depth_estimation_with_model_id(
+                    model_id: str,
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Generate a depth map with the model identifier in the path.
+
+                    The model_id can be specified in the URL path. If model_id is also
+                    explicitly provided in the request body, it must match the path
+                    parameter.
+                    """
+                    logger.debug(f"Reached /infer/depth-estimation/{model_id}")
+                    return _infer_depth_estimation(
+                        inference_request=inference_request,
+                        request=request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                        model_id=model_id,
+                    )
+
+            if ACTION_RECOGNITION_ENABLED:
+
+                @app.post(
+                    "/infer/action_recognition",
+                    response_model=ActionRecognitionInferenceResponse,
+                    summary="Action Recognition",
+                    description=(
+                        "Classify the actions in a video clip. The model states "
+                        "how the clip is cut and how its frames are sampled, so a "
+                        "caller sends the clip and nothing else. Frame indices in "
+                        "the response count from the first frame of the clip, and "
+                        "windows_classified reports how many calls the clip was "
+                        "cut into. A fine-tuned model reports its own classes. A "
+                        "zero-shot model names the events it finds in its own "
+                        "words. Frames are chosen by the clip's nominal frame "
+                        "rate, so a variable-frame-rate source is sampled at "
+                        "different instants than the model trained on. Send the "
+                        "clip as a URL. Base64 grows it by a third and holds the "
+                        "whole request in memory, so it suits short clips only."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def infer_action_recognition(
+                    inference_request: ActionRecognitionInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Classify the actions in a video clip.
+
+                    Args:
+                        inference_request (ActionRecognitionInferenceRequest): The
+                            clip to classify and the model to classify it with.
+                        api_key (Optional[str], default None): Roboflow API Key
+                            passed to the model during initialization for artifact
+                            retrieval.
+                        request (Request): The HTTP request.
+
+                    Returns:
+                        ActionRecognitionInferenceResponse: The classified ranges
+                        covering the clip.
+                    """
+                    logger.debug("Reached /infer/action_recognition")
+                    api_key = api_key_fallback(api_key)
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    model_id = inference_request.model_id
                     self.model_manager.add_model(
-                        depth_model_id,
+                        model_id,
                         inference_request.api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
                     response = self.model_manager.infer_from_request_sync(
-                        depth_model_id, inference_request
+                        model_id, inference_request
                     )
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
                         ]["lambda"]["actor"]
-                        trackUsage(depth_model_id, actor)
-
-                    # Extract data from nested response structure
-                    depth_data = response.response
-                    depth_response = DepthEstimationResponse(
-                        normalized_depth=depth_data["normalized_depth"].tolist(),
-                        image=depth_data["image"].base64_image,
-                    )
-                    return depth_response
+                        trackUsage(model_id, actor)
+                    return response
 
             if CORE_MODEL_TROCR_ENABLED:
 
@@ -3761,6 +4569,60 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
+                    return orjson_response_keeping_parent_id(response)
+
+            if CORE_MODEL_PPOCR_ENABLED:
+
+                @app.post(
+                    "/ocr/pp-ocr",
+                    response_model=OCRInferenceResponse,
+                    summary="PP-OCRv6 OCR response",
+                    description="Run PP-OCRv6 two-stage OCR to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def pp_ocr_retrieve_text(
+                    inference_request: PPOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Retrieves text from image data using the PP-OCRv6 model.
+
+                    Args:
+                        inference_request (PPOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the retrieved text.
+                    """
+                    if not USE_INFERENCE_MODELS:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="PP-OCR is not supported by this inference server configuration.",
+                        )
+
+                    logger.debug(f"Reached /ocr/pp-ocr")
+                    pp_ocr_model_id = load_pp_ocr_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        pp_ocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(pp_ocr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
@@ -3832,6 +4694,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -3847,6 +4710,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse,
                     KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
+                    AnomalyDetectionResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
                     SemanticSegmentationInferenceResponse,
@@ -3898,6 +4762,14 @@ class HttpInterface(BaseInterface):
                 image_type: Optional[str] = Query(
                     "base64",
                     description="One of base64 or numpy. Note, numpy input is not supported for Roboflow Hosted Inference.",
+                ),
+                class_filter: Optional[str] = Query(
+                    None,
+                    description=(
+                        "Action recognition only: comma separated classes. The "
+                        "subset of a fine-tuned model's classes to report. A "
+                        "zero-shot model answers in its own words and ignores it."
+                    ),
                 ),
                 labels: Optional[bool] = Query(
                     False,
@@ -3953,6 +4825,10 @@ class HttpInterface(BaseInterface):
                     default=None,
                     description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
                 ),
+                include_anomaly_map: Optional[bool] = Query(
+                    default=False,
+                    description="Anomaly detection only: include the raw anomaly heatmap in original image coordinates",
+                ),
                 source: Optional[str] = Query(
                     "external",
                     description="The source of the inference request",
@@ -3988,6 +4864,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
+                api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
                 if isinstance(confidence, (int, float)):
                     if confidence >= 1:
@@ -4025,7 +4902,7 @@ class HttpInterface(BaseInterface):
                             f"Invalid Content-Type: {request.headers['Content-Type']}"
                         )
 
-                if not countinference and service_secret != ROBOFLOW_SERVICE_SECRET:
+                if not countinference and not service_secret_is_valid(service_secret):
                     raise MissingServiceSecretError(
                         "Service secret is required to disable inference usage tracking"
                     )
@@ -4045,7 +4922,7 @@ class HttpInterface(BaseInterface):
                     if countinference:
                         trackUsage(request_model_id, actor)
                     else:
-                        if service_secret != ROBOFLOW_SERVICE_SECRET:
+                        if not service_secret_is_valid(service_secret):
                             raise MissingServiceSecretError(
                                 "Service secret is required to disable inference usage tracking"
                             )
@@ -4064,6 +4941,31 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
+                if task_type == "action-recognition":
+                    # The payload is a clip, so none of the image-shaped
+                    # arguments below apply to it. The `image` query parameter
+                    # carries a URL here, which is the transport to prefer: a
+                    # base64 body grows the clip by a third and is held whole
+                    # in memory.
+                    inference_response = self.model_manager.infer_from_request_sync(
+                        # add_model above registers under the alias, which is
+                        # model_id, so the lookup asks for that. Under Lambda
+                        # request_model_id is the authorizer's endpoint and
+                        # names nothing the manager holds.
+                        model_id,
+                        ActionRecognitionInferenceRequest(
+                            api_key=api_key,
+                            model_id=model_id,
+                            video=InferenceRequestVideo(
+                                type=request_image.type, value=request_image.value
+                            ),
+                            class_filter=_parse_legacy_class_filter(
+                                class_filter=class_filter
+                            ),
+                        ),
+                    )
+                    logger.debug("Response ready.")
+                    return orjson_response(inference_response)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":
@@ -4076,6 +4978,7 @@ class HttpInterface(BaseInterface):
                         args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
+                    args = {"include_anomaly_map": include_anomaly_map}
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
@@ -4163,6 +5066,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(
                     f"Reached /start/{dataset_id}/{version_id} with {dataset_id}/{version_id}"
                 )
+                api_key = api_key_fallback(api_key)
                 model_id = f"{dataset_id}/{version_id}"
                 self.model_manager.add_model(
                     model_id,

@@ -1,0 +1,35 @@
+---
+description: Python empty-line grouping style
+globs: **/*.py
+alwaysApply: false
+---
+
+# Empty Lines
+
+Use empty lines to make control flow and logical groups easy to scan.
+
+Add an empty line after guard clauses before the main body continues.
+
+```python
+if not items:
+    return []
+
+normalized_items = normalize_items(items=items)
+```
+
+Add an empty line between groups of logically consistent lines, such as input
+validation, setup, core computation, and result construction.
+
+```python
+validate_config(config=config)
+device = resolve_device(device=device)
+
+model = load_model(model_path=model_path, device=device)
+result = profile_model(model=model)
+
+serialized_result = serialize_result(result=result)
+
+return serialized_result
+```
+
+Always end files with a final empty line.

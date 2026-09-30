@@ -1,5 +1,4 @@
 import os
-import shutil
 import tempfile
 import uuid
 from copy import copy
@@ -17,9 +16,10 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
+from inference.usage_tracking.collector import usage_collector
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -63,22 +63,8 @@ class DocTR(RoboflowCoreModel):
         self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
         self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
 
-        os.makedirs(f"{MODEL_CACHE_DIR}/doctr/models/", exist_ok=True)
-
-        detector_weights_path = (
-            f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
-        )
-        shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
-            detector_weights_path,
-        )
-        recognizer_weights_path = (
-            f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
-        )
-        shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
-            recognizer_weights_path,
-        )
+        detector_weights_path = self.det_model.cache_file("model.pt")
+        recognizer_weights_path = self.rec_model.cache_file("model.pt")
 
         det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
         det_model.load_state_dict(
@@ -118,8 +104,11 @@ class DocTR(RoboflowCoreModel):
             for image in request.image:
                 request_copy.image = image
                 response.append(self.single_request(request=request_copy))
+            self._attach_resolved_model_metadata(response)
             return response
-        return self.single_request(request)
+        response = self.single_request(request)
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def single_request(self, request: DoctrOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
@@ -140,6 +129,7 @@ class DocTR(RoboflowCoreModel):
                 time=perf_counter() - t1,
             )
 
+    @usage_collector("model")
     def infer(
         self, image: Any, **kwargs
     ) -> Union[

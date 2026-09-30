@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 WORKFLOW_WITH_SAHI = {
@@ -52,12 +53,14 @@ def test_workflow_with_sahi(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     crowd_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -71,7 +74,11 @@ def test_workflow_with_sahi(
     # then
     assert len(result) == 1, "1 image submitted, expected one output"
     confidences = [p["confidence"] for p in result[0]["predictions"]["predictions"]]
-    if platform_environment == PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS:
+    if platform_environment in {
+        PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS,
+    }:
         np.allclose(
             confidences,
             [

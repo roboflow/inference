@@ -1,5 +1,6 @@
 from functools import wraps
 
+from fastapi import HTTPException
 from starlette.responses import JSONResponse
 
 from inference.core import logger
@@ -23,9 +24,11 @@ from inference.core.exceptions import (
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     OnnxProviderNotAvailable,
+    PayloadTooLargeError,
     PaymentRequiredError,
     PostProcessingError,
     PreProcessingError,
+    RequestDataContradiction,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
@@ -70,7 +73,15 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowsInvalidEnvironmentValueError,
     WorkflowSyntaxError,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowInvalidStepEntryError,
+    InnerWorkflowNestingDepthError,
+    InnerWorkflowParameterBindingsError,
+    InnerWorkflowTotalCountError,
 )
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -89,6 +100,32 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
+
+MODEL_ACCESS_ERROR_MESSAGES = {
+    402: "Not enough credits to perform this request. Verify your workspace billing page.",
+    403: "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
+    "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+    "to learn how to retrieve one.",
+    423: "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
+}
+
+
+def _build_model_retrieval_error_response(
+    error: ModelRetrievalError,
+) -> JSONResponse:
+    status_code = getattr(error, "status_code", None)
+    if status_code in MODEL_ACCESS_ERROR_MESSAGES:
+        return JSONResponse(
+            status_code=status_code,
+            content={"message": MODEL_ACCESS_ERROR_MESSAGES[status_code]},
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "message": f"Could not retrieve model {error}",
+            "help_url": error.help_url,
+        },
+    )
 
 
 def _build_execution_error_response(
@@ -123,6 +160,12 @@ def _build_execution_error_response(
                 block_traceback=error.block_traceback,
             ),
         ],
+        # Attached by the workflow-run route when `debug=True` and the run
+        # failed; carries logs of python blocks executed before the failure.
+        python_blocks_output_streams=getattr(
+            error, "python_blocks_output_streams", None
+        ),
+        python_blocks_debug_traces=getattr(error, "python_blocks_debug_traces", None),
     )
 
 
@@ -161,6 +204,12 @@ def with_route_exceptions(route):
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
+        except PayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": error.get_public_error_details()},
+            )
         except InputImageLoadError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -176,6 +225,14 @@ def with_route_exceptions(route):
                 content={
                     "message": f"Error with model input. Cause: {error}",
                     "help_url": error.help_url,
+                },
+            )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
                 },
             )
         except InvalidModelIDError as error:
@@ -229,6 +286,11 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
@@ -333,6 +395,7 @@ def with_route_exceptions(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,
@@ -415,13 +478,7 @@ def with_route_exceptions(route):
             )
         except ModelRetrievalError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": f"Could not retrieve model {error}",
-                    "help_url": error.help_url,
-                },
-            )
+            resp = _build_model_retrieval_error_response(error=error)
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -491,6 +548,14 @@ def with_route_exceptions(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -513,6 +578,15 @@ def with_route_exceptions(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -565,6 +639,8 @@ def with_route_exceptions(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -608,6 +684,12 @@ def with_route_exceptions_async(route):
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
+        except PayloadTooLargeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=413,
+                content={"message": error.get_public_error_details()},
+            )
         except InputImageLoadError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -623,6 +705,14 @@ def with_route_exceptions_async(route):
                 content={
                     "message": f"Error with model input. Cause: {error}",
                     "help_url": error.help_url,
+                },
+            )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
                 },
             )
         except InvalidModelIDError as error:
@@ -676,6 +766,11 @@ def with_route_exceptions_async(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionCycleError,
+            InnerWorkflowInvalidStepEntryError,
+            InnerWorkflowNestingDepthError,
+            InnerWorkflowTotalCountError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
@@ -780,6 +875,7 @@ def with_route_exceptions_async(route):
             )
         except (
             InvalidEnvironmentVariableError,
+            WorkflowsInvalidEnvironmentValueError,
             MissingServiceSecretError,
             ServiceConfigurationError,
             EnvironmentConfigurationError,
@@ -862,13 +958,7 @@ def with_route_exceptions_async(route):
             )
         except ModelRetrievalError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": f"Could not retrieve model {error}",
-                    "help_url": error.help_url,
-                },
-            )
+            resp = _build_model_retrieval_error_response(error=error)
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -938,6 +1028,14 @@ def with_route_exceptions_async(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -960,6 +1058,15 @@ def with_route_exceptions_async(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -1012,6 +1119,8 @@ def with_route_exceptions_async(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})

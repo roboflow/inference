@@ -1,8 +1,14 @@
 import base64
 import io
+from collections import OrderedDict, deque
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from inspect import Parameter, signature
 from io import BytesIO
+from threading import local
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Deque, List, Optional, Tuple, Union
+from uuid import uuid4
+from weakref import finalize
 
 import numpy as np
 import torch
@@ -13,21 +19,34 @@ from inference.core.entities.requests import (
     ClassificationInferenceRequest,
     InferenceRequest,
 )
+from inference.core.entities.requests.action_recognition import (
+    ActionRecognitionInferenceRequest,
+)
+from inference.core.entities.responses.action_recognition import (
+    ActionRecognitionInferenceResponse,
+    ActionRecognitionPrediction,
+)
 from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.core.entities.responses.inference import (
+    AnomalyDetectionResponse,
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
+    InferenceResponseImageDC,
     InstanceSegmentationInferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
     InstanceSegmentationPrediction,
+    InstanceSegmentationPredictionDC,
     InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
+    LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
     Point,
+    PointDC,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
@@ -36,21 +55,40 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    GCP_SERVERLESS,
+    MAX_VIDEO_DURATION_SECONDS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
-from inference.core.exceptions import PostProcessingError
+from inference.core.exceptions import PayloadTooLargeError, PostProcessingError
+from inference.core.models.action_recognition import merge_window_segments
 from inference.core.models.base import Model
 from inference.core.models.embeddings import make_embedding_info
+from inference.core.models.semantic_segmentation_utils import (
+    present_class_ids_from_label_map,
+)
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import mask2poly, masks2poly
+from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
+from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
+from inference.core.utils.video_utils import (
+    probe_video,
+    read_frame_windows,
+    video_source_path,
+)
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
     AutoModel,
     ClassificationModel,
     ClassificationPrediction,
+    DepthEstimationModel,
     Detections,
     InstanceDetections,
     InstanceSegmentationModel,
@@ -61,6 +99,32 @@ from inference_models import (
     ObjectDetectionModel,
     PreProcessingOverrides,
     SemanticSegmentationModel,
+)
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+    MAX_RFDETR_PIPELINE_DEPTH,
+    get_rfdetr_pipeline_depth,
+)
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionModel,
+    effective_max_frame_side,
+    plan_windows,
+)
+from inference_models.models.base.async_handoff import (
+    STREAM_PIPELINE_CONTEXT_ID_KWARG,
+    adapter_gpu_work_submitted,
+    attach_adapter_mapped_kwargs,
+    attach_async_response_future,
+    get_adapter_gpu_submit_generation,
+    get_adapter_mapped_kwargs,
+    get_adapter_stream_pipeline_context_id,
+    get_deferred_postprocess_done_event,
+    get_deferred_postprocess_finalizer,
+    mark_adapter_gpu_work_submitted,
+)
+from inference_models.models.base.instance_segmentation import InferenceFuture
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
 )
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
@@ -89,6 +153,110 @@ DEFAULT_COLOR_PALETTE = [
     "#FF39C9",
 ]
 
+_PINNED_HOST_BUFFER_CACHE_SIZE = 16
+_PINNED_HOST_BUFFER_CONTEXT = local()
+
+
+def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+    """Return a thread-local pinned CPU scratch tensor for async DtoH copies.
+
+    Response finalization can run on a worker thread while the inference thread
+    submits later GPU work. Keeping this cache thread-local avoids two workers
+    writing into the same scratch tensor. The small LRU cap prevents retaining a
+    new pinned allocation for every transient shape.
+
+    The cache is keyed by ``(name, dtype)`` only. When a cached buffer is large
+    enough, this returns a **view** into that entry, not a fresh allocation.
+    ``.numpy()`` and any slices alias the scratch memory until the next
+    ``copy_`` into the same cache slot. Values that outlive the current
+    finalization must be copied or reduced to scalars / fresh polygon arrays
+    before returning.
+    """
+    cache = getattr(_PINNED_HOST_BUFFER_CONTEXT, "cache", None)
+    if cache is None:
+        cache = OrderedDict()
+        _PINNED_HOST_BUFFER_CONTEXT.cache = cache
+    key = (name, dtype)
+    buf = cache.get(key)
+    if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
+        cache.move_to_end(key)
+        return buf[tuple(slice(0, s) for s in shape)]
+    buf = torch.empty(shape, dtype=dtype, pin_memory=True)
+    cache[key] = buf
+    cache.move_to_end(key)
+    while len(cache) > _PINNED_HOST_BUFFER_CACHE_SIZE:
+        cache.popitem(last=False)
+    return buf
+
+
+def _resolve_response_future(
+    future: Future,
+    context: str,
+):
+    try:
+        return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
+    except TimeoutError as error:
+        raise RuntimeError(f"Timed out while waiting for {context}.") from error
+
+
+class _PipelinePrimingSentinel:
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug only
+        return "<_PIPELINE_PRIMING>"
+
+
+_PIPELINE_PRIMING = _PipelinePrimingSentinel()
+
+
+def _get_enabled_inference_models_backends() -> List[str]:
+    """Return a stable backend request independent of Python hash seeding."""
+    return sorted(
+        VALID_INFERENCE_MODELS_BACKENDS.difference(DISABLED_INFERENCE_MODELS_BACKENDS)
+    )
+
+
+def _supports_independent_stage_execution(pre_process) -> bool:
+    """Return whether preprocessing declares the composed-execution control."""
+    try:
+        parameters = signature(pre_process).parameters
+    except (TypeError, ValueError):
+        return False
+    parameter = parameters.get("independent_stage_execution")
+    return parameter is not None and parameter.kind in {
+        Parameter.POSITIONAL_OR_KEYWORD,
+        Parameter.KEYWORD_ONLY,
+    }
+
+
+def _fixed_input_hw_from_backend(backend: Any) -> Optional[Tuple[int, int]]:
+    """Return a fixed canvas from an inference-models backend, if it has one.
+
+    Package backends (YOLO26 TRT and friends) keep the network size on
+    ``_inference_config.network_input``. Packages that accept a per-call
+    spatial size return ``None``.
+    """
+    network_input = getattr(
+        getattr(backend, "_inference_config", None),
+        "network_input",
+        None,
+    )
+    if network_input is None:
+        return None
+    if getattr(network_input, "dynamic_spatial_size_supported", False):
+        return None
+
+    training_input_size = getattr(network_input, "training_input_size", None)
+    try:
+        height = int(getattr(training_input_size, "height", None))
+        width = int(getattr(training_input_size, "width", None))
+    except (TypeError, ValueError):
+        return None
+    if height <= 0 or width <= 0:
+        return None
+
+    return height, width
+
 
 class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
@@ -105,11 +273,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -120,7 +284,23 @@ class InferenceModelsObjectDetectionAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
+        self._preprocess_supports_independent_stage_execution = (
+            _supports_independent_stage_execution(self._model.pre_process)
+        )
         self.class_names = list(self._model.class_names)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -145,6 +325,8 @@ class InferenceModelsObjectDetectionAdapter(Model):
             for v in images
         ]
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if self._preprocess_supports_independent_stage_execution:
+            mapped_kwargs["independent_stage_execution"] = False
         return self._model.pre_process(np_images, **mapped_kwargs)
 
     def predict(self, img_in, **kwargs):
@@ -257,11 +439,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -272,7 +450,74 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
+        # Stream pipelining: depth=1 means original synchronous behavior
+        # (preprocess→forward→postprocess on each frame, in order). depth=2
+        # means two stages in parallel: while the GPU works on the current
+        # frame, the CPU prepares/submits the next frame, then harvests the
+        # previous response. Only models that explicitly support the deferred
+        # GPU handoff contract can use this; other instance-segmentation
+        # backends keep depth=1 even if RFDETR_PIPELINE_DEPTH is set.
+        self._pipeline_depth = self._resolve_pipeline_depth()
+        self._response_delay = max(1, self._pipeline_depth - 1)
+        # Per-adapter in-flight futures + metadata. Not thread-safe; the
+        # InferencePipeline is single-producer and the adapter is owned by a
+        # single worker.
+        self._pending_gpu_submissions: Deque[
+            Tuple[InferenceFuture, PreprocessingMetadata, dict]
+        ] = deque()
+        self._pending_futures: Deque[
+            Tuple[InferenceFuture, PreprocessingMetadata, dict]
+        ] = deque()
+        self._gpu_submit_generation = 0
+        self._response_executor: Optional[ThreadPoolExecutor] = None
+        self._response_executor_finalizer = None
+        self._response_futures: Deque[
+            Tuple[
+                Future[List[InstanceSegmentationInferenceResponse]],
+                Optional[str],
+            ]
+        ] = deque()
+
+    def _resolve_pipeline_depth(self) -> int:
+        requested_depth = min(get_rfdetr_pipeline_depth(), MAX_RFDETR_PIPELINE_DEPTH)
+        if requested_depth <= 1 or self._model_supports_stream_pipeline():
+            return requested_depth
+        return 1
+
+    def _model_supports_stream_pipeline(self) -> bool:
+        supports_stream_pipeline = getattr(
+            self._model, "supports_stream_pipeline", False
+        )
+        if callable(supports_stream_pipeline):
+            return bool(supports_stream_pipeline())
+        return bool(supports_stream_pipeline)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[InstanceDetections]:
+        enforce_dense_masks = (
+            False
+            if GCP_SERVERLESS
+            else kwargs.get("enforce_dense_masks_in_inference_models", False)
+        )
+        if not enforce_dense_masks and "rle" not in self._model.supported_mask_formats:
+            raise PostProcessingError(
+                "RLE masks are required on the tensor-native instance-segmentation "
+                "path (enforce_dense_masks_in_inference_models is False) but the loaded "
+                f"model only supports mask formats {self._model.supported_mask_formats}. "
+                "Either use a model that supports 'rle' or set "
+                "enforce_dense_masks_in_inference_models=True to receive dense masks."
+            )
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -281,9 +526,23 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
+        if GCP_SERVERLESS:
+            enforce_dense_masks_in_inference_models = False
+        else:
+            enforce_dense_masks_in_inference_models = kwargs.get(
+                "enforce_dense_masks_in_inference_models",
+                False,
+            )
+        # Consumed here — must not leak into the model call, whose deeper
+        # pre/post stages do not accept arbitrary kwargs.
+        kwargs.pop("enforce_dense_masks_in_inference_models", None)
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        if "rle" in self._model.supported_mask_formats:
+        if (
+            "rle" in self._model.supported_mask_formats
+            and not enforce_dense_masks_in_inference_models
+        ):
             kwargs["mask_format"] = "rle"
+        kwargs.pop(STREAM_PIPELINE_CONTEXT_ID_KWARG, None)
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -301,11 +560,252 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         return self._model.pre_process(np_images, **mapped_kwargs)
 
+    def _request_batch_size(self, img_in: Any) -> int:
+        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+        if isinstance(pre_processing_meta, (list, tuple)):
+            return len(pre_processing_meta)
+        shape = getattr(img_in, "shape", None)
+        if shape is not None and len(shape) > 0:
+            return int(shape[0])
+        if isinstance(img_in, (list, tuple)):
+            return len(img_in)
+        return 1
+
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        return self._model.forward(img_in, **mapped_kwargs)
+        if self._pipeline_depth <= 1:
+            # Original path: forward on current frame, postprocess on
+            # current frame, all synchronous.
+            return self._model.forward(img_in, **mapped_kwargs)
+        if self._request_batch_size(img_in) > 1:
+            return self._model.forward(img_in, **mapped_kwargs)
+
+        mapped_kwargs["defer_count_to_adapter"] = (
+            kwargs.get("response_mask_format") != "rle"
+        )
+        mapped_kwargs["defer_postprocess_sync"] = True
+        mapped_kwargs["reuse_trt_graph_outputs"] = True
+        # Pipelined path: before launching frame N's forward, enqueue the
+        # oldest frame whose postprocess metadata is already known. That keeps
+        # postprocess off the current frame's postprocess() host path while
+        # still preserving the correctness dependency for reused TRT outputs.
+        self._submit_next_pending_gpu_work()
+        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+        fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+        stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
+        if not isinstance(stream_pipeline_context_id, str):
+            stream_pipeline_context_id = None
+        attach_adapter_mapped_kwargs(
+            fut,
+            mapped_kwargs,
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        )
+        if pre_processing_meta is not None:
+            self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
+        self._submit_ready_responses()
+        return fut
+
+    def flush(self) -> List[InstanceSegmentationInferenceResponse]:
+        """Drain the tail of the pipelined queue.
+
+        Returns responses for any in-flight frames whose forward/postprocess
+        GPU work was submitted but whose CPU-visible response has not yet been
+        materialized. Callers that use `RFDETR_PIPELINE_DEPTH>=2` MUST invoke
+        this at stream end or the final frames will be dropped.
+        """
+        if self._pipeline_depth <= 1:
+            return []
+        self._submit_all_pending_gpu_work()
+        self._submit_all_pending_responses()
+        responses: List[InstanceSegmentationInferenceResponse] = []
+        while self._response_futures:
+            response_future, _ = self._response_futures.popleft()
+            responses.extend(
+                _resolve_response_future(
+                    future=response_future,
+                    context="RF-DETR stream pipeline flush",
+                )
+            )
+        return responses
+
+    def shutdown_pipeline(self) -> None:
+        if self._response_executor is None:
+            return None
+        finalizer = self._response_executor_finalizer
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
+        self._response_executor.shutdown(wait=False)
+        self._response_executor = None
+        self._response_executor_finalizer = None
+
+    def _get_response_executor(self) -> ThreadPoolExecutor:
+        if self._response_executor is None:
+            self._response_executor = ThreadPoolExecutor(max_workers=1)
+            self._response_executor_finalizer = finalize(
+                self,
+                self._response_executor.shutdown,
+                wait=False,
+            )
+        return self._response_executor
+
+    def _submit_future_gpu_work(
+        self,
+        fut: InferenceFuture,
+        meta: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> None:
+        if adapter_gpu_work_submitted(fut):
+            return None
+        fut._meta = meta  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        submit_gpu_work = getattr(fut, "submit_gpu_work", None)
+        if callable(submit_gpu_work):
+            submit_gpu_work(meta)
+            self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
+            mark_adapter_gpu_work_submitted(fut, self._gpu_submit_generation)
+
+    def _submit_next_pending_gpu_work(self) -> None:
+        if not self._pending_gpu_submissions:
+            return None
+        self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
+
+    def _submit_all_pending_gpu_work(self) -> None:
+        while self._pending_gpu_submissions:
+            self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
+
+    def _submit_response_build(
+        self,
+        fut: InferenceFuture,
+        meta: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> None:
+        fut._meta = meta  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        response_future = self._get_response_executor().submit(
+            self._finalize_future,
+            fut,
+            meta,
+            mapped_kwargs,
+        )
+        context_id = get_adapter_stream_pipeline_context_id(fut)
+        self._response_futures.append(
+            (
+                response_future,
+                context_id,
+            )
+        )
+
+    def _submit_ready_responses(self) -> None:
+        while self._pending_futures:
+            fut, meta, mapped_kwargs = self._pending_futures[0]
+            submit_generation = get_adapter_gpu_submit_generation(fut)
+            if submit_generation is None:
+                self._submit_future_gpu_work(fut, meta, mapped_kwargs)
+                submit_generation = get_adapter_gpu_submit_generation(fut)
+            if submit_generation is None:
+                break
+            gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0)
+            if gpu_submit_generation < submit_generation + self._response_delay:
+                break
+            self._submit_response_build(*self._pending_futures.popleft())
+
+    def _submit_all_pending_responses(self) -> None:
+        while self._pending_futures:
+            self._submit_response_build(*self._pending_futures.popleft())
 
     def postprocess(
+        self,
+        predictions,
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
+            return self._postprocess_sync(
+                predictions, preprocess_return_metadata, **kwargs
+            )
+        fut: InferenceFuture = predictions
+        mapped_kwargs = get_adapter_mapped_kwargs(fut)
+        self._pending_gpu_submissions.append(
+            (
+                fut,
+                preprocess_return_metadata,
+                mapped_kwargs,
+            )
+        )
+        self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
+        if len(self._pending_futures) > self._response_delay:
+            self._submit_next_pending_gpu_work()
+            self._submit_ready_responses()
+
+        if not self._response_futures:
+            return self._empty_responses_for_metadata(
+                preprocess_return_metadata=preprocess_return_metadata,
+                workflow_execution=kwargs.get("source") == "workflow-execution",
+            )
+
+        response_future, context_id = self._response_futures.popleft()
+        if kwargs.get("source") == "workflow-execution":
+            responses = self._empty_responses_for_metadata(
+                preprocess_return_metadata=preprocess_return_metadata,
+                workflow_execution=True,
+            )
+            if responses:
+                attach_async_response_future(
+                    response=responses[0],
+                    response_future=response_future,
+                    context_id=context_id,
+                )
+            return responses
+        return _resolve_response_future(
+            future=response_future,
+            context="RF-DETR stream pipeline response finalization",
+        )
+
+    def _empty_responses_for_metadata(
+        self,
+        preprocess_return_metadata: PreprocessingMetadata,
+        workflow_execution: bool,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        if workflow_execution:
+            return [
+                InstanceSegmentationInferenceResponseDC(
+                    predictions=[],
+                    image=InferenceResponseImageDC(
+                        width=m.original_size.width,
+                        height=m.original_size.height,
+                    ),
+                )
+                for m in preprocess_return_metadata
+            ]
+        return [
+            InstanceSegmentationInferenceResponse(
+                predictions=[],
+                image=InferenceResponseImage(
+                    width=m.original_size.width,
+                    height=m.original_size.height,
+                ),
+            )
+            for m in preprocess_return_metadata
+        ]
+
+    def _finalize_future(
+        self,
+        fut: InferenceFuture,
+        preprocess_return_metadata: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        # Override the future's stashed meta (which was `None` at submit
+        # time) with the correct metadata for the frame whose forward pass
+        # the future represents. This is an allowed private-surface tweak
+        # because _DirectInferenceFuture's post_process is memoised.
+        fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        detections_list = fut.result()
+        return self._build_responses_from_detections(
+            detections_list, preprocess_return_metadata, **mapped_kwargs
+        )
+
+    def _postprocess_sync(
         self,
         predictions: List[InstanceDetections],
         preprocess_return_metadata: PreprocessingMetadata,
@@ -313,32 +813,192 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
+        )
+        return self._build_responses_from_detections(
+            detections_list, preprocess_return_metadata, **kwargs
+        )
+
+    def _build_responses_from_detections(
+        self,
+        detections_list: List[InstanceDetections],
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        return_in_rle = kwargs.get("response_mask_format") == "rle"
+        # Workflow callers consume a plain dict via `_is_response_dc_to_dict`;
+        # dataclasses avoid pydantic validation + `model_dump` overhead per
+        # frame. Keep the pydantic path for RLE responses and for non-workflow
+        # callers that rely on the response model type.
+        use_dc = (
+            kwargs.get("source") == "workflow-execution"
+            and not return_in_rle
+            and getattr(self, "_pipeline_depth", 1) > 1
         )
 
         responses: List[InstanceSegmentationInferenceResponse] = []
         for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
+            finalize_pending = get_deferred_postprocess_finalizer(det)
+            if callable(finalize_pending):
+                det = finalize_pending()
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
-            xyxy = det.xyxy.detach().cpu().numpy()
-            confs = det.confidence.detach().cpu().numpy()
-            if isinstance(det.mask, torch.Tensor):
-                masks = det.mask.detach().cpu().numpy()
-                if return_in_rle:
-                    polys_or_rles = [
-                        torch_mask_to_coco_rle(mask=mask) for mask in masks
-                    ]
-                else:
-                    polys_or_rles = masks2poly(masks)
-            else:
-                if return_in_rle:
-                    polys_or_rles = det.mask.to_coco_rle_masks()
-                else:
-                    polys_or_rles = rle_masks2poly(det.mask)
-            class_ids = det.class_id.detach().cpu().numpy()
+            combined_gpu = getattr(det, "_combined_gpu", None)
+            mask_gpu = getattr(det, "_mask_gpu", None)
+            mask_packed_gpu = getattr(det, "_mask_packed_gpu", None)
+            mask_cpu = getattr(det, "_mask_cpu", None)
+            defer_count_to_adapter = getattr(det, "_defer_count_to_adapter", False)
+            done_event = get_deferred_postprocess_done_event(det)
+            dense_mask_cuda = isinstance(mask_gpu, torch.Tensor) and mask_gpu.is_cuda
+            packed_mask_cuda = (
+                isinstance(mask_packed_gpu, torch.Tensor) and mask_packed_gpu.is_cuda
+            )
+            if (
+                not return_in_rle
+                and done_event is not None
+                and (dense_mask_cuda or packed_mask_cuda)
+            ):
+                device = mask_gpu.device if dense_mask_cuda else mask_packed_gpu.device
+                stream = torch.cuda.current_stream(device)
+                done_event.wait(stream)
 
+                if (
+                    defer_count_to_adapter
+                    and isinstance(combined_gpu, torch.Tensor)
+                    and combined_gpu.is_cuda
+                ):
+                    # combined_np / class_column / combined_slice are scratch views;
+                    # use only for survivor counting and in-loop scalar extraction.
+                    combined_host = get_pinned_buffer(
+                        "combined_full",
+                        tuple(combined_gpu.shape),
+                        combined_gpu.dtype,
+                    )
+                    combined_host.copy_(combined_gpu, non_blocking=True)
+                    stream.synchronize()
+                    combined_np = combined_host.numpy()
+                    class_column = combined_np[:, 5]
+                    inactive_indices = np.flatnonzero(class_column < 0)
+                    n_survivors = (
+                        int(inactive_indices[0])
+                        if inactive_indices.size > 0
+                        else int(class_column.shape[0])
+                    )
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
+                    else:
+                        combined_slice = combined_np[:n_survivors]
+                        xyxy = combined_slice[:, :4]
+                        confs = combined_slice[:, 4].view(np.float32)
+                        class_ids = combined_slice[:, 5]
+                        if packed_mask_cuda:
+                            packed_slice = mask_packed_gpu[:n_survivors]
+                            packed_host = get_pinned_buffer(
+                                "mask_packed",
+                                tuple(packed_slice.shape),
+                                packed_slice.dtype,
+                            )
+                            packed_host.copy_(packed_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = bitpacked_masks2poly(
+                                packed_host.numpy(), width=W
+                            )
+                        else:
+                            mask_slice = mask_gpu[:n_survivors]
+                            mask_host = get_pinned_buffer(
+                                "mask", tuple(mask_slice.shape), mask_slice.dtype
+                            )
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = masks2poly(mask_host.numpy())
+                else:
+                    n_survivors = int(det.xyxy.shape[0])
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
+                    else:
+                        mask_slice = mask_gpu[:n_survivors]
+                        mask_host = get_pinned_buffer(
+                            "mask", tuple(mask_slice.shape), mask_slice.dtype
+                        )
+                        if (
+                            isinstance(combined_gpu, torch.Tensor)
+                            and combined_gpu.is_cuda
+                            and tuple(combined_gpu.shape)
+                            == (n_survivors, det.xyxy.shape[1] + 2)
+                        ):
+                            combined_slice = combined_gpu[:n_survivors]
+                            combined_host = get_pinned_buffer(
+                                "combined",
+                                tuple(combined_slice.shape),
+                                combined_slice.dtype,
+                            )
+                            combined_host.copy_(combined_slice, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            combined_np = combined_host.numpy()
+                            xyxy = combined_np[:, :4]
+                            confs = combined_np[:, 4].view(np.float32)
+                            class_ids = combined_np[:, 5]
+                            polys_or_rles = masks2poly(mask_host.numpy())
+                        else:
+                            xyxy_host = get_pinned_buffer(
+                                "xyxy", tuple(det.xyxy.shape), det.xyxy.dtype
+                            )
+                            conf_host = get_pinned_buffer(
+                                "conf",
+                                tuple(det.confidence.shape),
+                                det.confidence.dtype,
+                            )
+                            class_host = get_pinned_buffer(
+                                "class_id",
+                                tuple(det.class_id.shape),
+                                det.class_id.dtype,
+                            )
+                            xyxy_host.copy_(det.xyxy, non_blocking=True)
+                            conf_host.copy_(det.confidence, non_blocking=True)
+                            class_host.copy_(det.class_id, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            xyxy = xyxy_host.numpy()
+                            confs = conf_host.numpy()
+                            class_ids = class_host.numpy()
+                            polys_or_rles = masks2poly(mask_host.numpy())
+            elif not return_in_rle and isinstance(mask_cpu, np.ndarray):
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                class_ids = det.class_id.detach().cpu().numpy()
+                polys_or_rles = masks2poly(mask_cpu)
+            else:
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                if isinstance(det.mask, torch.Tensor):
+                    masks = det.mask.detach().cpu().numpy()
+                    if return_in_rle:
+                        polys_or_rles = [
+                            torch_mask_to_coco_rle(mask=mask) for mask in masks
+                        ]
+                    else:
+                        polys_or_rles = masks2poly(masks)
+                else:
+                    if return_in_rle:
+                        polys_or_rles = det.mask.to_coco_rle_masks()
+                    else:
+                        polys_or_rles = rle_masks2poly(det.mask)
+                class_ids = det.class_id.detach().cpu().numpy()
+
+            # Some branches above intentionally keep numpy views into
+            # thread-local pinned scratch buffers. Only scalar values and
+            # polygon/RLE lists may be stored on responses below; do not return
+            # those arrays or any view derived from them.
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
@@ -361,46 +1021,71 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and class_name not in kwargs["class_filter"]
                 ):
                     continue
-                if not return_in_rle:
+                if use_dc:
                     predictions.append(
-                        InstanceSegmentationPrediction(
+                        InstanceSegmentationPredictionDC(
                             x=cx,
                             y=cy,
                             width=w,
                             height=h,
                             confidence=float(conf),
+                            class_name=class_name,
+                            class_id=class_id_int,
                             points=[
-                                Point(x=point[0], y=point[1])
+                                PointDC(x=float(point[0]), y=float(point[1]))
                                 for point in mask_as_poly_or_rle
                             ],
-                            **{"class": class_name},
-                            class_id=class_id_int,
                         )
                     )
                 else:
-                    if isinstance(mask_as_poly_or_rle["counts"], bytes):
-                        mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle[
-                            "counts"
-                        ].decode("ascii")
-                    predictions.append(
-                        InstanceSegmentationRLEPrediction(
-                            x=cx,
-                            y=cy,
-                            width=w,
-                            height=h,
-                            confidence=float(conf),
-                            rle=mask_as_poly_or_rle,
-                            **{"class": class_name},
-                            class_id=class_id_int,
+                    if not return_in_rle:
+                        predictions.append(
+                            InstanceSegmentationPrediction(
+                                x=cx,
+                                y=cy,
+                                width=w,
+                                height=h,
+                                confidence=float(conf),
+                                points=[
+                                    Point(x=point[0], y=point[1])
+                                    for point in mask_as_poly_or_rle
+                                ],
+                                **{"class": class_name},
+                                class_id=class_id_int,
+                            )
                         )
-                    )
+                    else:
+                        if isinstance(mask_as_poly_or_rle["counts"], bytes):
+                            mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle[
+                                "counts"
+                            ].decode("ascii")
+                        predictions.append(
+                            InstanceSegmentationRLEPrediction(
+                                x=cx,
+                                y=cy,
+                                width=w,
+                                height=h,
+                                confidence=float(conf),
+                                rle=mask_as_poly_or_rle,
+                                **{"class": class_name},
+                                class_id=class_id_int,
+                            )
+                        )
 
-            responses.append(
-                InstanceSegmentationInferenceResponse(
-                    predictions=predictions,
-                    image=InferenceResponseImage(width=W, height=H),
+            if use_dc:
+                responses.append(
+                    InstanceSegmentationInferenceResponseDC(
+                        predictions=predictions,
+                        image=InferenceResponseImageDC(width=W, height=H),
+                    )
                 )
-            )
+            else:
+                responses.append(
+                    InstanceSegmentationInferenceResponse(
+                        predictions=predictions,
+                        image=InferenceResponseImage(width=W, height=H),
+                    )
+                )
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -437,13 +1122,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
 
 def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
+    if INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED:
+        return rle_masks_to_polygons(masks=masks)
+
     segments = []
     h, w = masks.image_size
     for counts in masks.masks:
         rle_dict = {"size": [h, w], "counts": counts}
-        decoded_rle = np.ascontiguousarray(
-            mask_utils.decode(rle_dict)
-        )  # (H, W) uint8, already C-contiguous
+        decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))
         if not np.any(decoded_rle):
             segments.append(np.zeros((0, 2), dtype=np.float32))
             continue
@@ -466,11 +1152,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -480,7 +1162,21 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
+        self.key_points_classes = list(self._model.key_points_classes)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -677,11 +1373,7 @@ class InferenceModelsClassificationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
                 model_id_or_path=model_id,
@@ -693,6 +1385,9 @@ class InferenceModelsClassificationAdapter(Model):
                 **kwargs,
             )
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     def infer_embeddings_from_request(self, request):
@@ -727,6 +1422,16 @@ class InferenceModelsClassificationAdapter(Model):
             inference_id=request.id,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -759,7 +1464,7 @@ class InferenceModelsClassificationAdapter(Model):
 
     def postprocess(
         self,
-        predictions: Tuple[List[KeyPoints], Optional[List[Detections]]],
+        predictions: torch.Tensor,
         returned_metadata: List[Tuple[int, int]],
         **kwargs,
     ) -> Union[
@@ -839,6 +1544,7 @@ class InferenceModelsClassificationAdapter(Model):
         if not isinstance(request.image, list):
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
 
@@ -949,6 +1655,68 @@ def _reshape_classification_confidences(
     return confidence.reshape(expected_num_images, expected_num_classes)
 
 
+class InferenceModelsAnomalyDetectionAdapter(InferenceModelsClassificationAdapter):
+    """Serves PatchCore and FoundAD through the classification route."""
+
+    def postprocess(
+        self,
+        predictions: Any,
+        returned_metadata: List[Tuple[int, int]],
+        **kwargs,
+    ) -> List[AnomalyDetectionResponse]:
+        post_processed_predictions = self._model.post_process(
+            predictions, include_anomaly_map=kwargs.get("include_anomaly_map", False)
+        )
+        return prepare_anomaly_detection_response(
+            post_processed_predictions,
+            image_sizes=returned_metadata,
+            class_names=self.class_names,
+        )
+
+
+def prepare_anomaly_detection_response(
+    post_processed_predictions: ClassificationPrediction,
+    image_sizes: List[Tuple[int, int]],
+    class_names: List[str],
+) -> List[AnomalyDetectionResponse]:
+    # The decision comes from the threshold saved with the model, so both classes
+    # are always reported and the request confidence does not filter them.
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    responses = []
+    for classes_confidence, top_class_id, image_metadata, image_size in zip(
+        batch_confidences.tolist(),
+        post_processed_predictions.class_id.tolist(),
+        post_processed_predictions.images_metadata,
+        image_sizes,
+    ):
+        class_predictions = [
+            {
+                "class_id": class_id,
+                "class": class_names[class_id],
+                "confidence": round(classes_confidence[class_id], 4),
+            }
+            for class_id in (top_class_id, 1 - top_class_id)
+        ]
+        anomaly_map = image_metadata.get("anomaly_map")
+        responses.append(
+            AnomalyDetectionResponse(
+                image=InferenceResponseImage(width=image_size[1], height=image_size[0]),
+                predictions=class_predictions,
+                top=class_predictions[0]["class"],
+                confidence=class_predictions[0]["confidence"],
+                anomaly_score=image_metadata["anomaly_score"],
+                anomaly_threshold=image_metadata["anomaly_threshold"],
+                is_anomalous=image_metadata["is_anomalous"],
+                anomaly_map=anomaly_map.tolist() if anomaly_map is not None else None,
+            )
+        )
+    return responses
+
+
 def draw_predictions(inference_request, inference_response, class_names: List[str]):
     """Draw prediction visuals on an image.
 
@@ -1041,11 +1809,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
-        backend = list(
-            VALID_INFERENCE_MODELS_BACKENDS.difference(
-                DISABLED_INFERENCE_MODELS_BACKENDS
-            )
-        )
+        backend = _get_enabled_inference_models_backends()
         self._model: SemanticSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -1055,12 +1819,25 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             backend=backend,
             **kwargs,
         )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
     @property
     def class_map(self):
         # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[SemanticSegmentationResult]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -1097,6 +1874,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[SemanticSegmentationInferenceResponse]:
+        numpy_masks = kwargs.get("response_mask_format") == "numpy"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         segmentation_results = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
@@ -1112,14 +1890,25 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             # WARNING! This way of conversion is hazardous - first of all, if background class is not in class names,
             # for certain pre-processing, we end up with -1 values which will be wrapped to 255 - second of all,
             # we can support only 256 classes - those constraints should be fine until inference 2.0
+            segmentation_map_u8 = segmentation.segmentation_map.to(torch.uint8)
+            confidence_u8 = (segmentation.confidence * 255).to(torch.uint8)
+            if numpy_masks:
+                # In-process fast path: skip the full-resolution PNG encode.
+                # json-mode serialization (model_dump_json / FastAPI
+                # response_model) lazily encodes these arrays to base64 PNG,
+                # but the python-dump + orjson wire boundaries do NOT run
+                # field serializers - they must coerce the request first via
+                # ensure_wire_safe_mask_format (entities/requests/inference).
+                segmentation_mask = segmentation_map_u8.cpu().numpy()
+                confidence_mask = confidence_u8.cpu().numpy()
+            else:
+                segmentation_mask = self.img_to_b64_str(segmentation_map_u8)
+                confidence_mask = self.img_to_b64_str(confidence_u8)
             response_predictions = SemanticSegmentationPrediction(
-                segmentation_mask=self.img_to_b64_str(
-                    segmentation.segmentation_map.to(torch.uint8)
-                ),
-                confidence_mask=self.img_to_b64_str(
-                    (segmentation.confidence * 255).to(torch.uint8)
-                ),
+                segmentation_mask=segmentation_mask,
+                confidence_mask=confidence_mask,
                 class_map=self.class_map,
+                present_class_ids=present_class_ids_from_label_map(segmentation_map_u8),
                 image=dict(response_image),
             )
             response = SemanticSegmentationInferenceResponse(
@@ -1161,3 +1950,278 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             "draw_predictions(...) is not implemented for semantic segmentation models - responses contain "
             "visualization already."
         )
+
+
+class InferenceModelsDepthEstimationAdapter(Model):
+    """Serves any `inference_models` DepthEstimationModel (e.g. YOLO26-depth)
+    behind the depth-estimation contract shared with the DepthAnything
+    adapters: per-image min-max-normalized depth plus a viridis
+    visualization."""
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+
+        self.api_key = api_key if api_key else API_KEY
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
+
+        self.task_type = "depth-estimation"
+
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
+        self._model: DepthEstimationModel = AutoModel.from_pretrained(
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
+            **kwargs,
+        )
+        fixed_input_hw = _fixed_input_hw_from_backend(self._model)
+        if fixed_input_hw:
+            self.img_size_h, self.img_size_w = fixed_input_hw
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[torch.Tensor]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        depth_maps = self._model(images, **kwargs)
+        # Models behind this adapter (YOLO26-depth) emit metric depth, where
+        # larger means FARTHER. The tensor-native depth contract mirrors the
+        # DepthAnything adapters: raw per-image maps in which larger means
+        # CLOSER, with the caller (depth-estimation block) applying
+        # `(map - min) / (max - min)` itself. Negate so that formula reproduces
+        # this adapter's numpy-path `(max - map) / (max - min)` exactly.
+        return [-depth_map for depth_map in depth_maps]
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
+        return kwargs
+
+    def preprocess(self, image: Any, **kwargs):
+        if isinstance(image, list):
+            raise ValueError("Depth estimation does not support batched inference.")
+        np_image = load_image_bgr(
+            image,
+            disable_preproc_auto_orient=kwargs.get(
+                "disable_preproc_auto_orient", False
+            ),
+        )
+        return np_image, PreprocessReturnMetadata(
+            {"image_dims": (np_image.shape[1], np_image.shape[0])}
+        )
+
+    def predict(self, inputs: np.ndarray, **kwargs) -> Tuple[dict]:
+        import matplotlib.pyplot as plt
+
+        predictions = self._model(inputs)[0]
+        depth_map = predictions.to(torch.float32).cpu().numpy()
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        if depth_max == depth_min:
+            raise ValueError("Depth map has no variation (min equals max)")
+        # The endpoint exposes an ordinal proximity map where larger means
+        # closer. Reverse metric depth while normalizing so all supported
+        # models share the same range, direction, and near-to-far ordering.
+        normalized_depth = (depth_max - depth_map) / (depth_max - depth_min)
+
+        depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
+        cmap = plt.get_cmap("viridis")
+        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+
+        parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+        colored_depth_image = WorkflowImageData(
+            numpy_image=colored_depth, parent_metadata=parent_metadata
+        )
+        result = {
+            "image": colored_depth_image,
+            "normalized_depth": normalized_depth,
+        }
+        return (result,)
+
+    def postprocess(
+        self,
+        predictions: Tuple[dict],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> List[LMMInferenceResponse]:
+        image_dims = preprocess_return_metadata["image_dims"]
+        response = LMMInferenceResponse(
+            response=predictions[0],
+            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
+        )
+        return [response]
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        pass
+
+
+class InferenceModelsActionRecognitionAdapter(Model):
+    """Serves a clip to an action recognition model, one window at a time.
+
+    The model declares how a clip is cut and sampled, so a caller never states
+    a window length or a frame rate. Windows tile from the start of the clip
+    and the trailing remainder is dropped, which is how training validates.
+    """
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+        self.api_key = api_key if api_key else API_KEY
+        self.task_type = "action-recognition"
+        self._model: ActionRecognitionModel = load_action_recognition_model(
+            model_id=model_id, api_key=self.api_key, **kwargs
+        )
+
+    def infer_from_request(
+        self, request: ActionRecognitionInferenceRequest
+    ) -> ActionRecognitionInferenceResponse:
+        sampling = self._model.video_sampling
+        class_filter = request.class_filter or None
+        # Only a model that carries its own class list has ids to report. A
+        # request filter is not a vocabulary: a zero-shot model ignores it and
+        # answers in its own words, so a caption that happens to match one of
+        # the requested names would otherwise be given that name's index.
+        id_vocabulary = self._model.class_names or None
+        with video_source_path(
+            video_type=request.video.type, value=request.video.value
+        ) as path:
+            source_fps, frame_count = probe_video(path=path)
+            _ensure_clip_fits_the_duration_cap(
+                frame_count=frame_count, source_fps=source_fps
+            )
+            windows = plan_windows(
+                frame_count=frame_count,
+                source_fps=source_fps,
+                sampling=sampling,
+            )
+            timeline: List[ActionRecognitionPrediction] = []
+            windows_classified = 0
+            window_frames = read_frame_windows(
+                path=path,
+                windows=[window.frame_indices for window in windows],
+                max_frame_side=effective_max_frame_side(sampling),
+            )
+            for window, frames in zip(windows, window_frames):
+                if len(frames) < max(1, sampling.min_frames):
+                    continue
+                windows_classified += 1
+                # A window's segments index its own frames; the timeline
+                # counts the clip's.
+                merge_window_segments(
+                    timeline=timeline,
+                    frame_numbers=window.frame_indices[: len(frames)],
+                    segments=self._model.infer(
+                        frames=frames,
+                        class_names=class_filter,
+                        fps=window.sample_fps,
+                    ),
+                    id_vocabulary=id_vocabulary,
+                    stride=max(1.0, source_fps / window.sample_fps),
+                )
+        timeline.sort(key=lambda entry: (entry.start_frame_idx, entry.class_id))
+        response = ActionRecognitionInferenceResponse(
+            timeline=timeline,
+            source_fps=source_fps,
+            frame_count=frame_count,
+            windows_classified=windows_classified,
+        )
+        self._attach_resolved_model_metadata(response)
+        return response
+
+    def preprocess(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def predict(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def postprocess(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Action recognition reads a clip through infer_from_request."
+        )
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        pass
+
+
+def _ensure_clip_fits_the_duration_cap(frame_count: int, source_fps: float) -> None:
+    """Refuse a clip longer than the deployment serves in one request.
+
+    Each window is a model call, so a request's running time grows with the
+    clip. The size cap bounds bytes, not time: a low-bitrate file well under
+    it can run for an hour. The duration is the quantity a caller can see
+    and cut to, so that is what the limit names.
+    """
+    if MAX_VIDEO_DURATION_SECONDS < 0:
+        return
+    duration_seconds = frame_count / source_fps
+    if duration_seconds <= MAX_VIDEO_DURATION_SECONDS:
+        return
+    message = (
+        f"Video runs {duration_seconds:.1f} s. This server classifies at most "
+        f"{MAX_VIDEO_DURATION_SECONDS:.0f} s in one request. Send a shorter "
+        f"clip, or raise MAX_VIDEO_DURATION_SECONDS on the server."
+    )
+    raise PayloadTooLargeError(message=message, public_message=message)
+
+
+def load_action_recognition_model(
+    model_id: str, api_key: Optional[str] = None, **kwargs
+) -> ActionRecognitionModel:
+    """Load a model for this task the way every entry point loads it.
+
+    The HTTP adapter and the workflow block both come through here, so one
+    model id cannot resolve to different weights, or load under different
+    trust settings, depending on which surface asked for it.
+    """
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
+    loaded_model = AutoModel.from_pretrained(
+        model_id_or_path=model_id,
+        api_key=api_key,
+        allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+        allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+        weights_provider_extra_headers=get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        ),
+        backend=_get_enabled_inference_models_backends(),
+        **kwargs,
+    )
+    return _as_action_recognition_model(model=loaded_model, model_id=model_id)
+
+
+def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognitionModel:
+    """Accept a model that already serves the task, or wrap a bare reasoner."""
+    if isinstance(model, ActionRecognitionModel):
+        return model
+    from inference_models.models.cosmos3.cosmos3_action_recognition import (
+        Cosmos3EdgeActionRecognition,
+    )
+    from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
+
+    if isinstance(model, Cosmos3EdgeReasoner):
+        return Cosmos3EdgeActionRecognition.from_reasoner(reasoner=model)
+    raise ValueError(f"Model {model_id} does not support action recognition.")

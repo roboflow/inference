@@ -8,6 +8,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
@@ -21,7 +29,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -41,7 +49,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install -r requirements/requirements.cli.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
+          pip install -r requirements/requirements.cli.txt -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
+          pip install --no-deps ./inference_models
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
+        run: |
+          make create_workflows_wheel create_streamvision_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Unit Tests of Inference CLI
         timeout-minutes: 30
         run: python -m pytest tests/inference_cli/unit_tests

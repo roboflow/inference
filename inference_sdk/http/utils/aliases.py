@@ -60,6 +60,32 @@ YOLO26_POSE_ALIASES = {
     "yolo26x-pose-640": "coco-pose-detection/16",
 }
 
+YOLO26_SEM_ALIASES = {
+    "yolov26n-sem-1024": "yolo26-pretrains/yolo26n-sem",
+    "yolov26s-sem-1024": "yolo26-pretrains/yolo26s-sem",
+    "yolov26m-sem-1024": "yolo26-pretrains/yolo26m-sem",
+    "yolov26l-sem-1024": "yolo26-pretrains/yolo26l-sem",
+    "yolov26x-sem-1024": "yolo26-pretrains/yolo26x-sem",
+    "yolo26n-sem-1024": "yolo26-pretrains/yolo26n-sem",
+    "yolo26s-sem-1024": "yolo26-pretrains/yolo26s-sem",
+    "yolo26m-sem-1024": "yolo26-pretrains/yolo26m-sem",
+    "yolo26l-sem-1024": "yolo26-pretrains/yolo26l-sem",
+    "yolo26x-sem-1024": "yolo26-pretrains/yolo26x-sem",
+}
+
+YOLO26_DEPTH_ALIASES = {
+    "yolov26n-depth-768": "yolo26-pretrains/yolo26n-depth",
+    "yolov26s-depth-768": "yolo26-pretrains/yolo26s-depth",
+    "yolov26m-depth-768": "yolo26-pretrains/yolo26m-depth",
+    "yolov26l-depth-768": "yolo26-pretrains/yolo26l-depth",
+    "yolov26x-depth-768": "yolo26-pretrains/yolo26x-depth",
+    "yolo26n-depth-768": "yolo26-pretrains/yolo26n-depth",
+    "yolo26s-depth-768": "yolo26-pretrains/yolo26s-depth",
+    "yolo26m-depth-768": "yolo26-pretrains/yolo26m-depth",
+    "yolo26l-depth-768": "yolo26-pretrains/yolo26l-depth",
+    "yolo26x-depth-768": "yolo26-pretrains/yolo26x-depth",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     # "rfdetr-large": "coco/37", deprecated
@@ -76,6 +102,7 @@ RFDETR_ALIASES = {
     "rfdetr-seg-large": "coco-dataset-vdnr1/38",
     "rfdetr-seg-xlarge": "coco-dataset-vdnr1/39",
     "rfdetr-seg-2xlarge": "coco-dataset-vdnr1/40",
+    "rfdetr-keypoint-preview": "microsoft/coco-pose-detection-17-rfdetr-keypoint-preview-t1",
 }
 
 QWEN_ALIASES = {
@@ -155,12 +182,15 @@ REGISTERED_ALIASES = {
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,
+    **YOLO26_SEM_ALIASES,
+    **YOLO26_DEPTH_ALIASES,
 }
 
 OCR_ENDPOINTS = {
     "doctr": "/doctr/ocr",
     "trocr": "/ocr/trocr",
     "easy_ocr": "/easy_ocr/ocr",
+    "pp_ocr": "/ocr/pp-ocr",
 }
 
 

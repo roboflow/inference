@@ -222,6 +222,7 @@ def test_send_slack_notification_when_operation_succeeds_without_attachments() -
         channel="some",
         text="msg",
     )
+    client.files_upload_v2.assert_not_called()
     assert result[0] is False
 
 
@@ -238,7 +239,7 @@ def test_send_slack_notification_when_operation_succeeds_with_attachments() -> N
     )
 
     # then
-    client.chat_postMessage.files_upload_v2(
+    client.files_upload_v2.assert_called_once_with(
         channel="some",
         initial_comment="msg",
         file_uploads=[{"title": "some", "content": b"data"}],

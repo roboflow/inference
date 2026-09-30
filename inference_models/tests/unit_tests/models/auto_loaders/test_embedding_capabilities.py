@@ -36,7 +36,10 @@ def test_supported_classifier_capabilities(architecture, backend, task):
 
 def test_pinned_classifier_engine_is_rejected():
     package = ModelPackageMetadata(
-        package_id="engine", backend=BackendType.TRT, package_artefacts=[]
+        package_id="engine",
+        backend=BackendType.TRT,
+        package_artefacts=[],
+        trusted_source=True,
     )
     with pytest.raises(NoModelPackagesAvailableError, match="same model version"):
         negotiate_model_packages(
@@ -127,7 +130,16 @@ def test_access_manager_cache_separates_classification_and_feature_versions(
     core.AutoModel.from_pretrained(
         "project/1", required_capabilities=["image_embeddings"], **kwargs
     )
-    monkeypatch.setattr(core, "FEATURE_DEFINITION", "classifier-linear-input@v2")
+    original_definition = core.embedding_definition
+    monkeypatch.setattr(
+        core,
+        "embedding_definition",
+        lambda output_type: (
+            "classifier-linear-input@v2"
+            if output_type == "feature_vector"
+            else original_definition(output_type)
+        ),
+    )
     core.AutoModel.from_pretrained(
         "project/1", required_capabilities=["image_embeddings"], **kwargs
     )

@@ -220,3 +220,53 @@ def test_gemma4_family_architecture_resolves_to_gemma4_hf() -> None:
         backend=BackendType.HF,
     )
     assert cls.__name__ == "Gemma4HF"
+
+
+def test_pp_ocrv6_recognition_is_registered_as_onnx_text_only_ocr() -> None:
+    assert model_implementation_exists(
+        model_architecture="pp-ocrv6-rec",
+        task_type="text-only-ocr",
+        backend=BackendType.ONNX,
+    )
+    lazy_class = models_registry.REGISTERED_MODELS[
+        ("pp-ocrv6-rec", "text-only-ocr", BackendType.ONNX)
+    ]
+    assert (
+        lazy_class._module_name
+        == "inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx"
+    )
+    assert lazy_class._class_name == "PPOCRv6RecognitionOnnx"
+
+
+def test_pp_ocrv6_detection_is_registered_as_onnx_object_detection() -> None:
+    assert model_implementation_exists(
+        model_architecture="pp-ocrv6-det",
+        task_type="object-detection",
+        backend=BackendType.ONNX,
+    )
+    lazy_class = models_registry.REGISTERED_MODELS[
+        ("pp-ocrv6-det", "object-detection", BackendType.ONNX)
+    ]
+    assert (
+        lazy_class._module_name
+        == "inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx"
+    )
+    assert lazy_class._class_name == "PPOCRv6DetectionOnnx"
+
+
+@pytest.mark.parametrize(
+    "model_architecture, class_name",
+    [
+        ("patchcore", "PatchCoreForAnomalyDetectionTorch"),
+        ("foundad", "FoundADForAnomalyDetectionTorch"),
+    ],
+)
+def test_anomaly_detection_architectures_resolve_to_torch_classifiers(
+    model_architecture: str, class_name: str
+) -> None:
+    cls = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type="classification",
+        backend=BackendType.TORCH,
+    )
+    assert cls.__name__ == class_name

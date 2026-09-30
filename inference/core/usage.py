@@ -3,14 +3,16 @@ import json
 import elasticache_auto_discovery
 from pymemcache.client.hash import HashClient
 
-from inference.core.env import ELASTICACHE_ENDPOINT
+from inference.core.env import ELASTICACHE_ENDPOINT, OFFLINE_MODE
 from inference.core.logger import logger
 
-nodes = elasticache_auto_discovery.discover(ELASTICACHE_ENDPOINT)
-
-# set up memcache
-nodes = map(lambda x: (x[1], int(x[2])), nodes)
-memcache_client = HashClient(nodes)
+if OFFLINE_MODE:
+    memcache_client = None
+else:
+    nodes = elasticache_auto_discovery.discover(ELASTICACHE_ENDPOINT)
+    # set up memcache
+    nodes = map(lambda x: (x[1], int(x[2])), nodes)
+    memcache_client = HashClient(nodes)
 
 
 def trackUsage(endpoint, actor, n=1):
@@ -27,6 +29,9 @@ def trackUsage(endpoint, actor, n=1):
     Returns:
         None: This function does not return anything but updates the memcache client.
     """
+    if OFFLINE_MODE:
+        return None
+
     # count an inference
     try:
         job = endpoint + "endpoint:::actor" + actor

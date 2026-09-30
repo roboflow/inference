@@ -1,5 +1,6 @@
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -164,3 +165,117 @@ class TRTConfig(BaseModel):
     dynamic_batch_size_min: Optional[int] = Field(default=None)
     dynamic_batch_size_opt: Optional[int] = Field(default=None)
     dynamic_batch_size_max: Optional[int] = Field(default=None)
+
+
+class PlatformRegistrationPolicy(str, Enum):
+    """Whether platform register/upload must succeed for the pipeline to fail."""
+
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+
+
+@dataclass
+class CompilationVariantOutcome:
+    precision: str
+    dynamic_batch: bool
+    compiled: bool = False
+    installed_local: bool = False
+    local_package_id: Optional[str] = None
+    local_install_path: Optional[str] = None
+    registered_platform: bool = False
+    uploaded_sealed: bool = False
+    compile_error: Optional[str] = None
+    register_error: Optional[str] = None
+    backend: str = "onnx_cuda"
+    reason: str = ""
+
+
+@dataclass
+class CompilationPipelineResult:
+    """Outcome of compile → install → register/upload."""
+
+    model_id: str
+    model_architecture: str
+    compiled: bool = False
+    installed_local: bool = False
+    local_package_id: Optional[str] = None
+    local_install_path: Optional[str] = None
+    registered_platform: bool = False
+    uploaded_sealed: bool = False
+    compile_error: Optional[str] = None
+    register_error: Optional[str] = None
+    backend: str = "onnx_cuda"
+    reason: str = ""
+    variant_outcomes: List[CompilationVariantOutcome] = field(default_factory=list)
+
+    def as_log_metadata(self) -> dict:
+        return {
+            "model_id": self.model_id,
+            "model_architecture": self.model_architecture,
+            "compiled": self.compiled,
+            "installed_local": self.installed_local,
+            "local_package_id": self.local_package_id,
+            "local_install_path": self.local_install_path,
+            "registered_platform": self.registered_platform,
+            "uploaded_sealed": self.uploaded_sealed,
+            "compile_error": self.compile_error,
+            "register_error": self.register_error,
+            "backend": self.backend,
+            "reason": self.reason,
+            "variant_outcomes": [
+                {
+                    "precision": variant.precision,
+                    "dynamic_batch": variant.dynamic_batch,
+                    "compiled": variant.compiled,
+                    "installed_local": variant.installed_local,
+                    "local_package_id": variant.local_package_id,
+                    "local_install_path": variant.local_install_path,
+                    "registered_platform": variant.registered_platform,
+                    "uploaded_sealed": variant.uploaded_sealed,
+                    "compile_error": variant.compile_error,
+                    "register_error": variant.register_error,
+                    "backend": variant.backend,
+                    "reason": variant.reason,
+                }
+                for variant in self.variant_outcomes
+            ],
+        }
+
+
+def aggregate_compilation_variant_outcomes(
+    model_id: str,
+    model_architecture: str,
+    variant_outcomes: List[CompilationVariantOutcome],
+) -> CompilationPipelineResult:
+    preferred = next(
+        (
+            variant
+            for variant in reversed(variant_outcomes)
+            if variant.installed_local and variant.backend == "trt"
+        ),
+        None,
+    )
+    if preferred is None:
+        preferred = variant_outcomes[-1] if variant_outcomes else None
+    if preferred is None:
+        return CompilationPipelineResult(
+            model_id=model_id,
+            model_architecture=model_architecture,
+            reason="no compilation variants attempted",
+            variant_outcomes=variant_outcomes,
+        )
+    return CompilationPipelineResult(
+        model_id=model_id,
+        model_architecture=model_architecture,
+        compiled=preferred.compiled,
+        installed_local=preferred.installed_local,
+        local_package_id=preferred.local_package_id,
+        local_install_path=preferred.local_install_path,
+        registered_platform=preferred.registered_platform,
+        uploaded_sealed=preferred.uploaded_sealed,
+        compile_error=preferred.compile_error,
+        register_error=preferred.register_error,
+        backend=preferred.backend,
+        reason=preferred.reason,
+        variant_outcomes=variant_outcomes,
+    )

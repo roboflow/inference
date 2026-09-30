@@ -4,6 +4,10 @@ import time
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
 from tests.inference.integration_tests.regression_test import bool_env
 
 API_KEY = os.environ.get("API_KEY")
@@ -16,7 +20,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost")
     reason="Skipping SAM test",
 )
 def test_image_embedding(
-    clean_loaded_models_every_test_fixture
+    auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     # given
     payload = {
@@ -30,7 +34,8 @@ def test_image_embedding(
     response = requests.post(
         f"{BASE_URL}:{PORT}/sam3/embed_image",
         json=payload,
-        params={"api_key": API_KEY}
+        params=without_api_key_in_header_mode(auth_mode, {"api_key": API_KEY}),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     # then
@@ -45,7 +50,7 @@ def test_image_embedding(
     reason="Skipping SAM test",
 )
 def test_visual_segmentation(
-    clean_loaded_models_every_test_fixture
+    auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     payload = {
         "image": {
@@ -58,7 +63,8 @@ def test_visual_segmentation(
     response = requests.post(
         f"{BASE_URL}:{PORT}/sam3/visual_segment",
         json=payload,
-        params={"api_key": API_KEY}
+        params=without_api_key_in_header_mode(auth_mode, {"api_key": API_KEY}),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     # then
@@ -70,7 +76,7 @@ def test_visual_segmentation(
     reason="Skipping SAM test",
 )
 def test_concept_segmentation(
-    clean_loaded_models_every_test_fixture
+    auth_mode: str, clean_loaded_models_every_test_fixture
 ) -> None:
     payload = {
         "image": {
@@ -82,14 +88,15 @@ def test_concept_segmentation(
                 "type": "text",
                 "text": "dog",
             }
-        ]
+        ],
     }
 
     # when
     response = requests.post(
         f"{BASE_URL}:{PORT}/sam3/concept_segment",
         json=payload,
-        params={"api_key": API_KEY}
+        params=without_api_key_in_header_mode(auth_mode, {"api_key": API_KEY}),
+        headers=api_key_auth_headers(auth_mode, API_KEY),
     )
 
     # then

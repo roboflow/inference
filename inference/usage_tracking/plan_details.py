@@ -6,10 +6,11 @@ from typing import Dict, Optional, Union
 import requests
 from pydantic import BaseModel
 
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.logger import logger
 from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_hash
+from inference.usage_tracking.utils import ssl_verify_for_endpoint
 
 
 class WebRTCPlan(BaseModel):
@@ -119,11 +120,7 @@ class PlanDetails(SQLiteWrapper):
     def refresh_api_key_plan_cache(
         self, api_key: APIKey, sqlite_connection: Optional[sqlite3.Connection] = None
     ) -> Dict[str, Union[str, bool]]:
-        ssl_verify = True
-        if "localhost" in self._api_plan_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._api_plan_endpoint_url.lower():
-            ssl_verify = False
+        ssl_verify = ssl_verify_for_endpoint(self._api_plan_endpoint_url)
 
         api_key_hash = sha256_hash(api_key, length=-1)
         if api_key_hash in self.api_keys_plans:
@@ -140,6 +137,8 @@ class PlanDetails(SQLiteWrapper):
             }
 
         try:
+            if OFFLINE_MODE:
+                raise ConnectionError("OFFLINE_MODE is enabled")
             response = requests.get(
                 self._api_plan_endpoint_url,
                 verify=ssl_verify,
@@ -257,13 +256,12 @@ class PlanDetails(SQLiteWrapper):
         if self._webrtc_plans:
             return self._webrtc_plans
 
-        ssl_verify = True
-        if "localhost" in self._api_plan_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._api_plan_endpoint_url.lower():
-            ssl_verify = False
+        # verification target is the webrtc endpoint actually requested below
+        ssl_verify = ssl_verify_for_endpoint(self._webrtc_plans_endpoint_url)
 
         try:
+            if OFFLINE_MODE:
+                return {}
             response = requests.get(
                 self._webrtc_plans_endpoint_url,
                 verify=ssl_verify,

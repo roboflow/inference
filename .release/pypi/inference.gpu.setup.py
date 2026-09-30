@@ -6,7 +6,10 @@ from setuptools import find_packages
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-from inference.core.version import __version__
+_version_namespace = {"__name__": "inference.core.version"}
+with open(os.path.join(root, "inference", "core", "version.py")) as _version_file:
+    exec(_version_file.read(), _version_namespace)
+__version__ = _version_namespace["__version__"]
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -37,8 +40,11 @@ setuptools.setup(
             "requirements/requirements.gpu.txt",
             "requirements/requirements.cli.txt",
             "requirements/requirements.sdk.http.txt",
+            "requirements/requirements.workflows.txt",
+            "requirements/requirements.streamvision.txt",
         ]
-    ),
+    )
+    + [f"inference-sdk=={__version__}"],
     packages=find_packages(
         where=root,
         exclude=(
@@ -50,7 +56,17 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
+            "inference_sdk",
+            "inference_sdk.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
         ),
     ),
     package_data={
@@ -91,5 +107,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.13"
+    python_requires=">=3.10,<3.14",
 )

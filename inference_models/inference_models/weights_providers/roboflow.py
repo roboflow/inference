@@ -1,33 +1,37 @@
 import json
 import urllib.parse
-from typing import Annotated, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Discriminator, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from requests import Response, Timeout
 
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
     SECURE_GATEWAY,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
 
 LOCAL_API_KEY = "local"
 
 from inference_models.errors import (
     AssumptionError,
     BaseInferenceModelsError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
     ModelNotFoundError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
@@ -43,6 +47,15 @@ from inference_models.weights_providers.entities import (
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
+)
+from inference_models.weights_providers.local_trt_packages import (
+    discover_local_trt_packages,
+)
+from inference_models.weights_providers.trt_manifest import (
+    GPUServerSpecsV1,
+    JetsonMachineSpecsV1,
+    TrtModelPackageV1,
+    as_version,
 )
 
 MAX_MODEL_PACKAGE_PAGES = 10
@@ -107,6 +120,12 @@ def get_roboflow_model(
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> ModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     proxy_url_builder = None
     if SECURE_GATEWAY:
         proxy_url_builder = roboflow_secure_gateway_proxy_url_builder
@@ -126,6 +145,11 @@ def get_roboflow_model(
         if parsed_model_package is None:
             continue
         parsed_model_packages.append(parsed_model_package)
+    _merge_local_trt_packages(
+        parsed_model_packages=parsed_model_packages,
+        requested_model_id=model_id,
+        resolved_model_id=model_metadata.model_id,
+    )
     model_dependencies = None
     if model_metadata.model_dependencies:
         model_dependencies = []
@@ -148,6 +172,39 @@ def get_roboflow_model(
     )
 
 
+def _merge_local_trt_packages(
+    parsed_model_packages: List[ModelPackageMetadata],
+    requested_model_id: str,
+    resolved_model_id: str,
+) -> None:
+    """Augment platform packages with locally-discovered TRT packages.
+
+    Best-effort: a corrupt local cache must never break loading of a model that
+    has valid platform packages.
+    """
+    known_package_ids = {package.package_id for package in parsed_model_packages}
+    # Discover the resolved (canonical) id first: that is where the compiler
+    # installs engines, so it wins over any same-id package under the alias dir.
+    discovery_model_ids = [resolved_model_id]
+    if requested_model_id != resolved_model_id:
+        discovery_model_ids.append(requested_model_id)
+    for discovery_model_id in discovery_model_ids:
+        try:
+            local_packages = discover_local_trt_packages(model_id=discovery_model_id)
+        except Exception as error:
+            LOGGER.warning(
+                "Skipping local TRT discovery for model_id=%s due to error: %s",
+                discovery_model_id,
+                error,
+            )
+            continue
+        for local_package in local_packages:
+            if local_package.package_id in known_package_ids:
+                continue
+            parsed_model_packages.append(local_package)
+            known_package_ids.add(local_package.package_id)
+
+
 def roboflow_secure_gateway_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
@@ -159,9 +216,13 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    return f"http://{SECURE_GATEWAY}/proxy?url=" + urllib.parse.quote(
-        url, safe="~()*!'"
-    )
+    gateway_base = validate_secure_gateway_url(SECURE_GATEWAY)
+    gateway_prefix = f"{gateway_base}/proxy?url="
+    # Idempotent: an already-wrapped URL (e.g. a download_url proxied upstream)
+    # must not be proxied twice.
+    if url.startswith(gateway_prefix):
+        return url
+    return gateway_prefix + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(
@@ -216,6 +277,12 @@ def get_one_page_of_model_metadata(
     extra_headers: Optional[Dict[str, str]] = None,
     proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     query = {
         "modelId": model_id,
     }
@@ -287,8 +354,7 @@ def append_extra_headers(
 ) -> Dict[str, str]:
     if not extra_headers:
         return headers
-    extra_headers.update(headers)
-    return extra_headers
+    return {**extra_headers, **headers}
 
 
 def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
@@ -311,18 +377,36 @@ def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code == 401 or response.status_code == 403:
+    if response.status_code == 401:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
             "export key to `ROBOFLOW_API_KEY` environment variable",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
         )
+    if response.status_code == 402:
+        raise PaymentRequiredModelAccessError(
+            message=f"Could not {operation_name}. Not enough credits to perform this request. "
+            "Verify your workspace billing page.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#paymentrequiredmodelaccesserror",
+        )
+    if response.status_code == 403:
+        raise ForbiddenModelAccessError(
+            message=f"Could not {operation_name}. Access forbidden. Check that the API key has the required scopes "
+            "and that the workspace is active.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#forbiddenmodelaccesserror",
+        )
     if response.status_code == 404:
         raise ModelNotFoundError(
             message=f"Could not {operation_name}. Model not found. Are you sure that the identifier is correct "
             f"and provided credentials ensure access to the model?",
             help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelnotfounderror",
+        )
+    if response.status_code == 423:
+        raise UsagePausedModelAccessError(
+            message=f"Could not {operation_name}. Roboflow API usage is paused. Contact your workspace administrator "
+            "to re-enable API keys.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#usagepausedmodelaccesserror",
         )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
@@ -424,44 +508,6 @@ def parse_onnx_model_package(
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
     )
-
-
-class JetsonMachineSpecsV1(BaseModel):
-    type: Literal["jetson-machine-specs-v1"]
-    l4t_version: str = Field(alias="l4tVersion")
-    device_name: str = Field(alias="deviceName")
-    driver_version: str = Field(alias="driverVersion")
-
-
-class GPUServerSpecsV1(BaseModel):
-    type: Literal["gpu-server-specs-v1"]
-    driver_version: str = Field(alias="driverVersion")
-    os_version: str = Field(alias="osVersion")
-
-
-class TrtModelPackageV1(BaseModel):
-    type: Literal["trt-model-package-v1"]
-    backend_type: Literal["trt"] = Field(alias="backendType")
-    dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
-    static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
-    min_batch_size: Optional[int] = Field(alias="minBatchSize", default=None)
-    opt_batch_size: Optional[int] = Field(alias="optBatchSize", default=None)
-    max_batch_size: Optional[int] = Field(alias="maxBatchSize", default=None)
-    quantization: Quantization
-    cuda_device_type: str = Field(alias="cudaDeviceType")
-    cuda_device_cc: str = Field(alias="cudaDeviceCC")
-    cuda_version: str = Field(alias="cudaVersion")
-    trt_version: str = Field(alias="trtVersion")
-    same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
-    trt_forward_compatible: bool = Field(alias="trtForwardCompatible", default=False)
-    trt_lean_runtime_excluded: bool = Field(
-        alias="trtLeanRuntimeExcluded", default=False
-    )
-    machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
-    machine_specs: Annotated[
-        Union[JetsonMachineSpecsV1, GPUServerSpecsV1],
-        Discriminator(discriminator="type"),
-    ] = Field(alias="machineSpecs")
 
 
 def parse_trt_model_package(
@@ -737,15 +783,3 @@ MODEL_PACKAGE_PARSERS: Dict[
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
     "torch-script-model-package-v1": parse_torch_script_model_package,
 }
-
-
-def as_version(value: str) -> Version:
-    try:
-        return Version(value)
-    except InvalidVersion as error:
-        raise ModelMetadataConsistencyError(
-            message="Roboflow API returned model package manifest that is expected to provide valid version specification for "
-            "one of the field of package manifest, but instead provides value that cannot be parsed. This is most "
-            "likely Roboflow API bug - contact Roboflow to solve the problem.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
-        ) from error

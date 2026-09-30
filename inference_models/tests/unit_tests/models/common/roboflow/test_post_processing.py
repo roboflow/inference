@@ -443,3 +443,78 @@ class TestAlignInstanceSegmentationResultsClipping:
         assert out_bboxes[0, 1].item() == pytest.approx(20.0)
         assert out_bboxes[0, 2].item() == pytest.approx(600.0)
         assert out_bboxes[0, 3].item() == pytest.approx(400.0)
+
+
+class TestAlignInstanceSegmentationResultsChunking:
+
+    @staticmethod
+    def _meta(orig_h=200, orig_w=300) -> PreProcessingMetadata:
+        return PreProcessingMetadata(
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
+            original_size=ImageDimensions(height=orig_h, width=orig_w),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            scale_width=1.0,
+            scale_height=1.0,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0,
+                offset_y=0,
+                crop_width=orig_w,
+                crop_height=orig_h,
+            ),
+        )
+
+    def _run(self, mask_chunk_size: int, static_crop: bool = False):
+        torch.manual_seed(42)
+        n = 7
+        bboxes = torch.rand((n, 6), dtype=torch.float32) * 100
+        masks = torch.randn((n, 160, 160), dtype=torch.float32)
+        meta = self._meta()
+        static_crop_offset = meta.static_crop_offset
+        if static_crop:
+            static_crop_offset = StaticCropOffset(
+                offset_x=13,
+                offset_y=7,
+                crop_width=meta.original_size.width,
+                crop_height=meta.original_size.height,
+            )
+        return align_instance_segmentation_results(
+            image_bboxes=bboxes.clone(),
+            masks=masks.clone(),
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=ImageDimensions(
+                height=meta.original_size.height + (7 if static_crop else 0),
+                width=meta.original_size.width + (13 if static_crop else 0),
+            ),
+            size_after_pre_processing=meta.size_after_pre_processing,
+            inference_size=meta.inference_size,
+            static_crop_offset=static_crop_offset,
+            binarization_threshold=0.0,
+            mask_chunk_size=mask_chunk_size,
+        )
+
+    @pytest.mark.parametrize("mask_chunk_size", [1, 2, 3, 5])
+    def test_chunked_resize_matches_monolithic(self, mask_chunk_size: int) -> None:
+        # given / when
+        # chunk >= n runs the resize as one batch: the pre-chunking behaviour
+        ref_bboxes, ref_masks = self._run(mask_chunk_size=1000)
+        out_bboxes, out_masks = self._run(mask_chunk_size=mask_chunk_size)
+
+        # then
+        assert torch.equal(out_bboxes, ref_bboxes)
+        assert torch.equal(out_masks, ref_masks)
+        assert out_masks.dtype == torch.bool
+
+    def test_chunked_resize_matches_monolithic_with_static_crop_canvas(self) -> None:
+        # given / when
+        ref_bboxes, ref_masks = self._run(mask_chunk_size=1000, static_crop=True)
+        out_bboxes, out_masks = self._run(mask_chunk_size=2, static_crop=True)
+
+        # then
+        assert torch.equal(out_bboxes, ref_bboxes)
+        assert torch.equal(out_masks, ref_masks)

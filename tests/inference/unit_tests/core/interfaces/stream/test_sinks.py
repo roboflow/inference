@@ -1,10 +1,12 @@
 import json
 from datetime import datetime
 from functools import partial
-from typing import List, Union
+from typing import List, Optional, Union
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
+import supervision as sv
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -189,6 +191,223 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
         1280,
         3,
     ), "capture_image() should be called against resized image dictated by default parameter"
+
+
+@pytest.mark.parametrize("malformed_predictions", ["points", None])
+def test_render_boxes_renders_original_frame_when_predictions_container_is_malformed(
+    malformed_predictions: Optional[str],
+) -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((200, 200, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=37,
+    )
+    predictions = {
+        "image": {"width": 200, "height": 200},
+        "predictions": malformed_predictions,
+    }
+    captured_images = []
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        on_frame_rendered=captured_images.append,
+        display_size=None,
+    )
+
+    # then
+    assert len(captured_images) == 1
+    assert captured_images[0][0] == 37
+    assert np.array_equal(captured_images[0][1], video_frame.image)
+
+
+def test_render_boxes_renders_original_frame_when_predictions_hold_string_item() -> (
+    None
+):
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((200, 200, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=37,
+    )
+    predictions = {
+        "image": {"width": 200, "height": 200},
+        "predictions": ["points"],
+    }
+    captured_images = []
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        on_frame_rendered=captured_images.append,
+        display_size=None,
+    )
+
+    # then
+    assert len(captured_images) == 1
+    assert np.array_equal(captured_images[0][1], video_frame.image)
+
+
+def test_render_boxes_keeps_rle_mask_predictions_with_short_points() -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((4, 4, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=37,
+    )
+    predictions = {
+        "image": {"width": 4, "height": 4},
+        "predictions": [
+            {
+                "x": 2,
+                "y": 2,
+                "width": 4,
+                "height": 4,
+                "confidence": 0.9,
+                "class": class_name,
+                "class_id": class_id,
+                "points": [{"x": 0, "y": 0}],
+                "rle_mask": {"size": [4, 4], "counts": [0, 16]},
+            }
+            for class_id, class_name in enumerate(["first", "second"])
+        ],
+    }
+    annotator = MagicMock(spec=sv.LabelAnnotator)
+    annotator.annotate.side_effect = lambda scene, **kwargs: scene
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        annotator=annotator,
+        on_frame_rendered=lambda image: None,
+    )
+
+    # then
+    call_kwargs = annotator.annotate.call_args.kwargs
+    detections = call_kwargs["detections"]
+    assert call_kwargs["labels"] == ["first", "second"]
+    assert len(detections) == 2
+    assert detections.mask is not None
+    assert detections.mask.shape == (2, 4, 4)
+
+
+def test_render_boxes_skips_invalid_polygons_and_keeps_masks_of_valid_ones() -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((200, 200, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=37,
+    )
+    triangle = [{"x": 10, "y": 10}, {"x": 50, "y": 10}, {"x": 30, "y": 50}]
+    predictions = {
+        "image": {"width": 200, "height": 200},
+        "predictions": [
+            {
+                "x": 30,
+                "y": 30,
+                "width": 40,
+                "height": 40,
+                "confidence": 0.9,
+                "class": "first",
+                "class_id": 0,
+                "points": triangle,
+            },
+            {
+                "x": 100,
+                "y": 100,
+                "width": 20,
+                "height": 20,
+                "confidence": 0.8,
+                "class": "invalid",
+                "class_id": 1,
+                "points": [{"x": 90, "y": 90}, {"x": 110, "y": 110}],
+            },
+            {
+                "x": 30,
+                "y": 30,
+                "width": 40,
+                "height": 40,
+                "confidence": 0.7,
+                "class": "third",
+                "class_id": 2,
+                "points": triangle,
+            },
+        ],
+    }
+    annotator = MagicMock(spec=sv.LabelAnnotator)
+    annotator.annotate.side_effect = lambda scene, **kwargs: scene
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        annotator=annotator,
+        on_frame_rendered=lambda image: None,
+    )
+
+    # then
+    call_kwargs = annotator.annotate.call_args.kwargs
+    detections = call_kwargs["detections"]
+    assert call_kwargs["labels"] == ["first", "third"]
+    assert len(detections) == 2
+    assert detections.mask is not None
+    assert detections.mask.shape == (2, 200, 200)
+
+
+@pytest.mark.parametrize("points", [[], None])
+def test_render_boxes_keeps_rle_predictions_with_empty_or_null_points(
+    points: Optional[list],
+) -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((4, 4, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=37,
+    )
+    predictions = {
+        "image": {"width": 4, "height": 4},
+        "predictions": [
+            {
+                "x": 2,
+                "y": 2,
+                "width": 4,
+                "height": 4,
+                "confidence": 0.9,
+                "class": class_name,
+                "class_id": class_id,
+                "points": points,
+                "rle": {"size": [4, 4], "counts": [0, 16]},
+            }
+            for class_id, class_name in enumerate(["first", "second"])
+        ],
+    }
+    annotator = MagicMock(spec=sv.LabelAnnotator)
+    annotator.annotate.side_effect = lambda scene, **kwargs: scene
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        annotator=annotator,
+        on_frame_rendered=lambda image: None,
+    )
+
+    # then
+    call_kwargs = annotator.annotate.call_args.kwargs
+    detections = call_kwargs["detections"]
+    assert call_kwargs["labels"] == ["first", "second"]
+    assert len(detections) == 2
+    assert detections.mask is not None
+    assert detections.mask.shape == (2, 4, 4)
 
 
 def test_udp_sends_data_through_socket() -> None:

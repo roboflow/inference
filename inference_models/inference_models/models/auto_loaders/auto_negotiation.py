@@ -91,19 +91,28 @@ def negotiate_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     if requested_model_package_id is not None:
-        selected = select_model_package_by_id(
+        selected_package = select_model_package_by_id(
             model_packages=model_packages,
             requested_model_package_id=requested_model_package_id,
             verbose=verbose,
         )
+        if not allow_untrusted_packages and not selected_package.trusted_source:
+            raise NoModelPackagesAvailableError(
+                message=f"Model package `{requested_model_package_id}` comes from an untrusted "
+                f"source and cannot be loaded while `allow_untrusted_packages=False`.",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
+            )
         if not supports_capabilities(
-            model_architecture, task_type, selected.backend, required_capabilities
+            model_architecture,
+            task_type,
+            selected_package.backend,
+            required_capabilities,
         ):
             raise NoModelPackagesAvailableError(
-                f"Package {selected.package_id} does not support {required_capabilities}. "
+                f"Package {selected_package.package_id} does not support {required_capabilities}. "
                 "Use an embedding-capable package for the same model version."
             )
-        return [selected]
+        return [selected_package]
     capability_rejections = [
         DiscardedPackage(
             package_id=package.package_id,

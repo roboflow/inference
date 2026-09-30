@@ -18,8 +18,9 @@ YOLOv8 for instance segmentation combines object detection with pixel-level segm
 
 !!! info "Commercial Licensing"
     - **AGPL-3.0**: Free for open-source projects. Requires derivative works to be open-sourced.
-    - **Paid Roboflow customers**: Automatically get access to use any YOLOv8 models trained on or uploaded to the Roboflow platform for commercial use.
-    - **Free Roboflow customers**: Can use YOLOv8 via the serverless hosted API, or commercially self-hosted with a paid plan.
+    - **Roboflow Cloud**: [Roboflow Cloud products](https://docs.roboflow.com/deployment/roboflow-cloud/serverless-api) include a commercial license for every user.
+    - **Enterprise add-on**: A commercial license for self-hosted deployment is available as an Enterprise add-on.
+    - **Other plans**: Without that add-on, self-hosted deployment follows this model's license. An AGPL-3.0 model must be used under AGPL-3.0.
 
     Learn more: [Roboflow Licensing](https://roboflow.com/licensing) | [YOLOv8 License Details](https://roboflow.com/model-licenses/yolov8)
 

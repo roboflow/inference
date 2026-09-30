@@ -2,6 +2,8 @@ from copy import copy
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
+import numpy as np
+import torch
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -20,7 +22,8 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
-from inference_models import AutoModel
+from inference.usage_tracking.collector import usage_collector
+from inference_models import AutoModel, Detections
 from inference_models.models.doctr.doctr_torch import DocTR
 
 
@@ -56,6 +59,13 @@ class InferenceModelsDocTRAdapter(Model):
             **kwargs,
         )
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> Tuple[List[str], List[Detections]]:
+        return self._model.infer(images=images, **kwargs)
+
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         pass
 
@@ -72,12 +82,14 @@ class InferenceModelsDocTRAdapter(Model):
     ) -> Union[OCRInferenceResponse, List]:
         if type(request.image) is list:
             response = []
-            request_copy = copy.copy(request)
+            request_copy = copy(request)
             for image in request.image:
                 request_copy.image = image
                 response.append(self.single_request(request=request_copy))
-            return response
-        return self.single_request(request)
+        else:
+            response = self.single_request(request)
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def single_request(self, request: DoctrOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
@@ -98,6 +110,7 @@ class InferenceModelsDocTRAdapter(Model):
                 time=perf_counter() - t1,
             )
 
+    @usage_collector("model")
     def infer(
         self, image: Any, **kwargs
     ) -> Union[

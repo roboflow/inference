@@ -2,7 +2,9 @@ from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic.json_schema import SkipJsonSchema
 
+from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 from inference_sdk.http.entities import Confidence
 
@@ -28,6 +30,14 @@ class BaseRequest(BaseModel):
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
+    stream_pipeline_context_id: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        description=(
+            "Internal stream-pipeline frame pairing id. Not part of the public API."
+        ),
+    )
     disable_model_monitoring: Optional[bool] = Field(
         default=False, description="If true, disables model monitoring for this request"
     )
@@ -101,6 +111,8 @@ class DepthEstimationRequest(InferenceRequest):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
         model_id (str): The model ID to use for depth estimation.
         depth_version_id (Optional[str]): The version ID of the depth estimation model.
+        depth_map_format (Literal["json", "png16", "png8"]): Serialization format
+            for the normalized depth map in the response.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
@@ -109,6 +121,17 @@ class DepthEstimationRequest(InferenceRequest):
         default="small",
         examples=["small"],
         description="The version ID of the depth estimation model",
+    )
+    depth_map_format: Literal["json", "png16", "png8"] = Field(
+        default="json",
+        description="Serialization format for `normalized_depth` in the response: "
+        "`json` (default, wire-compatible with older clients) returns the nested "
+        "float list; `png16` returns a base64 16-bit grayscale PNG (quantization "
+        "step 1/65535, typically >10x smaller payload - `inference_sdk` decodes "
+        "it back to a numpy array when requested via `depth_map_format='png16'`); "
+        "`png8` returns a base64 8-bit grayscale PNG (256 depth levels, roughly "
+        "another order of magnitude smaller - fine for visualization/thresholding, "
+        "lossy for geometric use).",
     )
 
     @validator("model_id", always=True)
@@ -246,10 +269,21 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
         "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored.",
     )
+    enforce_dense_masks_in_inference_models: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="Flag to enforce dense masks in inference models. Such masks are faster than "
+        "RLE but consume more memory which may be unstable in some cases. This flag cannot be tweaked "
+        "when used on Roboflow serverless platform.",
+    )
 
 
 class SemanticSegmentationInferenceRequest(CVInferenceRequest):
-    """Semantic Segmentation inference request."""
+    """Semantic Segmentation inference request.
+
+    Attributes:
+        response_mask_format (str): Format of the masks in the response, one of 'base64_png', 'numpy'.
+    """
 
     def __init__(self, **kwargs):
         kwargs["model_type"] = "semantic-segmentation"
@@ -257,25 +291,49 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
 
     confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5, "default"],
+        examples=[0.5, "best", "default"],
         description=(
-            '"default" uses the model built-in threshold, or pass a float. '
-            '"best" (model-eval threshold) is not supported for semantic '
-            "segmentation yet."
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
+    )
+    response_mask_format: SkipJsonSchema[Literal["base64_png", "numpy"]] = Field(
+        default="base64_png",
+        examples=["base64_png"],
+        description=(
+            "[INTERNAL USE ONLY] Format of segmentation_mask / confidence_mask in the response. "
+            "'base64_png' (default) returns base64-encoded PNG strings. "
+            "'numpy' returns raw uint8 numpy arrays and is an in-process "
+            "contract for callers like the workflows semantic segmentation "
+            "block, skipping a full-resolution PNG encode/decode round-trip. "
+            "Wire boundaries coerce 'numpy' back to 'base64_png' (see "
+            "ensure_wire_safe_mask_format), and json-mode serialization of a "
+            "'numpy' response encodes the masks to base64 PNG, so wire "
+            "responses always carry strings."
         ),
     )
 
-    # TODO: drop this validator once model eval supports semantic segmentation.
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def _reject_best_confidence(cls, value: Any) -> Any:
-        if value == "best":
-            raise ValueError(
-                'confidence="best" is not supported for semantic segmentation '
-                "— model eval does not yet produce per-class thresholds for "
-                'this task. Use a float or "default".'
-            )
-        return value
+
+def ensure_wire_safe_mask_format(request: InferenceRequest) -> None:
+    """Coerces the in-process-only 'numpy' mask format to 'base64_png'.
+
+    This guard is load-bearing, not belt-and-braces: the server's wire
+    boundaries (``orjson_response`` and the enterprise parallel
+    ``write_response``) serialize with python-mode ``model_dump``/``dict``,
+    where pydantic's ``when_used='json'`` field serializer does NOT run - a
+    leaked ndarray mask would ship as a giant nested int array with a 200,
+    not fail. Call this at every boundary that ultimately serializes the
+    response for the wire. Safe to call with any request type.
+    """
+    if (
+        isinstance(request, SemanticSegmentationInferenceRequest)
+        and getattr(request, "response_mask_format", None) == "numpy"
+    ):
+        logger.warning(
+            "response_mask_format='numpy' is an in-process contract; "
+            "coercing to 'base64_png' for wire serialization"
+        )
+        request.response_mask_format = "base64_png"
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):
@@ -286,6 +344,11 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         visualization_stroke_width (Optional[int]): The stroke width used when visualizing predictions.
         visualize_predictions (Optional[bool]): If true, the predictions will be drawn on the original image and returned as a base64 string.
     """
+
+    include_anomaly_map: bool = Field(
+        default=False,
+        description="Include a raw anomaly heatmap for FoundAD and PatchCore models",
+    )
 
     def __init__(self, **kwargs):
         kwargs["model_type"] = "classification"

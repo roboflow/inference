@@ -3,7 +3,7 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, TypeVar, Union
 
 import numpy as np
 import sam2.utils.misc
@@ -18,6 +18,7 @@ from inference_models.models.sam2.cache import (
     Sam2ImageEmbeddingsInMemoryCache,
     Sam2LowResolutionMasksInMemoryCache,
 )
+from inference_models.models.sam2.entities import SAM2ImageEmbeddings, SAM2Prediction
 from inference_models.models.sam2.sam2_torch import SAM2Torch
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
@@ -53,6 +54,10 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
+from inference_models.errors import ModelInputError
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -123,6 +128,19 @@ class InferenceModelsSAM2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+        nested_model = getattr(self._model, "_model", None)
+        self.image_size = int(
+            getattr(self._model, "image_size", None)
+            or getattr(nested_model, "image_size", None)
+            or 1024
+        )
+
+    def run_tensor_native_inference(
+        self, action: Literal["embed", "segment"], **kwargs
+    ) -> List[Union[SAM2ImageEmbeddings, SAM2Prediction]]:
+        if action == "embed":
+            return self._model.embed_images(**kwargs)
+        return self._model.segment_images(**kwargs)
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
@@ -134,23 +152,26 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            response = Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            self._attach_resolved_model_metadata(response)
+            return response
         elif isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
 
             if request.format == "json":
-                return turn_segmentation_results_into_api_response(
+                response = turn_segmentation_results_into_api_response(
                     masks=masks,
                     scores=scores,
                     mask_threshold=MASK_THRESHOLD,
                     inference_start_timestamp=t1,
                 )
             elif request.format == "rle":
-                return turn_segmentation_results_into_rle_response(
+                response = turn_segmentation_results_into_rle_response(
                     masks=masks,
                     scores=scores,
                     mask_threshold=0.0,
@@ -166,6 +187,8 @@ class InferenceModelsSAM2Adapter(Model):
                 return binary_data
             else:
                 raise ValueError(f"Invalid format {request.format}")
+            self._attach_resolved_model_metadata(response)
+            return response
 
         else:
             raise ValueError(f"Invalid request type {type(request)}")
@@ -275,7 +298,6 @@ class InferenceModelsSAM2Adapter(Model):
             load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
         )
         save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
-        loaded_image = self.preproc_image(image)
         if prompts is not None:
             if type(prompts) is dict:
                 prompts = Sam2PromptSet(**prompts)
@@ -293,9 +315,8 @@ class InferenceModelsSAM2Adapter(Model):
             args["box"] = np.array(args["box"])
         if mask_input is not None and isinstance(mask_input, list):
             mask_input = np.array(mask_input)
-        prediction = self._model.segment_images(
-            images=loaded_image,
-            image_hashes=image_id,
+
+        segment_kwargs = dict(
             point_coordinates=args["point_coords"],
             point_labels=args["point_labels"],
             boxes=args["box"],
@@ -306,7 +327,23 @@ class InferenceModelsSAM2Adapter(Model):
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
             return_logits=True,
-        )[0]
+        )
+
+        prediction = None
+        if image_id is not None:
+            try:
+                prediction = self._model.segment_images(
+                    images=None, image_hashes=image_id, **segment_kwargs
+                )[0]
+            except ModelInputError as error:
+                if "no embeddings were found in the cache" not in str(error):
+                    raise
+                prediction = None
+        if prediction is None:
+            loaded_image = self.preproc_image(image)
+            prediction = self._model.segment_images(
+                images=loaded_image, image_hashes=image_id, **segment_kwargs
+            )[0]
         return choose_most_confident_sam_prediction(
             masks=prediction.masks.cpu().numpy(),
             scores=prediction.scores.cpu().numpy(),

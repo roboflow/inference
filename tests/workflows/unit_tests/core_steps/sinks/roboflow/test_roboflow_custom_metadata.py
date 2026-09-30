@@ -8,7 +8,7 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
+from inference.roboflow_workflows_plugin.sinks.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
     add_custom_metadata_request,
     get_workspace_name,
@@ -34,7 +34,7 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.get_roboflow_workspace"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.get_roboflow_workspace"
 )
 def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock: MagicMock,
@@ -60,7 +60,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata"
 )
 def test_add_custom_metadata_request_success(
     add_custom_metadata_mock: MagicMock,
@@ -97,7 +97,7 @@ def test_add_custom_metadata_request_success(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata"
 )
 def test_add_custom_metadata_request_failure(
     add_custom_metadata_mock: MagicMock,
@@ -182,7 +182,7 @@ def test_run_when_no_inference_ids() -> None:
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_fire_and_forget_with_background_tasks(
     add_custom_metadata_request_mock: MagicMock,
@@ -222,7 +222,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_classification_results(
     add_custom_metadata_request_mock: MagicMock,
@@ -258,7 +258,7 @@ def test_run_with_classification_results(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_classification_results_when_inference_id_is_not_given(
     add_custom_metadata_request_mock: MagicMock,
@@ -295,7 +295,7 @@ def test_run_with_classification_results_when_inference_id_is_not_given(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_fire_and_forget_with_thread_pool(
     add_custom_metadata_request_mock: MagicMock,
@@ -335,7 +335,7 @@ def test_run_when_fire_and_forget_with_thread_pool(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_when_not_fire_and_forget(
     add_custom_metadata_request_mock: MagicMock,
@@ -375,7 +375,7 @@ def test_run_when_not_fire_and_forget(
 
 
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+    "inference.roboflow_workflows_plugin.sinks.custom_metadata.v1.add_custom_metadata_request"
 )
 def test_run_with_field_value(
     add_custom_metadata_request_mock: MagicMock,

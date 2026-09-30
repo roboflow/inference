@@ -1,8 +1,4 @@
 ---
-search:
-  exclude: true
+template: redirect.html
+redirect_url: https://docs.roboflow.com/reference/inference/inference-python/inference-pipeline
 ---
-# Streaming over RTSP
-
-The easiest way to stream video from most security cameras
-or IP cameras is over RTSP.

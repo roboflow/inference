@@ -27,7 +27,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 
@@ -215,7 +215,7 @@ class Qwen25VLHF:
             else:
                 image_list = [_to_tensor(img) for img in images]
         else:
-            images = pre_process_network_input(
+            image_list, _ = pre_process_network_input_to_image_list(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
                 network_input=self._inference_config.network_input,
@@ -223,8 +223,7 @@ class Qwen25VLHF:
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
                 pre_processing_overrides=pre_processing_overrides,
-            )[0]
-            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
+            )
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
             prompt = "Describe what's in this image."
@@ -338,8 +337,12 @@ def refactor_adapter_weights_key(key: str) -> str:
 
 def _patch_preprocessor_config(cache_dir: str):
     """
-    Checks and patches the preprocessor_config.json in the given cache directory
-    to ensure the image_processor_type is recognized.
+    Validate the cached processor config and apply the compatibility override
+    in memory.
+
+    Cached package artefacts are content-addressed and may be shared with other
+    model packages. Mutating ``preprocessor_config.json`` in place invalidates
+    that identity and makes later offline loads depend on unverified bytes.
     """
     config_path = os.path.join(cache_dir, "preprocessor_config.json")
     target_key = "image_processor_type"
@@ -351,11 +354,6 @@ def _patch_preprocessor_config(cache_dir: str):
     with open(config_path, "r") as f:
         data = json.load(f)
 
-    if target_key in data and data[target_key] != correct_value:
-        data[target_key] = correct_value
-        with open(config_path, "w") as f:
-            json.dump(data, f, indent=4)
-    elif target_key in data:
-        pass
-    else:
+    if target_key not in data:
         raise ValueError(f"'{target_key}' not found in {config_path}")
+    Qwen2_5_VLProcessor.image_processor_class = correct_value

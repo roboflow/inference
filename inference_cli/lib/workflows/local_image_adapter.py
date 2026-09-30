@@ -9,18 +9,31 @@ from rich.progress import Progress, TaskID
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.profiling.core import (
-    NullWorkflowsProfiler,
-)
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference_cli.lib.logger import CLI_LOGGER
-from inference_cli.lib.utils import get_all_images_in_directory
+from inference_cli.lib.utils import get_all_images_in_directory, read_json
 from inference_cli.lib.workflows.common import (
     WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
@@ -110,6 +123,8 @@ def process_image_directory_with_workflow_using_inference_package(
     debug_mode: bool = False,
     max_failures: Optional[int] = None,
     max_concurrent_workflows_steps: int = 4,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = API_KEY
@@ -139,6 +154,8 @@ def process_image_directory_with_workflow_using_inference_package(
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
             debug_mode=debug_mode,
             max_failures=max_failures,
+            images_metadata_input_mapping=images_metadata_input_mapping,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
     finally:
         log_file.close()
@@ -180,6 +197,8 @@ def _process_images_within_directory(
     max_concurrent_workflows_steps: int,
     debug_mode: bool = False,
     max_failures: Optional[int] = None,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[str, str]]:
     workflow_specification = _get_workflow_specification(
         workflow_specification=workflow_specification,
@@ -228,6 +247,8 @@ def _process_images_within_directory(
             thread_pool_executor=thread_pool_executor,
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
             debug_mode=debug_mode,
+            images_metadata_input_mapping=images_metadata_input_mapping,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
         failures = 0
         succeeded_files = set()
@@ -276,6 +297,53 @@ def _on_failure(
     progress_bar.update(task_id, advance=1)
 
 
+def _resolve_metadata_driven_workflow_parameters(
+    image_path: str,
+    images_metadata_input_mapping: Optional[Dict[str, str]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Resolve per-image metadata for parameter injection.
+
+    When `images_metadata_input_mapping` is non-empty, the function looks
+    up the sibling `.json` metadata file for `image_path` (adding ".json"
+    to file name), validates that every value in the mapping is a key in
+    the metadata, and projects the metadata into a `{workflow_input: value}`
+    dict via the mapping.
+
+    Returns (params, error_summary). On the success path the params dict
+    is the projection (possibly empty when mapping is None/empty) and
+    error_summary is None. On any failure (missing file, missing required
+    keys) the params is None and error_summary explains why — the caller
+    forwards it verbatim to `on_failure`.
+    """
+    if not images_metadata_input_mapping:
+        return {}, None
+    assumed_metadata_file_path = f"{image_path}.json"
+    if not os.path.isfile(assumed_metadata_file_path):
+        return None, (
+            f"Could not find required metadata file for image: {image_path}. "
+            f"Since `images_metadata_input_mapping` was specified, presence of metadata file is enforced."
+        )
+    try:
+        metadata = read_json(path=assumed_metadata_file_path)
+        missing_keys = set(images_metadata_input_mapping.values()).difference(
+            metadata.keys()
+        )
+    except Exception as error:
+        return (
+            None,
+            f"Could not read metadata from {assumed_metadata_file_path} or the format of assumed "
+            f"metadata file is invalid: {error}",
+        )
+    if len(missing_keys) > 0:
+        return None, (
+            f"Could not find required metadata keys specified in `images_metadata_input_mapping` for image: "
+            f"{image_path}. Missing keys: {missing_keys}."
+        )
+    return {
+        key: metadata[value] for key, value in images_metadata_input_mapping.items()
+    }, None
+
+
 def _process_single_image_from_directory(
     image_path: ImagePath,
     model_manager: ModelManagerDecorator,
@@ -293,8 +361,24 @@ def _process_single_image_from_directory(
     max_concurrent_workflows_steps: int,
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> bool:
+    metadata_driven_workflow_parameters, metadata_error = (
+        _resolve_metadata_driven_workflow_parameters(
+            image_path=image_path,
+            images_metadata_input_mapping=images_metadata_input_mapping,
+        )
+    )
+    if metadata_error is not None:
+        if debug_mode:
+            CLI_LOGGER.exception(metadata_error)
+        on_failure(image_path, metadata_error)
+        return False
     try:
+        workflow_parameters = workflow_parameters or {}
+        metadata_driven_workflow_parameters.update(workflow_parameters)
+        workflow_parameters = metadata_driven_workflow_parameters
         result = _run_workflow_for_single_image_with_inference(
             model_manager=model_manager,
             image_path=image_path,
@@ -305,6 +389,7 @@ def _process_single_image_from_directory(
             api_key=api_key,
             thread_pool_executor=thread_pool_executor,
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
         index_entry = dump_image_processing_results(
             result=result,
@@ -372,18 +457,31 @@ def _run_workflow_for_single_image_with_inference(
     api_key: Optional[str],
     thread_pool_executor: ThreadPoolExecutor,
     max_concurrent_workflows_steps: int,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     workflow_init_parameters = {
-        "workflows_core.model_manager": model_manager,
+        "workflows_core.model_manager": ModelManagerModelsProvider(model_manager),
         "workflows_core.api_key": api_key,
         "workflows_core.thread_pool_executor": thread_pool_executor,
+        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
     }
+    if workflows_execution_engine_init_params:
+        workflow_init_parameters.update(workflows_execution_engine_init_params)
+    install_workflows_platform_bindings(workflow_init_parameters)
+    # AFTER the override merge, never before: a codec written earlier would be
+    # replaced here on Path A while the process registry kept the guarded one
+    # (round-2 Defect 1).
+    bind_image_codec(workflow_init_parameters)
+    workflow_init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
     execution_engine = ExecutionEngine.init(
         workflow_definition=workflow_specification,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=max_concurrent_workflows_steps,
         workflow_id=workflow_id,
         executor=thread_pool_executor,
+        step_error_handler=resolve_step_error_handler(),
     )
     runtime_parameters = workflow_parameters or {}
     runtime_parameters[image_input_name] = cv2.imread(image_path)

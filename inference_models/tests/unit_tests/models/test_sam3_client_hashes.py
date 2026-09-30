@@ -78,3 +78,42 @@ def test_segment_with_visual_prompts_hash_with_cache_disabled_raises() -> None:
             point_coordinates=np.array([[[1, 1]]]),
             point_labels=np.array([[1]]),
         )
+
+
+def test_serialize_prompt_single_point_does_not_raise() -> None:
+    # Regression: a single-point visual prompt arrives shaped
+    # (num_prompts, num_points, 2) = (1, 1, 2). serialize_prompt previously iterated
+    # the leading prompt axis as if it were the point axis, so the lone "coordinate"
+    # was [[x, y]] (length 1) and coord[1] raised IndexError, 500-ing SAM3 Smart Select
+    # on a single click / tiny-box conversion.
+    from inference_models.models.sam3.sam3_torch import serialize_prompt
+
+    serialized = serialize_prompt(
+        point_coordinates=np.array([[[10, 20]]]),
+        point_labels=np.array([[1]]),
+        boxes=None,
+    )
+
+    assert serialized == [
+        {"points": [{"x": 10, "y": 20, "positive": True}], "box": None}
+    ]
+
+
+def test_serialize_prompt_multiple_points_flattens_in_order() -> None:
+    from inference_models.models.sam3.sam3_torch import serialize_prompt
+
+    serialized = serialize_prompt(
+        point_coordinates=np.array([[[1, 2], [3, 4]]]),
+        point_labels=np.array([[1, 0]]),
+        boxes=None,
+    )
+
+    assert serialized == [
+        {
+            "points": [
+                {"x": 1, "y": 2, "positive": True},
+                {"x": 3, "y": 4, "positive": False},
+            ],
+            "box": None,
+        }
+    ]

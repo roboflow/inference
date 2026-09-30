@@ -15,10 +15,12 @@ per-frame shape is identical:
   processor's ``add_text_prompt`` / ``add_inputs_to_inference_session``
   methods.
 
-``HFStreamingVideoBase`` encapsulates all of this.  Concrete subclasses
-(``SAM2Video`` today, plus any future HF video tracker) just declare
-which transformers classes to load and which prompt types they accept;
-they inherit the streaming ``prompt`` / ``track`` methods unchanged.
+``HFVideoModelBase`` holds the plumbing common to every HF video
+tracker (construction, session init, locking).  ``HFStreamingVideoBase``
+adds the SAM2-shaped visually prompted ``prompt`` / ``track`` contract
+on top; SAM3's concept tracker (``sam3_video.SAM3Video``) builds its own
+per-frame API on the plumbing layer instead, because its prompts are
+session-wide concepts rather than per-frame visual seeds.
 """
 
 from threading import RLock
@@ -35,27 +37,30 @@ from inference_models.errors import ModelRuntimeError
 SESSION_KEY = "_video_inference_session"
 
 
-class HFStreamingVideoBase:
-    """Frame-by-frame SAM-family video tracker built on transformers.
+class HFVideoModelBase:
+    """Construction & session plumbing shared by HF video trackers.
 
-    Concrete subclasses set class-level ``_transformers_model_cls`` and
-    ``_transformers_processor_cls`` (lazy-initialised, typically in
-    ``from_pretrained``) so this base can call them generically.
+    Holds the transformers model + processor pair, the device/dtype
+    configuration, a re-entrant lock serialising frame processing, and
+    the ``init_video_session`` bookkeeping.  It makes no assumption
+    about the prompt vocabulary or per-frame call signature — concrete
+    families layer their own ``prompt`` / ``track`` on top:
+
+    - ``HFStreamingVideoBase`` — the SAM2-shaped visually prompted
+      tracker contract (``(masks, obj_ids, state_dict)`` tuples).
+    - ``SAM3Video`` — SAM3's concept tracker, whose per-frame results
+      additionally carry detection scores and the prompt→objects map.
 
     State management
     ----------------
     Callers keep the opaque ``state_dict`` returned from ``prompt`` /
-    ``track`` and pass it back on the next call.  Unlike SAM2's
-    PyTorch state dict (a serialisable ``{str: Tensor}`` map), the HF
-    inference session is a live Python object with GPU tensor
-    references — it is **not serialisable across processes**.
+    ``track`` and pass it back on the next call.  The HF inference
+    session inside is a live Python object with GPU tensor references —
+    it is **not serialisable across processes**.
     """
 
     _transformers_model_cls: Any = None
     _transformers_processor_cls: Any = None
-    #: Whether ``prompt`` should accept ``text=...`` prompts.  SAM3
-    #: supports them; SAM2 does not.
-    _supports_text_prompts: bool = False
 
     def __init__(
         self,
@@ -119,6 +124,40 @@ class HFStreamingVideoBase:
         return cls._transformers_model_cls, cls._transformers_processor_cls
 
     # ------------------------------------------------------------------
+    # Session plumbing
+    # ------------------------------------------------------------------
+
+    def _resolve_session(self, state_dict: Optional[dict], reset: bool) -> Any:
+        if reset:
+            return self._new_session()
+        if state_dict is not None:
+            session = state_dict.get(SESSION_KEY)
+            if session is not None:
+                return session
+        return self._new_session()
+
+    def _new_session(self) -> Any:
+        return self._processor.init_video_session(
+            inference_device=self._device,
+            processing_device="cpu",
+            video_storage_device="cpu",
+            dtype=self._dtype,
+        )
+
+
+class HFStreamingVideoBase(HFVideoModelBase):
+    """SAM2-shaped visually prompted streaming tracker contract.
+
+    ``prompt`` seeds a session with box, point, or supported text prompts
+    attached to a specific frame. ``track`` propagates the resulting tracks.
+    Both return ``(masks, obj_ids, state_dict)``.
+    """
+
+    #: Whether ``prompt`` should accept ``text=...`` prompts alongside
+    #: visual prompts. SAM2 does not support them.
+    _supports_text_prompts: bool = False
+
+    # ------------------------------------------------------------------
     # Streaming API — matches SAM2ForStream's shape so the two can be
     # swapped at call-sites.
     # ------------------------------------------------------------------
@@ -134,6 +173,7 @@ class HFStreamingVideoBase:
         state_dict: Optional[dict] = None,
         clear_old_prompts: bool = True,
         frame_idx: int = 0,
+        points: Optional[List[Tuple[float, float, bool]]] = None,
     ) -> Tuple[np.ndarray, np.ndarray, dict]:
         """Seed a session and run one streaming step.
 
@@ -145,7 +185,7 @@ class HFStreamingVideoBase:
             raise ModelRuntimeError(
                 message=(
                     f"{type(self).__name__} does not support text prompts; "
-                    "use `bboxes=` instead."
+                    "use `bboxes=` or `points=` instead."
                 ),
                 help_url=(
                     "https://inference-models.roboflow.com/errors/"
@@ -170,12 +210,41 @@ class HFStreamingVideoBase:
                 )
 
             box_list = _normalise_bboxes(bboxes)
-            if box_list:
+            point_list = _normalise_points(points)
+            if box_list and point_list:
+                # The processor replaces ``obj_with_new_inputs`` on each call.
+                # Send mixed prompts in one call so all objects are conditioned
+                # before the model processes the frame. Box labels 2 and 3 are
+                # the processor's native top-left and bottom-right labels.
+                box_points = [[[x1, y1], [x2, y2]] for x1, y1, x2, y2 in box_list]
+                point_coordinates = [[x, y] for x, y, _positive in point_list]
+                point_labels = [1 if positive else 0 for _x, _y, positive in point_list]
+                self._processor.add_inputs_to_inference_session(
+                    inference_session=session,
+                    frame_idx=frame_idx,
+                    obj_ids=list(range(len(box_list) + 1)),
+                    input_points=[[*box_points, point_coordinates]],
+                    input_labels=[[*[[2, 3] for _box in box_list], point_labels]],
+                    original_size=original_sizes[0],
+                )
+            elif box_list:
                 self._processor.add_inputs_to_inference_session(
                     inference_session=session,
                     frame_idx=frame_idx,
                     obj_ids=list(range(len(box_list))),
                     input_boxes=[[[float(v) for v in xyxy] for xyxy in box_list]],
+                    original_size=original_sizes[0],
+                )
+
+            elif point_list:
+                self._processor.add_inputs_to_inference_session(
+                    inference_session=session,
+                    frame_idx=frame_idx,
+                    obj_ids=[0],
+                    input_points=[[[[x, y] for x, y, _positive in point_list]]],
+                    input_labels=[
+                        [[1 if positive else 0 for _x, _y, positive in point_list]]
+                    ],
                     original_size=original_sizes[0],
                 )
 
@@ -237,23 +306,6 @@ class HFStreamingVideoBase:
     # Internals
     # ------------------------------------------------------------------
 
-    def _resolve_session(self, state_dict: Optional[dict], reset: bool) -> Any:
-        if reset:
-            return self._new_session()
-        if state_dict is not None:
-            session = state_dict.get(SESSION_KEY)
-            if session is not None:
-                return session
-        return self._new_session()
-
-    def _new_session(self) -> Any:
-        return self._processor.init_video_session(
-            inference_device=self._device,
-            processing_device="cpu",
-            video_storage_device="cpu",
-            dtype=self._dtype,
-        )
-
     def _extract_masks_and_ids(
         self,
         session: Any,
@@ -291,6 +343,11 @@ class HFStreamingVideoBase:
 
 def _ensure_numpy_image(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(image, torch.Tensor):
+        # Workflow tensor images are channels-first (CHW); the HF processor expects
+        # channels-last (HWC). Permute before the host transfer so the processor
+        # receives a correctly-shaped image.
+        if image.ndim == 3 and image.shape[0] in (1, 3, 4):
+            image = image.permute(1, 2, 0)
         return image.detach().cpu().numpy()
     return image
 
@@ -312,6 +369,21 @@ def _normalise_bboxes(
         x_rb = float(max(x1, x2))
         y_rb = float(max(y1, y2))
         out.append((x_lt, y_lt, x_rb, y_rb))
+    return out
+
+
+def _normalise_points(
+    points: Optional[List[Tuple[float, float, bool]]],
+) -> List[Tuple[float, float, bool]]:
+    if points is None:
+        return []
+    out: List[Tuple[float, float, bool]] = []
+    for point in points:
+        if point is None or len(point) < 2:
+            continue
+        x, y = point[:2]
+        positive = point[2] if len(point) > 2 else True
+        out.append((float(x), float(y), bool(positive)))
     return out
 
 

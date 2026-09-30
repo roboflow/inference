@@ -4,9 +4,23 @@ import os
 import threading
 from typing import Iterable, Optional, Tuple
 
+from inference_sdk.regions import resolve_roboflow_service_url
 from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
+
+# Outbound billing-forwarding authority: the validated service secret to send
+# with every outgoing request while it is set, forcing `countinference=false`
+# regardless of the client's own configuration. `None` means no implicit
+# billing parameters - a caller who configured `InferenceConfiguration`
+# explicitly keeps full control. Set (and reset) by the usage decorator
+# (`inference.usage_tracking.collector`) only for a call it proved carries an
+# authenticated opt-out, and read at request-send time by
+# `InferenceConfiguration.to_billing_query_parameters()` so a bare
+# `InferenceHTTPClient` forwards it with no per-call code.
+outbound_service_secret: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "outbound_service_secret", default=None
+)
 
 
 class RemoteProcessingTimeCollector:
@@ -128,6 +142,42 @@ remote_processing_times = contextvars.ContextVar(
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
 )
+
+# --- URL image input hardening (mirrors inference server, GHSA-hjmm-hr52-vrp2) ---
+# NOTE on defaults: the server defaults ALLOW_NON_HTTPS_URL_INPUT / FQDN
+# enforcement to the restrictive side. The SDK historically applied NO URL
+# validation, so to avoid a hard breaking change these *newly introduced*
+# restrictions default to permissive here. The SSRF-specific flags
+# (VALIDATE_IMAGE_URL_REDIRECTS / ALLOW_URL_TO_NON_GLOBAL_ADDRESSES) follow the
+# same deprecation schedule as the server.
+ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", "True"))
+ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", "True"))
+ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
+    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", "True")
+)
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        WHITELISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+# Scheduled to flip to True in Q4 2026 (per-hop redirect validation).
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", "False")
+)
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", "30"))
+# Scheduled to flip to False in Q4 2026 (block non-global destinations).
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", "True")
+)
 EXECUTION_ID_HEADER = os.getenv("EXECUTION_ID_HEADER", "execution_id")
 PROCESSING_TIME_HEADER = os.getenv("PROCESSING_TIME_HEADER", "X-Processing-Time")
 INTERNAL_REMOTE_EXEC_REQ_HEADER = "X-Internal-Remote-Exec-Req"
@@ -146,6 +196,8 @@ ALL_ROBOFLOW_API_URLS = {
     "https://infer.roboflow.com",
     "https://serverless.roboflow.com",
     "https://serverless.roboflow.one",
+    "https://serverless.roboflow.eu",
+    "https://serverless.roboflow-eu.one",
     "https://asyncinfer.roboflow.com",
     "https://asyncinfer.roboflow.one",
 }
@@ -167,10 +219,16 @@ WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
 )  # 256KB max buffered before backpressure
 
 # Roboflow API base URL for TURN config and other services
-RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", "https://api.roboflow.com")
+RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", resolve_roboflow_service_url("api"))
 
 
 class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
+
+    pass
+
+
+class InferenceSDKGuidanceWarning(Warning):
+    """Class used for recommendations on how to use the Inference SDK"""
 
     pass

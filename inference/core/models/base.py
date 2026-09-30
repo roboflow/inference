@@ -5,11 +5,20 @@ import numpy as np
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.inference import (
+    InferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
+    ResolvedModel,
+)
 from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.megapixel_buckets import (
+    clear_measured_model_input,
+    parse_image_dims_hw,
+    record_measured_model_input,
+)
 
 
 class BaseInference:
@@ -24,8 +33,13 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
+        clear_measured_model_input()
         with start_span("model.preprocess"):
             preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+            record_measured_model_input(
+                preproc_image,
+                fallback_hw=parse_image_dims_hw(returned_metadata),
+            )
             logger.debug(
                 f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
             )
@@ -39,6 +53,9 @@ class BaseInference:
             )
 
         return postprocessed
+
+    def run_tensor_native_inference(self, **kwargs) -> Any:
+        raise NotImplementedError
 
     def preprocess(
         self, image: Any, **kwargs
@@ -93,6 +110,31 @@ class Model(BaseInference):
         clear_cache(): Clears any cache if necessary.
     """
 
+    @property
+    def resolved_model(self) -> Any:
+        model = getattr(self, "_model", None)
+        if USE_INFERENCE_MODELS and model is not None:
+            return getattr(model, "resolved_model", None)
+        model_id = getattr(self, "endpoint", None) or getattr(self, "model_id", None)
+        return ResolvedModel(model_id=model_id) if model_id is not None else None
+
+    def _attach_resolved_model_metadata(self, responses: Any) -> None:
+        metadata = self.resolved_model
+        if metadata is None:
+            return
+        resolved_model = ResolvedModel(
+            model_id=metadata.model_id,
+            model_package_id=metadata.model_package_id,
+            backend=metadata.backend,
+            quantization=metadata.quantization,
+        )
+        responses = responses if isinstance(responses, list) else [responses]
+        for response in responses:
+            if isinstance(
+                response, (InferenceResponse, InstanceSegmentationInferenceResponseDC)
+            ):
+                response.resolved_model = resolved_model
+
     def log(self, m):
         """Prints the given message.
 
@@ -141,6 +183,11 @@ class Model(BaseInference):
         """
         t1 = perf_counter()
         kwargs = request.dict()
+        stream_pipeline_context_id = getattr(
+            request, "stream_pipeline_context_id", None
+        )
+        if stream_pipeline_context_id is not None:
+            kwargs["stream_pipeline_context_id"] = stream_pipeline_context_id
         confidence = kwargs.get("confidence")
         if isinstance(confidence, str) and not USE_INFERENCE_MODELS:
             logger.warning(
@@ -163,6 +210,7 @@ class Model(BaseInference):
         if not isinstance(request.image, list) and len(responses) > 0:
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
     def make_response(

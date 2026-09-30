@@ -3,6 +3,7 @@ import atexit
 import json
 import mimetypes
 import numbers
+import re
 import socket
 import sys
 import time
@@ -31,29 +32,53 @@ from inference.core.env import (
     DEVICE_ID,
     GCP_SERVERLESS,
     LAMBDA,
+    OFFLINE_MODE,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    ROBOFLOW_SERVICE_SECRET,
 )
+from inference.core.interfaces.http.api_key_resolution import header_api_key
 from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
 
 try:
-    from inference_sdk.config import apply_duration_minimum, execution_id
+    from inference_sdk.config import (
+        apply_duration_minimum,
+        execution_id,
+        outbound_service_secret,
+    )
 except ImportError:
     apply_duration_minimum = None
     execution_id = None
+    outbound_service_secret = None
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
+    bind_billing_suppression,
+    bind_workflow_preview,
+    call_carries_authenticated_non_billable_intent,
+    get_model_api_key_from_kwargs,
+    get_model_frames_and_input_hw,
     get_model_id_from_kwargs,
+    get_model_megapixel_buckets,
     get_model_resource_details_from_kwargs,
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
     get_request_resource_id_from_kwargs,
+    get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
+    get_workflow_block_api_key_from_kwargs,
+    get_workflow_block_frames_from_kwargs,
+    get_workflow_block_resource_details_from_kwargs,
+    get_workflow_block_resource_id_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    read_source_tags_bound_to_call,
+    resolve_workflow_block_execution,
+    usage_billing_suppressed,
+    usage_source_tags,
+    usage_workflow_is_preview,
 )
 from .payload_helpers import (
     APIKey,
@@ -63,6 +88,7 @@ from .payload_helpers import (
     ResourceID,
     SystemDetails,
     UsagePayload,
+    merge_megapixel_buckets,
     send_usage_payload,
     sha256_hash,
     zip_usage_payloads,
@@ -70,10 +96,18 @@ from .payload_helpers import (
 from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-from .utils import collect_func_params
+from .stream_session import stream_session_id as stream_session_id_var
+from .utils import collect_func_params, ssl_verify_for_endpoint
 
 T = TypeVar("T")
 P = ParamSpec("P")
+
+SUCCESS_OUTCOME = "success"
+ERROR_OUTCOME = "error"
+UNKNOWN_ERROR_TYPE = "unknown"
+ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+ERROR_STATUS_CODE_KEY = "error_status_code"
+ERROR_TYPE_KEY = "error_type"
 
 
 class UsageCollector:
@@ -150,7 +184,18 @@ class UsageCollector:
         self._system_info: Dict[str, Any] = {}
         self._resource_details_lock = Lock()
         self._resource_details: DefaultDict[
-            APIKey, Dict[Tuple[ResourceCategory, ResourceID], Dict[str, Any]]
+            APIKey,
+            Dict[
+                Tuple[
+                    ResourceCategory,
+                    ResourceID,
+                    bool,
+                    str,
+                    Optional[str],
+                    Optional[int],
+                ],
+                Dict[str, Any],
+            ],
         ] = defaultdict(dict)
 
         self._terminate_collector_thread = Event()
@@ -187,6 +232,7 @@ class UsageCollector:
             "inference_version": inference_version,
             "enterprise": False,
             "execution_duration": 0,
+            "megapixel_buckets": {},
         }
         if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -233,6 +279,135 @@ class UsageCollector:
     def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
+    @staticmethod
+    def _is_billable(resource_details: Optional[Dict[str, Any]]) -> bool:
+        """Normalize the pass-through billing flag for aggregation partitioning."""
+        if not resource_details:
+            return True
+        billable = resource_details.get("billable")
+        return not (
+            billable is False
+            or (isinstance(billable, str) and billable.lower() == "false")
+        )
+
+    @staticmethod
+    def _is_preview(resource_details: Optional[Dict[str, Any]]) -> bool:
+        """Normalize the preview flag for aggregation partitioning.
+
+        Partitioned on for the same reason `billable` is: a preview run and a
+        production run of the same resource inside one flush window would
+        otherwise collapse into a single row whose `is_preview` is whichever was
+        written last, making preview traffic indistinguishable from billed
+        traffic.
+        """
+        if not resource_details:
+            return False
+        preview = resource_details.get("is_preview")
+        return preview is True or (
+            isinstance(preview, str) and preview.lower() == "true"
+        )
+
+    @staticmethod
+    def _normalize_error_type(error_type: Any) -> str:
+        if not isinstance(error_type, str):
+            return UNKNOWN_ERROR_TYPE
+        error_type = error_type.strip()
+        if not ERROR_TYPE_PATTERN.fullmatch(error_type):
+            return UNKNOWN_ERROR_TYPE
+        return error_type
+
+    @staticmethod
+    def _normalize_error_status_code(status_code: Any) -> Optional[int]:
+        if isinstance(status_code, bool) or not isinstance(
+            status_code, numbers.Integral
+        ):
+            return None
+        status_code = int(status_code)
+        if not 400 <= status_code <= 599:
+            return None
+        return status_code
+
+    @classmethod
+    def _normalize_error_metadata(
+        cls, resource_details: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        resource_details = dict(resource_details)
+        if "error" not in resource_details:
+            resource_details.pop(ERROR_TYPE_KEY, None)
+            resource_details.pop(ERROR_STATUS_CODE_KEY, None)
+            return resource_details
+
+        resource_details[ERROR_TYPE_KEY] = cls._normalize_error_type(
+            resource_details.get(ERROR_TYPE_KEY)
+        )
+        error_status_code = cls._normalize_error_status_code(
+            resource_details.get(ERROR_STATUS_CODE_KEY)
+        )
+        if error_status_code is None:
+            resource_details.pop(ERROR_STATUS_CODE_KEY, None)
+        else:
+            resource_details[ERROR_STATUS_CODE_KEY] = error_status_code
+        return resource_details
+
+    @classmethod
+    def _usage_outcome(
+        cls, resource_details: Optional[Dict[str, Any]]
+    ) -> Tuple[str, Optional[str], Optional[int]]:
+        if not resource_details or "error" not in resource_details:
+            return SUCCESS_OUTCOME, None, None
+        error_type = cls._normalize_error_type(resource_details.get(ERROR_TYPE_KEY))
+        error_status_code = cls._normalize_error_status_code(
+            resource_details.get(ERROR_STATUS_CODE_KEY)
+        )
+        return ERROR_OUTCOME, error_type, error_status_code
+
+    @classmethod
+    def _resource_details_key(
+        cls,
+        category: ResourceCategory,
+        resource_id: ResourceID,
+        resource_details: Optional[Dict[str, Any]],
+    ) -> Tuple[
+        ResourceCategory,
+        ResourceID,
+        bool,
+        bool,
+        str,
+        Optional[str],
+        Optional[int],
+    ]:
+        outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
+        return (
+            category,
+            resource_id,
+            cls._is_billable(resource_details),
+            cls._is_preview(resource_details),
+            outcome,
+            error_type,
+            error_status_code,
+        )
+
+    @classmethod
+    def _usage_key(
+        cls,
+        category: ResourceCategory,
+        resource_id: ResourceID,
+        resource_details: Optional[Dict[str, Any]],
+        stream_session_id: Optional[str] = None,
+    ) -> str:
+        billable = str(cls._is_billable(resource_details)).lower()
+        outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
+        usage_key = f"{category}:{resource_id}:billable={billable}:outcome={outcome}"
+        if cls._is_preview(resource_details):
+            usage_key = f"{usage_key}:preview=true"
+        if outcome == ERROR_OUTCOME:
+            usage_key = f"{usage_key}:error_type={error_type}"
+            if error_status_code is not None:
+                usage_key = f"{usage_key}:error_status_code={error_status_code}"
+        if stream_session_id:
+            usage_key = f"{usage_key}:{stream_session_id}"
+        return usage_key
+
     def _enqueue_payload(self, payload: UsagePayload):
         logger.debug("Enqueuing usage payload")
         if not payload:
@@ -246,8 +421,10 @@ class UsageCollector:
                 merged_usage_payloads = zip_usage_payloads(
                     usage_payloads=usage_payloads,
                 )
-                for usage_payload in merged_usage_payloads:
-                    self._queue.put(usage_payload)
+                # Distinct sessions may not compress below the queue capacity.
+                # Keep the merged payloads in one slot so enqueueing cannot
+                # block while holding the lock needed by the queue consumer.
+                self._queue.put(merged_usage_payloads)
 
     def record_resource_details(
         self,
@@ -263,6 +440,7 @@ class UsageCollector:
                 "Tried to record non-dict resource details, '%s'", resource_details
             )
             return
+        resource_details = self._normalize_error_metadata(resource_details)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -271,7 +449,12 @@ class UsageCollector:
 
         with self._resource_details_lock:
             api_key_resource_details = self._resource_details[api_key]
-            api_key_resource_details[(category, resource_id)] = resource_details
+            resource_details_key = self._resource_details_key(
+                category=category,
+                resource_id=resource_id,
+                resource_details=resource_details,
+            )
+            api_key_resource_details[resource_details_key] = dict(resource_details)
 
     @staticmethod
     def system_info(
@@ -292,6 +475,10 @@ class UsageCollector:
         else:
             hostname = sha256_hash(hostname)
 
+        if OFFLINE_MODE and not ip_address:
+            # Avoid hostname resolution and the public 8.8.8.8 UDP route probe
+            # even when this helper is called directly outside record_usage().
+            ip_address = "127.0.0.1"
         if not ip_address:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
@@ -360,6 +547,7 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         source = str(source) if source else ""
         try:
@@ -367,26 +555,44 @@ class UsageCollector:
         except Exception:
             frames = 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
-        if not resource_id and resource_details:
-            resource_id = UsageCollector._calculate_resource_hash(resource_details)
+        provided_resource_details = self._normalize_error_metadata(
+            resource_details or {}
+        )
+        if not resource_id and provided_resource_details:
+            resource_id = UsageCollector._calculate_resource_hash(
+                resource_details=provided_resource_details
+            )
+        resource_details_key = self._resource_details_key(
+            category=category,
+            resource_id=resource_id,
+            resource_details=provided_resource_details,
+        )
         with self._resource_details_lock:
             cached_resource_details = self._resource_details.get(api_key, {}).get(
-                (category, resource_id)
+                resource_details_key
             )
             if cached_resource_details is not None:
                 cached_resource_details = dict(cached_resource_details)
-        # Cache miss must not silently drop the billable flag (and other fields)
-        # off the payload — fall back to the resource_details passed in by the caller.
-        if cached_resource_details:
-            resource_details = cached_resource_details
-        elif not resource_details:
-            resource_details = {}
+        # Cached details may contain stable resource metadata, but per-request
+        # values such as billable and error must always remain authoritative.
+        resource_details = {
+            **(cached_resource_details or {}),
+            **provided_resource_details,
+        }
+        resource_details = self._normalize_error_metadata(resource_details)
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
             hostname = self._system_info["hostname"]
+        stream_session_id = stream_session_id_var.get()
+        usage_key = self._usage_key(
+            category=category,
+            resource_id=resource_id,
+            resource_details=resource_details,
+            stream_session_id=stream_session_id,
+        )
         with UsageCollector._lock:
-            source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
+            source_usage = self._usage[api_key_hash][usage_key]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
@@ -403,6 +609,11 @@ class UsageCollector:
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             source_usage["execution_duration"] += execution_duration
+            if megapixel_buckets and not inference_test_run:
+                source_usage["megapixel_buckets"] = merge_megapixel_buckets(
+                    source_usage.get("megapixel_buckets"),
+                    megapixel_buckets,
+                )
             if (
                 roboflow_service_name
                 and roboflow_service_name != "external"
@@ -410,6 +621,9 @@ class UsageCollector:
             ):
                 source_usage["roboflow_service_name"] = roboflow_service_name
                 source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+
+            if stream_session_id:
+                source_usage["stream_session_id"] = stream_session_id
 
             exec_session_id = None
             if execution_id is not None:
@@ -430,7 +644,10 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
+        if OFFLINE_MODE:
+            return
         if not api_key:
             return
         self.record_system_info()
@@ -452,6 +669,7 @@ class UsageCollector:
             execution_duration=execution_duration,
             roboflow_service_name=roboflow_service_name,
             roboflow_internal_secret=roboflow_internal_secret,
+            megapixel_buckets=megapixel_buckets,
         )
 
     async def async_record_usage(
@@ -467,6 +685,7 @@ class UsageCollector:
         execution_duration: float = 0,
         roboflow_service_name: Optional[str] = None,
         roboflow_internal_secret: Optional[str] = None,
+        megapixel_buckets: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -482,6 +701,7 @@ class UsageCollector:
                     execution_duration=execution_duration,
                     roboflow_service_name=roboflow_service_name,
                     roboflow_internal_secret=roboflow_internal_secret,
+                    megapixel_buckets=megapixel_buckets,
                 )
         else:
             self.record_usage(
@@ -496,6 +716,7 @@ class UsageCollector:
                 execution_duration=execution_duration,
                 roboflow_service_name=roboflow_service_name,
                 roboflow_internal_secret=roboflow_internal_secret,
+                megapixel_buckets=megapixel_buckets,
             )
 
     def _usage_collector(self):
@@ -522,6 +743,10 @@ class UsageCollector:
         self._flush_queue()
 
     def _flush_queue(self):
+        if OFFLINE_MODE:
+            # Leave any usage persisted by an earlier online run untouched.
+            # Draining before the sender-level guard would silently discard it.
+            return
         usage_payloads = self._dump_usage_queue_with_lock()
         if not usage_payloads:
             return
@@ -531,11 +756,9 @@ class UsageCollector:
         self._offload_to_api(payloads=merged_payloads)
 
     def _offload_to_api(self, payloads: List[APIKeyUsage]):
-        ssl_verify = True
-        if "localhost" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
-        if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
-            ssl_verify = False
+        if OFFLINE_MODE:
+            return
+        ssl_verify = ssl_verify_for_endpoint(self._settings.api_usage_endpoint_url)
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 
@@ -596,22 +819,26 @@ class UsageCollector:
         usage_billable: bool,
         execution_duration: float,
         func: Callable[[Any], Any],
-        category: Literal["model", "workflows", "request", "modal"],
-        exc: Optional[str],
+        category: Literal["model", "workflows", "workflow_block", "request", "modal"],
+        error_details: Optional[Dict[str, Any]],
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
         func_kwargs = collect_func_params(func, args, kwargs)
+        # Downgrade-only: the request scope suppresses billing for rows recorded
+        # on behalf of a caller who authenticated the intent, but never restores
+        # it for a caller that opted out some other way.
+        billable = usage_billable and not usage_billing_suppressed.get()
         resource_details = {
-            "billable": usage_billable,
+            "billable": billable,
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         if DEVICE_ID:
             resource_details["device_id"] = DEVICE_ID
-        if exc is not None:
-            resource_details["error"] = exc
         resource_id = ""
+        frames = 1
+        megapixel_buckets: Dict[str, Dict[str, Any]] = {}
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if category == "workflows":
             workflow_api_key = get_workflow_api_key_from_kwargs(func_kwargs)
@@ -639,6 +866,48 @@ class UsageCollector:
             model_resource_details = get_model_resource_details_from_kwargs(func_kwargs)
             if model_resource_details:
                 resource_details = {**resource_details, **model_resource_details}
+            if not usage_api_key:
+                usage_api_key = get_model_api_key_from_kwargs(func_kwargs) or ""
+            frames, input_hw = get_model_frames_and_input_hw(func_kwargs)
+            megapixel_buckets = get_model_megapixel_buckets(
+                frames=frames,
+                input_hw=input_hw,
+                execution_duration=execution_duration,
+                inference_test_run=usage_inference_test_run,
+            )
+        elif category == "workflow_block":
+            block_api_key = get_workflow_block_api_key_from_kwargs(func_kwargs)
+            if not usage_api_key and block_api_key:
+                usage_api_key = block_api_key
+            resource_id = (
+                get_workflow_block_resource_id_from_kwargs(func_kwargs) or "unknown"
+            )
+            block_resource_details = get_workflow_block_resource_details_from_kwargs(
+                func_kwargs
+            )
+            frames = get_workflow_block_frames_from_kwargs(func_kwargs)
+            execution_duration, execution_details = resolve_workflow_block_execution(
+                execution_duration=execution_duration,
+            )
+            # The block's own measurement replaces the decorator's wall clock,
+            # so it has not been through the serverless floor yet.
+            execution_duration = UsageCollector._apply_duration_floor(
+                execution_duration
+            )
+            resource_details = {
+                **resource_details,
+                **block_resource_details,
+                **execution_details,
+            }
+            # Request-level flags the engine never passes into `step.run()`.
+            # Preview is published by the parent `run_workflow` decorator;
+            # `billable` is already inherited via `usage_billing_suppressed`.
+            resource_details["is_preview"] = (
+                usage_workflow_preview or usage_workflow_is_preview.get()
+            )
+            source_tag = usage_source_tags.get().get("source")
+            if source_tag:
+                resource_details["source"] = source_tag
         elif category == "request":
             request_api_key = get_request_api_key_from_kwargs(func_kwargs)
             request_resource_details = get_request_resource_details_from_kwargs(
@@ -656,6 +925,13 @@ class UsageCollector:
         else:
             resource_id = "unknown"
             category = "unknown"
+
+        source_info = get_source_info_from_kwargs(func_kwargs)
+        if source_info:
+            resource_details["source_info"] = source_info
+
+        if error_details is not None:
+            resource_details = {**resource_details, **error_details}
 
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
@@ -687,8 +963,13 @@ class UsageCollector:
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
+            if not usage_api_key:
+                # `Authorization: Bearer` key lives only in the request-scoped
+                # ContextVar - routes that keep the resolved key in a local
+                # variable never expose it through any bound parameter.
+                usage_api_key = header_api_key.get() or ""
 
-        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_service_name = func_kwargs.get("source_info") or source_info
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
@@ -702,11 +983,13 @@ class UsageCollector:
             "execution_duration": execution_duration,
             "roboflow_service_name": roboflow_service_name,
             "roboflow_internal_secret": roboflow_internal_secret,
+            "frames": frames,
+            "megapixel_buckets": megapixel_buckets,
         }
 
     @staticmethod
-    def _compute_execution_duration(t1: float, t2: float) -> float:
-        raw = t2 - t1
+    def _apply_duration_floor(raw: float) -> float:
+        """Billing floor a duration is subject to on GCP serverless."""
         if not GCP_SERVERLESS:
             return raw
         if apply_duration_minimum is not None:
@@ -718,8 +1001,51 @@ class UsageCollector:
                 pass
         return max(raw, 0.1)
 
+    @classmethod
+    def _compute_execution_duration(cls, t1: float, t2: float) -> float:
+        return cls._apply_duration_floor(t2 - t1)
+
+    @classmethod
+    def _exception_error_details(cls, error: Exception) -> Dict[str, Any]:
+        error_type = cls._normalize_error_type(type(error).__name__)
+        inner_error_type = getattr(error, "inner_error_type", None)
+        if inner_error_type:
+            error_type = cls._normalize_error_type(inner_error_type)
+
+        error_status_code = cls._normalize_error_status_code(
+            getattr(error, "status_code", None)
+        )
+        inner_error = getattr(error, "inner_error", None)
+        if error_status_code is None and inner_error is not None:
+            error_status_code = cls._normalize_error_status_code(
+                getattr(inner_error, "status_code", None)
+            )
+
+        error_details = {
+            "error": f"{error_type}: {str(error)}",
+            ERROR_TYPE_KEY: error_type,
+        }
+        if error_status_code is not None:
+            error_details[ERROR_STATUS_CODE_KEY] = error_status_code
+        return error_details
+
+    @classmethod
+    def _response_error(cls, response: Any) -> Optional[Dict[str, Any]]:
+        status_code = getattr(response, "status_code", None)
+        status_code = cls._normalize_error_status_code(status_code)
+        if status_code is not None:
+            return {
+                "error": (
+                    f"HTTPResponseError{status_code}: "
+                    f"response returned status {status_code}"
+                ),
+                ERROR_TYPE_KEY: "HTTPResponseError",
+                ERROR_STATUS_CODE_KEY: status_code,
+            }
+        return None
+
     def __call__(
-        self, category: Literal["model", "workflows", "request"]
+        self, category: Literal["model", "workflows", "workflow_block", "request"]
     ) -> Callable[P, T]:
         def decorator(func: Callable[P, T]) -> Callable[P, T]:
             @wraps(func)
@@ -733,52 +1059,93 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                # Bound once, then held for the call and its usage recording, so
+                # nested decorators inherit the caller's billing intent.
+                authenticated_opt_out = call_carries_authenticated_non_billable_intent(
+                    func, args, kwargs
+                )
+                suppression_token = bind_billing_suppression(
+                    authenticated_opt_out=authenticated_opt_out,
+                    usage_billable=usage_billable,
+                )
+                preview_token = bind_workflow_preview(usage_workflow_preview)
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
+                )
+                # Forwarding authority is published only for a call that proved
+                # it, and only for that call's own duration: a call with no
+                # billing arguments of its own must never touch this variable,
+                # so a nested decorator that inherited it does not strip it
+                # before a remote SDK call made inside that nested scope.
+                outbound_token = None
+                if authenticated_opt_out and outbound_service_secret is not None:
+                    outbound_token = outbound_service_secret.set(
+                        ROBOFLOW_SERVICE_SECRET
+                    )
                 try:
                     t1 = time.time()
-                    res = func(*args, **kwargs)
+                    try:
+                        res = func(*args, **kwargs)
+                    except Exception as exc:
+                        t2 = time.time()
+                        try:
+                            self.record_usage(
+                                **self._extract_usage_params_from_func_kwargs(
+                                    usage_fps=usage_fps,
+                                    usage_api_key=usage_api_key,
+                                    usage_workflow_id=usage_workflow_id,
+                                    usage_workflow_preview=usage_workflow_preview,
+                                    usage_inference_test_run=usage_inference_test_run,
+                                    usage_billable=usage_billable,
+                                    execution_duration=self._compute_execution_duration(
+                                        t1, t2
+                                    ),
+                                    func=func,
+                                    category=category,
+                                    error_details=self._exception_error_details(exc),
+                                    args=args,
+                                    kwargs=kwargs,
+                                )
+                            )
+                        except Exception as usage_exc:
+                            logger.debug("Failed to record usage - %s", usage_exc)
+                        raise
                     t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    self.record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            exc=None,
-                            args=args,
-                            kwargs=kwargs,
+                    try:
+                        self.record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=self._compute_execution_duration(
+                                    t1, t2
+                                ),
+                                func=func,
+                                category=category,
+                                error_details=self._response_error(res),
+                                args=args,
+                                kwargs=kwargs,
+                            )
                         )
-                    )
-                except Exception as exc:
-                    t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    exc_type = type(exc).__name__
-                    if hasattr(exc, "inner_error_type"):
-                        exc_type = exc.inner_error_type
-                    exc_str = f"{exc_type}: {str(exc)}"
-                    self.record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            exc=exc_str,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
-                    raise
-                return res
+                    except Exception as usage_exc:
+                        logger.debug("Failed to record usage - %s", usage_exc)
+                    return res
+                finally:
+                    if suppression_token is not None:
+                        usage_billing_suppressed.reset(suppression_token)
+                    if preview_token is not None:
+                        usage_workflow_is_preview.reset(preview_token)
+                    if outbound_token is not None:
+                        outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             @wraps(func)
             async def async_wrapper(
@@ -791,52 +1158,93 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
+                # Bound once, then held for the call and its usage recording, so
+                # nested decorators inherit the caller's billing intent.
+                authenticated_opt_out = call_carries_authenticated_non_billable_intent(
+                    func, args, kwargs
+                )
+                suppression_token = bind_billing_suppression(
+                    authenticated_opt_out=authenticated_opt_out,
+                    usage_billable=usage_billable,
+                )
+                preview_token = bind_workflow_preview(usage_workflow_preview)
+                # Same inheritance rule as suppression: only a call that
+                # carries tags of its own binds, so a nested decorator can
+                # never strip what the request-level call published.
+                source_tags = read_source_tags_bound_to_call(func, args, kwargs)
+                source_token = (
+                    usage_source_tags.set(source_tags) if source_tags else None
+                )
+                # Forwarding authority is published only for a call that proved
+                # it, and only for that call's own duration: a call with no
+                # billing arguments of its own must never touch this variable,
+                # so a nested decorator that inherited it does not strip it
+                # before a remote SDK call made inside that nested scope.
+                outbound_token = None
+                if authenticated_opt_out and outbound_service_secret is not None:
+                    outbound_token = outbound_service_secret.set(
+                        ROBOFLOW_SERVICE_SECRET
+                    )
                 try:
                     t1 = time.time()
-                    res = await func(*args, **kwargs)
+                    try:
+                        res = await func(*args, **kwargs)
+                    except Exception as exc:
+                        t2 = time.time()
+                        try:
+                            await self.async_record_usage(
+                                **self._extract_usage_params_from_func_kwargs(
+                                    usage_fps=usage_fps,
+                                    usage_api_key=usage_api_key,
+                                    usage_workflow_id=usage_workflow_id,
+                                    usage_workflow_preview=usage_workflow_preview,
+                                    usage_inference_test_run=usage_inference_test_run,
+                                    usage_billable=usage_billable,
+                                    execution_duration=self._compute_execution_duration(
+                                        t1, t2
+                                    ),
+                                    func=func,
+                                    category=category,
+                                    error_details=self._exception_error_details(exc),
+                                    args=args,
+                                    kwargs=kwargs,
+                                )
+                            )
+                        except Exception as usage_exc:
+                            logger.debug("Failed to record usage - %s", usage_exc)
+                        raise
                     t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    await self.async_record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            exc=None,
-                            args=args,
-                            kwargs=kwargs,
+                    try:
+                        await self.async_record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=self._compute_execution_duration(
+                                    t1, t2
+                                ),
+                                func=func,
+                                category=category,
+                                error_details=self._response_error(res),
+                                args=args,
+                                kwargs=kwargs,
+                            )
                         )
-                    )
-                except Exception as exc:
-                    t2 = time.time()
-                    execution_duration = self._compute_execution_duration(t1, t2)
-                    exc_type = type(exc).__name__
-                    if hasattr(exc, "inner_error_type"):
-                        exc_type = exc.inner_error_type
-                    exc_str = f"{exc_type}: {str(exc)}"
-                    await self.async_record_usage(
-                        **self._extract_usage_params_from_func_kwargs(
-                            usage_fps=usage_fps,
-                            usage_api_key=usage_api_key,
-                            usage_workflow_id=usage_workflow_id,
-                            usage_workflow_preview=usage_workflow_preview,
-                            usage_inference_test_run=usage_inference_test_run,
-                            usage_billable=usage_billable,
-                            execution_duration=execution_duration,
-                            func=func,
-                            category=category,
-                            exc=exc_str,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                    )
-                    raise
-                return res
+                    except Exception as usage_exc:
+                        logger.debug("Failed to record usage - %s", usage_exc)
+                    return res
+                finally:
+                    if suppression_token is not None:
+                        usage_billing_suppressed.reset(suppression_token)
+                    if preview_token is not None:
+                        usage_workflow_is_preview.reset(preview_token)
+                    if outbound_token is not None:
+                        outbound_service_secret.reset(outbound_token)
+                    if source_token is not None:
+                        usage_source_tags.reset(source_token)
 
             if asyncio.iscoroutinefunction(func):
                 return async_wrapper

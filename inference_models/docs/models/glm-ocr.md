@@ -51,7 +51,8 @@ Pre-trained GLM-OCR models are available via the Roboflow API and **require a Ro
 | `glm-ocr` | GLM-OCR vision-language model for text recognition |
 
 !!! warning "GPU Required"
-    GLM-OCR uses bfloat16 precision and requires GPU acceleration. CPU inference is not supported.
+    GLM-OCR requires GPU acceleration. CPU inference is not supported.
+    On CUDA, the model uses bfloat16 when the device supports it, otherwise float16.
 
 ## Supported Backends
 
@@ -67,7 +68,7 @@ Pre-trained GLM-OCR models are available via the Roboflow API and **require a Ro
 | **Upload Weights** | ❌ Not supported |
 | **Serverless API (v2)** | ✅ [Deploy via hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |
 | **Workflows** | ✅ Use in [Workflows](https://docs.roboflow.com/workflows) via LMM block |
-| **Edge Deployment (Jetson)** | ❌ Not supported |
+| **Edge Deployment (Jetson)** | ✅ Deploy on NVIDIA Jetson devices |
 | **Self-Hosting** | ✅ Deploy with `inference-models` (GPU required) |
 
 ## Installation
@@ -147,7 +148,7 @@ GLM-OCR returns a `List[str]` containing the recognized text from the input imag
 
 ## Performance Tips
 
-1. **Use GPU** - GLM-OCR requires GPU with bfloat16 support
+1. **Use GPU** - GLM-OCR requires GPU acceleration
 2. **Flash Attention** - Automatically enabled on Ampere+ GPUs (compute capability >= 8.0) for faster inference
 3. **Adjust max_new_tokens** - Increase for longer text passages, decrease for short labels
 4. **Use convenience methods** - `recognize_text()`, `recognize_formula()`, `recognize_table()` use optimized prompts for each task

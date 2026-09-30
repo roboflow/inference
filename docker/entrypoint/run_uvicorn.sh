@@ -35,24 +35,23 @@ is_truthy() {
 SSL_CERTFILE="${SSL_CERTFILE:-/etc/inference/certs/server.crt}"
 SSL_KEYFILE="${SSL_KEYFILE:-/etc/inference/certs/server.key}"
 
-SSL_ARGS=""
 if is_truthy "$ENABLE_HTTPS"; then
     if [ ! -r "$SSL_CERTFILE" ] || [ ! -r "$SSL_KEYFILE" ]; then
         echo "run_uvicorn.sh: ENABLE_HTTPS is set but SSL_CERTFILE ($SSL_CERTFILE) and SSL_KEYFILE ($SSL_KEYFILE) must both be readable" >&2
         exit 78
     fi
-    SSL_ARGS="--ssl-certfile $SSL_CERTFILE --ssl-keyfile $SSL_KEYFILE"
+    set -- --ssl-certfile "$SSL_CERTFILE" --ssl-keyfile "$SSL_KEYFILE" "$@"
     if [ -n "$SSL_KEYFILE_PASSWORD" ]; then
-        SSL_ARGS="$SSL_ARGS --ssl-keyfile-password $SSL_KEYFILE_PASSWORD"
+        set -- --ssl-keyfile-password "$SSL_KEYFILE_PASSWORD" "$@"
     fi
     if [ -n "$SSL_CA_CERTS" ]; then
-        SSL_ARGS="$SSL_ARGS --ssl-ca-certs $SSL_CA_CERTS"
+        set -- --ssl-ca-certs "$SSL_CA_CERTS" --ssl-cert-reqs 2 "$@"
     fi
 fi
 
 if command -v uvicorn >/dev/null 2>&1; then
-    set -- uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" $SSL_ARGS "$@"
+    set -- uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" "$@"
 else
-    set -- python3 -m uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" $SSL_ARGS "$@"
+    set -- python3 -m uvicorn "$APP" --workers "$NUM_WORKERS" --host "$HOST" --port "$PORT" "$@"
 fi
 exec "$@"

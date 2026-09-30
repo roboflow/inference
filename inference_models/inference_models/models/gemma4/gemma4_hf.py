@@ -27,7 +27,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
+    pre_process_network_input_to_image_list,
 )
 
 # HF Supported budgets for tokens representing images.
@@ -289,15 +289,14 @@ class Gemma4HF:
 
             raw_list = _collect_list()
         else:
-            processed = pre_process_network_input(
+            raw_list, _ = pre_process_network_input_to_image_list(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
-            )[0]
-            raw_list = [t.squeeze(0) for t in torch.split(processed, 1, dim=0)]
+            )
 
         pil_images = [_to_pil_rgb(img, input_color_format) for img in raw_list]
 

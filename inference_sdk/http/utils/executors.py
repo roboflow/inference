@@ -2,6 +2,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import partial
@@ -36,6 +37,7 @@ MODEL_COLD_START_COUNT_HEADER = "X-Model-Cold-Start-Count"
 MODEL_LOAD_TIME_HEADER = "X-Model-Load-Time"
 MODEL_LOAD_DETAILS_HEADER = "X-Model-Load-Details"
 MODEL_ID_HEADER = "X-Model-Id"
+_REQUESTS_SESSION_LOCAL = threading.local()
 
 
 class RequestMethod(Enum):
@@ -273,6 +275,14 @@ def make_parallel_requests(
     Returns:
         The list of responses.
     """
+    if len(requests_data) == 1:
+        return [
+            make_request(
+                request_data=requests_data[0],
+                request_method=request_method,
+            )
+        ]
+
     # Capture the current contextvars snapshot so OTel trace context
     # propagates into the thread pool workers. Must capture here (caller
     # thread) not inside the worker — workers run in fresh threads that
@@ -291,11 +301,30 @@ def make_parallel_requests(
         try:
             return make_request_closure(rd)
         finally:
-            for var, tok in tokens:
-                var.reset(tok)
+            try:
+                _reset_thread_local_requests_session()
+            finally:
+                for var, tok in tokens:
+                    var.reset(tok)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         return list(executor.map(_run_in_parent_context, requests_data))
+
+
+def _get_thread_local_requests_session() -> requests.Session:
+    session = getattr(_REQUESTS_SESSION_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        _REQUESTS_SESSION_LOCAL.session = session
+    return session
+
+
+def _reset_thread_local_requests_session() -> None:
+    session = getattr(_REQUESTS_SESSION_LOCAL, "session", None)
+    if session is None:
+        return
+    session.close()
+    del _REQUESTS_SESSION_LOCAL.session
 
 
 @backoff.on_predicate(
@@ -308,7 +337,7 @@ def make_parallel_requests(
 )
 @backoff.on_exception(
     backoff.constant,
-    exception=ConnectionError,
+    exception=(ConnectionError, requests.exceptions.ConnectionError),
     max_tries=3,
     interval=1,
     backoff_log_level=logging.DEBUG,
@@ -324,14 +353,21 @@ def make_request(request_data: RequestData, request_method: RequestMethod) -> Re
     Returns:
         The response from the API.
     """
-    method = requests.get if request_method is RequestMethod.GET else requests.post
-    return method(
-        request_data.url,
-        headers=request_data.headers,
-        params=request_data.parameters,
-        data=request_data.data,
-        json=request_data.payload,
-    )
+    session = _get_thread_local_requests_session()
+    method = session.get if request_method is RequestMethod.GET else session.post
+    # Preserve the old requests.get/post cookie behavior while still reusing
+    # the session's connection pool.
+    session.cookies.clear()
+    try:
+        return method(
+            request_data.url,
+            headers=request_data.headers,
+            params=request_data.parameters,
+            data=request_data.data,
+            json=request_data.payload,
+        )
+    finally:
+        session.cookies.clear()
 
 
 async def execute_requests_packages_async(

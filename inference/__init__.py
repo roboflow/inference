@@ -1,3 +1,11 @@
+# OFFLINE_MODE and the dependency environment (Hugging Face, Ultralytics
+# offline switches and cache locations) are established process-wide by
+# inference_models at import time - the single owner of that decision.
+# Import it before anything else so the latch exists no matter which
+# package the user touches first. `inference` depends on `inference_models`
+# unconditionally, so this import cannot fail on a supported install.
+import inference_models  # noqa: F401  isort: skip
+
 from typing import TYPE_CHECKING, Any, Callable, Dict
 
 if TYPE_CHECKING:
@@ -7,6 +15,7 @@ if TYPE_CHECKING:
     from inference.models.utils import get_model, get_roboflow_model
 
 _LAZY_ATTRIBUTES: Dict[str, Callable[[], Any]] = {
+    "Model": lambda: _import_from("inference.core.models.base", "Model"),
     "Stream": lambda: _import_from("inference.core.interfaces.stream.stream", "Stream"),
     "InferencePipeline": lambda: _import_from(
         "inference.core.interfaces.stream.inference_pipeline", "InferencePipeline"

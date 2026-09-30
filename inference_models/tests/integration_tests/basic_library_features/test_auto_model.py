@@ -1,6 +1,6 @@
 import os.path
 import re
-from typing import Optional
+from typing import Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -12,6 +12,7 @@ from inference_models import AutoModel, ClassificationPrediction
 from inference_models.configuration import ROBOFLOW_API_HOST
 from inference_models.errors import (
     DirectLocalStorageAccessError,
+    ForbiddenModelAccessError,
     ModelLoadingError,
     UnauthorizedModelAccessError,
 )
@@ -507,7 +508,13 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
 @pytest.mark.timeout(60)
 @pytest.mark.cpu_only
 @pytest.mark.slow
-@pytest.mark.skip("Skipping for now - registered packages must be fixed")
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (401, UnauthorizedModelAccessError),
+        (403, ForbiddenModelAccessError),
+    ],
+)
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 @mock.patch.object(core, "generate_model_package_cache_path")
 @mock.patch.object(core, "generate_shared_blobs_path")
@@ -517,6 +524,8 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
     generate_auto_resolution_cache_path_mock: MagicMock,
     empty_local_dir: str,
     requests_mock: Mocker,
+    status_code: int,
+    expected_error: Type[Exception],
 ) -> None:
     # given
     storage_manager = AccumulativeModelAccessManager()
@@ -538,7 +547,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
         f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
         [
             {
-                "status_code": 401,
+                "status_code": status_code,
             },
         ],
     )
@@ -550,7 +559,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
     )
 
     # when
-    with pytest.raises(UnauthorizedModelAccessError):
+    with pytest.raises(expected_error):
         _ = AutoModel.from_pretrained(
             "yolov8n-640", model_access_manager=storage_manager
         )

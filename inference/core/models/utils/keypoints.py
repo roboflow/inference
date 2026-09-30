@@ -1,10 +1,10 @@
-from typing import List
+from typing import Dict, List
 
 from inference.core.entities.responses.inference import Keypoint
 from inference.core.exceptions import ModelArtefactError
 
 
-def superset_keypoints_count(keypoints_metadata={}) -> int:
+def superset_keypoints_count(keypoints_metadata: Dict[int, Dict[int, str]]) -> int:
     """Returns the number of keypoints in the superset."""
     max_keypoints = 0
     for keypoints in keypoints_metadata.values():

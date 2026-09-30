@@ -50,6 +50,7 @@ from inference.core.env import (
     CORE_MODEL_BUCKET,
     INFER_BUCKET,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     SAM3_IMAGE_SIZE,
 )
 from inference.core.exceptions import ModelArtefactError, RoboflowAPINotAuthorizedError
@@ -66,6 +67,9 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
@@ -428,7 +432,7 @@ class SegmentAnything3(RoboflowCoreModel):
         infer_bucket_files = self.get_infer_bucket_file_list()
 
         # Auth check aligned with chosen endpoint type
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             endpoint_type = (
                 ModelEndpointType.CORE_MODEL
                 if self._is_core_sam3_endpoint()
@@ -438,6 +442,8 @@ class SegmentAnything3(RoboflowCoreModel):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=endpoint_type,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
@@ -446,6 +452,11 @@ class SegmentAnything3(RoboflowCoreModel):
         # Already cached
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
 
         # S3 path works for both; keys are {endpoint}/<file>
         if is_model_artefacts_bucket_available():
@@ -463,6 +474,8 @@ class SegmentAnything3(RoboflowCoreModel):
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            countinference=self.countinference,
+            service_secret=self.service_secret,
         )
 
         ort = api_data.get("ort") if isinstance(api_data, dict) else None
@@ -500,6 +513,7 @@ class SegmentAnything3(RoboflowCoreModel):
     @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
         # with self.sam3_lock:
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
             # Pass strongly-typed fields to preserve Sam3Prompt objects
@@ -512,6 +526,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 nms_iou_threshold=request.nms_iou_threshold,
             )
             # segment_image now returns either bytes or a response model
+            self._attach_resolved_model_metadata(result)
             return result
         else:
             raise ValueError(f"Invalid request type {type(request)}")

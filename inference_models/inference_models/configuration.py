@@ -1,8 +1,11 @@
 import os
 import warnings
+from typing import Optional
 
 import torch
 
+from inference_models._offline import OFFLINE_MODE
+from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_comma_separated_list_of_integers_from_env,
@@ -10,6 +13,7 @@ from inference_models.utils.environment import (
     get_integer_from_env,
     parse_comma_separated_values,
 )
+from inference_models.utils.secure_gateway import normalize_secure_gateway_configuration
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -36,16 +40,35 @@ IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     )
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
+# Region / environment matrix mirroring inference_sdk.regions - inference-models
+# is a standalone distribution and cannot depend on inference_sdk.
+_ROBOFLOW_API_HOSTS = {
+    ("us", "prod"): "https://api.roboflow.com",
+    ("us", "staging"): "https://api.roboflow.one",
+    ("eu", "prod"): "https://api.roboflow.eu",
+    ("eu", "staging"): "https://api.roboflow-eu.one",
+}
+ROBOFLOW_REGION = os.getenv("ROBOFLOW_REGION", "us").strip().lower()
+if ROBOFLOW_REGION not in {region for region, _ in _ROBOFLOW_API_HOSTS}:
+    warnings.warn(
+        f"Unknown ROBOFLOW_REGION {ROBOFLOW_REGION!r} - falling back to 'us'. "
+        "Supported regions: eu, us.",
+    )
+    ROBOFLOW_REGION = "us"
 ROBOFLOW_API_HOST = os.getenv(
     "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT.lower() == "prod"
-        else "https://api.roboflow.one"
-    ),
+    _ROBOFLOW_API_HOSTS[
+        (
+            ROBOFLOW_REGION,
+            "prod" if ROBOFLOW_ENVIRONMENT.lower() == "prod" else "staging",
+        )
+    ],
 )
 _legacy_license_server = os.getenv("LICENSE_SERVER")
+# Bare hosts use HTTPS with a migration warning; explicit HTTP is loopback-only.
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
         "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
@@ -55,7 +78,33 @@ if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
+    )
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+OFFLINE_MODE_WARM_UP = get_boolean_from_env(
+    variable_name="OFFLINE_MODE_WARM_UP", default=False
+)
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
@@ -69,6 +118,17 @@ AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
 SAM3_IMAGE_SIZE = get_integer_from_env(variable_name="SAM3_IMAGE_SIZE", default=1008)
+INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE", default=8
+)
+if INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
     default=30.0,
@@ -83,6 +143,49 @@ CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
 )
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
+)
+
+
+# Single source of truth for the optional shared model blob cache. Values are
+# only parsed here - `ModelBlobCacheConfig` validates them on construction so a
+# misconfigured cache falls open instead of breaking the library import.
+MODEL_BLOB_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED", default=False
+)
+MODEL_BLOB_CACHE_BUCKET = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET")
+MODEL_BLOB_CACHE_PREFIX = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX", "model-blobs"
+)
+MODEL_BLOB_CACHE_ENDPOINT_URL = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL"
+)
+MODEL_BLOB_CACHE_REGION = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION")
+MODEL_BLOB_CACHE_ACCESS_KEY_ID = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID"
+)
+MODEL_BLOB_CACHE_SECRET_ACCESS_KEY = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY"
+)
+MODEL_BLOB_CACHE_ADDRESSING_STYLE = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE", "auto"
+)
+MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
+    default=1.0,
+)
+MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
+    default=2.0,
+)
+MODEL_BLOB_CACHE_FAILURE_THRESHOLD = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD", default=3
+)
+MODEL_BLOB_CACHE_COOLDOWN_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS", default=60.0
+)
+MODEL_BLOB_CACHE_MAX_OBJECT_BYTES = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES",
+    default=20 * 1024**3,  # 20 GiB
 )
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
@@ -125,6 +228,18 @@ INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS",
     default=300,
 )
+INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE",
+    default=16,
+)
+if INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
 INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS",
     default=False,
@@ -224,6 +339,62 @@ INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
+INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+MAGE_VL_CODEC_ENGINES = {"hevc", "dcvc-rt"}
+
+
+def _parse_mage_vl_codec_engine(variable_name: str, default: str) -> str:
+    value = os.getenv(variable_name, default)
+    if value not in MAGE_VL_CODEC_ENGINES:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be one of "
+            f"{sorted(MAGE_VL_CODEC_ENGINES)} but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+def _parse_positive_integer_from_env(variable_name: str, default: int) -> int:
+    value = get_integer_from_env(variable_name=variable_name, default=default)
+    if value <= 0:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be a "
+            f"positive integer but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+# "hevc" runs the cv-preinfer binary on CPU; "dcvc-rt" runs the bundled neural
+# codec and is an order of magnitude slower without its compiled CUDA kernels.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE = _parse_mage_vl_codec_engine(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE",
+    default="hevc",
+)
+# Number of codec canvases packed out of the video and handed to the model.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS",
+    default=16,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS",
+    default=153664,
+)
 INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
     default=8192,
@@ -238,6 +409,14 @@ INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
 )
 INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE",
     default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
 )
 INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
@@ -289,6 +468,88 @@ INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
 )
+INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS",
+    default=4096 * 2160,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS",
+    default=32768,
+)
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+    default=8192 * 4320,
+)
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+    default=8192,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DETR_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.3,
+)
+INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.2,
+)
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+)
+RFDETR_PIPELINE_DEPTH_ENV_NAME = "RFDETR_PIPELINE_DEPTH"
+DEFAULT_RFDETR_PIPELINE_DEPTH = 1
+MIN_RFDETR_PIPELINE_DEPTH = 1
+MAX_RFDETR_PIPELINE_DEPTH = 2
+
+
+def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
+    """Parse and validate the RF-DETR streaming pipeline depth.
+
+    Depth is the number of in-flight CPU/GPU stages the stream adapter may keep
+    alive. ``1`` preserves the original synchronous behavior; values greater
+    than one enable delayed response finalization. Values above the supported
+    maximum are normalized to ``2``. Zero, negative, and non-integer values are
+    rejected instead of being silently clamped.
+    """
+    if value is None:
+        return DEFAULT_RFDETR_PIPELINE_DEPTH
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be an integer but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    if parsed < MIN_RFDETR_PIPELINE_DEPTH:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be >= {MIN_RFDETR_PIPELINE_DEPTH} but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return min(parsed, MAX_RFDETR_PIPELINE_DEPTH)
+
+
+def get_rfdetr_pipeline_depth() -> int:
+    """Read and validate ``RFDETR_PIPELINE_DEPTH`` from the environment."""
+    return parse_rfdetr_pipeline_depth(os.getenv(RFDETR_PIPELINE_DEPTH_ENV_NAME))
+
+
+RFDETR_PIPELINE_DEPTH = get_rfdetr_pipeline_depth()
 INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE",
     default=0.99,

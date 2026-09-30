@@ -15,6 +15,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
 )
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -42,6 +43,7 @@ from inference_models.models.common.roboflow.post_processing import ConfidenceFi
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -134,6 +136,7 @@ class VITForClassificationOnnx(
             required_capabilities=kwargs.get("required_capabilities"),
             output_type=kwargs.get("output_type", "feature_vector"),
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
@@ -185,14 +188,19 @@ class VITForClassificationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )[0]
+        pre_process_stream = self._pre_process_stream
+        with use_cuda_stream(pre_process_stream):
+            pre_processed_images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )[0]
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
@@ -203,6 +211,7 @@ class VITForClassificationOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -210,14 +219,33 @@ class VITForClassificationOnnx(
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
-            confidence = model_results
-        else:
-            confidence = torch.nn.functional.softmax(model_results, dim=-1)
-        return ClassificationPrediction(
-            class_id=confidence.argmax(dim=-1),
-            confidence=confidence,
-        )
+        post_process_stream = self._post_process_stream
+        with use_cuda_stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            if self._inference_config.post_processing.fused:
+                confidence = model_results
+            else:
+                confidence = torch.nn.functional.softmax(model_results, dim=-1)
+            results = ClassificationPrediction(
+                class_id=confidence.argmax(dim=-1),
+                confidence=confidence,
+            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")
 
 
 class VITForMultiLabelClassificationOnnx(
@@ -292,6 +320,7 @@ class VITForMultiLabelClassificationOnnx(
             required_capabilities=kwargs.get("required_capabilities"),
             output_type=kwargs.get("output_type", "feature_vector"),
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
@@ -346,14 +375,19 @@ class VITForMultiLabelClassificationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )[0]
+        pre_process_stream = self._pre_process_stream
+        with use_cuda_stream(pre_process_stream):
+            pre_processed_images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )[0]
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
@@ -364,6 +398,7 @@ class VITForMultiLabelClassificationOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -382,19 +417,37 @@ class VITForMultiLabelClassificationOnnx(
             threshold = threshold.to(
                 dtype=model_results.dtype, device=model_results.device
             )
-        if self._inference_config.post_processing.fused:
-            model_results = model_results
-        else:
-            model_results = torch.nn.functional.sigmoid(model_results)
-        results = []
-        for batch_element_confidence in model_results:
-            predicted_classes = torch.argwhere(
-                batch_element_confidence >= threshold
-            ).squeeze(dim=-1)
-            results.append(
-                MultiLabelClassificationPrediction(
-                    class_ids=predicted_classes,
-                    confidence=batch_element_confidence,
+        post_process_stream = self._post_process_stream
+        with use_cuda_stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            if self._inference_config.post_processing.fused:
+                model_results = model_results
+            else:
+                model_results = torch.nn.functional.sigmoid(model_results)
+            results = []
+            for batch_element_confidence in model_results:
+                predicted_classes = torch.argwhere(
+                    batch_element_confidence >= threshold
+                ).squeeze(dim=-1)
+                results.append(
+                    MultiLabelClassificationPrediction(
+                        class_ids=predicted_classes,
+                        confidence=batch_element_confidence,
+                    )
                 )
-            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

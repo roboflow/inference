@@ -1,11 +1,13 @@
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.container_adapter import (
-    ensure_docker_is_running,
+    CONTAINER_RUNTIME_PODMAN,
+    detect_container_runtime,
+    ensure_container_runtime_is_running,
     stop_inference_containers,
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
@@ -24,6 +26,17 @@ def start(
             help="Port to run the inference server on (default is 9001).",
         ),
     ] = 9001,
+    bind_address: Annotated[
+        Optional[str],
+        typer.Option(
+            "--bind-address",
+            "-b",
+            help="Host address the server port is published on. Defaults to 127.0.0.1 (connections only from this "
+            "machine), except for Jetson images, which default to 0.0.0.0 because they are usually driven from "
+            "another machine. Binding to 0.0.0.0 exposes a server that has no authentication by default and runs "
+            "Workflows Custom Python blocks, so secure it first.",
+        ),
+    ] = None,
     rf_env: Annotated[
         str,
         typer.Option(
@@ -46,7 +59,12 @@ def start(
         typer.Option(
             "--dev",
             "-d",
-            help="Run inference server in development mode (default is False).",
+            help="Run inference server in development mode (default is False). "
+            "Also sets ENABLE_BUILDER=True and NOTEBOOK_ENABLED=True in the "
+            "container, which turns on the Workflows builder UI (/build) and "
+            "the Jupyter notebook server. Set those two variables directly "
+            "(for example with --env-file) to enable them without the rest "
+            "of development mode.",
         ),
     ] = False,
     api_key: Annotated[
@@ -87,24 +105,63 @@ def start(
             help="Flag controlling if metrics are enabled (default is True)",
         ),
     ] = True,
+    volumes: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--volume",
+            "-v",
+            help="Volume mount in the format /host/path:/container/path[:ro]. Can be specified multiple times.",
+        ),
+    ] = None,
 ) -> None:
 
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
+
+    if tunnel and detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        # Fail before the inference container launches: the tunnel image is
+        # only driven through the Docker SDK.
+        typer.echo(
+            "The tunnel image is only launched through Docker; the podman "
+            "runtime path for it is not implemented yet. Start the tunnel "
+            "manually or run the server on a Docker host."
+        )
+        raise typer.Exit(code=1)
+
+    if tunnel and bind_address != "0.0.0.0":
+        typer.echo(
+            "The tunnel runs in a separate container and reaches the server through the host gateway, which a "
+            "loopback-only binding rejects. Publishing the server on 0.0.0.0 so the tunnel can connect."
+        )
+        bind_address = "0.0.0.0"
+
+    parsed_volumes = {}
+    for v in volumes or []:
+        parts = v.split(":")
+        if len(parts) < 2:
+            typer.echo(
+                f"Invalid volume format: {v}. Expected /host/path:/container/path[:ro]"
+            )
+            raise typer.Exit(code=1)
+        host_path, container_path = parts[0], parts[1]
+        mode = parts[2] if len(parts) == 3 else "rw"
+        parsed_volumes[host_path] = {"bind": container_path, "mode": mode}
 
     try:
         start_inference_container(
             image=image,
             port=port,
+            bind_address=bind_address,
             project=rf_env,
             env_file_path=env_file_path,
             development=development,
             api_key=api_key,
             use_local_images=use_local_images,
             metrics_enabled=metrics_enabled,
+            volumes=parsed_volumes or None,
         )
     except Exception as container_error:
         typer.echo(container_error)
@@ -126,7 +183,7 @@ def start(
 def status() -> None:
     typer.echo("Checking status of the inference server.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
@@ -142,7 +199,7 @@ def status() -> None:
 def stop() -> None:
     typer.echo("Terminating running inference containers.")
     try:
-        ensure_docker_is_running()
+        ensure_container_runtime_is_running()
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error

@@ -72,13 +72,6 @@ class GCPCloudLoggingProcessor:
         return event_dict
 
 
-class NoTracebackFormatter(logging.Formatter):
-    def format(self, record):
-        # Remove exc_info before formatting
-        record.exc_info = None
-        return super().format(record)
-
-
 def structlog_exception_formatter(
     logger_instance: WrappedLogger, name: str, event_dict: EventDict
 ) -> EventDict:
@@ -115,6 +108,19 @@ def structlog_exception_formatter(
     return event_dict
 
 
+# Workflows logs through `logging.getLogger(__name__)` under this package name.
+EXTRACTED_PACKAGE_LOGGERS = ("roboflow_workflows", "streamvision")
+
+
+def _attach_to_extracted_packages(handler: logging.Handler) -> None:
+    """Mirror the "inference" logger's handler and level onto extracted packages."""
+    for name in EXTRACTED_PACKAGE_LOGGERS:
+        extracted_logger = logging.getLogger(name)
+        extracted_logger.addHandler(handler)
+        extracted_logger.setLevel(LOG_LEVEL)
+        extracted_logger.propagate = False
+
+
 if API_LOGGING_ENABLED:
 
     is_gcp_environment = GCP_SERVERLESS or DEDICATED_DEPLOYMENT_ID is not None
@@ -128,11 +134,13 @@ if API_LOGGING_ENABLED:
 
     from inference.core.telemetry import trace_context_log_processor
 
-    processors = [
+    # Processors shared by structlog-originated records and by records that
+    # stdlib loggers emit under the `inference` tree - Workflows logs through
+    # `logging.getLogger(__name__)` since the decontamination (Phase 1).
+    shared_processors = [
         add_correlation,
         trace_context_log_processor,
         add_execution_id,
-        structlog.stdlib.filter_by_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
         structlog.processors.StackInfoRenderer(),
@@ -145,15 +153,19 @@ if API_LOGGING_ENABLED:
             ],
         ),
     ]
-
+    render_processors = []
     if is_gcp_environment:
-        processors.insert(1, add_gcp_severity)
-        processors.append(GCPCloudLoggingProcessor())
-
-    processors.append(structlog.processors.JSONRenderer())
+        shared_processors.insert(1, add_gcp_severity)
+        render_processors.append(GCPCloudLoggingProcessor())
+    render_processors.append(structlog.processors.JSONRenderer())
 
     structlog.configure(
-        processors=processors,
+        processors=[
+            structlog.stdlib.filter_by_level,
+            *shared_processors,
+            # hand the event dict to the stdlib handler's ProcessorFormatter
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         wrapper_class=structlog.stdlib.BoundLogger,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
@@ -162,11 +174,24 @@ if API_LOGGING_ENABLED:
     logger.setLevel(LOG_LEVEL)
     bounded_logger = logger.bind()
     handler = logging.StreamHandler()
-    handler.setFormatter(NoTracebackFormatter("%(message)s"))
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            # structlog records arrive pre-processed; foreign (stdlib) records
+            # get the same chain through foreign_pre_chain. Both end as JSON.
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                *render_processors,
+            ],
+            foreign_pre_chain=shared_processors,
+        )
+    )
     bounded_logger._logger.addHandler(handler)
     bounded_logger._logger.propagate = False
+    _attach_to_extracted_packages(handler)
 else:
     logger = logging.getLogger("inference")
     logger.setLevel(LOG_LEVEL)
-    logger.addHandler(RichHandler())
+    rich_handler = RichHandler()
+    logger.addHandler(rich_handler)
     logger.propagate = False
+    _attach_to_extracted_packages(rich_handler)
