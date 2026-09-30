@@ -4012,7 +4012,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.4rc2"
+version = "0.2.4rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anthropic" },
@@ -4057,9 +4057,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/c7/dc876d0b0da1eb00d29ab92ee27386bf28dfd15fd7949896c55bfa222a64/roboflow_workflows-0.2.4rc2.tar.gz", hash = "sha256:48aa1732847c0e1cfbeb85b4ce77c0c07cd14390971233ff5fce65ee996e9107", size = 5252085, upload-time = "2026-09-29T11:28:03.435Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/2f/e7477b696a7aa05edae2975009ded277b9003d661ad69bd49b0005360b35/roboflow_workflows-0.2.4rc3.tar.gz", hash = "sha256:af01a72ec1045fa160a565b5ffd74b1455edbdd2e93ae5c23bedf20feff7aeda", size = 5252906, upload-time = "2026-09-29T17:55:58.058Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4c/51/f340eef498b5d5788ae10444b9ae9eba9a5cdb61fd29bb2c9b1e3fb64362/roboflow_workflows-0.2.4rc2-py3-none-any.whl", hash = "sha256:63ab290e89bfb5ae5502f084e489bbf3275cdfb23b66d096ee757c515ef59c7e", size = 6290867, upload-time = "2026-09-29T11:28:01.243Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/f9/dd3e693d6e6b081ff58de968782ef563a98153f20ec0757ce33d73bd8f8d/roboflow_workflows-0.2.4rc3-py3-none-any.whl", hash = "sha256:1e388ab54496a3c407a23f5890c0e3b3e8b653b90a44aac54c85745b6e4b015b", size = 6290322, upload-time = "2026-09-29T17:55:56.142Z" },
 ]
 
 [[package]]
@@ -4464,12 +4464,13 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.0rc4"
+version = "0.1.0rc6"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "opencv-python" },
+    { name = "pillow" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "supervision" },
@@ -4478,6 +4479,7 @@ dependencies = [
 [package.optional-dependencies]
 nvdec = [
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
 ]
 test = [
     { name = "pytest" },
@@ -4492,6 +4494,7 @@ webrtc = [
 ]
 workflows = [
     { name = "roboflow-workflows" },
+    { name = "torch" },
 ]
 
 [package.metadata]
@@ -4500,6 +4503,7 @@ requires-dist = [
     { name = "av", marker = "extra == 'webrtc'", specifier = "==14.2.0" },
     { name = "numpy", specifier = ">=2.0.0,<2.4.0" },
     { name = "opencv-python", specifier = ">=4.8.1.78,<4.13.0" },
+    { name = "pillow", specifier = ">=12.3.0,<13.0.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
@@ -4507,23 +4511,25 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "<=0.21.1" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.4rc2" },
-    { name = "supervision", specifier = ">=0.29.0,<0.30.0" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.4rc3" },
+    { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
+    { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
+    { name = "torch", marker = "extra == 'workflows'", specifier = ">=2.0.1,<3.0.0" },
 ]
 provides-extras = ["webrtc", "workflows", "nvdec", "test"]
 
 [[package]]
 name = "supervision"
-version = "0.29.1"
+version = "0.30.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "av" },
     { name = "defusedxml" },
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "opencv-python" },
     { name = "pillow" },
     { name = "pydeprecate" },
     { name = "pyyaml" },
@@ -4533,9 +4539,9 @@ dependencies = [
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/ec/293e5693ef5f32b54533b680b909a96976925adbb5c3bbfbf53b199182e0/supervision-0.29.1.tar.gz", hash = "sha256:2db9f968a3253e6778573c39bbb8a8e3fa586ece6c98fbdc41d8fd8508eda5af", size = 246950, upload-time = "2026-06-23T19:55:37.717Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/20/4f519117a529bd35724ab3fa578e96539f96e0a3fabf30ea3556697e6fae/supervision-0.30.6.tar.gz", hash = "sha256:7fc29bd04a6b045c8f0b102371b2acabb81bd09f49d6d92313a47cedc0eb00b8", size = 356972, upload-time = "2026-09-29T11:08:05.157Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/7c/ed95842ac2e323f6a0fcaf5a5bb56b62c0596a4b177872da9f7605ca1ceb/supervision-0.29.1-py3-none-any.whl", hash = "sha256:8518f6bad0d19ff7a959d1b9eb1b54517aded814aa7f237598fed0e3a772c281", size = 280218, upload-time = "2026-06-23T19:55:36.114Z" },
+    { url = "https://files.pythonhosted.org/packages/69/32/ec4c7465e2fd88bac2590d1883951ea0933bdfb6992854863bd5d401bded/supervision-0.30.6-py3-none-any.whl", hash = "sha256:a3ed50fee54448146ebaf4c158a34285db618c1271484dec806b1142a8872f12", size = 395535, upload-time = "2026-09-29T11:08:03.626Z" },
 ]
 
 [[package]]

@@ -68,7 +68,7 @@ verifies an installed wheel runs without `inference`.
 |---|---|
 | `workflows` | `InferencePipeline.init_with_workflow`, `build_workflows_profiler`, the stream manager server |
 | `webrtc` | the stream manager server (`python -m streamvision`) |
-| `nvdec` | `PyNvVideoCodecFrameProducer` (Linux x86_64 and Windows x64) |
+| `nvdec` | PyNvVideoCodec and Torch for `PyNvVideoCodecFrameProducer` (Linux x86_64 and Windows x64); ensure Torch is a compatible CUDA build |
 | `test` | running the package tests |
 
 Without `workflows`, cameras, `InferencePipeline.init_with_custom_logic`, sinks, the

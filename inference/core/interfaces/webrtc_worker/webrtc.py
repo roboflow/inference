@@ -2,10 +2,12 @@ import asyncio
 import base64
 import datetime
 import gzip
+import inspect
 import json
 import logging
 import struct
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import time
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import orjson
 import supervision as sv
@@ -1147,9 +1149,19 @@ def _open_media_player(file: str, **kwargs) -> MediaPlayer:
         ) from None
 
 
+async def _deliver_answer(
+    callback: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
+    result: WebRTCWorkerResult,
+) -> None:
+    """Await async transports while retaining synchronous worker callbacks."""
+    delivery = callback(result)
+    if inspect.isawaitable(delivery):
+        await delivery
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
-    send_answer: Callable[[WebRTCWorkerResult], None],
+    send_answer: Callable[[WebRTCWorkerResult], Optional[Awaitable[None]]],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
@@ -1264,41 +1276,45 @@ async def init_rtc_peer_connection_with_loop(
     ) as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message="Could not decode InferencePipeline initialisation command payload.",
-            )
+            ),
         )
         return
     except WebRTCConfigurationError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except RoboflowAPINotAuthorizedError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotAuthorizedError.__name__,
                 error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
-            )
+            ),
         )
         return
     except RoboflowAPINotNotFoundError:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotNotFoundError.__name__,
                 error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
-            )
+            ),
         )
         return
     except WorkflowSyntaxError as error:
@@ -1309,7 +1325,8 @@ async def init_rtc_peer_connection_with_loop(
             blocks_errors_serialized = [
                 block_error.model_dump() for block_error in error.blocks_errors
             ]
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=error.public_message,
@@ -1317,27 +1334,30 @@ async def init_rtc_peer_connection_with_loop(
                 inner_error=str(error.inner_error) if error.inner_error else None,
                 inner_error_type=error.inner_error_type,
                 blocks_errors=blocks_errors_serialized,
-            )
+            ),
         )
         return
     except WorkflowError as error:
         if heartbeat_callback:
             heartbeat_callback()
-        send_answer(
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=WorkflowError.__name__,
                 error_message=str(error),
-            )
+            ),
         )
         return
     except Exception as error:
-        send_answer(
+        logger.exception("WebRTC pipeline initialization failed")
+        await _deliver_answer(
+            send_answer,
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message=str(error),
-            )
+            ),
         )
-        return
+        raise
 
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=_build_rtc_configuration(
@@ -1620,13 +1640,14 @@ async def init_rtc_peer_connection_with_loop(
         peer_connection.connectionState,
     )
 
-    send_answer(
+    await _deliver_answer(
+        send_answer,
         WebRTCWorkerResult(
             answer={
                 "type": peer_connection.localDescription.type,
                 "sdp": peer_connection.localDescription.sdp,
             },
-        )
+        ),
     )
 
     logger.info("Answer sent, waiting for termination event")
