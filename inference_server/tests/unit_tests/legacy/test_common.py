@@ -37,6 +37,37 @@ def test_image_dims_reads_jpeg_header():
     assert image_dims(_jpeg(7, 5)) == (7, 5)
 
 
+@pytest.mark.parametrize(
+    "orientation,expected", [(1, (7, 5)), (3, (7, 5)), (6, (5, 7)), (8, (5, 7))]
+)
+def test_image_dims_reports_exif_oriented_size(orientation, expected):
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buf = io.BytesIO()
+    Image.new("RGB", (7, 5)).save(buf, format="JPEG", exif=exif)
+    assert image_dims(buf.getvalue()) == expected
+
+
+@pytest.mark.parametrize("orientation", [3, 6, 8])
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "TIFF", "WEBP"])
+def test_image_dims_match_decoded_pixels_per_format(fmt, orientation):
+    """Reported size follows cv2.imdecode: JPEG/PNG/TIFF oriented, WebP not."""
+    from inference_model_manager.backends.decode import make_decoder
+
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    options = {"WEBP": {"lossless": True}}.get(fmt, {})
+    buf = io.BytesIO()
+    Image.new("RGB", (7, 5)).save(buf, fmt, exif=exif.tobytes(), **options)
+    data = buf.getvalue()
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.getexif().get(0x0112) == orientation
+    decoded = make_decoder("imagecodecs")(data)
+    assert image_dims(data) == (decoded.shape[1], decoded.shape[0])
+    transposed = fmt != "WEBP" and orientation in (6, 8)
+    assert image_dims(data) == ((5, 7) if transposed else (7, 5))
+
+
 def test_image_dims_reads_npy_header():
     buf = io.BytesIO()
     np.save(buf, np.zeros((5, 7, 3), dtype=np.uint8), allow_pickle=False)

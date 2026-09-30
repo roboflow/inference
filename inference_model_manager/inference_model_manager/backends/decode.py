@@ -9,6 +9,7 @@ Decoders:
 from __future__ import annotations
 
 import threading
+import zlib
 from typing import Any, Callable
 
 import imagecodecs
@@ -69,6 +70,166 @@ def _jpeg_header_pixels(data: bytes | memoryview) -> int:
             return 0
         offset += 2 + segment_length
     return 0
+
+
+_EXIF_ORIENTATION_TAG = 0x0112
+# Orientations 5-8 store the image transposed: decoded width and height swap.
+EXIF_TRANSPOSING_ORIENTATIONS = frozenset((5, 6, 7, 8))
+
+
+def exif_orientation(data: bytes | memoryview) -> int:
+    """EXIF Orientation (1-8) the decoder applies to ``data``, 1 when none.
+
+    Follows cv2.imdecode(IMREAD_COLOR), the previous server's decoder, format
+    by format: JPEG (APP1 Exif block), PNG (eXIf chunk) and TIFF (IFD0 tag)
+    are oriented; WebP and every other format are not, even when they carry
+    the tag. Only headers and metadata are read. Malformed EXIF is ignored,
+    as OpenCV does.
+    """
+    head = bytes(data[:8])
+    if head[:3] == b"\xff\xd8\xff":
+        return _jpeg_orientation(data)
+    if head == b"\x89PNG\r\n\x1a\n":
+        return _png_orientation(data)
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return _tiff_orientation(data) or 1
+    return 1
+
+
+def decoded_dims(data: bytes | memoryview, width: int, height: int) -> tuple[int, int]:
+    """(width, height) of the image the decoder returns for ``data``.
+
+    ``width`` and ``height`` are the size a header reader (e.g. Pillow)
+    reported. TIFF re-reads its stored size from IFD0 instead, because Pillow
+    already swaps the reported TIFF size for orientations 5-8. The swap below
+    then uses the same rule as the decoder, so size and pixels always agree.
+    """
+    if bytes(data[:4]) in (b"II*\x00", b"MM\x00*"):
+        stored = _tiff_ifd0(data, (_TIFF_WIDTH_TAG, _TIFF_HEIGHT_TAG))
+        if _TIFF_WIDTH_TAG in stored and _TIFF_HEIGHT_TAG in stored:
+            width, height = stored[_TIFF_WIDTH_TAG], stored[_TIFF_HEIGHT_TAG]
+    if exif_orientation(data) in EXIF_TRANSPOSING_ORIENTATIONS:
+        return height, width
+    return width, height
+
+
+def _jpeg_orientation(data: bytes | memoryview) -> int:
+    """Orientation from the APP1 Exif block, walking segments up to the scan."""
+    size = len(data)
+    offset = 2
+    while offset + 3 < size:
+        if data[offset] != 0xFF:
+            return 1
+        marker = data[offset + 1]
+        if marker == 0xFF:
+            offset += 1
+            continue
+        # Start of scan / end of image: the metadata segments are behind us.
+        if marker in (0xDA, 0xD9):
+            return 1
+        segment_length = int.from_bytes(data[offset + 2 : offset + 4], "big")
+        if segment_length < 2:
+            return 1
+        payload_start = offset + 4
+        payload_end = min(offset + 2 + segment_length, size)
+        if marker == 0xE1 and bytes(data[payload_start : payload_start + 6]) == (
+            b"Exif\x00\x00"
+        ):
+            orientation = _tiff_orientation(
+                bytes(data[payload_start + 6 : payload_end])
+            )
+            if orientation is not None:
+                return orientation
+        offset += 2 + segment_length
+    return 1
+
+
+def _png_orientation(data: bytes | memoryview) -> int:
+    """Orientation from the first eXIf chunk, 1 when absent or invalid.
+
+    libpng (behind cv2.imdecode) honours eXIf before or after the image data,
+    requires the payload to start with the TIFF byte-order mark (no
+    "Exif\\0\\0" prefix) and drops the chunk when its CRC is wrong.
+    """
+    size = len(data)
+    offset = 8
+    while offset + 8 <= size:
+        length = int.from_bytes(data[offset : offset + 4], "big")
+        chunk_type = bytes(data[offset + 4 : offset + 8])
+        payload_end = offset + 8 + length
+        if chunk_type == b"IEND" or payload_end + 4 > size:
+            return 1
+        if chunk_type == b"eXIf":
+            crc = int.from_bytes(data[payload_end : payload_end + 4], "big")
+            if zlib.crc32(data[offset + 4 : payload_end]) != crc:
+                return 1
+            return _tiff_orientation(bytes(data[offset + 8 : payload_end])) or 1
+        offset = payload_end + 4
+    return 1
+
+
+_TIFF_WIDTH_TAG = 0x0100
+_TIFF_HEIGHT_TAG = 0x0101
+
+
+def _tiff_ifd0(tiff: bytes | memoryview, tags: tuple[int, ...]) -> dict[int, int]:
+    """SHORT/LONG values of ``tags`` in IFD0 of a TIFF block; malformed → {}."""
+    if len(tiff) < 8:
+        return {}
+    if tiff[:2] == b"II":
+        order = "little"
+    elif tiff[:2] == b"MM":
+        order = "big"
+    else:
+        return {}
+    if int.from_bytes(tiff[2:4], order) != 42:
+        return {}
+    ifd = int.from_bytes(tiff[4:8], order)
+    if ifd + 2 > len(tiff):
+        return {}
+    entries = int.from_bytes(tiff[ifd : ifd + 2], order)
+    found: dict[int, int] = {}
+    for index in range(entries):
+        entry = ifd + 2 + 12 * index
+        if entry + 12 > len(tiff):
+            return {}
+        tag = int.from_bytes(tiff[entry : entry + 2], order)
+        if tag not in tags:
+            continue
+        value_type = int.from_bytes(tiff[entry + 2 : entry + 4], order)
+        if value_type == 3:  # SHORT
+            found[tag] = int.from_bytes(tiff[entry + 8 : entry + 10], order)
+        elif value_type == 4:  # LONG
+            found[tag] = int.from_bytes(tiff[entry + 8 : entry + 12], order)
+    return found
+
+
+def _tiff_orientation(tiff: bytes | memoryview) -> int | None:
+    """Orientation tag from IFD0 of a TIFF block, None when absent or invalid."""
+    value = _tiff_ifd0(tiff, (_EXIF_ORIENTATION_TAG,)).get(_EXIF_ORIENTATION_TAG)
+    return value if value is not None and 1 <= value <= 8 else None
+
+
+def apply_exif_orientation(image: np.ndarray, orientation: int) -> np.ndarray:
+    """Rotate/flip an HWC array to upright, matching PIL's exif_transpose.
+
+    Returns a view; the caller makes it contiguous.
+    """
+    if orientation == 2:
+        return image[:, ::-1]
+    if orientation == 3:
+        return image[::-1, ::-1]
+    if orientation == 4:
+        return image[::-1]
+    if orientation == 5:
+        return image.swapaxes(0, 1)
+    if orientation == 6:
+        return image.swapaxes(0, 1)[:, ::-1]
+    if orientation == 7:
+        return image.swapaxes(0, 1)[::-1, ::-1]
+    if orientation == 8:
+        return image.swapaxes(0, 1)[::-1]
+    return image
 
 
 def _reject_oversized(pixels: int, limit: int, stage: str) -> None:
@@ -171,13 +332,20 @@ def _to_rgb_hwc(img: np.ndarray) -> np.ndarray:
 def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     """Decode compressed image bytes to RGB HWC uint8 via an explicit codec.
 
+    EXIF orientation is applied where cv2.imdecode applies it (JPEG, PNG,
+    TIFF), so the result is upright. The result may be a non-contiguous view.
+
     Falls back to imagecodecs.imread() probing when the header is unrecognised.
     """
     raw = bytes(data)
     codec = _select_codec(raw)
     if codec is None:
         return _to_rgb_hwc(imagecodecs.imread(raw))
-    return _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
+    image = _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
+    # imagecodecs ignores EXIF; cv2.imdecode (the previous server) honours it
+    # for JPEG, PNG and TIFF, so a rotated phone photo must reach the model
+    # upright. exif_orientation returns 1 for the formats OpenCV leaves as is.
+    return apply_exif_orientation(image, exif_orientation(raw))
 
 
 DECODER_FACTORIES: dict[str, Callable[[str], Callable[[bytes], Any]]] = {}
