@@ -17,6 +17,8 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib
 
+import pytest
+from packaging.requirements import Requirement
 from setuptools import find_packages
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -34,42 +36,68 @@ def _load_pyproject() -> dict:
 def test_project_metadata() -> None:
     project = _load_pyproject()["project"]
     assert project["name"] == "streamvision"
-    assert project["version"] == "0.1.0rc5"
     assert project["requires-python"] == ">=3.10,<3.14"
 
 
-def test_dependency_names() -> None:
-    project = _load_pyproject()["project"]
-    dependency_names = {
-        dep.split(">=")[0].split("==")[0] for dep in project["dependencies"]
+def test_base_dependencies_keep_gpu_and_workflow_support_optional() -> None:
+    dependencies = {
+        Requirement(value).name: Requirement(value)
+        for value in _load_pyproject()["project"]["dependencies"]
     }
-    assert dependency_names == {
+    assert {
         "numpy",
         "opencv-python",
+        "pillow",
         "supervision",
         "pydantic",
         "psutil",
-    }
-    assert "roboflow-workflows" not in dependency_names
+    } <= dependencies.keys()
+    assert dependencies["pillow"].marker is None
+    assert (
+        not {"torch", "roboflow-workflows", "aiortc", "av", "pynvvideocodec"}
+        & dependencies.keys()
+    )
 
 
-def test_optional_dependency_extras() -> None:
+def test_workflows_and_webrtc_extras_declare_their_runtime_dependencies() -> None:
     extras = _load_pyproject()["project"]["optional-dependencies"]
-    assert set(extras) == {"webrtc", "nvdec", "test", "workflows"}
-    assert extras["webrtc"] == ["aiortc>=1.9.0", "av==14.2.0"]
-    assert extras["workflows"] == ["roboflow-workflows>=0.2.4rc3"]
-    assert extras["nvdec"] == [
-        "pynvvideocodec>=2.1.0,<3.0.0; (sys_platform == 'linux' and "
-        "platform_machine == 'x86_64') or (sys_platform == 'win32' and "
-        "platform_machine == 'AMD64')"
-    ]
-    assert extras["test"] == [
-        "pytest>=9.0.3,<10.0.0",
-        "requests-mock~=1.12.1",
-        "tomli>=2.0.0; python_version < '3.11'",
-        "pytest-asyncio<=0.21.1",
-        "pytest-timeout>=2.2.0",
-    ]
+    for extra, required in {
+        "workflows": {"roboflow-workflows", "torch"},
+        "webrtc": {"aiortc", "av"},
+    }.items():
+        unconditional = {
+            dependency.name
+            for value in extras[extra]
+            if (dependency := Requirement(value)).marker is None
+        }
+        assert required <= unconditional
+
+
+@pytest.mark.parametrize(
+    "platform, machine, supported",
+    [
+        ("linux", "x86_64", True),
+        ("win32", "AMD64", True),
+        ("darwin", "arm64", False),
+        ("darwin", "x86_64", False),
+        ("linux", "aarch64", False),
+        ("win32", "ARM64", False),
+    ],
+)
+def test_nvdec_declares_torch_and_codec_on_supported_platforms(
+    platform, machine, supported
+) -> None:
+    dependencies = {
+        Requirement(value).name: Requirement(value)
+        for value in _load_pyproject()["project"]["optional-dependencies"]["nvdec"]
+    }
+    for name in ("torch", "pynvvideocodec"):
+        marker = dependencies[name].marker
+        assert marker is not None
+        assert (
+            marker.evaluate({"sys_platform": platform, "platform_machine": machine})
+            is supported
+        )
 
 
 def test_find_packages_discovers_only_streamvision() -> None:

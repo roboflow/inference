@@ -4464,12 +4464,13 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.0rc5"
+version = "0.1.0rc6"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "opencv-python" },
+    { name = "pillow" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "supervision" },
@@ -4478,6 +4479,7 @@ dependencies = [
 [package.optional-dependencies]
 nvdec = [
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
 ]
 test = [
     { name = "pytest" },
@@ -4492,6 +4494,7 @@ webrtc = [
 ]
 workflows = [
     { name = "roboflow-workflows" },
+    { name = "torch" },
 ]
 
 [package.metadata]
@@ -4500,6 +4503,7 @@ requires-dist = [
     { name = "av", marker = "extra == 'webrtc'", specifier = "==14.2.0" },
     { name = "numpy", specifier = ">=2.0.0,<2.4.0" },
     { name = "opencv-python", specifier = ">=4.8.1.78,<4.13.0" },
+    { name = "pillow", specifier = ">=12.3.0,<13.0.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
@@ -4510,6 +4514,8 @@ requires-dist = [
     { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.4rc3" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
+    { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
+    { name = "torch", marker = "extra == 'workflows'", specifier = ">=2.0.1,<3.0.0" },
 ]
 provides-extras = ["webrtc", "workflows", "nvdec", "test"]
 
