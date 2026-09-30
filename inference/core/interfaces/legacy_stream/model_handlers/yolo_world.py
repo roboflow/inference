@@ -1,8 +1,9 @@
 from functools import partial
 from typing import Any, Callable, List
 
-from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.entities import ModelConfig
+from streamvision.camera.entities import VideoFrame
+from streamvision.stream.entities import ModelConfig
+
 from inference.models import YOLOWorld
 
 

@@ -220,7 +220,11 @@ def test_new_module_path_pattern_disables_the_sinks_in_both_modes(tensor_mode) -
         "USE_INFERENCE_MODELS": "True",
         "WORKFLOW_DISABLED_BLOCK_PATTERNS": "roboflow_workflows_plugin.sinks",
         "PYTHONPATH": os.pathsep.join(
-            [str(REPO_ROOT), str(REPO_ROOT / "inference_models")]
+            [
+                str(REPO_ROOT),
+                str(REPO_ROOT / "inference_models"),
+                str(REPO_ROOT / "stream_vision"),
+            ]
         ),
     }
     env.pop("WORKFLOW_DISABLED_BLOCK_TYPES", None)

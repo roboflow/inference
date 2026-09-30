@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional
 
 from inference.core import logger
 from inference.core.env import (
@@ -263,7 +263,7 @@ if modal is not None:
 
     async def run_rtc_peer_connection_with_watchdog(
         webrtc_request: WebRTCWorkerRequest,
-        send_answer: Callable[[WebRTCWorkerResult], None],
+        send_answer: Callable[[WebRTCWorkerResult], Awaitable[None]],
         model_manager: ModelManager,
         watchdog: Watchdog,
     ):
@@ -300,10 +300,6 @@ if modal is not None:
             logger.warning("Modal function was cancelled")
         except asyncio.CancelledError as exc:
             logger.warning("WebRTC connection task was cancelled (%s)", exc)
-        except Exception as exc:
-            logger.error(exc)
-        finally:
-            watchdog.stop()
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -414,19 +410,18 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN set: %s", bool(MODAL_IDENTITY_TOKEN))
 
-            def send_answer(obj: WebRTCWorkerResult):
+            async def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 if obj.error_message:
                     logger.error(
                         "Error: %s (%s)", obj.error_message, obj.exception_type
                     )
-                # Queue with no limit, below will never block
-                q.put(obj)
+                await q.put.aio(obj)
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
                 logger.info(error_msg)
-                send_answer(WebRTCWorkerResult(error_message=error_msg))
+                asyncio.run(send_answer(WebRTCWorkerResult(error_message=error_msg)))
                 return
             if (
                 not webrtc_request.webrtc_offer
@@ -435,7 +430,7 @@ if modal is not None:
             ):
                 error_msg = "Webrtc offer is missing, skipping processing"
                 logger.info(error_msg)
-                send_answer(WebRTCWorkerResult(error_message=error_msg))
+                asyncio.run(send_answer(WebRTCWorkerResult(error_message=error_msg)))
                 return
 
             watchdog = Watchdog(
@@ -459,9 +454,10 @@ if modal is not None:
                 logger.warning("Modal function was cancelled")
             except asyncio.CancelledError as exc:
                 logger.warning("WebRTC connection task was cancelled (%s)", exc)
-            except Exception as exc:
-                logger.warning("Unhandled exception: %s", exc)
+            except Exception:
+                logger.exception("WebRTC session failed")
             finally:
+                # This synchronous owner runs after asyncio.run has closed its loop.
                 watchdog.stop()
 
             _exec_session_stopped = datetime.datetime.now()

@@ -312,7 +312,11 @@ def _run(probe: str, tensor_mode: str, extra_env: dict) -> dict:
         # running NumPy twice under an inherited USE_INFERENCE_MODELS=False.
         "USE_INFERENCE_MODELS": "True",
         "PYTHONPATH": os.pathsep.join(
-            [str(REPO_ROOT), str(REPO_ROOT / "inference_models")]
+            [
+                str(REPO_ROOT),
+                str(REPO_ROOT / "inference_models"),
+                str(REPO_ROOT / "stream_vision"),
+            ]
         ),
     }
     # A case that sets neither variable must not inherit one from the shell.

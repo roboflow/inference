@@ -1,10 +1,14 @@
+from typing import Optional
+
 import numpy as np
+import pytest
 import supervision as sv
 from roboflow_workflows.core_steps.common.deserializers import (
     deserialize_detections_kind,
 )
 from roboflow_workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
+    filter_out_invalid_polygons,
     post_process_ocr_result,
 )
 from roboflow_workflows.execution_engine.entities.base import (
@@ -183,3 +187,236 @@ def test_post_process_ocr_result_with_invalid_polygons() -> None:
     assert len(detections) == 1
     assert len(detections.data["detection_id"]) == 1
     assert detections.data["detection_id"][0] == "valid_ocr"
+
+
+def _prediction_with_rle(detection_id: str, *, points: Optional[list]) -> dict:
+    return {
+        "width": 4,
+        "height": 4,
+        "x": 2,
+        "y": 2,
+        "confidence": 0.5,
+        "class_id": 0,
+        "class": "rle",
+        "points": points,
+        "rle": {"size": [4, 4], "counts": [0, 16]},
+        "detection_id": detection_id,
+        "parent_id": "image",
+    }
+
+
+def _mixed_polygon_and_rle_predictions() -> list:
+    return [
+        {
+            "width": 4,
+            "height": 4,
+            "x": 2,
+            "y": 2,
+            "confidence": 0.9,
+            "class_id": 1,
+            "class": "valid",
+            "points": [{"x": 0, "y": 0}, {"x": 4, "y": 0}, {"x": 2, "y": 4}],
+            "detection_id": "valid",
+            "parent_id": "image",
+        },
+        {
+            "width": 4,
+            "height": 4,
+            "x": 2,
+            "y": 2,
+            "confidence": 0.8,
+            "class_id": 2,
+            "class": "invalid",
+            "points": [{"x": 0, "y": 0}, {"x": 4, "y": 4}],
+            "detection_id": "invalid",
+            "parent_id": "image",
+        },
+        _prediction_with_rle("rle", points=[]),
+    ]
+
+
+def test_convert_inference_detections_batch_keeps_rle_predictions_with_short_points() -> (
+    None
+):
+    # given
+    predictions = [
+        {
+            "image": {"height": 4, "width": 4},
+            "predictions": _mixed_polygon_and_rle_predictions(),
+        }
+    ]
+
+    # when
+    result = convert_inference_detections_batch_to_sv_detections(
+        predictions=predictions,
+    )
+
+    # then
+    detections = result[0]
+    assert len(detections) == 2
+    assert list(detections.data["detection_id"]) == ["valid", "rle"]
+    assert list(detections.data["parent_id"]) == ["image", "image"]
+    assert list(detections.class_id) == [1, 0]
+
+
+@pytest.mark.parametrize("points", [[], None])
+def test_convert_inference_detections_batch_keeps_all_rle_predictions_with_empty_or_null_points(
+    points: Optional[list],
+) -> None:
+    # given
+    predictions = [
+        {
+            "image": {"height": 4, "width": 4},
+            "predictions": [
+                _prediction_with_rle("first", points=points),
+                _prediction_with_rle("second", points=points),
+            ],
+        }
+    ]
+
+    # when
+    result = convert_inference_detections_batch_to_sv_detections(
+        predictions=predictions,
+    )
+
+    # then
+    detections = result[0]
+    assert len(detections) == 2
+    assert list(detections.data["detection_id"]) == ["first", "second"]
+    assert detections.mask is not None
+    assert detections.mask.shape == (2, 4, 4)
+    assert detections.mask.all()
+
+
+def test_deserialize_detections_kind_keeps_rle_predictions_with_short_points() -> None:
+    # given
+    detections_input = {
+        "image": {"height": 4, "width": 4},
+        "predictions": _mixed_polygon_and_rle_predictions(),
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="test_param",
+        detections=detections_input,
+    )
+
+    # then
+    assert len(result) == 2
+    assert list(result.data["detection_id"]) == ["valid", "rle"]
+    assert list(result.data["parent_id"]) == ["image", "image"]
+    assert len(result.data["image_dimensions"]) == 2
+    assert list(result.class_id) == [1, 0]
+
+
+@pytest.mark.parametrize("points", [[], None])
+def test_deserialize_detections_kind_keeps_all_rle_predictions_with_empty_or_null_points(
+    points: Optional[list],
+) -> None:
+    # given
+    detections_input = {
+        "image": {"height": 4, "width": 4},
+        "predictions": [
+            _prediction_with_rle("first", points=points),
+            _prediction_with_rle("second", points=points),
+        ],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="test_param",
+        detections=detections_input,
+    )
+
+    # then
+    assert len(result) == 2
+    assert list(result.data["detection_id"]) == ["first", "second"]
+    assert result.mask is not None
+    assert result.mask.shape == (2, 4, 4)
+    assert result.mask.all()
+
+
+def test_deserialize_detections_kind_returns_empty_detections_when_predictions_is_none() -> (
+    None
+):
+    # given
+    detections_input = {"image": {"height": 4, "width": 4}, "predictions": None}
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="test_param",
+        detections=detections_input,
+    )
+
+    # then
+    assert len(result) == 0
+
+
+def test_deserialize_detections_kind_keeps_rle_mask_predictions_with_short_points() -> (
+    None
+):
+    # given
+    rle_mask_prediction = _prediction_with_rle("rle_mask", points=[{"x": 0, "y": 0}])
+    rle_mask_prediction["rle_mask"] = rle_mask_prediction.pop("rle")
+    detections_input = {
+        "image": {"height": 4, "width": 4},
+        "predictions": [rle_mask_prediction],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="test_param",
+        detections=detections_input,
+    )
+
+    # then
+    assert list(result.data["detection_id"]) == ["rle_mask"]
+    assert result.mask is not None
+    assert result.mask.shape == (1, 4, 4)
+
+
+_TWO_POINTS = [{"x": 0, "y": 0}, {"x": 4, "y": 4}]
+_THREE_POINTS = [{"x": 0, "y": 0}, {"x": 4, "y": 0}, {"x": 2, "y": 4}]
+_VALID_RLE = {"size": [4, 4], "counts": [0, 16]}
+
+
+@pytest.mark.parametrize(
+    "item, is_kept",
+    [
+        # dropped: a dict without valid RLE whose `points` is a list/tuple of < 3
+        ({"points": []}, False),
+        ({"points": _TWO_POINTS[:1]}, False),
+        ({"points": _TWO_POINTS}, False),
+        ({"points": tuple(_TWO_POINTS)}, False),
+        ({"points": _TWO_POINTS, "rle": {"size": [4, 4]}}, False),
+        ({"points": _TWO_POINTS, "rle": "not a dict"}, False),
+        # kept: 3 or more points
+        ({"points": _THREE_POINTS}, True),
+        # kept: valid RLE wins over `points`, under either key
+        ({"points": _TWO_POINTS, "rle": _VALID_RLE}, True),
+        ({"points": _TWO_POINTS, "rle_mask": _VALID_RLE}, True),
+        # kept: anything else is left for supervision to handle
+        ({}, True),
+        ({"points": None}, True),
+        ({"points": "ab"}, True),
+        ("points", True),
+        (None, True),
+    ],
+)
+def test_filter_out_invalid_polygons_drops_only_short_polygons_without_rle(
+    item: object,
+    is_kept: bool,
+) -> None:
+    # when
+    result = filter_out_invalid_polygons(predictions=[item])
+
+    # then
+    assert result == ([item] if is_kept else [])
+
+
+def test_filter_out_invalid_polygons_passes_non_list_container_through() -> None:
+    # when
+    result = filter_out_invalid_polygons(predictions=None)
+
+    # then
+    assert result is None
