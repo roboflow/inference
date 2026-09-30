@@ -283,6 +283,14 @@ MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/tmp/cache")
 ROBOFLOW_API_EXTRA_HEADERS = os.environ.get("ROBOFLOW_API_EXTRA_HEADERS")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_NAME")
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.environ.get("ROBOFLOW_INTERNAL_SERVICE_SECRET")
+# api_key -> workspace lookups made by the Workflows platform blocks. Same
+# variables and defaults as the legacy server's `get_roboflow_workspace` cache.
+WORKSPACE_CACHE_TTL_S = get_integer_from_env(
+    "MODELS_CACHE_AUTH_CACHE_TTL", default=15 * 60
+)
+WORKSPACE_CACHE_MAX_SIZE = get_integer_from_env(
+    "MODELS_CACHE_AUTH_CACHE_MAX_SIZE", default=100_000_000
+)
 try:
     SERVER_VERSION = importlib.metadata.version("inference-server")
 except importlib.metadata.PackageNotFoundError:

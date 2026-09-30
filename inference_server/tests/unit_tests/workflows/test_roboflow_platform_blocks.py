@@ -138,6 +138,9 @@ def _response(
 def _configured_api(monkeypatch):
     monkeypatch.setattr(host.configuration, "API_BASE_URL", API_URL + "/")
     monkeypatch.setattr(host.configuration, "OFFLINE_MODE", False)
+    host.clear_workspace_cache()
+    yield
+    host.clear_workspace_cache()
 
 
 def test_raise_for_status_redacts_the_key() -> None:
@@ -189,6 +192,61 @@ def test_get_workspace_rejects_an_empty_or_malformed_workspace(payload) -> None:
     ):
         with pytest.raises(RoboflowAPIRequestError):
             _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+
+
+def test_get_workspace_is_cached_per_api_key() -> None:
+    client = _RecordingPlatformClient()
+
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(payload={"workspace": "ws"})
+    ) as get:
+        assert client.get_roboflow_workspace(api_key="key-a") == "ws"
+        assert client.get_roboflow_workspace(api_key="key-a") == "ws"
+        assert get.call_count == 1
+        assert host.PLATFORM_CLIENT.get_roboflow_workspace(api_key="key-a") == "ws"
+        assert get.call_count == 1
+
+        assert client.get_roboflow_workspace(api_key="key-b") == "ws"
+        assert get.call_count == 2
+
+
+def test_get_workspace_cache_entry_expires_after_the_ttl() -> None:
+    now = [1000.0]
+    ttl = host.configuration.WORKSPACE_CACHE_TTL_S
+
+    with mock.patch.object(
+        host.requests, "get", return_value=_response(payload={"workspace": "ws"})
+    ) as get, mock.patch(
+        "inference_server.framework.model_stat.time.monotonic",
+        side_effect=lambda: now[0],
+    ):
+        _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+        now[0] += ttl - 1
+        _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+        assert get.call_count == 1
+        now[0] += 2
+        _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+        assert get.call_count == 2
+
+
+def test_get_workspace_failures_are_not_cached() -> None:
+    with mock.patch.object(
+        host.requests,
+        "get",
+        side_effect=[
+            _response(status_code=500),
+            _response(payload={}),
+            _response(payload={"workspace": "ws"}),
+        ],
+    ) as get:
+        with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+            _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+        with pytest.raises(RoboflowAPIRequestError):
+            _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key")
+        assert (
+            _RecordingPlatformClient().get_roboflow_workspace(api_key="my-key") == "ws"
+        )
+    assert get.call_count == 3
 
 
 @pytest.mark.parametrize(

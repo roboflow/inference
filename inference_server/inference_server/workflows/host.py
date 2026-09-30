@@ -10,6 +10,7 @@ import platform
 import re
 import socket
 import stat
+import threading
 import urllib.parse
 import uuid
 import warnings
@@ -421,6 +422,7 @@ from inference_sdk.http.errors import HTTPCallErrorError  # noqa: E402
 from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
     URL_FETCH_TIMEOUT_S,
 )
+from inference_server.framework.model_stat import _TtlLruCache  # noqa: E402
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
 from inference_server.legacy.errors import (  # noqa: E402
@@ -497,6 +499,21 @@ def _api_error_message(response: requests.Response, api_key: Optional[str]) -> s
 
 _SERVICE_SECRET_PATTERN = re.compile(r"service_secret=[^&]*")
 _WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+# Process-wide api_key -> workspace cache, the counterpart of the legacy
+# server's `@ttl_cache` on `get_roboflow_workspace`: blocks such as
+# visual_search_classifier look the workspace up once per image. Keyed by the
+# key's SHA-256 so no plaintext key is held; only successful lookups are stored.
+_WORKSPACE_CACHE = _TtlLruCache(
+    configuration.WORKSPACE_CACHE_MAX_SIZE, configuration.WORKSPACE_CACHE_TTL_S
+)
+_WORKSPACE_CACHE_LOCK = threading.Lock()
+
+
+def clear_workspace_cache() -> None:
+    with _WORKSPACE_CACHE_LOCK:
+        _WORKSPACE_CACHE.clear()
+
+
 _SEARCH_DEFAULT_FIELDS = [
     "id",
     "name",
@@ -696,6 +713,17 @@ class ServerRoboflowPlatformClient:
             raise RoboflowAPIRequestError(
                 "Empty workspace encountered, check your API key."
             )
+        cache_key = sha256(api_key.encode("utf-8")).hexdigest()
+        with _WORKSPACE_CACHE_LOCK:
+            cached_workspace_id = _WORKSPACE_CACHE.get(cache_key)
+        if cached_workspace_id is not None:
+            return cached_workspace_id
+        workspace_id = self._fetch_roboflow_workspace(api_key=api_key)
+        with _WORKSPACE_CACHE_LOCK:
+            _WORKSPACE_CACHE.set(cache_key, workspace_id)
+        return workspace_id
+
+    def _fetch_roboflow_workspace(self, api_key: str) -> str:
         url = _add_params_to_url(
             url=_api_url(""), params=[("api_key", api_key), ("nocache", "true")]
         )
