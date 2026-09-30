@@ -147,13 +147,8 @@ def test_modal_awaits_queue_and_stops_once_outside_event_loop(monkeypatch, fails
         _gpu=None,
         _container_startup_time_seconds=0,
     )
-    call = namespace["rtc_peer_connection_modal"]
-    if fails:
-        with pytest.raises(AttributeError) as caught:
-            call(instance, _request(), queue)
-        assert caught.value is error
-    else:
-        call(instance, _request(), queue)
+    namespace["rtc_peer_connection_modal"](instance, _request(), queue)
+    assert namespace["logger"].exception.called is fails
     queue.put.assert_not_called()
     queue.put.aio.assert_awaited_once_with(answer)
     watchdog.start.assert_called_once()
