@@ -2,7 +2,6 @@ import json
 
 import numpy as np
 import onnx
-import onnxruntime as ort
 import pytest
 from onnx import TensorProto, helper, numpy_helper
 
@@ -104,6 +103,8 @@ def classifier(control_flow=False, matmul=False, activation="Softmax"):
 def test_features_match_original_and_classifier_is_unchanged(
     control_flow, matmul, output_type, activation
 ):
+    import onnxruntime as ort
+
     source = classifier(control_flow, matmul, activation)
     before = source.SerializeToString()
     extracted, info = extract_classifier_embedding(source, output_type)
