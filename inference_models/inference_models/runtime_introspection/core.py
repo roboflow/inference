@@ -1,4 +1,5 @@
 import ctypes
+import importlib.metadata as importlib_metadata
 import os
 import platform
 import re
@@ -46,6 +47,7 @@ class RuntimeXRayResult:
     available_onnx_execution_providers: Optional[Set[str]]
     hf_transformers_available: bool
     trt_python_package_available: bool
+    coremltools_version: Optional[Version] = None
 
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
@@ -62,7 +64,7 @@ class RuntimeXRayResult:
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
             f"available_onnx_execution_providers={onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
-            f"torchvision_version={self.torchvision_version})"
+            f"torchvision_version={self.torchvision_version}, coremltools_version={self.coremltools_version})"
         )
 
 
@@ -173,6 +175,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         onnxruntime_version, available_onnx_execution_providers = None, None
     hf_transformers_available = is_hf_transformers_available()
     trt_python_package_available = is_trt_python_package_available()
+    coremltools_version = get_coreml_runtime_version()
     return RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
@@ -190,6 +193,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         available_onnx_execution_providers=available_onnx_execution_providers,
         hf_transformers_available=hf_transformers_available,
         trt_python_package_available=trt_python_package_available,
+        coremltools_version=coremltools_version,
     )
 
 
@@ -539,6 +543,26 @@ def get_onnxruntime_info() -> Optional[Tuple[Version, Set[str]]]:
         available_providers = onnxruntime.get_available_providers()
         return Version(onnxruntime.__version__), available_providers
     except ImportError:
+        return None
+
+
+# Core ML model packages target the iOS 16 / macOS 13 ML Program runtime.
+MIN_MACOS_VERSION_FOR_COREML = Version("13.0")
+
+
+@cache
+def get_coreml_runtime_version() -> Optional[Version]:
+    """Return the installed coremltools version when Core ML models can run here, else None.
+
+    Reads package metadata: importing coremltools takes ~1.5 s, which only a Core ML model load should pay.
+    """
+    if platform.system() != "Darwin":
+        return None
+    try:
+        if Version(platform.mac_ver()[0]) < MIN_MACOS_VERSION_FOR_COREML:
+            return None
+        return Version(importlib_metadata.version("coremltools"))
+    except (importlib_metadata.PackageNotFoundError, InvalidVersion):
         return None
 
 

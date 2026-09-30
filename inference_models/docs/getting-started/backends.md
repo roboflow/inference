@@ -153,6 +153,32 @@ See [Understand Core Concepts](../how-to/understand-core-concepts.md) for more d
 
     Mismatches will cause loading failures. Install the TensorRT version compatible with your target environment by specifying the exact version: `tensorrt==x.y.z`.
 
+### Core ML (Apple Silicon)
+
+**Native Core ML packages for Macs with Apple Silicon.**
+
+- ✅ **Pros**: Runs on the Apple GPU through Core ML directly, loads in under a second, fastest option on a Mac
+- ⚠️ **Cons**: macOS 13+ only, needs a Core ML package registered for the model
+- 🎯 **Best for**: Local development and edge deployments on Macs
+
+**Installation:**
+
+=== "uv"
+    ```bash
+    uv pip install "inference-models[coreml]"
+    ```
+
+=== "pip"
+    ```bash
+    pip install "inference-models[coreml]"
+    ```
+
+**Supported Models**: RF-DETR object detection and instance segmentation
+
+Packages run on the compute units set by `INFERENCE_MODELS_COREML_COMPUTE_UNITS` (default `CPUAndGPU`).
+A zipped `.mlpackage` is extracted once into the package's `coreml_cache/` directory. Models without a
+Core ML package keep using ONNX Runtime's `CoreMLExecutionProvider`.
+
 ### Hugging Face Transformers
 
 **Access to transformer-based models from Hugging Face Hub.**
@@ -275,10 +301,11 @@ Optimized for NVIDIA Jetson devices with JetPack 6.
 
 When multiple backends are installed, `AutoModel` selects backends in this order:
 
-1. **TensorRT** (if GPU available and model supports it)
-2. **PyTorch** (default, widest compatibility)
+1. **Core ML** (on macOS 13+ with the `coreml` extra, when the model has a Core ML package)
+2. **TensorRT** (if GPU available and model supports it)
 3. **ONNX** (good performance, cross-platform)
-4. **Hugging Face** (for transformer models)
+4. **PyTorch** (widest compatibility)
+5. **Hugging Face** (for transformer models)
 
 You can override this by specifying `backend_type`:
 

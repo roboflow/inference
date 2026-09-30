@@ -3,6 +3,13 @@ from typing import Dict, List
 
 from inference_models.errors import CorruptedModelPackageError
 
+# Directory inside a model package that holds compiled / extracted Core ML artefacts (ONNX Runtime's CoreML
+# compiled-model cache and native .mlpackage bundles). The inference cache watchdog purges it as one unit.
+COREML_CACHE_DIR_NAME = "coreml_cache"
+# The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling,
+# extracting and loading under the same lock keeps it from deleting a cache that is being written or read.
+COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
+
 
 def get_model_package_contents(
     model_package_dir: str,

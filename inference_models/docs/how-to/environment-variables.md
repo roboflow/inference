@@ -262,6 +262,7 @@ export ONNXRUNTIME_EXECUTION_PROVIDERS="CPUExecutionProvider"
 
 These apply to models that configure the `CoreMLExecutionProvider` themselves (currently RF-DETR),
 and only with onnxruntime 1.21 or newer; older versions run CoreML with onnxruntime's defaults.
+`INFERENCE_MODELS_COREML_COMPUTE_UNITS` also sets where native Core ML packages (the `coreml` backend) run.
 
 **`INFERENCE_MODELS_COREML_MODEL_FORMAT`**
 CoreML model format. `MLProgram` supports the transformer ops RF-DETR needs; `NeuralNetwork`

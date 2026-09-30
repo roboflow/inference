@@ -22,6 +22,10 @@ from inference_models.errors import (
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
+from inference_models.models.common.model_packages import (
+    COREML_CACHE_DIR_NAME,
+    COREML_CACHE_LOCK_NAME,
+)
 
 try:
     import onnxruntime
@@ -114,10 +118,6 @@ MODEL_INPUT_CASTING = {
 # in onnxruntime 1.21.0. Older builds keep the provider unconfigured, as before.
 MIN_ONNXRUNTIME_VERSION_FOR_COREML_OPTIONS = Version("1.21.0")
 COREML_EXECUTION_PROVIDER = "CoreMLExecutionProvider"
-COREML_CACHE_DIR_NAME = "coreml_cache"
-# The inference cache watchdog takes `<package>/.<entry>.lock` before purging a package entry, so compiling
-# and loading under the same lock keeps it from deleting a cache that is being written or read.
-COREML_CACHE_LOCK_NAME = f".{COREML_CACHE_DIR_NAME}.lock"
 COREML_MODEL_FORMATS = {"MLProgram", "NeuralNetwork"}
 COREML_COMPUTE_UNITS = {"CPUAndGPU", "ALL", "CPUAndNeuralEngine", "CPUOnly"}
 

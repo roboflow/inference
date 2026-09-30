@@ -1103,3 +1103,56 @@ def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_valid_configuration
         gpu_devices=["some"],
         l4t_version=None,
     )
+
+
+@pytest.mark.parametrize(
+    "system, mac_version, expected",
+    [
+        ("Linux", "", None),
+        ("Darwin", "12.7", None),
+        ("Darwin", "not-a-version", None),
+        ("Darwin", "14.5", Version("9.0")),
+    ],
+)
+def test_get_coreml_runtime_version(system: str, mac_version: str, expected) -> None:
+    # given
+    core.get_coreml_runtime_version.cache_clear()
+
+    # when
+    try:
+        with mock.patch.object(
+            core.platform, "system", return_value=system
+        ), mock.patch.object(
+            core.platform, "mac_ver", return_value=(mac_version, ("", "", ""), "")
+        ), mock.patch.object(
+            core.importlib_metadata, "version", return_value="9.0"
+        ):
+            result = core.get_coreml_runtime_version()
+    finally:
+        core.get_coreml_runtime_version.cache_clear()
+
+    # then
+    assert result == expected
+
+
+def test_get_coreml_runtime_version_when_coremltools_missing() -> None:
+    # given
+    core.get_coreml_runtime_version.cache_clear()
+
+    # when
+    try:
+        with mock.patch.object(
+            core.platform, "system", return_value="Darwin"
+        ), mock.patch.object(
+            core.platform, "mac_ver", return_value=("14.5", ("", "", ""), "")
+        ), mock.patch.object(
+            core.importlib_metadata,
+            "version",
+            side_effect=core.importlib_metadata.PackageNotFoundError("coremltools"),
+        ):
+            result = core.get_coreml_runtime_version()
+    finally:
+        core.get_coreml_runtime_version.cache_clear()
+
+    # then
+    assert result is None
