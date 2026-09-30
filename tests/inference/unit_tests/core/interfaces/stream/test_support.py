@@ -57,7 +57,7 @@ def test_copies_are_separate_objects_from_the_legacy_helpers() -> None:
     ):
         legacy, copy = implementations
         assert legacy is not copy
-        assert copy.__module__.startswith("inference.core.interfaces.stream.support")
+        assert copy.__module__.startswith("streamvision.stream.support")
 
 
 def _start_loop_in_thread() -> Tuple[asyncio.AbstractEventLoop, threading.Thread]:
@@ -701,12 +701,12 @@ def test_support_modules_are_configuration_independent() -> None:
     assert _imported_modules(async_queue) == ["asyncio", "threading", "typing"]
     assert _imported_modules(decorators) == [
         "functools",
-        "inference.core.interfaces.stream.warnings",
+        "streamvision.stream.warnings",
         "warnings",
     ]
     assert _imported_modules(stream_environment) == [
-        "inference.core.interfaces.stream.exceptions",
         "os",
+        "streamvision.stream.exceptions",
         "typing",
     ]
     assert _imported_modules(images) == [

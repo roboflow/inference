@@ -292,6 +292,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook && \
     python3 -m pip install --no-cache-dir --find-links dist/ \
         dist/roboflow_workflows*.whl \
+        dist/streamvision*.whl \
         dist/inference_cli*.whl \
         dist/inference_core*.whl \
         dist/inference_gpu*.whl \

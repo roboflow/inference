@@ -1,7 +1,7 @@
 """The `inference` flavour of `InferencePipeline`: models, model managers and the platform.
 
 `InferencePipeline` here subclasses the host-neutral pipeline
-(`inference.core.interfaces.stream.pipeline`) and keeps the historical public
+(`streamvision.stream.pipeline`) and keeps the historical public
 entry points - `init(model_id=...)`, `init_with_yolo_world(...)` and
 `init_with_workflow(model_manager=...)` - with their exact signatures and
 behaviour: model loading, Active Learning, API-key fallback, workflow
@@ -13,7 +13,7 @@ an instance of both this class and the neutral one; a pipeline created
 through the neutral class is not an instance of this one.
 
 `inference.core.interfaces.stream.inference_pipeline` is this very module
-(see that facade), so module attributes patched through the historical name
+(aliased by `inference._workflows_compat`), so attributes patched through that name
 - `get_model`, `API_KEY`, `ACTIVE_LEARNING_ENABLED`, `ENABLE_WORKFLOWS_PROFILING`,
 `BaseWorkflowsProfiler` and so on - are the ones read here. The composition
 points the neutral pipeline reads through `cls` (`prepare_video_sources`,
@@ -31,6 +31,67 @@ from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
+
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.execution_engine.profiling.core import (
+    BaseWorkflowsProfiler,
+    NullWorkflowsProfiler,
+    WorkflowsProfiler,
+)
+from roboflow_workflows.execution_engine.v1.executor.utils import resolve_futures
+from streamvision.camera.collection_policy import (
+    FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT,
+    STALENESS_DROP_CAUSE,
+    CollectionPolicy,
+    VideoProcessingMode,
+    resolve_video_processing_mode,
+)
+from streamvision.camera.entities import (
+    StatusUpdate,
+    UpdateSeverity,
+    VideoFrame,
+    VideoSourceIdentifier,
+)
+from streamvision.camera.utils import multiplex_videos
+from streamvision.camera.video_source import (
+    FRAME_DROPPED_EVENT,
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+    VideoSource,
+)
+from streamvision.stream.entities import (
+    AnyPrediction,
+    InferenceHandler,
+    InferenceHandlerResult,
+    ModelConfig,
+    SinkHandler,
+)
+from streamvision.stream.pipeline import (
+    INFERENCE_COMPLETED_EVENT,
+    INFERENCE_ERROR_EVENT,
+    INFERENCE_PIPELINE_CONTEXT,
+    INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
+    INFERENCE_THREAD_FINISHED_EVENT,
+    INFERENCE_THREAD_STARTED_EVENT,
+    SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT,
+    SOURCE_CONNECTION_LOST_EVENT,
+)
+from streamvision.stream.pipeline import (
+    InferencePipeline as HostNeutralInferencePipeline,
+)
+from streamvision.stream.pipeline import (
+    SinkMode,
+    _resolve_prediction_futures,
+    _rfdetr_stream_pipeline_enabled,
+    send_inference_pipeline_status_update,
+)
+from streamvision.stream.sinks import active_learning_sink, multi_sink
+from streamvision.stream.utils import (
+    VideoSourceOptions,
+    on_pipeline_end,
+    prepare_video_sources,
+)
+from streamvision.stream.watchdog import NullPipelineWatchdog, PipelineWatchDog
 
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
@@ -50,67 +111,11 @@ from inference.core.env import (
     WORKFLOWS_PROFILER_BUFFER_SIZE,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
-from inference.core.interfaces.camera.collection_policy import (
-    FRESHEST_MODE_BATCH_COLLECTION_TIMEOUT,
-    STALENESS_DROP_CAUSE,
-    CollectionPolicy,
-    VideoProcessingMode,
-    resolve_video_processing_mode,
-)
-from inference.core.interfaces.camera.entities import (
-    StatusUpdate,
-    UpdateSeverity,
-    VideoFrame,
-    VideoSourceIdentifier,
-)
-from inference.core.interfaces.camera.utils import multiplex_videos
-from inference.core.interfaces.camera.video_source import (
-    FRAME_DROPPED_EVENT,
-    BufferConsumptionStrategy,
-    BufferFillingStrategy,
-    VideoSource,
-)
 from inference.core.interfaces.legacy_stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.roboflow_platform_client import (
     install_workflows_platform_bindings,
-)
-from inference.core.interfaces.stream.entities import (
-    AnyPrediction,
-    InferenceHandler,
-    InferenceHandlerResult,
-    ModelConfig,
-    SinkHandler,
-)
-from inference.core.interfaces.stream.pipeline import (
-    INFERENCE_COMPLETED_EVENT,
-    INFERENCE_ERROR_EVENT,
-    INFERENCE_PIPELINE_CONTEXT,
-    INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
-    INFERENCE_THREAD_FINISHED_EVENT,
-    INFERENCE_THREAD_STARTED_EVENT,
-    SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT,
-    SOURCE_CONNECTION_LOST_EVENT,
-)
-from inference.core.interfaces.stream.pipeline import (
-    InferencePipeline as HostNeutralInferencePipeline,
-)
-from inference.core.interfaces.stream.pipeline import (
-    SinkMode,
-    _resolve_prediction_futures,
-    _rfdetr_stream_pipeline_enabled,
-    send_inference_pipeline_status_update,
-)
-from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
-from inference.core.interfaces.stream.utils import (
-    VideoSourceOptions,
-    on_pipeline_end,
-    prepare_video_sources,
-)
-from inference.core.interfaces.stream.watchdog import (
-    NullPipelineWatchdog,
-    PipelineWatchDog,
 )
 from inference.core.interfaces.workflows_models_provider import (
     ModelManagerModelsProvider,
@@ -121,13 +126,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.execution_engine.profiling.core import (
-    BaseWorkflowsProfiler,
-    NullWorkflowsProfiler,
-    WorkflowsProfiler,
-)
-from inference.core.workflows.execution_engine.v1.executor.utils import resolve_futures
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 from inference.usage_tracking.stream_session import (
@@ -427,7 +425,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
                 the legacy behavior explicitly (the escape hatch from the flag-driven default). File
                 sources always keep every-frame semantics regardless of mode. See
-                `inference.core.interfaces.camera.collection_policy` for details.
+                `streamvision.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
                 STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
@@ -631,7 +629,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
                 the legacy behavior explicitly (the escape hatch from the flag-driven default). File
                 sources always keep every-frame semantics regardless of mode. See
-                `inference.core.interfaces.camera.collection_policy` for details.
+                `streamvision.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
                 STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.
@@ -832,7 +830,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 otherwise the legacy collection behavior is preserved unchanged; pass "legacy" to force
                 the legacy behavior explicitly (the escape hatch from the flag-driven default). File
                 sources always keep every-frame semantics regardless of mode. See
-                `inference.core.interfaces.camera.collection_policy` for details.
+                `streamvision.camera.collection_policy` for details.
             max_staleness (Optional[float]): Staleness budget (seconds) of "auto" mode - live frames older
                 than this are dropped (reported as FRAME_DROPPED status updates with cause
                 STALENESS_BUDGET_EXCEEDED) instead of being served late. Default: 0.5.

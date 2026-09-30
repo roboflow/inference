@@ -16,10 +16,21 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Anthropic Claude block (`anthropic_claude@v5`): `claude-sonnet-5-5` model option.
 ### Changed
 
 - Carries forward the `0.2.2` model catalog: Anthropic Claude v5 lists `claude-opus-5-5` (Claude Opus 5.5, 128000 max output tokens) and the temperature warning names Opus 5.x; OpenAI v7 lists `gpt-6-sol` and `gpt-6-luna` (reasoning effort `none` through `max`, structured absolute detection prompts).
 - `prototypes.platform_errors`: `RoboflowAPINotAuthorizedError`, `RoboflowAPINotNotFoundError`, `RoboflowAPITimeoutError` and `RoboflowAPIConnectionError`, for hosts to raise and translate platform request failures. Names and bases match the `inference` server classes, which now re-export them; `RoboflowAPINotAuthorizedError` is not a `RoboflowAPIForbiddenError`.
+- Requires `supervision>=0.30.6,<0.31.0` (was `>=0.29.0,<0.30.0`). `supervision` 0.30 depends on `av`, `pydeprecate` and `defusedxml`, so installing this package now installs them too.
+- Time in Zone (`v1`, `v2`, `v3`, tensor variants included) follows `supervision` 0.30 and rounds a detection's anchor to the nearest pixel instead of rounding it up. A detection whose anchor lies within one pixel of a zone edge can change zone membership: an anchor at `x=10.4` was outside a zone ending at `x=10` and is now inside.
+- Detections Stitch with `overlap_filtering_strategy` set to `nmm` follows `supervision` 0.30 and compares instance segmentation masks at their own resolution instead of scaled to 640 pixels. Which detections merge can change where the scaled masks used to land on the other side of the IoU threshold. With NumPy data the merge is slower on large frames, because that time is spent inside `supervision`: 200 masks on a 3840x2160 frame took about 29 s with `supervision` 0.30.6 and about 1 s with 0.29.1 on the same CPU. With tensor data the block counts overlaps only where mask bounding boxes intersect and takes about as long as before.
+- Predictions whose polygon has fewer than 3 points are dropped before `supervision` parses the response, in model blocks, OCR blocks and detections passed as workflow inputs. The result is unchanged: the prediction is left out and the others keep their masks. `supervision` 0.30 on its own would keep it as a box and remove the masks of every detection in the response.
+
+### Fixed
+
+- Inner Workflow block no longer imports `fastapi`, which only the `enterprise` extra installs; its `background_tasks` argument is typed with `BackgroundTaskScheduler`. `roboflow_workflows.execution_engine.core` now imports without `fastapi`.
 
 ## `0.2.3`
 

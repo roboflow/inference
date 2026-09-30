@@ -109,7 +109,7 @@ def structlog_exception_formatter(
 
 
 # Workflows logs through `logging.getLogger(__name__)` under this package name.
-EXTRACTED_PACKAGE_LOGGERS = ("roboflow_workflows",)
+EXTRACTED_PACKAGE_LOGGERS = ("roboflow_workflows", "streamvision")
 
 
 def _attach_to_extracted_packages(handler: logging.Handler) -> None:
