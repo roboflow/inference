@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import inference.core.interfaces.webrtc_worker as webrtc_worker_package
 from inference.core.interfaces.webrtc_worker import webrtc
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
@@ -70,7 +71,7 @@ def test_initialization_error_is_delivered_logged_and_reraised(
 
 def _modal_functions(watchdog):
     # Execute the real functions without Modal decorators/image registration.
-    path = Path(webrtc.__file__).with_name("modal.py")
+    path = Path(webrtc_worker_package.__file__).with_name("modal.py")
     tree = ast.parse(path.read_text())
     names = {"run_rtc_peer_connection_with_watchdog", "rtc_peer_connection_modal"}
     functions = [

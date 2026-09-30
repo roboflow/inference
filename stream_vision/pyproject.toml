@@ -18,6 +18,7 @@ dependencies = [
 webrtc = [
   "aiortc>=1.9.0",
   "av==14.2.0",
+  "orjson>=3.11.6,<4.0.0",
 ]
 workflows = [
   "roboflow-workflows>=0.2.4rc3",

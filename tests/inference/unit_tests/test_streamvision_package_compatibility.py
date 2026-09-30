@@ -141,6 +141,21 @@ def test_legacy_pickle_reference_loads_the_canonical_class() -> None:
     assert pickle.loads(legacy_reference) is ModelConfig
 
 
+@pytest.mark.parametrize("class_name", ["WebRTCWorkerRequest", "WebRTCWorkerResult"])
+def test_legacy_webrtc_worker_pickle_references_load_the_moved_classes(
+    class_name: str,
+) -> None:
+    import streamvision.webrtc_worker.entities as canonical_entities
+
+    moved_class = getattr(canonical_entities, class_name)
+    assert moved_class.__module__ == "streamvision.webrtc_worker.entities"
+    assert pickle.loads(pickle.dumps(moved_class)) is moved_class
+    legacy_reference = (
+        f"cinference.core.interfaces.webrtc_worker.entities\n{class_name}\n."
+    ).encode()
+    assert pickle.loads(legacy_reference) is moved_class
+
+
 def test_reload_through_legacy_name_keeps_identity() -> None:
     import streamvision.stream.watchdog as canonical
 
