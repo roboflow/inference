@@ -1,0 +1,36 @@
+........................................................................ [ 48%]
+........................................................................ [ 97%]
+....                                                                     [100%]
+=============================== warnings summary ===============================
+inference_server/inference_server/legacy/prompts.py:121: 1 warning
+inference_server/inference_server/legacy/prompts.py:129: 1 warning
+inference_server/inference_server/legacy/prompts.py:138: 1 warning
+inference_server/inference_server/legacy/entities.py:357: 1 warning
+inference_server/inference_server/legacy/entities.py:711: 1 warning
+inference_server/inference_server/legacy/entities.py:735: 1 warning
+inference_server/inference_server/legacy/entities.py:815: 1 warning
+inference_server/inference_server/legacy/entities.py:893: 1 warning
+inference_server/inference_server/legacy/entities.py:919: 1 warning
+inference_server/inference_server/legacy/entities.py:940: 1 warning
+inference_server/inference_server/legacy/entities.py:1024: 1 warning
+inference_server/inference_server/legacy/entities.py:1152: 1 warning
+inference_server/inference_server/legacy/entities.py:1222: 1 warning
+inference_server/inference_server/legacy/entities.py:1306: 1 warning
+inference_server/inference_server/legacy/entities.py:1312: 1 warning
+  PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/fields.py:1093
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/fields.py:1093
+  PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/deprecated/class_validators.py:121
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/deprecated/class_validators.py:121
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/deprecated/class_validators.py:121
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/deprecated/class_validators.py:121
+  PydanticDeprecatedSince20: `allow_reuse` is deprecated and will be ignored; it should no longer be necessary. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+../../../../inference/.venv/lib/python3.10/site-packages/pydantic/fields.py:1062
+  PydanticDeprecatedSince20: `min_items` is deprecated and will be removed, use `min_length` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+148 passed, 22 warnings in 9.71s
